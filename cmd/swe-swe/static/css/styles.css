@@ -1,0 +1,564 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+#elm-app {
+    min-height: 100vh;
+    background-color: white;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    position: relative;
+}
+
+.header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background-color: white;
+    border-bottom: 1px solid #e0e0e0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.title-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header h1 {
+    margin: 0;
+    color: #333;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.connection-status {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transition: background-color 0.3s ease;
+}
+
+.connection-status.connected {
+    background-color: #4caf50;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
+}
+
+.connection-status.disconnected {
+    background-color: #757575;
+    box-shadow: 0 0 0 2px rgba(117, 117, 117, 0.3);
+}
+
+.theme-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #666;
+}
+
+.theme-dropdown {
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.messages {
+    flex-grow: 1;
+    padding: 80px 20px 120px 20px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.message-sender {
+    font-weight: bold;
+    margin: 10px 0 5px 0;
+    font-size: 0.9em;
+    color: #555;
+}
+
+.user-sender {
+    text-align: right;
+    align-self: flex-end;
+}
+
+.bot-sender {
+    text-align: left;
+    align-self: flex-start;
+}
+
+.message-content {
+    word-wrap: break-word;
+    padding: 8px 12px;
+    margin: 2px 0;
+    border-radius: 8px;
+    display: inline-block;
+    max-width: 85%;
+}
+
+.user-message {
+    background-color: #e3f2fd;
+    margin-left: auto;
+    text-align: right;
+    align-self: flex-end;
+    color: #0c5991;
+}
+
+.bot-message {
+    margin-right: auto;
+    text-align: left;
+    align-self: flex-start;
+    white-space: pre-wrap;
+}
+
+.input-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px;
+    background-color: white;
+    border-top: 1px solid #e0e0e0;
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.message-input {
+    flex-grow: 1;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    resize: none;
+    min-height: 20px;
+    height: 44px;
+    max-height: 120px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-y: auto;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+
+.message-input:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+}
+
+.send-button {
+    padding: 12px 20px;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 14px;
+    height: 44px;
+    transition: background-color 0.2s;
+}
+
+.send-button:hover {
+    background-color: #357abf;
+}
+
+.send-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+}
+
+/* For ANSI code formatting */
+.message-content pre {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: monospace;
+}
+
+.message-content code {
+    display: block;
+    background-color: #f5f5f5;
+    padding: 8px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    font-family: 'Courier New', Courier, monospace;
+    margin: 5px 0;
+}
+
+/* Tool result styles */
+.tool-result {
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.tool-result summary {
+    background-color: #f5f5f5;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #555;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.tool-result summary:hover {
+    background-color: #e8e8e8;
+}
+
+.tool-result[open] summary {
+    background-color: #e8e8e8;
+    border-bottom: 1px solid #ddd;
+}
+
+.tool-result-content {
+    padding: 15px;
+    background-color: #fafafa;
+    overflow-x: auto;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+/* Tool use styles */
+.tool-use {
+    margin: 5px 0;
+    padding: 8px 12px;
+    color: #555;
+    font-weight: 500;
+}
+
+.tool-use .tool-command {
+    margin-left: 8px;
+}
+
+.tool-use code {
+    background-color: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+/* Dark theme tool result styles */
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-result,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-result,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-result,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result {
+    border-color: #444;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-result summary,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-result summary,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary {
+    background-color: #2d2d2d;
+    color: #b0b0b0;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-result summary:hover,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary:hover,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-result summary:hover,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary:hover {
+    background-color: #383838;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-result[open] summary,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-result[open] summary,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-result[open] summary,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result[open] summary {
+    background-color: #383838;
+    border-bottom-color: #444;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-result-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-result-content,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-result-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result-content {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}
+
+/* Dark theme tool use styles */
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-use,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-use,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-use,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-use {
+    color: #b0b0b0;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-use code,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-use code,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-use code,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-use code,
+.messages[style*="background-color: rgb(30, 30, 30)"] .tool-result summary code,
+.messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary code,
+.messages[style*="background-color: rgb(45, 45, 45)"] .tool-result summary code,
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary code {
+    background-color: #3a3a3a;
+    color: #d0d0d0;
+}
+
+/* Todo list styles */
+.todo-list {
+    margin: 15px 0;
+    padding: 15px;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 8px;
+    background-color: rgba(128, 128, 128, 0.05);
+}
+
+.todo-header {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.todo-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.todo-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s;
+}
+
+.todo-item:hover {
+    background-color: rgba(128, 128, 128, 0.15);
+}
+
+.todo-status, .todo-priority {
+    font-size: 1.2em;
+    flex-shrink: 0;
+}
+
+.todo-content {
+    flex: 1;
+    line-height: 1.4;
+}
+
+/* Typing indicator styles */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin: 8px 0;
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 18px;
+    width: fit-content;
+    align-self: flex-start;
+}
+
+.typing-dots {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.typing-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #999;
+    animation: typing 1.4s infinite ease-in-out;
+}
+
+.stop-button {
+    font-size: 12px;
+    color: #666;
+    cursor: pointer;
+    text-decoration: underline;
+    transition: color 0.2s;
+}
+
+.stop-button:hover {
+    color: #d32f2f;
+}
+
+.typing-dot:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+@keyframes typing {
+    0%, 80%, 100% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Dark theme typing indicator */
+.messages[style*="background-color: rgb(30, 30, 30)"] .typing-indicator,
+.messages[style*="background-color: rgb(0, 0, 0)"] .typing-indicator,
+.messages[style*="background-color: rgb(45, 45, 45)"] .typing-indicator,
+.messages[style*="background-color: rgb(0, 43, 54)"] .typing-indicator {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .typing-dot,
+.messages[style*="background-color: rgb(0, 0, 0)"] .typing-dot,
+.messages[style*="background-color: rgb(45, 45, 45)"] .typing-dot,
+.messages[style*="background-color: rgb(0, 43, 54)"] .typing-dot {
+    background-color: #666;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .stop-button,
+.messages[style*="background-color: rgb(0, 0, 0)"] .stop-button,
+.messages[style*="background-color: rgb(45, 45, 45)"] .stop-button,
+.messages[style*="background-color: rgb(0, 43, 54)"] .stop-button {
+    color: #999;
+}
+
+.messages[style*="background-color: rgb(30, 30, 30)"] .stop-button:hover,
+.messages[style*="background-color: rgb(0, 0, 0)"] .stop-button:hover,
+.messages[style*="background-color: rgb(45, 45, 45)"] .stop-button:hover,
+.messages[style*="background-color: rgb(0, 43, 54)"] .stop-button:hover {
+    color: #ff5252;
+}
+
+/* Print styles */
+@media print {
+    .header,
+    .input-container {
+        display: none !important;
+    }
+
+    .messages {
+        padding: 20px !important;
+    }
+
+    body {
+        background-color: white !important;
+    }
+
+    #elm-app {
+        background-color: white !important;
+    }
+}
+
+/* Theme-specific adjustments */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+    }
+
+    #elm-app {
+        background-color: #1e1e1e;
+    }
+
+    .header {
+        background-color: #2d2d2d;
+        border-bottom-color: #444;
+    }
+
+    .header h1 {
+        color: #d4d4d4;
+    }
+
+    .theme-dropdown {
+        background-color: #2d2d2d;
+        color: #d4d4d4;
+        border-color: #444;
+    }
+
+    .message-input {
+        background-color: #2d2d2d;
+        color: #d4d4d4;
+        border-color: #444;
+    }
+
+    .send-button {
+        background-color: #0e639c;
+    }
+
+    .send-button:hover {
+        background-color: #1177bb;
+    }
+}
+
+/* Smooth theme transitions */
+.messages {
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Better styling for light theme */
+.messages[style*="background-color: rgb(255, 255, 255)"] .message-content {
+    background-color: #f0f0f0;
+}
+
+.messages[style*="background-color: rgb(255, 255, 255)"] .user-message .message-content {
+    background-color: #007bff;
+    color: white;
+}
+
+/* Solarized theme specific styles */
+.messages[style*="background-color: rgb(0, 43, 54)"] code,
+.messages[style*="background-color: rgb(0, 43, 54)"] pre {
+    background-color: #073642;
+    color: #93a1a1;
+}
+
+/* Dynamic header styles based on active theme */
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .header,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .header,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .header,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .header {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .header h1,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .header h1,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .header h1,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .header h1 {
+    color: #e0e0e0;
+}
+
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .theme-selector,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .theme-selector,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .theme-selector,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
+    color: #b0b0b0;
+}

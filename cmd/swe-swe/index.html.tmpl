@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>swe-swe Chat</title>
+    <link rel="stylesheet" href="{{.PrefixPath}}/css/styles.{{.CSSHash}}.css">
+</head>
+<body>
+    <div id="elm-app"></div>
+    <script src="{{.PrefixPath}}/js/app.{{.JSHash}}.js"></script>
+    <script>
+        // Detect OS theme preference
+        function getSystemTheme() {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                return 'dark';
+            }
+            return 'light';
+        }
+
+        // Initialize Elm app with theme preference
+        const app = Elm.Main.init({
+            node: document.getElementById('elm-app'),
+            flags: {
+                systemTheme: getSystemTheme()
+            }
+        });
+
+        // Listen for OS theme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                const newTheme = e.matches ? 'dark' : 'light';
+                if (app.ports.systemThemeChanged) {
+                    app.ports.systemThemeChanged.send(newTheme);
+                }
+            });
+        }
+
+        // WebSocket connection management with auto-reconnect
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}{{.PrefixPath}}/ws`;
+
+        let socket = null;
+        let reconnectAttempts = 0;
+        let maxReconnectAttempts = 10;
+        let reconnectInterval = null;
+        let messageQueue = [];
+
+        function getReconnectDelay() {
+            // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+            return Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        }
+
+        function updateConnectionStatus(isConnected) {
+            if (app.ports.connectionStatusReceiver) {
+                app.ports.connectionStatusReceiver.send(isConnected);
+            }
+        }
+
+        function connectWebSocket() {
+            if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+                return;
+            }
+
+            console.log(reconnectAttempts, 'Attempting WebSocket connection...');
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = function() {
+                console.log(reconnectAttempts, 'WebSocket connection established');
+                reconnectAttempts = 0;
+                updateConnectionStatus(true);
+
+                // Send any queued messages
+                while (messageQueue.length > 0) {
+                    const message = messageQueue.shift();
+                    socket.send(message);
+                }
+            };
+
+            socket.onclose = function(event) {
+                console.log(reconnectAttempts, 'WebSocket connection closed', event.code, event.reason);
+                updateConnectionStatus(false);
+
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    const delay = getReconnectDelay();
+                    console.log(reconnectAttempts, `Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+
+                    reconnectInterval = setTimeout(() => {
+                        reconnectAttempts++;
+                        connectWebSocket();
+                    }, delay);
+                }
+            };
+
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+
+            socket.onmessage = function(event) {
+                app.ports.messageReceiver.send(event.data);
+            };
+        }
+
+        // Initial connection
+        connectWebSocket();
+
+        // Subscribe to messages from Elm and send them to the server
+        app.ports.sendMessage.subscribe(function(message) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(message);
+            } else {
+                // Queue message if not connected
+                messageQueue.push(message);
+                console.log('Message queued - WebSocket not connected');
+            }
+        });
+
+        // Handle scroll to bottom requests from Elm
+        app.ports.scrollToBottom.subscribe(function() {
+            // Small delay to ensure DOM has updated after message rendering
+            setTimeout(function() {
+                // Since we're using a full-page layout, scroll to the bottom of the page
+                // This will scroll down to show the latest messages above the fixed input
+                window.scrollTo({
+                    top: document.body.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 10);
+        });
+
+        // Auto-resize textarea
+        function autoResizeTextarea() {
+            const textarea = document.querySelector('.message-input');
+            if (textarea) {
+                // Reset height to measure actual content height
+                textarea.style.height = 'auto';
+                // Set height to scroll height, constrained by CSS max-height
+                textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+            }
+        }
+
+        // Set up textarea auto-resize when the DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Use MutationObserver to detect when Elm updates the textarea
+            const observer = new MutationObserver(function() {
+                autoResizeTextarea();
+            });
+
+            // Start observing
+            const container = document.getElementById('elm-app');
+            if (container) {
+                observer.observe(container, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['value']
+                });
+            }
+
+            // Also listen for input events
+            document.addEventListener('input', function(e) {
+                if (e.target && e.target.classList.contains('message-input')) {
+                    autoResizeTextarea();
+                }
+            });
+
+            // Handle Enter key behavior for textarea
+            document.addEventListener('keydown', function(e) {
+                if (e.target && e.target.classList.contains('message-input')) {
+                    if (e.keyCode === 13 && !e.shiftKey && !e.metaKey && !e.altKey) {
+                        // Prevent default Enter behavior (new line)
+                        e.preventDefault();
+                        // Elm will handle sending the message
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
