@@ -39,23 +39,29 @@ swe-swe exposes any command-line coding agent through a modern web interface. In
 **Available flags:**
 - `-port int` - Port to listen on (default: 7000)
 - `-timeout duration` - Server timeout (default: 30s)
-- `-agent-cli string` - Agent CLI command template (default: "goose run --resume --debug --text ?")
-- `-agent-cli-resume string` - Resume flag to remove from -agent-cli on first execution (default: "--resume")
+- `-agent string` - Agent CLI command template (default: "goose run --resume --debug --text ?")
 - `-prefix-path string` - URL prefix path for serving assets (e.g., "/myapp")
-- `-defer-stdin-close bool` - Defer closing stdin until process ends (default: true for goose, false for claude)
-- `-json-output bool` - Parse JSON stream output (default: false, set true for claude with stream-json format)
 
 ### Agent Integration
 
-The `-agent-cli` flag configures which coding agent to use. Use `?` as a placeholder for user input:
+The `-agent` flag configures which coding agent to use:
 
 ```bash
-# Use goose (default)
-./bin/swe-swe -agent-cli-resume=--resume   -agent-cli "goose run --resume --debug --text ?"
-
 # Use Claude Code
-./bin/swe-swe -agent-cli-resume=--continue -agent-cli "claude --continue --output-format stream-json --verbose true --dangerously-skip-permissions --print" -defer-stdin-close=false -json-output
+./bin/swe-swe -agent claude
+
+# Use goose (uses native goose web interface)
+./bin/swe-swe -agent goose
 ```
+
+For custom agents, use the `-agent-cli-1st` and `-agent-cli-nth` flags with `?` as a placeholder for user input:
+
+```bash
+# Use a custom agent with specific parameters
+./bin/swe-swe -agent-cli-1st "myagent --param value --text ?" -agent-cli-nth "myagent --continue --text ?"
+```
+
+**Note:** When using `-agent goose`, the application directly executes `goose web --port <PORT>`, replacing the current process.
 
 ## Architecture
 

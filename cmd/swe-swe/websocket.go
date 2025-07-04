@@ -43,19 +43,19 @@ type ChatService struct {
 	clients         map[*Client]bool
 	broadcast       chan ChatItem
 	mutex           sync.Mutex
-	agentCLI        []string
-	agentCLIResume  string
+	agentCLI1st     []string
+	agentCLINth     string
 	deferStdinClose bool
 	jsonOutput      bool
 }
 
 // NewChatService creates a new chat service
-func NewChatService(agentCLIStr string, agentCLIResume string, deferStdinClose bool, jsonOutput bool) *ChatService {
+func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool, jsonOutput bool) *ChatService {
 	return &ChatService{
 		clients:         make(map[*Client]bool),
 		broadcast:       make(chan ChatItem),
-		agentCLI:        parseAgentCLI(agentCLIStr),
-		agentCLIResume:  agentCLIResume,
+		agentCLI1st:     parseAgentCLI(agentCLI1st),
+		agentCLINth:     agentCLINth,
 		deferStdinClose: deferStdinClose,
 		jsonOutput:      jsonOutput,
 	}
@@ -166,24 +166,20 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 	client.processMutex.Unlock()
 
 	// Prepare the agent command with prompt substitution
-	cmdArgs := make([]string, len(svc.agentCLI))
-	copy(cmdArgs, svc.agentCLI)
-
-	// On first execution, check if we need to add the resume flag
+	var cmdArgs []string
 	svc.mutex.Lock()
-	if isFirstMessage && svc.agentCLIResume != "" {
-		cmdArgs = slices.DeleteFunc(cmdArgs, func(s string) bool { return s == svc.agentCLIResume })
+	if isFirstMessage {
+		// Use the first message command
+		cmdArgs = make([]string, len(svc.agentCLI1st))
+		copy(cmdArgs, svc.agentCLI1st)
+	} else {
+		// Use the nth message command for subsequent messages
+		cmdArgs = parseAgentCLI(svc.agentCLINth)
 	}
 	svc.mutex.Unlock()
 
-	// Check if the original command contains the ? placeholder
-	hasPlaceholder := false
-	for _, arg := range svc.agentCLI {
-		if arg == "?" {
-			hasPlaceholder = true
-			break
-		}
-	}
+	// Check if the command contains the ? placeholder
+	hasPlaceholder := slices.Contains(cmdArgs, "?")
 
 	// Replace placeholder with actual prompt if present
 	for i, arg := range cmdArgs {
@@ -193,9 +189,9 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 	}
 
 	// Log the command execution
-	log.Printf("[EXEC] Executing command: %v", cmdArgs)
-	log.Printf("[EXEC] Full prompt: %s", prompt)
-	log.Printf("[EXEC] Has placeholder: %v", hasPlaceholder)
+	log.Printf("[EXEC] Executing command: %#v", cmdArgs)
+	log.Printf("[EXEC] Full prompt: %#v", prompt)
+	log.Printf("[EXEC] Has placeholder: %#v", hasPlaceholder)
 
 	// Execute the configured agent command
 	var cmd *exec.Cmd
