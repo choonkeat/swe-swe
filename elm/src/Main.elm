@@ -3,6 +3,10 @@ port module Main exposing
     , ClaudeContent
     , ClaudeMessage
     , ClaudeMessageContent
+    , Model
+    , ParseResult
+    , Theme(..)
+    , Todo
     , claudeMessageDecoder
     , main
     , parseClaudeMessage
@@ -770,7 +774,7 @@ parseClaudeContentList contents =
                     ( messages ++ parseClaudeContent content, toolUses )
 
         ( allMessages, allToolUses ) =
-            List.foldr processContent ( [], [] ) contents
+            List.foldl processContent ( [], [] ) contents
     in
     { messages = allMessages
     , toolUses = allToolUses
