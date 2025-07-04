@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -19,8 +21,8 @@ import (
 type Config struct {
 	Port            int
 	Timeout         time.Duration
-	AgentCLI        string
-	AgentCLIResume  string
+	AgentCLI1st     string
+	AgentCLINth     string
 	PrefixPath      string
 	DeferStdinClose bool
 	JSONOutput      bool
@@ -33,16 +35,51 @@ func main() {
 }
 
 func errmain() error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("os.Getwd failed: %w", err)
+	}
+
 	// Parse command line flags
-	config := Config{}
-	flag.IntVar(&config.Port, "port", 7000, "Port to listen on")
-	flag.DurationVar(&config.Timeout, "timeout", 30*time.Second, "Server timeout")
-	flag.StringVar(&config.AgentCLI, "agent-cli", "goose run --resume --debug --text ?", "Agent CLI command template (use ? as placeholder for prompt, include the resume session flag)")
-	flag.StringVar(&config.AgentCLIResume, "agent-cli-resume", "--resume", "Resume flag to remove from -agent-cli on first execution")
-	flag.StringVar(&config.PrefixPath, "prefix-path", "", "URL prefix path for serving assets (e.g., /myapp)")
-	flag.BoolVar(&config.DeferStdinClose, "defer-stdin-close", true, "Defer closing stdin until process ends (true for goose, false for claude)")
-	flag.BoolVar(&config.JSONOutput, "json-output", false, "Parse JSON stream output (true for claude with stream-json format)")
+	config := Config{
+		Port: 7000,
+		Timeout: 30*time.Second,
+		AgentCLI1st: "goose run --debug --text ?",
+		AgentCLINth: fmt.Sprintf("goose run --resume --path %s --debug --text ?", wd),
+		DeferStdinClose: true,
+		JSONOutput: false,
+	}
+	agent := flag.String("agent", "", "Use preset configuration for the specified agent (goose|claude)")
+	flag.IntVar(&config.Port, "port", config.Port, "Port to listen on")
+	flag.DurationVar(&config.Timeout, "timeout", config.Timeout, "Server timeout")
+	flag.StringVar(&config.AgentCLI1st, "agent-cli-1st", config.AgentCLI1st, "Agent CLI command template for first message (use ? as placeholder for prompt)")
+	flag.StringVar(&config.AgentCLINth, "agent-cli-nth", config.AgentCLINth, "Agent CLI command template for subsequent messages (use ? as placeholder for prompt)")
+	flag.StringVar(&config.PrefixPath, "prefix-path", config.PrefixPath, "URL prefix path for serving assets (e.g., /myapp)")
+	flag.BoolVar(&config.DeferStdinClose, "defer-stdin-close", config.DeferStdinClose, "Defer closing stdin until process ends (true for goose, false for claude)")
+	flag.BoolVar(&config.JSONOutput, "json-output", config.JSONOutput, "Parse JSON stream output (true for claude with stream-json format)")
 	flag.Parse()
+
+	// Apply agent presets
+	switch *agent {
+	case "goose":
+		// Use goose web directly instead of our implementation
+		log.Printf("Using native goose web command on port %d", config.Port)
+		// Exec goose web, replacing the current process
+		path, err := exec.LookPath("goose")
+		if err != nil {
+			return fmt.Errorf("goose command not found: %w", err)
+		}
+		return syscall.Exec(path, []string{"goose", "web", "--port", fmt.Sprintf("%d", config.Port)}, os.Environ())
+	case "claude":
+		config.AgentCLI1st = "claude --output-format stream-json --verbose --dangerously-skip-permissions --print ?"
+		config.AgentCLINth = "claude --continue --output-format stream-json --verbose --dangerously-skip-permissions --print ?"
+		config.DeferStdinClose = false
+		config.JSONOutput = true
+	case "":
+		// No preset specified, use provided flags or defaults
+	default:
+		return fmt.Errorf("unknown agent preset: %s (supported: goose, claude)", *agent)
+	}
 
 	// Ensure prefix path starts with / if provided
 	if config.PrefixPath != "" && !strings.HasPrefix(config.PrefixPath, "/") {
@@ -56,7 +93,7 @@ func errmain() error {
 	defer cancel()
 
 	// Create chat service
-	chatsvc := NewChatService(config.AgentCLI, config.AgentCLIResume, config.DeferStdinClose, config.JSONOutput)
+	chatsvc := NewChatService(config.AgentCLI1st, config.AgentCLINth, config.DeferStdinClose, config.JSONOutput)
 
 	// Run services concurrently
 	return runCtxFuncs(ctx,
