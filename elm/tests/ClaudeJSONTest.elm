@@ -1,9 +1,25 @@
 module ClaudeJSONTest exposing (suite)
 
+import Dict
 import Expect
 import Json.Decode as Decode
 import Main exposing (..)
 import Test exposing (..)
+
+
+-- Helper to create a test model
+testModel : Model
+testModel =
+    { input = ""
+    , messages = []
+    , currentSender = Nothing
+    , theme = DarkTerminal
+    , isConnected = True
+    , systemTheme = DarkTerminal
+    , isTyping = False
+    , isFirstUserMessage = True
+    , pendingToolUses = Dict.empty
+    }
 
 
 suite : Test
@@ -44,6 +60,8 @@ suite =
                                               , name = Nothing
                                               , input = Nothing
                                               , content = Nothing
+                                              , id = Nothing
+                                              , toolUseId = Nothing
                                               }
                                             ]
                                         }
@@ -187,6 +205,8 @@ suite =
                                           , name = Nothing
                                           , input = Nothing
                                           , content = Nothing
+                                          , id = Nothing
+                                          , toolUseId = Nothing
                                           }
                                         ]
                                     }
@@ -194,8 +214,11 @@ suite =
 
                         expected =
                             [ ChatContent "Hello world!" ]
+
+                        result =
+                            parseClaudeMessage testModel claudeMsg
                     in
-                    parseClaudeMessage claudeMsg
+                    result.messages
                         |> Expect.equal expected
             , test "parses tool use message with command and description" <|
                 \_ ->
@@ -219,20 +242,22 @@ suite =
                                           , name = Just "Bash"
                                           , input = inputJson
                                           , content = Nothing
+                                          , id = Nothing
+                                          , toolUseId = Nothing
                                           }
                                         ]
                                     }
                             }
 
                         result =
-                            parseClaudeMessage claudeMsg
+                            parseClaudeMessage testModel claudeMsg
                     in
-                    case result of
+                    case result.messages of
                         [ ChatContent content ] ->
                             Expect.all
                                 [ \_ -> content |> String.contains "[Using tool: Bash]" |> Expect.equal True
-                                , \_ -> content |> String.contains "Command: ls -la" |> Expect.equal True
-                                , \_ -> content |> String.contains "Description: List files" |> Expect.equal True
+                                , \_ -> content |> String.contains "\"command\": \"ls -la\"" |> Expect.equal True
+                                , \_ -> content |> String.contains "\"description\": \"List files\"" |> Expect.equal True
                                 ]
                                 ()
 
@@ -250,9 +275,9 @@ suite =
                             }
 
                         result =
-                            parseClaudeMessage claudeMsg
+                            parseClaudeMessage testModel claudeMsg
                     in
-                    case result of
+                    case result.messages of
                         [ ChatContent content ] ->
                             Expect.all
                                 [ \_ -> content |> String.contains "✓ Task completed (success)" |> Expect.equal True
@@ -280,6 +305,8 @@ suite =
                                           , name = Nothing
                                           , input = Nothing
                                           , content = Just "Command output here"
+                                          , id = Nothing
+                                          , toolUseId = Just "test-tool-use-id"
                                           }
                                         ]
                                     }
@@ -287,8 +314,11 @@ suite =
 
                         expected =
                             [ ChatToolResult "Command output here\n" ]
+
+                        result =
+                            parseClaudeMessage testModel claudeMsg
                     in
-                    parseClaudeMessage claudeMsg
+                    result.messages
                         |> Expect.equal expected
             , test "handles multiple content items" <|
                 \_ ->
@@ -307,12 +337,16 @@ suite =
                                           , name = Nothing
                                           , input = Nothing
                                           , content = Nothing
+                                          , id = Nothing
+                                          , toolUseId = Nothing
                                           }
                                         , { type_ = "text"
                                           , text = Just "Second part"
                                           , name = Nothing
                                           , input = Nothing
                                           , content = Nothing
+                                          , id = Nothing
+                                          , toolUseId = Nothing
                                           }
                                         ]
                                     }
@@ -320,8 +354,11 @@ suite =
 
                         expected =
                             [ ChatContent "First part", ChatContent "Second part" ]
+
+                        result =
+                            parseClaudeMessage testModel claudeMsg
                     in
-                    parseClaudeMessage claudeMsg
+                    result.messages
                         |> Expect.equal expected
             ]
         ]
