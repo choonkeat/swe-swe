@@ -1,0 +1,32 @@
+# Build goose from source using go install
+FROM golang:1.23-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git
+
+# Set GOPROXY to ensure we can download modules
+ENV GOPROXY=https://proxy.golang.org,direct
+ENV GO111MODULE=on
+
+# Install goose using go install
+RUN go install github.com/square/goose/cmd/goose@main
+
+# Final stage - minimal image with goose
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates bash git
+
+# Copy goose binary
+COPY --from=builder /go/bin/goose /usr/local/bin/goose
+
+# Create workspace directory
+RUN mkdir -p /workspace
+
+WORKDIR /workspace
+
+# Expose port for goose web
+EXPOSE 9000
+
+# Run goose web
+ENTRYPOINT ["goose", "web", "--host", "0.0.0.0", "--port", "9000"]

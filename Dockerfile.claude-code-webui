@@ -1,0 +1,33 @@
+# Multi-platform build for claude-code-webui
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download claude-code-webui binary based on architecture
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        BINARY_NAME="claude-code-webui-linux-amd64"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        BINARY_NAME="claude-code-webui-linux-arm64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    echo "Downloading claude-code-webui: $BINARY_NAME" && \
+    curl -L -f -o /usr/local/bin/claude-code-webui \
+        "https://github.com/sugyan/claude-code-webui/releases/latest/download/${BINARY_NAME}" && \
+    chmod +x /usr/local/bin/claude-code-webui
+
+# Create workspace directory
+RUN mkdir -p /workspace
+
+WORKDIR /workspace
+
+# Expose port for claude-code-webui
+EXPOSE 8080
+
+# Run claude-code-webui
+ENTRYPOINT ["claude-code-webui", "--host", "0.0.0.0", "--port", "8080"]

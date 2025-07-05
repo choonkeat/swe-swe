@@ -1,0 +1,52 @@
+# Multi-stage build for swe-swe with goose CLI
+FROM golang:1.23-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache make git
+
+# Install elm
+RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
+    gunzip elm.gz && \
+    chmod +x elm && \
+    mv elm /usr/local/bin/
+
+WORKDIR /build
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy elm package file
+COPY elm/elm.json elm/elm.json
+RUN cd elm && elm make --docs=/tmp/docs.json || true
+
+# Copy source code
+COPY . .
+
+# Build the binary
+RUN make build
+
+# Build goose from source
+FROM golang:1.23-alpine AS goose-builder
+RUN apk add --no-cache git
+RUN go install github.com/square/goose/cmd/goose@latest
+
+# Final stage - use alpine with goose CLI
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates bash
+
+# Copy goose binary
+COPY --from=goose-builder /go/bin/goose /usr/local/bin/goose
+
+# Copy the swe-swe binary
+COPY --from=builder /build/bin/swe-swe /usr/local/bin/swe-swe
+
+# Create workspace directory
+RUN mkdir -p /workspace
+
+WORKDIR /workspace
+
+# Default command
+ENTRYPOINT ["/usr/local/bin/swe-swe"]
