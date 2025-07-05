@@ -26,19 +26,14 @@ COPY . .
 # Build the binary
 RUN make build
 
-# Build goose from source
-FROM golang:1.23-alpine AS goose-builder
-RUN apk add --no-cache git
-RUN go install github.com/square/goose/cmd/goose@latest
+# Final stage - use debian with goose CLI
+FROM debian:bookworm-slim
 
-# Final stage - use alpine with goose CLI
-FROM alpine:3.19
+# Install runtime dependencies and curl for goose installation
+RUN apt-get update && apt-get install -y ca-certificates bash curl bzip2 libxcb1 && rm -rf /var/lib/apt/lists/*
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates bash
-
-# Copy goose binary
-COPY --from=goose-builder /go/bin/goose /usr/local/bin/goose
+# Install goose using official installation script
+RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/bin bash
 
 # Copy the swe-swe binary
 COPY --from=builder /build/bin/swe-swe /usr/local/bin/swe-swe
