@@ -31,6 +31,7 @@ type ChatItem struct {
 	Type    string `json:"type"`
 	Sender  string `json:"sender,omitempty"`
 	Content string `json:"content,omitempty"`
+	ToolInput string `json:"toolInput,omitempty"` // For permission requests
 }
 
 // ClientMessage represents a message from the client with sender and content
@@ -399,6 +400,7 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 												Type: "permission_request",
 												Content: content.Content,
 												Sender: toolInfo.Name,  // Tool name in Sender field
+												ToolInput: toolInfo.Input, // Include tool input details
 											})
 											// Don't send the error as regular content
 											continue

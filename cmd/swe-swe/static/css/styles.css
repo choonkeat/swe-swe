@@ -315,14 +315,24 @@ body {
     color: #b0b0b0;
 }
 
+.messages[style*="background-color: rgb(13, 17, 23)"] .tool-use code,
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-use code,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-use code,
+.messages[style*="background-color: rgb(26, 27, 38)"] .tool-use code,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-use code,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-use code,
+.messages[style*="background-color: rgb(13, 17, 23)"] .tool-result summary code,
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-result summary code,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary code,
+.messages[style*="background-color: rgb(26, 27, 38)"] .tool-result summary code,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-result summary code,
-.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary code {
+.messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary code,
+.messages[style*="background-color: rgb(13, 17, 23)"] .message-content code,
+.messages[style*="background-color: rgb(30, 30, 30)"] .message-content code,
+.messages[style*="background-color: rgb(0, 0, 0)"] .message-content code,
+.messages[style*="background-color: rgb(26, 27, 38)"] .message-content code,
+.messages[style*="background-color: rgb(45, 45, 45)"] .message-content code,
+.messages[style*="background-color: rgb(0, 43, 54)"] .message-content code {
     background-color: #3a3a3a;
     color: #d0d0d0;
 }
@@ -591,6 +601,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    transition: background-color 0.3s ease;
 }
 
 .permission-dialog {
@@ -602,6 +613,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     max-width: 480px;
     overflow: hidden;
     border: 1px solid rgba(0, 0, 0, 0.08);
+    transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .permission-header {
@@ -610,16 +622,19 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     padding: 24px;
     text-align: center;
     position: relative;
+    transition: background 0.3s ease;
 }
 
 .permission-header h3 {
     margin: 0;
     font-size: 1.4em;
+    transition: color 0.3s ease;
 }
 
 .permission-content {
     padding: 24px;
     background-color: #fafafa;
+    transition: background-color 0.3s ease;
 }
 
 .permission-content p {
@@ -628,6 +643,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     font-weight: 500;
     color: #424242;
     line-height: 1.5;
+    transition: color 0.3s ease;
 }
 
 .permission-error {
@@ -640,6 +656,51 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     color: #5d4037;
     border-radius: 4px;
     word-break: break-word;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+.permission-tool-details {
+    background-color: #f5f7fa;
+    border: 1px solid #e1e8ed;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.permission-tool-input {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+    color: #333;
+    transition: color 0.3s ease;
+}
+
+.permission-tool-input pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    transition: color 0.3s ease;
+}
+
+.permission-tool-input p {
+    margin: 0.25rem 0;
+    transition: color 0.3s ease;
+}
+
+.permission-tool-input details {
+    margin-top: 0.5rem;
+}
+
+.permission-tool-input summary {
+    cursor: pointer;
+    color: #1976d2;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.permission-tool-input summary:hover {
+    text-decoration: underline;
 }
 
 .permission-actions {
@@ -649,6 +710,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     padding: 16px 24px 24px;
     background-color: #fafafa;
     justify-content: center;
+    transition: background-color 0.3s ease;
 }
 
 .permission-button {
@@ -717,6 +779,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     border-radius: 8px;
     overflow: hidden;
     background-color: #fff3e0;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .permission-notice-header {
@@ -724,6 +787,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     color: white;
     padding: 10px 15px;
     font-weight: bold;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .permission-notice-body {
@@ -731,20 +795,116 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
     color: #666;
+    transition: color 0.3s ease;
 }
 
 /* Dark theme permission styles */
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-dialog,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-dialog,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-dialog,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-dialog,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-dialog,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-dialog {
+    background-color: #2d2d2d;
+    border-color: #444;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-content,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-content,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-content,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-content,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-content,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-content {
+    background-color: #1e1e1e;
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-content p,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-content p,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-content p,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-content p,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-content p,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-content p {
+    color: #d4d4d4;
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-actions,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-actions,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-actions,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-actions,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-actions,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-actions {
+    background-color: #1e1e1e;
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-error,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-error,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-error,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-error,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-error,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-error {
+    background-color: rgba(255, 152, 0, 0.1);
+    border-left-color: #ff9800;
+    color: #ffc107;
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-tool-details,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-tool-details,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-tool-details,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-tool-details,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-tool-details,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-details {
+    background-color: #2d2d2d;
+    border-color: #444;
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-tool-input,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-tool-input,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-tool-input,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-tool-input,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-tool-input,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-input {
+    color: #d4d4d4;
+}
+
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-tool-input summary,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-tool-input summary,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-tool-input summary,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-tool-input summary,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-tool-input summary,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-input summary {
+    color: #64b5f6;
+}
+
+/* Theme-specific permission notice styles */
+.messages[style*="background-color: rgb(13, 17, 23)"] .permission-notice,
 .messages[style*="background-color: rgb(30, 30, 30)"] .permission-notice,
 .messages[style*="background-color: rgb(0, 0, 0)"] .permission-notice,
+.messages[style*="background-color: rgb(26, 27, 38)"] .permission-notice,
 .messages[style*="background-color: rgb(45, 45, 45)"] .permission-notice,
 .messages[style*="background-color: rgb(0, 43, 54)"] .permission-notice {
     background-color: rgba(255, 152, 0, 0.1);
     border-color: #ff9800;
 }
 
+.messages[style*="background-color: rgb(13, 17, 23)"] .permission-notice-body,
 .messages[style*="background-color: rgb(30, 30, 30)"] .permission-notice-body,
 .messages[style*="background-color: rgb(0, 0, 0)"] .permission-notice-body,
+.messages[style*="background-color: rgb(26, 27, 38)"] .permission-notice-body,
 .messages[style*="background-color: rgb(45, 45, 45)"] .permission-notice-body,
 .messages[style*="background-color: rgb(0, 43, 54)"] .permission-notice-body {
     color: #d4d4d4;
+}
+
+/* Theme specific permission header styles */
+.messages[style*="background-color: rgb(0, 0, 0)"] ~ .permission-overlay .permission-header {
+    background: linear-gradient(135deg, #00aa00 0%, #008800 100%);
+}
+
+.messages[style*="background-color: rgb(0, 43, 54)"] ~ .permission-overlay .permission-header {
+    background: linear-gradient(135deg, #268bd2 0%, #2aa198 100%);
+}
+
+.messages[style*="background-color: rgb(26, 27, 38)"] ~ .permission-overlay .permission-header {
+    background: linear-gradient(135deg, #c678dd 0%, #61afef 100%);
 }

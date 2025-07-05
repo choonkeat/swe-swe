@@ -15,7 +15,7 @@ port module Main exposing
 import Ansi exposing (ansiToElmHtml, ansiToHtml)
 import Browser
 import Dict exposing (Dict)
-import Html exposing (Html, button, details, div, h1, h3, input, option, p, select, span, summary, text, textarea)
+import Html exposing (Html, button, details, div, h1, h3, input, option, p, pre, select, span, summary, text, textarea)
 import Html.Attributes exposing (class, disabled, placeholder, selected, style, value)
 import Html.Events exposing (keyCode, on, onClick, onInput, targetValue)
 import Json.Decode as Decode
@@ -93,6 +93,7 @@ type alias Model =
 type alias PermissionDialogState =
     { toolName : String
     , errorMessage : String
+    , toolInput : Maybe String
     }
 
 
@@ -111,7 +112,7 @@ type ChatItem
     | ChatExecEnd -- Exec command ended
     | ChatToolUse ClaudeContent -- Tool use with id
     | ChatToolUseWithResult ClaudeContent String -- Tool use with its result
-    | ChatPermissionRequest String String -- Permission request (tool name, error message)
+    | ChatPermissionRequest String String (Maybe String) -- Permission request (tool name, error message, tool input)
 
 
 
@@ -336,9 +337,9 @@ update msg model =
                             , scrollToBottom ()
                             )
 
-                        ChatPermissionRequest toolName errorMessage ->
+                        ChatPermissionRequest toolName errorMessage toolInput ->
                             ( { model
-                                | permissionDialog = Just { toolName = toolName, errorMessage = errorMessage }
+                                | permissionDialog = Just { toolName = toolName, errorMessage = errorMessage, toolInput = toolInput }
                                 , messages = model.messages ++ [ chatItem ]
                               }
                             , scrollToBottom ()
@@ -708,11 +709,15 @@ encodeChatItem chatItem =
                 [ ( "type", Encode.string "tool_use_with_result" )
                 ]
 
-        ChatPermissionRequest toolName errorMessage ->
+        ChatPermissionRequest toolName errorMessage toolInput ->
             Encode.object
                 [ ( "type", Encode.string "permission_request" )
                 , ( "sender", Encode.string toolName )
                 , ( "content", Encode.string errorMessage )
+                , ( "toolInput", case toolInput of
+                    Just input -> Encode.string input
+                    Nothing -> Encode.null
+                  )
                 ]
 
 
@@ -758,9 +763,10 @@ chatItemTypeDecoder itemType =
             Decode.fail "tool_use_with_result items should not be decoded from JSON"
 
         "permission_request" ->
-            Decode.map2 ChatPermissionRequest
+            Decode.map3 ChatPermissionRequest
                 (Decode.field "sender" Decode.string)
                 (Decode.field "content" Decode.string)
+                (Decode.maybe (Decode.field "toolInput" Decode.string))
 
         _ ->
             Decode.fail <| "Unknown chat item type: " ++ itemType
@@ -1157,6 +1163,16 @@ permissionDialogView maybeDialog =
                         ]
                     , div [ class "permission-content" ]
                         [ p [] [ text ("Claude wants to use: " ++ dialog.toolName) ]
+                        , case dialog.toolInput of
+                            Just input ->
+                                div [ class "permission-tool-details" ]
+                                    [ p [ style "font-weight" "bold", style "margin-bottom" "0.5rem" ] [ text "Tool parameters:" ]
+                                    , div [ class "permission-tool-input" ]
+                                        [ formatToolInput dialog.toolName input
+                                        ]
+                                    ]
+                            Nothing ->
+                                text ""
                         , div [ class "permission-error" ]
                             [ text dialog.errorMessage ]
                         ]
@@ -1187,6 +1203,90 @@ permissionDialogView maybeDialog =
 
         Nothing ->
             text ""
+
+
+-- Format tool input for display in permission dialog
+
+
+formatToolInput : String -> String -> Html Msg
+formatToolInput toolName inputJson =
+    case Decode.decodeString Decode.value inputJson of
+        Ok jsonValue ->
+            case toolName of
+                "Bash" ->
+                    case Decode.decodeString (Decode.field "command" Decode.string) inputJson of
+                        Ok command ->
+                            div []
+                                [ p [ style "margin" "0.25rem 0" ] [ text ("Command: " ++ command) ]
+                                ]
+                        Err _ ->
+                            pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
+
+                "Edit" ->
+                    case Decode.decodeString 
+                        (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
+                            (Decode.field "file_path" Decode.string)
+                            (Decode.field "old_string" Decode.string)
+                            (Decode.field "new_string" Decode.string)
+                        ) inputJson of
+                        Ok edit ->
+                            div []
+                                [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ edit.filePath) ]
+                                , details [ style "margin-top" "0.5rem" ]
+                                    [ summary [] [ text "View changes" ]
+                                    , div [ style "margin-top" "0.5rem" ]
+                                        [ p [ style "font-weight" "bold" ] [ text "Replace:" ]
+                                        , pre [ style "background-color" "#ffeeee", style "padding" "0.5rem", style "overflow" "auto" ] 
+                                            [ text (String.left 200 edit.oldString ++ if String.length edit.oldString > 200 then "..." else "") ]
+                                        , p [ style "font-weight" "bold", style "margin-top" "0.5rem" ] [ text "With:" ]
+                                        , pre [ style "background-color" "#eeffee", style "padding" "0.5rem", style "overflow" "auto" ] 
+                                            [ text (String.left 200 edit.newString ++ if String.length edit.newString > 200 then "..." else "") ]
+                                        ]
+                                    ]
+                                ]
+                        Err _ ->
+                            pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
+
+                "Read" ->
+                    case Decode.decodeString (Decode.field "file_path" Decode.string) inputJson of
+                        Ok filePath ->
+                            div []
+                                [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ filePath) ]
+                                ]
+                        Err _ ->
+                            pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
+
+                "Write" ->
+                    case Decode.decodeString (Decode.field "file_path" Decode.string) inputJson of
+                        Ok filePath ->
+                            div []
+                                [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ filePath) ]
+                                ]
+                        Err _ ->
+                            pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
+
+                "MultiEdit" ->
+                    case Decode.decodeString 
+                        (Decode.map2 (\fp edits -> { filePath = fp, editsCount = edits })
+                            (Decode.field "file_path" Decode.string)
+                            (Decode.field "edits" (Decode.list Decode.value) |> Decode.map List.length)
+                        ) inputJson of
+                        Ok info ->
+                            div []
+                                [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ info.filePath) ]
+                                , p [ style "margin" "0.25rem 0" ] [ text ("Number of edits: " ++ String.fromInt info.editsCount) ]
+                                ]
+                        Err _ ->
+                            pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
+
+                _ ->
+                    -- For other tools, show formatted JSON
+                    pre [ style "font-size" "0.9em", style "overflow" "auto" ] 
+                        [ text (Encode.encode 2 jsonValue) ]
+
+        Err _ ->
+            -- If JSON parsing fails, show raw text
+            pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
 
 -- State for rendering messages
@@ -1438,7 +1538,7 @@ renderMessages model items =
                     -- Don't render anything for exec end
                     state
 
-                ChatPermissionRequest toolName errorMessage ->
+                ChatPermissionRequest toolName errorMessage _ ->
                     -- Render permission request as a notice
                     let
                         elementsWithAccumulated =
