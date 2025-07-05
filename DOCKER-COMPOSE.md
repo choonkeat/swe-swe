@@ -11,13 +11,13 @@ This Docker Compose setup provides multiple coding assistant services that share
 - **Dockerfile**: `Dockerfile.claude`
 
 ### 2. swe-swe-goose (Port 7002)
-- **Status**: 🚧 Created (requires goose CLI)
+- **Status**: ✅ Running
 - **Description**: Runs swe-swe with goose agent
 - **Access**: http://localhost:7002
 - **Dockerfile**: `Dockerfile.goose`
 
 ### 3. goose (Port 9000)
-- **Status**: 🚧 Building (compilation takes time)
+- **Status**: ✅ Running
 - **Description**: Native goose web interface
 - **Access**: http://localhost:9000
 - **Dockerfile**: `Dockerfile.goose-web`

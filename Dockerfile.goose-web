@@ -1,24 +1,11 @@
-# Build goose from source using go install
-FROM golang:1.23-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache git
-
-# Set GOPROXY to ensure we can download modules
-ENV GOPROXY=https://proxy.golang.org,direct
-ENV GO111MODULE=on
-
-# Install goose using go install
-RUN go install github.com/square/goose/cmd/goose@main
-
 # Final stage - minimal image with goose
-FROM alpine:3.19
+FROM debian:bookworm-slim
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates bash git
+# Install runtime dependencies and curl for goose installation
+RUN apt-get update && apt-get install -y ca-certificates bash curl bzip2 libxcb1 && rm -rf /var/lib/apt/lists/*
 
-# Copy goose binary
-COPY --from=builder /go/bin/goose /usr/local/bin/goose
+# Install goose using official installation script
+RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/bin bash
 
 # Create workspace directory
 RUN mkdir -p /workspace
