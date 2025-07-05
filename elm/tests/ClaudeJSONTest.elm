@@ -19,6 +19,9 @@ testModel =
     , isTyping = False
     , isFirstUserMessage = True
     , pendingToolUses = Dict.empty
+    , allowedTools = []
+    , skipPermissions = False
+    , permissionDialog = Nothing
     }
 
 

@@ -15,11 +15,12 @@ port module Main exposing
 import Ansi exposing (ansiToElmHtml, ansiToHtml)
 import Browser
 import Dict exposing (Dict)
-import Html exposing (Html, button, details, div, h1, input, option, p, select, span, summary, text, textarea)
+import Html exposing (Html, button, details, div, h1, h3, input, option, p, select, span, summary, text, textarea)
 import Html.Attributes exposing (class, disabled, placeholder, selected, style, value)
 import Html.Events exposing (keyCode, on, onClick, onInput, targetValue)
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Html.Attributes exposing (autofocus)
 
 
 
@@ -83,6 +84,15 @@ type alias Model =
     , isTyping : Bool
     , isFirstUserMessage : Bool
     , pendingToolUses : Dict String ClaudeContent
+    , allowedTools : List String
+    , skipPermissions : Bool
+    , permissionDialog : Maybe PermissionDialogState
+    }
+
+
+type alias PermissionDialogState =
+    { toolName : String
+    , errorMessage : String
     }
 
 
@@ -101,6 +111,7 @@ type ChatItem
     | ChatExecEnd -- Exec command ended
     | ChatToolUse ClaudeContent -- Tool use with id
     | ChatToolUseWithResult ClaudeContent String -- Tool use with its result
+    | ChatPermissionRequest String String -- Permission request (tool name, error message)
 
 
 
@@ -174,6 +185,9 @@ init flags =
       , isTyping = False
       , isFirstUserMessage = True
       , pendingToolUses = Dict.empty
+      , allowedTools = []
+      , skipPermissions = False
+      , permissionDialog = Nothing
       }
     , Cmd.none
     )
@@ -192,6 +206,10 @@ type Msg
     | ConnectionStatus Bool
     | SystemThemeChanged String
     | StopExecution
+    | AllowPermission
+    | AllowPermissionPermanent
+    | DenyPermission
+    | SkipAllPermissions
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -318,6 +336,14 @@ update msg model =
                             , scrollToBottom ()
                             )
 
+                        ChatPermissionRequest toolName errorMessage ->
+                            ( { model
+                                | permissionDialog = Just { toolName = toolName, errorMessage = errorMessage }
+                                , messages = model.messages ++ [ chatItem ]
+                              }
+                            , scrollToBottom ()
+                            )
+
                 Err _ ->
                     ( model, Cmd.none )
 
@@ -396,6 +422,82 @@ update msg model =
                         )
             in
             ( model, sendMessage stopMessage )
+
+        AllowPermission ->
+            case model.permissionDialog of
+                Just dialog ->
+                    let
+                        newAllowedTools =
+                            model.allowedTools ++ [ dialog.toolName ]
+
+                        responseMessage =
+                            Encode.encode 0
+                                (Encode.object
+                                    [ ( "type", Encode.string "permission_response" )
+                                    , ( "allowedTools", Encode.list Encode.string newAllowedTools )
+                                    , ( "skipPermissions", Encode.bool False )
+                                    ]
+                                )
+                    in
+                    ( { model | permissionDialog = Nothing }
+                    , sendMessage responseMessage
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        AllowPermissionPermanent ->
+            case model.permissionDialog of
+                Just dialog ->
+                    let
+                        newAllowedTools =
+                            model.allowedTools ++ [ dialog.toolName ]
+
+                        responseMessage =
+                            Encode.encode 0
+                                (Encode.object
+                                    [ ( "type", Encode.string "permission_response" )
+                                    , ( "allowedTools", Encode.list Encode.string newAllowedTools )
+                                    , ( "skipPermissions", Encode.bool False )
+                                    ]
+                                )
+                    in
+                    ( { model | permissionDialog = Nothing, allowedTools = newAllowedTools }
+                    , sendMessage responseMessage
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        DenyPermission ->
+            let
+                responseMessage =
+                    Encode.encode 0
+                        (Encode.object
+                            [ ( "type", Encode.string "permission_response" )
+                            , ( "allowedTools", Encode.list Encode.string model.allowedTools )
+                            , ( "skipPermissions", Encode.bool False )
+                            ]
+                        )
+            in
+            ( { model | permissionDialog = Nothing }
+            , sendMessage responseMessage
+            )
+
+        SkipAllPermissions ->
+            let
+                responseMessage =
+                    Encode.encode 0
+                        (Encode.object
+                            [ ( "type", Encode.string "permission_response" )
+                            , ( "allowedTools", Encode.list Encode.string [] )
+                            , ( "skipPermissions", Encode.bool True )
+                            ]
+                        )
+            in
+            ( { model | permissionDialog = Nothing, skipPermissions = True }
+            , sendMessage responseMessage
+            )
 
 
 
@@ -502,23 +604,23 @@ themeToStyles : Theme -> List ( String, String )
 themeToStyles theme =
     case theme of
         DarkTerminal ->
-            [ ( "background-color", "#1e1e1e" )
-            , ( "color", "#d4d4d4" )
+            [ ( "background-color", "#0d1117" )
+            , ( "color", "#c9d1d9" )
             ]
 
         ClassicTerminal ->
             [ ( "background-color", "#000000" )
-            , ( "color", "#ffffff" )
+            , ( "color", "#00ff00" )
             ]
 
         SoftDark ->
-            [ ( "background-color", "#2d2d2d" )
-            , ( "color", "#cccccc" )
+            [ ( "background-color", "#1a1b26" )
+            , ( "color", "#a9b1d6" )
             ]
 
         LightModern ->
-            [ ( "background-color", "#ffffff" )
-            , ( "color", "#333333" )
+            [ ( "background-color", "#fafbfc" )
+            , ( "color", "#24292f" )
             ]
 
         Solarized ->
@@ -606,6 +708,13 @@ encodeChatItem chatItem =
                 [ ( "type", Encode.string "tool_use_with_result" )
                 ]
 
+        ChatPermissionRequest toolName errorMessage ->
+            Encode.object
+                [ ( "type", Encode.string "permission_request" )
+                , ( "sender", Encode.string toolName )
+                , ( "content", Encode.string errorMessage )
+                ]
+
 
 chatItemDecoder : Decode.Decoder ChatItem
 chatItemDecoder =
@@ -647,6 +756,11 @@ chatItemTypeDecoder itemType =
 
         "tool_use_with_result" ->
             Decode.fail "tool_use_with_result items should not be decoded from JSON"
+
+        "permission_request" ->
+            Decode.map2 ChatPermissionRequest
+                (Decode.field "sender" Decode.string)
+                (Decode.field "content" Decode.string)
 
         _ ->
             Decode.fail <| "Unknown chat item type: " ++ itemType
@@ -914,8 +1028,9 @@ subscriptions _ =
 
 view : Model -> Html Msg
 view model =
-    div [ class "chat-container" ]
-        [ div [ class "header" ]
+    div []
+        [ div [ class "chat-container" ]
+            [ div [ class "header" ]
             [ div [ class "title-container" ]
                 [ h1 [] [ text "swe-swe" ]
                 , div
@@ -1005,6 +1120,7 @@ view model =
                 , value model.input
                 , onInput Input
                 , onKeyDown KeyDown
+                , autofocus True
                 ]
                 []
             , button
@@ -1021,8 +1137,56 @@ view model =
                     )
                 ]
             ]
+            ]
+        , permissionDialogView model.permissionDialog
         ]
 
+
+
+-- Permission Dialog View
+
+
+permissionDialogView : Maybe PermissionDialogState -> Html Msg
+permissionDialogView maybeDialog =
+    case maybeDialog of
+        Just dialog ->
+            div [ class "permission-overlay" ]
+                [ div [ class "permission-dialog" ]
+                    [ div [ class "permission-header" ]
+                        [ h3 [] [ text "Claude requests permission" ]
+                        ]
+                    , div [ class "permission-content" ]
+                        [ p [] [ text ("Claude wants to use: " ++ dialog.toolName) ]
+                        , div [ class "permission-error" ]
+                            [ text dialog.errorMessage ]
+                        ]
+                    , div [ class "permission-actions" ]
+                        [ button
+                            [ class "permission-button permission-allow"
+                            , onClick AllowPermission
+                            ]
+                            [ text "Yes (Y)" ]
+                        , button
+                            [ class "permission-button permission-deny"
+                            , onClick DenyPermission
+                            ]
+                            [ text "No (N)" ]
+                        , button
+                            [ class "permission-button permission-allow-permanent"
+                            , onClick AllowPermissionPermanent
+                            ]
+                            [ text "Always allow this tool" ]
+                        , button
+                            [ class "permission-button permission-skip-all"
+                            , onClick SkipAllPermissions
+                            ]
+                            [ text "--dangerously-skip-permissions" ]
+                        ]
+                    ]
+                ]
+
+        Nothing ->
+            text ""
 
 
 -- State for rendering messages
@@ -1236,10 +1400,10 @@ renderMessages model items =
                             let
                                 statusSymbol =
                                     if todo.status == "completed" then
-                                        "✓ "
+                                        "☑ "
 
                                     else
-                                        "• "
+                                        "☐ "
 
                                 todoStyle =
                                     if todo.priority == "high" then
@@ -1273,6 +1437,25 @@ renderMessages model items =
                 ChatExecEnd ->
                     -- Don't render anything for exec end
                     state
+
+                ChatPermissionRequest toolName errorMessage ->
+                    -- Render permission request as a notice
+                    let
+                        elementsWithAccumulated =
+                            renderAccumulatedContent state
+
+                        permissionElement =
+                            div [ class "permission-notice" ]
+                                [ div [ class "permission-notice-header" ]
+                                    [ text ("⚠️ Permission required for: " ++ toolName) ]
+                                , div [ class "permission-notice-body" ]
+                                    [ text errorMessage ]
+                                ]
+                    in
+                    { state
+                        | accumulatedContent = ""
+                        , elements = elementsWithAccumulated ++ [ permissionElement ]
+                    }
 
         finalState =
             List.foldl renderItem initialState items
