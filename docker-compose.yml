@@ -1,0 +1,74 @@
+services:
+  # Service running swe-swe with claude CLI
+  swe-swe-claude:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude
+    container_name: swe-swe-claude
+    command: ["-agent", "claude", "-port", "7001"]
+    ports:
+      - "7001:7001"
+    volumes:
+      # Mount current directory to /workspace in container
+      - .:/workspace
+    working_dir: /workspace
+    networks:
+      - swe-swe-network
+    environment:
+      - AGENT_TYPE=claude
+
+  # Service running swe-swe with goose CLI  
+  swe-swe-goose:
+    build:
+      context: .
+      dockerfile: Dockerfile.goose
+    container_name: swe-swe-goose
+    command: ["-agent", "goose", "-port", "7002"]
+    ports:
+      - "7002:7002"
+    volumes:
+      # Mount current directory to /workspace in container
+      - .:/workspace
+    working_dir: /workspace
+    networks:
+      - swe-swe-network
+    environment:
+      - AGENT_TYPE=goose
+
+  # Service running native goose web
+  goose:
+    build:
+      context: .
+      dockerfile: Dockerfile.goose-web
+    container_name: goose
+    ports:
+      - "9000:9000"
+    volumes:
+      # Mount current directory to /workspace in container
+      - .:/workspace
+    working_dir: /workspace
+    networks:
+      - swe-swe-network
+    environment:
+      - GOOSE_MODEL=claude-3-5-sonnet-20241022
+
+  # Service running claude-code-webui
+  claude-code-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile.claude-code-webui
+    container_name: claude-code-webui
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount current directory to /workspace in container
+      - .:/workspace
+    working_dir: /workspace
+    networks:
+      - swe-swe-network
+    environment:
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+
+networks:
+  swe-swe-network:
+    driver: bridge
