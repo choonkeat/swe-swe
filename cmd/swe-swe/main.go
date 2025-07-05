@@ -71,8 +71,8 @@ func errmain() error {
 		}
 		return syscall.Exec(path, []string{"goose", "web", "--port", fmt.Sprintf("%d", config.Port)}, os.Environ())
 	case "claude":
-		config.AgentCLI1st = "claude --output-format stream-json --verbose --dangerously-skip-permissions --print ?"
-		config.AgentCLINth = "claude --continue --output-format stream-json --verbose --dangerously-skip-permissions --print ?"
+		config.AgentCLI1st = "claude --output-format stream-json --verbose --print ?"
+		config.AgentCLINth = "claude --continue --output-format stream-json --verbose --print ?"
 		config.DeferStdinClose = false
 		config.JSONOutput = true
 	case "":

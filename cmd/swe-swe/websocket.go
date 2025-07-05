@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os/exec"
@@ -21,6 +22,8 @@ type Client struct {
 	username     string
 	cancelFunc   context.CancelFunc
 	processMutex sync.Mutex
+	allowedTools []string // Track allowed tools for this client
+	skipPermissions bool  // Track if user chose to skip all permissions
 }
 
 // ChatItem represents either a sender or content in the chat
@@ -32,10 +35,12 @@ type ChatItem struct {
 
 // ClientMessage represents a message from the client with sender and content
 type ClientMessage struct {
-	Type         string `json:"type,omitempty"`
-	Sender       string `json:"sender,omitempty"`
-	Content      string `json:"content,omitempty"`
-	FirstMessage bool   `json:"firstMessage,omitempty"`
+	Type         string   `json:"type,omitempty"`
+	Sender       string   `json:"sender,omitempty"`
+	Content      string   `json:"content,omitempty"`
+	FirstMessage bool     `json:"firstMessage,omitempty"`
+	AllowedTools []string `json:"allowedTools,omitempty"` // For permission responses
+	SkipPermissions bool  `json:"skipPermissions,omitempty"` // User chose to skip all permissions
 }
 
 // ChatService manages the chat room state
@@ -47,6 +52,36 @@ type ChatService struct {
 	agentCLINth     string
 	deferStdinClose bool
 	jsonOutput      bool
+	toolUseCache    map[string]ToolUseInfo // Cache tool use info by ID
+	cacheMutex      sync.Mutex
+}
+
+// ToolUseInfo stores information about a tool use
+type ToolUseInfo struct {
+	Name  string `json:"name"`
+	Input string `json:"input"`
+}
+
+// ClaudeMessage represents a message from Claude's JSON output
+type ClaudeMessage struct {
+	Type    string                 `json:"type"`
+	Message *ClaudeMessageContent  `json:"message,omitempty"`
+}
+
+type ClaudeMessageContent struct {
+	Role    string          `json:"role"`
+	Content []ClaudeContent `json:"content"`
+}
+
+type ClaudeContent struct {
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	IsError   bool            `json:"is_error,omitempty"`
 }
 
 // NewChatService creates a new chat service
@@ -58,6 +93,7 @@ func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool
 		agentCLINth:     agentCLINth,
 		deferStdinClose: deferStdinClose,
 		jsonOutput:      jsonOutput,
+		toolUseCache:    make(map[string]ToolUseInfo),
 	}
 }
 
@@ -145,8 +181,15 @@ func parseAgentCLI(agentCLIStr string) []string {
 	return strings.Fields(agentCLIStr)
 }
 
+// isPermissionError checks if an error message is a permission error
+func isPermissionError(content string) bool {
+	return strings.Contains(content, "requested permissions") ||
+		strings.Contains(content, "haven't granted it yet") ||
+		strings.Contains(content, "permission denied")
+}
+
 // executeAgentCommand executes the configured agent command with the given prompt and streams the output
-func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirstMessage bool) {
+func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool) {
 	// Create a context that can be cancelled when the client disconnects
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -185,6 +228,29 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 	for i, arg := range cmdArgs {
 		if arg == "?" {
 			cmdArgs[i] = prompt
+		}
+	}
+
+	// Check if this is Claude agent and modify the command
+	if len(cmdArgs) > 0 && cmdArgs[0] == "claude" {
+		// Remove --dangerously-skip-permissions if present
+		newArgs := []string{}
+		for _, arg := range cmdArgs {
+			if arg != "--dangerously-skip-permissions" {
+				newArgs = append(newArgs, arg)
+			}
+		}
+		cmdArgs = newArgs
+
+		// Add --dangerously-skip-permissions only if user explicitly chose to skip
+		if skipPermissions {
+			// Find position to insert the flag (after claude command)
+			cmdArgs = append([]string{cmdArgs[0], "--dangerously-skip-permissions"}, cmdArgs[1:]...)
+		} else if len(allowedTools) > 0 {
+			// Add allowed tools if any are specified
+			for _, tool := range allowedTools {
+				cmdArgs = append(cmdArgs, "--allowedTools", tool)
+			}
 		}
 	}
 
@@ -298,6 +364,51 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 
 				// Handle JSON output if enabled
 				if svc.jsonOutput {
+					// Try to parse the JSON to detect tool uses and permission errors
+					var claudeMsg ClaudeMessage
+					if err := json.Unmarshal([]byte(line), &claudeMsg); err == nil {
+						// Check for tool uses and cache them
+						if claudeMsg.Type == "assistant" && claudeMsg.Message != nil {
+							for _, content := range claudeMsg.Message.Content {
+								if content.Type == "tool_use" && content.ID != "" {
+									// Cache tool use info
+									svc.cacheMutex.Lock()
+									svc.toolUseCache[content.ID] = ToolUseInfo{
+										Name:  content.Name,
+										Input: string(content.Input),
+									}
+									svc.cacheMutex.Unlock()
+								}
+							}
+						}
+
+						// Check for permission errors in tool results
+						if claudeMsg.Type == "user" && claudeMsg.Message != nil {
+							for _, content := range claudeMsg.Message.Content {
+								if content.Type == "tool_result" && content.IsError {
+									// Check if this is a permission error
+									if isPermissionError(content.Content) {
+										// Get the tool info from cache
+										svc.cacheMutex.Lock()
+										toolInfo, exists := svc.toolUseCache[content.ToolUseID]
+										svc.cacheMutex.Unlock()
+
+										if exists {
+											// Send permission request to frontend
+											svc.BroadcastItem(ChatItem{
+												Type: "permission_request",
+												Content: content.Content,
+												Sender: toolInfo.Name,  // Tool name in Sender field
+											})
+											// Don't send the error as regular content
+											continue
+										}
+									}
+								}
+							}
+						}
+					}
+
 					// Send raw JSON to Elm for parsing
 					svc.BroadcastItem(ChatItem{
 						Type:    "claudejson",
@@ -396,6 +507,22 @@ func websocketHandler(svc *ChatService) websocket.Handler {
 				continue
 			}
 
+			// Handle permission response
+			if clientMsg.Type == "permission_response" {
+				log.Printf("[WEBSOCKET] Received permission response")
+				// Update client's allowed tools
+				client.processMutex.Lock()
+				client.allowedTools = clientMsg.AllowedTools
+				client.skipPermissions = clientMsg.SkipPermissions
+				client.processMutex.Unlock()
+
+				// Send continue message
+				go func() {
+					executeAgentCommand(svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
+				}()
+				continue
+			}
+
 			// Broadcast the user sender first
 			userItem := ChatItem{
 				Type:   "user",
@@ -424,7 +551,12 @@ func websocketHandler(svc *ChatService) websocket.Handler {
 
 				// Execute agent command and stream response
 				go func() {
-					executeAgentCommand(svc, client, clientMsg.Content, clientMsg.FirstMessage)
+					// Use client's current allowed tools and skip permissions settings
+					client.processMutex.Lock()
+					allowedTools := client.allowedTools
+					skipPermissions := client.skipPermissions
+					client.processMutex.Unlock()
+					executeAgentCommand(svc, client, clientMsg.Content, clientMsg.FirstMessage, allowedTools, skipPermissions)
 				}()
 			}
 		}
