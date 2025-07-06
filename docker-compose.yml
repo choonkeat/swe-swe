@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile.claude
     container_name: swe-swe-claude
-    command: ["-agent", "claude", "-port", "7001"]
+    command: ["-agent", "claude", "-host", "0.0.0.0", "-port", "7001"]
     ports:
       - "7001:7001"
     volumes:
@@ -16,14 +16,15 @@ services:
       - swe-swe-network
     environment:
       - AGENT_TYPE=claude
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
-  # Service running swe-swe with goose CLI  
+  # Service running swe-swe with goose CLI
   swe-swe-goose:
     build:
       context: .
       dockerfile: Dockerfile.goose
     container_name: swe-swe-goose
-    command: ["-agent", "goose", "-port", "7002"]
+    command: ["-agent", "goose", "-host", "0.0.0.0", "-port", "7002"]
     ports:
       - "7002:7002"
     volumes:
@@ -33,7 +34,11 @@ services:
     networks:
       - swe-swe-network
     environment:
-      - AGENT_TYPE=goose
+      - GOOSE_DISABLE_KEYRING=true
+      - GOOSE_PROVIDER=anthropic
+      - GOOSE_MODEL=claude-3.5-sonnet
+      - GOOSE_PROVIDER__API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
   # Service running native goose web
   goose:
@@ -50,7 +55,11 @@ services:
     networks:
       - swe-swe-network
     environment:
+      - GOOSE_DISABLE_KEYRING=true
+      - GOOSE_PROVIDER=anthropic
       - GOOSE_MODEL=claude-3-5-sonnet-20241022
+      - GOOSE_PROVIDER__API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
   # Service running claude-code-webui
   claude-code-webui:
@@ -67,7 +76,7 @@ services:
     networks:
       - swe-swe-network
     environment:
-      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
 networks:
   swe-swe-network:
