@@ -1,4 +1,23 @@
 services:
+  # Traefik reverse proxy with basic auth
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--entrypoints.web.address=:7000"
+    ports:
+      - "7000:7000"
+      - "8081:8080"  # Traefik dashboard
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
+    networks:
+      - swe-swe-network
+
   # Service running swe-swe with claude CLI
   swe-swe-claude:
     build:
@@ -6,8 +25,11 @@ services:
       dockerfile: Dockerfile.claude
     container_name: swe-swe-claude
     command: ["-agent", "claude", "-host", "0.0.0.0", "-port", "7001"]
-    ports:
-      - "7001:7001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.swe-claude.rule=HostRegexp(`swe-swe-claude\\..+`)"
+      - "traefik.http.routers.swe-claude.middlewares=auth@file"
+      - "traefik.http.services.swe-claude.loadbalancer.server.port=7001"
     volumes:
       # Mount current directory to /workspace in container
       - .:/workspace
@@ -25,8 +47,11 @@ services:
       dockerfile: Dockerfile.goose
     container_name: swe-swe-goose
     command: ["-agent", "goose", "-host", "0.0.0.0", "-port", "7002"]
-    ports:
-      - "7002:7002"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.swe-goose.rule=HostRegexp(`swe-swe-goose\\..+`)"
+      - "traefik.http.routers.swe-goose.middlewares=auth@file"
+      - "traefik.http.services.swe-goose.loadbalancer.server.port=7002"
     volumes:
       # Mount current directory to /workspace in container
       - .:/workspace
@@ -46,8 +71,11 @@ services:
       context: .
       dockerfile: Dockerfile.goose-web
     container_name: goose
-    ports:
-      - "9000:9000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.goose.rule=HostRegexp(`goose\\..+`)"
+      - "traefik.http.routers.goose.middlewares=auth@file"
+      - "traefik.http.services.goose.loadbalancer.server.port=9000"
     volumes:
       # Mount current directory to /workspace in container
       - .:/workspace
@@ -57,7 +85,7 @@ services:
     environment:
       - GOOSE_DISABLE_KEYRING=true
       - GOOSE_PROVIDER=anthropic
-      - GOOSE_MODEL=claude-3-5-sonnet-20241022
+      - GOOSE_MODEL=claude-3.5-sonnet
       - GOOSE_PROVIDER__API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
@@ -67,8 +95,11 @@ services:
       context: .
       dockerfile: Dockerfile.claude-code-webui
     container_name: claude-code-webui
-    ports:
-      - "8080:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.claude-webui.rule=HostRegexp(`claude-code-webui\\..+`)"
+      - "traefik.http.routers.claude-webui.middlewares=auth@file"
+      - "traefik.http.services.claude-webui.loadbalancer.server.port=8080"
     volumes:
       # Mount current directory to /workspace in container
       - .:/workspace
