@@ -13,20 +13,35 @@ swe-swe exposes any command-line coding agent through a modern web interface. In
 
 ## Quick Start
 
-1. **Build the application:**
+### Using Docker Compose (Recommended)
+
+1. **Start all services:**
    ```bash
-   make build
+   docker-compose up -d
    ```
 
-2. **Run with default settings (uses goose):**
+2. **Access the services:**
+   - **swe-swe-claude**: http://swe-swe-claude.localhost:7000
+   - **swe-swe-goose**: http://swe-swe-goose.localhost:7000
+   - **goose**: http://goose.localhost:7000
+   - **claude-code-webui**: http://claude-code-webui.localhost:7000
+
+3. **Authentication:**
+   All services are protected with HTTP Basic Authentication:
+   - Username: `admin`
+   - Password: `password`
+
+   To customize credentials:
    ```bash
-   ./bin/swe-swe
+   # Generate new password hash
+   docker run --rm httpd:alpine htpasswd -nbB admin yourpassword
+   
+   # Set via environment variable
+   BASIC_AUTH_USERS='admin:$2y$05$...' docker-compose up -d
    ```
 
-3. **Open your browser:**
-   ```
-   http://localhost:7000
-   ```
+4. **Alternative domains:**
+   You can also use `*.lvh.me` domains (e.g., http://swe-swe-claude.lvh.me:7000) or any other domain that resolves to localhost.
 
 ## Configuration
 
@@ -96,14 +111,33 @@ For custom agents, use the `-agent-cli-1st` and `-agent-cli-nth` flags with `?` 
 {"type": "content", "content": "I'll help you implement user authentication..."}
 ```
 
-## Building from Source
+## Development
 
-### Prerequisites
+### Running Locally
+
+1. **Build the application:**
+   ```bash
+   make build
+   ```
+
+2. **Run with default settings (uses goose):**
+   ```bash
+   ./bin/swe-swe
+   ```
+
+3. **Open your browser:**
+   ```
+   http://localhost:7000
+   ```
+
+### Building from Source
+
+#### Prerequisites
 - Go 1.21+
 - Elm 0.19+
 - Make
 
-### Build Commands
+#### Build Commands
 ```bash
 # Build everything (Elm + Go)
 make build
@@ -124,7 +158,7 @@ make clean
 make run
 ```
 
-### Development Workflow
+#### Development Workflow
 1. Make changes to Elm code in `elm/src/Main.elm`
 2. Make changes to Go code in `cmd/swe-swe/*.go`
 3. Run `make build` to rebuild both frontend and backend

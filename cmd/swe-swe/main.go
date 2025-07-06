@@ -52,6 +52,7 @@ func errmain(ctx context.Context) error {
 		Timeout:         30 * time.Second,
 		AgentCLI1st:     "goose run --debug --text ?",
 		AgentCLINth:     fmt.Sprintf("goose run --resume --path %s --debug --text ?", wd),
+		PrefixPath:      "",
 		DeferStdinClose: true,
 		JSONOutput:      false,
 	}
