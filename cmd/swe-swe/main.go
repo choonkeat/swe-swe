@@ -29,12 +29,16 @@ type Config struct {
 }
 
 func main() {
-	if err := errmain(); err != nil {
+	// Setup context with signal handling for graceful shutdown
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	if err := errmain(ctx); err != nil {
+		cancel()
 		log.Fatal(err)
 	}
 }
 
-func errmain() error {
+func errmain(ctx context.Context) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("os.Getwd failed: %w", err)
@@ -87,10 +91,6 @@ func errmain() error {
 	}
 	// Remove trailing slash
 	config.PrefixPath = strings.TrimSuffix(config.PrefixPath, "/")
-
-	// Setup context with signal handling for graceful shutdown
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 
 	// Create chat service
 	chatsvc := NewChatService(config.AgentCLI1st, config.AgentCLINth, config.DeferStdinClose, config.JSONOutput)

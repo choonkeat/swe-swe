@@ -190,9 +190,9 @@ func isPermissionError(content string) bool {
 }
 
 // executeAgentCommand executes the configured agent command with the given prompt and streams the output
-func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool) {
+func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool) {
 	// Create a context that can be cancelled when the client disconnects
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parentctx)
 
 	// Store the cancel function in the client for later use
 	client.processMutex.Lock()
@@ -402,8 +402,11 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 												Sender: toolInfo.Name,  // Tool name in Sender field
 												ToolInput: toolInfo.Input, // Include tool input details
 											})
-											// Don't send the error as regular content
-											continue
+
+											// Terminate the process by cancelling the context
+											log.Printf("[EXEC] Permission error detected, terminating process")
+											cancel()
+											return
 										}
 									}
 								}
@@ -478,7 +481,7 @@ func executeAgentCommand(svc *ChatService, client *Client, prompt string, isFirs
 }
 
 // websocketHandler handles websocket connections
-func websocketHandler(svc *ChatService) websocket.Handler {
+func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 	return func(ws *websocket.Conn) {
 		client := &Client{
 			conn:     ws,
@@ -520,7 +523,7 @@ func websocketHandler(svc *ChatService) websocket.Handler {
 
 				// Send continue message
 				go func() {
-					executeAgentCommand(svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
+					executeAgentCommand(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
 				}()
 				continue
 			}
@@ -558,7 +561,7 @@ func websocketHandler(svc *ChatService) websocket.Handler {
 					allowedTools := client.allowedTools
 					skipPermissions := client.skipPermissions
 					client.processMutex.Unlock()
-					executeAgentCommand(svc, client, clientMsg.Content, clientMsg.FirstMessage, allowedTools, skipPermissions)
+					executeAgentCommand(ctx, svc, client, clientMsg.Content, clientMsg.FirstMessage, allowedTools, skipPermissions)
 				}()
 			}
 		}
@@ -568,6 +571,6 @@ func websocketHandler(svc *ChatService) websocket.Handler {
 // chatWebsocketHandler creates a websocket handler using the go-httphandler pattern
 func chatWebsocketHandler(svc *ChatService) httphandler.RequestHandler {
 	return func(r *http.Request) httphandler.Responder {
-		return httphandler.ResponderFunc(websocketHandler(svc).ServeHTTP)
+		return httphandler.ResponderFunc(websocketHandler(r.Context(), svc).ServeHTTP)
 	}
 }
