@@ -1,14 +1,83 @@
+:root {
+    /* Base Colors */
+    --color-white: #ffffff;
+    --color-black: #000000;
+    
+    /* Grayscale Palette */
+    --color-gray-50: #f5f5f5;    /* Light background */
+    --color-gray-100: #f0f0f0;   /* Alt background, code blocks */
+    --color-gray-200: #e0e0e0;   /* Borders, dividers */
+    --color-gray-300: #cccccc;   /* Disabled elements */
+    --color-gray-400: #b0b0b0;   /* Secondary text in dark mode */
+    --color-gray-500: #757575;   /* Disconnected status, neutral elements */
+    --color-gray-600: #666666;   /* Secondary text */
+    --color-gray-700: #555555;   /* Tertiary text */
+    --color-gray-800: #333333;   /* Primary text */
+    --color-gray-900: #1e1e1e;   /* Dark mode background */
+    
+    /* Primary Blues */
+    --color-blue-100: #e3f2fd;   /* User message background (light) */
+    --color-blue-500: #4a90e2;   /* Primary buttons, links */
+    --color-blue-600: #357abf;   /* Hover state */
+    --color-blue-700: #1976d2;   /* Focused state, permanent allow button */
+    --color-blue-800: #0e639c;   /* Dark mode primary */
+    --color-blue-text: #0c5991;  /* User message text */
+    
+    /* Status Colors */
+    --color-success: #4caf50;      /* Connected status, allow button */
+    --color-success-dark: #388e3c; /* Allow button hover */
+    --color-warning: #ff9800;      /* Warning notices, permission header */
+    --color-warning-dark: #f57c00; /* Permission header gradient */
+    --color-danger: #e53935;       /* Deny button, errors */
+    --color-danger-dark: #d32f2f;  /* Deny button hover */
+    
+    /* Semantic Variables */
+    /* Background Colors */
+    --bg-body: var(--color-gray-50);
+    --bg-surface: var(--color-white);
+    --bg-surface-alt: var(--color-gray-100);
+    --bg-code: var(--color-gray-100);
+    --bg-user-message: var(--color-blue-100);
+    
+    /* Text Colors */
+    --text-primary: var(--color-gray-800);
+    --text-secondary: var(--color-gray-700);
+    --text-tertiary: var(--color-gray-600);
+    --text-user-message: var(--color-blue-text);
+    
+    /* Border and Shadow */
+    --border-light: var(--color-gray-200);
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
+    
+    /* Interactive Elements */
+    --color-primary: var(--color-blue-500);
+    --color-primary-hover: var(--color-blue-600);
+    
+    /* Permission UI Colors */
+    --permission-header-bg: linear-gradient(135deg, #f57c00 0%, #ff6f00 100%);
+    --permission-notice-bg: #fff3e0;
+    --permission-allow-bg: #43a047;
+    --permission-allow-hover: #388e3c;
+    --permission-deny-bg: #e53935;
+    --permission-deny-hover: #d32f2f;
+    --permission-permanent-bg: #1976d2;
+    --permission-permanent-hover: #1565c0;
+    --permission-skip-bg: #757575;
+    --permission-skip-hover: #616161;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     margin: 0;
     padding: 0;
-    background-color: #f5f5f5;
-    color: #333;
+    background-color: var(--bg-body);
+    color: var(--text-primary);
 }
 
 #elm-app {
     min-height: 100vh;
-    background-color: white;
+    background-color: var(--bg-surface);
 }
 
 .chat-container {
@@ -28,9 +97,9 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 20px;
-    background-color: white;
-    border-bottom: 1px solid #e0e0e0;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-light);
+    box-shadow: var(--shadow-sm);
 }
 
 .title-container {
@@ -41,7 +110,7 @@ body {
 
 .header h1 {
     margin: 0;
-    color: #333;
+    color: var(--text-primary);
     font-size: 1.5rem;
     font-weight: 600;
 }
@@ -54,12 +123,12 @@ body {
 }
 
 .connection-status.connected {
-    background-color: #4caf50;
+    background-color: var(--color-success);
     box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
 }
 
 .connection-status.disconnected {
-    background-color: #757575;
+    background-color: var(--color-gray-500);
     box-shadow: 0 0 0 2px rgba(117, 117, 117, 0.3);
 }
 
@@ -68,14 +137,14 @@ body {
     align-items: center;
     gap: 8px;
     font-size: 14px;
-    color: #666;
+    color: var(--text-tertiary);
 }
 
 .theme-dropdown {
     padding: 4px 8px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-light);
     border-radius: 4px;
-    background-color: white;
+    background-color: var(--bg-surface);
     cursor: pointer;
     font-size: 14px;
 }
@@ -94,7 +163,7 @@ body {
     font-weight: bold;
     margin: 10px 0 5px 0;
     font-size: 0.9em;
-    color: #555;
+    color: var(--text-secondary);
 }
 
 .user-sender {
@@ -117,12 +186,12 @@ body {
 }
 
 .user-message {
-    background-color: #e3f2fd;
+    background-color: var(--bg-user-message);
     margin-left: auto;
     white-space: pre-wrap;
     text-align: left;
     align-self: flex-end;
-    color: #0c5991;
+    color: var(--text-user-message);
 }
 
 .bot-message {
@@ -142,15 +211,15 @@ body {
     align-items: center;
     gap: 10px;
     padding: 20px;
-    background-color: white;
-    border-top: 1px solid #e0e0e0;
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-light);
     box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .message-input {
     flex-grow: 1;
     padding: 12px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-light);
     border-radius: 8px;
     resize: none;
     min-height: 20px;
@@ -166,14 +235,14 @@ body {
 
 .message-input:focus {
     outline: none;
-    border-color: #4a90e2;
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
 }
 
 .send-button {
     padding: 12px 20px;
-    background-color: #4a90e2;
-    color: white;
+    background-color: var(--color-primary);
+    color: var(--color-white);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -184,11 +253,11 @@ body {
 }
 
 .send-button:hover {
-    background-color: #357abf;
+    background-color: var(--color-primary-hover);
 }
 
 .send-button:disabled {
-    background-color: #cccccc;
+    background-color: var(--color-gray-300);
     cursor: not-allowed;
 }
 
@@ -201,7 +270,7 @@ body {
 
 .message-content code {
     display: block;
-    background-color: #f5f5f5;
+    background-color: var(--bg-surface-alt);
     padding: 8px;
     border-radius: 4px;
     white-space: pre-wrap;
@@ -213,34 +282,34 @@ body {
 /* Tool result styles */
 .tool-result {
     margin: 10px 0;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border-light);
     border-radius: 8px;
     padding: 0;
     overflow: hidden;
 }
 
 .tool-result summary {
-    background-color: #f5f5f5;
+    background-color: var(--bg-surface-alt);
     padding: 10px 15px;
     cursor: pointer;
     font-weight: bold;
-    color: #555;
+    color: var(--text-secondary);
     user-select: none;
     transition: background-color 0.2s;
 }
 
 .tool-result summary:hover {
-    background-color: #e8e8e8;
+    background-color: var(--border-light);
 }
 
 .tool-result[open] summary {
-    background-color: #e8e8e8;
-    border-bottom: 1px solid #ddd;
+    background-color: var(--border-light);
+    border-bottom: 1px solid var(--border-light);
 }
 
 .tool-result-content {
     padding: 15px;
-    background-color: #fafafa;
+    background-color: var(--bg-surface-alt);
     overflow-x: auto;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 13px;
@@ -252,7 +321,7 @@ body {
 .tool-use {
     margin: 5px 0;
     padding: 8px 12px;
-    color: #555;
+    color: var(--text-secondary);
     font-weight: 500;
 }
 
@@ -261,7 +330,7 @@ body {
 }
 
 .tool-use code {
-    background-color: #f0f0f0;
+    background-color: var(--bg-code);
     padding: 2px 6px;
     border-radius: 3px;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
@@ -273,38 +342,38 @@ body {
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result,
 .messages[style*="background-color: rgb(26, 27, 38)"] .tool-result,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-result {
-    border-color: #444;
+    border-color: var(--color-gray-700);
 }
 
 .messages[style*="background-color: rgb(13, 17, 23)"] .tool-result summary,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary,
 .messages[style*="background-color: rgb(26, 27, 38)"] .tool-result summary,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary {
-    background-color: #2d2d2d;
-    color: #b0b0b0;
+    background-color: var(--bg-surface);
+    color: var(--color-gray-400);
 }
 
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-result summary:hover,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary:hover,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-result summary:hover,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-result summary:hover {
-    background-color: #383838;
+    background-color: var(--color-gray-700);
 }
 
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-result[open] summary,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result[open] summary,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-result[open] summary,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-result[open] summary {
-    background-color: #383838;
-    border-bottom-color: #444;
+    background-color: var(--color-gray-700);
+    border-bottom-color: var(--color-gray-700);
 }
 
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-result-content,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result-content,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-result-content,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-result-content {
-    background-color: #1e1e1e;
-    color: #d4d4d4;
+    background-color: var(--color-gray-900);
+    color: var(--color-gray-400);
 }
 
 /* Dark theme tool use styles */
@@ -312,7 +381,7 @@ body {
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-use,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-use,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-use {
-    color: #b0b0b0;
+    color: var(--color-gray-400);
 }
 
 .messages[style*="background-color: rgb(13, 17, 23)"] .tool-use code,
@@ -333,8 +402,8 @@ body {
 .messages[style*="background-color: rgb(26, 27, 38)"] .message-content code,
 .messages[style*="background-color: rgb(45, 45, 45)"] .message-content code,
 .messages[style*="background-color: rgb(0, 43, 54)"] .message-content code {
-    background-color: #3a3a3a;
-    color: #d0d0d0;
+    background-color: var(--color-gray-700);
+    color: var(--color-gray-400);
 }
 
 /* Todo list styles */
@@ -404,20 +473,20 @@ body {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background-color: #999;
+    background-color: var(--color-gray-600);
     animation: typing 1.4s infinite ease-in-out;
 }
 
 .stop-button {
     font-size: 12px;
-    color: #666;
+    color: var(--text-tertiary);
     cursor: pointer;
     text-decoration: underline;
     transition: color 0.2s;
 }
 
 .stop-button:hover {
-    color: #d32f2f;
+    color: var(--color-danger-dark);
 }
 
 .typing-dot:nth-child(1) {
@@ -451,21 +520,21 @@ body {
 .messages[style*="background-color: rgb(0, 0, 0)"] .typing-dot,
 .messages[style*="background-color: rgb(45, 45, 45)"] .typing-dot,
 .messages[style*="background-color: rgb(0, 43, 54)"] .typing-dot {
-    background-color: #666;
+    background-color: var(--text-tertiary);
 }
 
 .messages[style*="background-color: rgb(30, 30, 30)"] .stop-button,
 .messages[style*="background-color: rgb(0, 0, 0)"] .stop-button,
 .messages[style*="background-color: rgb(45, 45, 45)"] .stop-button,
 .messages[style*="background-color: rgb(0, 43, 54)"] .stop-button {
-    color: #999;
+    color: var(--color-gray-600);
 }
 
 .messages[style*="background-color: rgb(30, 30, 30)"] .stop-button:hover,
 .messages[style*="background-color: rgb(0, 0, 0)"] .stop-button:hover,
 .messages[style*="background-color: rgb(45, 45, 45)"] .stop-button:hover,
 .messages[style*="background-color: rgb(0, 43, 54)"] .stop-button:hover {
-    color: #ff5252;
+    color: var(--color-danger);
 }
 
 /* Print styles */
@@ -480,53 +549,64 @@ body {
     }
 
     body {
-        background-color: white !important;
+        background-color: var(--color-white) !important;
     }
 
     #elm-app {
-        background-color: white !important;
+        background-color: var(--color-white) !important;
     }
 }
 
-/* Theme-specific adjustments */
+/* Dark Theme Variable Overrides */
 @media (prefers-color-scheme: dark) {
-    body {
-        background-color: #1e1e1e;
-        color: #d4d4d4;
+    :root {
+        /* Background Colors */
+        --bg-body: var(--color-gray-900);
+        --bg-surface: #2d2d2d;
+        --bg-surface-alt: #383838;
+        --bg-code: #3a3a3a;
+        
+        /* Text Colors */
+        --text-primary: #d4d4d4;
+        --text-secondary: #b0b0b0;
+        --text-tertiary: #999999;
+        
+        /* Border and Shadow */
+        --border-light: #444444;
+        
+        /* Interactive Elements */
+        --color-primary: var(--color-blue-800);
+        --color-primary-hover: #1177bb;
+        
+        /* Permission UI Colors */
+        --permission-header-bg: linear-gradient(135deg, #268bd2 0%, #2aa198 100%);
+        --permission-notice-bg: rgba(255, 152, 0, 0.1);
     }
+}
 
-    #elm-app {
-        background-color: #1e1e1e;
-    }
-
-    .header {
-        background-color: #2d2d2d;
-        border-bottom-color: #444;
-    }
-
-    .header h1 {
-        color: #d4d4d4;
-    }
-
-    .theme-dropdown {
-        background-color: #2d2d2d;
-        color: #d4d4d4;
-        border-color: #444;
-    }
-
-    .message-input {
-        background-color: #2d2d2d;
-        color: #d4d4d4;
-        border-color: #444;
-    }
-
-    .send-button {
-        background-color: #0e639c;
-    }
-
-    .send-button:hover {
-        background-color: #1177bb;
-    }
+/* Class-based theme switching */
+body.dark-theme {
+    /* Background Colors */
+    --bg-body: var(--color-gray-900);
+    --bg-surface: #2d2d2d;
+    --bg-surface-alt: #383838;
+    --bg-code: #3a3a3a;
+    
+    /* Text Colors */
+    --text-primary: #d4d4d4;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #999999;
+    
+    /* Border and Shadow */
+    --border-light: #444444;
+    
+    /* Interactive Elements */
+    --color-primary: var(--color-blue-800);
+    --color-primary-hover: #1177bb;
+    
+    /* Permission UI Colors */
+    --permission-header-bg: linear-gradient(135deg, #268bd2 0%, #2aa198 100%);
+    --permission-notice-bg: rgba(255, 152, 0, 0.1);
 }
 
 /* Smooth theme transitions */
@@ -536,12 +616,12 @@ body {
 
 /* Better styling for light theme */
 .messages[style*="background-color: rgb(250, 251, 252)"] .message-content {
-    background-color: #f0f0f0;
+    background-color: var(--bg-code);
 }
 
 .messages[style*="background-color: rgb(250, 251, 252)"] .user-message .message-content {
-    background-color: #007bff;
-    color: white;
+    background-color: var(--color-primary);
+    color: var(--color-white);
 }
 
 /* Classic Terminal theme styling */
@@ -551,18 +631,18 @@ body {
 
 .messages[style*="background-color: rgb(0, 0, 0)"] .message-content {
     background-color: transparent;
-    border: 1px solid #00ff00;
+    border: 1px solid var(--color-success);
 }
 
 .messages[style*="background-color: rgb(0, 0, 0)"] .user-message {
-    color: #00ff00;
+    color: var(--color-success);
 }
 
 /* Solarized theme specific styles */
 .messages[style*="background-color: rgb(0, 43, 54)"] code,
 .messages[style*="background-color: rgb(0, 43, 54)"] pre {
-    background-color: #073642;
-    color: #93a1a1;
+    background-color: var(--color-gray-800);
+    color: var(--color-gray-400);
 }
 
 /* Dynamic header styles based on active theme */
@@ -578,14 +658,14 @@ body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .header h1,
 body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .header h1,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .header h1,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .header h1 {
-    color: #e0e0e0;
+    color: var(--border-light);
 }
 
 body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .theme-selector,
 body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .theme-selector,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .theme-selector,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
-    color: #b0b0b0;
+    color: var(--color-gray-400);
 }
 
 /* Permission Dialog Styles */
@@ -600,12 +680,12 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 90;
     transition: background-color 0.3s ease;
 }
 
 .permission-dialog {
-    background-color: white;
+    background-color: var(--bg-surface);
     border-radius: 8px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
     padding: 0;
@@ -617,8 +697,8 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
 }
 
 .permission-header {
-    background: linear-gradient(135deg, #f57c00 0%, #ff6f00 100%);
-    color: white;
+    background: var(--permission-header-bg);
+    color: var(--color-white);
     padding: 24px;
     text-align: center;
     position: relative;
@@ -633,7 +713,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
 
 .permission-content {
     padding: 24px;
-    background-color: #fafafa;
+    background-color: var(--bg-surface-alt);
     transition: background-color 0.3s ease;
 }
 
@@ -641,27 +721,27 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     font-size: 1em;
     margin-bottom: 16px;
     font-weight: 500;
-    color: #424242;
+    color: var(--text-secondary);
     line-height: 1.5;
     transition: color 0.3s ease;
 }
 
 .permission-error {
-    background-color: #fff3e0;
-    border-left: 3px solid #f57c00;
+    background-color: var(--permission-notice-bg);
+    border-left: 3px solid var(--color-warning-dark);
     padding: 12px 16px;
     margin: 12px 0;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.85em;
-    color: #5d4037;
+    color: var(--text-secondary);
     border-radius: 4px;
     word-break: break-word;
     transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
 }
 
 .permission-tool-details {
-    background-color: #f5f7fa;
-    border: 1px solid #e1e8ed;
+    background-color: var(--bg-surface-alt);
+    border: 1px solid var(--border-light);
     border-radius: 6px;
     padding: 12px 16px;
     margin: 12px 0;
@@ -671,7 +751,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
 .permission-tool-input {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
-    color: #333;
+    color: var(--text-primary);
     transition: color 0.3s ease;
 }
 
@@ -694,7 +774,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
 
 .permission-tool-input summary {
     cursor: pointer;
-    color: #1976d2;
+    color: var(--color-blue-700);
     font-weight: 500;
     transition: color 0.3s ease;
 }
@@ -708,7 +788,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     flex-wrap: wrap;
     gap: 8px;
     padding: 16px 24px 24px;
-    background-color: #fafafa;
+    background-color: var(--bg-surface-alt);
     justify-content: center;
     transition: background-color 0.3s ease;
 }
@@ -727,64 +807,64 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
 }
 
 .permission-allow {
-    background-color: #43a047;
-    color: white;
+    background-color: var(--permission-allow-bg);
+    color: var(--color-white);
     box-shadow: 0 2px 4px rgba(67, 160, 71, 0.2);
 }
 
 .permission-allow:hover {
-    background-color: #388e3c;
+    background-color: var(--permission-allow-hover);
     box-shadow: 0 4px 8px rgba(67, 160, 71, 0.3);
 }
 
 .permission-deny {
-    background-color: #e53935;
-    color: white;
+    background-color: var(--color-danger);
+    color: var(--color-white);
     box-shadow: 0 2px 4px rgba(229, 57, 53, 0.2);
 }
 
 .permission-deny:hover {
-    background-color: #d32f2f;
+    background-color: var(--color-danger-dark);
     box-shadow: 0 4px 8px rgba(229, 57, 53, 0.3);
 }
 
 .permission-allow-permanent {
-    background-color: #1976d2;
-    color: white;
+    background-color: var(--permission-permanent-bg);
+    color: var(--color-white);
     box-shadow: 0 2px 4px rgba(25, 118, 210, 0.2);
 }
 
 .permission-allow-permanent:hover {
-    background-color: #1565c0;
+    background-color: var(--permission-permanent-hover);
     box-shadow: 0 4px 8px rgba(25, 118, 210, 0.3);
 }
 
 .permission-skip-all {
-    background-color: #757575;
-    color: white;
+    background-color: var(--color-gray-500);
+    color: var(--color-white);
     font-size: 13px;
     padding: 8px 16px;
     box-shadow: 0 1px 3px rgba(117, 117, 117, 0.2);
 }
 
 .permission-skip-all:hover {
-    background-color: #616161;
+    background-color: var(--permission-skip-hover);
     box-shadow: 0 2px 4px rgba(117, 117, 117, 0.3);
 }
 
 /* Permission notice in chat */
 .permission-notice {
     margin: 10px 0;
-    border: 1px solid #ff9800;
+    border: 1px solid var(--color-warning);
     border-radius: 8px;
     overflow: hidden;
-    background-color: #fff3e0;
+    background-color: var(--permission-notice-bg);
     transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .permission-notice-header {
-    background-color: #ff9800;
-    color: white;
+    background-color: var(--color-warning);
+    color: var(--color-white);
     padding: 10px 15px;
     font-weight: bold;
     transition: background-color 0.3s ease, color 0.3s ease;
@@ -794,7 +874,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
     padding: 15px;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
-    color: #666;
+    color: var(--text-tertiary);
     transition: color 0.3s ease;
 }
 
@@ -805,8 +885,8 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-dialog,
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-dialog,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-dialog,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-dialog {
-    background-color: #2d2d2d;
-    border-color: #444;
+    background-color: var(--bg-surface);
+    border-color: var(--color-gray-700);
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
 }
 
@@ -816,7 +896,7 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-content
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-content,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-content,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-content {
-    background-color: #1e1e1e;
+    background-color: var(--color-gray-900);
 }
 
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-content p,
@@ -825,7 +905,7 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-content
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-content p,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-content p,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-content p {
-    color: #d4d4d4;
+    color: var(--color-gray-400);
 }
 
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-actions,
@@ -834,7 +914,7 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-actions
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-actions,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-actions,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-actions {
-    background-color: #1e1e1e;
+    background-color: var(--color-gray-900);
 }
 
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-error,
@@ -844,8 +924,8 @@ body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-erro
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-error,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-error {
     background-color: rgba(255, 152, 0, 0.1);
-    border-left-color: #ff9800;
-    color: #ffc107;
+    border-left-color: var(--color-warning);
+    color: var(--color-warning);
 }
 
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-tool-details,
@@ -854,8 +934,8 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-tool-de
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-tool-details,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-tool-details,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-details {
-    background-color: #2d2d2d;
-    border-color: #444;
+    background-color: var(--bg-surface);
+    border-color: var(--color-gray-700);
 }
 
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-tool-input,
@@ -864,7 +944,7 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-tool-in
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-tool-input,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-tool-input,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-input {
-    color: #d4d4d4;
+    color: var(--color-gray-400);
 }
 
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-tool-input summary,
@@ -873,7 +953,7 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-tool-in
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-tool-input summary,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-tool-input summary,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-input summary {
-    color: #64b5f6;
+    color: var(--color-primary);
 }
 
 /* Theme-specific permission notice styles */
@@ -884,7 +964,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 .messages[style*="background-color: rgb(45, 45, 45)"] .permission-notice,
 .messages[style*="background-color: rgb(0, 43, 54)"] .permission-notice {
     background-color: rgba(255, 152, 0, 0.1);
-    border-color: #ff9800;
+    border-color: var(--color-warning);
 }
 
 .messages[style*="background-color: rgb(13, 17, 23)"] .permission-notice-body,
@@ -893,18 +973,18 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 .messages[style*="background-color: rgb(26, 27, 38)"] .permission-notice-body,
 .messages[style*="background-color: rgb(45, 45, 45)"] .permission-notice-body,
 .messages[style*="background-color: rgb(0, 43, 54)"] .permission-notice-body {
-    color: #d4d4d4;
+    color: var(--color-gray-400);
 }
 
 /* Theme specific permission header styles */
 .messages[style*="background-color: rgb(0, 0, 0)"] ~ .permission-overlay .permission-header {
-    background: linear-gradient(135deg, #00aa00 0%, #008800 100%);
+    background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-dark) 100%);
 }
 
 .messages[style*="background-color: rgb(0, 43, 54)"] ~ .permission-overlay .permission-header {
-    background: linear-gradient(135deg, #268bd2 0%, #2aa198 100%);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
 }
 
 .messages[style*="background-color: rgb(26, 27, 38)"] ~ .permission-overlay .permission-header {
-    background: linear-gradient(135deg, #c678dd 0%, #61afef 100%);
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
 }
