@@ -19,6 +19,7 @@ import (
 
 // Config holds the server configuration
 type Config struct {
+	Host            string
 	Port            int
 	Timeout         time.Duration
 	AgentCLI1st     string
@@ -46,14 +47,16 @@ func errmain(ctx context.Context) error {
 
 	// Parse command line flags
 	config := Config{
-		Port: 7000,
-		Timeout: 30*time.Second,
-		AgentCLI1st: "goose run --debug --text ?",
-		AgentCLINth: fmt.Sprintf("goose run --resume --path %s --debug --text ?", wd),
+		Host:            "0.0.0.0",
+		Port:            7000,
+		Timeout:         30 * time.Second,
+		AgentCLI1st:     "goose run --debug --text ?",
+		AgentCLINth:     fmt.Sprintf("goose run --resume --path %s --debug --text ?", wd),
 		DeferStdinClose: true,
-		JSONOutput: false,
+		JSONOutput:      false,
 	}
 	agent := flag.String("agent", "", "Use preset configuration for the specified agent (goose|claude)")
+	flag.StringVar(&config.Host, "host", config.Host, "Address to listen on")
 	flag.IntVar(&config.Port, "port", config.Port, "Port to listen on")
 	flag.DurationVar(&config.Timeout, "timeout", config.Timeout, "Server timeout")
 	flag.StringVar(&config.AgentCLI1st, "agent-cli-1st", config.AgentCLI1st, "Agent CLI command template for first message (use ? as placeholder for prompt)")
@@ -67,13 +70,13 @@ func errmain(ctx context.Context) error {
 	switch *agent {
 	case "goose":
 		// Use goose web directly instead of our implementation
-		log.Printf("Using native goose web command on port %d", config.Port)
+		log.Printf("Using native goose web command on %s:%d", config.Host, config.Port)
 		// Exec goose web, replacing the current process
 		path, err := exec.LookPath("goose")
 		if err != nil {
 			return fmt.Errorf("goose command not found: %w", err)
 		}
-		return syscall.Exec(path, []string{"goose", "web", "--port", fmt.Sprintf("%d", config.Port)}, os.Environ())
+		return syscall.Exec(path, []string{"goose", "web", "--host", config.Host, "--port", fmt.Sprintf("%d", config.Port)}, os.Environ())
 	case "claude":
 		config.AgentCLI1st = "claude --output-format stream-json --verbose --print ?"
 		config.AgentCLINth = "claude --continue --output-format stream-json --verbose --print ?"
@@ -144,7 +147,7 @@ func runWebServer(config Config, chatsvc *ChatService) func(context.Context) err
 
 		// Configure server
 		server := &http.Server{
-			Addr:         fmt.Sprintf(":%d", config.Port),
+			Addr:         fmt.Sprintf("%s:%d", config.Host, config.Port),
 			Handler:      mux,
 			ReadTimeout:  config.Timeout,
 			WriteTimeout: config.Timeout,
@@ -153,7 +156,7 @@ func runWebServer(config Config, chatsvc *ChatService) func(context.Context) err
 		// Start server in a goroutine
 		serverErr := make(chan error, 1)
 		go func() {
-			log.Printf("Server starting on http://localhost:%d%s", config.Port, config.PrefixPath)
+			log.Printf("Server starting on http://%s:%d%s", config.Host, config.Port, config.PrefixPath)
 			serverErr <- server.ListenAndServe()
 		}()
 
