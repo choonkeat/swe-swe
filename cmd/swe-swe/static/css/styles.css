@@ -149,6 +149,28 @@ body {
     font-size: 14px;
 }
 
+.auto-focus-option {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    color: var(--text-tertiary);
+    margin-left: 16px;
+}
+
+.auto-focus-option label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.auto-focus-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
 .messages {
     flex-grow: 1;
     padding: 80px 20px 120px 20px;
@@ -665,6 +687,13 @@ body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .theme-selector,
 body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .theme-selector,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .theme-selector,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .theme-selector {
+    color: var(--color-gray-400);
+}
+
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .auto-focus-option,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .auto-focus-option,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .auto-focus-option,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .auto-focus-option {
     color: var(--color-gray-400);
 }
 

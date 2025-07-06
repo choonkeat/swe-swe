@@ -129,6 +129,18 @@
             }, 10);
         });
 
+        // Handle focus message input requests from Elm
+        app.ports.focusMessageInput.subscribe(function() {
+            // Small delay to ensure DOM has updated and any other focus events are processed
+            setTimeout(function() {
+                const textarea = document.querySelector('.message-input');
+                if (textarea && (!document.activeElement || document.activeElement === document.body)) {
+                    // Only focus if no other element has focus or if body has focus
+                    textarea.focus();
+                }
+            }, 50);
+        });
+
         // Auto-resize textarea
         function autoResizeTextarea() {
             const textarea = document.querySelector('.message-input');

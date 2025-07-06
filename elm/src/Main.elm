@@ -15,8 +15,8 @@ port module Main exposing
 import Ansi exposing (ansiToElmHtml, ansiToHtml)
 import Browser
 import Dict exposing (Dict)
-import Html exposing (Html, button, details, div, h1, h3, input, option, p, pre, select, span, summary, text, textarea)
-import Html.Attributes exposing (class, disabled, placeholder, selected, style, value)
+import Html exposing (Html, button, details, div, h1, h3, input, label, option, p, pre, select, span, summary, text, textarea)
+import Html.Attributes exposing (checked, class, disabled, placeholder, selected, style, type_, value)
 import Html.Events exposing (keyCode, on, onClick, onInput, targetValue)
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -40,6 +40,9 @@ port connectionStatusReceiver : (Bool -> msg) -> Sub msg
 
 
 port systemThemeChanged : (String -> msg) -> Sub msg
+
+
+port focusMessageInput : () -> Cmd msg
 
 
 
@@ -87,6 +90,7 @@ type alias Model =
     , allowedTools : List String
     , skipPermissions : Bool
     , permissionDialog : Maybe PermissionDialogState
+    , autoFocusEnabled : Bool
     }
 
 
@@ -189,6 +193,7 @@ init flags =
       , allowedTools = []
       , skipPermissions = False
       , permissionDialog = Nothing
+      , autoFocusEnabled = True
       }
     , Cmd.none
     )
@@ -211,6 +216,7 @@ type Msg
     | AllowPermissionPermanent
     | DenyPermission
     | SkipAllPermissions
+    | ToggleAutoFocus
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -317,10 +323,17 @@ update msg model =
                             )
 
                         ChatExecEnd ->
+                            let
+                                focusCmd =
+                                    if model.autoFocusEnabled && model.isTyping then
+                                        focusMessageInput ()
+                                    else
+                                        Cmd.none
+                            in
                             ( { model
                                 | isTyping = False -- Hide typing indicator when exec ends
                               }
-                            , Cmd.none
+                            , focusCmd
                             )
 
                         ChatToolUse _ ->
@@ -499,6 +512,9 @@ update msg model =
             ( { model | permissionDialog = Nothing, skipPermissions = True }
             , sendMessage responseMessage
             )
+
+        ToggleAutoFocus ->
+            ( { model | autoFocusEnabled = not model.autoFocusEnabled }, Cmd.none )
 
 
 
@@ -1092,6 +1108,17 @@ view model =
                         , selected (model.theme == Solarized)
                         ]
                         [ text "Solarized" ]
+                    ]
+                ]
+            , div [ class "auto-focus-option" ]
+                [ label []
+                    [ input
+                        [ type_ "checkbox"
+                        , checked model.autoFocusEnabled
+                        , onClick ToggleAutoFocus
+                        ]
+                        []
+                    , text " Auto-focus message input"
                     ]
                 ]
             ]
