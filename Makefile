@@ -29,3 +29,15 @@ run: build
 
 clean:
 	rm -rf bin $(ELM_OUTPUT)
+
+docker-compose-dev-up:
+	docker-compose --env-file .env -f docker/dev/docker-compose.yml up -d
+
+docker-compose-dev-down:
+	docker-compose --env-file .env -f docker/dev/docker-compose.yml down
+
+docker-compose-dev-build:
+	docker-compose --env-file .env -f docker/dev/docker-compose.yml build
+
+docker-compose-dev-logs:
+	docker-compose --env-file .env -f docker/dev/docker-compose.yml logs -f
