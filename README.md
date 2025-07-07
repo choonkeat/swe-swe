@@ -17,7 +17,19 @@ swe-swe exposes any command-line coding agent through a modern web interface. In
 
 1. **Start all services:**
    ```bash
-   docker-compose up -d
+   make docker-compose-dev-up
+   ```
+
+   Other useful commands:
+   ```bash
+   # Stop all services
+   make docker-compose-dev-up-down
+   
+   # Build/rebuild services
+   make docker-compose-dev-up-build
+   
+   # View logs
+   make docker-compose-dev-up-logs
    ```
 
 2. **Access the services:**
@@ -37,7 +49,7 @@ swe-swe exposes any command-line coding agent through a modern web interface. In
    docker run --rm httpd:alpine htpasswd -nbB admin yourpassword
    
    # Set via environment variable
-   BASIC_AUTH_USERS='admin:$2y$05$...' docker-compose up -d
+   BASIC_AUTH_USERS='admin:$2y$05$...' make docker-compose-dev-up
    ```
 
 4. **Alternative domains:**
