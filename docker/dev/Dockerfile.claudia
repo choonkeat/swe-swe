@@ -1,0 +1,23 @@
+FROM oven/bun:alpine
+
+# Install git and nodejs (required for cloning and building)
+RUN apk add --no-cache git nodejs npm
+
+# Clone the claudia repository
+RUN git clone https://github.com/getAsterisk/claudia.git /app
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies
+RUN bun install
+
+# Build the application
+RUN bun run build
+
+# Expose the default Vite preview port
+EXPOSE 4173
+
+# Start the application in dev mode since preview has host restrictions
+# Dev mode allows all hosts by default
+CMD ["sh", "-c", "cd /app && bun run dev --host 0.0.0.0 --port 4173"]

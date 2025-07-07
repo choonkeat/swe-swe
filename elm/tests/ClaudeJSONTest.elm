@@ -22,7 +22,6 @@ testModel =
     , allowedTools = []
     , skipPermissions = False
     , permissionDialog = Nothing
-    , autoFocusEnabled = True
     }
 
 
