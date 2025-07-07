@@ -1,0 +1,29 @@
+FROM oven/bun:alpine
+
+# Install git and nodejs (required for cloning and building)
+RUN apk add --no-cache git nodejs npm
+
+# Clone the claudia repository
+RUN git clone https://github.com/getAsterisk/claudia.git /app
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies
+RUN bun install
+
+# Show available scripts
+RUN echo "=== Available scripts in package.json ===" && \
+    cat package.json | grep -A 20 '"scripts"' || echo "No scripts section found"
+
+# Build the application
+RUN bun run build
+
+# Show directory structure after build
+RUN echo "=== Directory structure after build ===" && \
+    ls -la && \
+    echo "=== dist folder (if exists) ===" && \
+    ls -la dist/ || echo "No dist folder"
+
+# Keep container running for inspection
+CMD ["tail", "-f", "/dev/null"]

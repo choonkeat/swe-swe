@@ -90,7 +90,6 @@ type alias Model =
     , allowedTools : List String
     , skipPermissions : Bool
     , permissionDialog : Maybe PermissionDialogState
-    , autoFocusEnabled : Bool
     }
 
 
@@ -193,7 +192,6 @@ init flags =
       , allowedTools = []
       , skipPermissions = False
       , permissionDialog = Nothing
-      , autoFocusEnabled = True
       }
     , Cmd.none
     )
@@ -216,7 +214,6 @@ type Msg
     | AllowPermissionPermanent
     | DenyPermission
     | SkipAllPermissions
-    | ToggleAutoFocus
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -325,7 +322,7 @@ update msg model =
                         ChatExecEnd ->
                             let
                                 focusCmd =
-                                    if model.autoFocusEnabled && model.isTyping then
+                                    if model.isTyping then
                                         focusMessageInput ()
                                     else
                                         Cmd.none
@@ -513,8 +510,6 @@ update msg model =
             , sendMessage responseMessage
             )
 
-        ToggleAutoFocus ->
-            ( { model | autoFocusEnabled = not model.autoFocusEnabled }, Cmd.none )
 
 
 
@@ -1108,17 +1103,6 @@ view model =
                         , selected (model.theme == Solarized)
                         ]
                         [ text "Solarized" ]
-                    ]
-                ]
-            , div [ class "auto-focus-option" ]
-                [ label []
-                    [ input
-                        [ type_ "checkbox"
-                        , checked model.autoFocusEnabled
-                        , onClick ToggleAutoFocus
-                        ]
-                        []
-                    , text " Auto-focus message input"
                     ]
                 ]
             ]
