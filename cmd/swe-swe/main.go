@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -40,20 +38,15 @@ func main() {
 }
 
 func errmain(ctx context.Context) error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("os.Getwd failed: %w", err)
-	}
-
 	// Parse command line flags
 	config := Config{
 		Host:            "0.0.0.0",
 		Port:            7000,
 		Timeout:         30 * time.Second,
 		AgentCLI1st:     "goose run --debug --text ?",
-		AgentCLINth:     fmt.Sprintf("goose run --resume --path %s --debug --text ?", wd),
+		AgentCLINth:     "goose run --resume --debug --text ?",
 		PrefixPath:      "",
-		DeferStdinClose: true,
+		DeferStdinClose: false, // true,
 		JSONOutput:      false,
 	}
 	agent := flag.String("agent", "", "Use preset configuration for the specified agent (goose|claude)")
@@ -70,14 +63,7 @@ func errmain(ctx context.Context) error {
 	// Apply agent presets
 	switch *agent {
 	case "goose":
-		// Use goose web directly instead of our implementation
-		log.Printf("Using native goose web command on %s:%d", config.Host, config.Port)
-		// Exec goose web, replacing the current process
-		path, err := exec.LookPath("goose")
-		if err != nil {
-			return fmt.Errorf("goose command not found: %w", err)
-		}
-		return syscall.Exec(path, []string{"goose", "web", "--host", config.Host, "--port", fmt.Sprintf("%d", config.Port)}, os.Environ())
+		// use default values in flags
 	case "claude":
 		config.AgentCLI1st = "claude --output-format stream-json --verbose --print ?"
 		config.AgentCLINth = "claude --continue --output-format stream-json --verbose --print ?"
