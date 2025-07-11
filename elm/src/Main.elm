@@ -90,10 +90,18 @@ type alias Model =
     , allowedTools : List String
     , skipPermissions : Bool
     , permissionDialog : Maybe PermissionDialogState
+    , pendingPermissionRequest : Maybe PermissionRequest
     }
 
 
 type alias PermissionDialogState =
+    { toolName : String
+    , errorMessage : String
+    , toolInput : Maybe String
+    }
+
+
+type alias PermissionRequest =
     { toolName : String
     , errorMessage : String
     , toolInput : Maybe String
@@ -116,6 +124,7 @@ type ChatItem
     | ChatToolUse ClaudeContent -- Tool use with id
     | ChatToolUseWithResult ClaudeContent String -- Tool use with its result
     | ChatPermissionRequest String String (Maybe String) -- Permission request (tool name, error message, tool input)
+    | ChatPermissionResponse String String String -- Permission response (tool name, action, username)
 
 
 
@@ -192,6 +201,7 @@ init flags =
       , allowedTools = []
       , skipPermissions = False
       , permissionDialog = Nothing
+      , pendingPermissionRequest = Nothing
       }
     , Cmd.none
     )
@@ -250,6 +260,7 @@ update msg model =
                             ( { model
                                 | messages = model.messages ++ [ chatItem ]
                                 , currentSender = Just sender
+                                , pendingPermissionRequest = Nothing
                               }
                             , scrollToBottom ()
                             )
@@ -349,8 +360,16 @@ update msg model =
 
                         ChatPermissionRequest toolName errorMessage toolInput ->
                             ( { model
-                                | permissionDialog = Just { toolName = toolName, errorMessage = errorMessage, toolInput = toolInput }
+                                | pendingPermissionRequest = Just { toolName = toolName, errorMessage = errorMessage, toolInput = toolInput }
                                 , messages = model.messages ++ [ chatItem ]
+                              }
+                            , Cmd.batch [ scrollToBottom (), focusMessageInput () ]
+                            )
+
+                        ChatPermissionResponse _ _ _ ->
+                            ( { model
+                                | messages = model.messages ++ [ chatItem ]
+                                , pendingPermissionRequest = Nothing
                               }
                             , scrollToBottom ()
                             )
@@ -366,36 +385,51 @@ update msg model =
             ( { model | theme = newTheme }, Cmd.none )
 
         KeyDown key shiftKey metaKey ->
-            if key == 13 then
-                -- Enter key
-                if shiftKey || metaKey then
-                    -- Shift+Enter or Cmd/Alt+Enter: insert newline (handled by browser)
-                    ( model, Cmd.none )
+            case model.pendingPermissionRequest of
+                Just _ ->
+                    -- Handle keyboard shortcuts for permission responses
+                    case key of
+                        89 -> -- 'Y' key
+                            update AllowPermission model
 
-                else
-                -- Plain Enter: send message
-                if
-                    String.trim model.input == "" || not model.isConnected
-                then
-                    ( model, Cmd.none )
+                        78 -> -- 'N' key
+                            update DenyPermission model
 
-                else
-                    let
-                        messageJson =
-                            Encode.encode 0
-                                (Encode.object
-                                    [ ( "sender", Encode.string "USER" )
-                                    , ( "content", Encode.string model.input )
-                                    , ( "firstMessage", Encode.bool model.isFirstUserMessage )
-                                    ]
-                                )
-                    in
-                    ( { model | input = "", isFirstUserMessage = False }
-                    , Cmd.batch [ sendMessage messageJson, scrollToBottom () ]
-                    )
+                        _ ->
+                            ( model, Cmd.none )
 
-            else
-                ( model, Cmd.none )
+                Nothing ->
+                    -- Normal input handling
+                    if key == 13 then
+                        -- Enter key
+                        if shiftKey || metaKey then
+                            -- Shift+Enter or Cmd/Alt+Enter: insert newline (handled by browser)
+                            ( model, Cmd.none )
+
+                        else
+                        -- Plain Enter: send message
+                        if
+                            String.trim model.input == "" || not model.isConnected
+                        then
+                            ( model, Cmd.none )
+
+                        else
+                            let
+                                messageJson =
+                                    Encode.encode 0
+                                        (Encode.object
+                                            [ ( "sender", Encode.string "USER" )
+                                            , ( "content", Encode.string model.input )
+                                            , ( "firstMessage", Encode.bool model.isFirstUserMessage )
+                                            ]
+                                        )
+                            in
+                            ( { model | input = "", isFirstUserMessage = False }
+                            , Cmd.batch [ sendMessage messageJson, scrollToBottom () ]
+                            )
+
+                    else
+                        ( model, Cmd.none )
 
         ConnectionStatus isConnected ->
             ( { model
@@ -435,11 +469,11 @@ update msg model =
             ( model, sendMessage stopMessage )
 
         AllowPermission ->
-            case model.permissionDialog of
-                Just dialog ->
+            case model.pendingPermissionRequest of
+                Just permReq ->
                     let
                         newAllowedTools =
-                            model.allowedTools ++ [ dialog.toolName ]
+                            model.allowedTools ++ [ permReq.toolName ]
 
                         responseMessage =
                             Encode.encode 0
@@ -449,20 +483,27 @@ update msg model =
                                     , ( "skipPermissions", Encode.bool False )
                                     ]
                                 )
+
+                        -- Add permission response to chat history
+                        responseItem =
+                            ChatPermissionResponse permReq.toolName "allowed" "USER"
                     in
-                    ( { model | permissionDialog = Nothing }
-                    , sendMessage responseMessage
+                    ( { model
+                        | pendingPermissionRequest = Nothing
+                        , messages = model.messages ++ [ responseItem ]
+                      }
+                    , Cmd.batch [ sendMessage responseMessage, scrollToBottom () ]
                     )
 
                 Nothing ->
                     ( model, Cmd.none )
 
         AllowPermissionPermanent ->
-            case model.permissionDialog of
-                Just dialog ->
+            case model.pendingPermissionRequest of
+                Just permReq ->
                     let
                         newAllowedTools =
-                            model.allowedTools ++ [ dialog.toolName ]
+                            model.allowedTools ++ [ permReq.toolName ]
 
                         responseMessage =
                             Encode.encode 0
@@ -472,28 +513,48 @@ update msg model =
                                     , ( "skipPermissions", Encode.bool False )
                                     ]
                                 )
+
+                        -- Add permission response to chat history
+                        responseItem =
+                            ChatPermissionResponse permReq.toolName "allowed_permanent" "USER"
                     in
-                    ( { model | permissionDialog = Nothing, allowedTools = newAllowedTools }
-                    , sendMessage responseMessage
+                    ( { model
+                        | pendingPermissionRequest = Nothing
+                        , allowedTools = newAllowedTools
+                        , messages = model.messages ++ [ responseItem ]
+                      }
+                    , Cmd.batch [ sendMessage responseMessage, scrollToBottom () ]
                     )
 
                 Nothing ->
                     ( model, Cmd.none )
 
         DenyPermission ->
-            let
-                responseMessage =
-                    Encode.encode 0
-                        (Encode.object
-                            [ ( "type", Encode.string "permission_response" )
-                            , ( "allowedTools", Encode.list Encode.string model.allowedTools )
-                            , ( "skipPermissions", Encode.bool False )
-                            ]
-                        )
-            in
-            ( { model | permissionDialog = Nothing }
-            , sendMessage responseMessage
-            )
+            case model.pendingPermissionRequest of
+                Just permReq ->
+                    let
+                        responseMessage =
+                            Encode.encode 0
+                                (Encode.object
+                                    [ ( "type", Encode.string "permission_response" )
+                                    , ( "allowedTools", Encode.list Encode.string model.allowedTools )
+                                    , ( "skipPermissions", Encode.bool False )
+                                    ]
+                                )
+
+                        -- Add permission response to chat history
+                        responseItem =
+                            ChatPermissionResponse permReq.toolName "denied" "USER"
+                    in
+                    ( { model
+                        | pendingPermissionRequest = Nothing
+                        , messages = model.messages ++ [ responseItem ]
+                      }
+                    , Cmd.batch [ sendMessage responseMessage, scrollToBottom () ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         SkipAllPermissions ->
             let
@@ -731,6 +792,14 @@ encodeChatItem chatItem =
                   )
                 ]
 
+        ChatPermissionResponse toolName action username ->
+            Encode.object
+                [ ( "type", Encode.string "permission_response" )
+                , ( "toolName", Encode.string toolName )
+                , ( "action", Encode.string action )
+                , ( "username", Encode.string username )
+                ]
+
 
 chatItemDecoder : Decode.Decoder ChatItem
 chatItemDecoder =
@@ -778,6 +847,12 @@ chatItemTypeDecoder itemType =
                 (Decode.field "sender" Decode.string)
                 (Decode.field "content" Decode.string)
                 (Decode.maybe (Decode.field "toolInput" Decode.string))
+
+        "permission_response" ->
+            Decode.map3 ChatPermissionResponse
+                (Decode.field "toolName" Decode.string)
+                (Decode.field "action" Decode.string)
+                (Decode.field "username" Decode.string)
 
         _ ->
             Decode.fail <| "Unknown chat item type: " ++ itemType
@@ -1131,29 +1206,56 @@ view model =
                    )
             )
         , div [ class "input-container" ]
-            [ textarea
-                [ class "message-input"
-                , placeholder "Type a message... (Enter to send, Shift+Enter for new line)"
-                , value model.input
-                , onInput Input
-                , onKeyDown KeyDown
-                , autofocus True
-                ]
-                []
-            , button
-                [ class "send-button"
-                , onClick Send
-                , disabled (String.trim model.input == "" || not model.isConnected)
-                ]
-                [ text
-                    (if model.isConnected then
-                        "Send"
+            (case model.pendingPermissionRequest of
+                Just permissionReq ->
+                    [ div [ class "permission-actions" ]
+                        [ div [ class "permission-prompt" ]
+                            [ text ("Allow " ++ permissionReq.toolName ++ " access?") ]
+                        , div [ class "permission-buttons" ]
+                            [ button
+                                [ class "permission-button allow"
+                                , onClick AllowPermission
+                                ]
+                                [ text "✓ Allow for session (Y)" ]
+                            , button
+                                [ class "permission-button deny"
+                                , onClick DenyPermission
+                                ]
+                                [ text "✗ Deny (N)" ]
+                            , button
+                                [ class "permission-button allow-permanent"
+                                , onClick AllowPermissionPermanent
+                                ]
+                                [ text "YOLO (--dangerously-skip-permissions)" ]
+                            ]
+                        ]
+                    ]
 
-                     else
-                        "Offline"
-                    )
-                ]
-            ]
+                Nothing ->
+                    [ textarea
+                        [ class "message-input"
+                        , placeholder "Type a message... (Enter to send, Shift+Enter for new line)"
+                        , value model.input
+                        , onInput Input
+                        , onKeyDown KeyDown
+                        , autofocus True
+                        ]
+                        []
+                    , button
+                        [ class "send-button"
+                        , onClick Send
+                        , disabled (String.trim model.input == "" || not model.isConnected)
+                        ]
+                        [ text
+                            (if model.isConnected then
+                                "Send"
+
+                             else
+                                "Offline"
+                            )
+                        ]
+                    ]
+            )
             ]
         , permissionDialogView model.permissionDialog
         ]
@@ -1234,7 +1336,7 @@ formatToolInput toolName inputJson =
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
                 "Edit" ->
-                    case Decode.decodeString 
+                    case Decode.decodeString
                         (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
                             (Decode.field "file_path" Decode.string)
                             (Decode.field "old_string" Decode.string)
@@ -1247,10 +1349,10 @@ formatToolInput toolName inputJson =
                                     [ summary [] [ text "View changes" ]
                                     , div [ style "margin-top" "0.5rem" ]
                                         [ p [ style "font-weight" "bold" ] [ text "Replace:" ]
-                                        , pre [ style "background-color" "#ffeeee", style "padding" "0.5rem", style "overflow" "auto" ] 
+                                        , pre [ style "background-color" "#ffeeee", style "padding" "0.5rem", style "overflow" "auto" ]
                                             [ text (String.left 200 edit.oldString ++ if String.length edit.oldString > 200 then "..." else "") ]
                                         , p [ style "font-weight" "bold", style "margin-top" "0.5rem" ] [ text "With:" ]
-                                        , pre [ style "background-color" "#eeffee", style "padding" "0.5rem", style "overflow" "auto" ] 
+                                        , pre [ style "background-color" "#eeffee", style "padding" "0.5rem", style "overflow" "auto" ]
                                             [ text (String.left 200 edit.newString ++ if String.length edit.newString > 200 then "..." else "") ]
                                         ]
                                     ]
@@ -1277,7 +1379,7 @@ formatToolInput toolName inputJson =
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
                 "MultiEdit" ->
-                    case Decode.decodeString 
+                    case Decode.decodeString
                         (Decode.map2 (\fp edits -> { filePath = fp, editsCount = edits })
                             (Decode.field "file_path" Decode.string)
                             (Decode.field "edits" (Decode.list Decode.value) |> Decode.map List.length)
@@ -1292,7 +1394,7 @@ formatToolInput toolName inputJson =
 
                 _ ->
                     -- For other tools, show formatted JSON
-                    pre [ style "font-size" "0.9em", style "overflow" "auto" ] 
+                    pre [ style "font-size" "0.9em", style "overflow" "auto" ]
                         [ text (Encode.encode 2 jsonValue) ]
 
         Err _ ->
@@ -1549,23 +1651,78 @@ renderMessages model items =
                     -- Don't render anything for exec end
                     state
 
-                ChatPermissionRequest toolName errorMessage _ ->
+                ChatPermissionRequest toolName errorMessage toolInput ->
                     -- Render permission request as a notice
                     let
                         elementsWithAccumulated =
                             renderAccumulatedContent state
+
+                        inputDisplay =
+                            case toolInput of
+                                Just input ->
+                                    case Decode.decodeString Decode.value input of
+                                        Ok jsonValue ->
+                                            pre [ class "permission-notice-input" ]
+                                                [ text (Encode.encode 2 jsonValue) ]
+                                        Err _ ->
+                                            pre [ class "permission-notice-input" ]
+                                                [ text input ]
+                                Nothing ->
+                                    text ""
 
                         permissionElement =
                             div [ class "permission-notice" ]
                                 [ div [ class "permission-notice-header" ]
                                     [ text ("⚠️ Permission required for: " ++ toolName) ]
                                 , div [ class "permission-notice-body" ]
-                                    [ text errorMessage ]
+                                    [ text errorMessage
+                                    , inputDisplay
+                                    ]
                                 ]
                     in
                     { state
                         | accumulatedContent = ""
                         , elements = elementsWithAccumulated ++ [ permissionElement ]
+                    }
+
+                ChatPermissionResponse toolName action username ->
+                    -- Render permission response based on who responded
+                    let
+                        elementsWithAccumulated =
+                            renderAccumulatedContent state
+
+                        actionText =
+                            case action of
+                                "allowed" ->
+                                    "✓ Allowed " ++ toolName ++ " access"
+                                "allowed_permanent" ->
+                                    "✓ Always allowed " ++ toolName ++ " access"
+                                "denied" ->
+                                    "✗ Denied " ++ toolName ++ " access"
+                                _ ->
+                                    action ++ " " ++ toolName
+
+                        -- Determine message class based on the current sender
+                        messageClass =
+                            case state.currentSender of
+                                Just "USER" ->
+                                    "user-message"
+
+                                Just "swe-swe" ->
+                                    "bot-message"
+
+                                _ ->
+                                    "user-message"  -- Default to user-message for permission responses
+
+                        responseElement =
+                            div [ class "message-wrapper" ]
+                                [ div [ class "message", class messageClass ]
+                                    [ span [ class "message-content" ] [ text actionText ] ]
+                                ]
+                    in
+                    { state
+                        | accumulatedContent = ""
+                        , elements = elementsWithAccumulated ++ [ responseElement ]
                     }
 
         finalState =

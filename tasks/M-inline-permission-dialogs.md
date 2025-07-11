@@ -1,7 +1,46 @@
 # Feature: Inline Permission Dialogs in Conversation
 
+## Status: ✅ Implemented (Initial Version)
+
 ## Overview
 Replace popup permission dialogs with inline conversation elements, making permission requests and responses part of the chat history. This creates a more seamless experience and better audit trail, while naturally supporting multi-player mode.
+
+## Implementation Summary (Completed)
+- ✅ Permission requests appear as inline chat messages  
+- ✅ Input area transforms into permission action buttons
+- ✅ Keyboard shortcuts implemented (Y=allow, N=deny)
+- ✅ Permission responses recorded as chat messages
+- ✅ Full styling with theme support
+- ✅ Autofocus on permission buttons
+- ✅ Clean state management for permission flow
+
+## Implemented Features
+1. **Core Functionality**
+   - ChatPermissionResponse message type added
+   - Permission requests show as warning notices in chat
+   - User responses appear as chat messages with "You:" prefix
+   - Input area dynamically transforms into Allow/Deny buttons
+
+2. **User Experience**
+   - Keyboard shortcuts: Y for Allow, N for Deny
+   - Autofocus on permission buttons when request appears
+   - Clean visual styling with theme support (light/dark/custom)
+   - Permission buttons styled consistently with existing UI
+
+3. **Technical Changes**
+   - Added `pendingPermissionRequest` to Model state
+   - Removed modal dialog in favor of inline UI
+   - WebSocket handling for permission responses
+   - Proper state cleanup after permission decisions
+
+## Features Not Yet Implemented
+- Risk level indicators
+- Permission details/context expansion
+- Multi-player attribution (who approved/denied)
+- Batch permissions
+- Permission history filtering
+- Timeout handling
+- Escape key for deny (only N key currently)
 
 ## Key Features
 

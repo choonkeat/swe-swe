@@ -907,6 +907,81 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .auto-focus-optio
     transition: color 0.3s ease;
 }
 
+.permission-notice-input {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: var(--bg-code);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Inline permission actions in input container */
+.input-container .permission-actions {
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    gap: 10px;
+    width: 100%;
+}
+
+.input-container .permission-prompt {
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 5px;
+}
+
+.input-container .permission-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.input-container .permission-button {
+    flex: 1;
+    min-width: 120px;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+}
+
+.input-container .permission-button.allow {
+    background-color: var(--permission-allow-bg);
+    color: var(--color-white);
+}
+
+.input-container .permission-button.allow:hover {
+    background-color: var(--permission-allow-hover);
+}
+
+.input-container .permission-button.deny {
+    background-color: var(--color-danger);
+    color: var(--color-white);
+}
+
+.input-container .permission-button.deny:hover {
+    background-color: var(--color-danger-dark);
+}
+
+.input-container .permission-button.allow-permanent {
+    background-color: var(--permission-permanent-bg);
+    color: var(--color-white);
+}
+
+.input-container .permission-button.allow-permanent:hover {
+    background-color: var(--permission-permanent-hover);
+}
+
 /* Dark theme permission styles */
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-dialog,
 body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-dialog,
