@@ -24,6 +24,7 @@ type Client struct {
 	processMutex sync.Mutex
 	allowedTools []string // Track allowed tools for this client
 	skipPermissions bool  // Track if user chose to skip all permissions
+	pendingToolPermission string // Track which tool is pending permission
 }
 
 // ChatItem represents either a sender or content in the chat
@@ -403,6 +404,11 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 												ToolInput: toolInfo.Input, // Include tool input details
 											})
 
+											// Track which tool is pending permission
+											client.processMutex.Lock()
+											client.pendingToolPermission = toolInfo.Name
+											client.processMutex.Unlock()
+
 											// Terminate the process by cancelling the context
 											log.Printf("[EXEC] Permission error detected, terminating process")
 											cancel()
@@ -517,14 +523,30 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 				log.Printf("[WEBSOCKET] Received permission response")
 				// Update client's allowed tools
 				client.processMutex.Lock()
+				pendingTool := client.pendingToolPermission
 				client.allowedTools = clientMsg.AllowedTools
 				client.skipPermissions = clientMsg.SkipPermissions
+				client.pendingToolPermission = "" // Clear pending tool
 				client.processMutex.Unlock()
 
-				// Send continue message
-				go func() {
-					executeAgentCommand(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
-				}()
+				// Check if the pending tool was granted permission
+				toolWasAllowed := false
+				if pendingTool != "" {
+					for _, tool := range clientMsg.AllowedTools {
+						if tool == pendingTool {
+							toolWasAllowed = true
+							break
+						}
+					}
+				}
+
+				// Only send continue if permission was granted or skip permissions is enabled
+				if toolWasAllowed || clientMsg.SkipPermissions {
+					go func() {
+						executeAgentCommand(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
+					}()
+				}
+				// If permission was denied, don't send continue - the process has already been terminated
 				continue
 			}
 
