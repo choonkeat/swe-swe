@@ -412,6 +412,11 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 											// Terminate the process by cancelling the context
 											log.Printf("[EXEC] Permission error detected, terminating process")
 											cancel()
+											
+											// Send exec end event to hide typing indicator
+											svc.BroadcastItem(ChatItem{
+												Type: "exec_end",
+											})
 											return
 										}
 									}
@@ -539,6 +544,30 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 						}
 					}
 				}
+
+				// Echo back the permission response as a user message
+				var responseText string
+				if clientMsg.SkipPermissions {
+					responseText = "YOLO"
+				} else if toolWasAllowed {
+					responseText = "y"
+				} else {
+					responseText = "n"
+				}
+
+				// Broadcast the user sender first
+				userItem := ChatItem{
+					Type:   "user",
+					Sender: "USER",
+				}
+				svc.BroadcastItem(userItem)
+
+				// Broadcast the user's response
+				contentItem := ChatItem{
+					Type:    "content",
+					Content: responseText,
+				}
+				svc.BroadcastItem(contentItem)
 
 				// Only send continue if permission was granted or skip permissions is enabled
 				if toolWasAllowed || clientMsg.SkipPermissions {

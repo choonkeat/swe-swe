@@ -22,6 +22,7 @@ testModel =
     , allowedTools = []
     , skipPermissions = False
     , permissionDialog = Nothing
+    , pendingPermissionRequest = Nothing
     }
 
 
