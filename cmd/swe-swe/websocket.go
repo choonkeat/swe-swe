@@ -571,6 +571,13 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 
 				// Only send continue if permission was granted or skip permissions is enabled
 				if toolWasAllowed || clientMsg.SkipPermissions {
+					// Send bot sender item to switch back to swe-swe
+					botSenderItem := ChatItem{
+						Type:   "bot",
+						Sender: "swe-swe",
+					}
+					svc.BroadcastItem(botSenderItem)
+					
 					go func() {
 						executeAgentCommand(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
 					}()
