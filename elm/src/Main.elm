@@ -1208,26 +1208,24 @@ view model =
         , div [ class "input-container" ]
             (case model.pendingPermissionRequest of
                 Just permissionReq ->
-                    [ div [ class "permission-actions" ]
-                        [ div [ class "permission-prompt" ]
-                            [ text ("Allow " ++ permissionReq.toolName ++ " access?") ]
-                        , div [ class "permission-buttons" ]
-                            [ button
-                                [ class "permission-button allow"
-                                , onClick AllowPermission
-                                ]
-                                [ text "✓ Allow for session (Y)" ]
-                            , button
-                                [ class "permission-button deny"
-                                , onClick DenyPermission
-                                ]
-                                [ text "✗ Deny (N)" ]
-                            , button
-                                [ class "permission-button allow-permanent"
-                                , onClick AllowPermissionPermanent
-                                ]
-                                [ text "YOLO (--dangerously-skip-permissions)" ]
+                    [ div [ class "permission-inline" ]
+                        [ span [ class "permission-prompt-inline" ]
+                            [ text ("Allow " ++ permissionReq.toolName ++ " access? ") ]
+                        , button
+                            [ class "permission-button-inline allow"
+                            , onClick AllowPermission
                             ]
+                            [ text "Y" ]
+                        , button
+                            [ class "permission-button-inline deny"
+                            , onClick DenyPermission
+                            ]
+                            [ text "N" ]
+                        , button
+                            [ class "permission-button-inline yolo"
+                            , onClick AllowPermissionPermanent
+                            ]
+                            [ text "YOLO" ]
                         ]
                     ]
 
