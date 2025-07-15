@@ -982,6 +982,60 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .auto-focus-optio
     background-color: var(--permission-permanent-hover);
 }
 
+/* Inline permission prompt - compact single line */
+.input-container .permission-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    width: 100%;
+    height: auto;
+    min-height: 40px;
+}
+
+.input-container .permission-prompt-inline {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.input-container .permission-button-inline {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.input-container .permission-button-inline.allow {
+    background-color: var(--permission-allow-bg);
+    color: var(--color-white);
+}
+
+.input-container .permission-button-inline.allow:hover {
+    background-color: var(--permission-allow-hover);
+}
+
+.input-container .permission-button-inline.deny {
+    background-color: var(--color-danger);
+    color: var(--color-white);
+}
+
+.input-container .permission-button-inline.deny:hover {
+    background-color: var(--color-danger-dark);
+}
+
+.input-container .permission-button-inline.yolo {
+    background-color: var(--permission-permanent-bg);
+    color: var(--color-white);
+}
+
+.input-container .permission-button-inline.yolo:hover {
+    background-color: var(--permission-permanent-hover);
+}
+
 /* Dark theme permission styles */
 body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-dialog,
 body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-dialog,
@@ -1018,6 +1072,16 @@ body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-actions
 body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-actions,
 body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-actions,
 body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-actions {
+    background-color: var(--color-gray-900);
+}
+
+/* Dark theme inline permission styles */
+body:has(.messages[style*="background-color: rgb(13, 17, 23)"]) .permission-inline,
+body:has(.messages[style*="background-color: rgb(30, 30, 30)"]) .permission-inline,
+body:has(.messages[style*="background-color: rgb(0, 0, 0)"]) .permission-inline,
+body:has(.messages[style*="background-color: rgb(26, 27, 38)"]) .permission-inline,
+body:has(.messages[style*="background-color: rgb(45, 45, 45)"]) .permission-inline,
+body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-inline {
     background-color: var(--color-gray-900);
 }
 
