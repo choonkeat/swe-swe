@@ -163,14 +163,8 @@ func (s *ChatService) UnregisterClient(client *Client) {
 	delete(s.clients, client)
 	s.mutex.Unlock()
 
-	// Cancel any running processes for this client
-	client.processMutex.Lock()
-	if client.cancelFunc != nil {
-		log.Printf("[WEBSOCKET] Client disconnected, cancelling any running processes")
-		client.cancelFunc()
-		client.cancelFunc = nil
-	}
-	client.processMutex.Unlock()
+	// Do not cancel running processes when client disconnects - let them continue
+	log.Printf("[WEBSOCKET] Client disconnected, but keeping processes running")
 }
 
 // BroadcastItem sends a chat item to all clients
