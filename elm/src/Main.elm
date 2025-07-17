@@ -1318,6 +1318,54 @@ permissionDialogView maybeDialog =
 
 -- Format tool input for display in permission dialog
 
+-- Render diff for Edit or MultiEdit tool
+renderDiff : String -> String -> Html Msg
+renderDiff oldString newString =
+    let
+        oldLines = String.lines oldString
+        newLines = String.lines newString
+        
+        renderLine lineType content =
+            case lineType of
+                "old" ->
+                    div [ class "diff-line diff-old" ]
+                        [ span [ class "diff-marker" ] [ text "- " ]
+                        , span [] [ text content ]
+                        ]
+                "new" ->
+                    div [ class "diff-line diff-new" ]
+                        [ span [ class "diff-marker" ] [ text "+ " ]
+                        , span [] [ text content ]
+                        ]
+                _ ->
+                    div [ class "diff-line diff-context" ]
+                        [ span [ class "diff-marker" ] [ text "  " ]
+                        , span [] [ text content ]
+                        ]
+    in
+    div [ class "diff-container" ]
+        [ div [ class "diff-header" ]
+            [ text "Changes to apply:" ]
+        , div [ class "diff-content" ]
+            (List.map (renderLine "old") oldLines ++ List.map (renderLine "new") newLines)
+        ]
+
+
+-- Render a single edit as a diff
+renderEditAsDiff : Decode.Value -> Html Msg
+renderEditAsDiff editJson =
+    case Decode.decodeValue
+        (Decode.map3 (\old new replaceAll -> { oldString = old, newString = new, replaceAll = replaceAll })
+            (Decode.field "old_string" Decode.string)
+            (Decode.field "new_string" Decode.string)
+            (Decode.oneOf [ Decode.field "replace_all" Decode.bool, Decode.succeed False ])
+        ) editJson of
+        Ok edit ->
+            renderDiff edit.oldString edit.newString
+        Err _ ->
+            pre [ style "font-size" "0.9em", style "overflow" "auto" ] 
+                [ text (Encode.encode 2 editJson) ]
+
 
 formatToolInput : String -> String -> Html Msg
 formatToolInput toolName inputJson =
@@ -1483,43 +1531,70 @@ renderMessages model items =
                         toolName =
                             Maybe.withDefault "Unknown" toolUse.name
 
-                        inputDisplay =
+                        toolElement =
                             case toolUse.input of
                                 Just input ->
-                                    -- Special handling for MultiEdit with potentially large edits array
-                                    if toolName == "MultiEdit" then
-                                        case Decode.decodeValue (Decode.field "edits" (Decode.list Decode.value)) input of
-                                            Ok edits ->
-                                                let
-                                                    editCount =
-                                                        List.length edits
-
-                                                    truncatedInput =
-                                                        case Decode.decodeValue (Decode.dict Decode.value) input of
-                                                            Ok dict ->
-                                                                Dict.insert "edits" (Encode.string ("[" ++ String.fromInt editCount ++ " edits]")) dict
-                                                                    |> Encode.dict identity identity
-                                                                    |> Encode.encode 0
-
-                                                            Err _ ->
-                                                                Encode.encode 0 input
-                                                in
-                                                truncatedInput
-
+                                    if toolName == "Edit" then
+                                        -- Handle Edit tool with diff display
+                                        case Decode.decodeValue
+                                            (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
+                                                (Decode.field "file_path" Decode.string)
+                                                (Decode.field "old_string" Decode.string)
+                                                (Decode.field "new_string" Decode.string)
+                                            ) input of
+                                            Ok edit ->
+                                                div [ class "tool-use" ]
+                                                    [ div [ class "tool-header" ] 
+                                                        [ text ("[Edit] " ++ edit.filePath) ]
+                                                    , renderDiff edit.oldString edit.newString
+                                                    ]
                                             Err _ ->
-                                                Encode.encode 0 input
-
+                                                div [ class "tool-use" ]
+                                                    [ text ("[" ++ toolName ++ "] ")
+                                                    , Html.code [] [ text (Encode.encode 0 input) ]
+                                                    ]
+                                    
+                                    else if toolName == "MultiEdit" then
+                                        -- Handle MultiEdit tool with multiple diffs
+                                        case Decode.decodeValue
+                                            (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
+                                                (Decode.field "file_path" Decode.string)
+                                                (Decode.field "edits" (Decode.list Decode.value))
+                                            ) input of
+                                            Ok multiEdit ->
+                                                let
+                                                    editElements =
+                                                        List.indexedMap 
+                                                            (\idx editJson ->
+                                                                div [ class "multi-edit-item" ]
+                                                                    [ div [ class "edit-number" ] 
+                                                                        [ text ("Edit " ++ String.fromInt (idx + 1) ++ " of " ++ String.fromInt (List.length multiEdit.edits)) ]
+                                                                    , renderEditAsDiff editJson
+                                                                    ]
+                                                            ) 
+                                                            multiEdit.edits
+                                                in
+                                                div [ class "tool-use" ]
+                                                    [ div [ class "tool-header" ] 
+                                                        [ text ("[MultiEdit] " ++ multiEdit.filePath) ]
+                                                    , div [ class "multi-edit-container" ] editElements
+                                                    ]
+                                            Err _ ->
+                                                div [ class "tool-use" ]
+                                                    [ text ("[" ++ toolName ++ "] ")
+                                                    , Html.code [] [ text (Encode.encode 0 input) ]
+                                                    ]
+                                    
                                     else
-                                        Encode.encode 0 input
-
+                                        -- Other tools show JSON
+                                        div [ class "tool-use" ]
+                                            [ text ("[" ++ toolName ++ "] ")
+                                            , Html.code [] [ text (Encode.encode 0 input) ]
+                                            ]
+                                
                                 Nothing ->
-                                    ""
-
-                        toolElement =
-                            div [ class "tool-use" ]
-                                [ text ("[" ++ toolName ++ "] ")
-                                , Html.code [] [ text inputDisplay ]
-                                ]
+                                    div [ class "tool-use" ]
+                                        [ text ("[" ++ toolName ++ "]") ]
                     in
                     { state
                         | accumulatedContent = ""
@@ -1552,49 +1627,88 @@ renderMessages model items =
                         toolName =
                             Maybe.withDefault "Unknown" toolUse.name
 
-                        inputDisplay =
+                        toolElement =
                             case toolUse.input of
                                 Just input ->
-                                    -- Special handling for MultiEdit with potentially large edits array
-                                    if toolName == "MultiEdit" then
-                                        case Decode.decodeValue (Decode.field "edits" (Decode.list Decode.value)) input of
-                                            Ok edits ->
-                                                let
-                                                    editCount =
-                                                        List.length edits
-
-                                                    truncatedInput =
-                                                        case Decode.decodeValue (Decode.dict Decode.value) input of
-                                                            Ok dict ->
-                                                                Dict.insert "edits" (Encode.string ("[" ++ String.fromInt editCount ++ " edits]")) dict
-                                                                    |> Encode.dict identity identity
-                                                                    |> Encode.encode 0
-
-                                                            Err _ ->
-                                                                Encode.encode 0 input
-                                                in
-                                                truncatedInput
-
+                                    if toolName == "Edit" then
+                                        -- Handle Edit tool with diff display
+                                        case Decode.decodeValue
+                                            (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
+                                                (Decode.field "file_path" Decode.string)
+                                                (Decode.field "old_string" Decode.string)
+                                                (Decode.field "new_string" Decode.string)
+                                            ) input of
+                                            Ok edit ->
+                                                details [ class "tool-result" ]
+                                                    [ summary []
+                                                        [ text ("[Edit] " ++ edit.filePath) ]
+                                                    , div [ class "tool-result-content" ]
+                                                        [ renderDiff edit.oldString edit.newString
+                                                        , div [ class "result-separator" ] [ text "Result:" ]
+                                                        , div [] (ansiToElmHtml result)
+                                                        ]
+                                                    ]
                                             Err _ ->
-                                                Encode.encode 0 input
-
+                                                details [ class "tool-result" ]
+                                                    [ summary []
+                                                        [ text ("[" ++ toolName ++ "] ")
+                                                        , Html.code [] [ text (Encode.encode 0 input) ]
+                                                        ]
+                                                    , div [ class "tool-result-content" ] (ansiToElmHtml result)
+                                                    ]
+                                    
+                                    else if toolName == "MultiEdit" then
+                                        -- Handle MultiEdit tool with multiple diffs
+                                        case Decode.decodeValue
+                                            (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
+                                                (Decode.field "file_path" Decode.string)
+                                                (Decode.field "edits" (Decode.list Decode.value))
+                                            ) input of
+                                            Ok multiEdit ->
+                                                details [ class "tool-result" ]
+                                                    [ summary []
+                                                        [ text ("[MultiEdit] " ++ multiEdit.filePath ++ " (" ++ String.fromInt (List.length multiEdit.edits) ++ " edits)") ]
+                                                    , div [ class "tool-result-content" ]
+                                                        [ div [ class "multi-edit-container" ]
+                                                            (List.indexedMap 
+                                                                (\idx editJson ->
+                                                                    div [ class "multi-edit-item" ]
+                                                                        [ div [ class "edit-number" ] 
+                                                                            [ text ("Edit " ++ String.fromInt (idx + 1) ++ " of " ++ String.fromInt (List.length multiEdit.edits)) ]
+                                                                        , renderEditAsDiff editJson
+                                                                        ]
+                                                                ) 
+                                                                multiEdit.edits
+                                                            )
+                                                        , div [ class "result-separator" ] [ text "Result:" ]
+                                                        , div [] (ansiToElmHtml result)
+                                                        ]
+                                                    ]
+                                            Err _ ->
+                                                details [ class "tool-result" ]
+                                                    [ summary []
+                                                        [ text ("[" ++ toolName ++ "] ")
+                                                        , Html.code [] [ text (Encode.encode 0 input) ]
+                                                        ]
+                                                    , div [ class "tool-result-content" ] (ansiToElmHtml result)
+                                                    ]
+                                    
                                     else
-                                        Encode.encode 0 input
-
+                                        -- Other tools show JSON
+                                        details [ class "tool-result" ]
+                                            [ summary []
+                                                [ text ("[" ++ toolName ++ "] ")
+                                                , Html.code [] [ text (Encode.encode 0 input) ]
+                                                ]
+                                            , div [ class "tool-result-content" ] (ansiToElmHtml result)
+                                            ]
+                                
                                 Nothing ->
-                                    ""
-
-                        summaryContent =
-                            "[" ++ toolName ++ "] "
-
-                        toolElement =
-                            details [ class "tool-result" ]
-                                [ summary []
-                                    [ text summaryContent
-                                    , Html.code [] [ text inputDisplay ]
-                                    ]
-                                , div [ class "tool-result-content" ] (ansiToElmHtml result)
-                                ]
+                                    details [ class "tool-result" ]
+                                        [ summary []
+                                            [ text ("[" ++ toolName ++ "]") ]
+                                        , div [ class "tool-result-content" ] (ansiToElmHtml result)
+                                        ]
                     in
                     { state
                         | accumulatedContent = ""
