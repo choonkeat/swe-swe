@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alvinchoong/go-httphandler"
+	"github.com/creack/pty"
 	"golang.org/x/net/websocket"
 )
 
@@ -263,23 +266,88 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		cmd = exec.CommandContext(ctx, cmdArgs[0])
 	}
 
-	// Create stdin pipe
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		log.Printf("[ERROR] Failed to create stdin pipe: %v", err)
+	// Check if this is the goose command
+	isGooseCommand := len(cmdArgs) > 0 && cmdArgs[0] == "goose"
+
+	var stdin io.WriteCloser
+	var stdout io.ReadCloser
+	var stderr io.ReadCloser
+	var ptmx *os.File
+	var err error
+
+	if isGooseCommand {
+		// Use PTY for goose command
+		ptmx, err = pty.Start(cmd)
+		if err != nil {
+			log.Printf("[ERROR] Failed to start PTY: %v", err)
+			svc.BroadcastItem(ChatItem{
+				Type:    "content",
+				Content: "Error starting PTY: " + err.Error(),
+			})
+			return
+		}
+		defer func() {
+			_ = ptmx.Close()
+		}()
+
+		// Set terminal size (optional)
+		pty.Setsize(ptmx, &pty.Winsize{
+			Rows: 24,
+			Cols: 80,
+		})
+
+		stdin = ptmx
+		stdout = ptmx
+		// PTY combines stdout and stderr
+	} else {
+		// Use regular pipes for non-goose commands
+		// Create stdin pipe
+		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			log.Printf("[ERROR] Failed to create stdin pipe: %v", err)
+		}
+
+		// Get stdout pipe
+		stdout, err = cmd.StdoutPipe()
+		if err != nil {
+			log.Printf("[ERROR] Failed to create stdout pipe: %v", err)
+			svc.BroadcastItem(ChatItem{
+				Type:    "content",
+				Content: "Error creating command pipe: " + err.Error(),
+			})
+			return
+		}
+
+		// Get stderr pipe
+		stderr, err = cmd.StderrPipe()
+		if err != nil {
+			log.Printf("[ERROR] Failed to create stderr pipe: %v", err)
+		}
+
+		// Start the command
+		if err := cmd.Start(); err != nil {
+			log.Printf("[ERROR] Failed to start command: %v", err)
+			svc.BroadcastItem(ChatItem{
+				Type:    "content",
+				Content: "Error starting agent command: " + err.Error(),
+			})
+			return
+		}
 	}
 
-	// If no placeholder, write prompt to stdin
+	// Handle stdin writing
 	if stdin != nil && !hasPlaceholder {
 		go func() {
-			defer stdin.Close()
+			if !isGooseCommand {
+				defer stdin.Close()
+			}
 			_, err := stdin.Write([]byte(prompt + "\n"))
 			if err != nil {
 				log.Printf("[ERROR] Failed to write to stdin: %v", err)
 			}
 			log.Printf("[EXEC] Wrote prompt to stdin")
 		}()
-	} else if stdin != nil {
+	} else if stdin != nil && !isGooseCommand {
 		if svc.deferStdinClose {
 			// Defer closing stdin (for goose)
 			defer stdin.Close()
@@ -289,33 +357,6 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		}
 	}
 
-	// Get stdout pipe
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Printf("[ERROR] Failed to create stdout pipe: %v", err)
-		svc.BroadcastItem(ChatItem{
-			Type:    "content",
-			Content: "Error creating command pipe: " + err.Error(),
-		})
-		return
-	}
-
-	// Get stderr pipe
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		log.Printf("[ERROR] Failed to create stderr pipe: %v", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		log.Printf("[ERROR] Failed to start command: %v", err)
-		svc.BroadcastItem(ChatItem{
-			Type:    "content",
-			Content: "Error starting agent command: " + err.Error(),
-		})
-		return
-	}
-
 	log.Printf("[EXEC] Process started with PID: %d", cmd.Process.Pid)
 
 	// Send exec start event
@@ -323,7 +364,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		Type: "exec_start",
 	})
 
-	// Handle stderr in a separate goroutine
+	// Handle stderr in a separate goroutine (only for non-PTY commands)
 	if stderr != nil {
 		go func() {
 			scanner := bufio.NewScanner(stderr)
@@ -335,6 +376,14 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 				log.Printf("[ERROR] Error reading stderr: %v", err)
 			}
 		}()
+	}
+
+	// For goose command, monitor output for the prompt in the first 5 seconds
+	var promptDetected bool
+	var promptTimer *time.Timer
+	if isGooseCommand {
+		promptTimer = time.NewTimer(5 * time.Second)
+		defer promptTimer.Stop()
 	}
 
 	// Stream the output line by line
@@ -357,6 +406,24 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			line := scanner.Text()
 			if line != "" {
 				log.Printf("[STDOUT] %s", line)
+
+				// Check for goose prompt in the first 5 seconds
+				if isGooseCommand && !promptDetected && promptTimer != nil {
+					select {
+					case <-promptTimer.C:
+						// Timer expired, stop checking for prompt
+						promptDetected = true
+					default:
+						if strings.Contains(line, "Do you want to switch back to the original working directory?") {
+							log.Printf("[EXEC] Detected goose prompt, sending 'n'")
+							promptDetected = true
+							// Send "n" to the PTY
+							if _, err := stdin.Write([]byte("n\n")); err != nil {
+								log.Printf("[ERROR] Failed to send 'n' to goose: %v", err)
+							}
+						}
+					}
+				}
 
 				// Handle JSON output if enabled
 				if svc.jsonOutput {
@@ -406,7 +473,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 											// Terminate the process by cancelling the context
 											log.Printf("[EXEC] Permission error detected, terminating process")
 											cancel()
-											
+
 											// Send exec end event to hide typing indicator
 											svc.BroadcastItem(ChatItem{
 												Type: "exec_end",
@@ -571,7 +638,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 						Sender: "swe-swe",
 					}
 					svc.BroadcastItem(botSenderItem)
-					
+
 					go func() {
 						executeAgentCommand(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
 					}()
