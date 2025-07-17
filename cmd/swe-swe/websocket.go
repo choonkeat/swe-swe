@@ -246,10 +246,8 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			// Find position to insert the flag (after claude command)
 			cmdArgs = append([]string{cmdArgs[0], "--dangerously-skip-permissions"}, cmdArgs[1:]...)
 		} else if len(allowedTools) > 0 {
-			// Add allowed tools if any are specified
-			for _, tool := range allowedTools {
-				cmdArgs = append(cmdArgs, "--allowedTools", tool)
-			}
+			// Add allowed tools as a comma-separated list
+			cmdArgs = append(cmdArgs, "--allowedTools", strings.Join(allowedTools, ","))
 		}
 	}
 
