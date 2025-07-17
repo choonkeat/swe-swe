@@ -1156,3 +1156,113 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 .messages[style*="background-color: rgb(26, 27, 38)"] ~ .permission-overlay .permission-header {
     background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
 }
+
+/* Diff Display Styles */
+.diff-container {
+    margin: 8px 0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85em;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.diff-header {
+    background-color: var(--bg-surface-alt);
+    padding: 6px 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.diff-content {
+    background-color: var(--bg-code);
+    padding: 8px 0;
+    overflow-x: auto;
+}
+
+.diff-line {
+    padding: 2px 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.diff-line.diff-old {
+    background-color: rgba(255, 0, 0, 0.1);
+    color: #ff6b6b;
+}
+
+.diff-line.diff-new {
+    background-color: rgba(0, 255, 0, 0.1);
+    color: #51cf66;
+}
+
+.diff-line.diff-context {
+    color: var(--text-tertiary);
+}
+
+.diff-marker {
+    display: inline-block;
+    width: 20px;
+    text-align: center;
+    font-weight: bold;
+    user-select: none;
+}
+
+/* Tool use header styling */
+.tool-header {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+}
+
+/* Multi-edit container */
+.multi-edit-container {
+    margin-top: 8px;
+}
+
+.multi-edit-item {
+    margin-bottom: 16px;
+    padding: 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    background-color: var(--bg-surface);
+}
+
+.edit-number {
+    font-size: 0.85em;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.result-separator {
+    margin: 16px 0 8px 0;
+    padding: 8px 12px;
+    background-color: var(--bg-surface-alt);
+    border-top: 1px solid var(--border-light);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+/* Dark theme adjustments for diffs */
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-old,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-old,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-old,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-old,
+.messages[style*="background-color: rgb(45, 45, 45)"] .diff-line.diff-old,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-old {
+    background-color: rgba(255, 60, 60, 0.15);
+    color: #ff8787;
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-new,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-new,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-new,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-new,
+.messages[style*="background-color: rgb(45, 45, 45)"] .diff-line.diff-new,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-new {
+    background-color: rgba(60, 255, 60, 0.15);
+    color: #6bcf7f;
+}
