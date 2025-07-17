@@ -1,5 +1,7 @@
 github.com/alvinchoong/go-httphandler v0.3.0 h1:gSkgEk9HRHQwG/Mqe8OUc2oKGyaV832gjYGEIolGgUU=
 github.com/alvinchoong/go-httphandler v0.3.0/go.mod h1:DeiAAXTJSf8BW/PBEzfzJZAlqakkwrYHnZCHC5JtIaY=
+github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
+github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 golang.org/x/net v0.41.0 h1:vBTly1HeNPEn3wtREYfy4GZ/NECgw2Cnl+nK6Nz3uvw=
 golang.org/x/net v0.41.0/go.mod h1:B/K4NNqkfmg07DQYrbwvSluqCJOOXwUjeb/5lOisjbA=
 golang.org/x/sync v0.15.0 h1:KWH3jNZsfyT6xfAfKiz6MRNmd46ByHDYaZ7KSkCtdW8=
