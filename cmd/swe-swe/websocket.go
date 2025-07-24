@@ -366,6 +366,10 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 	if stderr != nil {
 		go func() {
 			scanner := bufio.NewScanner(stderr)
+			// Increase scanner buffer size to handle large lines (default is 64KB)
+			const maxScanTokenSize = 1024 * 1024 // 1MB
+			buf := make([]byte, 0, 64*1024)       // Start with 64KB buffer
+			scanner.Buffer(buf, maxScanTokenSize)
 			for scanner.Scan() {
 				line := scanner.Text()
 				log.Printf("[STDERR] %s", line)
@@ -386,6 +390,10 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 
 	// Stream the output line by line
 	scanner := bufio.NewScanner(stdout)
+	// Increase scanner buffer size to handle large lines (default is 64KB)
+	const maxScanTokenSize = 1024 * 1024 // 1MB
+	buf := make([]byte, 0, 64*1024)       // Start with 64KB buffer
+	scanner.Buffer(buf, maxScanTokenSize)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
