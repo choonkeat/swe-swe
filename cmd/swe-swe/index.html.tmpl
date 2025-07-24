@@ -15,6 +15,9 @@
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 return 'dark';
             }
+        // Read saved user theme preference from localStorage (defaults to 'system')
+        const savedUserTheme = localStorage.getItem('theme') || 'system';
+
             return 'light';
         }
 
@@ -26,6 +29,8 @@
             }
         });
 
+        // Read saved user theme preference from localStorage (defaults to 'system')
+        const savedUserTheme = localStorage.getItem('theme') || 'system';
         // Listen for OS theme changes
         if (window.matchMedia) {
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {

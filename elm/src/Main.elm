@@ -40,6 +40,7 @@ port connectionStatusReceiver : (Bool -> msg) -> Sub msg
 
 
 port systemThemeChanged : (String -> msg) -> Sub msg
+port persistUserTheme : String -> Cmd msg
 
 
 port focusMessageInput : () -> Cmd msg

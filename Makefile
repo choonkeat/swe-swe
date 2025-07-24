@@ -24,7 +24,7 @@ format-elm:
 	cd elm && echo y | elm-format src/
 
 SWEE_SWE_FLAGS=
-run: build
+run:
 	./bin/swe-swe $(SWE_SWE_FLAGS)
 
 clean:
