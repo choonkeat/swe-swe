@@ -146,6 +146,17 @@ suite =
                             ]
                     in
                     result |> Expect.equal expected
+            , test "debug dim ANSI without newlines" <|
+                \_ ->
+                    let
+                        input = "\u{001B}[2mfirst line\u{001B}[0m"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ span [style "color" "rgb(128,128,128)"] [text "first line"]
+                            ]
+                    in
+                    result |> Expect.equal expected
+                        
             , test "simple ANSI with newlines" <|
                 \_ ->
                     let
@@ -417,6 +428,17 @@ suite =
                         expected = div []
                             [ text "text "
                             , text " more text"
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "debug malformed RGB" <|
+                \_ ->
+                    let
+                        input = "\u{001B}[38;2;255mtest"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ text "test"
                             ]
                     in
                     result |> Expect.equal expected
