@@ -146,6 +146,54 @@ suite =
                             ]
                     in
                     result |> Expect.equal expected
+            , test "simple ANSI with newlines" <|
+                \_ ->
+                    let
+                        input = "\u{001B}[2mfirst line\u{001B}[0m\nsecond line\n"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ span [style "color" "rgb(128,128,128)"] [text "first line"]
+                            , br [] []
+                            , text "second line"
+                            , br [] []
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "handles accumulated content with ANSI and newlines (debug issue)" <|
+                \_ ->
+                    let
+                        -- This simulates the exact accumulated content from the debug logs
+                        input = "\u{001B}[2mstarting session |\u{001B}[0m \u{001B}[2mprovider:\u{001B}[0m \u{001B}[36m\u{001B}[2mopenai\u{001B}[0m \u{001B}[2mmodel:\u{001B}[0m \u{001B}[36m\u{001B}[2mo4-mini\u{001B}[0m\n    \u{001B}[2mlogging to\u{001B}[0m \u{001B}[36m\u{001B}[2m/Users/choonkeatchew/.local/share/goose/sessions/20250727_224736.jsonl\u{001B}[0m\n    \u{001B}[2mworking directory:\u{001B}[0m \u{001B}[36m\u{001B}[2m/Users/choonkeatchew/git/choonkeat/swe-swe\u{001B}[0m\n─── shell | \u{001B}[35m\u{001B}[2mdeveloper\u{001B}[0m ──────────────────────────\n"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ span [style "color" "rgb(128,128,128)"] [text "starting session |"]
+                            , text " "
+                            , span [style "color" "rgb(128,128,128)"] [text "provider:"]
+                            , text " "
+                            , span [style "color" "rgb(51,187,200)", style "color" "rgb(128,128,128)"] [text "openai"]
+                            , text " "
+                            , span [style "color" "rgb(128,128,128)"] [text "model:"]
+                            , text " "
+                            , span [style "color" "rgb(51,187,200)", style "color" "rgb(128,128,128)"] [text "o4-mini"]
+                            , br [] []
+                            , text "    "
+                            , span [style "color" "rgb(128,128,128)"] [text "logging to"]
+                            , text " "
+                            , span [style "color" "rgb(51,187,200)", style "color" "rgb(128,128,128)"] [text "/Users/choonkeatchew/.local/share/goose/sessions/20250727_224736.jsonl"]
+                            , br [] []
+                            , text "    "
+                            , span [style "color" "rgb(128,128,128)"] [text "working directory:"]
+                            , text " "
+                            , span [style "color" "rgb(51,187,200)", style "color" "rgb(128,128,128)"] [text "/Users/choonkeatchew/git/choonkeat/swe-swe"]
+                            , br [] []
+                            , text "─── shell | "
+                            , span [style "color" "rgb(211,56,211)", style "color" "rgb(128,128,128)"] [text "developer"]
+                            , text " ──────────────────────────"
+                            , br [] []
+                            ]
+                    in
+                    result |> Expect.equal expected
             ]
 
         , describe "RGB color support (24-bit)"
