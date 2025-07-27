@@ -10,13 +10,14 @@
     <div id="elm-app"></div>
     <script src="{{.PrefixPath}}/js/app.{{.JSHash}}.js"></script>
     <script>
+        // Read saved user theme preference from localStorage (defaults to 'system')
+        const savedUserTheme = localStorage.getItem('theme') || 'system';
+
         // Detect OS theme preference
         function getSystemTheme() {
             if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 return 'dark';
             }
-        // Read saved user theme preference from localStorage (defaults to 'system')
-        const savedUserTheme = localStorage.getItem('theme') || 'system';
 
             return 'light';
         }
@@ -25,12 +26,11 @@
         const app = Elm.Main.init({
             node: document.getElementById('elm-app'),
             flags: {
+                savedUserTheme: savedUserTheme,
                 systemTheme: getSystemTheme()
             }
         });
 
-        // Read saved user theme preference from localStorage (defaults to 'system')
-        const savedUserTheme = localStorage.getItem('theme') || 'system';
         // Listen for OS theme changes
         if (window.matchMedia) {
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
@@ -40,6 +40,11 @@
                 }
             });
         }
+
+        // Listen for theme persistence requests from Elm
+        app.ports.persistUserTheme.subscribe(function(theme) {
+            localStorage.setItem('theme', theme);
+        });
 
         // WebSocket connection management with auto-reconnect
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

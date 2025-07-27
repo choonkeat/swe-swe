@@ -16,11 +16,10 @@ import Ansi exposing (ansiToElmHtml, ansiToHtml)
 import Browser
 import Dict exposing (Dict)
 import Html exposing (Html, button, details, div, h1, h3, input, label, option, p, pre, select, span, summary, text, textarea)
-import Html.Attributes exposing (checked, class, disabled, placeholder, selected, style, type_, value)
+import Html.Attributes exposing (autofocus, checked, class, disabled, placeholder, selected, style, type_, value)
 import Html.Events exposing (keyCode, on, onClick, onInput, targetValue)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Html.Attributes exposing (autofocus)
 
 
 
@@ -40,6 +39,8 @@ port connectionStatusReceiver : (Bool -> msg) -> Sub msg
 
 
 port systemThemeChanged : (String -> msg) -> Sub msg
+
+
 port persistUserTheme : String -> Cmd msg
 
 
@@ -52,6 +53,7 @@ port focusMessageInput : () -> Cmd msg
 
 type alias Flags =
     { systemTheme : String
+    , savedUserTheme : String
     }
 
 
@@ -193,7 +195,7 @@ init flags =
     ( { input = ""
       , messages = []
       , currentSender = Nothing
-      , theme = System
+      , theme = stringToTheme flags.savedUserTheme
       , isConnected = False
       , systemTheme = initialTheme
       , isTyping = False
@@ -336,6 +338,7 @@ update msg model =
                                 focusCmd =
                                     if model.isTyping then
                                         focusMessageInput ()
+
                                     else
                                         Cmd.none
                             in
@@ -383,17 +386,19 @@ update msg model =
                 newTheme =
                     stringToTheme themeString
             in
-            ( { model | theme = newTheme }, Cmd.none )
+            ( { model | theme = newTheme }, persistUserTheme (themeToString newTheme) )
 
         KeyDown key shiftKey metaKey ->
             case model.pendingPermissionRequest of
                 Just _ ->
                     -- Handle keyboard shortcuts for permission responses
                     case key of
-                        89 -> -- 'Y' key
+                        89 ->
+                            -- 'Y' key
                             update AllowPermission model
 
-                        78 -> -- 'N' key
+                        78 ->
+                            -- 'N' key
                             update DenyPermission model
 
                         _ ->
@@ -571,7 +576,6 @@ update msg model =
             ( { model | permissionDialog = Nothing, skipPermissions = True }
             , sendMessage responseMessage
             )
-
 
 
 
@@ -787,9 +791,13 @@ encodeChatItem chatItem =
                 [ ( "type", Encode.string "permission_request" )
                 , ( "sender", Encode.string toolName )
                 , ( "content", Encode.string errorMessage )
-                , ( "toolInput", case toolInput of
-                    Just input -> Encode.string input
-                    Nothing -> Encode.null
+                , ( "toolInput"
+                  , case toolInput of
+                        Just input ->
+                            Encode.string input
+
+                        Nothing ->
+                            Encode.null
                   )
                 ]
 
@@ -1124,137 +1132,137 @@ view model =
     div []
         [ div [ class "chat-container" ]
             [ div [ class "header" ]
-            [ div [ class "title-container" ]
-                [ h1 [] [ text "swe-swe" ]
-                , div
-                    [ class "connection-status"
-                    , class
-                        (if model.isConnected then
-                            "connected"
-
-                         else
-                            "disconnected"
-                        )
-                    ]
-                    []
-                , if model.isConnected then
-                    text "connected"
-
-                  else
-                    text "disconnected"
-                ]
-            , div [ class "theme-selector" ]
-                [ text "Theme: "
-                , select
-                    [ class "theme-dropdown"
-                    , on "change" (Decode.map ThemeChanged targetValue)
-                    ]
-                    [ option
-                        [ value "system"
-                        , selected (model.theme == System)
-                        ]
-                        [ text "System Default" ]
-                    , option
-                        [ value "dark"
-                        , selected (model.theme == DarkTerminal)
-                        ]
-                        [ text "Dark Terminal" ]
-                    , option
-                        [ value "classic"
-                        , selected (model.theme == ClassicTerminal)
-                        ]
-                        [ text "Classic Terminal" ]
-                    , option
-                        [ value "soft"
-                        , selected (model.theme == SoftDark)
-                        ]
-                        [ text "Soft Dark" ]
-                    , option
-                        [ value "light"
-                        , selected (model.theme == LightModern)
-                        ]
-                        [ text "Light Modern" ]
-                    , option
-                        [ value "solarized"
-                        , selected (model.theme == Solarized)
-                        ]
-                        [ text "Solarized" ]
-                    ]
-                ]
-            ]
-        , div
-            ([ class "messages" ]
-                ++ List.map (\( k, v ) -> style k v) (themeToStyles (getEffectiveTheme model))
-            )
-            (renderMessages model model.messages
-                ++ (if model.isTyping then
-                        [ div [ class "typing-indicator" ]
-                            [ div [ class "typing-dots" ]
-                                [ div [ class "typing-dot" ] []
-                                , div [ class "typing-dot" ] []
-                                , div [ class "typing-dot" ] []
-                                ]
-                            , span
-                                [ class "stop-button"
-                                , onClick StopExecution
-                                ]
-                                [ text "Stop" ]
-                            ]
-                        ]
-
-                    else
-                        []
-                   )
-            )
-        , div [ class "input-container" ]
-            (case model.pendingPermissionRequest of
-                Just permissionReq ->
-                    [ div [ class "permission-inline" ]
-                        [ span [ class "permission-prompt-inline" ]
-                            [ text ("Allow " ++ permissionReq.toolName ++ " access? ") ]
-                        , button
-                            [ class "permission-button-inline allow"
-                            , onClick AllowPermission
-                            ]
-                            [ text "Y" ]
-                        , button
-                            [ class "permission-button-inline deny"
-                            , onClick DenyPermission
-                            ]
-                            [ text "N" ]
-                        , button
-                            [ class "permission-button-inline yolo"
-                            , onClick AllowPermissionPermanent
-                            ]
-                            [ text "YOLO" ]
-                        ]
-                    ]
-
-                Nothing ->
-                    [ textarea
-                        [ class "message-input"
-                        , placeholder "Type a message... (Enter to send, Shift+Enter for new line)"
-                        , value model.input
-                        , onInput Input
-                        , onKeyDown KeyDown
-                        , autofocus True
-                        ]
-                        []
-                    , button
-                        [ class "send-button"
-                        , onClick Send
-                        , disabled (String.trim model.input == "" || not model.isConnected)
-                        ]
-                        [ text
+                [ div [ class "title-container" ]
+                    [ h1 [] [ text "swe-swe" ]
+                    , div
+                        [ class "connection-status"
+                        , class
                             (if model.isConnected then
-                                "Send"
+                                "connected"
 
                              else
-                                "Offline"
+                                "disconnected"
                             )
                         ]
+                        []
+                    , if model.isConnected then
+                        text "connected"
+
+                      else
+                        text "disconnected"
                     ]
-            )
+                , div [ class "theme-selector" ]
+                    [ text "Theme: "
+                    , select
+                        [ class "theme-dropdown"
+                        , on "change" (Decode.map ThemeChanged targetValue)
+                        ]
+                        [ option
+                            [ value "system"
+                            , selected (model.theme == System)
+                            ]
+                            [ text "System Default" ]
+                        , option
+                            [ value "dark"
+                            , selected (model.theme == DarkTerminal)
+                            ]
+                            [ text "Dark Terminal" ]
+                        , option
+                            [ value "classic"
+                            , selected (model.theme == ClassicTerminal)
+                            ]
+                            [ text "Classic Terminal" ]
+                        , option
+                            [ value "soft"
+                            , selected (model.theme == SoftDark)
+                            ]
+                            [ text "Soft Dark" ]
+                        , option
+                            [ value "light"
+                            , selected (model.theme == LightModern)
+                            ]
+                            [ text "Light Modern" ]
+                        , option
+                            [ value "solarized"
+                            , selected (model.theme == Solarized)
+                            ]
+                            [ text "Solarized" ]
+                        ]
+                    ]
+                ]
+            , div
+                ([ class "messages" ]
+                    ++ List.map (\( k, v ) -> style k v) (themeToStyles (getEffectiveTheme model))
+                )
+                (renderMessages model model.messages
+                    ++ (if model.isTyping then
+                            [ div [ class "typing-indicator" ]
+                                [ div [ class "typing-dots" ]
+                                    [ div [ class "typing-dot" ] []
+                                    , div [ class "typing-dot" ] []
+                                    , div [ class "typing-dot" ] []
+                                    ]
+                                , span
+                                    [ class "stop-button"
+                                    , onClick StopExecution
+                                    ]
+                                    [ text "Stop" ]
+                                ]
+                            ]
+
+                        else
+                            []
+                       )
+                )
+            , div [ class "input-container" ]
+                (case model.pendingPermissionRequest of
+                    Just permissionReq ->
+                        [ div [ class "permission-inline" ]
+                            [ span [ class "permission-prompt-inline" ]
+                                [ text ("Allow " ++ permissionReq.toolName ++ " access? ") ]
+                            , button
+                                [ class "permission-button-inline allow"
+                                , onClick AllowPermission
+                                ]
+                                [ text "Y" ]
+                            , button
+                                [ class "permission-button-inline deny"
+                                , onClick DenyPermission
+                                ]
+                                [ text "N" ]
+                            , button
+                                [ class "permission-button-inline yolo"
+                                , onClick AllowPermissionPermanent
+                                ]
+                                [ text "YOLO" ]
+                            ]
+                        ]
+
+                    Nothing ->
+                        [ textarea
+                            [ class "message-input"
+                            , placeholder "Type a message... (Enter to send, Shift+Enter for new line)"
+                            , value model.input
+                            , onInput Input
+                            , onKeyDown KeyDown
+                            , autofocus True
+                            ]
+                            []
+                        , button
+                            [ class "send-button"
+                            , onClick Send
+                            , disabled (String.trim model.input == "" || not model.isConnected)
+                            ]
+                            [ text
+                                (if model.isConnected then
+                                    "Send"
+
+                                 else
+                                    "Offline"
+                                )
+                            ]
+                        ]
+                )
             ]
         , permissionDialogView model.permissionDialog
         ]
@@ -1283,6 +1291,7 @@ permissionDialogView maybeDialog =
                                         [ formatToolInput dialog.toolName input
                                         ]
                                     ]
+
                             Nothing ->
                                 text ""
                         , div [ class "permission-error" ]
@@ -1317,15 +1326,20 @@ permissionDialogView maybeDialog =
             text ""
 
 
--- Format tool input for display in permission dialog
 
+-- Format tool input for display in permission dialog
 -- Render diff for Edit or MultiEdit tool
+
+
 renderDiff : String -> String -> Html Msg
 renderDiff oldString newString =
     let
-        oldLines = String.lines oldString
-        newLines = String.lines newString
-        
+        oldLines =
+            String.lines oldString
+
+        newLines =
+            String.lines newString
+
         renderLine lineType content =
             case lineType of
                 "old" ->
@@ -1333,11 +1347,13 @@ renderDiff oldString newString =
                         [ span [ class "diff-marker" ] [ text "- " ]
                         , span [] [ text content ]
                         ]
+
                 "new" ->
                     div [ class "diff-line diff-new" ]
                         [ span [ class "diff-marker" ] [ text "+ " ]
                         , span [] [ text content ]
                         ]
+
                 _ ->
                     div [ class "diff-line diff-context" ]
                         [ span [ class "diff-marker" ] [ text "  " ]
@@ -1352,19 +1368,26 @@ renderDiff oldString newString =
         ]
 
 
+
 -- Render a single edit as a diff
+
+
 renderEditAsDiff : Decode.Value -> Html Msg
 renderEditAsDiff editJson =
-    case Decode.decodeValue
-        (Decode.map3 (\old new replaceAll -> { oldString = old, newString = new, replaceAll = replaceAll })
-            (Decode.field "old_string" Decode.string)
-            (Decode.field "new_string" Decode.string)
-            (Decode.oneOf [ Decode.field "replace_all" Decode.bool, Decode.succeed False ])
-        ) editJson of
+    case
+        Decode.decodeValue
+            (Decode.map3 (\old new replaceAll -> { oldString = old, newString = new, replaceAll = replaceAll })
+                (Decode.field "old_string" Decode.string)
+                (Decode.field "new_string" Decode.string)
+                (Decode.oneOf [ Decode.field "replace_all" Decode.bool, Decode.succeed False ])
+            )
+            editJson
+    of
         Ok edit ->
             renderDiff edit.oldString edit.newString
+
         Err _ ->
-            pre [ style "font-size" "0.9em", style "overflow" "auto" ] 
+            pre [ style "font-size" "0.9em", style "overflow" "auto" ]
                 [ text (Encode.encode 2 editJson) ]
 
 
@@ -1379,16 +1402,20 @@ formatToolInput toolName inputJson =
                             div []
                                 [ p [ style "margin" "0.25rem 0" ] [ text ("Command: " ++ command) ]
                                 ]
+
                         Err _ ->
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
                 "Edit" ->
-                    case Decode.decodeString
-                        (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
-                            (Decode.field "file_path" Decode.string)
-                            (Decode.field "old_string" Decode.string)
-                            (Decode.field "new_string" Decode.string)
-                        ) inputJson of
+                    case
+                        Decode.decodeString
+                            (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
+                                (Decode.field "file_path" Decode.string)
+                                (Decode.field "old_string" Decode.string)
+                                (Decode.field "new_string" Decode.string)
+                            )
+                            inputJson
+                    of
                         Ok edit ->
                             div []
                                 [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ edit.filePath) ]
@@ -1397,13 +1424,32 @@ formatToolInput toolName inputJson =
                                     , div [ style "margin-top" "0.5rem" ]
                                         [ p [ style "font-weight" "bold" ] [ text "Replace:" ]
                                         , pre [ style "background-color" "#ffeeee", style "padding" "0.5rem", style "overflow" "auto" ]
-                                            [ text (String.left 200 edit.oldString ++ if String.length edit.oldString > 200 then "..." else "") ]
+                                            [ text
+                                                (String.left 200 edit.oldString
+                                                    ++ (if String.length edit.oldString > 200 then
+                                                            "..."
+
+                                                        else
+                                                            ""
+                                                       )
+                                                )
+                                            ]
                                         , p [ style "font-weight" "bold", style "margin-top" "0.5rem" ] [ text "With:" ]
                                         , pre [ style "background-color" "#eeffee", style "padding" "0.5rem", style "overflow" "auto" ]
-                                            [ text (String.left 200 edit.newString ++ if String.length edit.newString > 200 then "..." else "") ]
+                                            [ text
+                                                (String.left 200 edit.newString
+                                                    ++ (if String.length edit.newString > 200 then
+                                                            "..."
+
+                                                        else
+                                                            ""
+                                                       )
+                                                )
+                                            ]
                                         ]
                                     ]
                                 ]
+
                         Err _ ->
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
@@ -1413,6 +1459,7 @@ formatToolInput toolName inputJson =
                             div []
                                 [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ filePath) ]
                                 ]
+
                         Err _ ->
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
@@ -1422,20 +1469,25 @@ formatToolInput toolName inputJson =
                             div []
                                 [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ filePath) ]
                                 ]
+
                         Err _ ->
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
                 "MultiEdit" ->
-                    case Decode.decodeString
-                        (Decode.map2 (\fp edits -> { filePath = fp, editsCount = edits })
-                            (Decode.field "file_path" Decode.string)
-                            (Decode.field "edits" (Decode.list Decode.value) |> Decode.map List.length)
-                        ) inputJson of
+                    case
+                        Decode.decodeString
+                            (Decode.map2 (\fp edits -> { filePath = fp, editsCount = edits })
+                                (Decode.field "file_path" Decode.string)
+                                (Decode.field "edits" (Decode.list Decode.value) |> Decode.map List.length)
+                            )
+                            inputJson
+                    of
                         Ok info ->
                             div []
                                 [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ info.filePath) ]
                                 , p [ style "margin" "0.25rem 0" ] [ text ("Number of edits: " ++ String.fromInt info.editsCount) ]
                                 ]
+
                         Err _ ->
                             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
 
@@ -1447,6 +1499,7 @@ formatToolInput toolName inputJson =
         Err _ ->
             -- If JSON parsing fails, show raw text
             pre [ style "font-size" "0.9em", style "overflow" "auto" ] [ text inputJson ]
+
 
 
 -- State for rendering messages
@@ -1492,7 +1545,7 @@ renderMessages model items =
                             _ ->
                                 ""
                 in
-                state.elements ++ [ div [ class "message-content", class senderClass ] (ansiToElmHtml state.accumulatedContent) ]
+                state.elements ++ [ pre [ class "message-content", class senderClass, style "white-space" "pre-wrap" ] (ansiToElmHtml state.accumulatedContent) ]
 
         renderItem : ChatItem -> RenderState -> RenderState
         renderItem item state =
@@ -1537,62 +1590,70 @@ renderMessages model items =
                                 Just input ->
                                     if toolName == "Edit" then
                                         -- Handle Edit tool with diff display
-                                        case Decode.decodeValue
-                                            (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
-                                                (Decode.field "file_path" Decode.string)
-                                                (Decode.field "old_string" Decode.string)
-                                                (Decode.field "new_string" Decode.string)
-                                            ) input of
+                                        case
+                                            Decode.decodeValue
+                                                (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
+                                                    (Decode.field "file_path" Decode.string)
+                                                    (Decode.field "old_string" Decode.string)
+                                                    (Decode.field "new_string" Decode.string)
+                                                )
+                                                input
+                                        of
                                             Ok edit ->
                                                 div [ class "tool-use" ]
-                                                    [ div [ class "tool-header" ] 
+                                                    [ div [ class "tool-header" ]
                                                         [ text ("[Edit] " ++ edit.filePath) ]
                                                     , renderDiff edit.oldString edit.newString
                                                     ]
+
                                             Err _ ->
                                                 div [ class "tool-use" ]
                                                     [ text ("[" ++ toolName ++ "] ")
                                                     , Html.code [] [ text (Encode.encode 0 input) ]
                                                     ]
-                                    
+
                                     else if toolName == "MultiEdit" then
                                         -- Handle MultiEdit tool with multiple diffs
-                                        case Decode.decodeValue
-                                            (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
-                                                (Decode.field "file_path" Decode.string)
-                                                (Decode.field "edits" (Decode.list Decode.value))
-                                            ) input of
+                                        case
+                                            Decode.decodeValue
+                                                (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
+                                                    (Decode.field "file_path" Decode.string)
+                                                    (Decode.field "edits" (Decode.list Decode.value))
+                                                )
+                                                input
+                                        of
                                             Ok multiEdit ->
                                                 let
                                                     editElements =
-                                                        List.indexedMap 
+                                                        List.indexedMap
                                                             (\idx editJson ->
                                                                 div [ class "multi-edit-item" ]
-                                                                    [ div [ class "edit-number" ] 
+                                                                    [ div [ class "edit-number" ]
                                                                         [ text ("Edit " ++ String.fromInt (idx + 1) ++ " of " ++ String.fromInt (List.length multiEdit.edits)) ]
                                                                     , renderEditAsDiff editJson
                                                                     ]
-                                                            ) 
+                                                            )
                                                             multiEdit.edits
                                                 in
                                                 div [ class "tool-use" ]
-                                                    [ div [ class "tool-header" ] 
+                                                    [ div [ class "tool-header" ]
                                                         [ text ("[MultiEdit] " ++ multiEdit.filePath) ]
                                                     , div [ class "multi-edit-container" ] editElements
                                                     ]
+
                                             Err _ ->
                                                 div [ class "tool-use" ]
                                                     [ text ("[" ++ toolName ++ "] ")
                                                     , Html.code [] [ text (Encode.encode 0 input) ]
                                                     ]
-                                    
+
                                     else
                                         -- Other tools show JSON
                                         div [ class "tool-use" ]
                                             [ text ("[" ++ toolName ++ "] ")
                                             , Html.code [] [ text (Encode.encode 0 input) ]
                                             ]
-                                
+
                                 Nothing ->
                                     div [ class "tool-use" ]
                                         [ text ("[" ++ toolName ++ "]") ]
@@ -1633,12 +1694,15 @@ renderMessages model items =
                                 Just input ->
                                     if toolName == "Edit" then
                                         -- Handle Edit tool with diff display
-                                        case Decode.decodeValue
-                                            (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
-                                                (Decode.field "file_path" Decode.string)
-                                                (Decode.field "old_string" Decode.string)
-                                                (Decode.field "new_string" Decode.string)
-                                            ) input of
+                                        case
+                                            Decode.decodeValue
+                                                (Decode.map3 (\fp old new -> { filePath = fp, oldString = old, newString = new })
+                                                    (Decode.field "file_path" Decode.string)
+                                                    (Decode.field "old_string" Decode.string)
+                                                    (Decode.field "new_string" Decode.string)
+                                                )
+                                                input
+                                        of
                                             Ok edit ->
                                                 details [ class "tool-result" ]
                                                     [ summary []
@@ -1649,6 +1713,7 @@ renderMessages model items =
                                                         , div [] (ansiToElmHtml result)
                                                         ]
                                                     ]
+
                                             Err _ ->
                                                 details [ class "tool-result" ]
                                                     [ summary []
@@ -1657,34 +1722,38 @@ renderMessages model items =
                                                         ]
                                                     , div [ class "tool-result-content" ] (ansiToElmHtml result)
                                                     ]
-                                    
+
                                     else if toolName == "MultiEdit" then
                                         -- Handle MultiEdit tool with multiple diffs
-                                        case Decode.decodeValue
-                                            (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
-                                                (Decode.field "file_path" Decode.string)
-                                                (Decode.field "edits" (Decode.list Decode.value))
-                                            ) input of
+                                        case
+                                            Decode.decodeValue
+                                                (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
+                                                    (Decode.field "file_path" Decode.string)
+                                                    (Decode.field "edits" (Decode.list Decode.value))
+                                                )
+                                                input
+                                        of
                                             Ok multiEdit ->
                                                 details [ class "tool-result" ]
                                                     [ summary []
                                                         [ text ("[MultiEdit] " ++ multiEdit.filePath ++ " (" ++ String.fromInt (List.length multiEdit.edits) ++ " edits)") ]
                                                     , div [ class "tool-result-content" ]
                                                         [ div [ class "multi-edit-container" ]
-                                                            (List.indexedMap 
+                                                            (List.indexedMap
                                                                 (\idx editJson ->
                                                                     div [ class "multi-edit-item" ]
-                                                                        [ div [ class "edit-number" ] 
+                                                                        [ div [ class "edit-number" ]
                                                                             [ text ("Edit " ++ String.fromInt (idx + 1) ++ " of " ++ String.fromInt (List.length multiEdit.edits)) ]
                                                                         , renderEditAsDiff editJson
                                                                         ]
-                                                                ) 
+                                                                )
                                                                 multiEdit.edits
                                                             )
                                                         , div [ class "result-separator" ] [ text "Result:" ]
                                                         , div [] (ansiToElmHtml result)
                                                         ]
                                                     ]
+
                                             Err _ ->
                                                 details [ class "tool-result" ]
                                                     [ summary []
@@ -1693,7 +1762,7 @@ renderMessages model items =
                                                         ]
                                                     , div [ class "tool-result-content" ] (ansiToElmHtml result)
                                                     ]
-                                    
+
                                     else
                                         -- Other tools show JSON
                                         details [ class "tool-result" ]
@@ -1703,7 +1772,7 @@ renderMessages model items =
                                                 ]
                                             , div [ class "tool-result-content" ] (ansiToElmHtml result)
                                             ]
-                                
+
                                 Nothing ->
                                     details [ class "tool-result" ]
                                         [ summary []
@@ -1777,9 +1846,11 @@ renderMessages model items =
                                         Ok jsonValue ->
                                             pre [ class "permission-notice-input" ]
                                                 [ text (Encode.encode 2 jsonValue) ]
+
                                         Err _ ->
                                             pre [ class "permission-notice-input" ]
                                                 [ text input ]
+
                                 Nothing ->
                                     text ""
 
@@ -1808,10 +1879,13 @@ renderMessages model items =
                             case action of
                                 "allowed" ->
                                     "✓ Allowed " ++ toolName ++ " access"
+
                                 "allowed_permanent" ->
                                     "✓ Always allowed " ++ toolName ++ " access"
+
                                 "denied" ->
                                     "✗ Denied " ++ toolName ++ " access"
+
                                 _ ->
                                     action ++ " " ++ toolName
 
@@ -1825,8 +1899,9 @@ renderMessages model items =
                                     "bot-message"
 
                                 _ ->
-                                    "user-message"  -- Default to user-message for permission responses
+                                    "user-message"
 
+                        -- Default to user-message for permission responses
                         responseElement =
                             div [ class "message-wrapper" ]
                                 [ div [ class "message", class messageClass ]
