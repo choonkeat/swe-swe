@@ -73,6 +73,81 @@ suite =
                     result |> Expect.equal expected
             ]
 
+        , describe "Carriage return handling"
+            [ test "simple carriage return" <|
+                \_ ->
+                    let
+                        input = "abc\rdef"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ text "def"
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "handles carriage return overwrites" <|
+                \_ ->
+                    let
+                        input = "hello\nworld\rthere"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ text "hello"
+                            , br [] []
+                            , text "there"
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "handles carriage return with spaces" <|
+                \_ ->
+                    let
+                        input = "hello\nworld                                \rthere"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ text "hello"
+                            , br [] []
+                            , text "there"
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "handles multiple carriage returns" <|
+                \_ ->
+                    let
+                        input = "abc\rdef\rghi"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ text "ghi"
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "handles carriage return with ANSI codes" <|
+                \_ ->
+                    let
+                        input = "\u{001B}[32mgreen\r\u{001B}[31mred"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ span [style "color" "rgb(194,54,33)"] [text "red"]
+                            ]
+                    in
+                    result |> Expect.equal expected
+
+            , test "handles progress indicator pattern" <|
+                \_ ->
+                    let
+                        input = "diff --git a/elm/src/Ansi.elm b/elm/src/Ansi.elm\n                                                                                \r\u{001B}[32m⠋\u{001B}[0m diff --git"
+                        result = ansiToHtml input
+                        expected = div []
+                            [ text "diff --git a/elm/src/Ansi.elm b/elm/src/Ansi.elm"
+                            , br [] []
+                            , span [style "color" "rgb(37,188,36)"] [text "⠋"]
+                            , text " diff --git"
+                            ]
+                    in
+                    result |> Expect.equal expected
+            ]
+
         , describe "RGB color support (24-bit)"
             [ test "handles RGB colored text" <|
                 \_ ->
