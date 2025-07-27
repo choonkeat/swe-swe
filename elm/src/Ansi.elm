@@ -14,6 +14,7 @@ import Regex
 type AnsiCode
     = Reset
     | Bold
+    | Dim
     | Underline
     | Italic
     | Color16 Color16
@@ -57,6 +58,7 @@ type alias StyleState =
     { foregroundColor : Maybe String
     , backgroundColor : Maybe String
     , bold : Bool
+    , dim : Bool
     , underline : Bool
     , italic : Bool
     }
@@ -84,6 +86,7 @@ initStyleState =
     { foregroundColor = Nothing
     , backgroundColor = Nothing
     , bold = False
+    , dim = False
     , underline = False
     , italic = False
     }
@@ -350,6 +353,23 @@ parseComplexHelper parts acc =
                 _ ->
                     parseComplexHelper rest acc
 
+        -- Handle incomplete RGB sequences - ignore them
+        "38" :: "2" :: _ ->
+            -- Incomplete RGB sequence, ignore all remaining parts
+            List.reverse acc
+
+        "48" :: "2" :: _ ->
+            -- Incomplete background RGB sequence, ignore all remaining parts  
+            List.reverse acc
+
+        "38" :: "5" :: [] ->
+            -- Incomplete 256-color sequence, ignore
+            List.reverse acc
+
+        "48" :: "5" :: [] ->
+            -- Incomplete background 256-color sequence, ignore
+            List.reverse acc
+
         single :: rest ->
             case parseSingleSGR single of
                 Just code ->
@@ -373,6 +393,9 @@ parseSingleSGR param =
 
                 1 ->
                     Just Bold
+
+                2 ->
+                    Just Dim
 
                 3 ->
                     Just Italic
@@ -516,6 +539,9 @@ applyAnsiCode code style =
 
         Bold ->
             { style | bold = True }
+
+        Dim ->
+            { style | dim = True }
 
         Underline ->
             { style | underline = True }
@@ -705,6 +731,11 @@ createStyledElement styleState content =
                     , Maybe.map (\c -> style "background-color" c) styleState.backgroundColor
                     , if styleState.bold then
                         Just (style "font-weight" "bold")
+
+                      else
+                        Nothing
+                    , if styleState.dim then
+                        Just (style "color" "rgb(128,128,128)")
 
                       else
                         Nothing
