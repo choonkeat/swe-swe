@@ -99,14 +99,44 @@ parseAnsiWithState state input =
         fullInput =
             state.incompleteSequence ++ input
 
+        -- Preprocess input to handle carriage returns
+        processedInput =
+            processCarriageReturns fullInput
+
         result =
-            parseAnsiStringStateful state fullInput
+            parseAnsiStringStateful state processedInput
 
         elementsWithLineBreaks =
             handleLineBreaks result.elements
     in
     { result | elements = elementsWithLineBreaks }
 
+
+
+-- Process carriage returns in input string
+-- When we encounter \r, we discard everything from the last \n (or start) up to the \r
+
+
+processCarriageReturns : String -> String
+processCarriageReturns input =
+    let
+        -- Split by lines and process each line for carriage returns
+        processLine : String -> String
+        processLine line =
+            let
+                parts = String.split "\r" line
+            in
+            case List.reverse parts of
+                [] ->
+                    ""
+                
+                last :: _ ->
+                    last
+    in
+    input
+        |> String.split "\n"
+        |> List.map processLine
+        |> String.join "\n"
 
 
 -- Internal function to parse ANSI string with current state
@@ -915,6 +945,10 @@ formatCodeBlock input =
 ansiToHtml : String -> HtmlData.Html msg
 ansiToHtml input =
     let
+        -- Preprocess input to handle carriage returns
+        processedInput =
+            processCarriageReturns input
+
         -- Detect if this is a code block by looking for triple backticks
         codeBlockPattern =
             Regex.fromString "```[\\w]*\\n[\\s\\S]*?```"
@@ -922,28 +956,28 @@ ansiToHtml input =
         isCodeBlock =
             case codeBlockPattern of
                 Just regex ->
-                    Regex.contains regex input
+                    Regex.contains regex processedInput
 
                 Nothing ->
                     False
 
         -- Check if input contains ANSI escape sequences
         hasAnsiCodes =
-            String.contains "\u{001B}[" input
+            String.contains "\u{001B}[" processedInput
     in
     if isCodeBlock then
         -- Handle as a code block
-        div [] (formatCodeBlock input)
+        div [] (formatCodeBlock processedInput)
 
     else if not hasAnsiCodes then
         -- Handle as plain text without ANSI parsing
-        div [] (handlePlainText input)
+        div [] (handlePlainText processedInput)
 
     else
         -- Handle text with ANSI codes
         let
             result =
-                parseAnsiWithState initAnsiState input
+                parseAnsiWithState initAnsiState processedInput
 
             elementsWithLineBreaks =
                 handleLineBreaks result.elements
