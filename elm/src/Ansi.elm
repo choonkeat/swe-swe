@@ -194,6 +194,21 @@ parseAnsiHelper currentStyle remaining acc buffer =
                         }
                     }
 
+        Just ( '\n', rest ) ->
+            -- Newline character - flush current buffer, add text element with newline, then continue
+            let
+                elementsWithBuffer =
+                    if String.isEmpty buffer then
+                        acc
+                    else
+                        createStyledElement currentStyle buffer :: acc
+                
+                -- Add a text element containing just the newline
+                elementsWithNewline =
+                    text "\n" :: elementsWithBuffer
+            in
+            parseAnsiHelper currentStyle rest elementsWithNewline ""
+
         Just ( char, rest ) ->
             -- Regular character
             parseAnsiHelper currentStyle rest acc (buffer ++ String.fromChar char)

@@ -499,6 +499,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 					})
 				} else {
 					// Regular text output
+					
 					svc.BroadcastItem(ChatItem{
 						Type:    "content",
 						Content: line + "\n",
