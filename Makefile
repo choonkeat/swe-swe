@@ -31,13 +31,13 @@ clean:
 	rm -rf bin $(ELM_OUTPUT)
 
 docker-compose-dev-up:
-	docker-compose --env-file .env -f docker/dev/docker-compose.yml up -d
+	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml up
 
 docker-compose-dev-down:
-	docker-compose --env-file .env -f docker/dev/docker-compose.yml down
+	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml down
 
 docker-compose-dev-build:
-	docker-compose --env-file .env -f docker/dev/docker-compose.yml build
+	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml build
 
 docker-compose-dev-logs:
-	docker-compose --env-file .env -f docker/dev/docker-compose.yml logs -f
+	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml logs -f
