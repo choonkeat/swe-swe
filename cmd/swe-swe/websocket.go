@@ -647,7 +647,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastItem(botSenderItem)
 
 					go func() {
-						executeAgentCommand(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
+						executeAgentCommand(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated
