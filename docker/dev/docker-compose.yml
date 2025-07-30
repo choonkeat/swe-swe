@@ -61,7 +61,7 @@ services:
     environment:
       - GOOSE_DISABLE_KEYRING=true
       - GOOSE_PROVIDER=anthropic
-      - GOOSE_MODEL=claude-3.5-sonnet
+      - GOOSE_MODEL=claude-3-5-sonnet-20241022
       - GOOSE_PROVIDER__API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
@@ -85,7 +85,7 @@ services:
     environment:
       - GOOSE_DISABLE_KEYRING=true
       - GOOSE_PROVIDER=anthropic
-      - GOOSE_MODEL=claude-3.5-sonnet
+      - GOOSE_MODEL=claude-3-5-sonnet-20241022
       - GOOSE_PROVIDER__API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 

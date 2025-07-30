@@ -30,7 +30,7 @@ RUN make build
 FROM debian:bookworm-slim
 
 # Install runtime dependencies and curl for goose installation
-RUN apt-get update && apt-get install -y ca-certificates bash curl bzip2 libxcb1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates bash curl bzip2 libxcb1 git && rm -rf /var/lib/apt/lists/*
 
 # Install goose using official installation script
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/bin bash
