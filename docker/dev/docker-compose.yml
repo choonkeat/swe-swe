@@ -11,7 +11,7 @@ services:
       - "--entrypoints.web.address=:7000"
     ports:
       - "7001:7000"
-      - "8081:8080"  # Traefik dashboard
+      - "7002:8080"  # Traefik dashboard
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -32,7 +32,7 @@ services:
       - "traefik.http.services.swe-claude.loadbalancer.server.port=7001"
     volumes:
       # Mount current directory to /workspace in container
-      - ../..:/workspace
+      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
     working_dir: /workspace
     networks:
       - swe-swe-network
@@ -54,7 +54,7 @@ services:
       - "traefik.http.services.swe-goose.loadbalancer.server.port=7002"
     volumes:
       # Mount current directory to /workspace in container
-      - ../..:/workspace
+      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
     working_dir: /workspace
     networks:
       - swe-swe-network
@@ -78,7 +78,7 @@ services:
       - "traefik.http.services.goose.loadbalancer.server.port=9000"
     volumes:
       # Mount current directory to /workspace in container
-      - ../..:/workspace
+      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
     working_dir: /workspace
     networks:
       - swe-swe-network
@@ -102,7 +102,7 @@ services:
       - "traefik.http.services.claude-webui.loadbalancer.server.port=8080"
     volumes:
       # Mount current directory to /workspace in container
-      - ../..:/workspace
+      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
     working_dir: /workspace
     networks:
       - swe-swe-network
@@ -122,7 +122,7 @@ services:
       - "traefik.http.services.claudia.loadbalancer.server.port=4173"
     volumes:
       # Mount current directory to /workspace in container
-      - ../..:/workspace
+      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
     working_dir: /workspace
     networks:
       - swe-swe-network
@@ -137,12 +137,33 @@ services:
     container_name: claudia-debug
     volumes:
       # Mount current directory to /workspace in container
-      - ../..:/workspace
+      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
     working_dir: /workspace
     networks:
       - swe-swe-network
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+  # Hello World Node.js app with hot reload
+  helloworld:
+    build:
+      context: ../../helloworld
+      dockerfile: Dockerfile
+    container_name: helloworld
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.helloworld.rule=HostRegexp(`helloworld\\..+`)"
+      - "traefik.http.services.helloworld.loadbalancer.server.port=3000"
+    volumes:
+      # Mount helloworld directory for hot reload
+      - ../../helloworld:/app
+      - /app/node_modules
+    working_dir: /app
+    networks:
+      - swe-swe-network
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
 
   # VSCode web service
   vscode:
@@ -156,7 +177,7 @@ services:
       - "traefik.http.services.vscode.loadbalancer.server.port=8080"
     volumes:
       # Mount project directory
-      - ../..:/home/coder/project
+      - ${WORKSPACE_DIR:-../../helloworld}:/home/coder/project
       # VSCode configuration persistence
       - ./vscode-data/.config:/home/coder/.config
       - ./vscode-data/.local:/home/coder/.local

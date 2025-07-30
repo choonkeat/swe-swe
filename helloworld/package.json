@@ -1,0 +1,17 @@
+{
+  "name": "helloworld-hotreload",
+  "version": "1.0.0",
+  "description": "Minimal Node.js hello world app with hot reload",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "chokidar": "^3.5.3"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
