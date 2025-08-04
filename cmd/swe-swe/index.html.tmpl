@@ -151,6 +151,15 @@
             }, 50);
         });
 
+        // Handle fuzzy search requests from Elm
+        app.ports.sendFuzzySearch.subscribe(function(message) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(message);
+            } else {
+                console.log('Fuzzy search request ignored - WebSocket not connected');
+            }
+        });
+
         // Auto-resize textarea
         function autoResizeTextarea() {
             const textarea = document.querySelector('.message-input');

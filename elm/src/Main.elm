@@ -47,6 +47,9 @@ port persistUserTheme : String -> Cmd msg
 port focusMessageInput : () -> Cmd msg
 
 
+port sendFuzzySearch : String -> Cmd msg
+
+
 
 -- MAIN
 
@@ -94,6 +97,7 @@ type alias Model =
     , skipPermissions : Bool
     , permissionDialog : Maybe PermissionDialogState
     , pendingPermissionRequest : Maybe PermissionRequest
+    , fuzzyMatcher : FuzzyMatcherState
     }
 
 
@@ -108,6 +112,30 @@ type alias PermissionRequest =
     { toolName : String
     , errorMessage : String
     , toolInput : Maybe String
+    }
+
+
+type alias FuzzyMatcherState =
+    { isOpen : Bool
+    , query : String
+    , results : List FileMatch
+    , selectedIndex : Int
+    , cursorPosition : Int -- Position in input where @ was typed
+    }
+
+
+type alias FileMatch =
+    { file : FileInfo
+    , score : Int
+    , matches : List Int
+    }
+
+
+type alias FileInfo =
+    { path : String
+    , name : String
+    , isDir : Bool
+    , relPath : String
     }
 
 
@@ -128,6 +156,7 @@ type ChatItem
     | ChatToolUseWithResult ClaudeContent String -- Tool use with its result
     | ChatPermissionRequest String String (Maybe String) -- Permission request (tool name, error message, tool input)
     | ChatPermissionResponse String String String -- Permission response (tool name, action, username)
+    | ChatFuzzySearchResults String -- Fuzzy search results (JSON)
 
 
 
@@ -191,6 +220,14 @@ init flags =
 
             else
                 LightModern
+        
+        initialFuzzyMatcher =
+            { isOpen = False
+            , query = ""
+            , results = []
+            , selectedIndex = 0
+            , cursorPosition = 0
+            }
     in
     ( { input = ""
       , messages = []
@@ -205,6 +242,7 @@ init flags =
       , skipPermissions = False
       , permissionDialog = Nothing
       , pendingPermissionRequest = Nothing
+      , fuzzyMatcher = initialFuzzyMatcher
       }
     , Cmd.none
     )
@@ -227,13 +265,79 @@ type Msg
     | AllowPermissionPermanent
     | DenyPermission
     | SkipAllPermissions
+    | FuzzySearchInput String Int -- query and cursor position
+    | FuzzySearchResults String -- JSON results from backend
+    | FuzzyMatcherNavigate Int -- -1 for up, 1 for down
+    | FuzzyMatcherSelect
+    | FuzzyMatcherClose
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Input text ->
-            ( { model | input = text }, Cmd.none )
+            -- Check for @ trigger
+            let
+                lastChar = String.right 1 text
+                beforeAt = String.dropRight 1 text
+                
+                ( newFuzzyMatcher, cmd ) =
+                    if lastChar == "@" && not model.fuzzyMatcher.isOpen then
+                        -- Open fuzzy matcher
+                        ( { isOpen = True
+                          , query = ""
+                          , results = []
+                          , selectedIndex = 0
+                          , cursorPosition = String.length text
+                          }
+                        , Cmd.none
+                        )
+                    else if model.fuzzyMatcher.isOpen then
+                        if String.length text < model.fuzzyMatcher.cursorPosition then
+                            -- Text was deleted before @ position, close matcher
+                            ( { isOpen = False
+                              , query = ""
+                              , results = []
+                              , selectedIndex = 0
+                              , cursorPosition = 0
+                              }
+                            , Cmd.none
+                            )
+                        else
+                            let
+                                query = String.dropLeft model.fuzzyMatcher.cursorPosition text
+                            in
+                            if String.contains " " query || String.contains "\n" query then
+                                -- Space or newline closes the matcher
+                                ( { isOpen = False
+                                  , query = ""
+                                  , results = []
+                                  , selectedIndex = 0
+                                  , cursorPosition = 0
+                                  }
+                                , Cmd.none
+                                )
+                            else
+                                -- Update query and search
+                                ( { isOpen = True
+                                  , query = query
+                                  , results = model.fuzzyMatcher.results
+                                  , selectedIndex = 0
+                                  , cursorPosition = model.fuzzyMatcher.cursorPosition
+                                  }
+                                , if String.length query > 0 then
+                                    sendFuzzySearch (Encode.encode 0 (Encode.object
+                                        [ ("type", Encode.string "fuzzy_search")
+                                        , ("query", Encode.string query)
+                                        , ("maxResults", Encode.int 50)
+                                        ]))
+                                  else
+                                    Cmd.none
+                                )
+                    else
+                        ( model.fuzzyMatcher, Cmd.none )
+            in
+            ( { model | input = text, fuzzyMatcher = newFuzzyMatcher }, cmd )
 
         Send ->
             if String.trim model.input == "" then
@@ -378,6 +482,10 @@ update msg model =
                             , scrollToBottom ()
                             )
 
+                        ChatFuzzySearchResults jsonResults ->
+                            -- Update fuzzy matcher with search results
+                            update (FuzzySearchResults jsonResults) model
+
                 Err _ ->
                     ( model, Cmd.none )
 
@@ -389,53 +497,72 @@ update msg model =
             ( { model | theme = newTheme }, persistUserTheme (themeToString newTheme) )
 
         KeyDown key shiftKey metaKey ->
-            case model.pendingPermissionRequest of
-                Just _ ->
-                    -- Handle keyboard shortcuts for permission responses
-                    case key of
-                        89 ->
-                            -- 'Y' key
-                            update AllowPermission model
-
-                        78 ->
-                            -- 'N' key
-                            update DenyPermission model
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                Nothing ->
-                    -- Normal input handling
-                    if key == 13 then
-                        -- Enter key
-                        if shiftKey || metaKey then
-                            -- Shift+Enter or Cmd/Alt+Enter: insert newline (handled by browser)
-                            ( model, Cmd.none )
-
-                        else
-                        -- Plain Enter: send message
-                        if
-                            String.trim model.input == "" || not model.isConnected
-                        then
-                            ( model, Cmd.none )
-
-                        else
-                            let
-                                messageJson =
-                                    Encode.encode 0
-                                        (Encode.object
-                                            [ ( "sender", Encode.string "USER" )
-                                            , ( "content", Encode.string model.input )
-                                            , ( "firstMessage", Encode.bool model.isFirstUserMessage )
-                                            ]
-                                        )
-                            in
-                            ( { model | input = "", isFirstUserMessage = False }
-                            , Cmd.batch [ sendMessage messageJson, scrollToBottom () ]
-                            )
-
-                    else
+            if model.fuzzyMatcher.isOpen then
+                -- Handle fuzzy matcher navigation
+                case key of
+                    38 -> -- Up arrow
+                        update (FuzzyMatcherNavigate -1) model
+                    
+                    40 -> -- Down arrow  
+                        update (FuzzyMatcherNavigate 1) model
+                    
+                    13 -> -- Enter
+                        update FuzzyMatcherSelect model
+                    
+                    27 -> -- Escape
+                        update FuzzyMatcherClose model
+                    
+                    _ ->
                         ( model, Cmd.none )
+                        
+            else
+                case model.pendingPermissionRequest of
+                    Just _ ->
+                        -- Handle keyboard shortcuts for permission responses
+                        case key of
+                            89 ->
+                                -- 'Y' key
+                                update AllowPermission model
+
+                            78 ->
+                                -- 'N' key
+                                update DenyPermission model
+
+                            _ ->
+                                ( model, Cmd.none )
+
+                    Nothing ->
+                        -- Normal input handling
+                        if key == 13 then
+                            -- Enter key
+                            if shiftKey || metaKey then
+                                -- Shift+Enter or Cmd/Alt+Enter: insert newline (handled by browser)
+                                ( model, Cmd.none )
+
+                            else
+                            -- Plain Enter: send message
+                            if
+                                String.trim model.input == "" || not model.isConnected
+                            then
+                                ( model, Cmd.none )
+
+                            else
+                                let
+                                    messageJson =
+                                        Encode.encode 0
+                                            (Encode.object
+                                                [ ( "sender", Encode.string "USER" )
+                                                , ( "content", Encode.string model.input )
+                                                , ( "firstMessage", Encode.bool model.isFirstUserMessage )
+                                                ]
+                                            )
+                                in
+                                ( { model | input = "", isFirstUserMessage = False }
+                                , Cmd.batch [ sendMessage messageJson, scrollToBottom () ]
+                                )
+
+                        else
+                            ( model, Cmd.none )
 
         ConnectionStatus isConnected ->
             ( { model
@@ -576,6 +703,68 @@ update msg model =
             ( { model | permissionDialog = Nothing, skipPermissions = True }
             , sendMessage responseMessage
             )
+
+        FuzzySearchInput query cursorPos ->
+            let
+                fuzzyMatcher = model.fuzzyMatcher
+                newFuzzyMatcher = { fuzzyMatcher | query = query, cursorPosition = cursorPos }
+                cmd = if String.length query > 0 then
+                    sendFuzzySearch (Encode.encode 0 (Encode.object
+                        [ ("type", Encode.string "fuzzy_search")
+                        , ("query", Encode.string query)
+                        , ("maxResults", Encode.int 50)
+                        ]))
+                  else
+                    Cmd.none
+            in
+            ( { model | fuzzyMatcher = newFuzzyMatcher }, cmd )
+
+        FuzzySearchResults jsonResults ->
+            let
+                fuzzyMatcher = model.fuzzyMatcher
+                results = case Decode.decodeString fileMatchListDecoder jsonResults of
+                    Ok matches -> matches
+                    Err _ -> []
+                newFuzzyMatcher = { fuzzyMatcher | results = results, selectedIndex = 0 }
+            in
+            ( { model | fuzzyMatcher = newFuzzyMatcher }, Cmd.none )
+
+        FuzzyMatcherNavigate direction ->
+            if model.fuzzyMatcher.isOpen then
+                let
+                    fuzzyMatcher = model.fuzzyMatcher
+                    newIndex = max 0 (min (List.length fuzzyMatcher.results - 1) (fuzzyMatcher.selectedIndex + direction))
+                    newFuzzyMatcher = { fuzzyMatcher | selectedIndex = newIndex }
+                in
+                ( { model | fuzzyMatcher = newFuzzyMatcher }, Cmd.none )
+            else
+                ( model, Cmd.none )
+
+        FuzzyMatcherSelect ->
+            if model.fuzzyMatcher.isOpen then
+                case List.head (List.drop model.fuzzyMatcher.selectedIndex model.fuzzyMatcher.results) of
+                    Just selectedMatch ->
+                        let
+                            -- Insert the selected file path at cursor position
+                            beforeCursor = String.left (model.fuzzyMatcher.cursorPosition - 1) model.input -- -1 to remove @
+                            afterCursor = String.dropLeft (model.fuzzyMatcher.cursorPosition + String.length model.fuzzyMatcher.query) model.input
+                            newInput = beforeCursor ++ selectedMatch.file.relPath ++ afterCursor
+                            
+                            -- Close fuzzy matcher
+                            newFuzzyMatcher = { isOpen = False, query = "", results = [], selectedIndex = 0, cursorPosition = 0 }
+                        in
+                        ( { model | input = newInput, fuzzyMatcher = newFuzzyMatcher }, Cmd.none )
+                    
+                    Nothing ->
+                        ( model, Cmd.none )
+            else
+                ( model, Cmd.none )
+
+        FuzzyMatcherClose ->
+            let
+                newFuzzyMatcher = { isOpen = False, query = "", results = [], selectedIndex = 0, cursorPosition = 0 }
+            in
+            ( { model | fuzzyMatcher = newFuzzyMatcher }, Cmd.none )
 
 
 
@@ -809,6 +998,12 @@ encodeChatItem chatItem =
                 , ( "username", Encode.string username )
                 ]
 
+        ChatFuzzySearchResults jsonResults ->
+            Encode.object
+                [ ( "type", Encode.string "fuzzy_search_results" )
+                , ( "content", Encode.string jsonResults )
+                ]
+
 
 chatItemDecoder : Decode.Decoder ChatItem
 chatItemDecoder =
@@ -862,6 +1057,10 @@ chatItemTypeDecoder itemType =
                 (Decode.field "toolName" Decode.string)
                 (Decode.field "action" Decode.string)
                 (Decode.field "username" Decode.string)
+
+        "fuzzy_search_results" ->
+            Decode.map ChatFuzzySearchResults
+                (Decode.field "content" Decode.string)
 
         _ ->
             Decode.fail <| "Unknown chat item type: " ++ itemType
@@ -1110,6 +1309,28 @@ todosDecoder =
     Decode.field "todos" (Decode.list todoDecoder)
 
 
+fileInfoDecoder : Decode.Decoder FileInfo
+fileInfoDecoder =
+    Decode.succeed FileInfo
+        |> required "path" Decode.string
+        |> required "name" Decode.string
+        |> required "isDir" Decode.bool
+        |> required "relPath" Decode.string
+
+
+fileMatchDecoder : Decode.Decoder FileMatch
+fileMatchDecoder =
+    Decode.succeed FileMatch
+        |> required "file" fileInfoDecoder
+        |> required "score" Decode.int
+        |> required "matches" (Decode.list Decode.int)
+
+
+fileMatchListDecoder : Decode.Decoder (List FileMatch)
+fileMatchListDecoder =
+    Decode.list fileMatchDecoder
+
+
 
 -- SUBSCRIPTIONS
 
@@ -1239,15 +1460,21 @@ view model =
                         ]
 
                     Nothing ->
-                        [ textarea
-                            [ class "message-input"
-                            , placeholder "Type a message... (Enter to send, Shift+Enter for new line)"
-                            , value model.input
-                            , onInput Input
-                            , onKeyDown KeyDown
-                            , autofocus True
+                        [ div [ class "input-wrapper" ]
+                            [ textarea
+                                [ class "message-input"
+                                , placeholder "Type a message... (Enter to send, Shift+Enter for new line, @ for file picker)"
+                                , value model.input
+                                , onInput Input
+                                , onKeyDown KeyDown
+                                , autofocus True
+                                ]
+                                []
+                            , if model.fuzzyMatcher.isOpen then
+                                fuzzyMatcherView model.fuzzyMatcher
+                              else
+                                text ""
                             ]
-                            []
                         , button
                             [ class "send-button"
                             , onClick Send
@@ -1324,6 +1551,57 @@ permissionDialogView maybeDialog =
 
         Nothing ->
             text ""
+
+
+-- Fuzzy Matcher View
+
+
+fuzzyMatcherView : FuzzyMatcherState -> Html Msg
+fuzzyMatcherView matcher =
+    if not matcher.isOpen || List.isEmpty matcher.results then
+        text ""
+    else
+        div [ class "fuzzy-matcher-dropdown" ]
+            [ div [ class "fuzzy-matcher-header" ]
+                [ text ("Files matching \"" ++ matcher.query ++ "\"") ]
+            , div [ class "fuzzy-matcher-results" ]
+                (List.indexedMap (fuzzyMatcherResultView matcher.selectedIndex) matcher.results)
+            ]
+
+
+fuzzyMatcherResultView : Int -> Int -> FileMatch -> Html Msg
+fuzzyMatcherResultView selectedIndex index fileMatch =
+    let
+        isSelected = index == selectedIndex
+        fileIcon = if fileMatch.file.isDir then "📁" else "📄"
+        highlightedName = highlightMatches fileMatch.file.name fileMatch.matches
+    in
+    div 
+        [ class "fuzzy-matcher-result"
+        , class (if isSelected then "selected" else "")
+        , onClick FuzzyMatcherSelect
+        ]
+        [ div [ class "fuzzy-matcher-result-icon" ] [ text fileIcon ]
+        , div [ class "fuzzy-matcher-result-content" ]
+            [ div [ class "fuzzy-matcher-result-name" ] highlightedName
+            , div [ class "fuzzy-matcher-result-path" ] [ text fileMatch.file.relPath ]
+            ]
+        ]
+
+
+highlightMatches : String -> List Int -> List (Html Msg)
+highlightMatches str matches =
+    let
+        chars = String.toList str
+        
+        renderChar : Int -> Char -> Html Msg
+        renderChar index char =
+            if List.member index matches then
+                span [ class "fuzzy-match-highlight" ] [ text (String.fromChar char) ]
+            else
+                text (String.fromChar char)
+    in
+    List.indexedMap renderChar chars
 
 
 
