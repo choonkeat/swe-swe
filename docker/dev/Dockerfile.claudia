@@ -1,5 +1,17 @@
 FROM oven/bun:alpine
 
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
+
+RUN set -e; \
+    if [ -d /usr/local/share/ca-certificates ] && \
+       [ "$(ls -A /usr/local/share/ca-certificates 2>/dev/null)" ]; then \
+        for cert in /usr/local/share/ca-certificates/*; do \
+            [ -f "$cert" ] || continue; \
+            printf '\n' >> /etc/ssl/certs/ca-certificates.crt; \
+            cat "$cert"  >> /etc/ssl/certs/ca-certificates.crt; \
+        done; \
+    fi
+
 # Install git and nodejs (required for cloning and building)
 RUN apk add --no-cache git nodejs npm
 
@@ -18,6 +30,9 @@ RUN bun run build
 # Expose the default Vite preview port
 EXPOSE 4173
 
-# Start the application in dev mode since preview has host restrictions
-# Dev mode allows all hosts by default
-CMD ["sh", "-c", "cd /app && bun run dev --host 0.0.0.0 --port 4173"]
+# Install a simple HTTP server for serving the built files
+RUN npm install -g serve
+
+# Start the built application with serve (no host restrictions)
+# The -s flag enables single-page app mode, -l sets the port
+CMD ["sh", "-c", "cd /app && serve -s dist -l 4173"]

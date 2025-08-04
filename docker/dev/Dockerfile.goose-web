@@ -1,6 +1,8 @@
 # Final stage - minimal image with goose
 FROM debian:bookworm-slim
 
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
+
 # Install runtime dependencies and curl for goose installation
 RUN apt-get update && apt-get install -y ca-certificates bash curl bzip2 libxcb1 && rm -rf /var/lib/apt/lists/*
 

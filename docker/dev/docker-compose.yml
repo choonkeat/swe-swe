@@ -1,6 +1,6 @@
 services:
-  # Traefik reverse proxy with basic auth
   traefik:
+  # Traefik reverse proxy with basic auth
     image: traefik:v3.0
     container_name: traefik
     command:
@@ -28,8 +28,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.swe-claude.rule=HostRegexp(`swe-swe-claude\\..+`)"
-      - "traefik.http.routers.swe-claude.middlewares=auth@file"
       - "traefik.http.services.swe-claude.loadbalancer.server.port=7001"
+      # - "traefik.http.routers.swe-claude.middlewares=auth@file" # uncomment for http basic protection
     volumes:
       # Mount current directory to /workspace in container
       - ${WORKSPACE_DIR:-../../helloworld}:/workspace
@@ -50,8 +50,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.swe-goose.rule=HostRegexp(`swe-swe-goose\\..+`)"
-      - "traefik.http.routers.swe-goose.middlewares=auth@file"
       - "traefik.http.services.swe-goose.loadbalancer.server.port=7002"
+      # - "traefik.http.routers.swe-goose.middlewares=auth@file" # uncomment for http basic protection
     volumes:
       # Mount current directory to /workspace in container
       - ${WORKSPACE_DIR:-../../helloworld}:/workspace
@@ -74,8 +74,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.goose.rule=HostRegexp(`goose\\..+`)"
-      - "traefik.http.routers.goose.middlewares=auth@file"
       - "traefik.http.services.goose.loadbalancer.server.port=9000"
+      # - "traefik.http.routers.goose.middlewares=auth@file" # uncomment for http basic protection
     volumes:
       # Mount current directory to /workspace in container
       - ${WORKSPACE_DIR:-../../helloworld}:/workspace
@@ -98,8 +98,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.claude-webui.rule=HostRegexp(`claude-code-webui\\..+`)"
-      - "traefik.http.routers.claude-webui.middlewares=auth@file"
       - "traefik.http.services.claude-webui.loadbalancer.server.port=8080"
+      # - "traefik.http.routers.claude-webui.middlewares=auth@file" # uncomment for http basic protection
     volumes:
       # Mount current directory to /workspace in container
       - ${WORKSPACE_DIR:-../../helloworld}:/workspace
@@ -118,8 +118,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.claudia.rule=HostRegexp(`claudia\\..+`)"
-      - "traefik.http.routers.claudia.middlewares=auth@file"
       - "traefik.http.services.claudia.loadbalancer.server.port=4173"
+      # - "traefik.http.routers.claudia.middlewares=auth@file" # uncomment for http basic protection
     volumes:
       # Mount current directory to /workspace in container
       - ${WORKSPACE_DIR:-../../helloworld}:/workspace
@@ -128,53 +128,19 @@ services:
       - swe-swe-network
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-
-  # Debug service for claudia to inspect available scripts
-  claudia-debug:
-    build:
-      context: ../..
-      dockerfile: docker/dev/Dockerfile.claudia.debug
-    container_name: claudia-debug
-    volumes:
-      # Mount current directory to /workspace in container
-      - ${WORKSPACE_DIR:-../../helloworld}:/workspace
-    working_dir: /workspace
-    networks:
-      - swe-swe-network
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-
-  # Hello World Node.js app with hot reload
-  helloworld:
-    build:
-      context: ../../helloworld
-      dockerfile: Dockerfile
-    container_name: helloworld
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.helloworld.rule=HostRegexp(`helloworld\\..+`)"
-      - "traefik.http.services.helloworld.loadbalancer.server.port=3000"
-    volumes:
-      # Mount helloworld directory for hot reload
-      - ../../helloworld:/app
-      - /app/node_modules
-    working_dir: /app
-    networks:
-      - swe-swe-network
-    environment:
-      - NODE_ENV=development
-      - PORT=3000
 
   # VSCode web service
   vscode:
-    image: codercom/code-server:latest
+    build:
+      context: ../..
+      dockerfile: docker/dev/Dockerfile.vscode
     container_name: vscode
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.vscode.rule=HostRegexp(`vscode\\..+`)"
-      - "traefik.http.routers.vscode.middlewares=auth@file"
       - "traefik.http.services.vscode.loadbalancer.server.port=8080"
+      # - "traefik.http.routers.vscode.middlewares=auth@file" # uncomment for http basic protection
     volumes:
       # Mount project directory
       - ${WORKSPACE_DIR:-../../helloworld}:/home/coder/project
@@ -195,6 +161,28 @@ services:
         reservations:
           cpus: '1'
           memory: 1G
+
+  # example Hello World Node.js app with hot reload
+  # aka the app that we are vibe coding on
+  helloworld:
+    build:
+      context: ../../helloworld
+      dockerfile: Dockerfile
+    container_name: helloworld
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.helloworld.rule=HostRegexp(`helloworld\\..+`)"
+      - "traefik.http.services.helloworld.loadbalancer.server.port=3000"
+    volumes:
+      # Mount helloworld directory for hot reload
+      - ../../helloworld:/app
+      - /app/node_modules
+    working_dir: /app
+    networks:
+      - swe-swe-network
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
 
 networks:
   swe-swe-network:

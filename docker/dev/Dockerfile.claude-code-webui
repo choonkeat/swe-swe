@@ -1,5 +1,6 @@
 # Multi-platform build for claude-code-webui
 FROM debian:bookworm-slim
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
 
 # Install runtime dependencies including Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \

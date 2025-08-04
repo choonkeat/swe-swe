@@ -1,8 +1,10 @@
 # Multi-stage build for swe-swe with goose CLI
 FROM golang:1.23-alpine AS builder
 
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
+
 # Install build dependencies
-RUN apk add --no-cache make git
+RUN update-ca-certificates && apk add --no-cache make git
 
 # Install elm
 RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
@@ -28,6 +30,11 @@ RUN make build
 
 # Final stage - use debian with goose CLI
 FROM debian:bookworm-slim
+
+# Create the target directory and copy the bundle
+COPY --from=builder /etc/ssl/certs/ /etc/ssl/certs/
+# Point Go’s crypto/x509 code at the bundle
+ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Install runtime dependencies and curl for goose installation
 RUN apt-get update && apt-get install -y ca-certificates bash curl bzip2 libxcb1 git && rm -rf /var/lib/apt/lists/*
