@@ -1,8 +1,9 @@
 # Multi-stage build for swe-swe
 FROM golang:1.23-alpine AS builder
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
 
 # Install build dependencies
-RUN apk add --no-cache make git
+RUN update-ca-certificates && apk add --no-cache make git
 
 # Install elm
 RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
@@ -28,6 +29,11 @@ RUN make build
 
 # Final stage - minimal image from scratch
 FROM scratch
+
+# Create the target directory and copy the bundle
+COPY --from=builder /etc/ssl/certs/ /etc/ssl/certs/
+# Point Go’s crypto/x509 code at the bundle
+ENV SSL_CERT_DIR=/etc/ssl/certs
 
 # Copy the binary
 COPY --from=builder /build/bin/swe-swe /swe-swe

@@ -1,8 +1,9 @@
 # Multi-stage build for swe-swe with claude CLI
 FROM golang:1.23-alpine AS builder
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
 
 # Install build dependencies
-RUN apk add --no-cache make git
+RUN update-ca-certificates && apk add --no-cache make git
 
 # Install elm
 RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
@@ -29,11 +30,14 @@ RUN make build
 # Final stage - use alpine for claude CLI installation
 FROM alpine:3.19
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates bash git
+# Copy custom CA certificates early
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
 
-# Install Node.js and npm
-RUN apk add --no-cache nodejs npm
+# Fix SSL issues by temporarily using HTTP for all packages
+RUN sed -i 's/https/http/g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates bash git nodejs npm && \
+    update-ca-certificates && \
+    sed -i 's/http/https/g' /etc/apk/repositories
 
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code

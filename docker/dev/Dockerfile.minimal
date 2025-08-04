@@ -1,8 +1,10 @@
 # Multi-stage build for swe-swe with minimal runtime
 FROM golang:1.23-alpine AS builder
 
+COPY docker/ca-certificates/*.* /usr/local/share/ca-certificates/
+
 # Install build dependencies
-RUN apk add --no-cache make git
+RUN update-ca-certificates && apk add --no-cache make git
 
 # Install elm
 RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
@@ -28,6 +30,11 @@ RUN make build
 
 # Final stage - use busybox for minimal OS utilities
 FROM busybox:stable-glibc
+
+COPY --from=builder /etc/ssl/certs/ /etc/ssl/certs/
+# BusyBox’s wget often looks at /etc/ssl/cert.pem – add a symlink just in case
+RUN ln -s /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem
+ENV SSL_CERT_DIR=/etc/ssl/certs  # Belt‑and‑braces
 
 # Copy the binary
 COPY --from=builder /build/bin/swe-swe /swe-swe
