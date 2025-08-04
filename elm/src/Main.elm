@@ -2191,6 +2191,10 @@ renderMessages model items =
                         , elements = elementsWithAccumulated ++ [ responseElement ]
                     }
 
+                ChatFuzzySearchResults _ ->
+                    -- Don't render fuzzy search results in the chat view
+                    state
+
         finalState =
             List.foldl renderItem initialState items
     in
