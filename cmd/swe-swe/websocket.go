@@ -46,6 +46,8 @@ type ClientMessage struct {
 	FirstMessage bool     `json:"firstMessage,omitempty"`
 	AllowedTools []string `json:"allowedTools,omitempty"` // For permission responses
 	SkipPermissions bool  `json:"skipPermissions,omitempty"` // User chose to skip all permissions
+	Query        string   `json:"query,omitempty"`        // For fuzzy search queries
+	MaxResults   int      `json:"maxResults,omitempty"`   // Maximum number of search results
 }
 
 // ChatService manages the chat room state
@@ -59,6 +61,7 @@ type ChatService struct {
 	jsonOutput      bool
 	toolUseCache    map[string]ToolUseInfo // Cache tool use info by ID
 	cacheMutex      sync.Mutex
+	fuzzyMatcher    *FuzzyMatcher          // File fuzzy matcher
 }
 
 // ToolUseInfo stores information about a tool use
@@ -91,6 +94,25 @@ type ClaudeContent struct {
 
 // NewChatService creates a new chat service
 func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool, jsonOutput bool) *ChatService {
+	// Get current working directory for fuzzy matcher
+	workingDir, err := os.Getwd()
+	if err != nil {
+		log.Printf("Failed to get working directory: %v", err)
+		workingDir = "."
+	}
+	
+	// Initialize fuzzy matcher
+	fuzzyMatcher := NewFuzzyMatcher(workingDir)
+	
+	// Index files in background
+	go func() {
+		if err := fuzzyMatcher.IndexFiles(); err != nil {
+			log.Printf("Failed to index files: %v", err)
+		} else {
+			log.Printf("Indexed %d files for fuzzy matching", fuzzyMatcher.GetFileCount())
+		}
+	}()
+	
 	return &ChatService{
 		clients:         make(map[*Client]bool),
 		broadcast:       make(chan ChatItem),
@@ -99,6 +121,7 @@ func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool
 		deferStdinClose: deferStdinClose,
 		jsonOutput:      jsonOutput,
 		toolUseCache:    make(map[string]ToolUseInfo),
+		fuzzyMatcher:    fuzzyMatcher,
 	}
 }
 
@@ -588,6 +611,38 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					client.cancelFunc = nil
 				}
 				client.processMutex.Unlock()
+				continue
+			}
+
+			// Handle fuzzy search
+			if clientMsg.Type == "fuzzy_search" {
+				log.Printf("[WEBSOCKET] Received fuzzy search query: %s", clientMsg.Query)
+				
+				maxResults := clientMsg.MaxResults
+				if maxResults <= 0 {
+					maxResults = 50 // Default limit
+				}
+				
+				// Perform fuzzy search
+				results := svc.fuzzyMatcher.Search(clientMsg.Query, maxResults)
+				
+				// Send results back to client
+				response := ChatItem{
+					Type: "fuzzy_search_results",
+				}
+				
+				// Convert results to JSON
+				if jsonData, err := json.Marshal(results); err == nil {
+					response.Content = string(jsonData)
+				} else {
+					log.Printf("[ERROR] Failed to marshal fuzzy search results: %v", err)
+					response.Content = "[]" // Empty results
+				}
+				
+				// Send directly to this client only
+				if err := websocket.JSON.Send(client.conn, response); err != nil {
+					log.Printf("Error sending fuzzy search results: %v", err)
+				}
 				continue
 			}
 
