@@ -748,7 +748,7 @@ update msg model =
                             -- Insert the selected file path at cursor position
                             beforeCursor = String.left (model.fuzzyMatcher.cursorPosition - 1) model.input -- -1 to remove @
                             afterCursor = String.dropLeft (model.fuzzyMatcher.cursorPosition + String.length model.fuzzyMatcher.query) model.input
-                            newInput = beforeCursor ++ selectedMatch.file.relPath ++ afterCursor
+                            newInput = beforeCursor ++ selectedMatch.file.relPath ++ " " ++ afterCursor
                             
                             -- Close fuzzy matcher
                             newFuzzyMatcher = { isOpen = False, query = "", results = [], selectedIndex = 0, cursorPosition = 0 }
@@ -1558,7 +1558,7 @@ permissionDialogView maybeDialog =
 
 fuzzyMatcherView : FuzzyMatcherState -> Html Msg
 fuzzyMatcherView matcher =
-    if not matcher.isOpen || List.isEmpty matcher.results then
+    if not matcher.isOpen then
         text ""
     else
         div [ class "fuzzy-matcher-dropdown" ]

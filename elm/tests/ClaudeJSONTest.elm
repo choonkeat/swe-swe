@@ -23,6 +23,13 @@ testModel =
     , skipPermissions = False
     , permissionDialog = Nothing
     , pendingPermissionRequest = Nothing
+    , fuzzyMatcher = 
+        { isOpen = False
+        , query = ""
+        , results = []
+        , selectedIndex = 0
+        , cursorPosition = 0
+        }
     }
 
 

@@ -197,7 +197,12 @@ func calculateFuzzyScore(pattern, target string) (int, []int) {
 	}
 	
 	if pattern == target {
-		return 1000, nil // Exact match gets highest score
+		// For exact matches, generate matches array for all characters
+		matches := make([]int, len(pattern))
+		for i := range matches {
+			matches[i] = i
+		}
+		return 1000, matches // Exact match gets highest score
 	}
 	
 	matches := []int{}
