@@ -207,7 +207,8 @@ func parseAgentCLI(agentCLIStr string) []string {
 func isPermissionError(content string) bool {
 	return strings.Contains(content, "requested permissions") ||
 		strings.Contains(content, "haven't granted it yet") ||
-		strings.Contains(content, "permission denied")
+		strings.Contains(content, "permission denied") ||
+		strings.Contains(content, "This command requires approval")
 }
 
 // executeAgentCommand executes the configured agent command with the given prompt and streams the output
