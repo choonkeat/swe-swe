@@ -11,53 +11,184 @@ swe-swe exposes any command-line coding agent through a modern web interface. In
 - **Self-contained binary** with embedded static assets
 - **Configurable agent integration** - works with any CLI tool
 
-## Quick Start
+---
 
-### Using Docker Compose (Recommended)
+## Using swe-swe to Develop Your Own Project
 
-1. **Start all services:**
+This is the primary use case: using swe-swe's development environment to build and modify **your own codebase**.
+
+### Quick Start - Develop Your Project
+
+1. **Clone swe-swe repository:**
    ```bash
-   make docker-compose-dev-up
+   git clone https://github.com/choonkeat/swe-swe.git
+   cd swe-swe
    ```
 
-   Other useful commands:
+2. **Set up your environment variables:**
+
+   Create a `.env` file in the swe-swe directory:
    ```bash
-   # Stop all services
-   make docker-compose-dev-up-down
-   
-   # Build/rebuild services
-   make docker-compose-dev-up-build
-   
-   # View logs
-   make docker-compose-dev-up-logs
+   ANTHROPIC_API_KEY=your_api_key_here
+   VSCODE_PASSWORD=your_vscode_password
    ```
 
-2. **Access the services:**
-   - **swe-swe-claude**: http://swe-swe-claude.localhost:7000
-   - **swe-swe-goose**: http://swe-swe-goose.localhost:7000
-   - **goose**: http://goose.localhost:7000
-   - **claude-code-webui**: http://claude-code-webui.localhost:7000
-
-3. **Authentication:**
-   All services are protected with HTTP Basic Authentication:
-   - Username: `admin`
-   - Password: `password`
-
-   To customize credentials:
+3. **Start swe-swe pointing to your project:**
    ```bash
-   # Generate new password hash
-   docker run --rm httpd:alpine htpasswd -nbB admin yourpassword
-   
-   # Set via environment variable
-   BASIC_AUTH_USERS='admin:$2y$05$...' make docker-compose-dev-up
+   # Replace with the absolute path to YOUR project directory
+   WORKSPACE_DIR=/path/to/your/project make docker-compose-dev-up
    ```
 
-4. **Alternative domains:**
-   You can also use `*.lvh.me` domains (e.g., http://swe-swe-claude.lvh.me:7000) or any other domain that resolves to localhost.
+   For example:
+   ```bash
+   WORKSPACE_DIR=/Users/me/my-app make docker-compose-dev-up
+   ```
+
+4. **Access the development environment:**
+
+   All services will work on YOUR project directory:
+
+   - **swe-swe-claude**: http://swe-swe-claude.localhost:7001 - Chat with Claude Code about your project
+   - **vscode**: http://vscode.localhost:7001 - VSCode web editor for your project
+   - **swe-swe-goose**: http://swe-swe-goose.localhost:7001 - Chat with Goose about your project
+   - **goose**: http://goose.localhost:7001 - Native Goose web interface
+   - **claude-code-webui**: http://claude-code-webui.localhost:7001 - Alternative Claude interface
+   - **claudia**: http://claudia.localhost:7001 - Another Claude interface option
+   - **Traefik Dashboard**: http://localhost:7002 - Monitor all services
+
+5. **Authentication:**
+
+   By default, services are NOT password protected. To enable HTTP Basic Authentication, uncomment the middleware lines in `docker/dev/docker-compose.yml` and configure credentials in `docker/dev/traefik-dynamic.yml`.
+
+### How It Works
+
+The key is the `WORKSPACE_DIR` environment variable:
+
+- When you run `WORKSPACE_DIR=/path/to/your/project make docker-compose-dev-up`, the docker-compose configuration mounts your project directory into all agent containers at `/workspace`
+- Each agent (Claude, Goose, etc.) and the VSCode container all see and can modify the same directory - YOUR project
+- Changes made through any interface (chat agents or VSCode) are immediately reflected in your actual project directory on your host machine
+- The default value (if `WORKSPACE_DIR` is not set) is `../../helloworld`, which is an example project in the swe-swe repo
+
+### Working with the Environment
+
+**Start development session:**
+```bash
+cd /path/to/swe-swe
+WORKSPACE_DIR=/path/to/your/project make docker-compose-dev-up
+```
+
+**Stop all services:**
+```bash
+make docker-compose-dev-up-down
+```
+
+**Rebuild services (after updating swe-swe itself):**
+```bash
+make docker-compose-dev-up-build
+```
+
+**View logs:**
+```bash
+make docker-compose-dev-up-logs
+```
+
+### Using Alternative Domains
+
+If `*.localhost` domains don't work on your system, you can use `*.lvh.me` which also resolves to 127.0.0.1:
+
+- http://swe-swe-claude.lvh.me:7001
+- http://vscode.lvh.me:7001
+- etc.
+
+### Tips for Development
+
+1. **Start with VSCode**: Open http://vscode.localhost:7001 to browse your project structure and understand the codebase
+2. **Use chat agents for coding**: Open the Claude or Goose interfaces to have AI help you write, refactor, or debug code
+3. **Multiple agents simultaneously**: You can have multiple browser tabs open - VSCode in one, Claude chat in another - all working on the same project
+4. **Real-time sync**: All changes are synchronized immediately between containers and your host machine
+
+---
+
+## Developing swe-swe Itself
+
+If you want to modify or contribute to swe-swe itself, here's how to set up a development environment.
+
+### Prerequisites
+- Go 1.21+
+- Elm 0.19+
+- Make
+- Docker & Docker Compose
+
+### Development Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/choonkeat/swe-swe.git
+   cd swe-swe
+   ```
+
+2. **Build the application:**
+   ```bash
+   make build
+   ```
+
+3. **Run locally:**
+   ```bash
+   make run
+   ```
+
+4. **Access at:**
+   ```
+   http://localhost:7000
+   ```
+
+### Build Commands
+
+```bash
+# Build everything (Elm + Go)
+make build
+
+# Build only Elm frontend
+make build-elm
+
+# Build only Go backend
+make build-go
+
+# Run tests
+make test
+
+# Clean build artifacts
+make clean
+
+# Run development server
+make run
+```
+
+### Development Workflow for swe-swe
+
+1. Make changes to Elm code in `elm/src/Main.elm`
+2. Make changes to Go code in `cmd/swe-swe/*.go`
+3. Run `make build` to rebuild both frontend and backend
+4. Test with `./bin/swe-swe`
+
+### Running swe-swe Development Environment
+
+To develop swe-swe using swe-swe itself (meta!):
+
+```bash
+# From within the swe-swe directory
+make docker-compose-dev-up
+```
+
+This will mount the swe-swe directory as the workspace, and you can use the web interfaces to modify swe-swe's own code.
+
+---
 
 ## Configuration
 
 ### Command Line Options
+
+When running the `swe-swe` binary directly:
 
 ```bash
 ./bin/swe-swe [options]
@@ -89,6 +220,8 @@ For custom agents, use the `-agent-cli-1st` and `-agent-cli-nth` flags with `?` 
 ```
 
 **Note:** When using `-agent goose`, the application directly executes `goose web --port <PORT>`, replacing the current process.
+
+---
 
 ## Architecture
 
@@ -123,58 +256,7 @@ For custom agents, use the `-agent-cli-1st` and `-agent-cli-nth` flags with `?` 
 {"type": "content", "content": "I'll help you implement user authentication..."}
 ```
 
-## Development
-
-### Running Locally
-
-1. **Build the application:**
-   ```bash
-   make build
-   ```
-
-2. **Run with default settings (uses goose):**
-   ```bash
-   ./bin/swe-swe
-   ```
-
-3. **Open your browser:**
-   ```
-   http://localhost:7000
-   ```
-
-### Building from Source
-
-#### Prerequisites
-- Go 1.21+
-- Elm 0.19+
-- Make
-
-#### Build Commands
-```bash
-# Build everything (Elm + Go)
-make build
-
-# Build only Elm frontend
-make build-elm
-
-# Build only Go backend
-make build-go
-
-# Run tests
-make test
-
-# Clean build artifacts
-make clean
-
-# Run development server
-make run
-```
-
-#### Development Workflow
-1. Make changes to Elm code in `elm/src/Main.elm`
-2. Make changes to Go code in `cmd/swe-swe/*.go`
-3. Run `make build` to rebuild both frontend and backend
-4. Test with `./bin/swe-swe`
+---
 
 ## File Structure
 
@@ -199,9 +281,19 @@ swe-swe/
 │   └── static/
 │       ├── css/styles.css     # Application styles and themes
 │       └── js/app.js          # Compiled Elm (generated)
+├── docker/
+│   └── dev/
+│       ├── docker-compose.yml # Docker compose configuration
+│       ├── Dockerfile.claude  # Claude agent container
+│       ├── Dockerfile.goose   # Goose agent container
+│       ├── Dockerfile.vscode  # VSCode web container
+│       └── ...                # Other Dockerfiles
+├── helloworld/                # Example project (default WORKSPACE_DIR)
 └── bin/
     └── swe-swe               # Compiled binary (generated)
 ```
+
+---
 
 ## License
 
