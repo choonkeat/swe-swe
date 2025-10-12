@@ -646,6 +646,19 @@ body.dark-theme {
     color: var(--color-white);
 }
 
+/* System Default theme (white background) */
+.messages[style*="background-color: rgb(255, 255, 255)"] {
+    color: var(--text-primary);
+}
+
+.messages[style*="background-color: rgb(255, 255, 255)"] .message-content {
+    color: var(--text-primary);
+}
+
+.messages[style*="background-color: rgb(255, 255, 255)"] .bot-message {
+    color: var(--text-primary);
+}
+
 /* Classic Terminal theme styling */
 .messages[style*="background-color: rgb(0, 0, 0)"] {
     font-family: 'Courier New', Courier, monospace;
