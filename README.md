@@ -107,6 +107,64 @@ If `*.localhost` domains don't work on your system, you can use `*.lvh.me` which
 3. **Multiple agents simultaneously**: You can have multiple browser tabs open - VSCode in one, Claude chat in another - all working on the same project
 4. **Real-time sync**: All changes are synchronized immediately between containers and your host machine
 
+### Using swe-swe Without Docker (Local Binary)
+
+If you prefer not to use Docker, you can run the swe-swe binary directly from your project directory:
+
+1. **Build swe-swe:**
+   ```bash
+   cd /path/to/swe-swe
+   make build
+   ```
+
+2. **Navigate to your project directory:**
+   ```bash
+   cd /path/to/your/project
+   ```
+
+3. **Run swe-swe from your project directory:**
+   ```bash
+   /path/to/swe-swe/bin/swe-swe -agent claude
+   ```
+
+   Or add it to your PATH and run:
+   ```bash
+   swe-swe -agent claude
+   ```
+
+4. **Access the web interface:**
+   ```
+   http://localhost:7000
+   ```
+
+**How it works:** The swe-swe binary runs the agent CLI tools (like `claude` or `goose`) in whatever directory you execute it from. The agents will have access to all files in that directory and can make changes directly.
+
+**Examples:**
+```bash
+# Use Claude Code agent
+cd ~/my-app
+swe-swe -agent claude
+
+# Use Goose agent
+cd ~/my-app
+swe-swe -agent goose
+
+# Use custom port
+cd ~/my-app
+swe-swe -agent claude -port 8080
+```
+
+**Pros of this approach:**
+- Simpler setup - no Docker required
+- Direct file system access
+- Lower resource usage
+
+**Cons compared to Docker:**
+- No VSCode web interface
+- No multiple agent interfaces at once
+- Requires agent CLI tools installed locally (claude, goose, etc.)
+- No Traefik dashboard
+
 ---
 
 ## Developing swe-swe Itself
