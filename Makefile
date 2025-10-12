@@ -1,7 +1,7 @@
 build: build-elm build-go
 
 ELM_OUTPUT=cmd/swe-swe/static/js/app.js
-build-elm:
+build-elm: elm/node_modules
 	cd elm && elm make src/Main.elm --output=../$(ELM_OUTPUT)
 
 build-go:
@@ -9,7 +9,7 @@ build-go:
 
 test: test-elm test-go
 
-test-elm:
+test-elm: elm/node_modules
 	cd elm && elm-test
 
 test-go:
@@ -20,8 +20,11 @@ format: format-go format-elm
 format-go:
 	gofmt -s -w .
 
-format-elm:
+format-elm: elm/node_modules
 	cd elm && echo y | elm-format src/
+
+elm/node_modules: elm/package.json
+	cd elm && npm ci
 
 SWEE_SWE_FLAGS=
 run:
