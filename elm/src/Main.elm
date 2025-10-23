@@ -57,6 +57,7 @@ port sendFuzzySearch : String -> Cmd msg
 type alias Flags =
     { systemTheme : String
     , savedUserTheme : String
+    , browserSessionID : String
     }
 
 
@@ -92,6 +93,7 @@ type alias Model =
     , systemTheme : Theme
     , isTyping : Bool
     , isFirstUserMessage : Bool
+    , browserSessionID : Maybe String
     , pendingToolUses : Dict String ClaudeContent
     , allowedTools : List String
     , skipPermissions : Bool
@@ -237,6 +239,7 @@ init flags =
       , systemTheme = initialTheme
       , isTyping = False
       , isFirstUserMessage = True
+      , browserSessionID = Just flags.browserSessionID
       , pendingToolUses = Dict.empty
       , allowedTools = []
       , skipPermissions = False
@@ -352,6 +355,7 @@ update msg model =
                                 [ ( "sender", Encode.string "USER" )
                                 , ( "content", Encode.string model.input )
                                 , ( "firstMessage", Encode.bool model.isFirstUserMessage )
+                                , ( "sessionID", Encode.string (Maybe.withDefault "" model.browserSessionID) )
                                 ]
                             )
                 in
@@ -554,6 +558,7 @@ update msg model =
                                                 [ ( "sender", Encode.string "USER" )
                                                 , ( "content", Encode.string model.input )
                                                 , ( "firstMessage", Encode.bool model.isFirstUserMessage )
+                                                , ( "sessionID", Encode.string (Maybe.withDefault "" model.browserSessionID) )
                                                 ]
                                             )
                                 in
