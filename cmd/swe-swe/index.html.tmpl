@@ -165,16 +165,80 @@
             }
         });
 
+        // Track scroll position state
+        let isUserAtBottom = true; // Start at bottom initially
+        let hasNewMessagesWhileScrolledUp = false;
+        const BOTTOM_THRESHOLD = 100; // pixels from bottom to consider "at bottom"
+
+        // Function to check if user is at bottom
+        function checkIfAtBottom() {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const windowHeight = window.innerHeight;
+            const docHeight = document.documentElement.scrollHeight;
+            const distanceFromBottom = docHeight - (scrollTop + windowHeight);
+            return distanceFromBottom <= BOTTOM_THRESHOLD;
+        }
+
+        // Update scroll state when user scrolls
+        function updateScrollState() {
+            const wasAtBottom = isUserAtBottom;
+            isUserAtBottom = checkIfAtBottom();
+            
+            // If user scrolled to bottom, clear new message indicator
+            if (isUserAtBottom && hasNewMessagesWhileScrolledUp) {
+                hasNewMessagesWhileScrolledUp = false;
+                updateNewMessageIndicator();
+            }
+        }
+
+        // Debounced scroll handler to avoid excessive checks
+        let scrollTimeout;
+        window.addEventListener('scroll', function() {
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
+            }
+            scrollTimeout = setTimeout(updateScrollState, 100);
+        });
+
+        // Function to show/hide new message indicator
+        function updateNewMessageIndicator() {
+            let indicator = document.querySelector('.new-message-indicator');
+            
+            if (hasNewMessagesWhileScrolledUp && !isUserAtBottom) {
+                if (!indicator) {
+                    indicator = document.createElement('div');
+                    indicator.className = 'new-message-indicator';
+                    indicator.innerHTML = '📩 New messages below';
+                    indicator.onclick = function() {
+                        window.scrollTo({
+                            top: document.body.scrollHeight,
+                            behavior: 'smooth'
+                        });
+                    };
+                    document.body.appendChild(indicator);
+                }
+                indicator.style.display = 'block';
+            } else if (indicator) {
+                indicator.style.display = 'none';
+            }
+        }
+
         // Handle scroll to bottom requests from Elm
         app.ports.scrollToBottom.subscribe(function() {
             // Small delay to ensure DOM has updated after message rendering
             setTimeout(function() {
-                // Since we're using a full-page layout, scroll to the bottom of the page
-                // This will scroll down to show the latest messages above the fixed input
-                window.scrollTo({
-                    top: document.body.scrollHeight,
-                    behavior: 'smooth'
-                });
+                // Check if user was at bottom before new message arrived
+                if (isUserAtBottom) {
+                    // User was at bottom, so auto-scroll to show new message
+                    window.scrollTo({
+                        top: document.body.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                } else {
+                    // User was scrolled up, don't interrupt but show indicator
+                    hasNewMessagesWhileScrolledUp = true;
+                    updateNewMessageIndicator();
+                }
             }, 10);
         });
 

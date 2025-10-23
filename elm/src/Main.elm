@@ -20,6 +20,7 @@ import Html.Attributes exposing (autofocus, checked, class, disabled, placeholde
 import Html.Events exposing (keyCode, on, onClick, onInput, targetValue)
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Set
 
 
 
@@ -1632,40 +1633,121 @@ highlightMatches str matches =
 -- Render diff for Edit or MultiEdit tool
 
 
+-- Diff line type for better diff rendering
+type DiffLineType
+    = Added String
+    | Removed String 
+    | Unchanged String
+
+-- Generate a unified diff from old and new strings
+generateUnifiedDiff : String -> String -> List DiffLineType
+generateUnifiedDiff oldString newString =
+    let
+        oldLines = String.lines oldString
+        newLines = String.lines newString
+        
+        -- Simple line-based diff algorithm
+        -- This is a simplified version - more complex algorithms like Myers could be used
+        diffLines = computeLineDiff oldLines newLines
+    in
+    diffLines
+
+-- Simple diff computation that finds added/removed/unchanged lines
+computeLineDiff : List String -> List String -> List DiffLineType
+computeLineDiff oldLines newLines =
+    let
+        oldSet = Set.fromList oldLines
+        newSet = Set.fromList newLines
+        
+        removedLines = Set.diff oldSet newSet |> Set.toList
+        addedLines = Set.diff newSet oldSet |> Set.toList
+        unchangedLines = Set.intersect oldSet newSet |> Set.toList
+        
+        -- Create a simple ordering: removed, then added, then some unchanged for context
+        diffResult = 
+            (List.map Removed removedLines) ++ 
+            (List.map Added addedLines) ++
+            (List.take 3 unchangedLines |> List.map Unchanged) -- Show some context
+    in
+    diffResult
+
 renderDiff : String -> String -> Html Msg
 renderDiff oldString newString =
     let
-        oldLines =
-            String.lines oldString
-
-        newLines =
-            String.lines newString
-
-        renderLine lineType content =
-            case lineType of
-                "old" ->
-                    div [ class "diff-line diff-old" ]
-                        [ span [ class "diff-marker" ] [ text "- " ]
-                        , span [] [ text content ]
-                        ]
-
-                "new" ->
-                    div [ class "diff-line diff-new" ]
+        diffLines = generateUnifiedDiff oldString newString
+        
+        renderDiffLine diffLine =
+            case diffLine of
+                Added content ->
+                    div [ class "diff-line diff-added" ]
                         [ span [ class "diff-marker" ] [ text "+ " ]
-                        , span [] [ text content ]
+                        , span [ class "diff-content" ] [ text content ]
                         ]
-
-                _ ->
+                
+                Removed content ->
+                    div [ class "diff-line diff-removed" ]
+                        [ span [ class "diff-marker" ] [ text "- " ]
+                        , span [ class "diff-content" ] [ text content ]
+                        ]
+                
+                Unchanged content ->
                     div [ class "diff-line diff-context" ]
                         [ span [ class "diff-marker" ] [ text "  " ]
-                        , span [] [ text content ]
+                        , span [ class "diff-content" ] [ text content ]
                         ]
+                        
+        -- If diff is too complex, fall back to side-by-side view
+        shouldShowSideBySide = 
+            (String.lines oldString |> List.length) > 10 || 
+            (String.lines newString |> List.length) > 10
     in
-    div [ class "diff-container" ]
+    if shouldShowSideBySide then
+        renderSideBySideDiff oldString newString
+    else
+        div [ class "diff-container unified" ]
+            [ div [ class "diff-header" ]
+                [ text "Changes:" ]
+            , div [ class "diff-content" ]
+                (List.map renderDiffLine diffLines)
+            ]
+
+-- Render side-by-side diff for larger changes
+renderSideBySideDiff : String -> String -> Html Msg
+renderSideBySideDiff oldString newString =
+    let
+        oldLines = String.lines oldString
+        newLines = String.lines newString
+        maxLines = max (List.length oldLines) (List.length newLines)
+        
+        renderSideBySideLine index =
+            let
+                oldLine = List.drop index oldLines |> List.head |> Maybe.withDefault ""
+                newLine = List.drop index newLines |> List.head |> Maybe.withDefault ""
+                hasOldLine = index < List.length oldLines
+                hasNewLine = index < List.length newLines
+            in
+            div [ class "diff-line-pair" ]
+                [ div [ class "diff-side diff-old" ]
+                    [ span [ class "diff-line-number" ] [ text (String.fromInt (index + 1)) ]
+                    , span [ class "diff-marker" ] 
+                        [ text (if hasOldLine then "- " else "  ") ]
+                    , span [ class "diff-content" ] 
+                        [ text (if hasOldLine then oldLine else "") ]
+                    ]
+                , div [ class "diff-side diff-new" ]
+                    [ span [ class "diff-line-number" ] [ text (String.fromInt (index + 1)) ]
+                    , span [ class "diff-marker" ] 
+                        [ text (if hasNewLine then "+ " else "  ") ]
+                    , span [ class "diff-content" ] 
+                        [ text (if hasNewLine then newLine else "") ]
+                    ]
+                ]
+    in
+    div [ class "diff-container side-by-side" ]
         [ div [ class "diff-header" ]
-            [ text "Changes to apply:" ]
+            [ text "Changes (side-by-side):" ]
         , div [ class "diff-content" ]
-            (List.map (renderLine "old") oldLines ++ List.map (renderLine "new") newLines)
+            (List.range 0 (maxLines - 1) |> List.map renderSideBySideLine)
         ]
 
 

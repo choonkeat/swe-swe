@@ -252,6 +252,20 @@ func calculateFuzzyScore(pattern, target string) (int, []int) {
 
 // Search performs fuzzy search on indexed files
 func (fm *FuzzyMatcher) Search(pattern string, maxResults int) []MatchResult {
+	// Check if index is stale (over 5 minutes old) and refresh in background
+	fm.mu.RLock()
+	needsRefresh := time.Since(fm.lastUpdate) > 5*time.Minute
+	fm.mu.RUnlock()
+	
+	if needsRefresh {
+		go func() {
+			if err := fm.IndexFiles(); err != nil {
+				// Log error but don't block search
+				fmt.Printf("Background file index refresh failed: %v\n", err)
+			}
+		}()
+	}
+	
 	fm.mu.RLock()
 	defer fm.mu.RUnlock()
 	

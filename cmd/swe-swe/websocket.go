@@ -119,6 +119,23 @@ func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool
 		}
 	}()
 
+	// Start periodic re-indexing to catch new files
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute) // Re-index every 2 minutes
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				if err := fuzzyMatcher.IndexFiles(); err != nil {
+					log.Printf("Periodic file re-indexing failed: %v", err)
+				} else {
+					log.Printf("Periodic re-index completed: %d files", fuzzyMatcher.GetFileCount())
+				}
+			}
+		}
+	}()
+
 	return &ChatService{
 		clients:         make(map[*Client]bool),
 		broadcast:       make(chan ChatItem),
@@ -316,8 +333,10 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 				insertPos = 3 // After claude --resume sessionID
 			}
 			cmdArgs = append(cmdArgs[:insertPos], append([]string{"--dangerously-skip-permissions"}, cmdArgs[insertPos:]...)...)
-		} else if len(allowedTools) > 0 {
-			// Add allowed tools as a comma-separated list
+		}
+		// ALWAYS add allowed tools if we have them (separate from skipPermissions)
+		if len(allowedTools) > 0 {
+			log.Printf("[PERMISSIONS] Passing allowed tools to Claude: %v", allowedTools)
 			cmdArgs = append(cmdArgs, "--allowedTools", strings.Join(allowedTools, ","))
 		}
 	}
@@ -714,6 +733,19 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					client.cancelFunc = nil
 				}
 				client.processMutex.Unlock()
+				continue
+			}
+
+			// Handle manual file index refresh
+			if clientMsg.Type == "refresh_file_index" {
+				log.Printf("[WEBSOCKET] Received manual file index refresh request")
+				go func() {
+					if err := svc.fuzzyMatcher.IndexFiles(); err != nil {
+						log.Printf("Manual file index refresh failed: %v", err)
+					} else {
+						log.Printf("Manual file index refresh completed: %d files", svc.fuzzyMatcher.GetFileCount())
+					}
+				}()
 				continue
 			}
 
