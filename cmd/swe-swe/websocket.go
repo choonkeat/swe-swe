@@ -22,22 +22,22 @@ import (
 // Client represents a connected websocket client
 type Client struct {
 	conn                  *websocket.Conn
-	username             string
-	browserSessionID     string        // Browser tab session ID
-	claudeSessionID      string        // CLI session ID from stream-json
-	hasStartedSession    bool          // Track if first message sent
-	cancelFunc           context.CancelFunc
-	processMutex         sync.Mutex
-	allowedTools         []string // Track allowed tools for this client
-	skipPermissions      bool     // Track if user chose to skip all permissions
-	pendingToolPermission string  // Track which tool is pending permission
+	username              string
+	browserSessionID      string // Browser tab session ID
+	claudeSessionID       string // CLI session ID from stream-json
+	hasStartedSession     bool   // Track if first message sent
+	cancelFunc            context.CancelFunc
+	processMutex          sync.Mutex
+	allowedTools          []string // Track allowed tools for this client
+	skipPermissions       bool     // Track if user chose to skip all permissions
+	pendingToolPermission string   // Track which tool is pending permission
 }
 
 // ChatItem represents either a sender or content in the chat
 type ChatItem struct {
-	Type    string `json:"type"`
-	Sender  string `json:"sender,omitempty"`
-	Content string `json:"content,omitempty"`
+	Type      string `json:"type"`
+	Sender    string `json:"sender,omitempty"`
+	Content   string `json:"content,omitempty"`
 	ToolInput string `json:"toolInput,omitempty"` // For permission requests
 }
 
@@ -65,7 +65,7 @@ type ChatService struct {
 	jsonOutput      bool
 	toolUseCache    map[string]ToolUseInfo // Cache tool use info by ID
 	cacheMutex      sync.Mutex
-	fuzzyMatcher    *FuzzyMatcher          // File fuzzy matcher
+	fuzzyMatcher    *FuzzyMatcher // File fuzzy matcher
 }
 
 // ToolUseInfo stores information about a tool use
@@ -105,10 +105,10 @@ func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool
 		log.Printf("Failed to get working directory: %v", err)
 		workingDir = "."
 	}
-	
+
 	// Initialize fuzzy matcher
 	fuzzyMatcher := NewFuzzyMatcher(workingDir)
-	
+
 	// Index files in background
 	go func() {
 		if err := fuzzyMatcher.IndexFiles(); err != nil {
@@ -117,7 +117,7 @@ func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool
 			log.Printf("Indexed %d files for fuzzy matching", fuzzyMatcher.GetFileCount())
 		}
 	}()
-	
+
 	return &ChatService{
 		clients:         make(map[*Client]bool),
 		broadcast:       make(chan ChatItem),
@@ -168,23 +168,31 @@ func (s *ChatService) RegisterClient(client *Client) {
 
 	log.Printf("[WEBSOCKET] New client connected")
 
-	// Send welcome message using broadcast mechanism for consistent processing
+	// Send welcome message directly to this client only
 	go func() {
+		// Wait a moment for client to establish session ID
+		time.Sleep(100 * time.Millisecond)
+
 		// Send the swe-swe bot item
 		botSenderItem := ChatItem{
 			Type:   "bot",
 			Sender: "swe-swe",
 		}
-		s.BroadcastItem(botSenderItem)
+		if err := websocket.JSON.Send(client.conn, botSenderItem); err != nil {
+			log.Printf("Error sending welcome bot item: %v", err)
+			return
+		}
 
 		// Send welcome content
-		log.Printf("[CHAT] Sending welcome message")
+		log.Printf("[CHAT] Sending welcome message to session: %s", client.browserSessionID)
 		welcomeMsg := "Welcome to the chat! Type something to start chatting."
 		contentItem := ChatItem{
 			Type:    "content",
 			Content: welcomeMsg,
 		}
-		s.BroadcastItem(contentItem)
+		if err := websocket.JSON.Send(client.conn, contentItem); err != nil {
+			log.Printf("Error sending welcome content: %v", err)
+		}
 	}()
 }
 
@@ -201,6 +209,28 @@ func (s *ChatService) UnregisterClient(client *Client) {
 // BroadcastItem sends a chat item to all clients
 func (s *ChatService) BroadcastItem(item ChatItem) {
 	s.broadcast <- item
+}
+
+// BroadcastToSession sends a chat item only to clients with matching session ID
+func (s *ChatService) BroadcastToSession(item ChatItem, sessionID string) {
+	if sessionID == "" {
+		// If no session ID, broadcast to all (fallback for compatibility)
+		s.BroadcastItem(item)
+		return
+	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	for client := range s.clients {
+		if client.browserSessionID == sessionID {
+			if err := websocket.JSON.Send(client.conn, item); err != nil {
+				log.Printf("Error sending message to client session %s: %v", sessionID, err)
+				delete(s.clients, client)
+				client.conn.Close()
+			}
+		}
+	}
 }
 
 // parseAgentCLI parses the agent CLI string into a command slice
@@ -272,7 +302,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 
 		// Add session resume support for subsequent messages
 		if !isFirstMessage && client.claudeSessionID != "" {
-			// Insert --resume flag and session ID after claude command
+			// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
 			cmdArgs = append([]string{cmdArgs[0], "--resume", client.claudeSessionID}, cmdArgs[1:]...)
 			log.Printf("[SESSION] Using --resume with Claude session ID: %s", client.claudeSessionID)
 		}
@@ -318,10 +348,10 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		ptmx, err = pty.Start(cmd)
 		if err != nil {
 			log.Printf("[ERROR] Failed to start PTY: %v", err)
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
 				Content: "Error starting PTY: " + err.Error(),
-			})
+			}, client.browserSessionID)
 			return
 		}
 		defer func() {
@@ -349,10 +379,10 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		stdout, err = cmd.StdoutPipe()
 		if err != nil {
 			log.Printf("[ERROR] Failed to create stdout pipe: %v", err)
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
 				Content: "Error creating command pipe: " + err.Error(),
-			})
+			}, client.browserSessionID)
 			return
 		}
 
@@ -365,10 +395,10 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		// Start the command
 		if err := cmd.Start(); err != nil {
 			log.Printf("[ERROR] Failed to start command: %v", err)
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
 				Content: "Error starting agent command: " + err.Error(),
-			})
+			}, client.browserSessionID)
 			return
 		}
 	}
@@ -398,9 +428,9 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 	log.Printf("[EXEC] Process started with PID: %d", cmd.Process.Pid)
 
 	// Send exec start event
-	svc.BroadcastItem(ChatItem{
+	svc.BroadcastToSession(ChatItem{
 		Type: "exec_start",
-	})
+	}, client.browserSessionID)
 
 	// Handle stderr in a separate goroutine (only for non-PTY commands)
 	if stderr != nil {
@@ -408,7 +438,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			scanner := bufio.NewScanner(stderr)
 			// Increase scanner buffer size to handle large lines (default is 64KB)
 			const maxScanTokenSize = 1024 * 1024 // 1MB
-			buf := make([]byte, 0, 64*1024)       // Start with 64KB buffer
+			buf := make([]byte, 0, 64*1024)      // Start with 64KB buffer
 			scanner.Buffer(buf, maxScanTokenSize)
 			for scanner.Scan() {
 				line := scanner.Text()
@@ -432,21 +462,21 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 	scanner := bufio.NewScanner(stdout)
 	// Increase scanner buffer size to handle large lines (default is 64KB)
 	const maxScanTokenSize = 1024 * 1024 // 1MB
-	buf := make([]byte, 0, 64*1024)       // Start with 64KB buffer
+	buf := make([]byte, 0, 64*1024)      // Start with 64KB buffer
 	scanner.Buffer(buf, maxScanTokenSize)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
 			// Context cancelled, stop processing
 			log.Printf("[EXEC] Process cancelled by context")
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
 				Content: "\n[Process stopped by user]\n",
-			})
+			}, client.browserSessionID)
 			// Send exec end event to hide typing indicator
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
-			})
+			}, client.browserSessionID)
 			return
 		default:
 			line := scanner.Text()
@@ -476,12 +506,17 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 					// Try to parse the JSON to detect tool uses and permission errors
 					var claudeMsg ClaudeMessage
 					if err := json.Unmarshal([]byte(line), &claudeMsg); err == nil {
-						// Extract and store Claude session ID if present
-						if claudeMsg.SessionID != "" && client.claudeSessionID == "" {
+						// Extract and store Claude session ID if present (always update to handle session resumption)
+						if claudeMsg.SessionID != "" {
 							client.processMutex.Lock()
+							oldSessionID := client.claudeSessionID
 							client.claudeSessionID = claudeMsg.SessionID
 							client.processMutex.Unlock()
-							log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s", client.claudeSessionID, client.browserSessionID)
+							if oldSessionID == "" {
+								log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s", client.claudeSessionID, client.browserSessionID)
+							} else if oldSessionID != client.claudeSessionID {
+								log.Printf("[SESSION] Updated Claude session ID from %s to %s for browser session: %s", oldSessionID, client.claudeSessionID, client.browserSessionID)
+							}
 						}
 
 						// Check for tool uses and cache them
@@ -512,12 +547,12 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 
 										if exists {
 											// Send permission request to frontend
-											svc.BroadcastItem(ChatItem{
-												Type: "permission_request",
-												Content: content.Content,
-												Sender: toolInfo.Name,  // Tool name in Sender field
+											svc.BroadcastToSession(ChatItem{
+												Type:      "permission_request",
+												Content:   content.Content,
+												Sender:    toolInfo.Name,  // Tool name in Sender field
 												ToolInput: toolInfo.Input, // Include tool input details
-											})
+											}, client.browserSessionID)
 
 											// Track which tool is pending permission
 											client.processMutex.Lock()
@@ -529,9 +564,9 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 											cancel()
 
 											// Send exec end event to hide typing indicator
-											svc.BroadcastItem(ChatItem{
+											svc.BroadcastToSession(ChatItem{
 												Type: "exec_end",
-											})
+											}, client.browserSessionID)
 											return
 										}
 									}
@@ -541,17 +576,17 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 					}
 
 					// Send raw JSON to Elm for parsing
-					svc.BroadcastItem(ChatItem{
+					svc.BroadcastToSession(ChatItem{
 						Type:    "claudejson",
 						Content: line,
-					})
+					}, client.browserSessionID)
 				} else {
 					// Regular text output
-					
-					svc.BroadcastItem(ChatItem{
+
+					svc.BroadcastToSession(ChatItem{
 						Type:    "content",
 						Content: line + "\n",
-					})
+					}, client.browserSessionID)
 				}
 			}
 		}
@@ -564,18 +599,18 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			// Context cancelled, don't send error message
 			log.Printf("[EXEC] Process cancelled, exit error ignored: %v", err)
 			// Send exec end event to hide typing indicator
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
-			})
+			}, client.browserSessionID)
 			return
 		default:
 			log.Printf("[ERROR] Command completed with error: %v", err)
-			
+
 			// Check if this was a Claude session resumption error
 			if !isFirstMessage && client.claudeSessionID != "" && len(cmdArgs) > 0 && cmdArgs[0] == "claude" {
 				errorMsg := err.Error()
 				// Check for common session resumption error patterns
-				if strings.Contains(errorMsg, "session") && (strings.Contains(errorMsg, "not found") || 
+				if strings.Contains(errorMsg, "session") && (strings.Contains(errorMsg, "not found") ||
 					strings.Contains(errorMsg, "invalid") || strings.Contains(errorMsg, "expired")) {
 					log.Printf("[SESSION] Claude session resumption failed, clearing session ID: %s", client.claudeSessionID)
 					// Clear the stored session ID so next attempt will start fresh
@@ -583,18 +618,18 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 					client.claudeSessionID = ""
 					client.hasStartedSession = false // Reset to allow fresh start
 					client.processMutex.Unlock()
-					svc.BroadcastItem(ChatItem{
+					svc.BroadcastToSession(ChatItem{
 						Type:    "content",
 						Content: "Session expired. Starting fresh session...",
-					})
+					}, client.browserSessionID)
 					return // Don't show the raw error to user
 				}
 			}
-			
-			svc.BroadcastItem(ChatItem{
+
+			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
 				Content: "Command completed with error: " + err.Error(),
-			})
+			}, client.browserSessionID)
 		}
 	} else {
 		log.Printf("[EXEC] Process completed successfully")
@@ -605,15 +640,15 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		select {
 		case <-ctx.Done():
 			// Send exec end event to hide typing indicator
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
-			})
+			}, client.browserSessionID)
 			return
 		default:
-			svc.BroadcastItem(ChatItem{
+			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
 				Content: "Error reading command output: " + err.Error(),
-			})
+			}, client.browserSessionID)
 		}
 	}
 
@@ -628,9 +663,9 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 	client.processMutex.Unlock()
 
 	// Send exec end event
-	svc.BroadcastItem(ChatItem{
+	svc.BroadcastToSession(ChatItem{
 		Type: "exec_end",
-	})
+	}, client.browserSessionID)
 }
 
 // websocketHandler handles websocket connections
@@ -674,20 +709,20 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			// Handle fuzzy search
 			if clientMsg.Type == "fuzzy_search" {
 				log.Printf("[WEBSOCKET] Received fuzzy search query: %s", clientMsg.Query)
-				
+
 				maxResults := clientMsg.MaxResults
 				if maxResults <= 0 {
 					maxResults = 50 // Default limit
 				}
-				
+
 				// Perform fuzzy search
 				results := svc.fuzzyMatcher.Search(clientMsg.Query, maxResults)
-				
+
 				// Send results back to client
 				response := ChatItem{
 					Type: "fuzzy_search_results",
 				}
-				
+
 				// Convert results to JSON
 				if jsonData, err := json.Marshal(results); err == nil {
 					response.Content = string(jsonData)
@@ -695,7 +730,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					log.Printf("[ERROR] Failed to marshal fuzzy search results: %v", err)
 					response.Content = "[]" // Empty results
 				}
-				
+
 				// Send directly to this client only
 				if err := websocket.JSON.Send(client.conn, response); err != nil {
 					log.Printf("Error sending fuzzy search results: %v", err)
@@ -740,14 +775,14 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					Type:   "user",
 					Sender: "USER",
 				}
-				svc.BroadcastItem(userItem)
+				svc.BroadcastToSession(userItem, client.browserSessionID)
 
 				// Broadcast the user's response
 				contentItem := ChatItem{
 					Type:    "content",
 					Content: responseText,
 				}
-				svc.BroadcastItem(contentItem)
+				svc.BroadcastToSession(contentItem, client.browserSessionID)
 
 				// Only send continue if permission was granted or skip permissions is enabled
 				if toolWasAllowed || clientMsg.SkipPermissions {
@@ -756,7 +791,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 						Type:   "bot",
 						Sender: "swe-swe",
 					}
-					svc.BroadcastItem(botSenderItem)
+					svc.BroadcastToSession(botSenderItem, client.browserSessionID)
 
 					go func() {
 						executeAgentCommand(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
@@ -771,14 +806,14 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 				Type:   "user",
 				Sender: clientMsg.Sender,
 			}
-			svc.BroadcastItem(userItem)
+			svc.BroadcastToSession(userItem, client.browserSessionID)
 
 			// Broadcast the user content
 			contentItem := ChatItem{
 				Type:    "content",
 				Content: clientMsg.Content,
 			}
-			svc.BroadcastItem(contentItem)
+			svc.BroadcastToSession(contentItem, client.browserSessionID)
 
 			// If it's from a user, send a streamed response from swe-swe
 			if clientMsg.Sender == "USER" {
@@ -790,7 +825,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					Type:   "bot",
 					Sender: "swe-swe",
 				}
-				svc.BroadcastItem(botSenderItem)
+				svc.BroadcastToSession(botSenderItem, client.browserSessionID)
 
 				// Execute agent command and stream response
 				go func() {

@@ -66,7 +66,7 @@ func errmain(ctx context.Context) error {
 		// use default values in flags
 	case "claude":
 		config.AgentCLI1st = "claude --output-format stream-json --verbose --print ?"
-		config.AgentCLINth = "claude --continue --output-format stream-json --verbose --print ?"
+		config.AgentCLINth = "claude --output-format stream-json --verbose --print ?"
 		config.DeferStdinClose = false
 		config.JSONOutput = true
 	case "":
