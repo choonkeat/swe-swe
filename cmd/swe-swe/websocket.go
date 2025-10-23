@@ -76,8 +76,9 @@ type ToolUseInfo struct {
 
 // ClaudeMessage represents a message from Claude's JSON output
 type ClaudeMessage struct {
-	Type    string                 `json:"type"`
-	Message *ClaudeMessageContent  `json:"message,omitempty"`
+	Type      string                `json:"type"`
+	SessionID string                `json:"session_id,omitempty"`
+	Message   *ClaudeMessageContent `json:"message,omitempty"`
 }
 
 type ClaudeMessageContent struct {
@@ -269,10 +270,21 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		}
 		cmdArgs = newArgs
 
+		// Add session resume support for subsequent messages
+		if !isFirstMessage && client.claudeSessionID != "" {
+			// Insert --resume flag and session ID after claude command
+			cmdArgs = append([]string{cmdArgs[0], "--resume", client.claudeSessionID}, cmdArgs[1:]...)
+			log.Printf("[SESSION] Using --resume with Claude session ID: %s", client.claudeSessionID)
+		}
+
 		// Add --dangerously-skip-permissions only if user explicitly chose to skip
 		if skipPermissions {
-			// Find position to insert the flag (after claude command)
-			cmdArgs = append([]string{cmdArgs[0], "--dangerously-skip-permissions"}, cmdArgs[1:]...)
+			// Find position to insert the flag (after claude command and potential --resume)
+			insertPos := 1
+			if !isFirstMessage && client.claudeSessionID != "" {
+				insertPos = 3 // After claude --resume sessionID
+			}
+			cmdArgs = append(cmdArgs[:insertPos], append([]string{"--dangerously-skip-permissions"}, cmdArgs[insertPos:]...)...)
 		} else if len(allowedTools) > 0 {
 			// Add allowed tools as a comma-separated list
 			cmdArgs = append(cmdArgs, "--allowedTools", strings.Join(allowedTools, ","))
@@ -464,6 +476,14 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 					// Try to parse the JSON to detect tool uses and permission errors
 					var claudeMsg ClaudeMessage
 					if err := json.Unmarshal([]byte(line), &claudeMsg); err == nil {
+						// Extract and store Claude session ID if present
+						if claudeMsg.SessionID != "" && client.claudeSessionID == "" {
+							client.processMutex.Lock()
+							client.claudeSessionID = claudeMsg.SessionID
+							client.processMutex.Unlock()
+							log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s", client.claudeSessionID, client.browserSessionID)
+						}
+
 						// Check for tool uses and cache them
 						if claudeMsg.Type == "assistant" && claudeMsg.Message != nil {
 							for _, content := range claudeMsg.Message.Content {
@@ -550,6 +570,27 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			return
 		default:
 			log.Printf("[ERROR] Command completed with error: %v", err)
+			
+			// Check if this was a Claude session resumption error
+			if !isFirstMessage && client.claudeSessionID != "" && len(cmdArgs) > 0 && cmdArgs[0] == "claude" {
+				errorMsg := err.Error()
+				// Check for common session resumption error patterns
+				if strings.Contains(errorMsg, "session") && (strings.Contains(errorMsg, "not found") || 
+					strings.Contains(errorMsg, "invalid") || strings.Contains(errorMsg, "expired")) {
+					log.Printf("[SESSION] Claude session resumption failed, clearing session ID: %s", client.claudeSessionID)
+					// Clear the stored session ID so next attempt will start fresh
+					client.processMutex.Lock()
+					client.claudeSessionID = ""
+					client.hasStartedSession = false // Reset to allow fresh start
+					client.processMutex.Unlock()
+					svc.BroadcastItem(ChatItem{
+						Type:    "content",
+						Content: "Session expired. Starting fresh session...",
+					})
+					return // Don't show the raw error to user
+				}
+			}
+			
 			svc.BroadcastItem(ChatItem{
 				Type:    "content",
 				Content: "Command completed with error: " + err.Error(),
@@ -576,9 +617,14 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		}
 	}
 
-	// Clear the cancel function when done
+	// Clear the cancel function when done and mark session as started
 	client.processMutex.Lock()
 	client.cancelFunc = nil
+	// Mark session as started after first successful command execution
+	if isFirstMessage {
+		client.hasStartedSession = true
+		log.Printf("[SESSION] Marked session as started for browser session: %s", client.browserSessionID)
+	}
 	client.processMutex.Unlock()
 
 	// Send exec end event
@@ -752,8 +798,9 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					client.processMutex.Lock()
 					allowedTools := client.allowedTools
 					skipPermissions := client.skipPermissions
+					isFirstMessage := !client.hasStartedSession
 					client.processMutex.Unlock()
-					executeAgentCommand(ctx, svc, client, clientMsg.Content, clientMsg.FirstMessage, allowedTools, skipPermissions)
+					executeAgentCommand(ctx, svc, client, clientMsg.Content, isFirstMessage, allowedTools, skipPermissions)
 				}()
 			}
 		}
