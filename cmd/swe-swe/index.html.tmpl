@@ -27,21 +27,33 @@
             return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
 
-        // Get or create browser session ID (persists across page refreshes, unique per tab)
-        let browserSessionID = sessionStorage.getItem('swe-swe-session-id');
-        if (!browserSessionID) {
-            browserSessionID = generateSessionID();
-            sessionStorage.setItem('swe-swe-session-id', browserSessionID);
+        // Parse Claude session ID from URL fragment
+        function parseClaudeSessionFromURL() {
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            return params.get('claude');
         }
-        console.log('Browser session ID:', browserSessionID);
 
-        // Initialize Elm app with theme preference and session ID
+        // Get or create browser session ID (always fresh per tab for message isolation)
+        let browserSessionID = generateSessionID();
+        console.log('Browser session ID:', browserSessionID);
+        
+        // Get Claude session ID from URL fragment (for conversation persistence)
+        let claudeSessionID = parseClaudeSessionFromURL();
+        if (claudeSessionID) {
+            console.log('Claude session ID from URL:', claudeSessionID);
+        } else {
+            console.log('No Claude session ID in URL - will start new conversation');
+        }
+
+        // Initialize Elm app with theme preference and session IDs
         const app = Elm.Main.init({
             node: document.getElementById('elm-app'),
             flags: {
                 savedUserTheme: savedUserTheme,
                 systemTheme: getSystemTheme(),
-                browserSessionID: browserSessionID
+                browserSessionID: browserSessionID,
+                claudeSessionID: claudeSessionID
             }
         });
 
@@ -59,6 +71,19 @@
         app.ports.persistUserTheme.subscribe(function(theme) {
             localStorage.setItem('theme', theme);
         });
+
+        // Listen for URL fragment updates from Elm
+        if (app.ports.updateURLFragment) {
+            app.ports.updateURLFragment.subscribe(function(claudeSessionID) {
+                if (claudeSessionID) {
+                    window.location.hash = 'claude=' + encodeURIComponent(claudeSessionID);
+                    console.log('Updated URL fragment with Claude session:', claudeSessionID);
+                } else {
+                    // Clear the fragment if no session ID
+                    window.location.hash = '';
+                }
+            });
+        }
 
         // WebSocket connection management with auto-reconnect
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
