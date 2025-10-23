@@ -50,6 +50,9 @@ port focusMessageInput : () -> Cmd msg
 port sendFuzzySearch : String -> Cmd msg
 
 
+port updateURLFragment : String -> Cmd msg
+
+
 
 -- MAIN
 
@@ -58,6 +61,7 @@ type alias Flags =
     { systemTheme : String
     , savedUserTheme : String
     , browserSessionID : String
+    , claudeSessionID : Maybe String
     }
 
 
@@ -241,7 +245,7 @@ init flags =
       , isTyping = False
       , isFirstUserMessage = True
       , browserSessionID = Just flags.browserSessionID
-      , claudeSessionID = Nothing
+      , claudeSessionID = flags.claudeSessionID
       , pendingToolUses = Dict.empty
       , allowedTools = []
       , skipPermissions = False
@@ -261,7 +265,6 @@ type Msg
     = Input String
     | Send
     | Receive String
-    | ReceiveClaudeSessionID String
     | ThemeChanged String
     | KeyDown Int Bool Bool
     | ConnectionStatus Bool
@@ -374,7 +377,7 @@ update msg model =
                     case Decode.decodeString (Decode.field "content" Decode.string) json of
                         Ok claudeSessionID ->
                             ( { model | claudeSessionID = Just claudeSessionID }
-                            , Cmd.none
+                            , updateURLFragment claudeSessionID
                             )
                         Err _ ->
                             ( model, Cmd.none )
@@ -598,9 +601,6 @@ update msg model =
               }
             , Cmd.none
             )
-
-        ReceiveClaudeSessionID claudeSessionID ->
-            ( { model | claudeSessionID = Just claudeSessionID }, Cmd.none )
 
         SystemThemeChanged themeString ->
             let
