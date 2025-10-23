@@ -1,9 +1,15 @@
 # Automated Regression Tests for Multi-Tab Sessions
 
-## Status: 📋 Ready for Implementation
+## Status: 📋 Ready for Implementation (Updated for Hybrid Architecture)
 
 ## Overview
 Create comprehensive automated regression tests to protect the multi-tab session functionality from future regressions. The session functionality is currently production-ready and manually tested, but lacks automated test coverage for the complex session management logic.
+
+### **🔄 Updated for Hybrid URL Fragment Architecture**
+**Critical Change**: Tests updated to reflect hybrid approach where:
+- ✅ **Browser session IDs**: Always generated fresh per tab (never in URL) → Maintains tab independence
+- ✅ **Claude session IDs**: Stored in URL fragments only → Enables conversation persistence and sharing
+- ✅ **Copy-paste safe**: URL copying creates independent tabs that can share Claude conversations
 
 ## Current Test Infrastructure Analysis
 
@@ -156,6 +162,86 @@ func TestClaudeSessionResumptionIntegration(t *testing.T)
 - Rapid session creation/destruction
 - Memory usage with many sessions
 - Session state consistency under race conditions
+
+### Phase 5: URL Fragment Persistence Tests (NEW)
+
+#### 5.1 URL Fragment Parsing Tests (Hybrid Architecture)
+**Test Cases:**
+- Parse valid URL fragments with Claude session ID: `#claude=abc-def`
+- Parse empty URL fragments (no existing Claude session)
+- Handle malformed URL fragments gracefully
+- Test URL fragment generation with Claude session ID only
+- Verify browser session ID is always generated fresh (never from URL)
+
+#### 5.2 Session Persistence Tests
+**Scenarios:**
+- Page refresh preserves Claude session via URL fragment
+- Page refresh generates fresh browser session ID (not from URL)
+- Browser back/forward maintains Claude conversation state
+- Bookmarked URLs restore correct Claude conversation
+- **Critical**: URL copying creates independent tabs with shared Claude session
+
+#### 5.3 URL Fragment Integration Tests
+**Test Functions:**
+```javascript
+// Test URL fragment parsing (Claude session only)
+function testClaudeSessionURLParsing()
+
+// Test URL updating when Claude session received (browser session NOT included)
+function testClaudeSessionURLUpdating()
+
+// Test Claude conversation restoration from bookmarked URL
+function testBookmarkedClaudeConversationRestoration()
+
+// CRITICAL: Test URL copy-paste creates independent tabs
+function testURLCopyPasteIndependence()
+
+// Test fresh browser session ID generation on every page load
+function testFreshBrowserSessionGeneration()
+```
+
+#### 5.4 Multi-Tab Independence Tests
+**Critical Test Cases:**
+```javascript
+// Test that copied URL creates independent tabs with shared Claude session
+function testCopyPasteURLBehavior() {
+    // 1. Tab A: Start Claude conversation → URL: #claude=abc-def
+    // 2. Copy URL to Tab B → Tab B gets fresh browser session ID
+    // 3. Verify: Tab A and B have different browser session IDs
+    // 4. Verify: Both tabs can continue same Claude conversation
+    // 5. Verify: Messages in Tab A don't appear in Tab B
+}
+
+// Test backend properly isolates tabs with same Claude session
+function testBackendTabIsolationWithSharedClaude() {
+    // Verify BroadcastToSession works correctly when multiple tabs share Claude session
+}
+```
+
+#### 5.5 Frontend Port Tests
+**Elm Test Cases:**
+```elm
+describe "URL Fragment Management (Hybrid Architecture)"
+    [ test "updateURLFragment port called with Claude session ID only" <|
+        -- Test port invocation excludes browser session ID
+        
+    , test "model initialized with fresh browser ID and URL Claude ID" <|
+        -- Test flags parsing generates fresh browser ID always
+        
+    , test "URL fragment contains only Claude session after extraction" <|
+        -- Test URL format: #claude=abc-def (no browser session)
+        
+    , test "URL copying preserves Claude session, generates fresh browser session" <|
+        -- Test copy-paste behavior maintains tab independence
+    ]
+```
+
+#### 5.5 Cross-Browser Compatibility Tests
+**Browser Testing:**
+- Chrome: URL fragment parsing and updating
+- Firefox: Session persistence across reloads
+- Safari: Port communication and URL handling
+- Edge: Fragment encoding and decoding
 
 ## Detailed Test Specifications
 
@@ -374,13 +460,27 @@ func TestClaudeSessionResumptionIntegration(t *testing.T)
 5. Add comprehensive error handling tests
 6. Performance and stress testing
 
-### Step 4: CI Integration & Documentation
+### Step 4: URL Fragment Persistence Tests
+**Estimated Time:** 3-4 hours
+**Files to Create:**
+- `/workspace/test/url-fragment-test.js` (Browser-based testing)
+- Add URL fragment test cases to existing Elm tests
+
+**Tasks:**
+1. Implement URL fragment parsing tests
+2. Create session persistence test scenarios  
+3. Test browser navigation and bookmarking
+4. Add Elm port testing for URL updates
+5. Cross-browser compatibility testing
+
+### Step 5: CI Integration & Documentation
 **Estimated Time:** 1-2 hours  
 **Tasks:**
 1. Verify `make test` runs all new tests
 2. Update task documentation with test status
 3. Add test maintenance notes
 4. Document test data and mock requirements
+5. **NEW:** Document URL fragment testing procedures
 
 ## Expected Outcomes
 
@@ -388,6 +488,7 @@ func TestClaudeSessionResumptionIntegration(t *testing.T)
 - **Backend Session Logic:** 90%+ coverage of session-related functions
 - **Frontend Session Parsing:** 100% coverage of session JSON handling
 - **Integration Workflows:** Complete multi-tab and persistence scenarios
+- **URL Fragment Management:** Complete coverage of parsing, updating, and persistence
 - **Error Handling:** All edge cases and failure modes covered
 
 ### Regression Protection
@@ -397,6 +498,9 @@ func TestClaudeSessionResumptionIntegration(t *testing.T)
 - Command building with --resume logic
 - Multi-client session isolation
 - Session persistence across reconnections
+- **NEW:** URL fragment parsing and generation
+- **NEW:** Session persistence via URL fragments (page refreshes, bookmarks)
+- **NEW:** Cross-browser URL fragment compatibility
 - Error handling and graceful degradation
 
 ### Performance Validation

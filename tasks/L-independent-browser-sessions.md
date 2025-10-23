@@ -1,6 +1,6 @@
 # Feature: Independent Browser Sessions - Per-Tab CLI Session Management
 
-## Status: 🔄 Phase 2.5 In Progress - WebSocket Reconnection Resilience Fix
+## Status: 🔄 Phase 2.6 Ready - URL Fragment Architecture for Ultimate Session Persistence
 
 ## Overview
 Enable multiple browser tabs/windows to maintain independent CLI sessions with Goose/Claude, allowing users to work on different tasks simultaneously without interfering with each other. Each browser connection should have its own persistent CLI session that survives page refreshes and reconnections.
@@ -20,20 +20,26 @@ Enable multiple browser tabs/windows to maintain independent CLI sessions with G
 8. ✅ **Session-aware commands** - Implement `--resume` logic for Claude subsequent messages
 9. ✅ **Error handling** - Handle invalid/missing session IDs gracefully
 
-### 🔄 Phase 2.5: WebSocket Reconnection Resilience (IN PROGRESS)
-10. 🔄 **Issue discovered** - WebSocket disconnections break session continuity
-11. 🔄 **Design fix** - Browser stores both browserSessionID AND claudeSessionID
-12. 📋 **Implementation** - Send Claude session ID back to browser, browser includes in messages
-13. 📋 **Testing** - Verify sessions survive network disconnections
+### ✅ Phase 2.5: WebSocket Reconnection Resilience (COMPLETED)
+10. ✅ **Issue discovered** - WebSocket disconnections break session continuity
+11. ✅ **Design fix** - Browser stores both browserSessionID AND claudeSessionID
+12. ✅ **Implementation** - Send Claude session ID back to browser, browser includes in messages
+13. ✅ **Testing** - Verify sessions survive network disconnections
+
+### 🔄 Phase 2.6: URL Fragment Architecture (DESIGN READY)
+14. 💡 **Breakthrough idea** - Store session IDs in URL fragments for ultimate persistence
+15. 🔄 **Architecture change** - Replace sessionStorage with URL fragment parsing
+16. 📋 **Implementation** - Parse session IDs from URL on load, update URL when sessions change
+17. 📋 **Benefits** - Session persistence across page reloads, bookmarkable sessions, shareable URLs
 
 ### 📋 Phase 3: Testing & Polish (DEFERRED)
-14. 📋 **Multi-tab testing** - Verify independent sessions work correctly
-15. 📋 **Persistence testing** - Verify sessions survive page refreshes
-16. 📋 **Session cleanup** - Clean up sessions on client disconnect (Optional)
+18. 📋 **Multi-tab testing** - Verify independent sessions work correctly
+19. 📋 **URL fragment persistence testing** - Verify sessions survive page refreshes via URL
+20. 📋 **Session cleanup** - Clean up sessions on client disconnect (Optional)
 
 ### 📋 Phase 4: Goose Integration (FUTURE/OPTIONAL)
-17. 📋 **Goose session commands** - Implement `goose session --name/--resume` logic
-18. 📋 **First vs subsequent message handling** - Handle different command syntax for Goose
+21. 📋 **Goose session commands** - Implement `goose session --name/--resume` logic
+22. 📋 **First vs subsequent message handling** - Handle different command syntax for Goose
 
 ## Current Implementation Status
 
@@ -156,7 +162,94 @@ Each browser tab/window should:
 - 📋 Use `goose session --name <browser-session-id>` for new sessions
 - 📋 Use `goose session --resume --name <browser-session-id>` for continuation
 
-## Technical Solution
+## 💡 Phase 2.6: URL Fragment Architecture - The Ultimate Solution
+
+### **🎯 Hybrid Architecture (The Smart Solution)**
+**Critical insight**: Only store Claude session ID in URL fragment, keep browser session ID tab-unique:
+
+```
+https://example.com/app#claude=adc10fa5-61dc-47fd-a1af-47fdd6d2007c
+```
+
+### **🚨 Why Browser Session ID Must NOT Be in URL**
+- ❌ **Copy-paste breaks multi-tab**: Pasted URL creates duplicate browser session ID
+- ❌ **Tab isolation lost**: Multiple tabs with same ID can't be distinguished
+- ❌ **Message cross-contamination**: Tab A's messages appear in Tab B
+- ❌ **Backend confusion**: Server can't properly isolate tab communications
+
+### **✅ Hybrid Benefits (Best of Both Worlds)**
+- ✅ **Perfect tab independence** - Each tab gets fresh browser session ID
+- ✅ **Claude conversation persistence** - URL preserves Claude session across refreshes
+- ✅ **Bookmarkable conversations** - Users can bookmark specific Claude chats
+- ✅ **Shareable Claude sessions** - Copy URL to continue Claude conversation in new tab
+- ✅ **Copy-paste safe** - New tabs stay independent while sharing Claude session
+- ✅ **Visual feedback** - URL shows which Claude conversation is active
+
+### **🔧 Implementation Changes**
+
+#### **JavaScript URL Fragment Handling:**
+```javascript
+// Parse Claude session ID from URL, generate fresh browser session ID
+function parseSessionFromURL() {
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    return {
+        browserSessionID: generateSessionID(),    // Always fresh per tab
+        claudeSessionID: params.get('claude')   // From URL if exists
+    };
+}
+
+// Update URL fragment with Claude session ID only
+app.ports.updateURLFragment.subscribe(function(claudeSessionID) {
+    if (claudeSessionID) {
+        window.location.hash = 'claude=' + encodeURIComponent(claudeSessionID);
+    }
+});
+```
+
+#### **Elm Changes:**
+```elm
+-- Flags include fresh browser ID and Claude ID from URL
+type alias Flags =
+    { systemTheme : String
+    , savedUserTheme : String  
+    , browserSessionID : String        -- Always fresh per tab
+    , claudeSessionID : Maybe String   -- From URL fragment if exists
+    }
+
+-- Simplified port to update URL fragment with Claude session only
+port updateURLFragment : String -> Cmd msg
+
+-- Update URL when Claude session ID received
+ReceiveClaudeSessionID claudeSessionID ->
+    ( { model | claudeSessionID = Just claudeSessionID }
+    , updateURLFragment claudeSessionID
+    )
+```
+
+#### **Complete Flow:**
+1. **Page Load**: Parse URL fragment → Extract Claude session ID (if exists), generate fresh browser session ID
+2. **Elm Init**: Receive session IDs via flags → Initialize model (fresh browser ID + Claude ID from URL)
+3. **First Message**: Send fresh browser session ID + existing Claude ID → Backend resumes or creates Claude session
+4. **Session ID Extracted**: Backend sends Claude session ID → Elm receives via WebSocket  
+5. **URL Update**: Elm calls updateURLFragment port → JavaScript updates URL with Claude session ID only
+6. **Page Refresh**: URL fragment preserved → Fresh browser ID generated, Claude session restored from URL
+7. **Copy-Paste URL**: New tab gets fresh browser ID + shared Claude session → Perfect independence + conversation continuity
+
+### **🏗️ Migration Strategy**
+1. **Phase 1**: Implement URL fragment parsing alongside existing sessionStorage
+2. **Phase 2**: Switch Elm initialization to use URL fragment data
+3. **Phase 3**: Remove sessionStorage code entirely
+4. **Phase 4**: Test thoroughly across browsers and scenarios
+
+### **🎁 Bonus Features Unlocked**
+- **Conversation URLs**: `https://app.com#claude=abc-def` → Direct Claude conversation access
+- **Safe URL sharing**: Send URL to colleague → They get fresh tab but continue your Claude conversation
+- **Conversation bookmarks**: Bookmark important Claude conversations for later
+- **Multi-device conversation sync**: Same URL continues Claude chat on any device
+- **Copy-paste workflow**: Copy URL to continue Claude session in another tab while keeping tabs independent
+
+## Technical Solution (Current Implementation)
 
 ### 1. Session ID Management
 **Client Side:**
