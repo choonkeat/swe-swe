@@ -48,6 +48,7 @@ type ClientMessage struct {
 	Content         string   `json:"content,omitempty"`
 	FirstMessage    bool     `json:"firstMessage,omitempty"`
 	SessionID       string   `json:"sessionID,omitempty"`       // Browser session ID
+	ClaudeSessionID string   `json:"claudeSessionID,omitempty"` // Claude session ID from browser
 	AllowedTools    []string `json:"allowedTools,omitempty"`    // For permission responses
 	SkipPermissions bool     `json:"skipPermissions,omitempty"` // User chose to skip all permissions
 	Query           string   `json:"query,omitempty"`           // For fuzzy search queries
@@ -247,7 +248,7 @@ func isPermissionError(content string) bool {
 }
 
 // executeAgentCommand executes the configured agent command with the given prompt and streams the output
-func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool) {
+func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string) {
 	// Create a context that can be cancelled when the client disconnects
 	ctx, cancel := context.WithCancel(parentctx)
 
@@ -300,18 +301,18 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 		}
 		cmdArgs = newArgs
 
-		// Add session resume support for subsequent messages
-		if !isFirstMessage && client.claudeSessionID != "" {
+		// Add session resume support for subsequent messages  
+		if !isFirstMessage && claudeSessionID != "" {
 			// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
-			cmdArgs = append([]string{cmdArgs[0], "--resume", client.claudeSessionID}, cmdArgs[1:]...)
-			log.Printf("[SESSION] Using --resume with Claude session ID: %s", client.claudeSessionID)
+			cmdArgs = append([]string{cmdArgs[0], "--resume", claudeSessionID}, cmdArgs[1:]...)
+			log.Printf("[SESSION] Using --resume with Claude session ID: %s", claudeSessionID)
 		}
 
 		// Add --dangerously-skip-permissions only if user explicitly chose to skip
 		if skipPermissions {
 			// Find position to insert the flag (after claude command and potential --resume)
 			insertPos := 1
-			if !isFirstMessage && client.claudeSessionID != "" {
+			if !isFirstMessage && claudeSessionID != "" {
 				insertPos = 3 // After claude --resume sessionID
 			}
 			cmdArgs = append(cmdArgs[:insertPos], append([]string{"--dangerously-skip-permissions"}, cmdArgs[insertPos:]...)...)
@@ -514,8 +515,18 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 							client.processMutex.Unlock()
 							if oldSessionID == "" {
 								log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s", client.claudeSessionID, client.browserSessionID)
+								// Send Claude session ID back to browser for storage
+								svc.BroadcastToSession(ChatItem{
+									Type:    "claude_session_id",
+									Content: client.claudeSessionID,
+								}, client.browserSessionID)
 							} else if oldSessionID != client.claudeSessionID {
 								log.Printf("[SESSION] Updated Claude session ID from %s to %s for browser session: %s", oldSessionID, client.claudeSessionID, client.browserSessionID)
+								// Send updated Claude session ID back to browser
+								svc.BroadcastToSession(ChatItem{
+									Type:    "claude_session_id", 
+									Content: client.claudeSessionID,
+								}, client.browserSessionID)
 							}
 						}
 
@@ -794,7 +805,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastToSession(botSenderItem, client.browserSessionID)
 
 					go func() {
-						executeAgentCommand(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions)
+						executeAgentCommand(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated
@@ -835,7 +846,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					skipPermissions := client.skipPermissions
 					isFirstMessage := !client.hasStartedSession
 					client.processMutex.Unlock()
-					executeAgentCommand(ctx, svc, client, clientMsg.Content, isFirstMessage, allowedTools, skipPermissions)
+					executeAgentCommand(ctx, svc, client, clientMsg.Content, isFirstMessage, allowedTools, skipPermissions, clientMsg.ClaudeSessionID)
 				}()
 			}
 		}

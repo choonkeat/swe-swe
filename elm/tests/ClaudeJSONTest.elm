@@ -19,6 +19,7 @@ testModel =
     , isTyping = False
     , isFirstUserMessage = True
     , browserSessionID = Just "test-session-123"
+    , claudeSessionID = Nothing
     , pendingToolUses = Dict.empty
     , allowedTools = []
     , skipPermissions = False
