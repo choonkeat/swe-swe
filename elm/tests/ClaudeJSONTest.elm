@@ -18,6 +18,7 @@ testModel =
     , systemTheme = DarkTerminal
     , isTyping = False
     , isFirstUserMessage = True
+    , browserSessionID = Just "test-session-123"
     , pendingToolUses = Dict.empty
     , allowedTools = []
     , skipPermissions = False
