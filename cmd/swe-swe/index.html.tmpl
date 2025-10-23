@@ -22,12 +22,26 @@
             return 'light';
         }
 
-        // Initialize Elm app with theme preference
+        // Session ID management - unique per browser tab
+        function generateSessionID() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Get or create browser session ID (persists across page refreshes, unique per tab)
+        let browserSessionID = sessionStorage.getItem('swe-swe-session-id');
+        if (!browserSessionID) {
+            browserSessionID = generateSessionID();
+            sessionStorage.setItem('swe-swe-session-id', browserSessionID);
+        }
+        console.log('Browser session ID:', browserSessionID);
+
+        // Initialize Elm app with theme preference and session ID
         const app = Elm.Main.init({
             node: document.getElementById('elm-app'),
             flags: {
                 savedUserTheme: savedUserTheme,
-                systemTheme: getSystemTheme()
+                systemTheme: getSystemTheme(),
+                browserSessionID: browserSessionID
             }
         });
 

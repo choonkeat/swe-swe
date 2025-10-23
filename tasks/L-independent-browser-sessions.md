@@ -1,7 +1,73 @@
 # Feature: Independent Browser Sessions - Per-Tab CLI Session Management
 
+## Status: 🔄 In Progress (Phase 1 Complete, Phase 2 Pending)
+
 ## Overview
 Enable multiple browser tabs/windows to maintain independent CLI sessions with Goose/Claude, allowing users to work on different tasks simultaneously without interfering with each other. Each browser connection should have its own persistent CLI session that survives page refreshes and reconnections.
+
+## Implementation Progress
+
+### ✅ Phase 1: Core Infrastructure (COMPLETED)
+1. ✅ **Client struct extended** - Added `browserSessionID`, `claudeSessionID`, `hasStartedSession` fields
+2. ✅ **ClientMessage struct updated** - Added `sessionID` field for WebSocket communication
+3. ✅ **WebSocket handler enhanced** - Extracts and stores browser session ID from incoming messages
+4. ✅ **Elm Model updated** - Tracks browser session ID in application state
+5. ✅ **Session ID generation** - JavaScript generates unique IDs stored in sessionStorage per tab
+6. ✅ **Message transmission** - Elm includes sessionID in all outgoing WebSocket messages
+
+### 📋 Phase 2: Claude Session Integration (PENDING)
+7. 📋 **Stream-JSON parsing** - Extract Claude session_id from existing JSON output
+8. 📋 **Session-aware commands** - Implement `--resume` logic for Claude subsequent messages
+
+### 📋 Phase 3: Testing & Polish (PENDING)
+9. 📋 **Error handling** - Handle invalid/missing session IDs gracefully
+10. 📋 **Multi-tab testing** - Verify independent sessions work correctly
+11. 📋 **Persistence testing** - Verify sessions survive page refreshes
+12. 📋 **Session cleanup** - Clean up sessions on client disconnect
+
+## Current Implementation Status
+
+### ✅ What's Working Now
+**Session Infrastructure:** Complete end-to-end session ID flow
+- Browser tabs generate unique session IDs (e.g., `session_1672531200000_abc123def`)
+- Session IDs persist across page refreshes via sessionStorage
+- Frontend passes session IDs to backend in all WebSocket messages
+- Backend extracts and tracks session IDs per client connection
+
+### 📋 What's Not Started Yet
+**Claude Session Management:** Session-aware command execution
+- Need to extract Claude session IDs from stream-json output
+- Need to implement `--resume` logic for subsequent messages
+
+### 📋 What's Not Working Yet
+**Actual Session Isolation:** Commands still share the same CLI process
+- Multiple tabs still interfere with each other's conversations
+- No session-specific command building implemented yet
+
+## Testing Current Implementation
+
+### Browser Console (F12 → Console)
+```javascript
+Browser session ID: session_1672531200000_abc123def
+```
+- Each tab should show different session ID
+- Same tab should keep same ID after refresh
+
+### Backend Logs
+```
+[WEBSOCKET] Client assigned browser session ID: session_1672531200000_abc123def
+```
+- Should appear when each tab sends its first message
+
+### Browser Network Tab (F12 → Network → WS)
+WebSocket messages should include sessionID:
+```json
+{
+  "sender": "USER",
+  "content": "hello",
+  "sessionID": "session_1672531200000_abc123def"
+}
+```
 
 ## Current Problem
 - All browser connections currently share the same CLI session state

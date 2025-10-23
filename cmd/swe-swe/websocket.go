@@ -21,13 +21,16 @@ import (
 
 // Client represents a connected websocket client
 type Client struct {
-	conn         *websocket.Conn
-	username     string
-	cancelFunc   context.CancelFunc
-	processMutex sync.Mutex
-	allowedTools []string // Track allowed tools for this client
-	skipPermissions bool  // Track if user chose to skip all permissions
-	pendingToolPermission string // Track which tool is pending permission
+	conn                  *websocket.Conn
+	username             string
+	browserSessionID     string        // Browser tab session ID
+	claudeSessionID      string        // CLI session ID from stream-json
+	hasStartedSession    bool          // Track if first message sent
+	cancelFunc           context.CancelFunc
+	processMutex         sync.Mutex
+	allowedTools         []string // Track allowed tools for this client
+	skipPermissions      bool     // Track if user chose to skip all permissions
+	pendingToolPermission string  // Track which tool is pending permission
 }
 
 // ChatItem represents either a sender or content in the chat
@@ -40,14 +43,15 @@ type ChatItem struct {
 
 // ClientMessage represents a message from the client with sender and content
 type ClientMessage struct {
-	Type         string   `json:"type,omitempty"`
-	Sender       string   `json:"sender,omitempty"`
-	Content      string   `json:"content,omitempty"`
-	FirstMessage bool     `json:"firstMessage,omitempty"`
-	AllowedTools []string `json:"allowedTools,omitempty"` // For permission responses
-	SkipPermissions bool  `json:"skipPermissions,omitempty"` // User chose to skip all permissions
-	Query        string   `json:"query,omitempty"`        // For fuzzy search queries
-	MaxResults   int      `json:"maxResults,omitempty"`   // Maximum number of search results
+	Type            string   `json:"type,omitempty"`
+	Sender          string   `json:"sender,omitempty"`
+	Content         string   `json:"content,omitempty"`
+	FirstMessage    bool     `json:"firstMessage,omitempty"`
+	SessionID       string   `json:"sessionID,omitempty"`       // Browser session ID
+	AllowedTools    []string `json:"allowedTools,omitempty"`    // For permission responses
+	SkipPermissions bool     `json:"skipPermissions,omitempty"` // User chose to skip all permissions
+	Query           string   `json:"query,omitempty"`           // For fuzzy search queries
+	MaxResults      int      `json:"maxResults,omitempty"`      // Maximum number of search results
 }
 
 // ChatService manages the chat room state
@@ -600,6 +604,12 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			if err := websocket.JSON.Receive(ws, &clientMsg); err != nil {
 				log.Printf("Error receiving message: %v", err)
 				break
+			}
+
+			// Extract and store browser session ID from client message
+			if clientMsg.SessionID != "" && client.browserSessionID == "" {
+				client.browserSessionID = clientMsg.SessionID
+				log.Printf("[WEBSOCKET] Client assigned browser session ID: %s", client.browserSessionID)
 			}
 
 			// Handle stop command
