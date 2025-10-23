@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -259,6 +260,7 @@ func TestFuzzyMatcherSearch(t *testing.T) {
 			{Path: "/test/README.md", Name: "README.md", RelPath: "README.md", IsDir: false},
 			{Path: "/test/app/assets/stylesheets/application.css", Name: "application.css", RelPath: "app/assets/stylesheets/application.css", IsDir: false},
 		},
+		lastUpdate: time.Now(),
 	}
 	
 	tests := []struct {
@@ -349,20 +351,24 @@ func TestFuzzyMatcherConcurrency(t *testing.T) {
 		{Path: "/test/main.go", Name: "main.go", RelPath: "main.go"},
 		{Path: "/test/test.go", Name: "test.go", RelPath: "test.go"},
 	}
+	fm.lastUpdate = time.Now()
 	
-	done := make(chan bool)
+	done := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
 			results := fm.Search("main", 5)
 			if len(results) == 0 {
-				t.Error("concurrent search failed")
+				done <- fmt.Errorf("concurrent search failed")
+			} else {
+				done <- nil
 			}
-			done <- true
 		}()
 	}
 	
 	for i := 0; i < 10; i++ {
-		<-done
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
 	}
 }
 

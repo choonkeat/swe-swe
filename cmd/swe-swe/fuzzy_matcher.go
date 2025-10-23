@@ -196,22 +196,50 @@ func calculateFuzzyScore(pattern, target string) (int, []int) {
 		return 0, nil
 	}
 	
+	// Check for exact match first
 	if pattern == target {
-		// For exact matches, generate matches array for all characters
 		matches := make([]int, len(pattern))
 		for i := range matches {
 			matches[i] = i
 		}
-		return 1000, matches // Exact match gets highest score
+		return 1000, matches
 	}
 	
+	// Check for substring match
+	if strings.Contains(target, pattern) {
+		startIdx := strings.Index(target, pattern)
+		matches := make([]int, len(pattern))
+		for i := range matches {
+			matches[i] = startIdx + i
+		}
+		score := 800 // High score for substring matches
+		
+		// Bonus for filename matches vs path matches
+		filename := filepath.Base(target)
+		if strings.Contains(strings.ToLower(filename), pattern) {
+			score += 50
+		}
+		
+		// Bonus for start of filename/word matches
+		if startIdx == 0 || target[startIdx-1] == '/' || target[startIdx-1] == '_' || target[startIdx-1] == '-' {
+			score += 30
+		}
+		
+		// Bonus for shorter targets
+		if len(target) > 0 {
+			score += (100 - len(target)) / 10
+		}
+		
+		return score, matches
+	}
+	
+	// Fuzzy matching - characters don't need to be consecutive
 	matches := []int{}
 	score := 0
 	patternIdx := 0
-	targetIdx := 0
 	
-	// Find character matches
-	for patternIdx < len(pattern) && targetIdx < len(target) {
+	// Find character matches in order
+	for targetIdx := 0; targetIdx < len(target) && patternIdx < len(pattern); targetIdx++ {
 		if pattern[patternIdx] == target[targetIdx] {
 			matches = append(matches, targetIdx)
 			score += 10
@@ -228,7 +256,6 @@ func calculateFuzzyScore(pattern, target string) (int, []int) {
 			
 			patternIdx++
 		}
-		targetIdx++
 	}
 	
 	// Must match all pattern characters
