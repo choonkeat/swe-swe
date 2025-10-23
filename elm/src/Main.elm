@@ -228,7 +228,7 @@ init flags =
 
             else
                 LightModern
-        
+
         initialFuzzyMatcher =
             { isOpen = False
             , query = ""
@@ -290,7 +290,7 @@ update msg model =
             let
                 lastChar = String.right 1 text
                 beforeAt = String.dropRight 1 text
-                
+
                 ( newFuzzyMatcher, cmd ) =
                     if lastChar == "@" && not model.fuzzyMatcher.isOpen then
                         -- Open fuzzy matcher
@@ -525,19 +525,19 @@ update msg model =
                 case key of
                     38 -> -- Up arrow
                         update (FuzzyMatcherNavigate -1) model
-                    
-                    40 -> -- Down arrow  
+
+                    40 -> -- Down arrow
                         update (FuzzyMatcherNavigate 1) model
-                    
+
                     13 -> -- Enter
                         update FuzzyMatcherSelect model
-                    
+
                     27 -> -- Escape
                         update FuzzyMatcherClose model
-                    
+
                     _ ->
                         ( model, Cmd.none )
-                        
+
             else
                 case model.pendingPermissionRequest of
                     Just _ ->
@@ -638,6 +638,7 @@ update msg model =
                                     [ ( "type", Encode.string "permission_response" )
                                     , ( "allowedTools", Encode.list Encode.string newAllowedTools )
                                     , ( "skipPermissions", Encode.bool False )
+                                    , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                                     ]
                                 )
 
@@ -668,6 +669,7 @@ update msg model =
                                     [ ( "type", Encode.string "permission_response" )
                                     , ( "allowedTools", Encode.list Encode.string newAllowedTools )
                                     , ( "skipPermissions", Encode.bool False )
+                                    , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                                     ]
                                 )
 
@@ -696,6 +698,7 @@ update msg model =
                                     [ ( "type", Encode.string "permission_response" )
                                     , ( "allowedTools", Encode.list Encode.string model.allowedTools )
                                     , ( "skipPermissions", Encode.bool False )
+                                    , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                                     ]
                                 )
 
@@ -721,6 +724,7 @@ update msg model =
                             [ ( "type", Encode.string "permission_response" )
                             , ( "allowedTools", Encode.list Encode.string [] )
                             , ( "skipPermissions", Encode.bool True )
+                            , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                             ]
                         )
             in
@@ -773,12 +777,12 @@ update msg model =
                             beforeCursor = String.left (model.fuzzyMatcher.cursorPosition - 1) model.input -- -1 to remove @
                             afterCursor = String.dropLeft (model.fuzzyMatcher.cursorPosition + String.length model.fuzzyMatcher.query) model.input
                             newInput = beforeCursor ++ selectedMatch.file.relPath ++ " " ++ afterCursor
-                            
+
                             -- Close fuzzy matcher
                             newFuzzyMatcher = { isOpen = False, query = "", results = [], selectedIndex = 0, cursorPosition = 0 }
                         in
                         ( { model | input = newInput, fuzzyMatcher = newFuzzyMatcher }, Cmd.none )
-                    
+
                     Nothing ->
                         ( model, Cmd.none )
             else
@@ -1600,7 +1604,7 @@ fuzzyMatcherResultView selectedIndex index fileMatch =
         fileIcon = if fileMatch.file.isDir then "📁" else "📄"
         highlightedName = highlightMatches fileMatch.file.name fileMatch.matches
     in
-    div 
+    div
         [ class "fuzzy-matcher-result"
         , class (if isSelected then "selected" else "")
         , onClick FuzzyMatcherSelect
@@ -1617,7 +1621,7 @@ highlightMatches : String -> List Int -> List (Html Msg)
 highlightMatches str matches =
     let
         chars = String.toList str
-        
+
         renderChar : Int -> Char -> Html Msg
         renderChar index char =
             if List.member index matches then
@@ -1636,7 +1640,7 @@ highlightMatches str matches =
 -- Diff line type for better diff rendering
 type DiffLineType
     = Added String
-    | Removed String 
+    | Removed String
     | Unchanged String
 
 -- Generate a unified diff from old and new strings
@@ -1645,7 +1649,7 @@ generateUnifiedDiff oldString newString =
     let
         oldLines = String.lines oldString
         newLines = String.lines newString
-        
+
         -- Simple line-based diff algorithm
         -- This is a simplified version - more complex algorithms like Myers could be used
         diffLines = computeLineDiff oldLines newLines
@@ -1658,14 +1662,14 @@ computeLineDiff oldLines newLines =
     let
         oldSet = Set.fromList oldLines
         newSet = Set.fromList newLines
-        
+
         removedLines = Set.diff oldSet newSet |> Set.toList
         addedLines = Set.diff newSet oldSet |> Set.toList
         unchangedLines = Set.intersect oldSet newSet |> Set.toList
-        
+
         -- Create a simple ordering: removed, then added, then some unchanged for context
-        diffResult = 
-            (List.map Removed removedLines) ++ 
+        diffResult =
+            (List.map Removed removedLines) ++
             (List.map Added addedLines) ++
             (List.take 3 unchangedLines |> List.map Unchanged) -- Show some context
     in
@@ -1675,7 +1679,7 @@ renderDiff : String -> String -> Html Msg
 renderDiff oldString newString =
     let
         diffLines = generateUnifiedDiff oldString newString
-        
+
         renderDiffLine diffLine =
             case diffLine of
                 Added content ->
@@ -1683,22 +1687,22 @@ renderDiff oldString newString =
                         [ span [ class "diff-marker" ] [ text "+ " ]
                         , span [ class "diff-content" ] [ text content ]
                         ]
-                
+
                 Removed content ->
                     div [ class "diff-line diff-removed" ]
                         [ span [ class "diff-marker" ] [ text "- " ]
                         , span [ class "diff-content" ] [ text content ]
                         ]
-                
+
                 Unchanged content ->
                     div [ class "diff-line diff-context" ]
                         [ span [ class "diff-marker" ] [ text "  " ]
                         , span [ class "diff-content" ] [ text content ]
                         ]
-                        
+
         -- If diff is too complex, fall back to side-by-side view
-        shouldShowSideBySide = 
-            (String.lines oldString |> List.length) > 10 || 
+        shouldShowSideBySide =
+            (String.lines oldString |> List.length) > 10 ||
             (String.lines newString |> List.length) > 10
     in
     if shouldShowSideBySide then
@@ -1718,7 +1722,7 @@ renderSideBySideDiff oldString newString =
         oldLines = String.lines oldString
         newLines = String.lines newString
         maxLines = max (List.length oldLines) (List.length newLines)
-        
+
         renderSideBySideLine index =
             let
                 oldLine = List.drop index oldLines |> List.head |> Maybe.withDefault ""
@@ -1729,16 +1733,16 @@ renderSideBySideDiff oldString newString =
             div [ class "diff-line-pair" ]
                 [ div [ class "diff-side diff-old" ]
                     [ span [ class "diff-line-number" ] [ text (String.fromInt (index + 1)) ]
-                    , span [ class "diff-marker" ] 
+                    , span [ class "diff-marker" ]
                         [ text (if hasOldLine then "- " else "  ") ]
-                    , span [ class "diff-content" ] 
+                    , span [ class "diff-content" ]
                         [ text (if hasOldLine then oldLine else "") ]
                     ]
                 , div [ class "diff-side diff-new" ]
                     [ span [ class "diff-line-number" ] [ text (String.fromInt (index + 1)) ]
-                    , span [ class "diff-marker" ] 
+                    , span [ class "diff-marker" ]
                         [ text (if hasNewLine then "+ " else "  ") ]
-                    , span [ class "diff-content" ] 
+                    , span [ class "diff-content" ]
                         [ text (if hasNewLine then newLine else "") ]
                     ]
                 ]
