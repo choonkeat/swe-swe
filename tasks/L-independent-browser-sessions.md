@@ -1,6 +1,6 @@
 # Feature: Independent Browser Sessions - Per-Tab CLI Session Management
 
-## Status: ✅ Phase 2 Complete - Claude Multi-Tab Sessions Fully Functional
+## Status: 🔄 Phase 2.5 In Progress - WebSocket Reconnection Resilience Fix
 
 ## Overview
 Enable multiple browser tabs/windows to maintain independent CLI sessions with Goose/Claude, allowing users to work on different tasks simultaneously without interfering with each other. Each browser connection should have its own persistent CLI session that survives page refreshes and reconnections.
@@ -20,14 +20,20 @@ Enable multiple browser tabs/windows to maintain independent CLI sessions with G
 8. ✅ **Session-aware commands** - Implement `--resume` logic for Claude subsequent messages
 9. ✅ **Error handling** - Handle invalid/missing session IDs gracefully
 
-### 📋 Phase 3: Testing & Polish (READY FOR TESTING)
-10. 📋 **Multi-tab testing** - Verify independent sessions work correctly
-11. 📋 **Persistence testing** - Verify sessions survive page refreshes
-12. 📋 **Session cleanup** - Clean up sessions on client disconnect (Optional)
+### 🔄 Phase 2.5: WebSocket Reconnection Resilience (IN PROGRESS)
+10. 🔄 **Issue discovered** - WebSocket disconnections break session continuity
+11. 🔄 **Design fix** - Browser stores both browserSessionID AND claudeSessionID
+12. 📋 **Implementation** - Send Claude session ID back to browser, browser includes in messages
+13. 📋 **Testing** - Verify sessions survive network disconnections
+
+### 📋 Phase 3: Testing & Polish (DEFERRED)
+14. 📋 **Multi-tab testing** - Verify independent sessions work correctly
+15. 📋 **Persistence testing** - Verify sessions survive page refreshes
+16. 📋 **Session cleanup** - Clean up sessions on client disconnect (Optional)
 
 ### 📋 Phase 4: Goose Integration (FUTURE/OPTIONAL)
-13. 📋 **Goose session commands** - Implement `goose session --name/--resume` logic
-14. 📋 **First vs subsequent message handling** - Handle different command syntax for Goose
+17. 📋 **Goose session commands** - Implement `goose session --name/--resume` logic
+18. 📋 **First vs subsequent message handling** - Handle different command syntax for Goose
 
 ## Current Implementation Status
 
@@ -44,7 +50,7 @@ Enable multiple browser tabs/windows to maintain independent CLI sessions with G
 - ✅ **Session state tracking:** Server tracks first vs subsequent messages per browser tab
 - ✅ **Error recovery:** Handles expired/invalid sessions by gracefully starting fresh
 - ✅ **Multi-tab isolation:** Each browser tab maintains independent Claude conversations
-- ✅ **Session persistence:** Sessions survive page refreshes and reconnections
+- ⚠️ **Session persistence:** Sessions survive page refreshes but NOT WebSocket reconnections (needs fix)
 
 ### 📋 What's Ready for Testing
 **Core Feature Complete:** Claude multi-tab sessions are production-ready
@@ -107,7 +113,31 @@ Browser session ID: session_1672531200000_abc123def
 - ✅ Check backend logs show different browser and Claude session IDs
 - ✅ Verify no cross-contamination between tab conversations
 
-## ✅ Problem SOLVED - Claude Multi-Tab Sessions Working
+## 🔄 WebSocket Reconnection Issue Discovered
+
+### ❌ Current Problem
+While multi-tab sessions work perfectly for simultaneous tabs, **WebSocket reconnections break session continuity**:
+
+1. **Working**: User has active Claude session → Network drops → WebSocket disconnects
+2. **Problem**: Backend `Client` struct (with `claudeSessionID`) gets garbage collected
+3. **Issue**: Browser reconnects with same `browserSessionID` but backend lost the `claudeSessionID` mapping
+4. **Result**: Session starts fresh instead of resuming existing Claude conversation
+
+### 🎯 Simple Solution Design
+Instead of complex backend session storage, **let browser store both session IDs**:
+
+**Current Flow (Broken):**
+- Browser stores `browserSessionID` → Backend maps to `claudeSessionID` → Mapping lost on disconnect
+
+**New Flow (Fixed):**
+- Browser stores `browserSessionID` AND `claudeSessionID` → Sends both → No backend state needed
+
+### 🔧 Required Changes (Minimal)
+1. **Backend**: Send Claude session ID back to browser when extracted
+2. **Frontend**: Store Claude session ID, include in all messages  
+3. **Backend**: Use Claude session ID directly from messages (no server state)
+
+## ✅ Multi-Tab Sessions Working (Within Connection)
 - ✅ Each browser connection maintains independent Claude CLI session state
 - ✅ Multiple browser tabs operate independently without interference  
 - ✅ Using specific Claude session IDs for targeted `--resume` functionality
@@ -118,7 +148,7 @@ Each browser tab/window now:
 - ✅ Generates a unique session ID on first connection (JavaScript)
 - ✅ Creates a new Claude CLI session on first message  
 - ✅ Resumes that specific Claude session on subsequent messages using `--resume`
-- ✅ Maintains session state across page refreshes and reconnections
+- ✅ Maintains session state across page refreshes (⚠️ but NOT WebSocket reconnections - needs fix)
 - ✅ Works independently from other browser tabs
 
 ### 📋 Future Behavior (Goose - Optional)

@@ -94,6 +94,7 @@ type alias Model =
     , isTyping : Bool
     , isFirstUserMessage : Bool
     , browserSessionID : Maybe String
+    , claudeSessionID : Maybe String
     , pendingToolUses : Dict String ClaudeContent
     , allowedTools : List String
     , skipPermissions : Bool
@@ -240,6 +241,7 @@ init flags =
       , isTyping = False
       , isFirstUserMessage = True
       , browserSessionID = Just flags.browserSessionID
+      , claudeSessionID = Nothing
       , pendingToolUses = Dict.empty
       , allowedTools = []
       , skipPermissions = False
@@ -259,6 +261,7 @@ type Msg
     = Input String
     | Send
     | Receive String
+    | ReceiveClaudeSessionID String
     | ThemeChanged String
     | KeyDown Int Bool Bool
     | ConnectionStatus Bool
@@ -356,6 +359,7 @@ update msg model =
                                 , ( "content", Encode.string model.input )
                                 , ( "firstMessage", Encode.bool model.isFirstUserMessage )
                                 , ( "sessionID", Encode.string (Maybe.withDefault "" model.browserSessionID) )
+                                , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                                 ]
                             )
                 in
@@ -364,134 +368,145 @@ update msg model =
                 )
 
         Receive json ->
-            case Decode.decodeString chatItemDecoder json of
-                Ok chatItem ->
-                    case chatItem of
-                        ChatUser sender ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                                , currentSender = Just sender
-                                , pendingPermissionRequest = Nothing
-                              }
-                            , scrollToBottom ()
-                            )
-
-                        ChatBot sender ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                                , currentSender = Just sender
-                              }
-                            , scrollToBottom ()
-                            )
-
-                        ChatContent content ->
-                            ( { model
-                                | messages = model.messages ++ [ ChatContent content ]
-                              }
-                            , scrollToBottom ()
-                            )
-
-                        ChatClaudeJSON jsonStr ->
-                            -- Parse the Claude JSON and convert to appropriate ChatItems
-                            case Decode.decodeString claudeMessageDecoder jsonStr of
-                                Ok claudeMsg ->
-                                    let
-                                        parseResult =
-                                            parseClaudeMessage model claudeMsg
-
-                                        newPendingToolUses =
-                                            List.foldl
-                                                (\( id, content ) dict -> Dict.insert id content dict)
-                                                model.pendingToolUses
-                                                parseResult.toolUses
-                                    in
-                                    ( { model
-                                        | messages = model.messages ++ parseResult.messages
-                                        , pendingToolUses = newPendingToolUses
-                                      }
-                                    , scrollToBottom ()
-                                    )
-
-                                Err _ ->
-                                    -- If parsing fails, display raw JSON as content
-                                    ( { model
-                                        | messages = model.messages ++ [ ChatContent jsonStr ]
-                                      }
-                                    , scrollToBottom ()
-                                    )
-
-                        ChatToolResult _ ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                              }
-                            , scrollToBottom ()
-                            )
-
-                        ChatTodoWrite _ ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                              }
-                            , scrollToBottom ()
-                            )
-
-                        ChatExecStart ->
-                            ( { model
-                                | isTyping = True -- Show typing indicator when exec starts
-                              }
+            -- First check if this is a Claude session ID message
+            case Decode.decodeString (Decode.field "type" Decode.string) json of
+                Ok "claude_session_id" ->
+                    case Decode.decodeString (Decode.field "content" Decode.string) json of
+                        Ok claudeSessionID ->
+                            ( { model | claudeSessionID = Just claudeSessionID }
                             , Cmd.none
                             )
+                        Err _ ->
+                            ( model, Cmd.none )
+                _ ->
+                    case Decode.decodeString chatItemDecoder json of
+                        Ok chatItem ->
+                            case chatItem of
+                                ChatUser sender ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                        , currentSender = Just sender
+                                        , pendingPermissionRequest = Nothing
+                                      }
+                                    , scrollToBottom ()
+                                    )
 
-                        ChatExecEnd ->
-                            let
-                                focusCmd =
-                                    if model.isTyping then
-                                        focusMessageInput ()
+                                ChatBot sender ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                        , currentSender = Just sender
+                                      }
+                                    , scrollToBottom ()
+                                    )
 
-                                    else
-                                        Cmd.none
-                            in
-                            ( { model
-                                | isTyping = False -- Hide typing indicator when exec ends
-                              }
-                            , focusCmd
-                            )
+                                ChatContent content ->
+                                    ( { model
+                                        | messages = model.messages ++ [ ChatContent content ]
+                                      }
+                                    , scrollToBottom ()
+                                    )
 
-                        ChatToolUse _ ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                              }
-                            , scrollToBottom ()
-                            )
+                                ChatClaudeJSON jsonStr ->
+                                    -- Parse the Claude JSON and convert to appropriate ChatItems
+                                    case Decode.decodeString claudeMessageDecoder jsonStr of
+                                        Ok claudeMsg ->
+                                            let
+                                                parseResult =
+                                                    parseClaudeMessage model claudeMsg
 
-                        ChatToolUseWithResult _ _ ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                              }
-                            , scrollToBottom ()
-                            )
+                                                newPendingToolUses =
+                                                    List.foldl
+                                                        (\( id, content ) dict -> Dict.insert id content dict)
+                                                        model.pendingToolUses
+                                                        parseResult.toolUses
+                                            in
+                                            ( { model
+                                                | messages = model.messages ++ parseResult.messages
+                                                , pendingToolUses = newPendingToolUses
+                                              }
+                                            , scrollToBottom ()
+                                            )
 
-                        ChatPermissionRequest toolName errorMessage toolInput ->
-                            ( { model
-                                | pendingPermissionRequest = Just { toolName = toolName, errorMessage = errorMessage, toolInput = toolInput }
-                                , messages = model.messages ++ [ chatItem ]
-                              }
-                            , Cmd.batch [ scrollToBottom (), focusMessageInput () ]
-                            )
+                                        Err _ ->
+                                            -- If parsing fails, display raw JSON as content
+                                            ( { model
+                                                | messages = model.messages ++ [ ChatContent jsonStr ]
+                                              }
+                                            , scrollToBottom ()
+                                            )
 
-                        ChatPermissionResponse _ _ _ ->
-                            ( { model
-                                | messages = model.messages ++ [ chatItem ]
-                                , pendingPermissionRequest = Nothing
-                              }
-                            , scrollToBottom ()
-                            )
+                                ChatToolResult _ ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                      }
+                                    , scrollToBottom ()
+                                    )
 
-                        ChatFuzzySearchResults jsonResults ->
-                            -- Update fuzzy matcher with search results
-                            update (FuzzySearchResults jsonResults) model
+                                ChatTodoWrite _ ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                      }
+                                    , scrollToBottom ()
+                                    )
 
-                Err _ ->
-                    ( model, Cmd.none )
+                                ChatExecStart ->
+                                    ( { model
+                                        | isTyping = True -- Show typing indicator when exec starts
+                                      }
+                                    , Cmd.none
+                                    )
+
+                                ChatExecEnd ->
+                                    let
+                                        focusCmd =
+                                            if model.isTyping then
+                                                focusMessageInput ()
+
+                                            else
+                                                Cmd.none
+                                    in
+                                    ( { model
+                                        | isTyping = False -- Hide typing indicator when exec ends
+                                      }
+                                    , focusCmd
+                                    )
+
+                                ChatToolUse _ ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                      }
+                                    , scrollToBottom ()
+                                    )
+
+                                ChatToolUseWithResult _ _ ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                      }
+                                    , scrollToBottom ()
+                                    )
+
+                                ChatPermissionRequest toolName errorMessage toolInput ->
+                                    ( { model
+                                        | pendingPermissionRequest = Just { toolName = toolName, errorMessage = errorMessage, toolInput = toolInput }
+                                        , messages = model.messages ++ [ chatItem ]
+                                      }
+                                    , Cmd.batch [ scrollToBottom (), focusMessageInput () ]
+                                    )
+
+                                ChatPermissionResponse _ _ _ ->
+                                    ( { model
+                                        | messages = model.messages ++ [ chatItem ]
+                                        , pendingPermissionRequest = Nothing
+                                      }
+                                    , scrollToBottom ()
+                                    )
+
+                                ChatFuzzySearchResults jsonResults ->
+                                    -- Update fuzzy matcher with search results
+                                    update (FuzzySearchResults jsonResults) model
+
+                        Err _ ->
+                            ( model, Cmd.none )
 
         ThemeChanged themeString ->
             let
@@ -583,6 +598,9 @@ update msg model =
               }
             , Cmd.none
             )
+
+        ReceiveClaudeSessionID claudeSessionID ->
+            ( { model | claudeSessionID = Just claudeSessionID }, Cmd.none )
 
         SystemThemeChanged themeString ->
             let
