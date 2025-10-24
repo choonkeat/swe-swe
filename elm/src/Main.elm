@@ -423,9 +423,41 @@ update msg model =
                                                         (\( id, content ) dict -> Dict.insert id content dict)
                                                         model.pendingToolUses
                                                         parseResult.toolUses
+
+                                                -- Collect IDs of tool uses that now have results
+                                                toolUseIdsWithResults =
+                                                    parseResult.messages
+                                                        |> List.filterMap
+                                                            (\item ->
+                                                                case item of
+                                                                    ChatToolUseWithResult toolUse _ ->
+                                                                        toolUse.id
+
+                                                                    _ ->
+                                                                        Nothing
+                                                            )
+                                                        |> Set.fromList
+
+                                                -- Filter out ChatToolUse messages that now have results
+                                                updatedMessages =
+                                                    model.messages
+                                                        |> List.filter
+                                                            (\item ->
+                                                                case item of
+                                                                    ChatToolUse toolUse ->
+                                                                        case toolUse.id of
+                                                                            Just id ->
+                                                                                not (Set.member id toolUseIdsWithResults)
+
+                                                                            Nothing ->
+                                                                                True
+
+                                                                    _ ->
+                                                                        True
+                                                            )
                                             in
                                             ( { model
-                                                | messages = model.messages ++ parseResult.messages
+                                                | messages = updatedMessages ++ parseResult.messages
                                                 , pendingToolUses = newPendingToolUses
                                               }
                                             , scrollToBottom ()
@@ -1807,36 +1839,10 @@ formatToolInput toolName inputJson =
                     of
                         Ok edit ->
                             div []
-                                [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ edit.filePath) ]
-                                , details [ style "margin-top" "0.5rem" ]
-                                    [ summary [] [ text "View changes" ]
-                                    , div [ style "margin-top" "0.5rem" ]
-                                        [ p [ style "font-weight" "bold" ] [ text "Replace:" ]
-                                        , pre [ style "background-color" "#ffeeee", style "padding" "0.5rem", style "overflow" "auto" ]
-                                            [ text
-                                                (String.left 200 edit.oldString
-                                                    ++ (if String.length edit.oldString > 200 then
-                                                            "..."
-
-                                                        else
-                                                            ""
-                                                       )
-                                                )
-                                            ]
-                                        , p [ style "font-weight" "bold", style "margin-top" "0.5rem" ] [ text "With:" ]
-                                        , pre [ style "background-color" "#eeffee", style "padding" "0.5rem", style "overflow" "auto" ]
-                                            [ text
-                                                (String.left 200 edit.newString
-                                                    ++ (if String.length edit.newString > 200 then
-                                                            "..."
-
-                                                        else
-                                                            ""
-                                                       )
-                                                )
-                                            ]
-                                        ]
-                                    ]
+                                [ p [ style "margin" "0.25rem 0", style "font-weight" "bold" ] 
+                                    [ text ("📝 Edit: " ++ edit.filePath) ]
+                                , div [ class "permission-diff-preview", style "margin-top" "0.5rem" ]
+                                    [ renderDiff edit.oldString edit.newString ]
                                 ]
 
                         Err _ ->
@@ -1865,16 +1871,47 @@ formatToolInput toolName inputJson =
                 "MultiEdit" ->
                     case
                         Decode.decodeString
-                            (Decode.map2 (\fp edits -> { filePath = fp, editsCount = edits })
+                            (Decode.map2 (\fp edits -> { filePath = fp, edits = edits })
                                 (Decode.field "file_path" Decode.string)
-                                (Decode.field "edits" (Decode.list Decode.value) |> Decode.map List.length)
+                                (Decode.field "edits" (Decode.list Decode.value))
                             )
                             inputJson
                     of
-                        Ok info ->
+                        Ok multiEdit ->
                             div []
-                                [ p [ style "margin" "0.25rem 0" ] [ text ("File: " ++ info.filePath) ]
-                                , p [ style "margin" "0.25rem 0" ] [ text ("Number of edits: " ++ String.fromInt info.editsCount) ]
+                                [ p [ style "margin" "0.25rem 0", style "font-weight" "bold" ] 
+                                    [ text ("📝 MultiEdit: " ++ multiEdit.filePath ++ " (" ++ String.fromInt (List.length multiEdit.edits) ++ " edits)") ]
+                                , details [ style "margin-top" "0.5rem" ]
+                                    [ summary [ style "cursor" "pointer", style "font-weight" "500" ] 
+                                        [ text "📋 Preview all changes" ]
+                                    , div [ class "permission-multi-edit-preview", style "margin-top" "0.5rem" ]
+                                        (List.indexedMap
+                                            (\idx editJson ->
+                                                let
+                                                    editResult = 
+                                                        Decode.decodeValue
+                                                            (Decode.map3 (\old new replaceAll -> { oldString = old, newString = new, replaceAll = replaceAll })
+                                                                (Decode.field "old_string" Decode.string)
+                                                                (Decode.field "new_string" Decode.string)
+                                                                (Decode.oneOf [ Decode.field "replace_all" Decode.bool, Decode.succeed False ])
+                                                            )
+                                                            editJson
+                                                in
+                                                div [ class "permission-edit-item" ]
+                                                    [ div [ style "font-size" "0.9em", style "color" "var(--text-secondary)", style "margin-bottom" "0.25rem" ]
+                                                        [ text ("Edit " ++ String.fromInt (idx + 1) ++ " of " ++ String.fromInt (List.length multiEdit.edits)) ]
+                                                    , case editResult of
+                                                        Ok edit ->
+                                                            renderDiff edit.oldString edit.newString
+                                                        
+                                                        Err _ ->
+                                                            div [ style "background-color" "var(--bg-surface-alt)", style "padding" "0.5rem", style "border-radius" "4px" ]
+                                                                [ text "Unable to preview this edit" ]
+                                                    ]
+                                            )
+                                            multiEdit.edits
+                                        )
+                                    ]
                                 ]
 
                         Err _ ->
