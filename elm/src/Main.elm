@@ -1676,6 +1676,7 @@ type DiffLineType
     = Added String
     | Removed String
     | Unchanged String
+    | Modified String String  -- old content, new content for character-level diff
 
 -- Generate a unified diff from old and new strings
 generateUnifiedDiff : String -> String -> List DiffLineType
@@ -1690,24 +1691,83 @@ generateUnifiedDiff oldString newString =
     in
     diffLines
 
--- Simple diff computation that finds added/removed/unchanged lines
+-- Myers' diff algorithm implementation for proper line-by-line diff
 computeLineDiff : List String -> List String -> List DiffLineType
 computeLineDiff oldLines newLines =
     let
-        oldSet = Set.fromList oldLines
-        newSet = Set.fromList newLines
-
-        removedLines = Set.diff oldSet newSet |> Set.toList
-        addedLines = Set.diff newSet oldSet |> Set.toList
-        unchangedLines = Set.intersect oldSet newSet |> Set.toList
-
-        -- Create a simple ordering: removed, then added, then some unchanged for context
-        diffResult =
-            (List.map Removed removedLines) ++
-            (List.map Added addedLines) ++
-            (List.take 3 unchangedLines |> List.map Unchanged) -- Show some context
+        -- Simple implementation using indexed comparison
+        maxLen = max (List.length oldLines) (List.length newLines)
+        
+        indexedOld = List.indexedMap Tuple.pair oldLines
+        indexedNew = List.indexedMap Tuple.pair newLines
+        
+        -- Helper to find if a line exists in the other list
+        findInList : String -> List (Int, String) -> Maybe Int
+        findInList target list =
+            list
+                |> List.filter (\(_, content) -> content == target)
+                |> List.head
+                |> Maybe.map Tuple.first
+        
+        -- Process lines with LCS-like logic
+        processDiff : List (Int, String) -> List (Int, String) -> List DiffLineType -> List DiffLineType
+        processDiff old new acc =
+            case (old, new) of
+                ([], []) ->
+                    List.reverse acc
+                
+                ([], (_, newLine) :: restNew) ->
+                    processDiff [] restNew (Added newLine :: acc)
+                
+                ((_, oldLine) :: restOld, []) ->
+                    processDiff restOld [] (Removed oldLine :: acc)
+                
+                ((oldIdx, oldLine) :: restOld, (newIdx, newLine) :: restNew) ->
+                    if oldLine == newLine then
+                        -- Lines match, it's unchanged
+                        processDiff restOld restNew (Unchanged oldLine :: acc)
+                    else
+                        -- Check if oldLine appears later in new
+                        case findInList oldLine indexedNew of
+                            Just futureIdx ->
+                                if futureIdx > newIdx && futureIdx - newIdx <= 3 then
+                                    -- oldLine appears soon, so current newLine is added
+                                    processDiff old restNew (Added newLine :: acc)
+                                else
+                                    -- Too far away, treat as remove + add
+                                    processDiff restOld new (Removed oldLine :: acc)
+                            
+                            Nothing ->
+                                -- oldLine doesn't exist in new, check if newLine exists in old
+                                case findInList newLine indexedOld of
+                                    Just futureIdx ->
+                                        if futureIdx > oldIdx && futureIdx - oldIdx <= 3 then
+                                            -- newLine appears soon in old, so current oldLine is removed
+                                            processDiff restOld new (Removed oldLine :: acc)
+                                        else
+                                            -- Too far away, treat as remove + add  
+                                            processDiff restOld restNew (Removed oldLine :: Added newLine :: acc)
+                                    
+                                    Nothing ->
+                                        -- Neither exists in the other, treat as modification
+                                        -- Check if lines are similar enough to be a modification
+                                        if isModifiedLine oldLine newLine then
+                                            processDiff restOld restNew (Modified oldLine newLine :: acc)
+                                        else
+                                            processDiff restOld restNew (Removed oldLine :: Added newLine :: acc)
+        
+        -- Helper to check if two lines are similar enough to be a modification
+        isModifiedLine : String -> String -> Bool
+        isModifiedLine old new =
+            let
+                oldWords = String.words old
+                newWords = String.words new
+                commonWords = Set.intersect (Set.fromList oldWords) (Set.fromList newWords)
+                similarity = toFloat (Set.size commonWords) / toFloat (max (List.length oldWords) (List.length newWords))
+            in
+            similarity > 0.3  -- If more than 30% of words match, consider it a modification
     in
-    diffResult
+    processDiff indexedOld indexedNew []
 
 renderDiff : String -> String -> Html Msg
 renderDiff oldString newString =
@@ -1733,6 +1793,20 @@ renderDiff oldString newString =
                         [ span [ class "diff-marker" ] [ text "  " ]
                         , span [ class "diff-content" ] [ text content ]
                         ]
+                
+                Modified oldContent newContent ->
+                    div [ class "diff-line diff-modified" ]
+                        [ div [ class "diff-modified-old" ]
+                            [ span [ class "diff-marker" ] [ text "- " ]
+                            , span [ class "diff-content" ] 
+                                (renderCharacterDiff oldContent newContent False)
+                            ]
+                        , div [ class "diff-modified-new" ]
+                            [ span [ class "diff-marker" ] [ text "+ " ]
+                            , span [ class "diff-content" ] 
+                                (renderCharacterDiff oldContent newContent True)
+                            ]
+                        ]
 
         -- If diff is too complex, fall back to side-by-side view
         shouldShowSideBySide =
@@ -1748,6 +1822,35 @@ renderDiff oldString newString =
             , div [ class "diff-content" ]
                 (List.map renderDiffLine diffLines)
             ]
+
+-- Render character-level diff for modified lines
+renderCharacterDiff : String -> String -> Bool -> List (Html Msg)
+renderCharacterDiff oldStr newStr showNew =
+    let
+        -- For simplicity, use a word-based approach for character-level highlighting
+        oldWords = String.split " " oldStr
+        newWords = String.split " " newStr
+        
+        renderWords : List String -> List String -> List (Html Msg)
+        renderWords oWords nWords =
+            if showNew then
+                -- Render new version with additions highlighted
+                List.map (\word ->
+                    if List.member word oldWords then
+                        span [] [ text (word ++ " ") ]
+                    else
+                        span [ class "diff-highlight-added" ] [ text (word ++ " ") ]
+                ) nWords
+            else
+                -- Render old version with removals highlighted 
+                List.map (\word ->
+                    if List.member word newWords then
+                        span [] [ text (word ++ " ") ]
+                    else
+                        span [ class "diff-highlight-removed" ] [ text (word ++ " ") ]
+                ) oWords
+    in
+    renderWords oldWords newWords
 
 -- Render side-by-side diff for larger changes
 renderSideBySideDiff : String -> String -> Html Msg
