@@ -578,6 +578,7 @@ update msg model =
                                                 , ( "content", Encode.string model.input )
                                                 , ( "firstMessage", Encode.bool model.isFirstUserMessage )
                                                 , ( "sessionID", Encode.string (Maybe.withDefault "" model.browserSessionID) )
+                                                , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                                                 ]
                                             )
                                 in
@@ -620,6 +621,7 @@ update msg model =
                     Encode.encode 0
                         (Encode.object
                             [ ( "type", Encode.string "stop" )
+                            , ( "claudeSessionID", Encode.string (Maybe.withDefault "" model.claudeSessionID) )
                             ]
                         )
             in
@@ -2182,10 +2184,10 @@ renderMessages model items =
                             let
                                 statusSymbol =
                                     if todo.status == "completed" then
-                                        "☑ "
+                                        "[✓] "
 
                                     else
-                                        "☐ "
+                                        "[ ] "
 
                                 todoStyle =
                                     if todo.priority == "high" then
