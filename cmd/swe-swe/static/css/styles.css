@@ -318,10 +318,38 @@ body {
     color: var(--text-secondary);
     user-select: none;
     transition: background-color 0.2s;
+    
+    /* Apply vertical cropping to summary */
+    max-height: 3.5em;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Fade effect for tool-result summary when content overflows */
+.tool-result summary::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1em;
+    background: linear-gradient(transparent, var(--bg-surface-alt));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.tool-result summary:not(.expanded)::after {
+    opacity: 1;
 }
 
 .tool-result summary:hover {
+    max-height: none;
     background-color: var(--border-light);
+}
+
+.tool-result summary:hover::after {
+    opacity: 0;
 }
 
 .tool-result[open] summary {
@@ -339,7 +367,9 @@ body {
     white-space: pre-wrap;
 }
 
-/* Tool use styles */
+/* Tool use styles - DEPRECATED: Now using unified .tool-result for all tool operations */
+/* Keeping for backward compatibility but should be removed once Elm code is updated */
+/*
 .tool-use {
     margin: 5px 0;
     padding: 8px 12px;
@@ -358,6 +388,7 @@ body {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
 }
+*/
 
 /* Dark theme tool result styles */
 .messages[style*="background-color: rgb(13, 17, 23)"] .tool-result,
@@ -398,20 +429,25 @@ body {
     color: var(--color-gray-400);
 }
 
-/* Dark theme tool use styles */
+/* Dark theme tool use styles - DEPRECATED */
+/*
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-use,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-use,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-use,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-use {
     color: var(--color-gray-400);
 }
+*/
 
+/* Dark theme code styles */
+/*
 .messages[style*="background-color: rgb(13, 17, 23)"] .tool-use code,
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-use code,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-use code,
 .messages[style*="background-color: rgb(26, 27, 38)"] .tool-use code,
 .messages[style*="background-color: rgb(45, 45, 45)"] .tool-use code,
 .messages[style*="background-color: rgb(0, 43, 54)"] .tool-use code,
+*/
 .messages[style*="background-color: rgb(13, 17, 23)"] .tool-result summary code,
 .messages[style*="background-color: rgb(30, 30, 30)"] .tool-result summary code,
 .messages[style*="background-color: rgb(0, 0, 0)"] .tool-result summary code,
@@ -1215,6 +1251,48 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
     color: var(--text-tertiary);
 }
 
+/* Explicit diff content text coloring */
+.diff-line.diff-old .diff-content {
+    color: #d73a49; /* Red for removed content */
+}
+
+.diff-line.diff-new .diff-content {
+    color: #28a745; /* Green for added content */
+}
+
+.diff-line.diff-added .diff-content {
+    color: #24292f; /* Dark text on light green background */
+}
+
+.diff-line.diff-removed .diff-content {
+    color: #24292f; /* Dark text on light red background */
+}
+
+.diff-line.diff-context .diff-content {
+    color: var(--text-tertiary);
+}
+
+/* Ensure diff markers also get proper coloring */
+.diff-line.diff-old .diff-marker {
+    color: #d73a49;
+    font-weight: bold;
+}
+
+.diff-line.diff-new .diff-marker {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.diff-line.diff-added .diff-marker {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.diff-line.diff-removed .diff-marker {
+    color: #d73a49;
+    font-weight: bold;
+}
+
 .diff-marker {
     display: inline-block;
     width: 20px;
@@ -1277,6 +1355,56 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 .messages[style*="background-color: rgb(45, 45, 45)"] .diff-line.diff-new,
 .messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-new {
     background-color: rgba(60, 255, 60, 0.15);
+    color: #6bcf7f;
+}
+
+/* Dark theme diff content coloring */
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-old .diff-content,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-old .diff-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-old .diff-content,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-old .diff-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-old .diff-content {
+    color: #ff8787; /* Lighter red for dark themes */
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-new .diff-content,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-new .diff-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-new .diff-content,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-new .diff-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-new .diff-content {
+    color: #6bcf7f; /* Lighter green for dark themes */
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-added .diff-content,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-added .diff-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-added .diff-content,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-added .diff-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-added .diff-content {
+    color: #adbac7; /* Light text on dark green background */
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-removed .diff-content,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-removed .diff-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-removed .diff-content,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-removed .diff-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-removed .diff-content {
+    color: #adbac7; /* Light text on dark red background */
+}
+
+/* Dark theme diff markers */
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-old .diff-marker,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-old .diff-marker,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-old .diff-marker,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-old .diff-marker,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-old .diff-marker {
+    color: #ff8787;
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-new .diff-marker,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-new .diff-marker,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-new .diff-marker,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-new .diff-marker,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-new .diff-marker {
     color: #6bcf7f;
 }
 
@@ -1601,4 +1729,186 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 .messages[style*="background-color: rgb(26, 27, 38)"] .diff-side.diff-new,
 .messages[style*="background-color: rgb(0, 43, 54)"] .diff-side.diff-new {
     background-color: #0d4a1a;
+}
+
+/* Side-by-side diff content coloring */
+.diff-side.diff-old .diff-content {
+    color: #d73a49;
+}
+
+.diff-side.diff-new .diff-content {
+    color: #28a745;
+}
+
+/* Dark theme side-by-side diff content */
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-side.diff-old .diff-content,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-side.diff-old .diff-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-side.diff-old .diff-content,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-side.diff-old .diff-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-side.diff-old .diff-content {
+    color: #ff8787;
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-side.diff-new .diff-content,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-side.diff-new .diff-content,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-side.diff-new .diff-content,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-side.diff-new .diff-content,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-side.diff-new .diff-content {
+    color: #6bcf7f;
+}
+
+/* Permission dialog diff preview styling */
+.permission-diff-preview {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    margin: 0.5rem 0;
+}
+
+.permission-diff-preview .diff-container {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+}
+
+.permission-multi-edit-preview {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.permission-edit-item {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.permission-edit-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.diff-truncation-notice {
+    padding: 0.5rem;
+    background-color: var(--bg-surface-alt);
+    border-top: 1px solid var(--border-light);
+    text-align: center;
+    font-style: italic;
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+/* Compact permission diff styling */
+.permission-diff-preview .diff-line {
+    padding: 1px 8px;
+    line-height: 1.2;
+    font-size: 0.85em;
+}
+
+.permission-diff-preview .diff-header {
+    padding: 4px 8px;
+    font-size: 0.85em;
+}
+
+/* Dark theme support for permission diffs */
+.messages[style*="background-color: rgb(13, 17, 23)"] .permission-diff-preview,
+.messages[style*="background-color: rgb(30, 30, 30)"] .permission-diff-preview,
+.messages[style*="background-color: rgb(0, 0, 0)"] .permission-diff-preview,
+.messages[style*="background-color: rgb(26, 27, 38)"] .permission-diff-preview,
+.messages[style*="background-color: rgb(0, 43, 54)"] .permission-diff-preview {
+    border-color: var(--color-gray-700);
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-truncation-notice,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-truncation-notice,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-truncation-notice,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-truncation-notice,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-truncation-notice {
+    background-color: var(--color-gray-800);
+    border-color: var(--color-gray-700);
+    color: var(--color-gray-400);
+}
+
+/* Character-level diff highlighting */
+.diff-highlight-added {
+    background-color: #acf2bd;
+    color: #24292f;
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+.diff-highlight-removed {
+    background-color: #fdb8c0;
+    color: #24292f;
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+/* Dark theme character-level diff highlighting */
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-highlight-added,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-highlight-added,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-highlight-added,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-highlight-added,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-highlight-added {
+    background-color: #2d5a3d;
+    color: #adbac7;
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-highlight-removed,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-highlight-removed,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-highlight-removed,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-highlight-removed,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-highlight-removed {
+    background-color: #6d2d3d;
+    color: #adbac7;
+}
+
+/* Modified line styles for character-level diffs */
+.diff-line.diff-modified {
+    border-left: 4px solid #fd8c73;
+    padding-left: 8px;
+    margin: 2px 0;
+    background-color: #fff8f0;
+}
+
+.diff-modified-old {
+    background-color: #ffecec;
+    padding: 2px 8px;
+    margin: 1px 0;
+    border-left: 2px solid #d73a49;
+}
+
+.diff-modified-new {
+    background-color: #e6ffed;
+    padding: 2px 8px;
+    margin: 1px 0;
+    border-left: 2px solid #28a745;
+}
+
+/* Dark theme modified line styles */
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-line.diff-modified,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-line.diff-modified,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-line.diff-modified,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-line.diff-modified,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-line.diff-modified {
+    background-color: #2d2d2d;
+    border-left-color: #fd8c73;
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-modified-old,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-modified-old,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-modified-old,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-modified-old,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-modified-old {
+    background-color: #4a0d0d;
+    border-left-color: #ff8787;
+}
+
+.messages[style*="background-color: rgb(13, 17, 23)"] .diff-modified-new,
+.messages[style*="background-color: rgb(30, 30, 30)"] .diff-modified-new,
+.messages[style*="background-color: rgb(0, 0, 0)"] .diff-modified-new,
+.messages[style*="background-color: rgb(26, 27, 38)"] .diff-modified-new,
+.messages[style*="background-color: rgb(0, 43, 54)"] .diff-modified-new {
+    background-color: #0d4a1a;
+    border-left-color: #6bcf7f;
 }

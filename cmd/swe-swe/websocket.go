@@ -23,9 +23,10 @@ import (
 type Client struct {
 	conn                  *websocket.Conn
 	username              string
-	browserSessionID      string // Browser tab session ID
-	claudeSessionID       string // CLI session ID from stream-json
-	hasStartedSession     bool   // Track if first message sent
+	browserSessionID      string   // Browser tab session ID
+	claudeSessionID       string   // CLI session ID from stream-json (current/latest)
+	claudeSessionHistory []string // History of session IDs (max 10, newest at end)
+	hasStartedSession     bool     // Track if first message sent
 	cancelFunc            context.CancelFunc
 	processMutex          sync.Mutex
 	allowedTools          []string // Track allowed tools for this client
@@ -264,8 +265,61 @@ func isPermissionError(content string) bool {
 		strings.Contains(content, "This command requires approval")
 }
 
-// executeAgentCommand executes the configured agent command with the given prompt and streams the output
-func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string) {
+// tryExecuteWithSessionHistory attempts to execute the command with session IDs from history
+func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, primarySessionID string) {
+	// Build a list of session IDs to try, starting with the provided one
+	var sessionIDsToTry []string
+	
+	// If we have a primary session ID from the client message, try it first
+	if primarySessionID != "" {
+		sessionIDsToTry = append(sessionIDsToTry, primarySessionID)
+	}
+	
+	// Then try session IDs from history in reverse order (newest first)
+	client.processMutex.Lock()
+	historyLen := len(client.claudeSessionHistory)
+	for i := historyLen - 1; i >= 0; i-- {
+		sessionID := client.claudeSessionHistory[i]
+		// Don't add duplicates
+		if sessionID != primarySessionID {
+			sessionIDsToTry = append(sessionIDsToTry, sessionID)
+		}
+	}
+	client.processMutex.Unlock()
+	
+	// If this is a subsequent message and we have session IDs to try
+	if !isFirstMessage && len(sessionIDsToTry) > 0 {
+		for i, sessionID := range sessionIDsToTry {
+			if i > 0 {
+				log.Printf("[SESSION] Retrying with older session ID from history (attempt %d/%d): %s", i+1, len(sessionIDsToTry), sessionID)
+			}
+			
+			// Try execution with this session ID
+			success := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID)
+			if success {
+				// Success! Update the current session ID if different
+				client.processMutex.Lock()
+				if client.claudeSessionID != sessionID {
+					log.Printf("[SESSION] Successfully resumed with session ID: %s", sessionID)
+					client.claudeSessionID = sessionID
+				}
+				client.processMutex.Unlock()
+				return
+			}
+		}
+		
+		// All session IDs failed, try without resume (fresh start)
+		log.Printf("[SESSION] All session IDs failed, starting fresh conversation")
+		executeAgentCommandWithSession(parentctx, svc, client, prompt, true, allowedTools, skipPermissions, "")
+	} else {
+		// First message or no session IDs available
+		executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, "")
+	}
+}
+
+// executeAgentCommandWithSession executes the configured agent command with a specific session ID
+// Returns true if execution was successful, false if session resume failed
+func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string) bool {
 	// Create a context that can be cancelled when the client disconnects
 	ctx, cancel := context.WithCancel(parentctx)
 
@@ -372,7 +426,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 				Type:    "content",
 				Content: "Error starting PTY: " + err.Error(),
 			}, client.browserSessionID)
-			return
+			return false
 		}
 		defer func() {
 			_ = ptmx.Close()
@@ -403,7 +457,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 				Type:    "content",
 				Content: "Error creating command pipe: " + err.Error(),
 			}, client.browserSessionID)
-			return
+			return false
 		}
 
 		// Get stderr pipe
@@ -419,7 +473,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 				Type:    "content",
 				Content: "Error starting agent command: " + err.Error(),
 			}, client.browserSessionID)
-			return
+			return false
 		}
 	}
 
@@ -497,7 +551,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
 			}, client.browserSessionID)
-			return
+			return false
 		default:
 			line := scanner.Text()
 			if line != "" {
@@ -531,16 +585,28 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 							client.processMutex.Lock()
 							oldSessionID := client.claudeSessionID
 							client.claudeSessionID = claudeMsg.SessionID
+							
+							// Add to history if it's a new session ID
+							if oldSessionID != claudeMsg.SessionID {
+								// Append to history
+								client.claudeSessionHistory = append(client.claudeSessionHistory, claudeMsg.SessionID)
+								
+								// Keep only the last 10 session IDs
+								if len(client.claudeSessionHistory) > 10 {
+									client.claudeSessionHistory = client.claudeSessionHistory[len(client.claudeSessionHistory)-10:]
+								}
+							}
 							client.processMutex.Unlock()
+							
 							if oldSessionID == "" {
-								log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s", client.claudeSessionID, client.browserSessionID)
+								log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s (history: %d)", client.claudeSessionID, client.browserSessionID, len(client.claudeSessionHistory))
 								// Send Claude session ID back to browser for storage
 								svc.BroadcastToSession(ChatItem{
 									Type:    "claude_session_id",
 									Content: client.claudeSessionID,
 								}, client.browserSessionID)
 							} else if oldSessionID != client.claudeSessionID {
-								log.Printf("[SESSION] Updated Claude session ID from %s to %s for browser session: %s", oldSessionID, client.claudeSessionID, client.browserSessionID)
+								log.Printf("[SESSION] Updated Claude session ID from %s to %s for browser session: %s (history: %d)", oldSessionID, client.claudeSessionID, client.browserSessionID, len(client.claudeSessionHistory))
 								// Send updated Claude session ID back to browser
 								svc.BroadcastToSession(ChatItem{
 									Type:    "claude_session_id", 
@@ -597,7 +663,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 											svc.BroadcastToSession(ChatItem{
 												Type: "exec_end",
 											}, client.browserSessionID)
-											return
+											return false
 										}
 									}
 								}
@@ -632,7 +698,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
 			}, client.browserSessionID)
-			return
+			return false
 		default:
 			log.Printf("[ERROR] Command completed with error: %v", err)
 
@@ -642,17 +708,9 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 				// Check for common session resumption error patterns
 				if strings.Contains(errorMsg, "session") && (strings.Contains(errorMsg, "not found") ||
 					strings.Contains(errorMsg, "invalid") || strings.Contains(errorMsg, "expired")) {
-					log.Printf("[SESSION] Claude session resumption failed, clearing session ID: %s", client.claudeSessionID)
-					// Clear the stored session ID so next attempt will start fresh
-					client.processMutex.Lock()
-					client.claudeSessionID = ""
-					client.hasStartedSession = false // Reset to allow fresh start
-					client.processMutex.Unlock()
-					svc.BroadcastToSession(ChatItem{
-						Type:    "content",
-						Content: "Session expired. Starting fresh session...",
-					}, client.browserSessionID)
-					return // Don't show the raw error to user
+					log.Printf("[SESSION] Claude session resumption failed for session ID: %s", claudeSessionID)
+					// Return false to indicate session resume failed
+					return false
 				}
 			}
 
@@ -673,7 +731,7 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
 			}, client.browserSessionID)
-			return
+			return false
 		default:
 			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
@@ -696,6 +754,9 @@ func executeAgentCommand(parentctx context.Context, svc *ChatService, client *Cl
 	svc.BroadcastToSession(ChatItem{
 		Type: "exec_end",
 	}, client.browserSessionID)
+	
+	// Return true to indicate successful execution
+	return true
 }
 
 // websocketHandler handles websocket connections
@@ -837,7 +898,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastToSession(botSenderItem, client.browserSessionID)
 
 					go func() {
-						executeAgentCommand(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
+						tryExecuteWithSessionHistory(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated
@@ -878,7 +939,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					skipPermissions := client.skipPermissions
 					isFirstMessage := !client.hasStartedSession
 					client.processMutex.Unlock()
-					executeAgentCommand(ctx, svc, client, clientMsg.Content, isFirstMessage, allowedTools, skipPermissions, clientMsg.ClaudeSessionID)
+					tryExecuteWithSessionHistory(ctx, svc, client, clientMsg.Content, isFirstMessage, allowedTools, skipPermissions, clientMsg.ClaudeSessionID)
 				}()
 			}
 		}
