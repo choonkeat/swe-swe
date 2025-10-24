@@ -1372,7 +1372,7 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 }
 
 .fuzzy-match-highlight {
-    background-color: var(--color-warning);
+    background-color: #569CD6;
     color: var(--color-white);
     padding: 1px 2px;
     border-radius: 2px;
