@@ -176,6 +176,7 @@ type alias Todo =
     , content : String
     , status : String
     , priority : String
+    , activeForm : Maybe String
     }
 
 
@@ -236,6 +237,13 @@ init flags =
             , selectedIndex = 0
             , cursorPosition = 0
             }
+        
+        isFirstUserMessage =
+            case flags.claudeSessionID of
+                Just _ ->
+                    False
+                Nothing ->
+                    True
     in
     ( { input = ""
       , messages = []
@@ -244,7 +252,7 @@ init flags =
       , isConnected = False
       , systemTheme = initialTheme
       , isTyping = False
-      , isFirstUserMessage = True
+      , isFirstUserMessage = isFirstUserMessage
       , browserSessionID = Just flags.browserSessionID
       , claudeSessionID = flags.claudeSessionID
       , pendingToolUses = Dict.empty
@@ -971,11 +979,15 @@ themeToStyles theme =
 encodeTodo : Todo -> Encode.Value
 encodeTodo todo =
     Encode.object
-        [ ( "id", Encode.string todo.id )
+        ([ ( "id", Encode.string todo.id )
         , ( "content", Encode.string todo.content )
         , ( "status", Encode.string todo.status )
         , ( "priority", Encode.string todo.priority )
-        ]
+        ] ++ 
+        (case todo.activeForm of
+            Just form -> [ ( "activeForm", Encode.string form ) ]
+            Nothing -> []
+        ))
 
 
 encodeChatItem : ChatItem -> Encode.Value
@@ -1364,6 +1376,7 @@ todoDecoder =
         |> required "content" Decode.string
         |> required "status" Decode.string
         |> required "priority" Decode.string
+        |> optional "activeForm" (Decode.maybe Decode.string) Nothing
 
 
 todosDecoder : Decode.Decoder (List Todo)
@@ -2326,18 +2339,32 @@ renderMessages model items =
                                     if todo.status == "completed" then
                                         "[✓] "
 
+                                    else if todo.status == "in_progress" then
+                                        "[⏳] "
+
                                     else
                                         "[ ] "
+
+                                displayText =
+                                    if todo.status == "in_progress" then
+                                        case todo.activeForm of
+                                            Just form -> form
+                                            Nothing -> todo.content
+                                    else
+                                        todo.content
 
                                 todoStyle =
                                     if todo.priority == "high" then
                                         [ style "font-weight" "bold" ]
 
+                                    else if todo.status == "in_progress" then
+                                        [ style "font-style" "italic" ]
+
                                     else
                                         []
                             in
                             div ([ class "todo-item" ] ++ todoStyle)
-                                [ text (statusSymbol ++ todo.content) ]
+                                [ text (statusSymbol ++ displayText) ]
 
                         todoListElement =
                             div [ class "todo-list" ]
