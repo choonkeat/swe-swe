@@ -663,6 +663,10 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 											svc.BroadcastToSession(ChatItem{
 												Type: "exec_end",
 											}, client.browserSessionID)
+											
+											// Wait for the command to actually terminate
+											// This prevents the process from continuing to run
+											cmd.Wait()
 											return false
 										}
 									}
