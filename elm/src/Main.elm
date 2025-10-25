@@ -8,8 +8,10 @@ port module Main exposing
     , Theme(..)
     , Todo
     , claudeMessageDecoder
+    , encodeTodo
     , main
     , parseClaudeMessage
+    , todosDecoder
     )
 
 import Ansi exposing (ansiToElmHtml, ansiToHtml)
