@@ -60,5 +60,32 @@ Thorough step-by-step documentation covering:
   - Recovery mechanisms
   - User experience impact
 
+## Observed Issues
+
+### Session Recovery Failure (2025/10/25)
+**Problem:** Browser client got stuck when Claude session ID was not found
+- Lines 28-36 in logs.txt show the failure sequence:
+  1. Client tried to resume with session ID: `81407d78-753d-45ec-9783-bb3c0a8ade0a`
+  2. Server executed: `claude --resume 81407d78-753d-45ec-9783-bb3c0a8ade0a`
+  3. Claude CLI returned error: "No conversation found with session ID"
+  4. Process exited with status 1
+  5. **Browser client was stuck with no recovery mechanism**
+
+**Impact:** 
+- User had to manually refresh the browser (lines 37-41)
+- New session was created, losing conversation context
+- Poor user experience, especially problematic for mobile users
+
+**Root Cause:**
+- When Claude CLI can't find a session ID, the server returns an error
+- Browser client has no fallback mechanism
+- No automatic retry or graceful degradation
+
+**Proposed Solutions:**
+1. **Automatic Fallback:** If session resume fails, automatically start a new session
+2. **Error Recovery UI:** Show user a clear error message with recovery options
+3. **Session Validation:** Check if session exists before attempting resume
+4. **Graceful Degradation:** Continue with new session while preserving user's input
+
 ## Goal
 Create comprehensive documentation that maps out the entire session lifecycle and identifies potential failure points or areas for improvement in session persistence robustness.
