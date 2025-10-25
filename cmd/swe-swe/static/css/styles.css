@@ -233,6 +233,7 @@ body {
     align-items: center;
     gap: 10px;
     padding: 20px;
+    box-sizing: border-box;
     background-color: var(--bg-surface);
     border-top: 1px solid var(--border-light);
     box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
@@ -248,7 +249,7 @@ body {
     height: 44px;
     max-height: 120px;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
     line-height: 1.4;
     overflow-y: auto;
     box-sizing: border-box;
@@ -365,6 +366,7 @@ body {
     font-size: 13px;
     line-height: 1.5;
     white-space: pre-wrap;
+    word-break: break-word; /* Ensures long text wraps on mobile */
 }
 
 /* Tool use styles - DEPRECATED: Now using unified .tool-result for all tool operations */
@@ -1911,4 +1913,69 @@ body:has(.messages[style*="background-color: rgb(0, 43, 54)"]) .permission-tool-
 .messages[style*="background-color: rgb(0, 43, 54)"] .diff-modified-new {
     background-color: #0d4a1a;
     border-left-color: #6bcf7f;
+}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+    /* Stack input and send button vertically on mobile */
+    .input-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box; /* Include padding in width calculation */
+        z-index: 1000;
+        flex-direction: column; /* Stack items vertically */
+        gap: 8px; /* Reduce gap between rows */
+    }
+    
+    /* Adjust message container padding to account for taller fixed input */
+    .messages {
+        padding-bottom: 120px; /* Increased to accommodate 2 rows */
+    }
+    
+    /* Make input wrapper take full width */
+    .input-wrapper {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+    
+    /* Make textarea take full width within wrapper */
+    .message-input {
+        width: 100%;
+        box-sizing: border-box;
+        white-space: normal; /* Allow text to wrap */
+    }
+    
+    /* Fix placeholder text overflow on mobile */
+    .message-input::placeholder {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* Make send button full width on mobile */
+    .send-button {
+        width: 100%;
+        min-width: unset;
+        flex-shrink: 0;
+        padding: 14px 20px; /* Slightly taller for easier tapping */
+    }
+    
+    /* Ensure monospace text wraps properly on mobile */
+    .tool-result-content,
+    .message-content pre,
+    .message-content code,
+    .permission-tool-input pre {
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }
+    
+    /* Prevent horizontal scrolling on mobile */
+    body {
+        overflow-x: hidden;
+    }
 }
