@@ -1372,10 +1372,10 @@ claudeContentDecoder =
 todoDecoder : Decode.Decoder Todo
 todoDecoder =
     Decode.succeed Todo
-        |> required "id" Decode.string
+        |> optional "id" Decode.string ""
         |> required "content" Decode.string
         |> required "status" Decode.string
-        |> required "priority" Decode.string
+        |> optional "priority" Decode.string "medium"
         |> optional "activeForm" (Decode.maybe Decode.string) Nothing
 
 
