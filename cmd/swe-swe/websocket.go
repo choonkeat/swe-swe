@@ -28,6 +28,7 @@ type Client struct {
 	claudeSessionHistory []string // History of session IDs (max 10, newest at end)
 	hasStartedSession     bool     // Track if first message sent
 	cancelFunc            context.CancelFunc
+	activeProcess         *exec.Cmd          // Track the active process for proper termination
 	processMutex          sync.Mutex
 	allowedTools          []string // Track allowed tools for this client
 	skipPermissions       bool     // Track if user chose to skip all permissions
@@ -97,6 +98,43 @@ type ClaudeContent struct {
 	ID        string          `json:"id,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	IsError   bool            `json:"is_error,omitempty"`
+}
+
+// terminateProcess gracefully terminates a process with a timeout
+func terminateProcess(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	
+	log.Printf("[PROCESS] Attempting graceful termination of process PID: %d", cmd.Process.Pid)
+	
+	// Try graceful shutdown first with interrupt signal
+	err := cmd.Process.Signal(os.Interrupt)
+	if err != nil {
+		log.Printf("[PROCESS] Failed to send interrupt signal: %v", err)
+	}
+	
+	// Wait for process to terminate gracefully
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	
+	select {
+	case <-time.After(2 * time.Second):
+		// Force kill after timeout
+		log.Printf("[PROCESS] Graceful termination timed out, force killing PID: %d", cmd.Process.Pid)
+		err := cmd.Process.Kill()
+		if err != nil {
+			log.Printf("[PROCESS] Failed to kill process: %v", err)
+		}
+	case err := <-done:
+		if err != nil {
+			log.Printf("[PROCESS] Process terminated with error: %v", err)
+		} else {
+			log.Printf("[PROCESS] Process terminated gracefully")
+		}
+	}
 }
 
 // NewChatService creates a new chat service
@@ -329,6 +367,11 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 		// Cancel any existing process
 		log.Printf("[WEBSOCKET] Terminating existing agent process before starting new one")
 		client.cancelFunc()
+		// Also terminate the actual process if it exists
+		if client.activeProcess != nil {
+			terminateProcess(client.activeProcess)
+			client.activeProcess = nil
+		}
 		// Give the process a moment to terminate gracefully
 		client.processMutex.Unlock()
 		// Sleep briefly to allow the previous goroutine to finish
@@ -476,6 +519,12 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			return false
 		}
 	}
+	
+	// Store the active process
+	client.processMutex.Lock()
+	client.activeProcess = cmd
+	log.Printf("[PROCESS] Stored active process PID: %d", cmd.Process.Pid)
+	client.processMutex.Unlock()
 
 	// Handle stdin writing
 	if stdin != nil && !hasPlaceholder {
@@ -759,6 +808,11 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 		Type: "exec_end",
 	}, client.browserSessionID)
 	
+	// Clear the active process as it has completed
+	client.processMutex.Lock()
+	client.activeProcess = nil
+	client.processMutex.Unlock()
+	
 	// Return true to indicate successful execution
 	return true
 }
@@ -802,8 +856,14 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			if clientMsg.Type == "stop" {
 				log.Printf("[WEBSOCKET] Received stop command from client")
 				client.processMutex.Lock()
+				// Properly terminate the active process
+				if client.activeProcess != nil {
+					log.Printf("[WEBSOCKET] Terminating active process PID: %d", client.activeProcess.Process.Pid)
+					terminateProcess(client.activeProcess)
+					client.activeProcess = nil
+				}
 				if client.cancelFunc != nil {
-					log.Printf("[WEBSOCKET] Cancelling running process")
+					log.Printf("[WEBSOCKET] Cancelling running process context")
 					client.cancelFunc()
 					client.cancelFunc = nil
 				}
@@ -912,7 +972,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastToSession(botSenderItem, client.browserSessionID)
 
 					go func() {
-						tryExecuteWithSessionHistory(ctx, svc, client, "Permission fixed. Try again. (If editing files, you would need to read them again)", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
+						tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated

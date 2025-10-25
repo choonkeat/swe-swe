@@ -362,3 +362,20 @@ This approach maintains session integrity while preventing zombie processes.
 3. Implement Phase 2 for more robust handling
 4. Implement Phase 3 for optimal UX
 5. Consider backporting to mobile-specific code paths if needed
+
+## Permission Retry Message Simplification
+
+The permission retry message should be simplified to just "continue" because:
+
+1. **It matches Claude CLI's expected input** - When Claude CLI pauses for permission, it's waiting for a simple continuation command like "continue" or "y", not a full explanation.
+
+2. **Avoids confusing the AI assistant** - The verbose message "Permission fixed. Try again. (If editing files, you would need to read them again)" could be interpreted as a new user request or instruction, potentially causing Claude to:
+   - Re-read files unnecessarily
+   - Start a new task instead of continuing the interrupted one
+   - Get confused about what to do next
+
+3. **Maintains conversation flow** - "continue" is a clear signal to resume the interrupted operation from where it left off, without adding extra context that might derail the current task.
+
+4. **Prevents redundant actions** - The original message explicitly suggests re-reading files, which may not always be necessary and could waste time/tokens.
+
+The simpler "continue" message ensures Claude CLI resumes exactly where it stopped, treating it as a continuation of the interrupted flow rather than a new instruction.
