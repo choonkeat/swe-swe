@@ -373,5 +373,75 @@ suite =
                     in
                     result.messages
                         |> Expect.equal expected
+            , test "parses TodoWrite tool with activeForm field" <|
+                \_ ->
+                    let
+                        inputJson =
+                            Decode.decodeString Decode.value
+                                """{"todos": [
+                                    {
+                                        "content": "Fix parsing issue",
+                                        "activeForm": "Fixing parsing issue",
+                                        "status": "in_progress",
+                                        "id": "todo-1",
+                                        "priority": "normal"
+                                    },
+                                    {
+                                        "content": "Add unit tests",
+                                        "activeForm": "Adding unit tests",
+                                        "status": "pending",
+                                        "id": "todo-2", 
+                                        "priority": "normal"
+                                    }
+                                ]}"""
+                                |> Result.toMaybe
+
+                        claudeMsg =
+                            { type_ = "assistant"
+                            , subtype = Nothing
+                            , durationMs = Nothing
+                            , result = Nothing
+                            , message =
+                                Just
+                                    { role = Just "assistant"
+                                    , content =
+                                        [ { type_ = "tool_use"
+                                          , text = Nothing
+                                          , name = Just "TodoWrite"
+                                          , input = inputJson
+                                          , content = Nothing
+                                          , id = Nothing
+                                          , toolUseId = Nothing
+                                          }
+                                        ]
+                                    }
+                            }
+
+                        result =
+                            parseClaudeMessage testModel claudeMsg
+                    in
+                    case result.messages of
+                        [ ChatTodoWrite todos ] ->
+                            Expect.all
+                                [ \_ -> List.length todos |> Expect.equal 2
+                                , \_ ->
+                                    case todos of
+                                        [ todo1, todo2 ] ->
+                                            Expect.all
+                                                [ \_ -> todo1.content |> Expect.equal "Fix parsing issue"
+                                                , \_ -> todo1.status |> Expect.equal "in_progress"
+                                                , \_ -> todo1.id |> Expect.equal "todo-1"
+                                                , \_ -> todo2.content |> Expect.equal "Add unit tests"
+                                                , \_ -> todo2.status |> Expect.equal "pending"
+                                                , \_ -> todo2.id |> Expect.equal "todo-2"
+                                                ]
+                                                ()
+                                        _ ->
+                                            Expect.fail "Expected exactly 2 todos"
+                                ]
+                                ()
+
+                        _ ->
+                            Expect.fail "Expected ChatTodoWrite message"
             ]
         ]
