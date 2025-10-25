@@ -788,6 +788,16 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 				log.Printf("[WEBSOCKET] Client assigned browser session ID: %s", client.browserSessionID)
 			}
 
+			// Store Claude session ID if provided (important for reconnections)
+			if clientMsg.ClaudeSessionID != "" && client.claudeSessionID == "" {
+				client.claudeSessionID = clientMsg.ClaudeSessionID
+				// Add to history as well
+				client.claudeSessionHistory = append(client.claudeSessionHistory, clientMsg.ClaudeSessionID)
+				// Mark session as already started since we're resuming
+				client.hasStartedSession = true
+				log.Printf("[WEBSOCKET] Client resuming Claude session ID: %s", client.claudeSessionID)
+			}
+
 			// Handle stop command
 			if clientMsg.Type == "stop" {
 				log.Printf("[WEBSOCKET] Received stop command from client")
@@ -941,7 +951,8 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					client.processMutex.Lock()
 					allowedTools := client.allowedTools
 					skipPermissions := client.skipPermissions
-					isFirstMessage := !client.hasStartedSession
+					// Check both hasStartedSession and FirstMessage flag from frontend
+					isFirstMessage := !client.hasStartedSession && clientMsg.FirstMessage
 					client.processMutex.Unlock()
 					tryExecuteWithSessionHistory(ctx, svc, client, clientMsg.Content, isFirstMessage, allowedTools, skipPermissions, clientMsg.ClaudeSessionID)
 				}()
