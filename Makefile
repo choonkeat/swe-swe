@@ -15,6 +15,16 @@ test-elm: elm/node_modules
 test-go:
 	go test ./...
 
+PLAYWRIGHT_ARGS=
+test-playwright: tests/playwright/node_modules tests/playwright/.playwright-installed
+	cd tests/playwright && npx playwright test $(PLAYWRIGHT_ARGS)
+
+tests/playwright/node_modules: tests/playwright/package.json
+	cd tests/playwright && npm install
+
+tests/playwright/.playwright-installed: tests/playwright/node_modules
+	cd tests/playwright && npx playwright install && touch .playwright-installed
+
 format: format-go format-elm
 
 format-go:
