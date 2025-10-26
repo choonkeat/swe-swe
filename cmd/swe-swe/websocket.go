@@ -335,8 +335,10 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 			}
 			
 			// Try execution with this session ID
-			success := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID)
-			if success {
+			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID)
+			
+			switch result {
+			case ExecutionSuccess:
 				// Success! Update the current session ID if different
 				client.processMutex.Lock()
 				if client.claudeSessionID != sessionID {
@@ -345,6 +347,17 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 				}
 				client.processMutex.Unlock()
 				return
+			case ExecutionPermissionError:
+				// Permission error - do not retry with other sessions
+				log.Printf("[SESSION] Permission error detected, stopping session retry attempts")
+				return
+			case ExecutionSessionError:
+				// Session error - continue trying with next session ID
+				log.Printf("[SESSION] Session error with ID %s, will try next session", sessionID)
+				continue
+			default:
+				// Other error - continue trying with next session ID
+				continue
 			}
 		}
 		
@@ -357,9 +370,19 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 	}
 }
 
+// ExecutionResult represents the outcome of a command execution
+type ExecutionResult int
+
+const (
+	ExecutionSuccess ExecutionResult = iota
+	ExecutionPermissionError
+	ExecutionSessionError
+	ExecutionOtherError
+)
+
 // executeAgentCommandWithSession executes the configured agent command with a specific session ID
-// Returns true if execution was successful, false if session resume failed
-func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string) bool {
+// Returns ExecutionResult to indicate success, permission error (no retry), or other errors (retry allowed)
+func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string) ExecutionResult {
 	// Create a context that can be cancelled when the client disconnects
 	ctx, cancel := context.WithCancel(parentctx)
 
@@ -471,7 +494,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 				Type:    "content",
 				Content: "Error starting PTY: " + err.Error(),
 			}, client.browserSessionID)
-			return false
+			return ExecutionOtherError
 		}
 		defer func() {
 			_ = ptmx.Close()
@@ -502,7 +525,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 				Type:    "content",
 				Content: "Error creating command pipe: " + err.Error(),
 			}, client.browserSessionID)
-			return false
+			return ExecutionOtherError
 		}
 
 		// Get stderr pipe
@@ -518,7 +541,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 				Type:    "content",
 				Content: "Error starting agent command: " + err.Error(),
 			}, client.browserSessionID)
-			return false
+			return ExecutionOtherError
 		}
 	}
 	
@@ -602,7 +625,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
 			}, client.browserSessionID)
-			return false
+			return ExecutionOtherError
 		default:
 			line := scanner.Text()
 			if line != "" {
@@ -732,7 +755,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 											}, client.browserSessionID)
 											
 											// Process is now guaranteed dead, no need for cmd.Wait()
-											return false
+											return ExecutionPermissionError
 										}
 									}
 								}
@@ -767,7 +790,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
 			}, client.browserSessionID)
-			return false
+			return ExecutionOtherError
 		default:
 			log.Printf("[ERROR] Command completed with error: %v", err)
 
@@ -778,8 +801,8 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 				if strings.Contains(errorMsg, "session") && (strings.Contains(errorMsg, "not found") ||
 					strings.Contains(errorMsg, "invalid") || strings.Contains(errorMsg, "expired")) {
 					log.Printf("[SESSION] Claude session resumption failed for session ID: %s", claudeSessionID)
-					// Return false to indicate session resume failed
-					return false
+					// Return session error to indicate session resume failed
+					return ExecutionSessionError
 				}
 			}
 
@@ -800,7 +823,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			svc.BroadcastToSession(ChatItem{
 				Type: "exec_end",
 			}, client.browserSessionID)
-			return false
+			return ExecutionOtherError
 		default:
 			svc.BroadcastToSession(ChatItem{
 				Type:    "content",
@@ -830,7 +853,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 	client.processMutex.Unlock()
 	
 	// Return true to indicate successful execution
-	return true
+	return ExecutionSuccess
 }
 
 // websocketHandler handles websocket connections
