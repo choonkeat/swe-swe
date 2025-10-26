@@ -33,32 +33,42 @@ We need Claude commands that are:
 - Won't cause any damage if permissions are granted
 - Predictable and repeatable
 
-### Proposed Test Commands:
+### Working Test Commands (Verified):
 
-1. **Write File (Edit/Write tool permission)**
-   - Command: `"Create a test file at /tmp/swe-swe-test-{timestamp}.txt with the content 'Hello from test'"`
-   - Why safe: Uses /tmp directory, unique filename, minimal content
-   - Permission triggered: Edit or Write tool
+**ALL TESTS USE WRITE COMMANDS** - These reliably trigger permission dialogs:
 
-2. **Read Non-Existent File (Read tool permission)**  
-   - Command: `"Check if the file /tmp/nonexistent-test-file-{timestamp}.txt exists and tell me what it contains"`
-   - Why safe: File doesn't exist, read-only operation
-   - Permission triggered: Read tool
+1. **Basic Write File**
+   - Command: `"Create a test file at /tmp/test-{timestamp}.txt with content 'Test 1'"`
+   - Permission triggered: Write tool permission
+   - Used for: Basic permission detection test
 
-3. **List Directory (Bash ls permission)**
-   - Command: `"List the files in /tmp directory using the ls command"`
-   - Why safe: Read-only operation on temp directory
-   - Permission triggered: Bash tool with ls command
+2. **Grant Flow Write**
+   - Command: `"Create a test file at /tmp/grant-test-{timestamp}.txt with content 'Grant test'"`
+   - Permission triggered: Write tool permission
+   - Used for: Testing permission grant flow
 
-4. **Create Directory (Bash mkdir permission)**
-   - Command: `"Create a directory /tmp/swe-swe-test-dir-{timestamp}"`
-   - Why safe: Temp directory, unique name, can be cleaned up
-   - Permission triggered: Bash tool with mkdir command
+3. **Deny Flow Write**
+   - Command: `"Create a test file at /tmp/deny-test-{timestamp}.txt with content 'Deny test'"`
+   - Permission triggered: Write tool permission
+   - Used for: Testing permission deny flow
 
-5. **Git Status (Bash git permission)**
-   - Command: `"Run git status to check the current repository state"`
-   - Why safe: Read-only git operation
-   - Permission triggered: Bash tool with git command
+4. **Duplicate Check Write**
+   - Command: `"Create a test file at /tmp/duplicate-test-{timestamp}.txt with content 'No duplicates'"`
+   - Permission triggered: Write tool permission
+   - Used for: Verifying no duplicate dialogs
+
+5. **Process Stop Write**
+   - Command: `"Create a test file at /tmp/wait-test-{timestamp}.txt with content 'Process should stop'"`
+   - Permission triggered: Write tool permission
+   - Used for: Verifying process stops during wait
+
+6. **Session Context Write**
+   - Setup: `"Hello Claude, please remember the number 42"`
+   - Command: `"Please write the number 42 to file /tmp/session-test-{timestamp}.txt"`
+   - Permission triggered: Write tool permission
+   - Used for: Verifying no session retry cascade and context preservation
+
+**Note**: Other commands (ls, git status, mkdir, read) do NOT reliably trigger permissions in the current configuration
 
 ## Test Scenarios
 
