@@ -33,6 +33,8 @@ type Client struct {
 	allowedTools          []string // Track allowed tools for this client
 	skipPermissions       bool     // Track if user chose to skip all permissions
 	pendingToolPermission string   // Track which tool is pending permission
+	lastKilledSessionID   string   // Track killed session to avoid reuse
+	lastUserMessage       string   // Save message for replay after permission
 }
 
 // ChatItem represents either a sender or content in the chat
@@ -699,23 +701,37 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 												ToolInput: toolInfo.Input, // Include tool input details
 											}, client.browserSessionID)
 
-											// Track which tool is pending permission
+											// Track which tool is pending permission and save context for recovery
 											client.processMutex.Lock()
 											client.pendingToolPermission = toolInfo.Name
+											client.lastKilledSessionID = client.claudeSessionID  // Save session to avoid reuse
+											// Note: We'll save the last user message in the main message handler
 											client.processMutex.Unlock()
 
-											// Terminate the process by cancelling the context
-											log.Printf("[EXEC] Permission error detected, terminating process")
+											// FIRST: Terminate the process completely before sending permission dialog
+											// This eliminates race conditions where Claude continues generating output
+											log.Printf("[EXEC] Permission error detected, terminating process completely")
+											
+											// Store the active process reference and clear it
+											client.processMutex.Lock()
+											processToKill := client.activeProcess
+											client.activeProcess = nil
+											client.processMutex.Unlock()
+											
+											// Terminate the process (blocks until dead)
+											if processToKill != nil {
+												terminateProcess(processToKill)
+											}
+											
+											// Cancel the context to clean up any remaining resources
 											cancel()
-
+											
 											// Send exec end event to hide typing indicator
 											svc.BroadcastToSession(ChatItem{
 												Type: "exec_end",
 											}, client.browserSessionID)
 											
-											// Wait for the command to actually terminate
-											// This prevents the process from continuing to run
-											cmd.Wait()
+											// Process is now guaranteed dead, no need for cmd.Wait()
 											return false
 										}
 									}
@@ -972,7 +988,24 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastToSession(botSenderItem, client.browserSessionID)
 
 					go func() {
-						tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
+						// Get the saved message to replay
+						client.processMutex.Lock()
+						messageToReplay := client.lastUserMessage
+						killedSessionID := client.lastKilledSessionID
+						client.processMutex.Unlock()
+						
+						// If we have a saved message, replay it; otherwise send "continue"
+						// Don't use the killed session ID or the one from the client message
+						// to ensure we start fresh after the permission error
+						if messageToReplay != "" && killedSessionID != "" {
+							// Force a fresh session by not providing any session ID
+							// This ensures we don't try to resume the killed session
+							log.Printf("[PERMISSION] Replaying user message with fresh session after permission granted")
+							tryExecuteWithSessionHistory(ctx, svc, client, messageToReplay, false, clientMsg.AllowedTools, clientMsg.SkipPermissions, "")
+						} else {
+							// Fallback to old behavior if no saved message
+							tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
+						}
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated
@@ -997,6 +1030,11 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			if clientMsg.Sender == "USER" {
 				// Log that we received a message from user
 				log.Printf("[CHAT] Received message from %s: %s", clientMsg.Sender, clientMsg.Content)
+				
+				// Save the user message for potential replay after permission errors
+				client.processMutex.Lock()
+				client.lastUserMessage = clientMsg.Content
+				client.processMutex.Unlock()
 
 				// First, send the swe-swe bot item
 				botSenderItem := ChatItem{
