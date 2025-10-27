@@ -54,3 +54,9 @@ docker-compose-dev-build:
 
 docker-compose-dev-logs:
 	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml logs -f
+
+local-restart: build
+	lsof -i:7000 | grep LISTEN | while read name pid others; do echo $$name $$pid; kill $$pid; done
+
+local-always-running:
+	while date; do make build run SWE_SWE_FLAGS='-agent claude' 2>&1 | tee logs.txt; sleep 3; done
