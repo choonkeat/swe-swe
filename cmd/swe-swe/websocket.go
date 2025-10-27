@@ -420,9 +420,12 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 	
 	// If this is a subsequent message and we have session IDs to try
 	if !isFirstMessage && len(sessionIDsToTry) > 0 {
+		log.Printf("[SESSION DEBUG] Attempting to resume with %d session IDs: %v", len(sessionIDsToTry), sessionIDsToTry)
 		for i, sessionID := range sessionIDsToTry {
 			if i > 0 {
 				log.Printf("[SESSION] Retrying with older session ID from history (attempt %d/%d): %s", i+1, len(sessionIDsToTry), sessionID)
+			} else {
+				log.Printf("[SESSION DEBUG] Trying primary session ID: %s", sessionID)
 			}
 			
 			// Skip redundant validation - let execution handle session errors directly
@@ -690,6 +693,10 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 		}, client.browserSessionID)
 	}
 
+	// Capture stderr content for error detection
+	var stderrContent strings.Builder
+	var stderrMutex sync.Mutex
+	
 	// Handle stderr in a separate goroutine (only for non-PTY commands)
 	if stderr != nil {
 		go func() {
@@ -701,6 +708,12 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			for scanner.Scan() {
 				line := scanner.Text()
 				log.Printf("[STDERR] %s", line)
+				
+				// Capture stderr content for error detection
+				stderrMutex.Lock()
+				stderrContent.WriteString(line)
+				stderrContent.WriteString("\n")
+				stderrMutex.Unlock()
 			}
 			if err := scanner.Err(); err != nil {
 				log.Printf("[ERROR] Error reading stderr: %v", err)
@@ -923,12 +936,24 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			// Check if this was a Claude session resumption error
 			if !isFirstMessage && client.claudeSessionID != "" && len(cmdArgs) > 0 && cmdArgs[0] == "claude" {
 				errorMsg := err.Error()
-				// Check for common session resumption error patterns
-				if strings.Contains(errorMsg, "session") && (strings.Contains(errorMsg, "not found") ||
-					strings.Contains(errorMsg, "invalid") || strings.Contains(errorMsg, "expired")) {
+				
+				// Also get stderr content for better error detection
+				stderrMutex.Lock()
+				stderrText := stderrContent.String()
+				stderrMutex.Unlock()
+				
+				log.Printf("[SESSION DEBUG] Checking error for session issues. Error: %s, STDERR: %s", errorMsg, stderrText)
+				
+				// Check for common session resumption error patterns in both error message and stderr
+				combinedError := errorMsg + " " + stderrText
+				if (strings.Contains(combinedError, "session") && (strings.Contains(combinedError, "not found") ||
+					strings.Contains(combinedError, "invalid") || strings.Contains(combinedError, "expired"))) ||
+					strings.Contains(combinedError, "No conversation found") {
 					log.Printf("[SESSION] Claude session resumption failed for session ID: %s", claudeSessionID)
 					// Return session error to indicate session resume failed
 					return ExecutionSessionError
+				} else {
+					log.Printf("[SESSION DEBUG] Error does not match session failure patterns")
 				}
 			}
 
