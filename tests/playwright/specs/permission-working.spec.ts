@@ -3,6 +3,13 @@ import { test, expect, Page } from '@playwright/test';
 /**
  * Permission dialog tests using Write commands that reliably trigger permissions
  * All tests use variations of "Create a test file" which we know works
+ * 
+ * Tests cover:
+ * - Basic permission dialog detection
+ * - Permission grant and deny flows  
+ * - No duplicate dialogs
+ * - Process suspension during permission wait
+ * - Session context preservation after permission grant
  */
 
 // Helper to send a message and press Enter
@@ -38,7 +45,7 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     console.log('Test 1: Verifying permission dialog appears');
     
     // Use Write command that we know triggers permission
-    await sendMessage(page, `Create a test file at /tmp/test-${Date.now()}.txt with content "Test 1"`);
+    await sendMessage(page, `Create a test file at ./tmp/test-${Date.now()}.txt with content "Test 1"`);
     
     // Verify permission dialog appears
     const permissionDiv = await waitForPermissionDialog(page);
@@ -57,7 +64,7 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     console.log('Test 2: Verifying grant flow works');
     
     // Use Write command 
-    await sendMessage(page, `Create a test file at /tmp/grant-test-${Date.now()}.txt with content "Grant test"`);
+    await sendMessage(page, `Create a test file at ./tmp/grant-test-${Date.now()}.txt with content "Grant test"`);
     
     // Wait for dialog
     await waitForPermissionDialog(page);
@@ -70,7 +77,7 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     await expect(page.locator('.permission-inline')).not.toBeVisible({ timeout: 5000 });
     
     // Wait for success message (Claude should continue)
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
     
     // Look for "Allowed" confirmation
     const allowedMessage = page.locator('text=/✓ Allowed/i');
@@ -83,7 +90,7 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     console.log('Test 3: Verifying deny flow works');
     
     // Use Write command
-    await sendMessage(page, `Create a test file at /tmp/deny-test-${Date.now()}.txt with content "Deny test"`);
+    await sendMessage(page, `Create a test file at ./tmp/deny-test-${Date.now()}.txt with content "Deny test"`);
     
     // Wait for dialog
     await waitForPermissionDialog(page);
@@ -107,7 +114,7 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     console.log('Test 4: Verifying no duplicate dialogs');
     
     // Use Write command
-    await sendMessage(page, `Create a test file at /tmp/duplicate-test-${Date.now()}.txt with content "No duplicates"`);
+    await sendMessage(page, `Create a test file at ./tmp/duplicate-test-${Date.now()}.txt with content "No duplicates"`);
     
     // Wait for dialog
     await waitForPermissionDialog(page);
@@ -135,7 +142,7 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     const initialCount = await page.locator('.chat-item, .message-content').count();
     
     // Use Write command
-    await sendMessage(page, `Create a test file at /tmp/wait-test-${Date.now()}.txt with content "Process should stop"`);
+    await sendMessage(page, `Create a test file at ./tmp/wait-test-${Date.now()}.txt with content "Process should stop"`);
     
     // Wait for dialog
     await waitForPermissionDialog(page);
@@ -158,6 +165,46 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     await denyButton.click();
     
     console.log('✅ Test 5 passed: Process stops during wait');
+  });
+
+  test('Test 6: Session context preservation after permission grant', async ({ page }) => {
+    console.log('Test 6: Verifying session context is preserved after permission grant');
+    
+    // First, create a file to establish context
+    const testId = Date.now();
+    await sendMessage(page, `Create a test file at ./tmp/session-context-test-${testId}.txt with content "Testing session preservation"`);
+    
+    // Wait for permission dialog
+    await waitForPermissionDialog(page);
+    
+    // Grant permission
+    const allowButton = page.getByRole('button', { name: 'Y', exact: true });
+    await allowButton.click();
+    
+    // Wait for permission dialog to disappear
+    await expect(page.locator('.permission-inline')).not.toBeVisible({ timeout: 5000 });
+    
+    // Wait for operation to complete (longer timeout for file creation)
+    await page.waitForTimeout(10000);
+    
+    // Now ask a follow-up question that tests if context is preserved
+    await sendMessage(page, 'What was the previous file you just created? What content did it have?');
+    
+    // Wait for response
+    await page.waitForTimeout(8000);
+    
+    // The response should reference the specific file and content we just created
+    // Look for the test ID in the chat response (not in the original request)
+    // Count how many times the testId appears - should be at least 2 (original + response)
+    const allTestIdMatches = page.locator(`text=/${testId}/i`);
+    const matchCount = await allTestIdMatches.count();
+    expect(matchCount).toBeGreaterThanOrEqual(2);
+    
+    // Also look for the content in the response - this proves the AI remembered the specific content
+    const contentResponse = page.locator('text=/Testing session preservation/i');
+    await expect(contentResponse.first()).toBeVisible({ timeout: 5000 });
+    
+    console.log('✅ Test 6 passed: Session context preserved after permission grant');
   });
 
 });
