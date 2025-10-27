@@ -345,7 +345,7 @@ func startReplacementSession(ctx context.Context, svc *ChatService, client *Clie
 	
 	// Start new Claude session with simple wait command
 	// This happens synchronously - we need the session ID before showing permission dialog
-	executeAgentCommandWithSession(ctx, svc, client, "wait", false, []string{}, false, "")
+	executeAgentCommandWithSession(ctx, svc, client, "wait", false, []string{}, false, "", true)
 	log.Printf("[PERMISSION] Replacement session started and tracked in history")
 }
 
@@ -385,7 +385,7 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 			}
 			
 			// Try execution with this session ID
-			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID)
+			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID, false)
 			
 			switch result {
 			case ExecutionSuccess:
@@ -413,10 +413,10 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 		
 		// All session IDs failed, try without resume (fresh start)
 		log.Printf("[SESSION] All session IDs failed, starting fresh conversation")
-		executeAgentCommandWithSession(parentctx, svc, client, prompt, true, allowedTools, skipPermissions, "")
+		executeAgentCommandWithSession(parentctx, svc, client, prompt, true, allowedTools, skipPermissions, "", false)
 	} else {
 		// First message or no session IDs available
-		executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, "")
+		executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, "", false)
 	}
 }
 
@@ -468,7 +468,7 @@ func validateClaudeSession(sessionID string) bool {
 
 // executeAgentCommandWithSession executes the configured agent command with a specific session ID
 // Returns ExecutionResult to indicate success, permission error (no retry), or other errors (retry allowed)
-func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string) ExecutionResult {
+func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string, quiet bool) ExecutionResult {
 	// Create a context that can be cancelled when the client disconnects
 	ctx, cancel := context.WithCancel(parentctx)
 
@@ -676,10 +676,12 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 
 	log.Printf("[EXEC] Process started with PID: %d", cmd.Process.Pid)
 
-	// Send exec start event
-	svc.BroadcastToSession(ChatItem{
-		Type: "exec_start",
-	}, client.browserSessionID)
+	// Send exec start event (unless quiet)
+	if !quiet {
+		svc.BroadcastToSession(ChatItem{
+			Type: "exec_start",
+		}, client.browserSessionID)
+	}
 
 	// Handle stderr in a separate goroutine (only for non-PTY commands)
 	if stderr != nil {
@@ -718,14 +720,18 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 		case <-ctx.Done():
 			// Context cancelled, stop processing
 			log.Printf("[EXEC] Process cancelled by context")
-			svc.BroadcastToSession(ChatItem{
-				Type:    "content",
-				Content: "\n[Process stopped by user]\n",
-			}, client.browserSessionID)
-			// Send exec end event to hide typing indicator
-			svc.BroadcastToSession(ChatItem{
-				Type: "exec_end",
-			}, client.browserSessionID)
+			if !quiet {
+				svc.BroadcastToSession(ChatItem{
+					Type:    "content",
+					Content: "\n[Process stopped by user]\n",
+				}, client.browserSessionID)
+			}
+			// Send exec end event to hide typing indicator (unless quiet)
+			if !quiet {
+				svc.BroadcastToSession(ChatItem{
+					Type: "exec_end",
+				}, client.browserSessionID)
+			}
 			return ExecutionOtherError
 		default:
 			line := scanner.Text()
@@ -877,18 +883,21 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 						}
 					}
 
-					// Send raw JSON to Elm for parsing
-					svc.BroadcastToSession(ChatItem{
-						Type:    "claudejson",
-						Content: line,
-					}, client.browserSessionID)
+					// Send raw JSON to Elm for parsing (unless quiet)
+					if !quiet {
+						svc.BroadcastToSession(ChatItem{
+							Type:    "claudejson",
+							Content: line,
+						}, client.browserSessionID)
+					}
 				} else {
-					// Regular text output
-
-					svc.BroadcastToSession(ChatItem{
-						Type:    "content",
-						Content: line + "\n",
-					}, client.browserSessionID)
+					// Regular text output (unless quiet)
+					if !quiet {
+						svc.BroadcastToSession(ChatItem{
+							Type:    "content",
+							Content: line + "\n",
+						}, client.browserSessionID)
+					}
 				}
 			}
 		}
@@ -956,10 +965,12 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 	}
 	client.processMutex.Unlock()
 
-	// Send exec end event
-	svc.BroadcastToSession(ChatItem{
-		Type: "exec_end",
-	}, client.browserSessionID)
+	// Send exec end event (unless quiet)
+	if !quiet {
+		svc.BroadcastToSession(ChatItem{
+			Type: "exec_end",
+		}, client.browserSessionID)
+	}
 	
 	// Clear the active process as it has completed
 	client.processMutex.Lock()

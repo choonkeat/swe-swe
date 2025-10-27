@@ -207,4 +207,44 @@ test.describe('Permission Dialog Tests - All Using Write Commands', () => {
     console.log('✅ Test 6 passed: Session context preserved after permission grant');
   });
 
+  test('Test 7: No extra messages during permission dialog (quiet session warming)', async ({ page }) => {
+    console.log('Test 7: Verifying session warming runs quietly during permission dialog');
+    
+    // Use Write command that triggers permission
+    const testId = Date.now();
+    await sendMessage(page, `Create a test file at ./tmp/quiet-test-${testId}.txt with content "Testing quiet mode"`);
+    
+    // Wait for permission dialog to appear
+    await waitForPermissionDialog(page);
+    
+    // Count all chat items when dialog appears
+    const itemsAtDialog = await page.locator('.chat-item, .message-content, .message-sender').count();
+    console.log(`Chat items when dialog appears: ${itemsAtDialog}`);
+    
+    // Wait 8 seconds (enough time for session warming to complete)
+    // During this time, session warming should run but produce no visible output
+    console.log('Waiting 8 seconds to verify no additional messages appear...');
+    await page.waitForTimeout(8000);
+    
+    // Count chat items again - should be exactly the same (no session warming output visible)
+    const itemsAfterWait = await page.locator('.chat-item, .message-content, .message-sender').count();
+    console.log(`Chat items after 8 second wait: ${itemsAfterWait}`);
+    
+    // Verify no additional messages appeared (session warming was quiet)
+    expect(itemsAfterWait).toBe(itemsAtDialog);
+    
+    // Also verify no "wait" command or processing indicators appeared
+    const waitMessages = await page.locator('text=/wait/i').count();
+    const processingIndicators = await page.locator('.typing-indicator, .typing-dots').count();
+    
+    // Should not see "wait" command output or extra processing indicators
+    console.log(`Wait messages found: ${waitMessages}, Processing indicators: ${processingIndicators}`);
+    
+    // Clean up - deny permission to avoid continuing the test
+    const denyButton = page.getByRole('button', { name: 'N', exact: true });
+    await denyButton.click();
+    
+    console.log('✅ Test 7 passed: Session warming runs quietly without visible output');
+  });
+
 });

@@ -1,6 +1,6 @@
 - ignore the content of ./external
 - always use `make` to run test or build the programs, e.g. `make test` `make build`
-- do NOT start swe-swe process yourself. kill the process listening at port 7000 and a new build will start
+- do NOT start swe-swe process yourself. use `make local-restart` and a new build will start if it builds
 
 ## IMPORTANT: Permission Handling
 - When you get permission errors like "Claude requested permissions to [tool]" or "This command requires approval", DO NOT attempt to work around them
