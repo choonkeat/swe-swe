@@ -43,7 +43,7 @@ npx playwright test --headed
 
 #### Run specific test:
 ```bash
-npx playwright test specs/permission-simple.spec.ts --headed
+npx playwright test specs/permission-tests.spec.ts --headed
 ```
 
 #### Debug mode (step through tests):
@@ -58,23 +58,36 @@ npx playwright test --ui
 
 ## Test Scenarios
 
-The test suite covers 5 critical scenarios:
+The consolidated test suite covers comprehensive permission scenarios:
 
-1. **Basic Permission Detection**: Verifies permission dialog appears for commands requiring file/tool access
-2. **Permission Grant Flow**: Tests allowing permissions and verifying Claude continues execution
-3. **Permission Deny Flow**: Tests denying permissions and verifying proper error handling
-4. **No Duplicate Dialogs**: Ensures only one permission dialog appears (no cascade)
-5. **Process Termination**: Verifies Claude process stops while waiting for permission
+### Permission Type Coverage:
+1. **Write Permissions**: File creation commands
+2. **Read Permissions**: File reading commands  
+3. **Edit Permissions**: File editing commands
+4. **Additional Tools**: Glob search, MultiEdit operations
+
+### Permission Flow Testing:
+1. **Basic Detection**: Verifies permission dialogs appear for different command types
+2. **Grant Flow**: Tests allowing permissions and verifying execution continues
+3. **Deny Flow**: Tests denying permissions and verifying proper error handling
+4. **No Duplicate Dialogs**: Ensures only one permission dialog appears
+5. **Process Pausing**: Verifies process pauses while waiting for permission
+
+### Advanced Scenarios:
+1. **Session Context Preservation**: Verifies session state survives permission grants
+2. **Background Process Behavior**: Ensures session warming runs quietly during permission waits
 
 ## Test Commands Used
 
-All test commands are harmless and work with `/tmp` directory:
+All test commands are harmless and work with `./tmp` directory:
 
-- `Create a test file at /tmp/swe-swe-test-{timestamp}.txt` - Tests Write permission
-- `Create a directory /tmp/swe-swe-test-dir-{timestamp}` - Tests Bash mkdir permission
-- `List the files in /tmp directory using the ls command` - Tests Bash ls permission
-- `Run git status to check the repository state` - Tests Bash git permission
-- `Check if the file /tmp/test-{timestamp}.txt exists` - Tests Read permission
+**IMPORTANT: Always use `./tmp` (relative) not `/tmp` (absolute) for test files!**
+
+- **Write**: `Create a test file at ./tmp/test-{timestamp}.txt with content "..."`
+- **Read**: `Read the file ./tmp/test-read-{timestamp}.txt and show me its contents`
+- **Edit**: `Edit the file ./tmp/edit-test-{timestamp}.txt and add the line "..."`
+- **MultiEdit**: `Update the file ./tmp/multi-edit-test-{timestamp}.txt by replacing any existing content with "..."`
+- **Glob**: `Search for all .txt files in the ./tmp directory and show me what you find`
 
 ## Using with Playwright MCP
 
@@ -82,7 +95,7 @@ Since you have Playwright MCP installed (`claude mcp add playwright`), you can a
 
 1. **Run the tests**:
    ```
-   "Run the Playwright tests in tests/playwright/specs/permission-simple.spec.ts"
+   "Run the Playwright tests in tests/playwright/specs/permission-tests.spec.ts"
    ```
 
 2. **Debug a failing test**:
@@ -90,9 +103,9 @@ Since you have Playwright MCP installed (`claude mcp add playwright`), you can a
    "Debug the permission grant flow test and show me what's happening"
    ```
 
-3. **Add new test scenarios**:
+3. **Run specific test groups**:
    ```
-   "Add a test for sequential permission requests to the test suite"
+   "Run only the Bash permission tests from the test suite"
    ```
 
 ## CI Integration (Future)
@@ -135,11 +148,15 @@ To add these tests to CI:
 
 Successful test run looks like:
 ```
-✅ Test 1 passed: Permission dialog detected successfully
-✅ Test 2 passed: Permission grant flow works correctly
-✅ Test 3 passed: Permission deny flow works correctly
-✅ Test 4 passed: No duplicate permission dialogs
-✅ Test 5 passed: Process stops while waiting for permission
+✅ Write permission detection works
+✅ Write permission grant flow works  
+✅ Write permission deny flow works
+✅ Read permission detection works
+✅ Bash permission detection works
+✅ No duplicate dialogs appear
+✅ Process pauses during permission wait
+✅ Session context preserved after permission grant
+✅ Session warming runs without visible output
 ```
 
 ## Contributing
