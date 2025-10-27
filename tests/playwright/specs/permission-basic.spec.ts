@@ -15,7 +15,7 @@ test('Permission dialog appears for Write command', async ({ page }) => {
   console.log('✓ Textbox found');
   
   // Type a command that requires Write permission
-  await textbox.fill('Please create a test file at /tmp/playwright-test.txt with content "Hello"');
+  await textbox.fill('Please create a test file at ./tmp/playwright-test.txt with content "Hello"');
   
   // Press Enter to send
   await textbox.press('Enter');

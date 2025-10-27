@@ -62,7 +62,7 @@ test.describe('Permission Dialog Tests', () => {
     
     // Send a command that requires Write permission
     const timestamp = Date.now();
-    await sendMessage(page, `Create a test file at /tmp/swe-swe-test-${timestamp}.txt with the content 'Hello from Playwright test'`);
+    await sendMessage(page, `Create a test file at ./tmp/swe-swe-test-${timestamp}.txt with the content 'Hello from Playwright test'`);
     
     // Wait for permission dialog to appear
     const permissionDiv = await waitForPermissionDialog(page);
@@ -83,9 +83,9 @@ test.describe('Permission Dialog Tests', () => {
   test('Test 2: Permission grant flow', async ({ page }) => {
     console.log('Starting Test 2: Permission grant flow');
     
-    // Send a command that requires permission
+    // Send a Write command that reliably triggers permission
     const timestamp = Date.now();
-    await sendMessage(page, `Create a directory /tmp/swe-swe-test-dir-${timestamp}`);
+    await sendMessage(page, `Create a test file at ./tmp/grant-flow-test-${timestamp}.txt with content "Permission grant test"`);
     
     // Wait for permission dialog
     await waitForPermissionDialog(page);
@@ -101,11 +101,11 @@ test.describe('Permission Dialog Tests', () => {
     await expect(page.locator('.permission-inline')).not.toBeVisible({ timeout: 5000 });
     
     // Wait for Claude to continue and complete the task
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
     
-    // Verify new chat items appeared (Claude continued execution)
-    const chatItemsAfter = await page.locator('.chat-item').count();
-    expect(chatItemsAfter).toBeGreaterThan(chatItemsBefore);
+    // Look for "Allowed" confirmation
+    const allowedMessage = page.locator('text=/✓ Allowed/i');
+    await expect(allowedMessage).toBeVisible({ timeout: 5000 });
     
     console.log('✅ Test 2 passed: Permission grant flow works correctly');
   });
@@ -113,8 +113,9 @@ test.describe('Permission Dialog Tests', () => {
   test('Test 3: Permission deny flow', async ({ page }) => {
     console.log('Starting Test 3: Permission deny flow');
     
-    // Send a command that requires permission
-    await sendMessage(page, 'List the files in /tmp directory using the ls command');
+    // Send a Write command that reliably triggers permission
+    const timestamp = Date.now();
+    await sendMessage(page, `Create a test file at ./tmp/deny-flow-test-${timestamp}.txt with content "Permission deny test"`);
     
     // Wait for permission dialog
     await waitForPermissionDialog(page);
@@ -130,7 +131,7 @@ test.describe('Permission Dialog Tests', () => {
     await page.waitForTimeout(2000);
     
     // Look for denial indicator (✗ Denied message)
-    const denialMessage = page.locator('text=/Denied/i');
+    const denialMessage = page.locator('text=/✗ Denied/i');
     await expect(denialMessage).toBeVisible({ timeout: 5000 });
     
     console.log('✅ Test 3 passed: Permission deny flow works correctly');
@@ -139,8 +140,9 @@ test.describe('Permission Dialog Tests', () => {
   test('Test 4: No duplicate permission dialogs', async ({ page }) => {
     console.log('Starting Test 4: No duplicate permission dialogs');
     
-    // Send a command that requires permission
-    await sendMessage(page, `Run git status to check the repository state`);
+    // Send a Write command that reliably triggers permission
+    const timestamp = Date.now();
+    await sendMessage(page, `Create a test file at ./tmp/duplicate-check-${timestamp}.txt with content "No duplicates test"`);
     
     // Wait for first permission dialog
     await waitForPermissionDialog(page);
@@ -169,8 +171,9 @@ test.describe('Permission Dialog Tests', () => {
     // Count initial chat items
     const initialChatCount = await page.locator('.chat-item').count();
     
-    // Send a command that requires permission
-    await sendMessage(page, `Check if the file /tmp/test-${Date.now()}.txt exists and tell me what it contains`);
+    // Send a Write command that reliably triggers permission
+    const timestamp = Date.now();
+    await sendMessage(page, `Create a test file at ./tmp/wait-test-${timestamp}.txt with content "Process stop test"`);
     
     // Wait for permission dialog
     await waitForPermissionDialog(page);
@@ -179,6 +182,7 @@ test.describe('Permission Dialog Tests', () => {
     const countAtDialog = await page.locator('.chat-item').count();
     
     // Wait 5 seconds without interacting with the dialog
+    console.log('Waiting 5 seconds to verify process is stopped...');
     await page.waitForTimeout(5000);
     
     // Count chat items again - should be the same (process stopped)

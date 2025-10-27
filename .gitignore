@@ -5,3 +5,4 @@ cmd/swe-swe/static/js/app*.js
 docker/ca-certificates/*
 docker/dev/vscode-data
 elm/node_modules
+tmp
