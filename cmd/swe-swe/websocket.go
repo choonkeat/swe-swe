@@ -425,11 +425,7 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 				log.Printf("[SESSION] Retrying with older session ID from history (attempt %d/%d): %s", i+1, len(sessionIDsToTry), sessionID)
 			}
 			
-			// Pre-validate session before attempting execution
-			if !validateClaudeSession(sessionID) {
-				log.Printf("[SESSION] Pre-validation failed for session ID %s, skipping", sessionID)
-				continue
-			}
+			// Skip redundant validation - let execution handle session errors directly
 			
 			// Try execution with this session ID
 			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID, false)
@@ -477,41 +473,8 @@ const (
 	ExecutionOtherError
 )
 
-// validateClaudeSession checks if a Claude session ID exists and is valid
-func validateClaudeSession(sessionID string) bool {
-	if sessionID == "" {
-		return false
-	}
-
-	// Use claude --resume with --print to test if session exists
-	// This is a lightweight check that will fail fast if session doesn't exist
-	cmd := exec.Command("claude", "--resume", sessionID, "--print", "echo test")
-	
-	// Set a short timeout for validation
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd = exec.CommandContext(ctx, cmd.Args[0], cmd.Args[1:]...)
-	
-	// Capture output to check for error messages
-	output, err := cmd.CombinedOutput()
-	
-	if err != nil {
-		outputStr := string(output)
-		// Check for specific session not found error
-		if strings.Contains(outputStr, "No conversation found with session ID") ||
-		   strings.Contains(outputStr, "session") && strings.Contains(outputStr, "not found") ||
-		   strings.Contains(outputStr, "invalid") && strings.Contains(outputStr, "session") {
-			log.Printf("[SESSION] Validation failed for session ID %s: session not found", sessionID)
-			return false
-		}
-		// Other errors might be temporary, log but consider valid
-		log.Printf("[SESSION] Validation check error for session ID %s: %v", sessionID, err)
-		return true
-	}
-	
-	log.Printf("[SESSION] Successfully validated session ID: %s", sessionID)
-	return true
-}
+// validateClaudeSession removed - redundant validation that wastes tokens and adds delay
+// Session errors are now handled directly during command execution
 
 // executeAgentCommandWithSession executes the configured agent command with a specific session ID
 // Returns ExecutionResult to indicate success, permission error (no retry), or other errors (retry allowed)
@@ -586,24 +549,10 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 
 		// Add session resume support for subsequent messages  
 		if !isFirstMessage && claudeSessionID != "" {
-			// Validate session exists before attempting resume
-			if validateClaudeSession(claudeSessionID) {
-				// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
-				cmdArgs = append([]string{cmdArgs[0], "--resume", claudeSessionID}, cmdArgs[1:]...)
-				log.Printf("[SESSION] Using --resume with Claude session ID: %s", claudeSessionID)
-			} else {
-				// Session doesn't exist, log and continue without resume
-				log.Printf("[SESSION] Session ID %s is invalid, starting fresh session", claudeSessionID)
-				
-				// Send user-friendly message to client
-				svc.BroadcastToSession(ChatItem{
-					Type:    "session_error",
-					Content: "Previous session expired. Starting a fresh conversation...",
-				}, client.browserSessionID)
-				
-				// Return session error to trigger retry with other sessions or fresh start
-				return ExecutionSessionError
-			}
+			// Use session ID directly - let command execution handle validation
+			// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
+			cmdArgs = append([]string{cmdArgs[0], "--resume", claudeSessionID}, cmdArgs[1:]...)
+			log.Printf("[SESSION] Using --resume with Claude session ID: %s", claudeSessionID)
 		}
 
 		// Add --dangerously-skip-permissions only if user explicitly chose to skip
