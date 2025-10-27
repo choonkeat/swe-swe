@@ -339,6 +339,16 @@ func isPermissionError(content string) bool {
 		strings.Contains(content, "This command requires approval")
 }
 
+// startReplacementSession creates a fresh Claude session to replace the killed one
+func startReplacementSession(ctx context.Context, svc *ChatService, client *Client) {
+	log.Printf("[PERMISSION] Starting replacement session")
+	
+	// Start new Claude session with simple wait command
+	// This happens synchronously - we need the session ID before showing permission dialog
+	executeAgentCommandWithSession(ctx, svc, client, "wait", false, []string{}, false, "")
+	log.Printf("[PERMISSION] Replacement session started and tracked in history")
+}
+
 // tryExecuteWithSessionHistory attempts to execute the command with session IDs from history
 func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, primarySessionID string) {
 	// Build a list of session IDs to try, starting with the provided one
@@ -846,6 +856,9 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 													client.processMutex.Unlock()
 												}
 											}
+											
+											// ADD SESSION WARMING: Start replacement session immediately
+											startReplacementSession(parentctx, svc, client)
 											
 											// Don't cancel the context - we want to keep everything alive
 											// cancel()
