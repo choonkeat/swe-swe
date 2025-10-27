@@ -35,6 +35,7 @@ type Client struct {
 	pendingToolPermission string   // Track which tool is pending permission
 	lastKilledSessionID   string   // Track killed session to avoid reuse
 	lastUserMessage       string   // Save message for replay after permission
+	lastActiveSessionID   string   // Save session ID to resume after permission grant
 }
 
 // ChatItem represents either a sender or content in the chat
@@ -123,7 +124,7 @@ func terminateProcess(cmd *exec.Cmd) {
 	}()
 	
 	select {
-	case <-time.After(2 * time.Second):
+	case <-time.After(30 * time.Second):
 		// Force kill after timeout
 		log.Printf("[PROCESS] Graceful termination timed out, force killing PID: %d", cmd.Process.Pid)
 		err := cmd.Process.Kill()
@@ -294,7 +295,40 @@ func (s *ChatService) BroadcastToSession(item ChatItem, sessionID string) {
 
 // parseAgentCLI parses the agent CLI string into a command slice
 func parseAgentCLI(agentCLIStr string) []string {
-	return strings.Fields(agentCLIStr)
+	var args []string
+	var current strings.Builder
+	inQuotes := false
+	escapeNext := false
+	
+	for _, r := range agentCLIStr {
+		if escapeNext {
+			current.WriteRune(r)
+			escapeNext = false
+			continue
+		}
+		
+		switch r {
+		case '\\':
+			escapeNext = true
+		case '"':
+			inQuotes = !inQuotes
+		case ' ', '\t', '\n':
+			if inQuotes {
+				current.WriteRune(r)
+			} else if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+	
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	
+	return args
 }
 
 // isPermissionError checks if an error message is a permission error
@@ -332,6 +366,12 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 		for i, sessionID := range sessionIDsToTry {
 			if i > 0 {
 				log.Printf("[SESSION] Retrying with older session ID from history (attempt %d/%d): %s", i+1, len(sessionIDsToTry), sessionID)
+			}
+			
+			// Pre-validate session before attempting execution
+			if !validateClaudeSession(sessionID) {
+				log.Printf("[SESSION] Pre-validation failed for session ID %s, skipping", sessionID)
+				continue
 			}
 			
 			// Try execution with this session ID
@@ -379,6 +419,42 @@ const (
 	ExecutionSessionError
 	ExecutionOtherError
 )
+
+// validateClaudeSession checks if a Claude session ID exists and is valid
+func validateClaudeSession(sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+
+	// Use claude --resume with --print to test if session exists
+	// This is a lightweight check that will fail fast if session doesn't exist
+	cmd := exec.Command("claude", "--resume", sessionID, "--print", "echo test")
+	
+	// Set a short timeout for validation
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd = exec.CommandContext(ctx, cmd.Args[0], cmd.Args[1:]...)
+	
+	// Capture output to check for error messages
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		outputStr := string(output)
+		// Check for specific session not found error
+		if strings.Contains(outputStr, "No conversation found with session ID") ||
+		   strings.Contains(outputStr, "session") && strings.Contains(outputStr, "not found") ||
+		   strings.Contains(outputStr, "invalid") && strings.Contains(outputStr, "session") {
+			log.Printf("[SESSION] Validation failed for session ID %s: session not found", sessionID)
+			return false
+		}
+		// Other errors might be temporary, log but consider valid
+		log.Printf("[SESSION] Validation check error for session ID %s: %v", sessionID, err)
+		return true
+	}
+	
+	log.Printf("[SESSION] Successfully validated session ID: %s", sessionID)
+	return true
+}
 
 // executeAgentCommandWithSession executes the configured agent command with a specific session ID
 // Returns ExecutionResult to indicate success, permission error (no retry), or other errors (retry allowed)
@@ -442,9 +518,24 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 
 		// Add session resume support for subsequent messages  
 		if !isFirstMessage && claudeSessionID != "" {
-			// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
-			cmdArgs = append([]string{cmdArgs[0], "--resume", claudeSessionID}, cmdArgs[1:]...)
-			log.Printf("[SESSION] Using --resume with Claude session ID: %s", claudeSessionID)
+			// Validate session exists before attempting resume
+			if validateClaudeSession(claudeSessionID) {
+				// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
+				cmdArgs = append([]string{cmdArgs[0], "--resume", claudeSessionID}, cmdArgs[1:]...)
+				log.Printf("[SESSION] Using --resume with Claude session ID: %s", claudeSessionID)
+			} else {
+				// Session doesn't exist, log and continue without resume
+				log.Printf("[SESSION] Session ID %s is invalid, starting fresh session", claudeSessionID)
+				
+				// Send user-friendly message to client
+				svc.BroadcastToSession(ChatItem{
+					Type:    "session_error",
+					Content: "Previous session expired. Starting a fresh conversation...",
+				}, client.browserSessionID)
+				
+				// Return session error to trigger retry with other sessions or fresh start
+				return ExecutionSessionError
+			}
 		}
 
 		// Add --dangerously-skip-permissions only if user explicitly chose to skip
@@ -728,26 +819,36 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 											client.processMutex.Lock()
 											client.pendingToolPermission = toolInfo.Name
 											client.lastKilledSessionID = client.claudeSessionID  // Save session to avoid reuse
+											client.lastActiveSessionID = client.claudeSessionID   // Save session to resume after permission grant
 											// Note: We'll save the last user message in the main message handler
 											client.processMutex.Unlock()
 
-											// FIRST: Terminate the process completely before sending permission dialog
-											// This eliminates race conditions where Claude continues generating output
-											log.Printf("[EXEC] Permission error detected, terminating process completely")
+											// FIRST: Interrupt the process (like pressing Escape in TUI) before sending permission dialog
+											// This stops execution but keeps the session alive
+											log.Printf("[EXEC] Permission error detected, interrupting process with SIGINT")
 											
-											// Store the active process reference and clear it
+											// Store the active process reference but DON'T clear it yet - we'll resume it
 											client.processMutex.Lock()
-											processToKill := client.activeProcess
-											client.activeProcess = nil
+											processToInterrupt := client.activeProcess
+											// Keep client.activeProcess set so we can resume it later
 											client.processMutex.Unlock()
 											
-											// Terminate the process (blocks until dead)
-											if processToKill != nil {
-												terminateProcess(processToKill)
+											// Interrupt the process with SIGINT (like Escape key) instead of killing it
+											// This should pause Claude's execution while keeping the session alive
+											if processToInterrupt != nil {
+												err := interruptProcess(processToInterrupt)
+												if err != nil {
+													log.Printf("[EXEC] Failed to interrupt process, falling back to terminate: %v", err)
+													terminateProcess(processToInterrupt)
+													// Clear activeProcess if we had to terminate
+													client.processMutex.Lock()
+													client.activeProcess = nil
+													client.processMutex.Unlock()
+												}
 											}
 											
-											// Cancel the context to clean up any remaining resources
-											cancel()
+											// Don't cancel the context - we want to keep everything alive
+											// cancel()
 											
 											// Send exec end event to hide typing indicator
 											svc.BroadcastToSession(ChatItem{
@@ -1015,16 +1116,15 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 						client.processMutex.Lock()
 						messageToReplay := client.lastUserMessage
 						killedSessionID := client.lastKilledSessionID
+						savedSessionID := client.lastActiveSessionID  // Get the session ID we saved when permission was needed
 						client.processMutex.Unlock()
 						
 						// If we have a saved message, replay it; otherwise send "continue"
-						// Don't use the killed session ID or the one from the client message
-						// to ensure we start fresh after the permission error
 						if messageToReplay != "" && killedSessionID != "" {
-							// Force a fresh session by not providing any session ID
-							// This ensures we don't try to resume the killed session
-							log.Printf("[PERMISSION] Replaying user message with fresh session after permission granted")
-							tryExecuteWithSessionHistory(ctx, svc, client, messageToReplay, false, clientMsg.AllowedTools, clientMsg.SkipPermissions, "")
+							// Use the saved session ID to resume where we left off
+							// This preserves context instead of starting fresh
+							log.Printf("[PERMISSION] Replaying user message with saved session ID after permission granted: %s", savedSessionID)
+							tryExecuteWithSessionHistory(ctx, svc, client, messageToReplay, false, clientMsg.AllowedTools, clientMsg.SkipPermissions, savedSessionID)
 						} else {
 							// Fallback to old behavior if no saved message
 							tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)

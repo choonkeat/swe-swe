@@ -324,6 +324,11 @@ body {
     max-height: 3.5em;
     overflow: hidden;
     position: relative;
+    
+    /* Fix word wrapping for long tool names */
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
 }
 
 /* Fade effect for tool-result summary when content overflows */
