@@ -337,7 +337,7 @@ func isPermissionError(content string) bool {
 	return strings.Contains(content, "requested permissions") ||
 		strings.Contains(content, "haven't granted it yet") ||
 		strings.Contains(content, "permission denied") ||
-		strings.Contains(content, "This command requires approval")
+		strings.Contains(content, "requires approval")
 }
 
 // startReplacementSession creates a fresh Claude session to replace the killed one
