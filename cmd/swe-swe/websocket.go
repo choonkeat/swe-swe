@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -349,6 +350,52 @@ func startReplacementSession(ctx context.Context, svc *ChatService, client *Clie
 	log.Printf("[PERMISSION] Replacement session started and tracked in history")
 }
 
+// stopProcessWithReplacement immediately stops a process and starts a replacement session
+// This unifies process stopping for both manual stops and permission errors
+func stopProcessWithReplacement(ctx context.Context, svc *ChatService, client *Client, reason string) {
+	client.processMutex.Lock()
+	processToStop := client.activeProcess
+	client.processMutex.Unlock()
+	
+	if processToStop == nil {
+		log.Printf("[PROCESS] No active process to stop for reason: %s", reason)
+		return
+	}
+	
+	log.Printf("[PROCESS] Stopping process PID: %d (reason: %s)", processToStop.Process.Pid, reason)
+	
+	// Try graceful interrupt first (immediate, non-blocking)
+	err := interruptProcess(processToStop)
+	if err != nil {
+		log.Printf("[PROCESS] Failed to interrupt process, using SIGKILL: %v", err)
+		// Force kill immediately - don't wait
+		if killErr := processToStop.Process.Kill(); killErr != nil {
+			log.Printf("[PROCESS] Failed to kill process: %v", killErr)
+		}
+	}
+	
+	// Clear the active process immediately
+	client.processMutex.Lock()
+	client.activeProcess = nil
+	client.processMutex.Unlock()
+	
+	// Start replacement session immediately (this is the key optimization)
+	startReplacementSession(ctx, svc, client)
+	
+	// Send stop confirmation to UI
+	svc.BroadcastToSession(ChatItem{
+		Type:    "content",
+		Content: fmt.Sprintf("\n[Process stopped: %s]\n", reason),
+	}, client.browserSessionID)
+	
+	// Send exec end event to hide typing indicator
+	svc.BroadcastToSession(ChatItem{
+		Type: "exec_end",
+	}, client.browserSessionID)
+	
+	log.Printf("[PROCESS] Process stopped and replacement session started")
+}
+
 // tryExecuteWithSessionHistory attempts to execute the command with session IDs from history
 func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, primarySessionID string) {
 	// Build a list of session IDs to try, starting with the provided one
@@ -478,16 +525,27 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 		// Cancel any existing process
 		log.Printf("[WEBSOCKET] Terminating existing agent process before starting new one")
 		client.cancelFunc()
+		client.cancelFunc = nil
 		// Also terminate the actual process if it exists
 		if client.activeProcess != nil {
-			terminateProcess(client.activeProcess)
+			processToStop := client.activeProcess
 			client.activeProcess = nil
+			client.processMutex.Unlock()
+			
+			// Use immediate termination without session replacement since we're starting a new process
+			log.Printf("[PROCESS] Stopping existing process PID: %d (reason: new process starting)", processToStop.Process.Pid)
+			err := interruptProcess(processToStop)
+			if err != nil {
+				log.Printf("[PROCESS] Failed to interrupt existing process, using SIGKILL: %v", err)
+				if killErr := processToStop.Process.Kill(); killErr != nil {
+					log.Printf("[PROCESS] Failed to kill existing process: %v", killErr)
+				}
+			}
+			
+			// Brief pause to allow cleanup
+			time.Sleep(100 * time.Millisecond)
+			client.processMutex.Lock()
 		}
-		// Give the process a moment to terminate gracefully
-		client.processMutex.Unlock()
-		// Sleep briefly to allow the previous goroutine to finish
-		time.Sleep(100 * time.Millisecond)
-		client.processMutex.Lock()
 	}
 	client.cancelFunc = cancel
 	client.processMutex.Unlock()
@@ -839,8 +897,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 											// Note: We'll save the last user message in the main message handler
 											client.processMutex.Unlock()
 
-											// FIRST: Interrupt the process (like pressing Escape in TUI) before sending permission dialog
-											// This stops execution but keeps the session alive
+											// Use the original permission interruption approach - interrupt but don't kill
 											log.Printf("[EXEC] Permission error detected, interrupting process with SIGINT")
 											
 											// Store the active process reference but DON'T clear it yet - we'll resume it
@@ -865,9 +922,6 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 											
 											// ADD SESSION WARMING: Start replacement session immediately
 											startReplacementSession(parentctx, svc, client)
-											
-											// Don't cancel the context - we want to keep everything alive
-											// cancel()
 											
 											// Send exec end event to hide typing indicator
 											svc.BroadcastToSession(ChatItem{
@@ -1019,19 +1073,18 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			// Handle stop command
 			if clientMsg.Type == "stop" {
 				log.Printf("[WEBSOCKET] Received stop command from client")
+				
+				// Cancel the context first to stop any ongoing processing
 				client.processMutex.Lock()
-				// Properly terminate the active process
-				if client.activeProcess != nil {
-					log.Printf("[WEBSOCKET] Terminating active process PID: %d", client.activeProcess.Process.Pid)
-					terminateProcess(client.activeProcess)
-					client.activeProcess = nil
-				}
 				if client.cancelFunc != nil {
 					log.Printf("[WEBSOCKET] Cancelling running process context")
 					client.cancelFunc()
 					client.cancelFunc = nil
 				}
 				client.processMutex.Unlock()
+				
+				// Stop process with immediate replacement (non-blocking)
+				go stopProcessWithReplacement(ctx, svc, client, "user stop")
 				continue
 			}
 
