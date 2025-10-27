@@ -76,6 +76,8 @@ This is likely related to the fix in `bug-permission-dialog-process-continues.md
 ## Priority
 **MEDIUM** - ~~Complete session loss is a critical issue~~ **→ WORKAROUND IMPLEMENTED**: System prompt now prevents Claude from suggesting alternatives, significantly reducing redundant work. Session loss still occurs but impact is minimized.
 
+**🎯 NEW SOLUTION PLANNED**: [Session Warming Approach](./L-implement-session-warming-permission-fix.md) - Eliminate session loss entirely by maintaining live waiting sessions during permission dialogs.
+
 ## Suggested Solution
 
 ### Option 1: Store Failed Tool Call (Preferred)
@@ -205,9 +207,10 @@ Work with Anthropic to add suspend/resume support to Claude CLI.
 
 ### Next Steps
 
-1. **Immediate Fix**: Implement tool-level retry (Option 1) to avoid session loss
-2. **Long-term**: Explore Option 2 to eliminate process interruption entirely
-3. **Test**: Ensure todo list state preservation across permission flows
+1. ✅ **Immediate Fix**: Implemented system prompt workaround to reduce redundant work
+2. 🎯 **Next Implementation**: [Session Warming Approach](./L-implement-session-warming-permission-fix.md) - Complete solution to eliminate session loss
+3. **Long-term**: Consider broader session persistence improvements
+4. **Test**: Ensure todo list state preservation across permission flows
 
 ### Workaround Implemented (2025/10/27)
 
