@@ -405,8 +405,62 @@ func startReplacementSession(ctx context.Context, svc *ChatService, client *Clie
 
 	// Start new Claude session with simple stop command using bare minimum Claude
 	// This happens synchronously - we need the session ID before showing permission dialog
-	executeAgentCommandWithSession(ctx, svc, client, "stop", false, []string{}, false, "", true, true)
+	// Use a special replacement session function that doesn't fall back to original prompts
+	startReplacementSessionOnly(ctx, svc, client)
 	log.Printf("[PERMISSION] Replacement session started and tracked in history")
+}
+
+// startReplacementSessionOnly creates a replacement session without falling back to original prompts
+func startReplacementSessionOnly(ctx context.Context, svc *ChatService, client *Client) {
+	// Try to create a replacement session with "stop" command
+	// If this fails, we just log it - replacement sessions are for optimization, not critical
+	
+	// Build a list of session IDs to try from history
+	var sessionIDsToTry []string
+	
+	client.processMutex.Lock()
+	historyLen := len(client.claudeSessionHistory)
+	for i := historyLen - 1; i >= 0; i-- {
+		sessionIDsToTry = append(sessionIDsToTry, client.claudeSessionHistory[i])
+	}
+	client.processMutex.Unlock()
+	
+	log.Printf("[SESSION DEBUG] Attempting replacement session with %d session IDs", len(sessionIDsToTry))
+	
+	// Try existing sessions first
+	for i, sessionID := range sessionIDsToTry {
+		log.Printf("[SESSION] Trying replacement session with ID %s (attempt %d/%d)", sessionID, i+1, len(sessionIDsToTry))
+		
+		result := executeAgentCommandWithSession(ctx, svc, client, "stop", false, []string{}, false, sessionID, true, true)
+		
+		switch result {
+		case ExecutionSuccess:
+			log.Printf("[SESSION] Replacement session successful with ID: %s", sessionID)
+			client.processMutex.Lock()
+			client.claudeSessionID = sessionID
+			client.processMutex.Unlock()
+			return
+		case ExecutionPermissionError:
+			log.Printf("[SESSION] Permission error in replacement session, continuing")
+			continue
+		case ExecutionSessionError:
+			log.Printf("[SESSION] Session error with ID %s in replacement, trying next", sessionID)
+			continue
+		default:
+			log.Printf("[SESSION] Other error in replacement session, trying next")
+			continue
+		}
+	}
+	
+	// If all existing sessions failed, try a completely fresh session
+	log.Printf("[SESSION] All existing sessions failed for replacement, trying fresh session")
+	result := executeAgentCommandWithSession(ctx, svc, client, "stop", true, []string{}, false, "", true, true)
+	
+	if result == ExecutionSuccess {
+		log.Printf("[SESSION] Fresh replacement session created successfully")
+	} else {
+		log.Printf("[SESSION] Replacement session creation failed, but this is non-critical")
+	}
 }
 
 // stopProcessWithReplacement immediately stops a process and starts a replacement session
