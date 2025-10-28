@@ -88,6 +88,31 @@ if clientMsg.ClaudeSessionID != "" && client.claudeSessionID == "" {
 2. If Claude session ID changes in URL, all tabs should follow the new session
 3. New tabs joining an existing Claude session should see live updates
 
+### Critical Discovery: Claude Session ID Communication Gap
+
+**Key insight**: When a new tab opens with the same Claude session ID from the URL fragment:
+
+1. **Browser correctly extracts Claude session ID** from URL fragment (`#claude=session123`)
+2. **Browser sends Claude session ID** to server in WebSocket message (`claudeSessionID: "session123"`)
+3. **Server receives and stores** the Claude session ID correctly (`client.claudeSessionID = clientMsg.ClaudeSessionID`)
+
+**But the critical gap is**:
+- **If the tab doesn't send a user message**, the server never learns that this client belongs to that Claude session
+- **The browser only sends `claudeSessionID` when sending user messages** (elm/src/Main.elm:376)
+- **Silent tabs (that just opened but haven't sent messages) are invisible** to the session broadcasting system
+
+**Current behavior**:
+```
+Tab A: Opens #claude=session123 → Sends message → Server knows claudeSessionID="session123"
+Tab B: Opens #claude=session123 → Silent (no message) → Server claudeSessionID="" 
+Tab A: Gets AI response → Only Tab B receives it (Tab B unknown to session)
+```
+
+**The fix requires**:
+1. **Immediate session announcement**: Browser should send Claude session ID immediately on WebSocket connection
+2. **Connect message with session info**: Send Claude session ID in connection handshake, not just user messages
+3. **Server tracks silent clients**: Server should track all clients by Claude session ID, even if they haven't sent messages
+
 ## Technical Solution
 
 ### Option 1: Claude Session-Based Broadcasting (Recommended)
