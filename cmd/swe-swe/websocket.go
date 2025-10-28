@@ -911,14 +911,6 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 										svc.cacheMutex.Unlock()
 
 										if exists {
-											// Send permission request to frontend
-											svc.BroadcastToSession(ChatItem{
-												Type:      "permission_request",
-												Content:   content.Content,
-												Sender:    toolInfo.Name,  // Tool name in Sender field
-												ToolInput: toolInfo.Input, // Include tool input details
-											}, client.browserSessionID)
-
 											// Track which tool is pending permission and save context for recovery
 											client.processMutex.Lock()
 											client.pendingToolPermission = toolInfo.Name
@@ -953,6 +945,14 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 
 											// ADD SESSION WARMING: Start replacement session immediately
 											startReplacementSession(parentctx, svc, client)
+
+											// Send permission request to frontend AFTER replacement session is ready
+											svc.BroadcastToSession(ChatItem{
+												Type:      "permission_request",
+												Content:   content.Content,
+												Sender:    toolInfo.Name,  // Tool name in Sender field
+												ToolInput: toolInfo.Input, // Include tool input details
+											}, client.browserSessionID)
 
 											// Send exec end event to hide typing indicator
 											svc.BroadcastToSession(ChatItem{
