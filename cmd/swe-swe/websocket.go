@@ -109,21 +109,21 @@ func terminateProcess(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	
+
 	log.Printf("[PROCESS] Attempting graceful termination of process PID: %d", cmd.Process.Pid)
-	
+
 	// Try graceful shutdown first with interrupt signal
 	err := cmd.Process.Signal(os.Interrupt)
 	if err != nil {
 		log.Printf("[PROCESS] Failed to send interrupt signal: %v", err)
 	}
-	
+
 	// Wait for process to terminate gracefully
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
 	}()
-	
+
 	select {
 	case <-time.After(30 * time.Second):
 		// Force kill after timeout
@@ -166,7 +166,7 @@ func NewChatService(agentCLI1st string, agentCLINth string, deferStdinClose bool
 	go func() {
 		ticker := time.NewTicker(2 * time.Minute) // Re-index every 2 minutes
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ticker.C:
@@ -301,10 +301,10 @@ func (s *ChatService) BroadcastToClaudeSession(item ChatItem, claudeSessionID st
 		s.BroadcastItem(item)
 		return
 	}
-	
+
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	
+
 	broadcastCount := 0
 	for client := range s.clients {
 		// Match by Claude session ID, not browser session ID
@@ -318,7 +318,7 @@ func (s *ChatService) BroadcastToClaudeSession(item ChatItem, claudeSessionID st
 			}
 		}
 	}
-	
+
 	log.Printf("[BROADCAST] Sent message to %d clients in Claude session: %s", broadcastCount, claudeSessionID)
 }
 
@@ -326,7 +326,7 @@ func (s *ChatService) BroadcastToClaudeSession(item ChatItem, claudeSessionID st
 func (s *ChatService) broadcastNewSessionToWaitingClients(newSessionID string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	
+
 	// For now, we'll update all clients that don't have a Claude session ID yet
 	// This is a simple solution for the multi-tab sync issue
 	updatedCount := 0
@@ -334,7 +334,7 @@ func (s *ChatService) broadcastNewSessionToWaitingClients(newSessionID string) {
 		if client.claudeSessionID == "" {
 			client.claudeSessionID = newSessionID
 			client.claudeSessionHistory = append(client.claudeSessionHistory, newSessionID)
-			
+
 			// Send the new session ID to this client
 			if err := websocket.JSON.Send(client.conn, ChatItem{
 				Type:    "claude_session_id",
@@ -346,7 +346,7 @@ func (s *ChatService) broadcastNewSessionToWaitingClients(newSessionID string) {
 			}
 		}
 	}
-	
+
 	if updatedCount > 0 {
 		log.Printf("[SESSION] Updated %d waiting clients with new Claude session ID: %s", updatedCount, newSessionID)
 	}
@@ -358,14 +358,14 @@ func parseAgentCLI(agentCLIStr string) []string {
 	var current strings.Builder
 	inQuotes := false
 	escapeNext := false
-	
+
 	for _, r := range agentCLIStr {
 		if escapeNext {
 			current.WriteRune(r)
 			escapeNext = false
 			continue
 		}
-		
+
 		switch r {
 		case '\\':
 			escapeNext = true
@@ -382,11 +382,11 @@ func parseAgentCLI(agentCLIStr string) []string {
 			current.WriteRune(r)
 		}
 	}
-	
+
 	if current.Len() > 0 {
 		args = append(args, current.String())
 	}
-	
+
 	return args
 }
 
@@ -401,10 +401,10 @@ func isPermissionError(content string) bool {
 // startReplacementSession creates a fresh Claude session to replace the killed one
 func startReplacementSession(ctx context.Context, svc *ChatService, client *Client) {
 	log.Printf("[PERMISSION] Starting replacement session")
-	
+
 	// Start new Claude session with simple wait command
 	// This happens synchronously - we need the session ID before showing permission dialog
-	executeAgentCommandWithSession(ctx, svc, client, "wait", false, []string{}, false, "", true)
+	executeAgentCommandWithSession(ctx, svc, client, "stop", false, []string{}, false, "", true)
 	log.Printf("[PERMISSION] Replacement session started and tracked in history")
 }
 
@@ -414,14 +414,14 @@ func stopProcessWithReplacement(ctx context.Context, svc *ChatService, client *C
 	client.processMutex.Lock()
 	processToStop := client.activeProcess
 	client.processMutex.Unlock()
-	
+
 	if processToStop == nil {
 		log.Printf("[PROCESS] No active process to stop for reason: %s", reason)
 		return
 	}
-	
+
 	log.Printf("[PROCESS] Stopping process PID: %d (reason: %s)", processToStop.Process.Pid, reason)
-	
+
 	// Try graceful interrupt first (immediate, non-blocking)
 	err := interruptProcess(processToStop)
 	if err != nil {
@@ -431,26 +431,26 @@ func stopProcessWithReplacement(ctx context.Context, svc *ChatService, client *C
 			log.Printf("[PROCESS] Failed to kill process: %v", killErr)
 		}
 	}
-	
+
 	// Clear the active process immediately
 	client.processMutex.Lock()
 	client.activeProcess = nil
 	client.processMutex.Unlock()
-	
+
 	// Start replacement session immediately (this is the key optimization)
 	startReplacementSession(ctx, svc, client)
-	
+
 	// Send stop confirmation to UI
 	svc.BroadcastToSession(ChatItem{
 		Type:    "content",
 		Content: fmt.Sprintf("\n[Process stopped: %s]\n", reason),
 	}, client.browserSessionID)
-	
+
 	// Send exec end event to hide typing indicator
 	svc.BroadcastToSession(ChatItem{
 		Type: "exec_end",
 	}, client.browserSessionID)
-	
+
 	log.Printf("[PROCESS] Process stopped and replacement session started")
 }
 
@@ -458,12 +458,12 @@ func stopProcessWithReplacement(ctx context.Context, svc *ChatService, client *C
 func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, primarySessionID string) {
 	// Build a list of session IDs to try, starting with the provided one
 	var sessionIDsToTry []string
-	
+
 	// If we have a primary session ID from the client message, try it first
 	if primarySessionID != "" {
 		sessionIDsToTry = append(sessionIDsToTry, primarySessionID)
 	}
-	
+
 	// Then try session IDs from history in reverse order (newest first)
 	client.processMutex.Lock()
 	historyLen := len(client.claudeSessionHistory)
@@ -475,7 +475,7 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 		}
 	}
 	client.processMutex.Unlock()
-	
+
 	// If this is a subsequent message and we have session IDs to try
 	if !isFirstMessage && len(sessionIDsToTry) > 0 {
 		log.Printf("[SESSION DEBUG] Attempting to resume with %d session IDs: %v", len(sessionIDsToTry), sessionIDsToTry)
@@ -485,12 +485,12 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 			} else {
 				log.Printf("[SESSION DEBUG] Trying primary session ID: %s", sessionID)
 			}
-			
+
 			// Skip redundant validation - let execution handle session errors directly
-			
+
 			// Try execution with this session ID
 			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID, false)
-			
+
 			switch result {
 			case ExecutionSuccess:
 				// Success! Update the current session ID if different
@@ -514,7 +514,7 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 				continue
 			}
 		}
-		
+
 		// All session IDs failed, try without resume (fresh start)
 		log.Printf("[SESSION] All session IDs failed, starting fresh conversation")
 		executeAgentCommandWithSession(parentctx, svc, client, prompt, true, allowedTools, skipPermissions, "", false)
@@ -555,7 +555,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			processToStop := client.activeProcess
 			client.activeProcess = nil
 			client.processMutex.Unlock()
-			
+
 			// Use immediate termination without session replacement since we're starting a new process
 			log.Printf("[PROCESS] Stopping existing process PID: %d (reason: new process starting)", processToStop.Process.Pid)
 			err := interruptProcess(processToStop)
@@ -565,7 +565,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 					log.Printf("[PROCESS] Failed to kill existing process: %v", killErr)
 				}
 			}
-			
+
 			// Brief pause to allow cleanup
 			time.Sleep(100 * time.Millisecond)
 			client.processMutex.Lock()
@@ -608,7 +608,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 		}
 		cmdArgs = newArgs
 
-		// Add session resume support for subsequent messages  
+		// Add session resume support for subsequent messages
 		if !isFirstMessage && claudeSessionID != "" {
 			// Use session ID directly - let command execution handle validation
 			// Insert --resume flag and session ID after claude command (without --continue to preserve full conversation history)
@@ -713,7 +713,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			return ExecutionOtherError
 		}
 	}
-	
+
 	// Store the active process
 	client.processMutex.Lock()
 	client.activeProcess = cmd
@@ -754,7 +754,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 	// Capture stderr content for error detection
 	var stderrContent strings.Builder
 	var stderrMutex sync.Mutex
-	
+
 	// Handle stderr in a separate goroutine (only for non-PTY commands)
 	if stderr != nil {
 		go func() {
@@ -766,7 +766,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			for scanner.Scan() {
 				line := scanner.Text()
 				log.Printf("[STDERR] %s", line)
-				
+
 				// Capture stderr content for error detection
 				stderrMutex.Lock()
 				stderrContent.WriteString(line)
@@ -844,19 +844,19 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 							client.processMutex.Lock()
 							oldSessionID := client.claudeSessionID
 							client.claudeSessionID = claudeMsg.SessionID
-							
+
 							// Add to history if it's a new session ID
 							if oldSessionID != claudeMsg.SessionID {
 								// Append to history
 								client.claudeSessionHistory = append(client.claudeSessionHistory, claudeMsg.SessionID)
-								
+
 								// Keep only the last 10 session IDs
 								if len(client.claudeSessionHistory) > 10 {
 									client.claudeSessionHistory = client.claudeSessionHistory[len(client.claudeSessionHistory)-10:]
 								}
 							}
 							client.processMutex.Unlock()
-							
+
 							if oldSessionID == "" {
 								log.Printf("[SESSION] Extracted Claude session ID: %s for browser session: %s (history: %d)", client.claudeSessionID, client.browserSessionID, len(client.claudeSessionHistory))
 								// Send Claude session ID back to browser for storage
@@ -864,7 +864,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 									Type:    "claude_session_id",
 									Content: client.claudeSessionID,
 								}, client.browserSessionID)
-								
+
 								// IMPORTANT: When a new Claude session is created, we need to update
 								// any other clients that might be expecting this session. This handles
 								// the multi-tab case where tabs open with same URL session but that
@@ -874,7 +874,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 								log.Printf("[SESSION] Updated Claude session ID from %s to %s for browser session: %s (history: %d)", oldSessionID, client.claudeSessionID, client.browserSessionID, len(client.claudeSessionHistory))
 								// Send updated Claude session ID back to browser
 								svc.BroadcastToSession(ChatItem{
-									Type:    "claude_session_id", 
+									Type:    "claude_session_id",
 									Content: client.claudeSessionID,
 								}, client.browserSessionID)
 							}
@@ -925,13 +925,13 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 
 											// Use the original permission interruption approach - interrupt but don't kill
 											log.Printf("[EXEC] Permission error detected, interrupting process with SIGINT")
-											
+
 											// Store the active process reference but DON'T clear it yet - we'll resume it
 											client.processMutex.Lock()
 											processToInterrupt := client.activeProcess
 											// Keep client.activeProcess set so we can resume it later
 											client.processMutex.Unlock()
-											
+
 											// Interrupt the process with SIGINT (like Escape key) instead of killing it
 											// This should pause Claude's execution while keeping the session alive
 											if processToInterrupt != nil {
@@ -945,15 +945,15 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 													client.processMutex.Unlock()
 												}
 											}
-											
+
 											// ADD SESSION WARMING: Start replacement session immediately
 											startReplacementSession(parentctx, svc, client)
-											
+
 											// Send exec end event to hide typing indicator
 											svc.BroadcastToSession(ChatItem{
 												Type: "exec_end",
 											}, client.browserSessionID)
-											
+
 											// Process is now guaranteed dead, no need for cmd.Wait()
 											return ExecutionPermissionError
 										}
@@ -1000,14 +1000,14 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			// Check if this was a Claude session resumption error
 			if !isFirstMessage && client.claudeSessionID != "" && len(cmdArgs) > 0 && cmdArgs[0] == "claude" {
 				errorMsg := err.Error()
-				
+
 				// Also get stderr content for better error detection
 				stderrMutex.Lock()
 				stderrText := stderrContent.String()
 				stderrMutex.Unlock()
-				
+
 				log.Printf("[SESSION DEBUG] Checking error for session issues. Error: %s, STDERR: %s", errorMsg, stderrText)
-				
+
 				// Check for common session resumption error patterns in both error message and stderr
 				combinedError := errorMsg + " " + stderrText
 				if (strings.Contains(combinedError, "session") && (strings.Contains(combinedError, "not found") ||
@@ -1063,12 +1063,12 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 			Type: "exec_end",
 		}, client.browserSessionID)
 	}
-	
+
 	// Clear the active process as it has completed
 	client.processMutex.Lock()
 	client.activeProcess = nil
 	client.processMutex.Unlock()
-	
+
 	// Return true to indicate successful execution
 	return ExecutionSuccess
 }
@@ -1120,7 +1120,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			// Handle stop command
 			if clientMsg.Type == "stop" {
 				log.Printf("[WEBSOCKET] Received stop command from client")
-				
+
 				// Cancel the context first to stop any ongoing processing
 				client.processMutex.Lock()
 				if client.cancelFunc != nil {
@@ -1129,7 +1129,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					client.cancelFunc = nil
 				}
 				client.processMutex.Unlock()
-				
+
 				// Stop process with immediate replacement (non-blocking)
 				go stopProcessWithReplacement(ctx, svc, client, "user stop")
 				continue
@@ -1236,23 +1236,10 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastToClaudeSession(botSenderItem, client.claudeSessionID)
 
 					go func() {
-						// Get the saved message to replay
-						client.processMutex.Lock()
-						messageToReplay := client.lastUserMessage
-						killedSessionID := client.lastKilledSessionID
-						savedSessionID := client.lastActiveSessionID  // Get the session ID we saved when permission was needed
-						client.processMutex.Unlock()
-						
-						// If we have a saved message, replay it; otherwise send "continue"
-						if messageToReplay != "" && killedSessionID != "" {
-							// Use the saved session ID to resume where we left off
-							// This preserves context instead of starting fresh
-							log.Printf("[PERMISSION] Replaying user message with saved session ID after permission granted: %s", savedSessionID)
-							tryExecuteWithSessionHistory(ctx, svc, client, messageToReplay, false, clientMsg.AllowedTools, clientMsg.SkipPermissions, savedSessionID)
-						} else {
-							// Fallback to old behavior if no saved message
-							tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
-						}
+						// Since startReplacementSession created a warmed session with context,
+						// we just need to say "continue" instead of replaying the full message
+						log.Printf("[PERMISSION] Continuing with replacement session after permission granted")
+						tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated
@@ -1277,7 +1264,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			if clientMsg.Sender == "USER" {
 				// Log that we received a message from user
 				log.Printf("[CHAT] Received message from %s: %s", clientMsg.Sender, clientMsg.Content)
-				
+
 				// Save the user message for potential replay after permission errors
 				client.processMutex.Lock()
 				client.lastUserMessage = clientMsg.Content
