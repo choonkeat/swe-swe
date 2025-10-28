@@ -34,6 +34,7 @@ type Client struct {
 	allowedTools          []string // Track allowed tools for this client
 	skipPermissions       bool     // Track if user chose to skip all permissions
 	pendingToolPermission string   // Track which tool is pending permission
+	pendingToolUseID      string   // Track tool_use_id for retry after permission grant
 	lastKilledSessionID   string   // Track killed session to avoid reuse
 	lastUserMessage       string   // Save message for replay after permission
 	lastActiveSessionID   string   // Save session ID to resume after permission grant
@@ -402,9 +403,9 @@ func isPermissionError(content string) bool {
 func startReplacementSession(ctx context.Context, svc *ChatService, client *Client) {
 	log.Printf("[PERMISSION] Starting replacement session")
 
-	// Start new Claude session with simple wait command
+	// Start new Claude session with simple stop command using bare minimum Claude
 	// This happens synchronously - we need the session ID before showing permission dialog
-	executeAgentCommandWithSession(ctx, svc, client, "stop", false, []string{}, false, "", true)
+	executeAgentCommandWithSession(ctx, svc, client, "stop", false, []string{}, false, "", true, true)
 	log.Printf("[PERMISSION] Replacement session started and tracked in history")
 }
 
@@ -489,7 +490,7 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 			// Skip redundant validation - let execution handle session errors directly
 
 			// Try execution with this session ID
-			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID, false)
+			result := executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, sessionID, false, false)
 
 			switch result {
 			case ExecutionSuccess:
@@ -517,10 +518,10 @@ func tryExecuteWithSessionHistory(parentctx context.Context, svc *ChatService, c
 
 		// All session IDs failed, try without resume (fresh start)
 		log.Printf("[SESSION] All session IDs failed, starting fresh conversation")
-		executeAgentCommandWithSession(parentctx, svc, client, prompt, true, allowedTools, skipPermissions, "", false)
+		executeAgentCommandWithSession(parentctx, svc, client, prompt, true, allowedTools, skipPermissions, "", false, false)
 	} else {
 		// First message or no session IDs available
-		executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, "", false)
+		executeAgentCommandWithSession(parentctx, svc, client, prompt, isFirstMessage, allowedTools, skipPermissions, "", false, false)
 	}
 }
 
@@ -539,7 +540,7 @@ const (
 
 // executeAgentCommandWithSession executes the configured agent command with a specific session ID
 // Returns ExecutionResult to indicate success, permission error (no retry), or other errors (retry allowed)
-func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string, quiet bool) ExecutionResult {
+func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService, client *Client, prompt string, isFirstMessage bool, allowedTools []string, skipPermissions bool, claudeSessionID string, quiet bool, bareMinimum bool) ExecutionResult {
 	// Create a context that can be cancelled when the client disconnects
 	ctx, cancel := context.WithCancel(parentctx)
 
@@ -577,7 +578,10 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 	// Prepare the agent command with prompt substitution
 	var cmdArgs []string
 	svc.mutex.Lock()
-	if isFirstMessage {
+	if bareMinimum {
+		// Use bare minimum Claude command without system prompts, with --continue for conversation history
+		cmdArgs = []string{"claude", "--output-format", "stream-json", "--verbose", "--continue", "--print", "?"}
+	} else if isFirstMessage {
 		// Use the first message command
 		cmdArgs = make([]string, len(svc.agentCLI1st))
 		copy(cmdArgs, svc.agentCLI1st)
@@ -918,6 +922,7 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 											// Track which tool is pending permission and save context for recovery
 											client.processMutex.Lock()
 											client.pendingToolPermission = toolInfo.Name
+											client.pendingToolUseID = content.ToolUseID  // Save tool_use_id for retry
 											client.lastKilledSessionID = client.claudeSessionID  // Save session to avoid reuse
 											client.lastActiveSessionID = client.claudeSessionID   // Save session to resume after permission grant
 											// Note: We'll save the last user message in the main message handler
@@ -1186,9 +1191,11 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 				// Update client's allowed tools
 				client.processMutex.Lock()
 				pendingTool := client.pendingToolPermission
+				pendingToolUseID := client.pendingToolUseID
 				client.allowedTools = clientMsg.AllowedTools
 				client.skipPermissions = clientMsg.SkipPermissions
 				client.pendingToolPermission = "" // Clear pending tool
+				client.pendingToolUseID = ""      // Clear pending tool use ID
 				client.processMutex.Unlock()
 
 				// Check if the pending tool was granted permission
@@ -1236,10 +1243,16 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					svc.BroadcastToClaudeSession(botSenderItem, client.claudeSessionID)
 
 					go func() {
-						// Since startReplacementSession created a warmed session with context,
-						// we just need to say "continue" instead of replaying the full message
-						log.Printf("[PERMISSION] Continuing with replacement session after permission granted")
-						tryExecuteWithSessionHistory(ctx, svc, client, "continue", false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
+						// Use the captured tool_use_id to retry the specific tool that failed
+						var retryCommand string
+						if pendingToolUseID != "" {
+							retryCommand = fmt.Sprintf("retry tool_use_id %s", pendingToolUseID)
+							log.Printf("[PERMISSION] Retrying specific tool use ID after permission granted: %s", pendingToolUseID)
+						} else {
+							retryCommand = "continue"
+							log.Printf("[PERMISSION] No tool use ID available, falling back to continue")
+						}
+						tryExecuteWithSessionHistory(ctx, svc, client, retryCommand, false, clientMsg.AllowedTools, clientMsg.SkipPermissions, clientMsg.ClaudeSessionID)
 					}()
 				}
 				// If permission was denied, don't send continue - the process has already been terminated

@@ -68,7 +68,7 @@ func errmain(ctx context.Context) error {
 	case "claude":
 		systemPrompt := "CRITICAL: When you receive permission errors (like 'Claude requested permissions' or 'This command requires approval'), DO NOT attempt workarounds or alternative approaches. Simply STOP and wait. The system will automatically retry your exact command once permission is granted. Do not explain what you would do if permission was granted - just wait silently."
 		config.AgentCLI1st = "claude --output-format stream-json --verbose --append-system-prompt " + strconv.Quote(systemPrompt) + " --print ?"
-		config.AgentCLINth = "claude --output-format stream-json --verbose --append-system-prompt " + strconv.Quote(systemPrompt) + " --print ?"
+		config.AgentCLINth = "claude --output-format stream-json --verbose --continue --print ?"
 		config.DeferStdinClose = false
 		config.JSONOutput = true
 	case "":
