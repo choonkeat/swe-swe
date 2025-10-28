@@ -294,6 +294,64 @@ func (s *ChatService) BroadcastToSession(item ChatItem, sessionID string) {
 	}
 }
 
+// BroadcastToClaudeSession sends messages to all clients sharing a Claude session
+func (s *ChatService) BroadcastToClaudeSession(item ChatItem, claudeSessionID string) {
+	if claudeSessionID == "" {
+		// Fallback to broadcasting to all clients if no Claude session ID
+		s.BroadcastItem(item)
+		return
+	}
+	
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	broadcastCount := 0
+	for client := range s.clients {
+		// Match by Claude session ID, not browser session ID
+		if client.claudeSessionID == claudeSessionID {
+			if err := websocket.JSON.Send(client.conn, item); err != nil {
+				log.Printf("Error sending to client in Claude session %s: %v", claudeSessionID, err)
+				delete(s.clients, client)
+				client.conn.Close()
+			} else {
+				broadcastCount++
+			}
+		}
+	}
+	
+	log.Printf("[BROADCAST] Sent message to %d clients in Claude session: %s", broadcastCount, claudeSessionID)
+}
+
+// broadcastNewSessionToWaitingClients updates clients that might be waiting for a session
+func (s *ChatService) broadcastNewSessionToWaitingClients(newSessionID string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	
+	// For now, we'll update all clients that don't have a Claude session ID yet
+	// This is a simple solution for the multi-tab sync issue
+	updatedCount := 0
+	for client := range s.clients {
+		if client.claudeSessionID == "" {
+			client.claudeSessionID = newSessionID
+			client.claudeSessionHistory = append(client.claudeSessionHistory, newSessionID)
+			
+			// Send the new session ID to this client
+			if err := websocket.JSON.Send(client.conn, ChatItem{
+				Type:    "claude_session_id",
+				Content: newSessionID,
+			}); err != nil {
+				log.Printf("Error sending session ID to waiting client: %v", err)
+			} else {
+				updatedCount++
+			}
+		}
+	}
+	
+	if updatedCount > 0 {
+		log.Printf("[SESSION] Updated %d waiting clients with new Claude session ID: %s", updatedCount, newSessionID)
+	}
+}
+
 // parseAgentCLI parses the agent CLI string into a command slice
 func parseAgentCLI(agentCLIStr string) []string {
 	var args []string
@@ -806,6 +864,12 @@ func executeAgentCommandWithSession(parentctx context.Context, svc *ChatService,
 									Type:    "claude_session_id",
 									Content: client.claudeSessionID,
 								}, client.browserSessionID)
+								
+								// IMPORTANT: When a new Claude session is created, we need to update
+								// any other clients that might be expecting this session. This handles
+								// the multi-tab case where tabs open with same URL session but that
+								// session doesn't exist yet.
+								svc.broadcastNewSessionToWaitingClients(client.claudeSessionID)
 							} else if oldSessionID != client.claudeSessionID {
 								log.Printf("[SESSION] Updated Claude session ID from %s to %s for browser session: %s (history: %d)", oldSessionID, client.claudeSessionID, client.browserSessionID, len(client.claudeSessionHistory))
 								// Send updated Claude session ID back to browser
@@ -1035,13 +1099,22 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 			}
 
 			// Store Claude session ID if provided (important for reconnections)
-			if clientMsg.ClaudeSessionID != "" && client.claudeSessionID == "" {
-				client.claudeSessionID = clientMsg.ClaudeSessionID
-				// Add to history as well
-				client.claudeSessionHistory = append(client.claudeSessionHistory, clientMsg.ClaudeSessionID)
-				// Mark session as already started since we're resuming
-				client.hasStartedSession = true
-				log.Printf("[WEBSOCKET] Client resuming Claude session ID: %s", client.claudeSessionID)
+			if clientMsg.ClaudeSessionID != "" {
+				if client.claudeSessionID == "" {
+					client.claudeSessionID = clientMsg.ClaudeSessionID
+					// Add to history as well
+					client.claudeSessionHistory = append(client.claudeSessionHistory, clientMsg.ClaudeSessionID)
+					// Mark session as already started since we're resuming
+					client.hasStartedSession = true
+					log.Printf("[WEBSOCKET] Client resuming Claude session ID: %s", client.claudeSessionID)
+				} else if client.claudeSessionID != clientMsg.ClaudeSessionID {
+					// Handle dynamic Claude session changes
+					oldSessionID := client.claudeSessionID
+					client.claudeSessionID = clientMsg.ClaudeSessionID
+					// Add to history
+					client.claudeSessionHistory = append(client.claudeSessionHistory, clientMsg.ClaudeSessionID)
+					log.Printf("[SESSION] Client switched from Claude session %s to %s", oldSessionID, client.claudeSessionID)
+				}
 			}
 
 			// Handle stop command
@@ -1144,14 +1217,14 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					Type:   "user",
 					Sender: "USER",
 				}
-				svc.BroadcastToSession(userItem, client.browserSessionID)
+				svc.BroadcastToClaudeSession(userItem, client.claudeSessionID)
 
 				// Broadcast the user's response
 				contentItem := ChatItem{
 					Type:    "content",
 					Content: responseText,
 				}
-				svc.BroadcastToSession(contentItem, client.browserSessionID)
+				svc.BroadcastToClaudeSession(contentItem, client.claudeSessionID)
 
 				// Only send continue if permission was granted or skip permissions is enabled
 				if toolWasAllowed || clientMsg.SkipPermissions {
@@ -1160,7 +1233,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 						Type:   "bot",
 						Sender: "swe-swe",
 					}
-					svc.BroadcastToSession(botSenderItem, client.browserSessionID)
+					svc.BroadcastToClaudeSession(botSenderItem, client.claudeSessionID)
 
 					go func() {
 						// Get the saved message to replay
@@ -1191,14 +1264,14 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 				Type:   "user",
 				Sender: clientMsg.Sender,
 			}
-			svc.BroadcastToSession(userItem, client.browserSessionID)
+			svc.BroadcastToClaudeSession(userItem, client.claudeSessionID)
 
 			// Broadcast the user content
 			contentItem := ChatItem{
 				Type:    "content",
 				Content: clientMsg.Content,
 			}
-			svc.BroadcastToSession(contentItem, client.browserSessionID)
+			svc.BroadcastToClaudeSession(contentItem, client.claudeSessionID)
 
 			// If it's from a user, send a streamed response from swe-swe
 			if clientMsg.Sender == "USER" {
@@ -1215,7 +1288,7 @@ func websocketHandler(ctx context.Context, svc *ChatService) websocket.Handler {
 					Type:   "bot",
 					Sender: "swe-swe",
 				}
-				svc.BroadcastToSession(botSenderItem, client.browserSessionID)
+				svc.BroadcastToClaudeSession(botSenderItem, client.claudeSessionID)
 
 				// Execute agent command and stream response
 				go func() {
