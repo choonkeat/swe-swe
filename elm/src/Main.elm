@@ -1198,8 +1198,8 @@ parseClaudeMessage model msg =
                                     |> List.filterMap
                                         (\content ->
                                             if content.type_ == "tool_result" then
-                                                Maybe.map2
-                                                    (\toolUseId resultContent ->
+                                                Maybe.andThen
+                                                    (\(toolUseId, resultContent) ->
                                                         let
                                                             formattedResult =
                                                                 if String.endsWith "\n" resultContent then
@@ -1210,13 +1210,26 @@ parseClaudeMessage model msg =
                                                         in
                                                         case Dict.get toolUseId model.pendingToolUses of
                                                             Just toolUse ->
-                                                                ChatToolUseWithResult toolUse formattedResult
+                                                                -- Check if this is a successful TodoWrite result and hide it
+                                                                if toolUse.name == Just "TodoWrite" && 
+                                                                   String.contains "successfully" formattedResult && 
+                                                                   String.contains "modified" formattedResult then
+                                                                    -- Skip rendering successful TodoWrite tool results
+                                                                    Nothing
+                                                                else
+                                                                    Just (ChatToolUseWithResult toolUse formattedResult)
 
                                                             Nothing ->
-                                                                ChatToolResult formattedResult
+                                                                -- Check if this is a successful TodoWrite result and hide it
+                                                                if String.contains "Todos have been modified successfully" formattedResult then
+                                                                    -- Skip rendering successful TodoWrite tool results
+                                                                    Nothing
+                                                                else
+                                                                    Just (ChatToolResult formattedResult)
                                                     )
-                                                    content.toolUseId
-                                                    content.content
+                                                    (Maybe.map2 Tuple.pair
+                                                        content.toolUseId
+                                                        content.content)
 
                                             else
                                                 Nothing
