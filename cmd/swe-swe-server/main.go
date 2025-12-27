@@ -731,7 +731,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 	// If browser automation is enabled, send system prompt about browser tools
 	if browserEndpoint := os.Getenv("BROWSER_WS_ENDPOINT"); browserEndpoint != "" {
 		browserPrompt := `You have browser automation capabilities via MCP Playwright tools (mcp__playwright__*).
-If browser tools are unavailable or not working, read .claude/browser-automation.md for troubleshooting.
+If browser tools are unavailable or not working, read .swe-swe/browser-automation.md for troubleshooting.
 User can watch the browser via VNC at http://chrome.lvh.me:9899/vnc_auto.html
 
 ` + "\n"
