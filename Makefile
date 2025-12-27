@@ -1,62 +1,59 @@
-build: build-elm build-go
+.PHONY: build run stop test clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean
 
-ELM_OUTPUT=cmd/swe-swe/static/js/app.js
-build-elm: elm/node_modules
-	cd elm && elm make src/Main.elm --output=../$(ELM_OUTPUT)
+build: build-server build-cli
 
-build-go:
-	go build -o bin/swe-swe cmd/swe-swe/*.go
+build-server:
+	mkdir -p ./cmd/swe-swe/bin
+	GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.linux-amd64 ./cmd/swe-swe-server
+	GOOS=linux GOARCH=arm64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.linux-arm64 ./cmd/swe-swe-server
+	GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.darwin-amd64 ./cmd/swe-swe-server
+	GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.darwin-arm64 ./cmd/swe-swe-server
 
-test: test-elm test-go
-
-test-elm: elm/node_modules
-	cd elm && elm-test
-
-test-go:
-	go test ./...
-
-PLAYWRIGHT_ARGS=
-test-playwright: tests/playwright/node_modules tests/playwright/.playwright-installed
-	cd tests/playwright && npx playwright test $(PLAYWRIGHT_ARGS)
-
-tests/playwright/node_modules: tests/playwright/package.json
-	cd tests/playwright && npm install
-
-tests/playwright/.playwright-installed: tests/playwright/node_modules
-	cd tests/playwright && npx playwright install && touch .playwright-installed
-
-format: format-go format-elm
-
-format-go:
-	gofmt -s -w .
-
-format-elm: elm/node_modules
-	cd elm && echo y | elm-format src/
-
-elm/node_modules: elm/package.json
-	cd elm && npm ci
-
-SWEE_SWE_FLAGS=
+RUN_ARGS ?=
 run:
-	./bin/swe-swe $(SWE_SWE_FLAGS)
+	go run cmd/swe-swe-server/* $(RUN_ARGS)
+
+stop:
+	lsof -ti :9898 | xargs kill -9 2>/dev/null || true
+
+test:
+	go test -v ./...
 
 clean:
-	rm -rf bin $(ELM_OUTPUT)
+	rm -rf ./dist
 
-docker-compose-dev-up:
-	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml up
+# swe-swe convenience targets
+SWE_SWE_PATH ?= ./tmp
+SWE_SWE_CLI := ./dist/swe-swe
 
-docker-compose-dev-down:
-	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml down
+$(SWE_SWE_CLI): build-cli
 
-docker-compose-dev-build:
-	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml build
+swe-swe-init: build-server $(SWE_SWE_CLI)
+	$(SWE_SWE_CLI) init --path $(SWE_SWE_PATH)
 
-docker-compose-dev-logs:
-	WORKSPACE_DIR=${WORKSPACE_DIR} docker-compose --env-file .env -f docker/dev/docker-compose.yml logs -f
+swe-swe-test: swe-swe-init
+	cd $(SWE_SWE_PATH) && docker-compose -f .swe-swe/docker-compose.yml config > /dev/null
+	@echo "✓ docker-compose.yml is valid"
+	@test -f $(SWE_SWE_PATH)/.swe-swe/Dockerfile && echo "✓ Dockerfile exists"
+	@test -f $(SWE_SWE_PATH)/.swe-swe/traefik-dynamic.yml && echo "✓ traefik-dynamic.yml exists"
+	@test -f $(SWE_SWE_PATH)/.swe-swe/bin/swe-swe-server && echo "✓ swe-swe-server binary exists"
+	@test -d $(SWE_SWE_PATH)/.swe-swe/home && echo "✓ home directory exists"
+	cd $(SWE_SWE_PATH) && docker-compose -f .swe-swe/docker-compose.yml build --no-cache
+	@echo "✓ docker-compose build successful (swe-swe-server image built)"
 
-local-restart: build
-	lsof -i:7000 | grep LISTEN | while read name pid others; do echo $$name $$pid; kill $$pid; done
+swe-swe-run: swe-swe-init
+	$(SWE_SWE_CLI) run --path $(SWE_SWE_PATH)
 
-local-always-running:
-	while date; do make build run SWE_SWE_FLAGS='-agent claude' 2>&1 | tee logs.txt; sleep 3; done
+swe-swe-stop: $(SWE_SWE_CLI)
+	$(SWE_SWE_CLI) stop --path $(SWE_SWE_PATH)
+
+swe-swe-clean:
+	rm -rf $(SWE_SWE_PATH)/.swe-swe
+
+build-cli:
+	mkdir -p ./dist
+	GOOS=linux GOARCH=amd64 go build -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe
+	GOOS=linux GOARCH=arm64 go build -o ./dist/swe-swe.linux-arm64 ./cmd/swe-swe
+	GOOS=darwin GOARCH=amd64 go build -o ./dist/swe-swe.darwin-amd64 ./cmd/swe-swe
+	GOOS=darwin GOARCH=arm64 go build -o ./dist/swe-swe.darwin-arm64 ./cmd/swe-swe
+	GOOS=windows GOARCH=amd64 go build -o ./dist/swe-swe.windows-amd64.exe ./cmd/swe-swe

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select AI Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .selection-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100%;
+            padding: 24px;
+        }
+        .selection-page__header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .selection-page__title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        .selection-page__subtitle {
+            font-size: 14px;
+            color: #888;
+        }
+        .selection-page__grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            max-width: 800px;
+            width: 100%;
+        }
+        .selection-page__card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px;
+            background: #2d2d2d;
+            border: 2px solid #404040;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            color: inherit;
+        }
+        .selection-page__card:hover {
+            border-color: #007acc;
+            background: #333;
+            transform: translateY(-2px);
+        }
+        .selection-page__card:active {
+            transform: translateY(0);
+        }
+        .selection-page__card-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+        .selection-page__card-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .selection-page__card-desc {
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+        }
+        /* Assistant-specific colors */
+        .selection-page__card[data-assistant="claude"]:hover {
+            border-color: #d97706;
+        }
+        .selection-page__card[data-assistant="gemini"]:hover {
+            border-color: #4285f4;
+        }
+        .selection-page__card[data-assistant="codex"]:hover {
+            border-color: #10a37f;
+        }
+        .selection-page__card[data-assistant="goose"]:hover {
+            border-color: #f472b6;
+        }
+        .selection-page__card[data-assistant="aider"]:hover {
+            border-color: #22c55e;
+        }
+        .selection-page__card[data-assistant="custom"]:hover {
+            border-color: #a855f7;
+        }
+    </style>
+</head>
+<body>
+    <div class="selection-page">
+        <div class="selection-page__header">
+            <h1 class="selection-page__title">Select AI Assistant</h1>
+            <p class="selection-page__subtitle">Choose an assistant to start a new terminal session</p>
+        </div>
+        <div class="selection-page__grid">
+            {{range .Assistants}}
+            <a href="/session/{{$.NewUUID}}?assistant={{.Binary}}" class="selection-page__card" data-assistant="{{.Binary}}">
+                <div class="selection-page__card-icon">{{if eq .Binary "claude"}}🧠{{else if eq .Binary "gemini"}}✨{{else if eq .Binary "codex"}}🤖{{else if eq .Binary "goose"}}🪿{{else if eq .Binary "aider"}}🛠{{else}}⚙️{{end}}</div>
+                <div class="selection-page__card-name">{{.Name}}</div>
+                <div class="selection-page__card-desc">{{.ShellCmd}}</div>
+            </a>
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>

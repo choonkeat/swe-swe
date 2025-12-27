@@ -1,0 +1,95 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--entrypoints.web.address=:7000"
+    ports:
+      - "${SWE_PORT:-9899}:7000"
+      - "${SWE_DASHBOARD_PORT:-9900}:8080"  # Traefik dashboard at traefik.lvh.me:${SWE_PORT:-9899}
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
+    networks:
+      - swe-network
+    restart: unless-stopped
+
+  swe-swe-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: swe-swe-server
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.swe.rule=HostRegexp(`.*`)"
+      - "traefik.http.routers.swe.priority=10"
+      - "traefik.http.services.swe.loadbalancer.server.port=9898"
+      # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
+      # - "traefik.http.routers.swe.middlewares=auth@file"
+    volumes:
+      # Mount project directory to /workspace
+      - ${WORKSPACE_DIR:-.}:/workspace
+      # Mount persistent home for auth/config storage
+      - ./home:/home/app
+      # Mount swe-swe-server binary from host (allows live updates)
+      - ./bin/swe-swe-server:/usr/local/bin/swe-swe-server:ro
+      # Enterprise certificates (if certs/ directory exists with certificates)
+      - ./certs:/swe-swe/certs:ro
+    working_dir: /workspace
+    networks:
+      - swe-network
+    environment:
+      # Pass through API keys (edit or set as environment variables)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Enterprise certificates (if configured during swe-swe init)
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS}
+      - SSL_CERT_FILE=${SSL_CERT_FILE}
+      # Add other credentials as needed:
+      # - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped
+
+  code-server:
+    image: codercom/code-server:latest
+    container_name: code-server
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vscode.rule=HostRegexp(`vscode\\..+`)"
+      - "traefik.http.routers.vscode.priority=100"
+      - "traefik.http.services.vscode.loadbalancer.server.port=8080"
+      # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
+      # - "traefik.http.routers.vscode.middlewares=auth@file"
+    volumes:
+      # Mount project directory
+      - ${WORKSPACE_DIR:-.}:/home/coder/project
+      # Mount persistent home for VSCode settings/extensions
+      - ./home:/home/coder
+      # Enterprise certificates (if certs/ directory exists with certificates)
+      - ./certs:/swe-swe/certs:ro
+    working_dir: /home/coder/project
+    networks:
+      - swe-network
+    environment:
+      # VSCode password (set via SWE_SWE_PASSWORD env var)
+      - PASSWORD=${SWE_SWE_PASSWORD:-changeme}
+      - TZ=${TZ:-UTC}
+      # Enterprise certificates (if configured during swe-swe init)
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS}
+      - SSL_CERT_FILE=${SSL_CERT_FILE}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+networks:
+  swe-network:
+    driver: bridge
