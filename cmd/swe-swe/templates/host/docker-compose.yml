@@ -80,15 +80,27 @@ services:
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
-  vscode:
-    image: codercom/code-server:latest
+  vscode-proxy:
+    image: nginx:latest
+    volumes:
+      - ./nginx-vscode.conf:/etc/nginx/conf.d/default.conf:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.vscode.rule=HostRegexp(`vscode\\..+`)"
+      - "traefik.http.routers.vscode.rule=PathPrefix(`/vscode`)"
       - "traefik.http.routers.vscode.priority=100"
-      - "traefik.http.services.vscode.loadbalancer.server.port=8080"
+      - "traefik.http.services.vscode.loadbalancer.server.port=8081"
       # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
       # - "traefik.http.routers.vscode.middlewares=auth@file"
+    depends_on:
+      - code-server
+    networks:
+      - swe-network
+    restart: unless-stopped
+
+  code-server:
+    image: codercom/code-server:latest
+    command:
+      - "--bind-addr=0.0.0.0:8080"
     volumes:
       # Mount project directory
       - ${WORKSPACE_DIR:-.}:/home/coder/project
