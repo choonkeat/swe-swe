@@ -31,9 +31,10 @@ COPY chrome/nginx-cdp.conf /etc/nginx/nginx.conf
 # Create nginx log directory
 RUN mkdir -p /var/log/nginx
 
-# noVNC web files location - create index.html symlink for default page
+# noVNC web files location
+# Create symlink to full viewer (vnc_lite.html) as vnc.html so it's available when wrapper redirects to it
 ENV NOVNC_HOME=/usr/share/novnc
-RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
+RUN ln -sf /usr/share/novnc/vnc_lite.html /usr/share/novnc/vnc.html
 
 # Copy noVNC wrapper HTML for /chrome basepath (configures correct WebSocket path)
 COPY chrome/novnc-wrapper.html /app/novnc-wrapper.html
