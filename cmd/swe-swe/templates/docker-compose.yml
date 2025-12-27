@@ -26,6 +26,9 @@ services:
       - "traefik.http.routers.chrome.rule=HostRegexp(`chrome\\..*`)"
       - "traefik.http.routers.chrome.priority=100"
       - "traefik.http.services.chrome.loadbalancer.server.port=6080"
+    volumes:
+      # Enterprise certificates (if certs/ directory exists with certificates)
+      - ./certs:/swe-swe/certs:ro
     networks:
       - swe-network
     restart: unless-stopped

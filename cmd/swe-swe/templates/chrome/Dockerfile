@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
     chromium \
     supervisor \
     procps \
-    socat \
+    nginx \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -23,13 +24,26 @@ RUN mkdir -p /var/log/supervisor /var/run
 # Supervisor config to manage processes
 COPY chrome/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
+# Nginx config for CDP reverse proxy (fixes Host header issue)
+COPY chrome/nginx-cdp.conf /etc/nginx/nginx.conf
+
+# Create nginx log directory
+RUN mkdir -p /var/log/nginx
+
 # noVNC web files location
 ENV NOVNC_HOME=/usr/share/novnc
 
+# Copy entrypoint script for enterprise certificate installation
+COPY chrome/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Expose ports
-# 9223: CDP via socat forwarder (Chrome binds to localhost only)
+# 9223: CDP via nginx reverse proxy (Chrome binds to localhost only, nginx fixes Host header)
 # 6080: noVNC web UI - for developer observation
 EXPOSE 9223 6080
 
-# Start supervisor to manage Xvfb, Chrome, x11vnc, and websockify
+# Entrypoint installs enterprise certificates (if mounted), then runs CMD
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Start supervisor to manage Xvfb, Chrome, x11vnc, nginx, and websockify
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
