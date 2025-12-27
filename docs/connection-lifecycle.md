@@ -140,37 +140,71 @@ getReconnectDelay() {
 
 ### 3. Shell Exits Normally (exit 0)
 
-**Trigger:** User types `exit`, shell script completes, or process terminates cleanly
+**Trigger:** User types `exit`, shell script completes, or process terminates cleanly with exit code 0
 
 **Server behavior:**
-1. PTY read returns EOF
-2. If clients connected: broadcasts `[Process exited, restarting...]`
-3. Waits 500ms, then restarts shell
-4. If no clients: PTY reader exits, session remains until TTL expires
+1. PTY read returns EOF or error
+2. Check exit code:
+   - **Exit code 0** (success): Process is NOT restarted, session remains
+   - **Non-zero exit code** (error): Process is restarted after 500ms
+3. Broadcasts appropriate message to clients
+4. If no clients connected: PTY reader exits immediately
 
-**Client behavior:**
-- Sees `[Process exited, restarting...]` in terminal
+**Client behavior on exit 0:**
+- Sees `[Process exited successfully]` in terminal
 - WebSocket remains connected
-- New shell prompt appears after restart
+- Shell does NOT restart
+- User can start a new command or session
 - No status bar change (still "Connected")
 
-**Code reference:** `main.go:284-320`
+**Client behavior on non-zero exit:**
+- Sees `[Process exited with code X, restarting...]` in terminal
+- WebSocket remains connected
+- New shell prompt appears after 500ms restart
+- No status bar change (still "Connected")
+
+**Code reference:** `main.go:397-462` (PTY reader with exit code checking)
 ```go
 n, err := ptyFile.Read(buf)
 if err != nil {
-    // Process has died - check if we should restart
+    clientCount := sess.ClientCount()
     if clientCount == 0 {
         log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
         return
     }
-    // Notify clients of restart
-    restartMsg := []byte("\r\n[Process exited, restarting...]\r\n")
+
+    // Check exit code to determine restart behavior
+    var exitCode int
+    if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
+        exitCode = status.ExitStatus()
+    }
+
+    if exitCode == 0 {
+        // Successful exit - don't restart
+        successMsg := []byte("\r\n[Process exited successfully]\r\n")
+        s.vtMu.Lock()
+        s.vt.Write(successMsg)
+        s.vtMu.Unlock()
+        s.Broadcast(successMsg)
+        return
+    }
+
+    // Non-zero exit - restart with message
+    restartMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d, restarting...]\r\n", exitCode))
+    s.vtMu.Lock()
+    s.vt.Write(restartMsg)
+    s.vtMu.Unlock()
     s.Broadcast(restartMsg)
-    // Wait a bit before restarting
+
+    // Wait before restarting
     time.Sleep(500 * time.Millisecond)
-    s.RestartProcess(shellRestartCmd)
+    if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
+        // ... handle restart failure (see scenario 5)
+    }
 }
 ```
+
+**Key Difference from Prior Behavior:** Earlier versions restarted on all exits. Current version only restarts on non-zero exit codes, allowing sessions to terminate cleanly on successful exit.
 
 ---
 
@@ -178,11 +212,20 @@ if err != nil {
 
 **Trigger:** Shell crashes, killed by signal, or exits with non-zero code
 
-**Server behavior:** Same as normal exit - process is restarted automatically
+**Server behavior:**
+1. Detects non-zero exit code
+2. Broadcasts `[Process exited with code X, restarting...]` message
+3. Waits 500ms
+4. Restarts shell automatically
+5. Sends new prompt
 
-**Client behavior:** Same as normal exit - sees restart message, new prompt
+**Client behavior:**
+- Sees `[Process exited with code X, restarting...]` in terminal
+- WebSocket remains connected
+- New shell prompt appears after 500ms
+- No status bar change (still "Connected")
 
-**Note:** The server doesn't distinguish between exit 0 and exit 1. Both trigger restart.
+**Note:** The server treats exit 0 and non-zero exits differently (see scenario 3). Exit 0 does NOT trigger restart, while non-zero exits always restart.
 
 ---
 
@@ -191,28 +234,38 @@ if err != nil {
 **Trigger:** Cannot spawn new shell (e.g., shell binary missing, permission denied)
 
 **Server behavior:**
-1. Broadcasts `[Failed to restart process: <error>]`
-2. PTY reader goroutine exits
-3. Session remains in memory but is "dead"
-4. WebSocket connections remain open but no shell I/O
+1. Writes error to virtual terminal and broadcasts to all clients
+2. Logs error
+3. PTY reader goroutine exits (returns)
+4. Session remains in memory but is "dead" (no subprocess)
+5. WebSocket connections remain open
 
 **Client behavior:**
-- Sees error message in terminal
+- Sees error message in terminal: `[Failed to restart process: <error_details>]`
 - WebSocket stays connected
 - Status bar still shows "Connected"
-- User input is written to dead PTY (no effect)
+- User input keystrokes are accepted but discarded (PTY is dead)
+- No visual indication that shell is dead (potential UX issue)
 
-**Code reference:** `main.go:310-318`
+**Code reference:** `main.go:451-459` (PTY reader error handling)
 ```go
-if err := s.RestartProcess(shellRestartCmd); err != nil {
+if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
     log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
     errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
+    s.vtMu.Lock()
+    s.vt.Write(errMsg)
+    s.vtMu.Unlock()
     s.Broadcast(errMsg)
-    return // PTY reader exits
+    return  // PTY reader exits, session becomes dead
 }
 ```
 
-**Potential issue:** Client thinks it's connected but shell is dead. Could improve by sending a JSON error message and/or closing WebSocket.
+**Known Issue:** Client appears "Connected" even though shell is dead. The session shows as healthy while it cannot process any input. Keystrokes are silently discarded because PTY is no longer reading/writing.
+
+**Potential Improvements:**
+- Send JSON error message instead of (or in addition to) broadcast
+- Close WebSocket to force client reconnection
+- Set a "session dead" flag to reject further input attempts
 
 ---
 
@@ -264,13 +317,22 @@ s.clients = make(map[*websocket.Conn]bool)
 
 **Client behavior:** N/A (no clients connected)
 
-**Code reference:** `main.go:430-438`
+**Code reference:** `main.go:675-692` (sessionReaper goroutine)
 ```go
-for uuid, sess := range sessions {
-    if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
-        log.Printf("Session expired: %s (idle for %v)", uuid, time.Since(sess.LastActive()))
-        sess.Close()
-        delete(sessions, uuid)
+func sessionReaper() {
+    ticker := time.NewTicker(time.Minute)
+    defer ticker.Stop()
+
+    for range ticker.C {
+        sessionsMu.Lock()
+        for uuid, sess := range sessions {
+            if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
+                log.Printf("Session expired: %s (idle for %v)", uuid, time.Since(sess.LastActive()))
+                sess.Close()
+                delete(sessions, uuid)
+            }
+        }
+        sessionsMu.Unlock()
     }
 }
 ```
