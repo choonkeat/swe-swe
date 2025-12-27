@@ -17,6 +17,28 @@ services:
       - swe-network
     restart: unless-stopped
 
+  chrome:
+    build:
+      context: .
+      dockerfile: chrome/Dockerfile
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chrome.rule=HostRegexp(`chrome\\..*`)"
+      - "traefik.http.routers.chrome.priority=100"
+      - "traefik.http.services.chrome.loadbalancer.server.port=6080"
+    networks:
+      - swe-network
+    restart: unless-stopped
+    # Resource limits for X11/VNC rendering
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
   swe-swe-server:
     build:
       context: .
@@ -28,6 +50,8 @@ services:
       - "traefik.http.services.swe.loadbalancer.server.port=9898"
       # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
       # - "traefik.http.routers.swe.middlewares=auth@file"
+    depends_on:
+      - chrome
     volumes:
       # Mount project directory to /workspace
       - ${WORKSPACE_DIR:-.}:/workspace
@@ -46,6 +70,8 @@ services:
       # Enterprise certificates (if configured during swe-swe init)
       - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS}
       - SSL_CERT_FILE=${SSL_CERT_FILE}
+      # Browser automation via MCP Playwright connected to chrome service
+      - BROWSER_WS_ENDPOINT=ws://chrome:9222
       # Add other credentials as needed:
       # - GEMINI_API_KEY=${GEMINI_API_KEY}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
