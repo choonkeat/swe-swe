@@ -1,8 +1,0 @@
-http:
-  middlewares:
-    auth:
-      basicAuth:
-        users:
-          # To generate a new password hash: docker run --rm httpd:alpine htpasswd -nbB admin yourpassword
-          # Default: admin:password
-          - "admin:$2y$05$pE.39zvni14nH8PioXXEzuaH2qxcpk.22Nnh2LAz3WymNMPEy3uXa"
