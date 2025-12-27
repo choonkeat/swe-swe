@@ -4,7 +4,7 @@ This document describes the swe-swe CLI commands and how the swe-swe-server bina
 
 ## Quick Summary
 
-- `swe-swe init` — Initialize a new swe-swe project (one-time setup)
+- `swe-swe init [--agents=...] [--exclude=...] [--apt-get-install=...]` — Initialize a new swe-swe project with customizable agent selection
 - `swe-swe up [services...]` — Start the environment (or specific services) AND **always update the server binary**
 - `swe-swe down [services...]` — Stop the environment (or specific services)
 - `swe-swe build [services...]` — Force a fresh Docker image rebuild (no cache)
@@ -69,23 +69,68 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 
 ## Command Reference
 
-### `swe-swe init [--path PATH]`
+### `swe-swe init [options]`
 
 **Purpose:** Initialize a new swe-swe project at PATH (defaults to current directory).
 
 **What it does:**
 1. Creates metadata directory structure in `$HOME/.swe-swe/projects/{sanitized-path}/` (bin/, home/, certs/)
 2. Writes `.path` file with original project path
-3. Extracts Docker templates (Dockerfile, docker-compose.yml, entrypoint.sh, traefik-dynamic.yml)
-4. Extracts swe-swe-server binary from embedded assets to metadata directory
-5. Handles enterprise certificates if `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, or `NODE_EXTRA_CA_CERTS_BUNDLE` environment variables are set
+3. Processes Dockerfile template based on selected agents (conditional sections)
+4. Extracts Docker templates (Dockerfile, docker-compose.yml, entrypoint.sh, traefik-dynamic.yml)
+5. Extracts swe-swe-server binary from embedded assets to metadata directory
+6. Handles enterprise certificates if `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, or `NODE_EXTRA_CA_CERTS_BUNDLE` environment variables are set
 
-**Example:**
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--path PATH` | Project directory (defaults to current directory) |
+| `--agents AGENTS` | Comma-separated list of agents to include (default: all) |
+| `--exclude AGENTS` | Comma-separated list of agents to exclude |
+| `--apt-get-install PACKAGES` | Additional apt packages to install (comma or space separated) |
+| `--list-agents` | List available agents and exit |
+| `--update-binary-only` | Update only the binary, skip template files |
+
+**Available Agents:**
+| Agent | Description | Dependencies |
+|-------|-------------|--------------|
+| `claude` | Claude Code CLI | Node.js |
+| `gemini` | Gemini CLI | Node.js |
+| `codex` | Codex CLI | Node.js |
+| `aider` | Aider | Python |
+| `goose` | Goose | None (standalone binary) |
+
+**Examples:**
 ```bash
+# Initialize with all agents (default)
 swe-swe init --path ~/my-project
-cd ~/my-project
-swe-swe up
+
+# Initialize with Claude only (minimal, fastest build)
+swe-swe init --agents=claude
+
+# Initialize with Claude and Gemini
+swe-swe init --agents=claude,gemini
+
+# Initialize without Python-based agents (smaller image)
+swe-swe init --exclude=aider
+
+# Initialize with additional system packages
+swe-swe init --apt-get-install="vim htop tmux"
+
+# Combine options
+swe-swe init --agents=claude,codex --apt-get-install="vim" --path ~/my-project
+
+# List available agents
+swe-swe init --list-agents
 ```
+
+**Dockerfile Optimization:**
+The Dockerfile template uses conditional sections to minimize image size:
+- Python/pip is only installed when `aider` is selected
+- Node.js/npm is only installed when `claude`, `gemini`, or `codex` is selected
+- Custom apt packages are only added when `--apt-get-install` is specified
+
+This optimization can significantly reduce Docker build time and final image size when using only a subset of agents.
 
 ### `swe-swe up [--path PATH] [services...] [-- docker-compose-args...]`
 

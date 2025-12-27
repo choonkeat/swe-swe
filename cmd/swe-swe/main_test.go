@@ -301,6 +301,130 @@ func TestSplitAtDoubleDash(t *testing.T) {
 	}
 }
 
+// TestParseAgentList verifies agent list parsing
+func TestParseAgentList(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantList []string
+		wantErr  bool
+	}{
+		{"", nil, false},
+		{"claude", []string{"claude"}, false},
+		{"claude,gemini", []string{"claude", "gemini"}, false},
+		{"claude, gemini, codex", []string{"claude", "gemini", "codex"}, false},
+		{"CLAUDE", []string{"claude"}, false}, // case insensitive
+		{"invalid", nil, true},
+		{"claude,invalid", nil, true},
+	}
+
+	for _, tt := range tests {
+		got, err := parseAgentList(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("parseAgentList(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if !tt.wantErr && len(got) != len(tt.wantList) {
+			t.Errorf("parseAgentList(%q) = %v, want %v", tt.input, got, tt.wantList)
+		}
+	}
+}
+
+// TestResolveAgents verifies agent resolution with include/exclude
+func TestResolveAgents(t *testing.T) {
+	tests := []struct {
+		agents   string
+		exclude  string
+		wantLen  int
+		wantErr  bool
+	}{
+		{"", "", 5, false},                       // default: all agents
+		{"all", "", 5, false},                    // explicit all
+		{"claude", "", 1, false},                 // single agent
+		{"claude,gemini", "", 2, false},          // multiple agents
+		{"", "aider", 4, false},                  // exclude one
+		{"", "aider,goose", 3, false},            // exclude multiple
+		{"all", "aider", 4, false},               // all minus exclude
+		{"claude,gemini,aider", "aider", 2, false}, // include then exclude
+		{"invalid", "", 0, true},                 // invalid agent
+		{"", "invalid", 0, true},                 // invalid exclude
+	}
+
+	for _, tt := range tests {
+		got, err := resolveAgents(tt.agents, tt.exclude)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("resolveAgents(%q, %q) error = %v, wantErr = %v", tt.agents, tt.exclude, err, tt.wantErr)
+			continue
+		}
+		if !tt.wantErr && len(got) != tt.wantLen {
+			t.Errorf("resolveAgents(%q, %q) len = %d, want %d (got: %v)", tt.agents, tt.exclude, len(got), tt.wantLen, got)
+		}
+	}
+}
+
+// TestProcessDockerfileTemplate verifies template processing
+func TestProcessDockerfileTemplate(t *testing.T) {
+	template := `FROM base
+# {{IF NODEJS}}
+RUN install nodejs
+# {{ENDIF}}
+# {{IF PYTHON}}
+RUN install python
+# {{ENDIF}}
+# {{IF CLAUDE}}
+RUN install claude
+# {{ENDIF}}
+# {{IF APT_PACKAGES}}
+RUN apt-get install {{APT_PACKAGES}}
+# {{ENDIF}}
+CMD done`
+
+	tests := []struct {
+		name     string
+		agents   []string
+		apt      string
+		contains []string
+		notContains []string
+	}{
+		{
+			name:     "claude only",
+			agents:   []string{"claude"},
+			apt:      "",
+			contains: []string{"install nodejs", "install claude"},
+			notContains: []string{"install python", "apt-get install"},
+		},
+		{
+			name:     "aider only",
+			agents:   []string{"aider"},
+			apt:      "",
+			contains: []string{"install python"},
+			notContains: []string{"install nodejs", "install claude"},
+		},
+		{
+			name:     "with apt packages",
+			agents:   []string{"claude"},
+			apt:      "vim htop",
+			contains: []string{"apt-get install vim htop"},
+			notContains: []string{"{{APT_PACKAGES}}"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := processDockerfileTemplate(template, tt.agents, tt.apt)
+			for _, s := range tt.contains {
+				if !strings.Contains(result, s) {
+					t.Errorf("result should contain %q, got:\n%s", s, result)
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(result, s) {
+					t.Errorf("result should NOT contain %q, got:\n%s", s, result)
+				}
+			}
+		})
+	}
+}
+
 // TestListDetectsAndPrunesStaleProjects verifies handleList detects missing paths and prunes them
 func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
 	testDir := t.TempDir()
