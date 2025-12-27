@@ -34,6 +34,10 @@ RUN npm install -g \
     @google/gemini-cli \
     2>/dev/null || true
 
+# Install MCP Playwright for browser automation
+# This enables the system to control browsers via Playwright CDP connections
+RUN npm install -g @anthropic-ai/mcp-playwright 2>/dev/null || echo "Warning: MCP Playwright installation failed"
+
 RUN pip3 install --break-system-packages \
     aider-chat
 

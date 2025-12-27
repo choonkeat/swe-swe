@@ -728,6 +728,23 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
+	// If browser automation is enabled, send system prompt about browser tools
+	if browserEndpoint := os.Getenv("BROWSER_WS_ENDPOINT"); browserEndpoint != "" {
+		browserPrompt := `You have browser automation capabilities via MCP Playwright tools:
+- mcp__playwright__browser_navigate: Navigate to URLs
+- mcp__playwright__browser_click: Click elements
+- mcp__playwright__browser_type: Type text into fields
+- mcp__playwright__browser_snapshot: Take screenshots
+- mcp__playwright__browser_fill_form: Fill out forms
+- And other browser interaction tools
+
+Browser renders to a virtual display. The session state resets on container restart.
+Use browser tools for web scraping, form filling, UI testing, and debugging web applications.
+
+` + "\n"
+		ptmx.Write([]byte(browserPrompt))
+	}
+
 	sess := &Session{
 		UUID:            sessionUUID,
 		Assistant:       assistant,

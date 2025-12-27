@@ -120,6 +120,9 @@ func handleInit() {
 			"templates/docker-compose.yml",
 			"templates/traefik-dynamic.yml",
 			"templates/entrypoint.sh",
+			"templates/chrome/Dockerfile",
+			"templates/chrome/supervisord.conf",
+			"templates/docs/BROWSER_AUTOMATION.md",
 		}
 
 		for _, templateFile := range templateFiles {
@@ -128,12 +131,19 @@ func handleInit() {
 				log.Fatalf("Failed to read embedded file %q: %v", templateFile, err)
 			}
 
-			filename := filepath.Base(templateFile)
-			destPath := filepath.Join(sweDir, filename)
+			// Calculate destination path, preserving subdirectories
+			relPath := strings.TrimPrefix(templateFile, "templates/")
+			destPath := filepath.Join(sweDir, relPath)
+
+			// Create parent directories if needed
+			destDir := filepath.Dir(destPath)
+			if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
+				log.Fatalf("Failed to create directory %q: %v", destDir, err)
+			}
 
 			// entrypoint.sh should be executable
 			fileMode := os.FileMode(0644)
-			if filename == "entrypoint.sh" {
+			if filepath.Base(templateFile) == "entrypoint.sh" {
 				fileMode = os.FileMode(0755)
 			}
 
