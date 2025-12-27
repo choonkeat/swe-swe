@@ -1,6 +1,6 @@
 module github.com/choonkeat/swe-swe
 
-go 1.25.3
+go 1.23
 
 require github.com/google/uuid v1.6.0
 
