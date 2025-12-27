@@ -20,7 +20,10 @@ NC='\033[0m' # No Color
 
 # Copy noVNC wrapper to serve from /chrome basepath with correct WebSocket path
 if [ -f /app/novnc-wrapper.html ]; then
-    cp /app/novnc-wrapper.html /usr/share/novnc/index.html
+    # Remove any existing symlink at index.html (cp -f won't replace symlinks properly)
+    rm -f /usr/share/novnc/index.html
+    # Use cp with -P flag to copy the file itself (not follow symlinks) and force overwrite
+    cp -f /app/novnc-wrapper.html /usr/share/novnc/index.html
     echo -e "${GREEN}✓ noVNC wrapper installed for /chrome basepath${NC}"
 fi
 
