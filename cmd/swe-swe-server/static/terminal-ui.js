@@ -65,6 +65,7 @@ class TerminalUI extends HTMLElement {
         this.connect();
         this.setupEventListeners();
         this.renderLinks();
+        this.renderServiceLinks();
     }
 
     disconnectedCallback() {
@@ -211,6 +212,12 @@ class TerminalUI extends HTMLElement {
                     display: flex;
                     align-items: center;
                     gap: 8px;
+                }
+                .terminal-ui__status-service-links {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    margin-right: 8px;
                 }
                 .terminal-ui__status-link {
                     color: #fff;
@@ -622,6 +629,63 @@ class TerminalUI extends HTMLElement {
         });
 
         statusRight.insertBefore(container, statusRight.firstChild);
+    }
+
+    renderServiceLinks() {
+        // Only show service links when hostname starts with "swe-swe."
+        const hostname = window.location.hostname;
+        if (!hostname.startsWith('swe-swe.')) return;
+
+        const statusRight = this.querySelector('.terminal-ui__status-right');
+        if (!statusRight) return;
+
+        // Remove any existing service links container
+        const existingContainer = statusRight.querySelector('.terminal-ui__status-service-links');
+        if (existingContainer) {
+            existingContainer.remove();
+        }
+
+        // Build URLs by swapping subdomain
+        const protocol = window.location.protocol;
+        const port = window.location.port;
+        const baseDomain = hostname.substring('swe-swe.'.length);
+
+        const buildUrl = (subdomain) => {
+            const host = `${subdomain}.${baseDomain}`;
+            return port ? `${protocol}//${host}:${port}` : `${protocol}//${host}`;
+        };
+
+        const services = [
+            { name: 'vscode', url: buildUrl('vscode') },
+            { name: 'browser', url: buildUrl('chrome') }
+        ];
+
+        const container = document.createElement('div');
+        container.className = 'terminal-ui__status-service-links';
+
+        services.forEach((service, index) => {
+            const a = document.createElement('a');
+            a.href = service.url;
+            a.className = 'terminal-ui__status-link';
+            a.textContent = service.name;
+            container.appendChild(a);
+
+            // Add separator between links
+            if (index < services.length - 1) {
+                const sep = document.createElement('span');
+                sep.className = 'terminal-ui__status-link-sep';
+                sep.textContent = ' | ';
+                container.appendChild(sep);
+            }
+        });
+
+        // Insert before status-info (first child after any custom links)
+        const statusInfo = statusRight.querySelector('.terminal-ui__status-info');
+        if (statusInfo) {
+            statusRight.insertBefore(container, statusInfo);
+        } else {
+            statusRight.insertBefore(container, statusRight.firstChild);
+        }
     }
 
     updateStatus(state, message) {
