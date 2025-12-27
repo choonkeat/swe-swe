@@ -20,7 +20,7 @@ RUN useradd -m -s /bin/bash chrome
 RUN mkdir -p /var/log/supervisor /var/run
 
 # Supervisor config to manage processes
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY chrome/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # noVNC web files location
 ENV NOVNC_HOME=/usr/share/novnc
