@@ -35,7 +35,10 @@ RUN mkdir -p /var/log/nginx
 ENV NOVNC_HOME=/usr/share/novnc
 RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
 
-# Copy entrypoint script for enterprise certificate installation
+# Copy noVNC wrapper HTML for /chrome basepath (configures correct WebSocket path)
+COPY chrome/novnc-wrapper.html /app/novnc-wrapper.html
+
+# Copy entrypoint script for enterprise certificate installation and noVNC setup
 COPY chrome/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

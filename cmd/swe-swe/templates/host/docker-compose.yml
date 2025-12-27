@@ -23,10 +23,12 @@ services:
       dockerfile: chrome/Dockerfile
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.chrome.rule=PathPrefix(`/chrome`)"
+      - "traefik.http.routers.chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
       - "traefik.http.routers.chrome.priority=100"
-      - "traefik.http.routers.chrome.middlewares=chrome-strip@docker"
+      - "traefik.http.routers.chrome.middlewares=chrome-redirect@docker,chrome-strip@docker"
       - "traefik.http.services.chrome.loadbalancer.server.port=6080"
+      - "traefik.http.middlewares.chrome-redirect.redirectregex.regex=^/chrome$$"
+      - "traefik.http.middlewares.chrome-redirect.redirectregex.replacement=/chrome/"
       - "traefik.http.middlewares.chrome-strip.stripprefix.prefixes=/chrome"
     volumes:
       # Enterprise certificates (if certs/ directory exists with certificates)

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>noVNC</title>
+</head>
+<body>
+    <script>
+        // Configure URL query parameters to tell noVNC the correct WebSocket path
+        // When served from /chrome basepath via Traefik StripPrefix:
+        // - Browser is at http://host:port/chrome/
+        // - Traefik strips /chrome, forwards to websockify as /
+        // - WebSocket should connect to ws://host:port/chrome/websockify
+        //
+        // We pass this as a query parameter so noVNC uses the absolute path
+        const params = new URLSearchParams();
+        params.set('path', '/chrome/websockify');
+
+        // Redirect to noVNC vnc.html with path parameter
+        window.location.href = 'vnc.html?' + params.toString();
+    </script>
+</body>
+</html>
