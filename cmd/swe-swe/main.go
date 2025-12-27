@@ -16,7 +16,7 @@ import (
 	"syscall"
 )
 
-//go:embed templates/* bin/*
+//go:embed all:templates bin/*
 var assets embed.FS
 
 func main() {
@@ -115,6 +115,7 @@ func handleInit() {
 	// Skip template extraction if --update-binary-only flag is set
 	if !*updateBinaryOnly {
 		// Extract embedded files
+		// Files that go to metadata directory (.swe-swe/projects/<path>/)
 		templateFiles := []string{
 			"templates/Dockerfile",
 			"templates/docker-compose.yml",
@@ -123,6 +124,11 @@ func handleInit() {
 			"templates/chrome/Dockerfile",
 			"templates/chrome/supervisord.conf",
 			"templates/docs/BROWSER_AUTOMATION.md",
+		}
+
+		// Files that go to project directory (for Claude Code MCP config)
+		projectFiles := []string{
+			"templates/.claude/mcp.json",
 		}
 
 		for _, templateFile := range templateFiles {
@@ -148,6 +154,29 @@ func handleInit() {
 			}
 
 			if err := os.WriteFile(destPath, content, fileMode); err != nil {
+				log.Fatalf("Failed to write %q: %v", destPath, err)
+			}
+			fmt.Printf("Created %s\n", destPath)
+		}
+
+		// Extract project-level files (go to project directory, not metadata)
+		for _, templateFile := range projectFiles {
+			content, err := assets.ReadFile(templateFile)
+			if err != nil {
+				log.Fatalf("Failed to read embedded file %q: %v", templateFile, err)
+			}
+
+			// Calculate destination path in project directory
+			relPath := strings.TrimPrefix(templateFile, "templates/")
+			destPath := filepath.Join(absPath, relPath)
+
+			// Create parent directories if needed
+			destDir := filepath.Dir(destPath)
+			if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
+				log.Fatalf("Failed to create directory %q: %v", destDir, err)
+			}
+
+			if err := os.WriteFile(destPath, content, 0644); err != nil {
 				log.Fatalf("Failed to write %q: %v", destPath, err)
 			}
 			fmt.Printf("Created %s\n", destPath)
