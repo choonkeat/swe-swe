@@ -37,13 +37,68 @@ startsecs=5
 
 ## Status
 - [x] Identified problem (Chrome binds to localhost only)
-- [x] Implemented socat workaround
+- [x] Implemented socat workaround (partial fix - didn't fix Host header)
 - [x] Added `.claude/browser-automation.md` to templates for troubleshooting guide
 - [x] Updated browser prompt in main.go to reference the guide
-- [ ] User to rebuild and test: `swe-swe stop && swe-swe build && swe-swe up`
-- [ ] Verify `netstat -tlnp | grep 9223` shows `0.0.0.0:9223`
+- [x] Verified template files have the fix (2025-12-26):
+  - `supervisord.conf` has `[program:cdp-forwarder]` with socat command
+  - `Dockerfile` has `socat` package installed
+- [x] **Discovered Host header issue** (2025-12-26):
+  - socat forwards port but Chrome rejects `Host: chrome` header
+  - Chrome only accepts localhost or IP address in Host header
+  - `curl -H "Host: localhost" http://chrome:9223/json/version` works
+  - `curl http://172.22.0.4:9223/json/version` works (IP address)
+- [x] **Replaced socat with nginx reverse proxy** (2025-12-26):
+  - nginx rewrites Host header to "localhost" before proxying to Chrome
+  - Created `nginx-cdp.conf` with proxy_set_header Host localhost
+  - Updated Dockerfile: replaced socat with nginx
+  - Updated supervisord.conf: replaced cdp-forwarder (socat) with cdp-proxy (nginx)
+- [x] **Added enterprise SSL certificate support** (2025-12-26):
+  - Chrome needs enterprise certs to access HTTPS sites through corporate proxies
+  - Created `chrome/entrypoint.sh` - installs certs from `/swe-swe/certs` to system trust store
+  - Updated Dockerfile: added ca-certificates, entrypoint.sh, ENTRYPOINT directive
+  - Updated docker-compose.yml: mount `./certs:/swe-swe/certs:ro` into chrome container
+- [ ] **NEXT: User to rebuild chrome container**
 - [ ] Verify MCP Playwright tools work in claude-code session
 - [ ] Commit changes
+
+## Session Log (2025-12-26)
+- Confirmed current chrome container only has `127.0.0.1:9222` (no 9223)
+- Template files have correct fix, but container needs rebuild
+- Container name: `users-choonkeatchew-git-choonkeat-swe-swe-a45e1b96-chrome-1`
+- **UPDATE**: socat IS working on 0.0.0.0:9223, but CDP rejects non-localhost Host headers
+- `curl http://chrome:9223/json/version` returns: "Host header is specified and is not an IP address or localhost"
+- **FIX ATTEMPT 1**: Added `--remote-allow-origins=*` to Chrome startup flags (did not help with Host header)
+- **FIX ATTEMPT 2**: Replaced socat with nginx reverse proxy
+  - nginx rewrites Host header to "localhost" before proxying
+  - Files changed:
+    - `chrome/nginx-cdp.conf` - new file with nginx config
+    - `chrome/Dockerfile` - replaced socat with nginx
+    - `chrome/supervisord.conf` - replaced cdp-forwarder with cdp-proxy (nginx)
+- **ENHANCEMENT**: Added enterprise SSL certificate support to chrome container
+  - User reported Chrome cannot visit HTTPS sites (enterprise proxy/VPN)
+  - Same pattern as swe-swe container: mount certs, install via entrypoint
+  - Files changed:
+    - `chrome/entrypoint.sh` - new file, installs certs before supervisord
+    - `chrome/Dockerfile` - added ca-certificates, entrypoint.sh
+    - `docker-compose.yml` - mount ./certs:/swe-swe/certs:ro into chrome
+
+## Next Steps (for user on host)
+```bash
+# Rebuild and restart chrome container
+docker-compose build chrome && docker-compose up -d chrome
+```
+
+Then verify nginx is proxying correctly:
+```bash
+# Check nginx is listening on port 9223
+docker exec <chrome-container> netstat -tlnp | grep 9223
+# Expected: 0.0.0.0:9223 LISTEN
+
+# Test CDP endpoint from inside claude-code container
+curl -s http://chrome:9223/json/version
+# Should return Chrome version JSON (no Host header error)
+```
 
 ## Verification Commands
 From host:
