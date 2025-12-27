@@ -27,49 +27,76 @@ Example: `ws://localhost:9898/ws/abc123-def456`
 | `0x01` + 2 bytes + name + data | File upload: `[0x01, name_len_hi, name_len_lo, ...filename_bytes, ...file_data]` |
 | Other | Terminal input (keystrokes and raw shell I/O) |
 
-**Resize message client implementation:** `static/terminal-ui.js:258-268`
+**Resize message client implementation:** `static/terminal-ui.js:686-697`
 ```javascript
 sendResize() {
-    const rows = this.term.rows;
-    const cols = this.term.cols;
-    const msg = new Uint8Array([
-        0x00,
-        (rows >> 8) & 0xFF, rows & 0xFF,
-        (cols >> 8) & 0xFF, cols & 0xFF
-    ]);
-    this.ws.send(msg);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        const rows = this.term.rows;
+        const cols = this.term.cols;
+        const msg = new Uint8Array([
+            0x00,
+            (rows >> 8) & 0xFF, rows & 0xFF,
+            (cols >> 8) & 0xFF, cols & 0xFF
+        ]);
+        this.ws.send(msg);
+    }
 }
 ```
 
-**Terminal input client implementation:** `static/terminal-ui.js:754-758`
+**Terminal input client implementation:** `static/terminal-ui.js:1063-1069`
 ```javascript
 this.term.onData(data => {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(data);
+        // Convert string to Uint8Array for binary transmission
+        const encoder = new TextEncoder();
+        this.ws.send(encoder.encode(data));
     }
 });
 ```
 
-**File upload client implementation:** `static/terminal-ui.js:1295-1336`
+**File upload client implementation:** `static/terminal-ui.js:1295-1336` (handleFile method)
 ```javascript
-sendFileUpload(file) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const data = event.target.result;
-        const filename = file.name;
-        const nameBytes = new TextEncoder().encode(filename);
+async handleFile(file) {
+    console.log('File dropped:', file.name, file.type, file.size);
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.showTemporaryStatus('Not connected', 3000);
+        return;
+    }
+
+    const encoder = new TextEncoder();
+
+    if (this.isTextFile(file)) {
+        // Read and paste text directly to terminal
+        const text = await this.readFileAsText(file);
+        if (text === null) {
+            this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
+            return;
+        }
+        this.ws.send(encoder.encode(text));
+        this.showTemporaryStatus(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
+    } else {
+        // Binary file: send as binary upload with 0x01 prefix
+        // Format: [0x01, name_len_hi, name_len_lo, ...name_bytes, ...file_data]
+        const fileData = await this.readFileAsBinary(file);
+        if (fileData === null) {
+            this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
+            return;
+        }
+        const nameBytes = encoder.encode(file.name);
         const nameLen = nameBytes.length;
 
-        const msg = new Uint8Array(3 + nameLen + data.byteLength);
-        msg[0] = 0x01;  // File upload marker
-        msg[1] = (nameLen >> 8) & 0xFF;
-        msg[2] = nameLen & 0xFF;
-        msg.set(nameBytes, 3);
-        msg.set(new Uint8Array(data), 3 + nameLen);
+        // Build the message: 0x01 + 2-byte name length + name + file data
+        const message = new Uint8Array(1 + 2 + nameLen + fileData.length);
+        message[0] = 0x01; // file upload message type
+        message[1] = (nameLen >> 8) & 0xFF; // name length high byte
+        message[2] = nameLen & 0xFF; // name length low byte
+        message.set(nameBytes, 3);
+        message.set(fileData, 3 + nameLen);
 
-        this.ws.send(msg);
-    };
-    reader.readAsArrayBuffer(file);
+        this.ws.send(message);
+        this.showTemporaryStatus(`Uploaded: ${file.name} (${this.formatFileSize(file.size)})`);
+    }
 }
 ```
 
@@ -109,14 +136,20 @@ if _, err := sess.PTY.Write(data); err != nil {
 }
 ```
 
-**Broadcast to clients:** `main.go:142-155`
+**Broadcast to clients:** `main.go:213-225`
 ```go
 func (s *Session) Broadcast(data []byte) {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
-    for conn := range s.clients {
-        conn.WriteMessage(websocket.BinaryMessage, data)
-    }
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	for conn := range s.clients {
+		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			log.Printf("Broadcast write error: %v", err)
+		}
+	}
 }
 ```
 
@@ -136,35 +169,49 @@ All text messages are JSON objects with a `type` field.
 {"type": "pong", "data": {"ts": 1703318400000}}
 ```
 
-**Client implementation:** `static/terminal-ui.js:343-348`
+**Client implementation:** `static/terminal-ui.js:1047-1052`
 ```javascript
 startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatInterval = setInterval(() => {
         this.sendJSON({type: 'ping', data: {ts: Date.now()}});
-    }, 30000);
+    }, 30000); // every 30 seconds
 }
 ```
 
-**Server implementation:** `main.go:527-550`
+**Server implementation:** `main.go:807-837`
 ```go
 if messageType == websocket.TextMessage {
     var msg struct {
-        Type string          `json:"type"`
-        Data json.RawMessage `json:"data,omitempty"`
+        Type     string          `json:"type"`
+        Data     json.RawMessage `json:"data,omitempty"`
+        UserName string          `json:"userName,omitempty"`
+        Text     string          `json:"text,omitempty"`
     }
     if err := json.Unmarshal(data, &msg); err != nil {
         log.Printf("Invalid JSON message: %v", err)
         continue
     }
+
     switch msg.Type {
     case "ping":
         response := map[string]interface{}{"type": "pong"}
         if msg.Data != nil {
             response["data"] = msg.Data
         }
-        conn.WriteJSON(response)
+        if err := conn.WriteJSON(response); err != nil {
+            log.Printf("Failed to send pong: %v", err)
+        }
+    case "chat":
+        // Handle incoming chat message
+        if msg.UserName != "" && msg.Text != "" {
+            sess.BroadcastChatMessage(msg.UserName, msg.Text)
+            log.Printf("Chat message from %s: %s", msg.UserName, msg.Text)
+        }
+    default:
+        log.Printf("Unknown message type: %s", msg.Type)
     }
+    continue
 }
 ```
 
@@ -189,7 +236,7 @@ if messageType == websocket.TextMessage {
 }
 ```
 
-**Client implementation:** `static/terminal-ui.js:829-853`
+**Client implementation:** `static/terminal-ui.js:998-1022`
 ```javascript
 sendChatMessage() {
     const input = this.querySelector('.terminal-ui__chat-input');
@@ -204,7 +251,7 @@ sendChatMessage() {
         if (!userName) return;
     }
 
-    // Send to server (relies on server broadcast for display)
+    // Send to server
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.sendJSON({
             type: 'chat',
@@ -218,29 +265,43 @@ sendChatMessage() {
 }
 ```
 
-**Server implementation:** `main.go:894-899`
+**Server implementation:** `main.go:828-833`
 ```go
 case "chat":
     // Handle incoming chat message
     if msg.UserName != "" && msg.Text != "" {
-        sess.AddChatMessage(msg.UserName, msg.Text)
+        sess.BroadcastChatMessage(msg.UserName, msg.Text)
         log.Printf("Chat message from %s: %s", msg.UserName, msg.Text)
     }
 ```
 
-**Server broadcast:** `main.go:264-283`
+**Server broadcast:** `main.go:260-285`
 ```go
-func (s *Session) AddChatMessage(userName, text string) {
-    msg := ChatMessage{
-        UserName:  userName,
-        Text:      text,
-        Timestamp: time.Now(),
-    }
-    s.chatMessages = append(s.chatMessages, msg)
-    if len(s.chatMessages) > 10 {
-        s.chatMessages = s.chatMessages[len(s.chatMessages)-10:]
-    }
-    s.broadcastChat(msg)
+func (s *Session) BroadcastChatMessage(userName, text string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	chatJSON := map[string]interface{}{
+		"type":      "chat",
+		"userName":  userName,
+		"text":      text,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+
+	data, err := json.Marshal(chatJSON)
+	if err != nil {
+		log.Printf("BroadcastChatMessage marshal error: %v", err)
+		return
+	}
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	for conn := range s.clients {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("BroadcastChatMessage write error: %v", err)
+		}
+	}
 }
 ```
 
@@ -263,21 +324,36 @@ func (s *Session) AddChatMessage(userName, text string) {
 - `rows`: Terminal height in rows
 - `assistant`: Name of the detected AI assistant (or empty string if none)
 
-**Server implementation:** `main.go:227-256` (BroadcastStatus function)
+**Server implementation:** `main.go:228-256` (BroadcastStatus function)
 ```go
 func (s *Session) BroadcastStatus() {
-    s.mu.RLock()
-    clientCount := len(s.clients)
-    s.mu.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-    status := map[string]interface{}{
-        "type":      "status",
-        "viewers":   clientCount,
-        "cols":      s.ClientSize.Cols,
-        "rows":      s.ClientSize.Rows,
-        "assistant": s.DetectedAssistant,
-    }
-    // ... broadcast to all clients
+	rows, cols := s.calculateMinSize()
+	status := map[string]interface{}{
+		"type":      "status",
+		"viewers":   len(s.clients),
+		"cols":      cols,
+		"rows":      rows,
+		"assistant": s.AssistantConfig.Name,
+	}
+
+	data, err := json.Marshal(status)
+	if err != nil {
+		log.Printf("BroadcastStatus marshal error: %v", err)
+		return
+	}
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	for conn := range s.clients {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("BroadcastStatus write error: %v", err)
+		}
+	}
+	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.clients), cols, rows)
 }
 ```
 
@@ -298,9 +374,9 @@ case 'status':
 ```
 
 **When sent:**
-- After client connects (`main.go:115`)
-- After client disconnects (`main.go:141`)
-- After terminal is resized (`main.go:167`)
+- After client connects (`main.go:116`, AddClient method)
+- After client disconnects (`main.go:141`, RemoveClient method)
+- After terminal is resized (`main.go:167`, UpdateClientSize method)
 
 ---
 
@@ -380,13 +456,22 @@ case 'file_upload':
 5. **Terminal I/O**: Bidirectional binary messages
 6. **Disconnect**: WebSocket closes, client auto-reconnects
 
-**Snapshot on join:** `main.go:503-511`
+**Snapshot on join:** `main.go:778-791`
 ```go
+// If this is a new session, start the PTY reader goroutine
 if isNew {
     sess.startPTYReader()
 } else {
+    // Send snapshot to catch up the new client with existing screen state
     snapshot := sess.GenerateSnapshot()
-    conn.WriteMessage(websocket.BinaryMessage, snapshot)
+    sess.writeMu.Lock()
+    err := conn.WriteMessage(websocket.BinaryMessage, snapshot)
+    sess.writeMu.Unlock()
+    if err != nil {
+        log.Printf("Failed to send snapshot: %v", err)
+    } else {
+        log.Printf("Sent screen snapshot to new client (%d bytes)", len(snapshot))
+    }
 }
 ```
 
