@@ -123,6 +123,8 @@ func handleInit() {
 			"templates/entrypoint.sh",
 			"templates/chrome/Dockerfile",
 			"templates/chrome/supervisord.conf",
+			"templates/chrome/entrypoint.sh",
+			"templates/chrome/nginx-cdp.conf",
 			"templates/docs/BROWSER_AUTOMATION.md",
 		}
 
