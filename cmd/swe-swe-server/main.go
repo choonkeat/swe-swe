@@ -613,11 +613,13 @@ func main() {
 				return
 			}
 
-			// Validate assistant exists in available list
+			// Validate assistant exists in available list and get its display name
 			var validAssistant bool
+			var assistantName string
 			for _, a := range availableAssistants {
 				if a.Binary == assistant {
 					validAssistant = true
+					assistantName = a.Name
 					break
 				}
 			}
@@ -639,12 +641,20 @@ func main() {
 			}
 
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			uuidShort := sessionUUID
+			if len(sessionUUID) >= 5 {
+				uuidShort = sessionUUID[:5]
+			}
 			data := struct {
-				UUID      string
-				Assistant string
+				UUID          string
+				UUIDShort     string
+				Assistant     string
+				AssistantName string
 			}{
-				UUID:      sessionUUID,
-				Assistant: assistant,
+				UUID:          sessionUUID,
+				UUIDShort:     uuidShort,
+				Assistant:     assistant,
+				AssistantName: assistantName,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)
