@@ -728,15 +728,17 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
-	// If browser automation is enabled, send system prompt about browser tools
-	if browserEndpoint := os.Getenv("BROWSER_WS_ENDPOINT"); browserEndpoint != "" {
-		browserPrompt := `You have browser automation capabilities via MCP Playwright tools (mcp__playwright__*).
-If browser tools are unavailable or not working, read .swe-swe/browser-automation.md for troubleshooting.
-User can watch the browser via VNC at http://chrome.lvh.me:9899/vnc_auto.html
-
-` + "\n"
-		ptmx.Write([]byte(browserPrompt))
-	}
+	// NOTE: Commented out - injecting text via PTY doesn't actually reach Claude's
+	// conversation context; it only displays in the terminal. Browser automation
+	// instructions should be in CLAUDE.md or system prompt instead.
+	// if browserEndpoint := os.Getenv("BROWSER_WS_ENDPOINT"); browserEndpoint != "" {
+	// 	browserPrompt := `You have browser automation capabilities via MCP Playwright tools (mcp__playwright__*).
+	// If browser tools are unavailable or not working, read .swe-swe/browser-automation.md for troubleshooting.
+	// User can watch the browser via VNC at http://chrome.lvh.me:9899/vnc_auto.html
+	//
+	// ` + "\n"
+	// 	ptmx.Write([]byte(browserPrompt))
+	// }
 
 	sess := &Session{
 		UUID:            sessionUUID,
