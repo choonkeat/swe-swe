@@ -23,9 +23,11 @@ services:
       dockerfile: chrome/Dockerfile
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.chrome.rule=HostRegexp(`chrome\\..*`)"
+      - "traefik.http.routers.chrome.rule=PathPrefix(`/chrome`)"
       - "traefik.http.routers.chrome.priority=100"
+      - "traefik.http.routers.chrome.middlewares=chrome-strip@docker"
       - "traefik.http.services.chrome.loadbalancer.server.port=6080"
+      - "traefik.http.middlewares.chrome-strip.stripprefix.prefixes=/chrome"
     volumes:
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
@@ -48,7 +50,7 @@ services:
       dockerfile: Dockerfile
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.swe-swe.rule=HostRegexp(`.*`)"
+      - "traefik.http.routers.swe-swe.rule=PathPrefix(`/`)"
       - "traefik.http.routers.swe-swe.priority=10"
       - "traefik.http.services.swe-swe.loadbalancer.server.port=9898"
       # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
