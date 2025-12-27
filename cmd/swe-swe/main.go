@@ -38,6 +38,8 @@ func main() {
 		handleBuild()
 	case "update":
 		handleUpdate()
+	case "list":
+		handleList()
 	case "help":
 		printUsage()
 	default:
@@ -56,6 +58,7 @@ Commands:
   down [--path PATH]                     Stop the swe-swe environment at PATH (defaults to current directory)
   build [--path PATH]                    Rebuild the swe-swe Docker images (fresh build, no cache)
   update [--path PATH]                   Update swe-swe-server binary in existing project
+  list                                   List all initialized swe-swe projects (auto-prunes missing paths)
   help                                   Show this help message
 
 Environment Variables:
@@ -626,4 +629,75 @@ func getMetadataDir(absPath string) (string, error) {
 
 	sanitized := sanitizePath(absPath)
 	return filepath.Join(homeDir, ".swe-swe", "projects", sanitized), nil
+}
+
+// handleList lists all initialized swe-swe projects and auto-prunes missing ones
+func handleList() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Failed to get home directory: %v", err)
+	}
+
+	projectsDir := filepath.Join(homeDir, ".swe-swe", "projects")
+
+	// Check if projects directory exists
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("No projects initialized yet")
+			return
+		}
+		log.Fatalf("Failed to read projects directory: %v", err)
+	}
+
+	var activeProjects []string
+	var prunedCount int
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		metadataDir := filepath.Join(projectsDir, entry.Name())
+		pathFile := filepath.Join(metadataDir, ".path")
+
+		// Read the .path file
+		pathData, err := os.ReadFile(pathFile)
+		if err != nil {
+			// If .path file doesn't exist or can't be read, skip this entry
+			if os.IsNotExist(err) {
+				fmt.Printf("Warning: .path file missing in %s (skipping)\n", entry.Name())
+			}
+			continue
+		}
+
+		projectPath := string(pathData)
+
+		// Check if the original path still exists
+		if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+			// Project path no longer exists, remove metadata directory
+			if err := os.RemoveAll(metadataDir); err != nil {
+				fmt.Printf("Warning: Failed to remove stale metadata directory %s: %v\n", metadataDir, err)
+			}
+			prunedCount++
+		} else {
+			// Project path exists, add to active list
+			activeProjects = append(activeProjects, projectPath)
+		}
+	}
+
+	// Display active projects
+	if len(activeProjects) == 0 {
+		fmt.Println("No projects initialized yet")
+	} else {
+		fmt.Printf("Initialized projects (%d):\n", len(activeProjects))
+		for _, projectPath := range activeProjects {
+			fmt.Printf("  %s\n", projectPath)
+		}
+	}
+
+	// Show pruning summary if any projects were removed
+	if prunedCount > 0 {
+		fmt.Printf("\nRemoved %d stale project(s)\n", prunedCount)
+	}
 }
