@@ -1,8 +1,0 @@
-bin
-elm-stuff
-cmd/swe-swe/static/js/app*.js
-.env
-docker/ca-certificates/*
-docker/dev/vscode-data
-elm/node_modules
-tmp
