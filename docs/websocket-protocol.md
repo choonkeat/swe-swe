@@ -17,26 +17,17 @@ Example: `ws://localhost:9898/ws/abc123-def456`
 
 ## Message Types
 
-### Binary Messages (Terminal I/O)
+### Binary Messages (Terminal I/O, File Upload, Terminal Resize)
 
 #### Client → Server
 
 | Bytes | Description |
 |-------|-------------|
-| `0x00` + 4 bytes | Resize: `[0x00, rows_hi, rows_lo, cols_hi, cols_lo]` |
-| Other | Terminal input (keystrokes) |
+| `0x00` + 4 bytes | Terminal resize: `[0x00, rows_hi, rows_lo, cols_hi, cols_lo]` |
+| `0x01` + 2 bytes + name + data | File upload: `[0x01, name_len_hi, name_len_lo, ...filename_bytes, ...file_data]` |
+| Other | Terminal input (keystrokes and raw shell I/O) |
 
-**Implementation:** `static/terminal-ui.js:357-363`
-```javascript
-this.term.onData(data => {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        const encoder = new TextEncoder();
-        this.ws.send(encoder.encode(data));
-    }
-});
-```
-
-**Resize message:** `static/terminal-ui.js:258-268`
+**Resize message client implementation:** `static/terminal-ui.js:258-268`
 ```javascript
 sendResize() {
     const rows = this.term.rows;
@@ -50,27 +41,75 @@ sendResize() {
 }
 ```
 
+**Terminal input client implementation:** `static/terminal-ui.js:754-758`
+```javascript
+this.term.onData(data => {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(data);
+    }
+});
+```
+
+**File upload client implementation:** `static/terminal-ui.js:1295-1336`
+```javascript
+sendFileUpload(file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const data = event.target.result;
+        const filename = file.name;
+        const nameBytes = new TextEncoder().encode(filename);
+        const nameLen = nameBytes.length;
+
+        const msg = new Uint8Array(3 + nameLen + data.byteLength);
+        msg[0] = 0x01;  // File upload marker
+        msg[1] = (nameLen >> 8) & 0xFF;
+        msg[2] = nameLen & 0xFF;
+        msg.set(nameBytes, 3);
+        msg.set(new Uint8Array(data), 3 + nameLen);
+
+        this.ws.send(msg);
+    };
+    reader.readAsArrayBuffer(file);
+}
+```
+
 #### Server → Client
 
 Raw PTY output bytes, sent directly to xterm.js.
 
-**Implementation:** `main.go:553-566`
+**Server binary message handler:** `main.go:841-903`
 ```go
-// Handle binary messages (terminal I/O)
+// Binary messages: resize, file upload, or terminal input
 if len(data) >= 5 && data[0] == 0x00 {
+    // Terminal resize
     rows := uint16(data[1])<<8 | uint16(data[2])
     cols := uint16(data[3])<<8 | uint16(data[4])
     sess.UpdateClientSize(conn, rows, cols)
     continue
 }
-// Regular terminal input
+
+if len(data) >= 3 && data[0] == 0x01 {
+    // File upload
+    nameLen := uint16(data[1])<<8 | uint16(data[2])
+    if len(data) < 3+int(nameLen) {
+        log.Printf("Invalid file upload message: incomplete name")
+        continue
+    }
+    filename := string(data[3 : 3+nameLen])
+    fileData := data[3+nameLen:]
+    // Save file and broadcast
+    sess.HandleFileUpload(conn, filename, fileData)
+    continue
+}
+
+// Regular terminal input (keystrokes)
 if _, err := sess.PTY.Write(data); err != nil {
     log.Printf("PTY write error: %v", err)
     break
 }
 ```
 
-**Broadcast to clients:** `main.go:144-152`
+**Broadcast to clients:** `main.go:142-155`
 ```go
 func (s *Session) Broadcast(data []byte) {
     s.mu.RLock()
@@ -205,63 +244,132 @@ func (s *Session) AddChatMessage(userName, text string) {
 }
 ```
 
-#### chat_history (Chat History on Connection)
+#### status (Session Status Broadcast)
 
-**Server → Client (Sent when new client joins):**
+**Server → Client (Sent when client connects/disconnects or terminal resizes):**
 ```json
 {
-  "type": "chat_history",
-  "messages": [
-    {
-      "userName": "Alice",
-      "text": "First message",
-      "timestamp": "2025-12-24T16:00:00Z"
-    },
-    {
-      "userName": "Bob",
-      "text": "Second message",
-      "timestamp": "2025-12-24T16:01:00Z"
-    }
-  ]
+  "type": "status",
+  "viewers": 2,
+  "cols": 120,
+  "rows": 30,
+  "assistant": "claude"
 }
 ```
 
-**Client implementation:** `static/terminal-ui.js:609-618`
+**Fields:**
+- `viewers`: Number of active clients connected to this session
+- `cols`: Terminal width in columns
+- `rows`: Terminal height in rows
+- `assistant`: Name of the detected AI assistant (or empty string if none)
+
+**Server implementation:** `main.go:227-256` (BroadcastStatus function)
+```go
+func (s *Session) BroadcastStatus() {
+    s.mu.RLock()
+    clientCount := len(s.clients)
+    s.mu.RUnlock()
+
+    status := map[string]interface{}{
+        "type":      "status",
+        "viewers":   clientCount,
+        "cols":      s.ClientSize.Cols,
+        "rows":      s.ClientSize.Rows,
+        "assistant": s.DetectedAssistant,
+    }
+    // ... broadcast to all clients
+}
+```
+
+**Client implementation:** `static/terminal-ui.js:769-778`
 ```javascript
-case 'chat_history':
-    // Chat history on connection
-    if (msg.messages && Array.isArray(msg.messages)) {
-        msg.messages.forEach(histMsg => {
-            if (histMsg.userName && histMsg.text) {
-                const isOwn = histMsg.userName === this.currentUserName;
-                this.addChatMessage(histMsg.userName, histMsg.text, isOwn);
-            }
-        });
+case 'status':
+    if (msg.viewers !== undefined) {
+        this.updateViewerCount(msg.viewers);
+    }
+    if (msg.cols !== undefined && msg.rows !== undefined) {
+        // Update terminal size display
+        this.updateSizeDisplay(msg.cols, msg.rows);
+    }
+    if (msg.assistant) {
+        this.updateAssistantDisplay(msg.assistant);
     }
     break;
 ```
 
-**Server implementation:** `main.go:326-356`
-```go
-func (s *Session) SendChatHistory(conn *websocket.Conn) {
-    history := s.GetChatHistory()
-    messages := make([]map[string]interface{}, len(history))
-    for i, msg := range history {
-        messages[i] = map[string]interface{}{
-            "userName":  msg.UserName,
-            "text":      msg.Text,
-            "timestamp": msg.Timestamp.Format(time.RFC3339),
-        }
-    }
-    // ... marshal and send
+**When sent:**
+- After client connects (`main.go:115`)
+- After client disconnects (`main.go:141`)
+- After terminal is resized (`main.go:167`)
+
+---
+
+#### file_upload (File Upload Response)
+
+**Server → Client (Sent after file upload completes):**
+```json
+{
+  "type": "file_upload",
+  "success": true,
+  "filename": "document.pdf",
+  "error": null
 }
 ```
 
-**Sent automatically on join:** `main.go:121-122`
-```go
-// Send chat history to new client
-go s.SendChatHistory(conn)
+or on error:
+
+```json
+{
+  "type": "file_upload",
+  "success": false,
+  "filename": "document.pdf",
+  "error": "Failed to save file: permission denied"
+}
 ```
+
+**Fields:**
+- `success`: Boolean indicating if file was saved successfully
+- `filename`: Name of the uploaded file
+- `error`: Error message if `success` is false, null otherwise
+
+**File upload flow:**
+1. Client sends binary message with 0x01 prefix containing filename and file data
+2. Server parses and saves file to `.swe-swe/uploads/{sanitized_filename}`
+3. File path is written to PTY for assistant to access
+4. Server sends this JSON response confirming success or error
+
+**Server implementation:** `main.go:937-952` (sendFileUploadResponse function)
+```go
+func (s *Session) sendFileUploadResponse(conn *websocket.Conn, filename string, success bool, err string) {
+    response := map[string]interface{}{
+        "type":     "file_upload",
+        "success":  success,
+        "filename": filename,
+    }
+    if err != "" {
+        response["error"] = err
+    } else {
+        response["error"] = nil
+    }
+    conn.WriteJSON(response)
+}
+```
+
+**Client implementation:** `static/terminal-ui.js:786-793`
+```javascript
+case 'file_upload':
+    if (msg.success) {
+        this.showNotification(`File uploaded: ${msg.filename}`);
+    } else {
+        this.showNotification(`Upload failed: ${msg.error}`, 'error');
+    }
+    break;
+```
+
+**File storage location:**
+- Uploaded files are saved to `.swe-swe/uploads/` directory in metadata
+- Filenames are sanitized to prevent directory traversal
+- File path is printed to PTY so assistant can see where file was saved
 
 ## Session Lifecycle
 
@@ -282,12 +390,26 @@ if isNew {
 }
 ```
 
-## Future Message Types
+## Summary of All Message Types
 
-The protocol is extensible. Planned types:
+| Type | Direction | Category | Status |
+|------|-----------|----------|--------|
+| `ping` / `pong` | Client ↔ Server | Control | ✅ Implemented |
+| `chat` | Client → Server → Client | Control | ✅ Implemented |
+| `status` | Server → Client | Control | ✅ Implemented |
+| `file_upload` | Server → Client | Control | ✅ Implemented |
+| Terminal resize (0x00) | Client → Server | Binary | ✅ Implemented |
+| File upload (0x01) | Client → Server | Binary | ✅ Implemented |
+| Terminal I/O | Client ↔ Server | Binary | ✅ Implemented |
+
+## Extensibility
+
+The protocol is designed to be extensible. Future message types could include:
 
 | Type | Direction | Description |
 |------|-----------|-------------|
 | `notify` | Server → Client | System notifications |
 | `cursor` | Server → Client | Other users' cursor positions |
 | `typing` | Client → Server | Typing indicator for other users |
+| `presence` | Server → Client | User join/leave notifications |
+| `sync` | Server → Client | Synchronized state updates |
