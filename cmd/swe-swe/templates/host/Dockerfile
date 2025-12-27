@@ -29,6 +29,8 @@ ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
 
 # Install AI assistant CLIs
 RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @google/gemini-cli
+RUN npm install -g @openai/codex
 
 # Install MCP Playwright for browser automation
 # This enables the system to control browsers via Playwright CDP connections
