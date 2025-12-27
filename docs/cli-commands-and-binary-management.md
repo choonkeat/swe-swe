@@ -142,6 +142,78 @@ swe-swe update                       # Updates binary if needed
 # Later, restart containers with 'swe-swe up' to use new binary
 ```
 
+### `swe-swe list`
+
+**Purpose:** List all initialized swe-swe projects and automatically prune stale metadata.
+
+**What it does:**
+1. Scans `$HOME/.swe-swe/projects/` directory for metadata directories
+2. For each metadata directory, reads `.path` file to recover original project path
+3. Checks if original project path still exists on disk
+4. **Auto-prunes**: Removes metadata directories for missing project paths
+5. Displays remaining active projects with count
+6. Shows summary of pruned projects
+
+**Auto-Prune Behavior:**
+- **Trigger**: Runs automatically every time `swe-swe list` is executed
+- **Stale Detection**: Checks if original project path (stored in `.path` file) still exists
+- **Action**: Uses `os.RemoveAll()` to delete the entire metadata directory for missing projects
+- **Safety**: Only removes metadata, not the project itself (which is already gone)
+- **Transparency**: Warns about stale directories that can't be removed and shows count of successful removals
+
+**When to use:**
+- Discover what projects you have initialized
+- Clean up metadata for deleted/moved projects
+- Verify project paths before any cleanup operations
+- Regular maintenance to keep `$HOME/.swe-swe/projects/` clean
+
+**Code reference:** `cmd/swe-swe/main.go:634-703`
+
+**Example:**
+```bash
+# List all projects and auto-prune stale ones
+swe-swe list
+# Output:
+# Initialized projects (2):
+#   /Users/alice/projects/myapp
+#   /Users/alice/projects/anotherapp
+#
+# Removed 1 stale project(s)
+```
+
+**What happens if project path no longer exists:**
+```bash
+# Delete a project directory
+rm -rf /Users/alice/projects/oldproject
+
+# Run list - it will detect the stale metadata
+swe-swe list
+# Output:
+# Initialized projects (1):
+#   /Users/alice/projects/myapp
+#
+# Removed 1 stale project(s)
+```
+
+**Metadata Directory Structure (what gets pruned):**
+When a project is stale and pruned, the entire directory at `$HOME/.swe-swe/projects/{sanitized-path}/` is removed, including:
+- Docker templates (Dockerfile, docker-compose.yml, traefik-dynamic.yml)
+- Server binary (bin/swe-swe-server)
+- Persistent home directory (home/)
+- Enterprise certificates (certs/)
+- Path marker file (.path)
+- Environment variables (.env, if present)
+
+**Warning**: If you have running containers from a stale project, they will continue running. Only the metadata directory is removed. Containers must be stopped first:
+```bash
+# If containers are still running from a deleted project
+docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml down
+# Then run swe-swe list to prune the metadata
+swe-swe list
+```
+
+---
+
 ## Binary Management Architecture
 
 ### Key Design: Volume-Mounted Binary
