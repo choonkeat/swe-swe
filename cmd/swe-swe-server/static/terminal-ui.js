@@ -808,7 +808,7 @@ class TerminalUI extends HTMLElement {
             let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
 
             if (this.assistantName) {
-                html += ` with ${this.assistantName}`;
+                html += ` with <a href="/" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
 
             // Add viewer suffix if more than 1 viewer
@@ -1157,6 +1157,7 @@ class TerminalUI extends HTMLElement {
                 // Open chat input
                 this.toggleChatInput();
             }
+            // Note: agent link is a real <a> tag, no JS handler needed
         });
 
         // Chat input handlers
