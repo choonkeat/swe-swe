@@ -129,8 +129,9 @@ func handleInit() {
 		}
 
 		// Files that go to project directory (for Claude Code MCP config)
+		// Note: .mcp.json must be at project root, not .claude/mcp.json
 		projectFiles := []string{
-			"templates/.claude/mcp.json",
+			"templates/.mcp.json",
 		}
 
 		for _, templateFile := range templateFiles {
