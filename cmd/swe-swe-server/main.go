@@ -844,7 +844,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if msg.Data != nil {
 					response["data"] = msg.Data
 				}
-				if err := conn.WriteJSON(response); err != nil {
+				sess.writeMu.Lock()
+				err := conn.WriteJSON(response)
+				sess.writeMu.Unlock()
+				if err != nil {
 					log.Printf("Failed to send pong: %v", err)
 				}
 			case "chat":
@@ -874,7 +877,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			nameLen := int(data[1])<<8 | int(data[2])
 			if len(data) < 3+nameLen {
 				log.Printf("Invalid file upload: data too short for filename")
-				sendFileUploadResponse(conn, false, "", "Invalid upload format")
+				sendFileUploadResponse(sess, conn, false, "", "Invalid upload format")
 				continue
 			}
 			filename := string(data[3 : 3+nameLen])
@@ -883,7 +886,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			// Sanitize filename: only keep the base name, no path traversal
 			filename = sanitizeFilename(filename)
 			if filename == "" {
-				sendFileUploadResponse(conn, false, "", "Invalid filename")
+				sendFileUploadResponse(sess, conn, false, "", "Invalid filename")
 				continue
 			}
 
@@ -891,7 +894,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			uploadsDir := ".swe-swe/uploads"
 			if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 				log.Printf("Failed to create uploads directory: %v", err)
-				sendFileUploadResponse(conn, false, filename, "Failed to create uploads directory")
+				sendFileUploadResponse(sess, conn, false, filename, "Failed to create uploads directory")
 				continue
 			}
 
@@ -899,12 +902,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			filePath := uploadsDir + "/" + filename
 			if err := os.WriteFile(filePath, fileData, 0644); err != nil {
 				log.Printf("File upload error: %v", err)
-				sendFileUploadResponse(conn, false, filename, err.Error())
+				sendFileUploadResponse(sess, conn, false, filename, err.Error())
 				continue
 			}
 
 			log.Printf("File uploaded: %s (%d bytes)", filePath, len(fileData))
-			sendFileUploadResponse(conn, true, filename, "")
+			sendFileUploadResponse(sess, conn, true, filename, "")
 
 			// Send the file path to PTY - Claude Code will detect it and read from disk
 			absPath, err := os.Getwd()
@@ -957,7 +960,7 @@ func sanitizeFilename(name string) string {
 }
 
 // sendFileUploadResponse sends a JSON response for file upload
-func sendFileUploadResponse(conn *websocket.Conn, success bool, filename, errMsg string) {
+func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, filename, errMsg string) {
 	response := map[string]interface{}{
 		"type":    "file_upload",
 		"success": success,
@@ -968,7 +971,10 @@ func sendFileUploadResponse(conn *websocket.Conn, success bool, filename, errMsg
 	if errMsg != "" {
 		response["error"] = errMsg
 	}
-	if err := conn.WriteJSON(response); err != nil {
+	sess.writeMu.Lock()
+	err := conn.WriteJSON(response)
+	sess.writeMu.Unlock()
+	if err != nil {
 		log.Printf("Failed to send file upload response: %v", err)
 	}
 }
