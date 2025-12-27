@@ -632,10 +632,6 @@ class TerminalUI extends HTMLElement {
     }
 
     renderServiceLinks() {
-        // Only show service links when hostname starts with "swe-swe."
-        const hostname = window.location.hostname;
-        if (!hostname.startsWith('swe-swe.')) return;
-
         const statusRight = this.querySelector('.terminal-ui__status-right');
         if (!statusRight) return;
 
@@ -645,17 +641,9 @@ class TerminalUI extends HTMLElement {
             existingContainer.remove();
         }
 
-        // Build URLs by swapping subdomain
+        // All services use path-based routing
         const protocol = window.location.protocol;
         const port = window.location.port;
-        const baseDomain = hostname.substring('swe-swe.'.length);
-
-        const buildUrl = (subdomain) => {
-            const host = `${subdomain}.${baseDomain}`;
-            return port ? `${protocol}//${host}:${port}` : `${protocol}//${host}`;
-        };
-
-        // All services use path-based routing
         const baseUrl = port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
         const services = [
             { name: 'vscode', url: `${baseUrl}/vscode` },
