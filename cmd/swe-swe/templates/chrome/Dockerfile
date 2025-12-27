@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     chromium \
     supervisor \
     procps \
+    socat \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -26,9 +27,9 @@ COPY chrome/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 ENV NOVNC_HOME=/usr/share/novnc
 
 # Expose ports
-# 9222: Chrome DevTools Protocol (CDP) - for MCP Playwright connection
+# 9223: CDP via socat forwarder (Chrome binds to localhost only)
 # 6080: noVNC web UI - for developer observation
-EXPOSE 9222 6080
+EXPOSE 9223 6080
 
 # Start supervisor to manage Xvfb, Chrome, x11vnc, and websockify
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
