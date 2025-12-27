@@ -31,8 +31,9 @@ COPY chrome/nginx-cdp.conf /etc/nginx/nginx.conf
 # Create nginx log directory
 RUN mkdir -p /var/log/nginx
 
-# noVNC web files location
+# noVNC web files location - create index.html symlink for default page
 ENV NOVNC_HOME=/usr/share/novnc
+RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
 
 # Copy entrypoint script for enterprise certificate installation
 COPY chrome/entrypoint.sh /usr/local/bin/entrypoint.sh
