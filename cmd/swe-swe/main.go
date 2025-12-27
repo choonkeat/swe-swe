@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/md5"
 	"embed"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -578,4 +580,34 @@ func compareBinaryVersions(cliBinaryPath, projectBinaryPath string) (bool, strin
 	needsUpdate := newVersion != oldVersion && newVersion != "unknown"
 
 	return needsUpdate, oldVersion, newVersion, nil
+}
+
+// sanitizePath converts an absolute path into a sanitized directory name suitable
+// for use under $HOME/.swe-swe/projects/. It replaces non-alphanumeric characters
+// (except separators) with hyphens and appends an MD5 hash of the full absolute path.
+// Example: /Users/alice/projects/my-app -> users-alice-projects-my-app-{md5-first-8-chars}
+func sanitizePath(absPath string) string {
+	// Replace path separators and non-alphanumeric chars with hyphens
+	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	sanitized := re.ReplaceAllString(absPath, "-")
+	// Remove leading/trailing hyphens
+	sanitized = strings.Trim(sanitized, "-")
+
+	// Compute MD5 hash of absolute path
+	hash := md5.Sum([]byte(absPath))
+	hashStr := fmt.Sprintf("%x", hash)[:8] // First 8 chars of hex hash
+
+	return fmt.Sprintf("%s-%s", sanitized, hashStr)
+}
+
+// getMetadataDir returns the metadata directory path for a given project absolute path.
+// Metadata is stored in $HOME/.swe-swe/projects/{sanitized-path}/
+func getMetadataDir(absPath string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %v", err)
+	}
+
+	sanitized := sanitizePath(absPath)
+	return filepath.Join(homeDir, ".swe-swe", "projects", sanitized), nil
 }
