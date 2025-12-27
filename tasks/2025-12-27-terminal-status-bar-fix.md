@@ -59,6 +59,13 @@ Remove outdated subdomain precondition from terminal status bar and clean up unu
 ## Expected Outcome
 Status bar will show [vscode] | [browser] service links for all access patterns, not just subdomain-based access. The terminal UI will be consistent with the new path-based routing architecture.
 
+## Implementation Summary
+✅ **COMPLETED** - All code changes implemented in commit `0f491c5`
+- Removed subdomain precondition check that was blocking status bar rendering
+- Removed unused `buildUrl()` function and subdomain-swapping logic
+- Verified path-based URL construction remains correct
+- Status bar will now display service links on all hostnames
+
 ## Related Files
 - Source: `cmd/swe-swe-server/static/terminal-ui.js`
 - Template: `cmd/swe-swe-server/static/index.html` (uses `<terminal-ui>` element)
