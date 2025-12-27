@@ -36,6 +36,9 @@ RUN mkdir -p /var/log/nginx
 ENV NOVNC_HOME=/usr/share/novnc
 RUN ln -sf /usr/share/novnc/vnc_lite.html /usr/share/novnc/vnc.html
 
+# Customize noVNC title to 'chrome - swe-swe'
+RUN sed -i 's/<title>.*<\/title>/<title>chrome - swe-swe<\/title>/' /usr/share/novnc/vnc_lite.html
+
 # Copy noVNC wrapper HTML for /chrome basepath (configures correct WebSocket path)
 COPY chrome/novnc-wrapper.html /app/novnc-wrapper.html
 
