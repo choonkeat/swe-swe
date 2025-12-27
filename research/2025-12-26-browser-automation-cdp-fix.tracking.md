@@ -67,8 +67,14 @@ startsecs=5
   - All installs now fail fast (no `|| true`, `|| echo`, `2>/dev/null`)
   - Removed optional codex/gemini-cli (future: CLI flags)
   - Cleaned up stale comments
-- [ ] **NEXT: Restart Claude Code session to activate MCP Playwright tools**
-- [ ] Verify MCP Playwright tools work after session restart
+- [x] **Session restarted with MCP Playwright tools** (2025-12-27)
+- [x] **CRITICAL: WebSocket URL rewriting needed** (2025-12-27):
+  - Chrome returns `ws://localhost/devtools/browser/...` (port 80, localhost)
+  - Playwright MCP tries to connect to this URL directly → ECONNREFUSED ::1:80
+  - Need nginx to rewrite `ws://localhost/` → `ws://chrome:9223/` in JSON responses
+  - Added `sub_filter` directives to `nginx-cdp.conf`
+- [x] Rebuild chrome container with nginx sub_filter fix
+- [x] Verify MCP Playwright tools work after rebuild (2025-12-27: confirmed working)
 - [x] Commit changes (e9d4ed8)
 
 ## Session Log (2025-12-26)
@@ -136,3 +142,52 @@ From inside claude-code container:
 ```bash
 curl -s http://chrome:9223/json/version
 ```
+
+## Session Log (2025-12-27)
+- MCP Playwright tools are loaded but failing with: `ECONNREFUSED ::1:80`
+- Root cause: Chrome returns `webSocketDebuggerUrl: "ws://localhost/devtools/browser/..."`
+  - No port specified → defaults to 80
+  - `localhost` → Playwright tries to connect in current container
+- CDP HTTP endpoint works fine: `curl http://chrome:9223/json/version` returns valid JSON
+- **FIX**: Added `sub_filter` to nginx-cdp.conf to rewrite WebSocket URLs:
+  ```nginx
+  sub_filter_types application/json;
+  sub_filter_once off;
+  sub_filter 'ws://localhost/' 'ws://chrome:9223/';
+  sub_filter 'ws://127.0.0.1/' 'ws://chrome:9223/';
+  sub_filter 'ws://127.0.0.1:9222/' 'ws://chrome:9223/';
+  ```
+
+## Next Steps for Resume (2025-12-27)
+
+### What was done
+- Updated `cmd/swe-swe/templates/chrome/nginx-cdp.conf` with `sub_filter` to rewrite WebSocket URLs
+
+### What user needs to do (on host machine)
+```bash
+# 1. Rebuild chrome container with the nginx sub_filter fix
+cd /path/to/project/.swe-swe
+docker-compose build chrome && docker-compose up -d chrome
+
+# 2. Verify the fix - should show ws://chrome:9223/... instead of ws://localhost/...
+docker exec <chrome-container> curl -s http://localhost:9223/json/version
+```
+
+### What agent should do after rebuild
+1. Test MCP Playwright by navigating to a URL:
+   ```
+   Use mcp__playwright__browser_navigate to https://example.com
+   ```
+2. If successful, take a snapshot:
+   ```
+   Use mcp__playwright__browser_snapshot
+   ```
+3. If still failing, check:
+   - Is nginx running? `docker exec <chrome> ps aux | grep nginx`
+   - Is sub_filter working? Compare output of `curl http://chrome:9223/json/version` before/after
+   - Check nginx logs: `docker exec <chrome> cat /var/log/nginx/error.log`
+
+### Success criteria
+- `mcp__playwright__browser_navigate` returns success (not ECONNREFUSED)
+- `mcp__playwright__browser_snapshot` shows page content
+- Mark tracking items as complete and commit changes
