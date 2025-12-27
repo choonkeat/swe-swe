@@ -341,6 +341,7 @@ func handleInit() {
 			"templates/host/docker-compose.yml",
 			"templates/host/traefik-dynamic.yml",
 			"templates/host/entrypoint.sh",
+			"templates/host/nginx-vscode.conf",
 			"templates/host/chrome/Dockerfile",
 			"templates/host/chrome/supervisord.conf",
 			"templates/host/chrome/entrypoint.sh",

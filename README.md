@@ -22,7 +22,7 @@ A containerized development environment for AI-assisted coding with integrated V
 
 4. **Access the services**
    - **swe-swe terminal**: http://swe-swe.lvh.me:9899
-   - **VSCode**: http://vscode.lvh.me:9899
+   - **VSCode**: http://lvh.me:9899/vscode
    - **Chrome VNC**: http://chrome.lvh.me:9899 (browser automation viewer)
    - **Traefik dashboard**: http://localhost:9900
 
@@ -284,10 +284,10 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 #### traefik
 - **Ports**: 7000 (web, external port 9899), 8080 (dashboard, external port 9900)
 - **Purpose**: Reverse proxy and routing
-- **Routing Rules** (subdomain-based):
-  - `swe-swe.lvh.me`: Routes to swe-swe-server
-  - `vscode.lvh.me`: Routes to code-server
-  - `traefik.lvh.me`: Dashboard
+- **Routing Rules**:
+  - `swe-swe.lvh.me`: Routes to swe-swe-server (subdomain-based)
+  - `/vscode` path: Routes to code-server (path-based)
+  - `traefik.lvh.me`: Dashboard (subdomain-based)
   - All other subdomains: Routes to swe-swe-server
 
 ### Network

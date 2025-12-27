@@ -655,8 +655,10 @@ class TerminalUI extends HTMLElement {
             return port ? `${protocol}//${host}:${port}` : `${protocol}//${host}`;
         };
 
+        // VSCode uses path-based routing (/vscode), browser uses subdomain routing
+        const baseUrl = port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
         const services = [
-            { name: 'vscode', url: buildUrl('vscode') },
+            { name: 'vscode', url: `${baseUrl}/vscode` },
             { name: 'browser', url: buildUrl('chrome') }
         ];
 
