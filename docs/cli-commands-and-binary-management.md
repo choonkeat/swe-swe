@@ -5,10 +5,47 @@ This document describes the swe-swe CLI commands and how the swe-swe-server bina
 ## Quick Summary
 
 - `swe-swe init` — Initialize a new swe-swe project (one-time setup)
-- `swe-swe up` — Start the environment AND **always update the server binary**
-- `swe-swe down` — Stop the environment
-- `swe-swe build` — Force a fresh Docker image rebuild (no cache)
+- `swe-swe up [services...]` — Start the environment (or specific services) AND **always update the server binary**
+- `swe-swe down [services...]` — Stop the environment (or specific services)
+- `swe-swe build [services...]` — Force a fresh Docker image rebuild (no cache)
 - `swe-swe update` — Update the server binary without starting containers
+- `swe-swe list` — List all initialized projects (auto-prunes stale ones)
+
+## Service Targeting
+
+Commands `up`, `down`, and `build` support targeting specific services:
+
+```bash
+# Target specific services
+swe-swe up chrome                    # Start only chrome (and dependencies)
+swe-swe down chrome vscode           # Stop chrome and vscode
+swe-swe build chrome                 # Rebuild only chrome image
+
+# No service specified = all services (default behavior)
+swe-swe up                           # Start all services
+swe-swe down                         # Stop all services
+```
+
+### Available Services
+
+Services are defined in docker-compose.yml:
+
+| Service | Description |
+|---------|-------------|
+| `swe-swe` | Claude Code container (runs swe-swe-server) |
+| `vscode` | VSCode/code-server IDE |
+| `chrome` | Chrome browser with VNC |
+| `traefik` | Reverse proxy (routing) |
+
+### Pass-through Arguments
+
+Use `--` to pass additional arguments directly to docker-compose:
+
+```bash
+swe-swe down -- --remove-orphans     # Remove orphaned containers
+swe-swe up -- -d                     # Run in detached mode
+swe-swe up chrome -- --build         # Build before starting
+```
 
 ## Project Directory Structure
 
@@ -43,8 +80,6 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 4. Extracts swe-swe-server binary from embedded assets to metadata directory
 5. Handles enterprise certificates if `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, or `NODE_EXTRA_CA_CERTS_BUNDLE` environment variables are set
 
-**Code reference:** `cmd/swe-swe/main.go:66-184`
-
 **Example:**
 ```bash
 swe-swe init --path ~/my-project
@@ -52,56 +87,59 @@ cd ~/my-project
 swe-swe up
 ```
 
-### `swe-swe up [--path PATH]`
+### `swe-swe up [--path PATH] [services...] [-- docker-compose-args...]`
 
-**Purpose:** Start the swe-swe environment and ensure containers are running.
+**Purpose:** Start the swe-swe environment (or specific services) and ensure containers are running.
 
 **What it does:**
 1. Validates that metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/` (fails if project not initialized)
 2. **Always extracts the current swe-swe-server binary** from the CLI's embedded assets to metadata directory
 3. Validates Docker and docker-compose are available
-4. Runs `docker-compose up` to start/resume containers
+4. Runs `docker-compose up` to start/resume containers (or specific services if specified)
 5. On Unix/Linux/macOS: uses `syscall.Exec` to replace the current process with docker-compose (signals go directly to docker-compose)
 6. On Windows: runs docker-compose as subprocess with signal forwarding
 
 **Critical behavior:** The binary is extracted **every time** `swe-swe up` runs, regardless of whether containers already exist.
 
-**Code reference:** `cmd/swe-swe/main.go:186-310`
-
-**Example:**
+**Examples:**
 ```bash
 cd ~/my-project
-swe-swe up                           # Starts/resumes environment
-# Containers are now running, access at http://0.0.0.0:9899
+swe-swe up                           # Start all services
+swe-swe up chrome                    # Start only chrome (and dependencies)
+swe-swe up chrome vscode             # Start chrome and vscode
+swe-swe up -- -d                     # Start detached (background)
 
 # Ctrl+C to stop (signals sent directly to docker-compose)
 ```
 
-### `swe-swe down [--path PATH]`
+### `swe-swe down [--path PATH] [services...] [-- docker-compose-args...]`
 
-**Purpose:** Stop the swe-swe environment without removing data.
+**Purpose:** Stop the swe-swe environment (or specific services) without removing data.
 
 **What it does:**
 1. Validates metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/`
-2. Runs `docker-compose down` which stops and removes containers
-3. Preserves volumes (home directory, workspace persist)
-4. Preserves the swe-swe-server binary and metadata
+2. If services specified: runs `docker-compose stop` + `docker-compose rm -f` for those services
+3. If no services specified: runs `docker-compose down` which stops and removes all containers
+4. Preserves volumes (home directory, workspace persist)
+5. Preserves the swe-swe-server binary and metadata
 
-**Code reference:** `cmd/swe-swe/main.go:336-382`
-
-**Example:**
+**Examples:**
 ```bash
-swe-swe down                         # Stops containers
+swe-swe down                         # Stop all containers
+swe-swe down chrome                  # Stop only chrome
+swe-swe down chrome vscode           # Stop chrome and vscode
+swe-swe down -- --remove-orphans     # Remove orphaned containers
+
 # Running again later with 'swe-swe up' restarts with the same environment
 ```
 
-### `swe-swe build [--path PATH]`
+### `swe-swe build [--path PATH] [services...] [-- docker-compose-args...]`
 
 **Purpose:** Force a fresh Docker image rebuild with no cache.
 
 **What it does:**
 1. Validates metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/`
-2. Runs `docker-compose build --no-cache` to rebuild all images from scratch
+2. Runs `docker-compose build --no-cache` to rebuild images from scratch (or specific services if specified)
 3. Does NOT update the swe-swe-server binary (binary is volume-mounted, not baked into image)
 
 **When to use:**
@@ -110,12 +148,12 @@ swe-swe down                         # Stops containers
 - When troubleshooting Docker layer issues
 - When dependencies in the Docker image need updating
 
-**Code reference:** `cmd/swe-swe/main.go:385-427`
-
-**Example:**
+**Examples:**
 ```bash
-swe-swe build                        # Forces fresh build
-swe-swe up                           # Start with fresh image
+swe-swe build                        # Rebuild all images
+swe-swe build chrome                 # Rebuild only chrome image
+swe-swe build chrome swe-swe         # Rebuild chrome and swe-swe images
+swe-swe up                           # Start with fresh images
 ```
 
 ### `swe-swe update [--path PATH]`
@@ -133,8 +171,6 @@ swe-swe up                           # Start with fresh image
 - Updating an existing project when the CLI binary is updated
 - Preparing for a container restart without starting it immediately
 - Checking if an update is needed
-
-**Code reference:** `cmd/swe-swe/main.go:501-612`
 
 **Example:**
 ```bash
@@ -166,8 +202,6 @@ swe-swe update                       # Updates binary if needed
 - Clean up metadata for deleted/moved projects
 - Verify project paths before any cleanup operations
 - Regular maintenance to keep `$HOME/.swe-swe/projects/` clean
-
-**Code reference:** `cmd/swe-swe/main.go:634-703`
 
 **Example:**
 ```bash
@@ -220,7 +254,7 @@ swe-swe list
 
 The swe-swe-server binary is **not baked into the Docker image**. Instead, it's **volume-mounted from the host**:
 
-**In docker-compose.yml (line 39):**
+**In docker-compose.yml:**
 ```yaml
 volumes:
   - ./bin/swe-swe-server:/usr/local/bin/swe-swe-server:ro
@@ -279,9 +313,10 @@ If the matching architecture binary isn't available, it falls back to amd64.
 
 | Aspect | `swe-swe up` | `swe-swe build` |
 |--------|--------------|-----------------|
-| **Binary update** | ✅ Always updates | ❌ No binary update |
-| **Docker rebuild** | ❌ Only if image missing | ✅ Always rebuilds with `--no-cache` |
-| **Container restart** | ✅ Starts/resumes containers | ❌ Builds only, doesn't start |
+| **Binary update** | Always updates | No binary update |
+| **Docker rebuild** | Only if image missing | Always rebuilds with `--no-cache` |
+| **Container restart** | Starts/resumes containers | Builds only, doesn't start |
+| **Service targeting** | Supports `[services...]` | Supports `[services...]` |
 | **When to use** | Regular startup | Dockerfile changes |
 | **Speed** | Fast (reuses image layers) | Slow (rebuilds everything) |
 
@@ -354,6 +389,9 @@ If set, certificates are copied to `.swe-swe/certs/` and mounted in the containe
 ### Q: I modified the Dockerfile but `swe-swe up` didn't rebuild it
 **A:** Use `swe-swe build` to force a fresh rebuild, then `swe-swe up`.
 
+### Q: I want to rebuild only the chrome container
+**A:** Use `swe-swe build chrome` then `swe-swe up chrome`.
+
 ### Q: The swe-swe-server binary is not executable
 **A:** The CLI sets the binary to 0755 (executable) automatically. If this fails, manually run:
 ```bash
@@ -372,9 +410,12 @@ docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml lo
 ### Q: How do I find where my project metadata is stored?
 **A:** Run `swe-swe list` to see all projects and their metadata locations. Metadata is stored in `$HOME/.swe-swe/projects/` with a sanitized directory name based on your project path.
 
+### Q: What if I specify an invalid service name?
+**A:** docker-compose will return an error like "no such service: foo". Service names must match those defined in docker-compose.yml (swe-swe, vscode, chrome, traefik).
+
 ## Related Files
 
 - `cmd/swe-swe/main.go` — CLI command implementations
-- `cmd/swe-swe/templates/docker-compose.yml` — Docker Compose configuration
-- `cmd/swe-swe/templates/Dockerfile` — Docker image definition
+- `cmd/swe-swe/templates/host/docker-compose.yml` — Docker Compose configuration
+- `cmd/swe-swe/templates/host/Dockerfile` — Docker image definition
 - `cmd/swe-swe/bin/` — Embedded swe-swe-server binaries (linux-amd64, linux-arm64)

@@ -42,17 +42,17 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  swe-swe-server:
+  swe-swe:
     build:
       context: .
       dockerfile: Dockerfile
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.swe.rule=HostRegexp(`.*`)"
-      - "traefik.http.routers.swe.priority=10"
-      - "traefik.http.services.swe.loadbalancer.server.port=9898"
+      - "traefik.http.routers.swe-swe.rule=HostRegexp(`.*`)"
+      - "traefik.http.routers.swe-swe.priority=10"
+      - "traefik.http.services.swe-swe.loadbalancer.server.port=9898"
       # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
-      # - "traefik.http.routers.swe.middlewares=auth@file"
+      # - "traefik.http.routers.swe-swe.middlewares=auth@file"
     depends_on:
       - chrome
     volumes:
@@ -80,7 +80,7 @@ services:
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
-  code-server:
+  vscode:
     image: codercom/code-server:latest
     labels:
       - "traefik.enable=true"

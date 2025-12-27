@@ -258,6 +258,49 @@ func TestHandleUpMetadataDirLookup(t *testing.T) {
 	}
 }
 
+// TestSplitAtDoubleDash verifies argument splitting at "--"
+func TestSplitAtDoubleDash(t *testing.T) {
+	tests := []struct {
+		input       []string
+		wantBefore  []string
+		wantAfter   []string
+	}{
+		{[]string{}, []string{}, nil},
+		{[]string{"chrome"}, []string{"chrome"}, nil},
+		{[]string{"--"}, []string{}, []string{}},
+		{[]string{"chrome", "--"}, []string{"chrome"}, []string{}},
+		{[]string{"--", "--remove-orphans"}, []string{}, []string{"--remove-orphans"}},
+		{[]string{"chrome", "--", "--remove-orphans"}, []string{"chrome"}, []string{"--remove-orphans"}},
+		{[]string{"chrome", "vscode", "--", "-d", "--build"}, []string{"chrome", "vscode"}, []string{"-d", "--build"}},
+	}
+
+	for _, tt := range tests {
+		before, after := splitAtDoubleDash(tt.input)
+
+		// Compare before
+		if len(before) != len(tt.wantBefore) {
+			t.Errorf("splitAtDoubleDash(%v) before = %v, want %v", tt.input, before, tt.wantBefore)
+			continue
+		}
+		for i := range before {
+			if before[i] != tt.wantBefore[i] {
+				t.Errorf("splitAtDoubleDash(%v) before[%d] = %q, want %q", tt.input, i, before[i], tt.wantBefore[i])
+			}
+		}
+
+		// Compare after
+		if len(after) != len(tt.wantAfter) {
+			t.Errorf("splitAtDoubleDash(%v) after = %v, want %v", tt.input, after, tt.wantAfter)
+			continue
+		}
+		for i := range after {
+			if after[i] != tt.wantAfter[i] {
+				t.Errorf("splitAtDoubleDash(%v) after[%d] = %q, want %q", tt.input, i, after[i], tt.wantAfter[i])
+			}
+		}
+	}
+}
+
 // TestListDetectsAndPrunesStaleProjects verifies handleList detects missing paths and prunes them
 func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
 	testDir := t.TempDir()

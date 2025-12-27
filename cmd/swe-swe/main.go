@@ -19,6 +19,17 @@ import (
 //go:embed all:templates bin/*
 var assets embed.FS
 
+// splitAtDoubleDash splits args at "--" separator
+// Returns (beforeArgs, afterArgs) where afterArgs are passed through to docker-compose
+func splitAtDoubleDash(args []string) ([]string, []string) {
+	for i, arg := range args {
+		if arg == "--" {
+			return args[:i], args[i+1:]
+		}
+	}
+	return args, nil
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -50,16 +61,26 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options]
+	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options] [services...] [-- docker-compose-args...]
 
 Commands:
   init [--path PATH]                     Initialize a new swe-swe project
-  up [--path PATH]                       Start the swe-swe environment at PATH (defaults to current directory)
-  down [--path PATH]                     Stop the swe-swe environment at PATH (defaults to current directory)
-  build [--path PATH]                    Rebuild the swe-swe Docker images (fresh build, no cache)
+  up [--path PATH] [services...]         Start the swe-swe environment (or specific services)
+  down [--path PATH] [services...]       Stop the swe-swe environment (or specific services)
+  build [--path PATH] [services...]      Rebuild Docker images (fresh build, no cache)
   update [--path PATH]                   Update swe-swe-server binary in existing project
   list                                   List all initialized swe-swe projects (auto-prunes missing paths)
   help                                   Show this help message
+
+Services (defined in docker-compose.yml):
+  swe-swe, vscode, chrome, traefik
+
+Examples:
+  swe-swe up                             Start all services
+  swe-swe up chrome                      Start only chrome (and dependencies)
+  swe-swe down chrome                    Stop only chrome
+  swe-swe build chrome                   Rebuild only chrome image
+  swe-swe down -- --remove-orphans       Pass args to docker-compose
 
 Environment Variables:
   SWE_SWE_PASSWORD                       VSCode password (defaults to changeme)
@@ -237,6 +258,10 @@ func handleUp() {
 		*path = "."
 	}
 
+	// Split at "--" for pass-through args to docker-compose
+	// Service names are passed directly to docker-compose (no validation needed)
+	services, passThrough := splitAtDoubleDash(fs.Args())
+
 	absPath, err := filepath.Abs(*path)
 	if err != nil {
 		log.Fatalf("Failed to resolve path: %v", err)
@@ -291,7 +316,11 @@ func handleUp() {
 	}
 
 	composeFile := filepath.Join(sweDir, "docker-compose.yml")
-	fmt.Printf("Starting swe-swe environment at %s\n", absPath)
+	if len(services) > 0 {
+		fmt.Printf("Starting services %v at %s\n", services, absPath)
+	} else {
+		fmt.Printf("Starting swe-swe environment at %s\n", absPath)
+	}
 	fmt.Printf("Access at: http://0.0.0.0:%d\n", port)
 
 	// Prepare environment variables
@@ -333,6 +362,8 @@ func handleUp() {
 
 	// Build arguments for docker-compose
 	args := []string{"docker-compose", "-f", composeFile, "up"}
+	args = append(args, passThrough...)
+	args = append(args, services...)
 
 	// Replace process with docker-compose on Unix/Linux/macOS
 	if runtime.GOOS != "windows" {
@@ -384,6 +415,10 @@ func handleDown() {
 		*path = "."
 	}
 
+	// Split at "--" for pass-through args to docker-compose
+	// Service names are passed directly to docker-compose (no validation needed)
+	services, passThrough := splitAtDoubleDash(fs.Args())
+
 	absPath, err := filepath.Abs(*path)
 	if err != nil {
 		log.Fatalf("Failed to resolve path: %v", err)
@@ -409,19 +444,47 @@ func handleDown() {
 	}
 
 	composeFile := filepath.Join(sweDir, "docker-compose.yml")
-	fmt.Printf("Stopping swe-swe environment at %s\n", absPath)
 
-	// Run docker-compose down
-	cmd := exec.Command("docker-compose", "-f", composeFile, "down")
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Build command args
+	args := []string{"-f", composeFile}
+	if len(services) > 0 {
+		// Use "stop" + "rm" for specific services (down doesn't support service targeting)
+		fmt.Printf("Stopping services %v at %s\n", services, absPath)
+		stopArgs := append(args, "stop")
+		stopArgs = append(stopArgs, passThrough...)
+		stopArgs = append(stopArgs, services...)
+		cmd := exec.Command("docker-compose", stopArgs...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("Failed to stop services: %v", err)
+		}
 
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to stop docker-compose: %v", err)
+		// Remove stopped containers
+		rmArgs := append(args, "rm", "-f")
+		rmArgs = append(rmArgs, services...)
+		cmd = exec.Command("docker-compose", rmArgs...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("Failed to remove containers: %v", err)
+		}
+		fmt.Printf("Stopped services %v at %s\n", services, absPath)
+	} else {
+		fmt.Printf("Stopping swe-swe environment at %s\n", absPath)
+		args = append(args, "down")
+		args = append(args, passThrough...)
+		cmd := exec.Command("docker-compose", args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("Failed to stop docker-compose: %v", err)
+		}
+		fmt.Printf("Stopped swe-swe environment at %s\n", absPath)
 	}
-
-	fmt.Printf("Stopped swe-swe environment at %s\n", absPath)
 }
 
 func handleBuild() {
@@ -433,6 +496,10 @@ func handleBuild() {
 		*path = "."
 	}
 
+	// Split at "--" for pass-through args to docker-compose
+	// Service names are passed directly to docker-compose (no validation needed)
+	services, passThrough := splitAtDoubleDash(fs.Args())
+
 	absPath, err := filepath.Abs(*path)
 	if err != nil {
 		log.Fatalf("Failed to resolve path: %v", err)
@@ -458,10 +525,18 @@ func handleBuild() {
 	}
 
 	composeFile := filepath.Join(sweDir, "docker-compose.yml")
-	fmt.Printf("Building swe-swe environment at %s (fresh build, no cache)\n", absPath)
 
-	// Run docker-compose build with --no-cache
-	cmd := exec.Command("docker-compose", "-f", composeFile, "build", "--no-cache")
+	// Build command args (--no-cache by default, can be overridden via passThrough)
+	args := []string{"-f", composeFile, "build", "--no-cache"}
+	args = append(args, passThrough...)
+	if len(services) > 0 {
+		fmt.Printf("Building services %v at %s (fresh build, no cache)\n", services, absPath)
+		args = append(args, services...)
+	} else {
+		fmt.Printf("Building swe-swe environment at %s (fresh build, no cache)\n", absPath)
+	}
+
+	cmd := exec.Command("docker-compose", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -470,7 +545,11 @@ func handleBuild() {
 		log.Fatalf("Failed to build docker-compose: %v", err)
 	}
 
-	fmt.Printf("Successfully built swe-swe environment at %s\n", absPath)
+	if len(services) > 0 {
+		fmt.Printf("Successfully built services %v at %s\n", services, absPath)
+	} else {
+		fmt.Printf("Successfully built swe-swe environment at %s\n", absPath)
+	}
 }
 
 // handleCertificates detects and copies enterprise certificates for Docker builds
