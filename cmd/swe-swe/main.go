@@ -64,7 +64,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options] [services...] [-- docker-compose-args...]
 
 Commands:
-  init [--path PATH]                     Initialize a new swe-swe project
+  init [options]                         Initialize a new swe-swe project
   up [--path PATH] [services...]         Start the swe-swe environment (or specific services)
   down [--path PATH] [services...]       Stop the swe-swe environment (or specific services)
   build [--path PATH] [services...]      Rebuild Docker images (fresh build, no cache)
@@ -72,30 +72,229 @@ Commands:
   list                                   List all initialized swe-swe projects (auto-prunes missing paths)
   help                                   Show this help message
 
+Init Options:
+  --path PATH                            Project directory (defaults to current directory)
+  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose (default: all)
+  --exclude AGENTS                       Comma-separated agents to exclude
+  --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
+  --list-agents                          List available agents and exit
+  --update-binary-only                   Update only the binary, skip templates
+
+Available Agents:
+  claude   - Claude Code (requires Node.js)
+  gemini   - Gemini CLI (requires Node.js)
+  codex    - Codex CLI (requires Node.js)
+  aider    - Aider (requires Python)
+  goose    - Goose (standalone binary)
+
 Services (defined in docker-compose.yml):
   swe-swe, vscode, chrome, traefik
 
 Examples:
-  swe-swe up                             Start all services
-  swe-swe up chrome                      Start only chrome (and dependencies)
-  swe-swe down chrome                    Stop only chrome
-  swe-swe build chrome                   Rebuild only chrome image
-  swe-swe down -- --remove-orphans       Pass args to docker-compose
+  swe-swe init                                   Initialize with all agents
+  swe-swe init --agents=claude                   Initialize with Claude only (minimal)
+  swe-swe init --agents=claude,gemini            Initialize with Claude and Gemini
+  swe-swe init --exclude=aider,goose             Initialize without Aider and Goose
+  swe-swe init --apt-get-install="vim htop"      Add custom packages
+  swe-swe init --list-agents                     Show available agents
+  swe-swe up                                     Start all services
+  swe-swe up chrome                              Start only chrome (and dependencies)
+  swe-swe down chrome                            Stop only chrome
+  swe-swe build chrome                           Rebuild only chrome image
+  swe-swe down -- --remove-orphans               Pass args to docker-compose
 
 Environment Variables:
   SWE_SWE_PASSWORD                       VSCode password (defaults to changeme)
 `)
 }
 
+// allAgents lists all available AI agents that can be installed
+var allAgents = []string{"claude", "gemini", "codex", "aider", "goose"}
+
+// parseAgentList parses a comma-separated agent list and validates agent names
+func parseAgentList(input string) ([]string, error) {
+	if input == "" {
+		return nil, nil
+	}
+	parts := strings.Split(input, ",")
+	var agents []string
+	for _, p := range parts {
+		agent := strings.TrimSpace(strings.ToLower(p))
+		if agent == "" {
+			continue
+		}
+		valid := false
+		for _, a := range allAgents {
+			if agent == a {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("unknown agent %q (available: %s)", agent, strings.Join(allAgents, ", "))
+		}
+		agents = append(agents, agent)
+	}
+	return agents, nil
+}
+
+// resolveAgents computes the final agent list based on --agents and --exclude flags
+func resolveAgents(agentsFlag, excludeFlag string) ([]string, error) {
+	// Parse exclude list first
+	excludeList, err := parseAgentList(excludeFlag)
+	if err != nil {
+		return nil, fmt.Errorf("--exclude: %v", err)
+	}
+	excludeSet := make(map[string]bool)
+	for _, e := range excludeList {
+		excludeSet[e] = true
+	}
+
+	// If --agents is specified, use that list (minus excludes)
+	if agentsFlag != "" {
+		if agentsFlag == "all" {
+			// Start with all agents, apply excludes
+			var result []string
+			for _, a := range allAgents {
+				if !excludeSet[a] {
+					result = append(result, a)
+				}
+			}
+			return result, nil
+		}
+		agentList, err := parseAgentList(agentsFlag)
+		if err != nil {
+			return nil, fmt.Errorf("--agents: %v", err)
+		}
+		var result []string
+		for _, a := range agentList {
+			if !excludeSet[a] {
+				result = append(result, a)
+			}
+		}
+		return result, nil
+	}
+
+	// Default: all agents minus excludes
+	var result []string
+	for _, a := range allAgents {
+		if !excludeSet[a] {
+			result = append(result, a)
+		}
+	}
+	return result, nil
+}
+
+// agentInList checks if an agent is in the list
+func agentInList(agent string, list []string) bool {
+	for _, a := range list {
+		if a == agent {
+			return true
+		}
+	}
+	return false
+}
+
+// processDockerfileTemplate processes the Dockerfile template with conditional sections
+// based on selected agents and custom apt packages
+func processDockerfileTemplate(content string, agents []string, aptPackages string) string {
+	// Helper to check if agent is selected
+	hasAgent := func(agent string) bool {
+		return agentInList(agent, agents)
+	}
+
+	// Check if we need Python (only for aider)
+	needsPython := hasAgent("aider")
+
+	// Check if we need Node.js (claude, gemini, codex, or playwright)
+	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex")
+
+	// Build the Dockerfile from template
+	lines := strings.Split(content, "\n")
+	var result []string
+	skip := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Handle conditional markers
+		if strings.HasPrefix(trimmed, "# {{IF ") && strings.HasSuffix(trimmed, "}}") {
+			condition := strings.TrimSuffix(strings.TrimPrefix(trimmed, "# {{IF "), "}}")
+			switch condition {
+			case "PYTHON":
+				skip = !needsPython
+			case "NODEJS":
+				skip = !needsNodeJS
+			case "CLAUDE":
+				skip = !hasAgent("claude")
+			case "GEMINI":
+				skip = !hasAgent("gemini")
+			case "CODEX":
+				skip = !hasAgent("codex")
+			case "AIDER":
+				skip = !hasAgent("aider")
+			case "GOOSE":
+				skip = !hasAgent("goose")
+			case "APT_PACKAGES":
+				skip = aptPackages == ""
+			}
+			continue
+		}
+
+		if trimmed == "# {{ENDIF}}" {
+			skip = false
+			continue
+		}
+
+		// Handle APT_PACKAGES placeholder
+		if strings.Contains(line, "{{APT_PACKAGES}}") {
+			if aptPackages != "" {
+				line = strings.ReplaceAll(line, "{{APT_PACKAGES}}", aptPackages)
+			}
+		}
+
+		if !skip {
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("path", ".", "Path to initialize")
 	updateBinaryOnly := fs.Bool("update-binary-only", false, "Update only the binary, skip templates (for existing projects)")
+	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose) or 'all'")
+	excludeFlag := fs.String("exclude", "", "Comma-separated list of agents to exclude")
+	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
+	listAgents := fs.Bool("list-agents", false, "List available agents and exit")
 	fs.Parse(os.Args[2:])
+
+	// Handle --list-agents
+	if *listAgents {
+		fmt.Println("Available agents:")
+		fmt.Println("  claude  - Claude Code (Node.js)")
+		fmt.Println("  gemini  - Gemini CLI (Node.js)")
+		fmt.Println("  codex   - Codex CLI (Node.js)")
+		fmt.Println("  aider   - Aider (Python)")
+		fmt.Println("  goose   - Goose (Go binary)")
+		return
+	}
 
 	if *path == "" {
 		*path = "."
 	}
+
+	// Resolve agent list
+	agents, err := resolveAgents(*agentsFlag, *excludeFlag)
+	if err != nil {
+		log.Fatalf("Failed to resolve agents: %v", err)
+	}
+
+	// Normalize apt packages (replace commas with spaces for apt-get)
+	aptPkgs := strings.ReplaceAll(*aptPackages, ",", " ")
+	aptPkgs = strings.TrimSpace(aptPkgs)
 
 	// Create directory if it doesn't exist
 	absPath, err := filepath.Abs(*path)
@@ -155,10 +354,25 @@ func handleInit() {
 			"templates/container/.swe-swe/browser-automation.md",
 		}
 
+		// Print selected agents
+		if len(agents) > 0 {
+			fmt.Printf("Selected agents: %s\n", strings.Join(agents, ", "))
+		} else {
+			fmt.Println("No agents selected (minimal environment)")
+		}
+		if aptPkgs != "" {
+			fmt.Printf("Additional apt packages: %s\n", aptPkgs)
+		}
+
 		for _, hostFile := range hostFiles {
 			content, err := assets.ReadFile(hostFile)
 			if err != nil {
 				log.Fatalf("Failed to read embedded file %q: %v", hostFile, err)
+			}
+
+			// Process Dockerfile template with conditional sections
+			if hostFile == "templates/host/Dockerfile" {
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs))
 			}
 
 			// Calculate destination path, preserving subdirectories

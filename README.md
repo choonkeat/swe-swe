@@ -57,11 +57,46 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 
 **Options**:
 - `--path PATH`: Project directory (defaults to current directory)
+- `--agents AGENTS`: Comma-separated list of agents to include (default: all)
+- `--exclude AGENTS`: Comma-separated list of agents to exclude
+- `--apt-get-install PACKAGES`: Additional apt packages to install
+- `--list-agents`: List available agents and exit
+- `--update-binary-only`: Update only the binary, skip template files
 
-Example:
+**Available Agents**:
+| Agent | Description | Dependencies |
+|-------|-------------|--------------|
+| `claude` | Claude Code CLI | Node.js |
+| `gemini` | Gemini CLI | Node.js |
+| `codex` | Codex CLI | Node.js |
+| `aider` | Aider | Python |
+| `goose` | Goose | None (standalone binary) |
+
+**Examples**:
 ```bash
+# Initialize with all agents (default)
 swe-swe init --path ~/my-project
+
+# Initialize with Claude only (minimal, fastest build)
+swe-swe init --path ~/my-project --agents=claude
+
+# Initialize with Claude and Gemini
+swe-swe init --path ~/my-project --agents=claude,gemini
+
+# Initialize without Python-based agents (no aider)
+swe-swe init --path ~/my-project --exclude=aider
+
+# Initialize with additional system packages
+swe-swe init --path ~/my-project --apt-get-install="vim htop tmux"
+
+# List available agents
+swe-swe init --list-agents
 ```
+
+**Dependency Optimization**: The Dockerfile is automatically optimized based on selected agents:
+- Python/pip is only installed if `aider` is included
+- Node.js/npm is only installed if `claude`, `gemini`, or `codex` is included
+- This can significantly reduce image size and build time
 
 Services are accessible using the `lvh.me` wildcard domain (resolves any subdomain to localhost).
 
