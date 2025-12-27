@@ -25,7 +25,12 @@ A containerized development environment for AI-assisted coding with integrated V
    - **VSCode**: http://vscode.lvh.me:9899
    - **Traefik dashboard**: http://traefik.lvh.me:9899 (dashboard on port 9900)
 
-5. **Stop the environment**
+5. **View all initialized projects**
+   ```bash
+   swe-swe list
+   ```
+
+6. **Stop the environment**
    ```bash
    swe-swe down --path /path/to/your/project
    ```
@@ -39,7 +44,7 @@ A containerized development environment for AI-assisted coding with integrated V
 
 ### `swe-swe init --path PATH`
 
-Initializes a new swe-swe project at the specified path. Creates the `.swe-swe/` directory structure with:
+Initializes a new swe-swe project at the specified path. Creates metadata directory at `$HOME/.swe-swe/projects/{sanitized-path}/` with:
 
 - **Dockerfile**: Container image definition with Node.js, Go, and optional tools
 - **docker-compose.yml**: Multi-container orchestration
@@ -47,6 +52,7 @@ Initializes a new swe-swe project at the specified path. Creates the `.swe-swe/`
 - **bin/swe-swe-server**: The AI terminal server (copied for Docker)
 - **home/**: Persistent storage for VSCode settings and shell history
 - **certs/**: Enterprise certificates (if detected)
+- **.path**: Records original project path (used for project discovery)
 
 **Options**:
 - `--path PATH`: Project directory (defaults to current directory)
@@ -150,6 +156,34 @@ swe-swe init --path ~/my-project
 swe-swe init --path ~/my-project --update-binary-only
 ```
 
+### `swe-swe list`
+
+Lists all initialized swe-swe projects and automatically prunes stale ones.
+
+**What it does:**
+1. Scans `$HOME/.swe-swe/projects/` directory
+2. For each project, reads `.path` file to get original path
+3. Checks if original path still exists
+4. Auto-removes metadata directories for deleted projects (pruning)
+5. Displays remaining active projects with count
+6. Shows summary of pruned projects
+
+**When to use:**
+- Discover what projects you have initialized
+- Clean up metadata for deleted projects
+- Verify project paths before cleanup
+
+Example:
+```bash
+swe-swe list
+# Output:
+# Initialized projects (2):
+#   /Users/alice/projects/myapp
+#   /Users/alice/projects/anotherapp
+#
+# Removed 1 stale project(s)
+```
+
 ### `swe-swe help`
 
 Displays the help message with all available commands.
@@ -158,16 +192,25 @@ Displays the help message with all available commands.
 
 ### Directory Structure
 
+Project metadata is stored in `$HOME/.swe-swe/projects/{sanitized-path}/`:
+
 ```
-.swe-swe/
+$HOME/.swe-swe/projects/{sanitized-path}/
 ├── Dockerfile              # Container image definition
 ├── docker-compose.yml      # Service orchestration
 ├── traefik-dynamic.yml     # HTTP routing rules
+├── .path                   # Original project path (for discovery)
 ├── bin/
 │   └── swe-swe-server     # Linux binary for Docker
 ├── home/                   # Persistent VSCode/shell home (volume)
 └── certs/                  # Enterprise certificates (if detected)
 ```
+
+**Why metadata is stored outside the project:**
+- Prevents container access to infrastructure configuration
+- Allows metadata cleanup via `swe-swe list` command
+- Centralizes all metadata in one location
+- Your project directory remains clean (no `.swe-swe/`)
 
 ### Services
 
@@ -208,7 +251,7 @@ All containers communicate via the `swe-network` bridge. This allows:
 
 ### Customizing the Dockerfile
 
-Edit `.swe-swe/Dockerfile` to:
+The Dockerfile is located in `$HOME/.swe-swe/projects/{sanitized-path}/Dockerfile`. Edit it to:
 - Add Python: `apt-get install -y python3 python3-pip`
 - Add Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`
 - Add other tools via `apt-get`
@@ -223,7 +266,7 @@ export OPENAI_API_KEY=sk-...
 swe-swe up --path ~/my-project
 ```
 
-Or create a `.env` file in `.swe-swe/`:
+Or create a `.env` file in `$HOME/.swe-swe/projects/{sanitized-path}/`:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
@@ -231,7 +274,7 @@ OPENAI_API_KEY=sk-...
 
 ### Resource Limits
 
-Edit `.swe-swe/docker-compose.yml` to adjust resource constraints:
+Edit `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml` to adjust resource constraints:
 
 ```yaml
 code-server:
@@ -327,7 +370,7 @@ The `swe-swe init` command automatically selects the correct Linux binary for Do
 SWE_PORT=9900 swe-swe up --path ~/my-project
 ```
 
-Alternatively, modify `.swe-swe/docker-compose.yml` to change the port mapping.
+Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml` to change the port mapping.
 
 ### API Key Not Found
 
@@ -343,14 +386,15 @@ Alternatively, modify `.swe-swe/docker-compose.yml` to change the port mapping.
 
 **Solution**:
 1. Verify Docker is running: `docker ps`
-2. Check containers are healthy: `docker-compose -f .swe-swe/docker-compose.yml ps`
+2. Check containers are healthy: `docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml ps`
 3. Check Traefik logs: `docker logs traefik`
 
 ### Persistent Home Issues
 
 If VSCode settings/extensions don't persist:
-1. Verify `.swe-swe/home/` exists and has correct permissions
-2. Reinitialize: `rm -rf .swe-swe && swe-swe init`
+1. Verify `$HOME/.swe-swe/projects/{sanitized-path}/home/` exists and has correct permissions
+2. Check that the metadata directory wasn't accidentally deleted
+3. Reinitialize the project: `swe-swe init --path /path/to/project`
 
 ## Advanced Usage
 
@@ -388,7 +432,7 @@ CMD ["/usr/local/bin/swe-swe-server", "-session-ttl", "30m"]
 
 ### Basic Auth
 
-Uncomment the auth middleware in `.swe-swe/traefik-dynamic.yml` to enable basic authentication for both swe-swe and VSCode.
+Uncomment the auth middleware in `$HOME/.swe-swe/projects/{sanitized-path}/traefik-dynamic.yml` to enable basic authentication for both swe-swe and VSCode.
 
 ## API Reference
 
