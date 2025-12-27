@@ -104,28 +104,34 @@ async handleFile(file) {
 
 Raw PTY output bytes, sent directly to xterm.js.
 
-**Server binary message handler:** `main.go:841-903`
+**Server binary message handler:** `main.go:849-914`
 ```go
-// Binary messages: resize, file upload, or terminal input
+// Check for terminal resize message (0x00 prefix)
 if len(data) >= 5 && data[0] == 0x00 {
-    // Terminal resize
     rows := uint16(data[1])<<8 | uint16(data[2])
     cols := uint16(data[3])<<8 | uint16(data[4])
     sess.UpdateClientSize(conn, rows, cols)
     continue
 }
 
+// Check for file upload message (0x01 prefix)
 if len(data) >= 3 && data[0] == 0x01 {
-    // File upload
-    nameLen := uint16(data[1])<<8 | uint16(data[2])
-    if len(data) < 3+int(nameLen) {
-        log.Printf("Invalid file upload message: incomplete name")
+    nameLen := int(data[1])<<8 | int(data[2])
+    if len(data) < 3+nameLen {
+        sendFileUploadResponse(conn, false, "", "Invalid upload format")
         continue
     }
     filename := string(data[3 : 3+nameLen])
     fileData := data[3+nameLen:]
-    // Save file and broadcast
-    sess.HandleFileUpload(conn, filename, fileData)
+
+    // Sanitize, save to .swe-swe/uploads/, send response
+    filename = sanitizeFilename(filename)
+    filePath := ".swe-swe/uploads/" + filename
+    os.WriteFile(filePath, fileData, 0644)
+    sendFileUploadResponse(conn, true, filename, "")
+
+    // Write file path to PTY for assistant to see
+    sess.PTY.Write([]byte(absFilePath))
     continue
 }
 
@@ -414,18 +420,18 @@ or on error:
 3. File path is written to PTY for assistant to access
 4. Server sends this JSON response confirming success or error
 
-**Server implementation:** `main.go:937-952` (sendFileUploadResponse function)
+**Server implementation:** `main.go:949-964` (sendFileUploadResponse function)
 ```go
-func (s *Session) sendFileUploadResponse(conn *websocket.Conn, filename string, success bool, err string) {
+func sendFileUploadResponse(conn *websocket.Conn, success bool, filename, errMsg string) {
     response := map[string]interface{}{
-        "type":     "file_upload",
-        "success":  success,
-        "filename": filename,
+        "type":    "file_upload",
+        "success": success,
     }
-    if err != "" {
-        response["error"] = err
-    } else {
-        response["error"] = nil
+    if filename != "" {
+        response["filename"] = filename
+    }
+    if errMsg != "" {
+        response["error"] = errMsg
     }
     conn.WriteJSON(response)
 }

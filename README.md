@@ -1,6 +1,6 @@
 # swe-swe
 
-A containerized development environment for AI-assisted coding with integrated VSCode, Traefik reverse proxy, and support for multiple AI assistants (Claude, Gemini, OpenAI).
+A containerized development environment for AI-assisted coding with integrated VSCode, browser automation, Traefik reverse proxy, and support for multiple AI assistants (Claude, Gemini, Codex, Goose, Aider).
 
 ## Quick Start
 
@@ -23,7 +23,8 @@ A containerized development environment for AI-assisted coding with integrated V
 4. **Access the services**
    - **swe-swe terminal**: http://swe-swe.lvh.me:9899
    - **VSCode**: http://vscode.lvh.me:9899
-   - **Traefik dashboard**: http://traefik.lvh.me:9899 (dashboard on port 9900)
+   - **Chrome VNC**: http://chrome.lvh.me:9899 (browser automation viewer)
+   - **Traefik dashboard**: http://localhost:9900
 
 5. **View all initialized projects**
    ```bash
@@ -78,8 +79,9 @@ These are copied to `.swe-swe/certs/` and mounted into all containers.
 Starts the swe-swe environment using `docker-compose up`. The environment includes:
 
 1. **swe-swe-server**: WebSocket-based AI terminal with session management
-2. **code-server**: VS Code running in a container
-3. **traefik**: HTTP reverse proxy with routing rules
+2. **chrome**: Headless Chromium with VNC for browser automation (used by MCP Playwright)
+3. **code-server**: VS Code running in a container
+4. **traefik**: HTTP reverse proxy with routing rules
 
 The workspace is mounted at `/workspace` inside containers, allowing bidirectional file access.
 
@@ -98,6 +100,7 @@ swe-swe up --path ~/my-project
 - `SWE_DASHBOARD_PORT`: Traefik dashboard port (defaults to 9900)
 - `NODE_EXTRA_CA_CERTS`: Enterprise certificate path
 - `SSL_CERT_FILE`: Certificate file for HTTPS tools
+- `BROWSER_WS_ENDPOINT`: WebSocket endpoint for browser automation (auto-configured to `ws://chrome:9223`)
 
 ### `swe-swe down --path PATH`
 
@@ -220,8 +223,20 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 - **Features**:
   - Real-time terminal with PTY support
   - Session management with configurable TTL
-  - Multiple AI assistant detection (claude, gemini, openai, etc.)
+  - Multiple AI assistant detection (claude, gemini, codex, goose, aider)
   - Automatic process restart on failure
+  - File upload via drag-and-drop (saved to `.swe-swe/uploads/`)
+  - In-session chat for collaboration
+
+#### chrome
+- **Ports**: 9223 (CDP), 6080 (VNC/noVNC)
+- **Purpose**: Headless Chromium browser for AI-driven browser automation
+- **Features**:
+  - Chrome DevTools Protocol (CDP) access via nginx proxy
+  - VNC server for visual observation at `chrome.lvh.me:9899`
+  - Used by MCP Playwright for browser automation tasks
+  - Enterprise SSL certificate support via NSS database
+- **Documentation**: See `docs/browser-automation.md`
 
 #### code-server
 - **Port**: 8080 (inside container)
@@ -377,7 +392,7 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 **Error**: `no AI assistants available`
 
 **Solution**: The server didn't detect an installed assistant:
-1. Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or similar
+1. Set API keys: `ANTHROPIC_API_KEY` (Claude), `GEMINI_API_KEY` (Gemini), `OPENAI_API_KEY` (Codex)
 2. Or install CLI tools: `claude`, `gemini`, `codex`, `goose`, `aider`
 
 ### Network Issues
