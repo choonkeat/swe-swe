@@ -346,6 +346,7 @@ func handleInit() {
 			"templates/host/chrome/supervisord.conf",
 			"templates/host/chrome/entrypoint.sh",
 			"templates/host/chrome/nginx-cdp.conf",
+			"templates/host/chrome/novnc-wrapper.html",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)
