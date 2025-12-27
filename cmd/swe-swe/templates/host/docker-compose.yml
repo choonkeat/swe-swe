@@ -9,7 +9,7 @@ services:
       - "--entrypoints.web.address=:7000"
     ports:
       - "${SWE_PORT:-9899}:7000"
-      - "${SWE_DASHBOARD_PORT:-9900}:8080"  # Traefik dashboard at traefik.lvh.me:${SWE_PORT:-9899}
+      - "${SWE_DASHBOARD_PORT:-9900}:8080"  # Traefik dashboard at localhost:${SWE_DASHBOARD_PORT:-9900}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"

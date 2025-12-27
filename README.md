@@ -21,9 +21,9 @@ A containerized development environment for AI-assisted coding with integrated V
    ```
 
 4. **Access the services**
-   - **swe-swe terminal**: http://swe-swe.lvh.me:9899
-   - **VSCode**: http://lvh.me:9899/vscode
-   - **Chrome VNC**: http://chrome.lvh.me:9899 (browser automation viewer)
+   - **swe-swe terminal**: http://0.0.0.0:9899
+   - **VSCode**: http://0.0.0.0:9899/vscode
+   - **Chrome VNC**: http://0.0.0.0:9899/chrome (browser automation viewer)
    - **Traefik dashboard**: http://localhost:9900
 
 5. **View all initialized projects**
@@ -98,9 +98,9 @@ swe-swe init --list-agents
 - Node.js/npm is only installed if `claude`, `gemini`, or `codex` is included
 - This can significantly reduce image size and build time
 
-Services are accessible using the `lvh.me` wildcard domain (resolves any subdomain to localhost).
+Services are accessible via path-based routing on `localhost` (or `0.0.0.0`) at the configured port.
 
-**Note on Domain & Port**: The domain is fixed to `lvh.me` and port defaults to `9899`. Both can be customized via environment variables for `swe-swe up` (see below). The domain cannot be changed via CLI flag; modify `docker-compose.yml` Traefik routing rules for custom domains.
+**Note on Port**: The port defaults to `9899` and can be customized via environment variables for `swe-swe up` (see below). Services are routed based on request paths (e.g., `/vscode`, `/chrome`) rather than subdomains, making it compatible with ngrok, cloudflared, and other tunnel services.
 
 **Enterprise Certificate Support**: If you're behind a corporate firewall or VPN, the init command automatically detects and copies certificates from:
 - `NODE_EXTRA_CA_CERTS`
@@ -268,7 +268,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 - **Purpose**: Headless Chromium browser for AI-driven browser automation
 - **Features**:
   - Chrome DevTools Protocol (CDP) access via nginx proxy
-  - VNC server for visual observation at `chrome.lvh.me:9899`
+  - VNC server for visual observation at `/chrome` path (e.g., http://0.0.0.0:9899/chrome)
   - Used by MCP Playwright for browser automation tasks
   - Enterprise SSL certificate support via NSS database
 - **Documentation**: See `docs/browser-automation.md`
@@ -283,12 +283,11 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 
 #### traefik
 - **Ports**: 7000 (web, external port 9899), 8080 (dashboard, external port 9900)
-- **Purpose**: Reverse proxy and routing
+- **Purpose**: Reverse proxy and routing with path-based request matching
 - **Routing Rules**:
-  - `swe-swe.lvh.me`: Routes to swe-swe-server (subdomain-based)
-  - `/vscode` path: Routes to code-server (path-based)
-  - `traefik.lvh.me`: Dashboard (subdomain-based)
-  - All other subdomains: Routes to swe-swe-server
+  - `/vscode` path: Routes to code-server with path prefix stripped (priority 100)
+  - `/chrome` path: Routes to chrome service with path prefix stripped (priority 100)
+  - `/` path: Routes to swe-swe-server (priority 10, catch-all)
 
 ### Network
 
@@ -432,12 +431,13 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 
 ### Network Issues
 
-**Error**: Service not accessible at `*.lvh.me`
+**Error**: Service not accessible at configured port (default 9899)
 
 **Solution**:
 1. Verify Docker is running: `docker ps`
 2. Check containers are healthy: `docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml ps`
-3. Check Traefik logs: `docker logs traefik`
+3. Check Traefik logs: `docker logs <project-name>-traefik-1`
+4. Verify you're using correct paths: `http://0.0.0.0:9899/`, `http://0.0.0.0:9899/vscode`, `http://0.0.0.0:9899/chrome`
 
 ### Persistent Home Issues
 
