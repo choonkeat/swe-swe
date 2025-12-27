@@ -1,0 +1,4 @@
+dist/
+cmd/swe-swe/bin
+tmp/
+.swe-swe/
