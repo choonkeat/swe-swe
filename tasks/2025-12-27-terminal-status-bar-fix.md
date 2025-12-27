@@ -63,11 +63,15 @@ Remove outdated subdomain precondition from terminal status bar and clean up unu
 Status bar will show [vscode] | [browser] service links for all access patterns, not just subdomain-based access. The terminal UI will be consistent with the new path-based routing architecture.
 
 ## Implementation Summary
-✅ **COMPLETED** - All code changes implemented in commit `0f491c5`
+✅ **COMPLETED** - All code changes implemented
 - Removed subdomain precondition check that was blocking status bar rendering
 - Removed unused `buildUrl()` function and subdomain-swapping logic
-- Verified path-based URL construction remains correct
+- Updated service links to include trailing slashes (`/vscode/`, `/chrome/`)
+- Fixed Traefik redirect regex for `/chrome` path (changed `^/chrome$$` to `^/chrome$`)
 - Status bar will now display service links on all hostnames
+
+## Bug Discovered & Fixed
+The Traefik redirect middleware for `/chrome` had an incorrect regex pattern `^/chrome$$` (double dollar sign) which prevented the redirect from `/chrome` to `/chrome/` from working. Fixed to `^/chrome$` in `docker-compose.yml` line 30.
 
 ## Related Files
 - Source: `cmd/swe-swe-server/static/terminal-ui.js`
