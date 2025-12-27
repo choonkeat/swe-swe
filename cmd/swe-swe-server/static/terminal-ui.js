@@ -646,8 +646,8 @@ class TerminalUI extends HTMLElement {
         const port = window.location.port;
         const baseUrl = port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
         const services = [
-            { name: 'vscode', url: `${baseUrl}/vscode` },
-            { name: 'browser', url: `${baseUrl}/chrome` }
+            { name: 'vscode', url: `${baseUrl}/vscode/` },
+            { name: 'browser', url: `${baseUrl}/chrome/` }
         ];
 
         const container = document.createElement('div');

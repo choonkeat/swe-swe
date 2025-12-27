@@ -39,21 +39,24 @@ Remove outdated subdomain precondition from terminal status bar and clean up unu
   ```
 - **COMPLETED**: Removed unused buildUrl function and baseDomain logic
 
-### 3. Verify path-based URLs remain correct
-- [x] Confirm lines 658-663 stay intact (these build the correct path-based URLs)
+### 3. Verify path-based URLs remain correct and add trailing slashes
+- [x] Updated URLs to include trailing slashes (required by routing configuration)
   ```javascript
   // All services use path-based routing
   const baseUrl = port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
   const services = [
-      { name: 'vscode', url: `${baseUrl}/vscode` },
-      { name: 'browser', url: `${baseUrl}/chrome` }
+      { name: 'vscode', url: `${baseUrl}/vscode/` },
+      { name: 'browser', url: `${baseUrl}/chrome/` }
   ];
   ```
-- **VERIFIED**: Path-based URLs are correct and intact
+- **VERIFIED**: Traefik routing requires trailing slashes
+  - `/chrome/` is explicitly redirected from `/chrome` (docker-compose.yml line 30-31)
+  - `/vscode/` is required by nginx location matching (nginx-vscode.conf)
+  - These are intentional design decisions for proper path handling across proxy layers
 
 ### 4. Test the fix
 - [ ] Verify status bar displays [vscode] | [browser] links when accessing terminal via path-based URL
-- [ ] Verify links navigate to correct paths (`/vscode` and `/chrome`)
+- [ ] Verify links navigate to correct paths (`/vscode/` and `/chrome/` with trailing slashes)
 - [ ] Verify links work on different hostnames/environments
 
 ## Expected Outcome
