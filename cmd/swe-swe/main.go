@@ -83,10 +83,14 @@ func handleInit() {
 		log.Fatalf("Failed to create directory %q: %v", absPath, err)
 	}
 
-	// Create .swe-swe directory
-	sweDir := filepath.Join(absPath, ".swe-swe")
+	// Get metadata directory in $HOME/.swe-swe/projects/
+	sweDir, err := getMetadataDir(absPath)
+	if err != nil {
+		log.Fatalf("Failed to compute metadata directory: %v", err)
+	}
+
 	if err := os.MkdirAll(sweDir, 0755); err != nil {
-		log.Fatalf("Failed to create .swe-swe directory: %v", err)
+		log.Fatalf("Failed to create metadata directory: %v", err)
 	}
 
 	// Create bin, home, and certs subdirectories
@@ -97,6 +101,12 @@ func handleInit() {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			log.Fatalf("Failed to create directory %q: %v", dir, err)
 		}
+	}
+
+	// Write .path file to record the project path
+	pathFile := filepath.Join(sweDir, ".path")
+	if err := os.WriteFile(pathFile, []byte(absPath), 0644); err != nil {
+		log.Fatalf("Failed to write path file: %v", err)
 	}
 
 	// Skip template extraction if --update-binary-only flag is set
@@ -161,7 +171,7 @@ func handleInit() {
 		}
 	}
 
-	// Write binary to .swe-swe/bin/swe-swe-server
+	// Write binary to metadata/bin/swe-swe-server
 	serverPath := filepath.Join(binDir, "swe-swe-server")
 	if err := os.WriteFile(serverPath, binaryData, 0755); err != nil {
 		log.Fatalf("Failed to extract swe-swe-server binary: %v", err)
@@ -169,6 +179,7 @@ func handleInit() {
 	fmt.Printf("Extracted %s\n", serverPath)
 
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
+	fmt.Printf("View all projects: swe-swe list\n")
 	fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
 }
 

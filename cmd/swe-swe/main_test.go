@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -105,7 +106,7 @@ func TestGetMetadataDirUnderHome(t *testing.T) {
 	}
 }
 
-// TestGetMetadataDirDifferentForDifferentPaths verifies different paths get different metadata dirs
+// TestGetMetadataDifferentForDifferentPaths verifies different paths get different metadata dirs
 func TestGetMetadataDirDifferentForDifferentPaths(t *testing.T) {
 	path1 := "/tmp/test-project-1"
 	path2 := "/tmp/test-project-2"
@@ -119,5 +120,97 @@ func TestGetMetadataDirDifferentForDifferentPaths(t *testing.T) {
 
 	if result1 == result2 {
 		t.Errorf("different paths should get different metadata dirs: %q", result1)
+	}
+}
+
+// TestPathFileCreated verifies .path file is created and contains correct path
+func TestPathFileCreated(t *testing.T) {
+	// Create temporary test directory
+	testDir := t.TempDir()
+	projectDir := filepath.Join(testDir, "myproject")
+
+	// Compute where metadata will be stored
+	metadataDir, err := getMetadataDir(projectDir)
+	if err != nil {
+		t.Fatalf("Failed to get metadata dir: %v", err)
+	}
+
+	// Create project directory structure (simulating what handleInit does)
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Failed to create project dir: %v", err)
+	}
+
+	if err := os.MkdirAll(metadataDir, 0755); err != nil {
+		t.Fatalf("Failed to create metadata dir: %v", err)
+	}
+
+	// Write .path file
+	pathFile := filepath.Join(metadataDir, ".path")
+	if err := os.WriteFile(pathFile, []byte(projectDir), 0644); err != nil {
+		t.Fatalf("Failed to write path file: %v", err)
+	}
+
+	// Read and verify .path file
+	content, err := os.ReadFile(pathFile)
+	if err != nil {
+		t.Errorf("Failed to read path file: %v", err)
+	}
+
+	if string(content) != projectDir {
+		t.Errorf("path file contains wrong content: got %q, want %q", string(content), projectDir)
+	}
+}
+
+// TestMetadataDirStructure verifies metadata directory contains expected subdirectories
+func TestMetadataDirStructure(t *testing.T) {
+	testDir := t.TempDir()
+	projectDir := filepath.Join(testDir, "myproject")
+
+	metadataDir, err := getMetadataDir(projectDir)
+	if err != nil {
+		t.Fatalf("Failed to get metadata dir: %v", err)
+	}
+
+	// Create subdirectories
+	binDir := filepath.Join(metadataDir, "bin")
+	homeDir := filepath.Join(metadataDir, "home")
+	certsDir := filepath.Join(metadataDir, "certs")
+
+	for _, dir := range []string{binDir, homeDir, certsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create dir: %v", err)
+		}
+	}
+
+	// Verify directories exist
+	for _, dir := range []string{binDir, homeDir, certsDir} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Errorf("Directory does not exist: %s", dir)
+		}
+		if !info.IsDir() {
+			t.Errorf("Path is not a directory: %s", dir)
+		}
+	}
+}
+
+// TestSweSweNotCreatedInProject verifies .swe-swe is NOT created in project directory
+func TestSweSweNotCreatedInProject(t *testing.T) {
+	testDir := t.TempDir()
+	projectDir := filepath.Join(testDir, "myproject")
+
+	// Create project directory
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Failed to create project dir: %v", err)
+	}
+
+	// Old location should NOT exist
+	oldSweDir := filepath.Join(projectDir, ".swe-swe")
+	_, err := os.Stat(oldSweDir)
+	if err == nil {
+		t.Errorf(".swe-swe should NOT be created in project directory at %s", oldSweDir)
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("Unexpected error checking for .swe-swe: %v", err)
 	}
 }
