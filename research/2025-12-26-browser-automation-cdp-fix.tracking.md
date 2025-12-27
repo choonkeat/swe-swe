@@ -58,9 +58,18 @@ startsecs=5
   - Created `chrome/entrypoint.sh` - installs certs from `/swe-swe/certs` to system trust store
   - Updated Dockerfile: added ca-certificates, entrypoint.sh, ENTRYPOINT directive
   - Updated docker-compose.yml: mount `./certs:/swe-swe/certs:ro` into chrome container
-- [ ] **NEXT: User to rebuild chrome container**
-- [ ] Verify MCP Playwright tools work in claude-code session
-- [ ] Commit changes
+- [x] **User rebuilt chrome container** (2025-12-26)
+- [x] CDP endpoint verified working via nginx proxy:
+  - `curl http://chrome:9223/json/version` returns Chrome version JSON
+  - Port 9222 correctly blocked from external access
+- [x] Fixed MCP package name (`@playwright/mcp` not `@anthropic-ai/mcp-playwright`)
+- [x] Removed "best-effort" silent failure patterns from Dockerfile:
+  - All installs now fail fast (no `|| true`, `|| echo`, `2>/dev/null`)
+  - Removed optional codex/gemini-cli (future: CLI flags)
+  - Cleaned up stale comments
+- [ ] **NEXT: Restart Claude Code session to activate MCP Playwright tools**
+- [ ] Verify MCP Playwright tools work after session restart
+- [x] Commit changes (e9d4ed8)
 
 ## Session Log (2025-12-26)
 - Confirmed current chrome container only has `127.0.0.1:9222` (no 9223)
@@ -82,6 +91,19 @@ startsecs=5
     - `chrome/entrypoint.sh` - new file, installs certs before supervisord
     - `chrome/Dockerfile` - added ca-certificates, entrypoint.sh
     - `docker-compose.yml` - mount ./certs:/swe-swe/certs:ro into chrome
+
+- **VERIFICATION PASSED** (session resumed):
+  - Chrome container rebuilt with nginx proxy
+  - `curl http://chrome:9223/json/version` returns valid JSON
+  - MCP tools not available in current session (session predates config)
+- **CRITICAL FIX: Wrong MCP package** (2025-12-26):
+  - `@anthropic-ai/mcp-playwright` does NOT exist (npm 404)
+  - Correct package: `@playwright/mcp` (official Microsoft/Playwright)
+  - Config format: uses CLI args `--cdp-endpoint` not env vars
+  - Files updated:
+    - `cmd/swe-swe/templates/.claude/mcp.json`
+    - `cmd/swe-swe/templates/Dockerfile`
+    - `/workspace/.claude/mcp.json`
 
 ## Next Steps (for user on host)
 ```bash
