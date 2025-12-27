@@ -1,7 +1,6 @@
 services:
   traefik:
     image: traefik:v3.0
-    container_name: traefik
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
@@ -22,7 +21,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: swe-swe-server
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.swe.rule=HostRegexp(`.*`)"
@@ -55,7 +53,6 @@ services:
 
   code-server:
     image: codercom/code-server:latest
-    container_name: code-server
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.vscode.rule=HostRegexp(`vscode\\..+`)"
