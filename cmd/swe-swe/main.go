@@ -197,10 +197,15 @@ func handleUp() {
 		log.Fatalf("Failed to resolve path: %v", err)
 	}
 
-	// Check if .swe-swe directory exists
-	sweDir := filepath.Join(absPath, ".swe-swe")
+	// Get metadata directory
+	sweDir, err := getMetadataDir(absPath)
+	if err != nil {
+		log.Fatalf("Failed to compute metadata directory: %v", err)
+	}
+
+	// Check if metadata directory exists
 	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
-		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s", absPath, absPath)
+		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
 	}
 
 	// Check if docker-compose is available

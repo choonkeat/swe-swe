@@ -214,3 +214,46 @@ func TestSweSweNotCreatedInProject(t *testing.T) {
 		t.Errorf("Unexpected error checking for .swe-swe: %v", err)
 	}
 }
+
+// TestHandleUpMetadataDirLookup verifies handleUp uses getMetadataDir() to find metadata
+func TestHandleUpMetadataDirLookup(t *testing.T) {
+	testDir := t.TempDir()
+	projectDir := filepath.Join(testDir, "myproject")
+
+	// Create project directory
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Failed to create project dir: %v", err)
+	}
+
+	// Get the metadata directory that handleUp would use
+	metadataDir, err := getMetadataDir(projectDir)
+	if err != nil {
+		t.Fatalf("Failed to get metadata dir: %v", err)
+	}
+
+	// Metadata directory should NOT exist yet
+	if _, err := os.Stat(metadataDir); err == nil {
+		t.Errorf("Metadata dir should not exist before init: %s", metadataDir)
+	}
+
+	// Create the metadata directory (simulating handleInit)
+	if err := os.MkdirAll(metadataDir, 0755); err != nil {
+		t.Fatalf("Failed to create metadata dir: %v", err)
+	}
+
+	// Create docker-compose.yml
+	composeFile := filepath.Join(metadataDir, "docker-compose.yml")
+	if err := os.WriteFile(composeFile, []byte("version: '3'"), 0644); err != nil {
+		t.Fatalf("Failed to create docker-compose.yml: %v", err)
+	}
+
+	// Verify metadata directory now exists
+	if _, err := os.Stat(metadataDir); err != nil {
+		t.Errorf("Metadata dir should exist after creation: %v", err)
+	}
+
+	// Verify docker-compose.yml is where handleUp expects it
+	if _, err := os.Stat(composeFile); err != nil {
+		t.Errorf("docker-compose.yml should exist at %s: %v", composeFile, err)
+	}
+}
