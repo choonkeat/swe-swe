@@ -2,3 +2,4 @@ dist/
 cmd/swe-swe/bin
 tmp/
 .swe-swe/
+!cmd/swe-swe/templates/container/.swe-swe/

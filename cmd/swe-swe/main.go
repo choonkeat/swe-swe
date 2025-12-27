@@ -115,33 +115,33 @@ func handleInit() {
 	// Skip template extraction if --update-binary-only flag is set
 	if !*updateBinaryOnly {
 		// Extract embedded files
-		// Files that go to metadata directory (.swe-swe/projects/<path>/)
-		templateFiles := []string{
-			"templates/Dockerfile",
-			"templates/docker-compose.yml",
-			"templates/traefik-dynamic.yml",
-			"templates/entrypoint.sh",
-			"templates/chrome/Dockerfile",
-			"templates/chrome/supervisord.conf",
-			"templates/chrome/entrypoint.sh",
-			"templates/chrome/nginx-cdp.conf",
-			"templates/docs/BROWSER_AUTOMATION.md",
+		// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
+		hostFiles := []string{
+			"templates/host/Dockerfile",
+			"templates/host/docker-compose.yml",
+			"templates/host/traefik-dynamic.yml",
+			"templates/host/entrypoint.sh",
+			"templates/host/chrome/Dockerfile",
+			"templates/host/chrome/supervisord.conf",
+			"templates/host/chrome/entrypoint.sh",
+			"templates/host/chrome/nginx-cdp.conf",
 		}
 
-		// Files that go to project directory (for Claude Code MCP config)
+		// Files that go to project directory (accessible by Claude in container)
 		// Note: .mcp.json must be at project root, not .claude/mcp.json
-		projectFiles := []string{
-			"templates/.mcp.json",
+		containerFiles := []string{
+			"templates/container/.mcp.json",
+			"templates/container/.swe-swe/browser-automation.md",
 		}
 
-		for _, templateFile := range templateFiles {
-			content, err := assets.ReadFile(templateFile)
+		for _, hostFile := range hostFiles {
+			content, err := assets.ReadFile(hostFile)
 			if err != nil {
-				log.Fatalf("Failed to read embedded file %q: %v", templateFile, err)
+				log.Fatalf("Failed to read embedded file %q: %v", hostFile, err)
 			}
 
 			// Calculate destination path, preserving subdirectories
-			relPath := strings.TrimPrefix(templateFile, "templates/")
+			relPath := strings.TrimPrefix(hostFile, "templates/host/")
 			destPath := filepath.Join(sweDir, relPath)
 
 			// Create parent directories if needed
@@ -152,7 +152,7 @@ func handleInit() {
 
 			// entrypoint.sh should be executable
 			fileMode := os.FileMode(0644)
-			if filepath.Base(templateFile) == "entrypoint.sh" {
+			if filepath.Base(hostFile) == "entrypoint.sh" {
 				fileMode = os.FileMode(0755)
 			}
 
@@ -162,15 +162,15 @@ func handleInit() {
 			fmt.Printf("Created %s\n", destPath)
 		}
 
-		// Extract project-level files (go to project directory, not metadata)
-		for _, templateFile := range projectFiles {
-			content, err := assets.ReadFile(templateFile)
+		// Extract container files (go to project directory, accessible by Claude)
+		for _, containerFile := range containerFiles {
+			content, err := assets.ReadFile(containerFile)
 			if err != nil {
-				log.Fatalf("Failed to read embedded file %q: %v", templateFile, err)
+				log.Fatalf("Failed to read embedded file %q: %v", containerFile, err)
 			}
 
 			// Calculate destination path in project directory
-			relPath := strings.TrimPrefix(templateFile, "templates/")
+			relPath := strings.TrimPrefix(containerFile, "templates/container/")
 			destPath := filepath.Join(absPath, relPath)
 
 			// Create parent directories if needed
