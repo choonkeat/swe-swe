@@ -1,26 +1,20 @@
-# Chrome browser with Xvfb + noVNC for visual observability
+# Chrome browser with noVNC for visual observability
 # Enables Claude to control a browser while developers watch via VNC
+# Based on selenium/standalone-chrome which includes Chrome, Xvfb, VNC
 
-FROM debian:bookworm-slim
+FROM seleniarm/standalone-chromium:124.0
 
-RUN apt-get update && apt-get install -y \
-    xvfb \
-    x11vnc \
-    novnc \
-    websockify \
-    chromium \
-    supervisor \
-    procps \
+USER root
+
+# Install nginx for CDP reverse proxy and supervisor for process management
+RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
-    ca-certificates \
+    supervisor \
     libnss3-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -s /bin/bash chrome
-
 # Create directories for supervisor and logs
-RUN mkdir -p /var/log/supervisor /var/run
+RUN mkdir -p /var/log/supervisor /var/run /var/log/nginx
 
 # Supervisor config to manage processes
 COPY chrome/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -28,16 +22,13 @@ COPY chrome/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Nginx config for CDP reverse proxy (fixes Host header issue)
 COPY chrome/nginx-cdp.conf /etc/nginx/nginx.conf
 
-# Create nginx log directory
-RUN mkdir -p /var/log/nginx
-
-# noVNC web files location
-# Create symlink to full viewer (vnc_lite.html) as vnc.html so it's available when wrapper redirects to it
-ENV NOVNC_HOME=/usr/share/novnc
-RUN ln -sf /usr/share/novnc/vnc_lite.html /usr/share/novnc/vnc.html
+# noVNC is at /opt/bin/noVNC in selenium image
+ENV NOVNC_HOME=/opt/bin/noVNC
 
 # Customize noVNC title to 'chrome - swe-swe'
-RUN sed -i 's/<title>.*<\/title>/<title>chrome - swe-swe<\/title>/' /usr/share/novnc/vnc_lite.html
+RUN if [ -f /opt/bin/noVNC/vnc_lite.html ]; then \
+        sed -i 's/<title>.*<\/title>/<title>chrome - swe-swe<\/title>/' /opt/bin/noVNC/vnc_lite.html; \
+    fi
 
 # Copy noVNC wrapper HTML for /chrome basepath (configures correct WebSocket path)
 COPY chrome/novnc-wrapper.html /app/novnc-wrapper.html
@@ -54,5 +45,5 @@ EXPOSE 9223 6080
 # Entrypoint installs enterprise certificates (if mounted), then runs CMD
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# Start supervisor to manage Xvfb, Chrome, x11vnc, nginx, and websockify
+# Start supervisor to manage Chrome, nginx, and websockify (Xvfb and VNC from base image)
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
