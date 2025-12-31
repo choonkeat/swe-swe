@@ -2,6 +2,8 @@
 
 A containerized development environment for AI-assisted coding with integrated VSCode, browser automation, Traefik reverse proxy, and support for multiple AI assistants (Claude, Gemini, Codex, Goose, Aider).
 
+https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
+
 ## Quick Start
 
 1. **Download the swe-swe binary** for your platform:
