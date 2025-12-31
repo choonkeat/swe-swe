@@ -21,9 +21,9 @@ NC='\033[0m' # No Color
 # Copy noVNC wrapper to serve from /chrome basepath with correct WebSocket path
 if [ -f /app/novnc-wrapper.html ]; then
     # Remove any existing symlink at index.html (cp -f won't replace symlinks properly)
-    rm -f /usr/share/novnc/index.html
+    rm -f /opt/bin/noVNC/index.html
     # Use cp with -P flag to copy the file itself (not follow symlinks) and force overwrite
-    cp -f /app/novnc-wrapper.html /usr/share/novnc/index.html
+    cp -f /app/novnc-wrapper.html /opt/bin/noVNC/index.html
     echo -e "${GREEN}✓ noVNC wrapper installed for /chrome basepath${NC}"
 fi
 
@@ -38,8 +38,8 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
         fi
     fi
 
-    # 2. Install to NSS database (for Chromium browser)
-    NSS_DB="/home/chrome/.pki/nssdb"
+    # 2. Install to NSS database (for Chrome browser)
+    NSS_DB="/home/seluser/.pki/nssdb"
     mkdir -p "$NSS_DB"
 
     # Initialize NSS database if it doesn't exist
@@ -60,8 +60,8 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
         fi
     done
 
-    # Set ownership for chrome user
-    chown -R chrome:chrome "$NSS_DB"
+    # Set ownership for seluser
+    chown -R seluser:seluser "$NSS_DB"
 
     echo -e "${GREEN}✓ Enterprise certificates installed${NC}"
 fi
