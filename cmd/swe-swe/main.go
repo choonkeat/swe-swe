@@ -374,6 +374,9 @@ func handleInit() {
 			"templates/host/chrome/entrypoint.sh",
 			"templates/host/chrome/nginx-cdp.conf",
 			"templates/host/chrome/novnc-wrapper.html",
+			"templates/host/auth/Dockerfile",
+			"templates/host/auth/go.mod",
+			"templates/host/auth/main.go",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)

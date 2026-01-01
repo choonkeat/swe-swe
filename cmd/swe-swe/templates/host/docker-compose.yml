@@ -17,6 +17,21 @@ services:
       - swe-network
     restart: unless-stopped
 
+  auth:
+    build:
+      context: .
+      dockerfile: auth/Dockerfile
+    environment:
+      - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/swe-swe-auth`)"
+      - "traefik.http.routers.auth.priority=200"
+      - "traefik.http.services.auth.loadbalancer.server.port=4180"
+    networks:
+      - swe-network
+    restart: unless-stopped
+
   chrome:
     build:
       context: .
