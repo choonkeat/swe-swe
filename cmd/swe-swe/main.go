@@ -342,6 +342,17 @@ func handleInit() {
 		}
 	}
 
+	// Set home directory ownership to UID 1000 (code-server user) recursively.
+	// This is needed when running as root on Linux, otherwise code-server
+	// cannot write to its home directory. Errors are ignored because this
+	// only works when running as root on Linux.
+	filepath.Walk(homeDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil {
+			os.Chown(path, 1000, 1000)
+		}
+		return nil
+	})
+
 	// Write .path file to record the project path
 	pathFile := filepath.Join(sweDir, ".path")
 	if err := os.WriteFile(pathFile, []byte(absPath), 0644); err != nil {
