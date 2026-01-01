@@ -78,11 +78,39 @@ const loginFormHTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-// loginHandler handles GET requests to show the login form.
+// loginHandler handles GET (show form) and POST (validate password) requests.
 func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		loginPostHandler(w, r)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(loginFormHTML))
+}
+
+// loginPostHandler validates password, sets cookie, and redirects.
+func loginPostHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	password := r.FormValue("password")
+	if password == "" || password != secret {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	// Set session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:  cookieName,
+		Value: signCookie(secret),
+		Path:  "/",
+	})
+
+	// Redirect to home
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func main() {

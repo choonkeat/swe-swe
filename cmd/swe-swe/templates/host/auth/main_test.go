@@ -147,3 +147,73 @@ func TestLoginGetHandler_ContainsSubmitButton(t *testing.T) {
 		t.Error("expected submit button in HTML")
 	}
 }
+
+// Login POST endpoint tests
+
+func TestLoginPostHandler_WrongPassword_Returns401(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=wrong-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", w.Code)
+	}
+}
+
+func TestLoginPostHandler_EmptyPassword_Returns401(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", w.Code)
+	}
+}
+
+func TestLoginPostHandler_CorrectPassword_SetsCookie(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=correct-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	cookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Error("expected session cookie to be set")
+	}
+}
+
+func TestLoginPostHandler_CorrectPassword_Redirects(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=correct-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Errorf("expected status 302, got %d", w.Code)
+	}
+	location := w.Header().Get("Location")
+	if location != "/" {
+		t.Errorf("expected redirect to /, got %s", location)
+	}
+}
