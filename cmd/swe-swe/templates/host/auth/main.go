@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -54,31 +56,126 @@ func computeHMAC(data, secret string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// verifyHandler checks the session cookie and returns 200 (valid) or 401 (invalid).
+// verifyHandler checks the session cookie and returns 200 (valid) or redirects to login (invalid).
 // Used by Traefik ForwardAuth middleware.
 func verifyHandler(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(cookieName)
 	if err != nil || !verifyCookie(cookie.Value, secret) {
-		w.WriteHeader(http.StatusUnauthorized)
+		// Get the original URL from ForwardAuth headers
+		originalURI := r.Header.Get("X-Forwarded-Uri")
+		if originalURI == "" {
+			originalURI = "/"
+		}
+		// Build absolute redirect URL using forwarded host/proto
+		scheme := r.Header.Get("X-Forwarded-Proto")
+		if scheme == "" {
+			scheme = "http"
+		}
+		host := r.Header.Get("X-Forwarded-Host")
+		if host == "" {
+			host = r.Host
+		}
+		loginPath := "/swe-swe-auth/login?redirect=" + url.QueryEscape(originalURI)
+		loginURL := scheme + "://" + host + loginPath
+		// Set Location header manually to avoid Go converting to internal host
+		w.Header().Set("Location", loginURL)
+		w.WriteHeader(http.StatusFound)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-const loginFormHTML = `<!DOCTYPE html>
+// renderLoginForm generates the login HTML with optional redirect value and error message
+func renderLoginForm(redirectURL, errorMsg string) string {
+	redirectField := ""
+	if redirectURL != "" {
+		redirectField = fmt.Sprintf(`<input type="hidden" name="redirect" value="%s">`, html.EscapeString(redirectURL))
+	}
+	errorHTML := ""
+	if errorMsg != "" {
+		errorHTML = fmt.Sprintf(`<div class="error">%s</div>`, html.EscapeString(errorMsg))
+	}
+	return fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - swe-swe</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 100%%;
+            max-width: 400px;
+        }
+        h1 {
+            margin: 0 0 24px 0;
+            font-size: 24px;
+            text-align: center;
+            color: #333;
+        }
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        input[type="password"] {
+            width: 100%%;
+            padding: 16px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 16px;
+        }
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+        button {
+            width: 100%%;
+            padding: 16px;
+            font-size: 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        button:hover { background: #0056b3; }
+        button:active { background: #004085; }
+    </style>
 </head>
 <body>
-    <form method="POST" action="/swe-swe-auth/login">
-        <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
-        <button type="submit">Login</button>
-    </form>
+    <div class="container">
+        <h1>swe-swe</h1>
+        %s
+        <form method="POST" action="/swe-swe-auth/login">
+            %s
+            <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+    </div>
 </body>
-</html>`
+</html>`, errorHTML, redirectField)
+}
 
 // loginHandler handles GET (show form) and POST (validate password) requests.
 func loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -86,21 +183,27 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		loginPostHandler(w, r)
 		return
 	}
+	redirectURL := r.URL.Query().Get("redirect")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(loginFormHTML))
+	w.Write([]byte(renderLoginForm(redirectURL, "")))
 }
 
 // loginPostHandler validates password, sets cookie, and redirects.
 func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(renderLoginForm("", "Invalid request")))
 		return
 	}
 
 	password := r.FormValue("password")
+	redirectURL := r.FormValue("redirect")
 	if password == "" || password != secret {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(renderLoginForm(redirectURL, "Invalid password")))
 		return
 	}
 
@@ -115,8 +218,11 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 		Secure:   isSecure,
 	})
 
-	// Redirect to home
-	http.Redirect(w, r, "/", http.StatusFound)
+	// Redirect to original URL or home
+	if redirectURL == "" {
+		redirectURL = "/"
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func main() {
