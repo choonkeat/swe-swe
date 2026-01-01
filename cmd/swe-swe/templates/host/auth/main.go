@@ -104,11 +104,15 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set session cookie
+	// Set session cookie with security attributes
+	isSecure := r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
-		Name:  cookieName,
-		Value: signCookie(secret),
-		Path:  "/",
+		Name:     cookieName,
+		Value:    signCookie(secret),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isSecure,
 	})
 
 	// Redirect to home

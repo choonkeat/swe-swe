@@ -217,3 +217,107 @@ func TestLoginPostHandler_CorrectPassword_Redirects(t *testing.T) {
 		t.Errorf("expected redirect to /, got %s", location)
 	}
 }
+
+// Cookie security tests
+
+func TestLoginPostHandler_CookieHasHttpOnly(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=correct-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	cookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie to be set")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("expected cookie to have HttpOnly flag")
+	}
+}
+
+func TestLoginPostHandler_CookieHasSameSiteLax(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=correct-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	cookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie to be set")
+	}
+	if sessionCookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("expected SameSite=Lax, got %v", sessionCookie.SameSite)
+	}
+}
+
+func TestLoginPostHandler_CookieSecureWhenHTTPS(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=correct-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	cookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie to be set")
+	}
+	if !sessionCookie.Secure {
+		t.Error("expected Secure flag when X-Forwarded-Proto is https")
+	}
+}
+
+func TestLoginPostHandler_CookieNotSecureWhenHTTP(t *testing.T) {
+	secret = "correct-password"
+	body := strings.NewReader("password=correct-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// No X-Forwarded-Proto header (HTTP)
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	cookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == cookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie to be set")
+	}
+	if sessionCookie.Secure {
+		t.Error("expected no Secure flag when not HTTPS")
+	}
+}
