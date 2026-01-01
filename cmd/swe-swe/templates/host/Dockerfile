@@ -14,11 +14,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # {{IF NODEJS}}
-# Install Node.js from Debian repositories (simpler than nvm in Docker)
-RUN apt-get update && apt-get install -y \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+# Install Node.js 24 LTS from NodeSource (Debian repos only have EOL Node.js 18)
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # Ensure npm global packages are in PATH
 ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
