@@ -463,7 +463,7 @@ func handleInit() {
 			// Calculate destination path, preserving subdirectories
 			relPath := strings.TrimPrefix(hostFile, "templates/host/")
 			// Rename go.mod.txt and go.sum.txt back to go.mod/go.sum
-			// (workaround for go:embed excluding go.mod files)
+			// (workaround for go:embed excluding directories with go.mod files)
 			if strings.HasSuffix(relPath, "go.mod.txt") || strings.HasSuffix(relPath, "go.sum.txt") {
 				relPath = strings.TrimSuffix(relPath, ".txt")
 			}
