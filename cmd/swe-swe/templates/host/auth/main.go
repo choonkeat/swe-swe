@@ -59,14 +59,25 @@ func computeHMAC(data, secret string) string {
 // verifyHandler checks the session cookie and returns 200 (valid) or redirects to login (invalid).
 // Used by Traefik ForwardAuth middleware.
 func verifyHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	originalURI := r.Header.Get("X-Forwarded-Uri")
+	userAgent := r.Header.Get("User-Agent")
+
 	cookie, err := r.Cookie(cookieName)
 	if err != nil || !verifyCookie(cookie.Value, secret) {
-		// Get the original URL from ForwardAuth headers
-		originalURI := r.Header.Get("X-Forwarded-Uri")
-		if originalURI == "" {
-			originalURI = "/"
+		// Log failed auth attempts for debugging
+		uaSnippet := userAgent
+		if len(uaSnippet) > 50 {
+			uaSnippet = uaSnippet[:50]
 		}
+		log.Printf("Auth failed: uri=%s cookie_present=%v ua=%s elapsed=%v",
+			originalURI, err == nil, uaSnippet, time.Since(start))
+
 		// Build absolute redirect URL using forwarded host/proto
+		redirectURI := originalURI
+		if redirectURI == "" {
+			redirectURI = "/"
+		}
 		scheme := r.Header.Get("X-Forwarded-Proto")
 		if scheme == "" {
 			scheme = "http"
@@ -75,12 +86,17 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		if host == "" {
 			host = r.Host
 		}
-		loginPath := "/swe-swe-auth/login?redirect=" + url.QueryEscape(originalURI)
+		loginPath := "/swe-swe-auth/login?redirect=" + url.QueryEscape(redirectURI)
 		loginURL := scheme + "://" + host + loginPath
 		// Set Location header manually to avoid Go converting to internal host
 		w.Header().Set("Location", loginURL)
 		w.WriteHeader(http.StatusFound)
 		return
+	}
+
+	// Log WebSocket auth for performance analysis
+	if strings.HasPrefix(originalURI, "/ws/") {
+		log.Printf("Auth OK (WebSocket): uri=%s elapsed=%v", originalURI, time.Since(start))
 	}
 	w.WriteHeader(http.StatusOK)
 }
