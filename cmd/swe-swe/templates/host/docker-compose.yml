@@ -40,7 +40,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
       - "traefik.http.routers.chrome.priority=100"
-      - "traefik.http.routers.chrome.middlewares=chrome-redirect@docker,chrome-strip@docker"
+      - "traefik.http.routers.chrome.middlewares=forwardauth@file,chrome-redirect@docker,chrome-strip@docker"
       - "traefik.http.services.chrome.loadbalancer.server.port=6080"
       - "traefik.http.middlewares.chrome-redirect.redirectregex.regex=^/chrome$$"
       - "traefik.http.middlewares.chrome-redirect.redirectregex.replacement=/chrome/"
@@ -60,9 +60,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.swe-swe.rule=PathPrefix(`/`)"
       - "traefik.http.routers.swe-swe.priority=10"
+      - "traefik.http.routers.swe-swe.middlewares=forwardauth@file"
       - "traefik.http.services.swe-swe.loadbalancer.server.port=9898"
-      # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
-      # - "traefik.http.routers.swe-swe.middlewares=auth@file"
     depends_on:
       - chrome
     volumes:
@@ -98,9 +97,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.vscode.rule=PathPrefix(`/vscode`)"
       - "traefik.http.routers.vscode.priority=100"
+      - "traefik.http.routers.vscode.middlewares=forwardauth@file"
       - "traefik.http.services.vscode.loadbalancer.server.port=8081"
-      # Uncomment below to enable basic auth (edit traefik-dynamic.yml to configure credentials)
-      # - "traefik.http.routers.vscode.middlewares=auth@file"
     depends_on:
       - code-server
     networks:
