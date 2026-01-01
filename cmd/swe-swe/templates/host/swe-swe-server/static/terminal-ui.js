@@ -484,6 +484,69 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__chat-cancel-btn:hover {
                     background: #777;
                 }
+                /* Paste Overlay */
+                .terminal-ui__paste-overlay {
+                    position: absolute;
+                    bottom: 60px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    width: 90%;
+                    max-width: 600px;
+                    display: none;
+                    flex-direction: column;
+                    gap: 8px;
+                    pointer-events: all;
+                    z-index: 101;
+                    animation: terminal-ui-slideUp 0.3s ease-out;
+                }
+                .terminal-ui__paste-overlay.active {
+                    display: flex;
+                }
+                .terminal-ui__paste-textarea {
+                    width: 100%;
+                    min-height: 120px;
+                    padding: 10px 14px;
+                    border: 1px solid #666;
+                    border-radius: 4px;
+                    background: rgba(40, 40, 40, 0.95);
+                    color: #e0e0e0;
+                    font-size: 13px;
+                    font-family: monospace;
+                    outline: none;
+                    resize: vertical;
+                    transition: border-color 0.2s;
+                }
+                .terminal-ui__paste-textarea:focus {
+                    border-color: #007AFF;
+                    box-shadow: 0 0 8px rgba(0, 122, 255, 0.3);
+                }
+                .terminal-ui__paste-button-group {
+                    display: flex;
+                    gap: 6px;
+                    justify-content: flex-end;
+                }
+                .terminal-ui__paste-send-btn, .terminal-ui__paste-cancel-btn {
+                    padding: 10px 14px;
+                    background: #007AFF;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                    white-space: nowrap;
+                }
+                .terminal-ui__paste-send-btn:hover {
+                    background: #0051D5;
+                }
+                .terminal-ui__paste-cancel-btn {
+                    background: #666;
+                }
+                .terminal-ui__paste-cancel-btn:hover {
+                    background: #777;
+                }
                 /* Chat notification badge */
                 .terminal-ui__chat-notification {
                     position: absolute;
@@ -521,6 +584,16 @@ class TerminalUI extends HTMLElement {
                     <div class="terminal-ui__chat-button-group">
                         <button class="terminal-ui__chat-send-btn">Send</button>
                         <button class="terminal-ui__chat-cancel-btn">Cancel</button>
+                    </div>
+                </div>
+                <div class="terminal-ui__paste-overlay">
+                    <textarea
+                        class="terminal-ui__paste-textarea"
+                        placeholder="Paste content here..."
+                    ></textarea>
+                    <div class="terminal-ui__paste-button-group">
+                        <button class="terminal-ui__paste-send-btn">Send</button>
+                        <button class="terminal-ui__paste-cancel-btn">Cancel</button>
                     </div>
                 </div>
                 <div class="terminal-ui__terminal"></div>
@@ -1013,6 +1086,36 @@ class TerminalUI extends HTMLElement {
         overlay.classList.remove('active');
     }
 
+    showPasteOverlay() {
+        const overlay = this.querySelector('.terminal-ui__paste-overlay');
+        const textarea = this.querySelector('.terminal-ui__paste-textarea');
+        if (!overlay) return;
+
+        overlay.classList.add('active');
+        textarea.value = '';
+        textarea.focus();
+    }
+
+    hidePasteOverlay() {
+        const overlay = this.querySelector('.terminal-ui__paste-overlay');
+        if (!overlay) return;
+
+        overlay.classList.remove('active');
+        this.term.focus();
+    }
+
+    sendPasteContent() {
+        const textarea = this.querySelector('.terminal-ui__paste-textarea');
+        const text = textarea ? textarea.value : '';
+
+        if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const encoder = new TextEncoder();
+            this.ws.send(encoder.encode(text));
+        }
+
+        this.hidePasteOverlay();
+    }
+
     addChatMessage(userName, text, isOwn = false) {
         const overlay = this.querySelector('.terminal-ui__chat-overlay');
         if (!overlay) return;
@@ -1151,22 +1254,22 @@ class TerminalUI extends HTMLElement {
                 }
 
                 if (btn.dataset.action === 'paste') {
-                    if (!navigator.clipboard || !navigator.clipboard.readText) {
-                        this.showTemporaryStatus('Clipboard access requires HTTPS', 3000);
-                        this.term.focus();
-                        return;
+                    if (navigator.clipboard && navigator.clipboard.readText) {
+                        navigator.clipboard.readText().then(text => {
+                            if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                const encoder = new TextEncoder();
+                                this.ws.send(encoder.encode(text));
+                            }
+                            this.term.focus();
+                        }).catch(err => {
+                            console.error('Failed to read clipboard:', err);
+                            // Fallback to paste overlay on error
+                            this.showPasteOverlay();
+                        });
+                    } else {
+                        // Clipboard API not available, show paste overlay
+                        this.showPasteOverlay();
                     }
-                    navigator.clipboard.readText().then(text => {
-                        if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            const encoder = new TextEncoder();
-                            this.ws.send(encoder.encode(text));
-                        }
-                        this.term.focus();
-                    }).catch(err => {
-                        console.error('Failed to read clipboard:', err);
-                        this.showTemporaryStatus('Clipboard access denied', 3000);
-                        this.term.focus();
-                    });
                     return;
                 }
 
@@ -1264,6 +1367,36 @@ class TerminalUI extends HTMLElement {
         if (cancelBtn) {
             cancelBtn.addEventListener('click', () => {
                 this.closeChatInput();
+            });
+        }
+
+        // Paste overlay handlers
+        const pasteTextarea = this.querySelector('.terminal-ui__paste-textarea');
+        const pasteSendBtn = this.querySelector('.terminal-ui__paste-send-btn');
+        const pasteCancelBtn = this.querySelector('.terminal-ui__paste-cancel-btn');
+
+        if (pasteTextarea) {
+            pasteTextarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.hidePasteOverlay();
+                }
+                // Ctrl/Cmd+Enter to send
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    this.sendPasteContent();
+                }
+            });
+        }
+
+        if (pasteSendBtn) {
+            pasteSendBtn.addEventListener('click', () => {
+                this.sendPasteContent();
+            });
+        }
+
+        if (pasteCancelBtn) {
+            pasteCancelBtn.addEventListener('click', () => {
+                this.hidePasteOverlay();
             });
         }
 
