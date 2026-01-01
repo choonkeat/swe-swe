@@ -31,7 +31,7 @@ A standalone Go HTTP service (`auth`) that:
 | Step | Description |
 |------|-------------|
 | **1.1** | ✅ Project scaffolding — Create `auth/` directory with `go.mod`, empty `main.go`, `main_test.go` |
-| **1.2** | Cookie signing utilities (TDD) — `signCookie()` and `verifyCookie()` functions with HMAC |
+| **1.2** | ✅ Cookie signing utilities (TDD) — `signCookie()` and `verifyCookie()` functions with HMAC |
 | **1.3** | Verify endpoint (TDD) — `GET /swe-swe-auth/verify` checks cookie, returns 200 or 401 |
 | **1.4** | Login form endpoint (TDD) — `GET /swe-swe-auth/login` serves HTML form |
 | **1.5** | Login POST handler (TDD) — `POST /swe-swe-auth/login` validates password, sets cookie, redirects |
