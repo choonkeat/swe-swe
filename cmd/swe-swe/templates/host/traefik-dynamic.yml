@@ -6,3 +6,12 @@ http:
     forwardauth:
       forwardAuth:
         address: "http://auth:4180/swe-swe-auth/verify"
+
+  routers:
+    # Traefik dashboard protected by ForwardAuth
+    dashboard:
+      rule: "PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
+      service: "api@internal"
+      middlewares:
+        - "forwardauth"
+      priority: 150
