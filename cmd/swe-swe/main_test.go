@@ -425,6 +425,51 @@ CMD done`
 	}
 }
 
+// TestProcessDockerfileTemplateWithDocker verifies Docker conditional processing
+func TestProcessDockerfileTemplateWithDocker(t *testing.T) {
+	template := `FROM base
+# {{IF DOCKER}}
+RUN install docker-cli
+# {{ENDIF}}
+CMD done`
+
+	tests := []struct {
+		name        string
+		withDocker  bool
+		contains    []string
+		notContains []string
+	}{
+		{
+			name:        "without docker",
+			withDocker:  false,
+			contains:    []string{"FROM base", "CMD done"},
+			notContains: []string{"install docker-cli"},
+		},
+		{
+			name:        "with docker",
+			withDocker:  true,
+			contains:    []string{"FROM base", "install docker-cli", "CMD done"},
+			notContains: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := processDockerfileTemplate(template, []string{}, "", "", tt.withDocker)
+			for _, s := range tt.contains {
+				if !strings.Contains(result, s) {
+					t.Errorf("result should contain %q, got:\n%s", s, result)
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(result, s) {
+					t.Errorf("result should NOT contain %q, got:\n%s", s, result)
+				}
+			}
+		})
+	}
+}
+
 // TestGoldenFiles verifies swe-swe init output matches golden files
 func TestGoldenFiles(t *testing.T) {
 	// Skip if running short tests
