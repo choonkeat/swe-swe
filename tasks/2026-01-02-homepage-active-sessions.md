@@ -91,31 +91,34 @@ The `/` handler will pass active session information to the template, **filterin
 
 ---
 
-## Phase 3: Frontend Template - Unified Layout
+## Phase 3: Frontend Template - Unified Layout ✅
 
 ### What will be achieved
 Replace the current agent grid with a unified list grouped by agent, showing active sessions and a "Start new session" action for each agent.
 
 ### Steps
-1. Replace the grid layout in `selection.html` with grouped list:
+- [x] Replace the grid layout in `selection.html` with grouped list:
    - For each agent: show icon + name + session count (only if > 0)
    - For each session under agent: UUID short, viewer count, duration, join link
    - Always show "+ Start new session" link at bottom of each agent group
 
-2. Update CSS:
+- [x] Update CSS:
    - Remove grid styles (or repurpose)
    - Add styles for grouped list layout (indented sessions, hover states)
    - Keep dark theme consistency
 
-3. Duration formatting in template (e.g., "5m ago", "1h 23m ago")
+- [x] Duration formatting via `formatDuration()` helper in Go (e.g., "5m", "1h 23m")
 
 ### Verification
-1. **No sessions anywhere**: Each agent shows just "+ Start new session"
-2. **Sessions exist**: Agent groups show session count, sessions listed with details
-3. **Join existing**: Clicking session joins it (viewer count increases)
-4. **Start new**: Clicking "Start new session" creates new UUID
-5. **Order**: Sessions within agent sorted by most recent first
-6. **Visual**: Clean, readable, consistent with dark theme
+- [x] **Build check**: `go build`
+- [x] **Existing tests**: `go test ./...`
+- [ ] **Manual check**:
+  - No sessions anywhere: Each agent shows just "+ Start new session"
+  - Sessions exist: Agent groups show session count, sessions listed with details
+  - Join existing: Clicking session joins it (viewer count increases)
+  - Start new: Clicking "Start new session" creates new UUID
+  - Order: Sessions within agent sorted by most recent first
+  - Visual: Clean, readable, consistent with dark theme
 
 ---
 
