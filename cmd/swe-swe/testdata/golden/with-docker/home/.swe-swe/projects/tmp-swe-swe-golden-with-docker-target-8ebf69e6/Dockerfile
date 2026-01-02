@@ -58,6 +58,17 @@ RUN pip3 install --break-system-packages aider-chat
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
 
+# Install Docker CLI only (talks to host Docker via mounted socket)
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "${ARCH}" in \
+        amd64) DOCKER_ARCH="x86_64" ;; \
+        arm64) DOCKER_ARCH="aarch64" ;; \
+        armhf) DOCKER_ARCH="armhf" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.4.1.tgz" | \
+    tar xz -C /usr/local/bin --strip-components=1 docker/docker
+
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.

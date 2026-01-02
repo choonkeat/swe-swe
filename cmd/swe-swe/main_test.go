@@ -585,19 +585,22 @@ func TestGoldenFiles(t *testing.T) {
 // TestGoldenFilesMatchTemplate verifies golden Dockerfiles match template processing
 func TestGoldenFilesMatchTemplate(t *testing.T) {
 	variants := []struct {
-		name   string
-		agents []string
-		apt    string
-		npm    string
+		name       string
+		agents     []string
+		apt        string
+		npm        string
+		withDocker bool
 	}{
-		{"default", []string{"claude", "gemini", "codex", "aider", "goose"}, "", ""},
-		{"claude-only", []string{"claude"}, "", ""},
-		{"aider-only", []string{"aider"}, "", ""},
-		{"goose-only", []string{"goose"}, "", ""},
-		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", ""},
-		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim curl", ""},
-		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "typescript"},
-		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim", "typescript"},
+		{"default", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", false},
+		{"claude-only", []string{"claude"}, "", "", false},
+		{"aider-only", []string{"aider"}, "", "", false},
+		{"goose-only", []string{"goose"}, "", "", false},
+		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", "", false},
+		{"exclude-aider", []string{"claude", "gemini", "codex", "goose"}, "", "", false},
+		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim curl", "", false},
+		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "typescript", false},
+		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim", "typescript", false},
+		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", true},
 	}
 
 	// Read the template
@@ -608,8 +611,8 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 
 	for _, v := range variants {
 		t.Run(v.name, func(t *testing.T) {
-			// Generate expected output from template (withDocker=false for these baseline tests)
-			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, false)
+			// Generate expected output from template
+			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker)
 
 			// Read golden file
 			goldenDir := filepath.Join("testdata", "golden", v.name, "home", ".swe-swe", "projects")
