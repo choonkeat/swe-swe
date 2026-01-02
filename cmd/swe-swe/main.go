@@ -318,6 +318,35 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 	return strings.Join(result, "\n")
 }
 
+// processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
+// This is used for docker-compose.yml and entrypoint.sh which only need the DOCKER condition
+func processSimpleTemplate(content string, withDocker bool) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	skip := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Handle conditional markers (support both # and yaml-style comments)
+		if strings.Contains(trimmed, "{{IF DOCKER}}") {
+			skip = !withDocker
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{ENDIF}}") {
+			skip = false
+			continue
+		}
+
+		if !skip {
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("path", ".", "Path to initialize")
@@ -464,6 +493,11 @@ func handleInit() {
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
 				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker))
+			}
+
+			// Process docker-compose.yml template with conditional sections
+			if hostFile == "templates/host/docker-compose.yml" {
+				content = []byte(processSimpleTemplate(string(content), *withDocker))
 			}
 
 			// Calculate destination path, preserving subdirectories

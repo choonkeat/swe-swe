@@ -637,6 +637,77 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 	}
 }
 
+// TestProcessSimpleTemplate verifies simple template processing for docker-compose.yml and entrypoint.sh
+func TestProcessSimpleTemplate(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		withDocker bool
+		expected   string
+	}{
+		{
+			name: "docker block included when withDocker=true",
+			input: `services:
+  swe-swe:
+    volumes:
+      - /workspace:/workspace
+      # {{IF DOCKER}}
+      - /var/run/docker.sock:/var/run/docker.sock
+      # {{ENDIF}}
+    networks:
+      - default`,
+			withDocker: true,
+			expected: `services:
+  swe-swe:
+    volumes:
+      - /workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default`,
+		},
+		{
+			name: "docker block removed when withDocker=false",
+			input: `services:
+  swe-swe:
+    volumes:
+      - /workspace:/workspace
+      # {{IF DOCKER}}
+      - /var/run/docker.sock:/var/run/docker.sock
+      # {{ENDIF}}
+    networks:
+      - default`,
+			withDocker: false,
+			expected: `services:
+  swe-swe:
+    volumes:
+      - /workspace:/workspace
+    networks:
+      - default`,
+		},
+		{
+			name: "no docker markers - content unchanged",
+			input: `services:
+  swe-swe:
+    volumes:
+      - /workspace:/workspace`,
+			withDocker: false,
+			expected: `services:
+  swe-swe:
+    volumes:
+      - /workspace:/workspace`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := processSimpleTemplate(tt.input, tt.withDocker)
+			if result != tt.expected {
+				t.Errorf("processSimpleTemplate mismatch.\nExpected:\n%s\n\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
 // TestListDetectsAndPrunesStaleProjects verifies handleList detects missing paths and prunes them
 func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
 	testDir := t.TempDir()
