@@ -41,13 +41,13 @@ Add a `CreatedAt` field to the Session struct so we can display how long each se
 
 ---
 
-## Phase 2: Template Data
+## Phase 2: Template Data ✅
 
 ### What will be achieved
 The `/` handler will pass active session information to the template, **filtering out sessions where the process has exited**.
 
 ### Steps
-1. Create structs for template data:
+- [x] Create structs for template data:
    ```go
    type SessionInfo struct {
        UUID          string
@@ -64,7 +64,7 @@ The `/` handler will pass active session information to the template, **filterin
    }
    ```
 
-2. In the `/` handler:
+- [x] In the `/` handler:
    - Lock `sessionsMu.RLock()`
    - Iterate over `sessions` map
    - **Skip sessions where `sess.Cmd.ProcessState != nil`** (process exited)
@@ -72,9 +72,9 @@ The `/` handler will pass active session information to the template, **filterin
    - Sort sessions within each group by `CreatedAt` desc (most recent first)
    - Unlock
 
-3. Build `[]AgentWithSessions` for all available assistants (including those with no sessions)
+- [x] Build `[]AgentWithSessions` for all available assistants (including those with no sessions)
 
-4. Update template data struct:
+- [x] Update template data struct:
    ```go
    data := struct {
        Agents  []AgentWithSessions
@@ -83,9 +83,9 @@ The `/` handler will pass active session information to the template, **filterin
    ```
 
 ### Verification
-1. **Build check**: `go build`
-2. **Existing tests**: `go test ./...`
-3. **Manual check**:
+- [x] **Build check**: `go build`
+- [x] **Existing tests**: `go test ./...`
+- [ ] **Manual check**:
    - Start a session, refresh homepage → session appears under agent
    - Exit the process cleanly → refresh homepage → session gone
 
