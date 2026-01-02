@@ -420,10 +420,10 @@ Verify the complete `--with-docker` feature works end-to-end.
   - [x] Verify `--help` shows new flag
   - [x] Add informational output when flag is used
 
-- [ ] Phase 6: End-to-end testing
-  - [ ] Test `--with-docker` variant builds and runs
-  - [ ] Test `docker` commands work inside container
-  - [ ] Test regression: non-docker variant still works
+- [x] Phase 6: End-to-end testing
+  - [x] Test `--with-docker` variant builds and runs
+  - [x] Test `docker` commands work inside container
+  - [x] Test regression: non-docker variant still works
 
 - [x] Add `with-docker` golden file variant
   - [x] Run `make golden-update` with new variant
