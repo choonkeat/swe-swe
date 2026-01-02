@@ -118,7 +118,7 @@ Commands:
 Init Options:
   --path PATH                            Project directory (defaults to current directory)
   --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose (default: all)
-  --exclude AGENTS                       Comma-separated agents to exclude
+  --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
   --with-docker                          Mount Docker socket to allow container to run Docker commands
@@ -140,7 +140,7 @@ Examples:
   swe-swe init                                   Initialize with all agents
   swe-swe init --agents=claude                   Initialize with Claude only (minimal)
   swe-swe init --agents=claude,gemini            Initialize with Claude and Gemini
-  swe-swe init --exclude=aider,goose             Initialize without Aider and Goose
+  swe-swe init --exclude-agents=aider,goose      Initialize without Aider and Goose
   swe-swe init --apt-get-install="vim htop"      Add custom apt packages
   swe-swe init --npm-install="typescript tsx"    Add custom npm packages
   swe-swe init --with-docker                     Enable Docker-in-Docker access
@@ -280,12 +280,12 @@ func parseAgentList(input string) ([]string, error) {
 	return agents, nil
 }
 
-// resolveAgents computes the final agent list based on --agents and --exclude flags
+// resolveAgents computes the final agent list based on --agents and --exclude-agents flags
 func resolveAgents(agentsFlag, excludeFlag string) ([]string, error) {
 	// Parse exclude list first
 	excludeList, err := parseAgentList(excludeFlag)
 	if err != nil {
-		return nil, fmt.Errorf("--exclude: %v", err)
+		return nil, fmt.Errorf("--exclude-agents: %v", err)
 	}
 	excludeSet := make(map[string]bool)
 	for _, e := range excludeList {
@@ -554,7 +554,7 @@ func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("path", ".", "Path to initialize")
 	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose) or 'all'")
-	excludeFlag := fs.String("exclude", "", "Comma-separated list of agents to exclude")
+	excludeFlag := fs.String("exclude-agents", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
@@ -641,6 +641,7 @@ func handleInit() {
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	hostFiles := []string{
+			"templates/host/.dockerignore",
 			"templates/host/Dockerfile",
 			"templates/host/docker-compose.yml",
 			"templates/host/traefik-dynamic.yml",

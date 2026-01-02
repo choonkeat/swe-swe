@@ -617,7 +617,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"aider-only", []string{"--agents", "aider"}},
 		{"goose-only", []string{"--agents", "goose"}},
 		{"nodejs-agents", []string{"--agents", "claude,gemini,codex"}},
-		{"exclude-aider", []string{"--exclude", "aider"}},
+		{"exclude-aider", []string{"--exclude-agents", "aider"}},
 		{"with-apt", []string{"--apt-get-install", "vim,curl"}},
 		{"with-npm", []string{"--npm-install", "typescript"}},
 		{"with-both-packages", []string{"--apt-get-install", "vim", "--npm-install", "typescript"}},

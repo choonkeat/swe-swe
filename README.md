@@ -60,7 +60,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 **Options**:
 - `--path PATH`: Project directory (defaults to current directory)
 - `--agents AGENTS`: Comma-separated list of agents to include (default: all)
-- `--exclude AGENTS`: Comma-separated list of agents to exclude
+- `--exclude-agents AGENTS`: Comma-separated list of agents to exclude
 - `--apt-get-install PACKAGES`: Additional apt packages to install
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
@@ -88,7 +88,7 @@ swe-swe init --path ~/my-project --agents=claude
 swe-swe init --path ~/my-project --agents=claude,gemini
 
 # Initialize without Python-based agents (no aider)
-swe-swe init --path ~/my-project --exclude=aider
+swe-swe init --path ~/my-project --exclude-agents=aider
 
 # Initialize with additional system packages
 swe-swe init --path ~/my-project --apt-get-install="vim htop tmux"

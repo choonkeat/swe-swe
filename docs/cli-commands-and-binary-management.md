@@ -4,7 +4,7 @@ This document describes the swe-swe CLI commands and how the swe-swe-server is b
 
 ## Quick Summary
 
-- `swe-swe init [--agents=...] [--exclude=...] [--apt-get-install=...]` — Initialize a new swe-swe project with customizable agent selection
+- `swe-swe init [--agents=...] [--exclude-agents=...] [--apt-get-install=...]` — Initialize a new swe-swe project with customizable agent selection
 - `swe-swe up [services...]` — Start the environment (or specific services)
 - `swe-swe down [services...]` — Stop the environment (or specific services)
 - `swe-swe build [services...]` — Force a fresh Docker image rebuild (no cache)
@@ -90,7 +90,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 |------|-------------|
 | `--path PATH` | Project directory (defaults to current directory) |
 | `--agents AGENTS` | Comma-separated list of agents to include (default: all) |
-| `--exclude AGENTS` | Comma-separated list of agents to exclude |
+| `--exclude-agents AGENTS` | Comma-separated list of agents to exclude |
 | `--apt-get-install PACKAGES` | Additional apt packages to install (comma or space separated) |
 | `--list-agents` | List available agents and exit |
 
@@ -115,7 +115,7 @@ swe-swe init --agents=claude
 swe-swe init --agents=claude,gemini
 
 # Initialize without Python-based agents (smaller image)
-swe-swe init --exclude=aider
+swe-swe init --exclude-agents=aider
 
 # Initialize with additional system packages
 swe-swe init --apt-get-install="vim htop tmux"
