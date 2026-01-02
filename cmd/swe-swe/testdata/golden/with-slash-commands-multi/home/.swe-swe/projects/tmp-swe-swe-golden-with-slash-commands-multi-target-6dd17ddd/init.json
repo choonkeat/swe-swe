@@ -1,0 +1,19 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex",
+    "aider",
+    "goose"
+  ],
+  "slashCommands": [
+    {
+      "alias": "ck",
+      "url": "https://github.com/choonkeat/slash-commands.git"
+    },
+    {
+      "alias": "org/team-cmds",
+      "url": "https://github.com/org/team-cmds.git"
+    }
+  ]
+}

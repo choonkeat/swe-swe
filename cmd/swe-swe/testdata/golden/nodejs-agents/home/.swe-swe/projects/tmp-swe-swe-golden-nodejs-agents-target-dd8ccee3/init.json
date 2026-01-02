@@ -1,0 +1,7 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex"
+  ]
+}

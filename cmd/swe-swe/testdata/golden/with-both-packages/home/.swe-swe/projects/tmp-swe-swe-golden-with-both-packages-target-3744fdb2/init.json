@@ -1,0 +1,11 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex",
+    "aider",
+    "goose"
+  ],
+  "aptPackages": "vim",
+  "npmPackages": "typescript"
+}

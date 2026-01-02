@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -274,8 +275,45 @@ var allAgents = []string{"claude", "gemini", "codex", "aider", "goose"}
 
 // SlashCommandsRepo represents a git repository to clone for slash commands
 type SlashCommandsRepo struct {
-	Alias string // "ck" or derived "choonkeat/slash-commands"
-	URL   string // "https://github.com/choonkeat/slash-commands.git"
+	Alias string `json:"alias"` // "ck" or derived "choonkeat/slash-commands"
+	URL   string `json:"url"`   // "https://github.com/choonkeat/slash-commands.git"
+}
+
+// InitConfig stores the configuration used to initialize a project.
+// This is saved to init.json and used by --previous-init-flags=reuse.
+type InitConfig struct {
+	Agents        []string            `json:"agents"`
+	AptPackages   string              `json:"aptPackages,omitempty"`
+	NpmPackages   string              `json:"npmPackages,omitempty"`
+	WithDocker    bool                `json:"withDocker,omitempty"`
+	SlashCommands []SlashCommandsRepo `json:"slashCommands,omitempty"`
+}
+
+// saveInitConfig writes the init configuration to init.json
+func saveInitConfig(sweDir string, config InitConfig) error {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal init config: %w", err)
+	}
+	configPath := filepath.Join(sweDir, "init.json")
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write init config: %w", err)
+	}
+	return nil
+}
+
+// loadInitConfig reads the init configuration from init.json
+func loadInitConfig(sweDir string) (InitConfig, error) {
+	configPath := filepath.Join(sweDir, "init.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return InitConfig{}, fmt.Errorf("failed to read init config: %w", err)
+	}
+	var config InitConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return InitConfig{}, fmt.Errorf("failed to parse init config: %w", err)
+	}
+	return config, nil
 }
 
 // deriveAliasFromURL extracts owner/repo from a git URL
@@ -896,6 +934,18 @@ func handleInit() {
 
 	// Handle enterprise certificates
 	handleCertificates(sweDir, certsDir)
+
+	// Save init configuration for --previous-init-flags=reuse
+	initConfig := InitConfig{
+		Agents:        agents,
+		AptPackages:   aptPkgs,
+		NpmPackages:   npmPkgs,
+		WithDocker:    *withDocker,
+		SlashCommands: slashCmds,
+	}
+	if err := saveInitConfig(sweDir, initConfig); err != nil {
+		log.Fatalf("Failed to save init config: %v", err)
+	}
 
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")

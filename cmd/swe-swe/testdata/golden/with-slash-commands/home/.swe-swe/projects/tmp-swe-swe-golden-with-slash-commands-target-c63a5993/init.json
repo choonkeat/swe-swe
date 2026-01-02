@@ -1,0 +1,15 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex",
+    "aider",
+    "goose"
+  ],
+  "slashCommands": [
+    {
+      "alias": "ck",
+      "url": "https://github.com/choonkeat/slash-commands.git"
+    }
+  ]
+}
