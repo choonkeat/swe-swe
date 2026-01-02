@@ -1,4 +1,4 @@
-.PHONY: build run stop test clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean
+.PHONY: build run stop test clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update
 
 build: build-cli
 
@@ -19,7 +19,10 @@ clean:
 
 # swe-swe convenience targets
 SWE_SWE_PATH ?= ./tmp
-SWE_SWE_CLI := ./dist/swe-swe
+SWE_SWE_GOOS := $(shell go env GOOS)
+SWE_SWE_GOARCH := $(shell go env GOARCH)
+SWE_SWE_EXT := $(if $(filter windows,$(SWE_SWE_GOOS)),.exe,)
+SWE_SWE_CLI := ./dist/swe-swe.$(SWE_SWE_GOOS)-$(SWE_SWE_GOARCH)$(SWE_SWE_EXT)
 
 $(SWE_SWE_CLI): build-cli
 
@@ -53,3 +56,26 @@ build-cli:
 	GOOS=darwin GOARCH=amd64 go build -o ./dist/swe-swe.darwin-amd64 ./cmd/swe-swe
 	GOOS=darwin GOARCH=arm64 go build -o ./dist/swe-swe.darwin-arm64 ./cmd/swe-swe
 	GOOS=windows GOARCH=amd64 go build -o ./dist/swe-swe.windows-amd64.exe ./cmd/swe-swe
+
+# Golden file generation for testing
+GOLDEN_TESTDATA := ./cmd/swe-swe/testdata/golden
+
+golden-update: build-cli
+	@rm -rf /tmp/swe-swe-golden
+	@ln -sfn $(abspath $(GOLDEN_TESTDATA)) /tmp/swe-swe-golden
+	@$(MAKE) _golden-variant NAME=default FLAGS=
+	@$(MAKE) _golden-variant NAME=claude-only FLAGS="--agents claude"
+	@$(MAKE) _golden-variant NAME=aider-only FLAGS="--agents aider"
+	@$(MAKE) _golden-variant NAME=goose-only FLAGS="--agents goose"
+	@$(MAKE) _golden-variant NAME=nodejs-agents FLAGS="--agents claude,gemini,codex"
+	@$(MAKE) _golden-variant NAME=exclude-aider FLAGS="--exclude aider"
+	@$(MAKE) _golden-variant NAME=with-apt FLAGS="--apt-get-install vim,curl"
+	@$(MAKE) _golden-variant NAME=with-npm FLAGS="--npm-install typescript"
+	@$(MAKE) _golden-variant NAME=with-both-packages FLAGS="--apt-get-install vim --npm-install typescript"
+	@rm -f /tmp/swe-swe-golden
+	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
+
+_golden-variant:
+	@rm -rf $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
+	@mkdir -p $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
+	@HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --path /tmp/swe-swe-golden/$(NAME)/target
