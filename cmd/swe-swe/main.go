@@ -157,6 +157,96 @@ Requires: Docker with Compose plugin (docker compose) or standalone docker-compo
 // allAgents lists all available AI agents that can be installed
 var allAgents = []string{"claude", "gemini", "codex", "aider", "goose"}
 
+// SlashCommandsRepo represents a git repository to clone for slash commands
+type SlashCommandsRepo struct {
+	Alias string // "ck" or derived "choonkeat/slash-commands"
+	URL   string // "https://github.com/choonkeat/slash-commands.git"
+}
+
+// deriveAliasFromURL extracts owner/repo from a git URL
+// e.g., "https://github.com/choonkeat/slash-commands.git" -> "choonkeat/slash-commands"
+func deriveAliasFromURL(url string) (string, error) {
+	if url == "" {
+		return "", fmt.Errorf("empty URL")
+	}
+
+	// Remove .git suffix if present
+	url = strings.TrimSuffix(url, ".git")
+
+	// Find the last two path segments (owner/repo)
+	// Works for: https://github.com/owner/repo, git@github.com:owner/repo, etc.
+	parts := strings.Split(url, "/")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid git URL: cannot extract owner/repo from %q", url)
+	}
+
+	owner := parts[len(parts)-2]
+	repo := parts[len(parts)-1]
+
+	// Handle git@host:owner/repo format (owner might have : prefix)
+	if strings.Contains(owner, ":") {
+		ownerParts := strings.Split(owner, ":")
+		owner = ownerParts[len(ownerParts)-1]
+	}
+
+	if owner == "" || repo == "" {
+		return "", fmt.Errorf("invalid git URL: cannot extract owner/repo from %q", url)
+	}
+
+	return owner + "/" + repo, nil
+}
+
+// parseSlashCommandsEntry parses a single "[alias@]<git-url>" entry
+func parseSlashCommandsEntry(entry string) (SlashCommandsRepo, error) {
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return SlashCommandsRepo{}, fmt.Errorf("empty entry")
+	}
+
+	// Check for alias@url format
+	// Only split on first @ to handle URLs that might contain @
+	atIndex := strings.Index(entry, "@")
+	if atIndex > 0 && !strings.HasPrefix(entry, "http") && !strings.HasPrefix(entry, "git@") {
+		// Has alias prefix (e.g., "ck@https://...")
+		alias := entry[:atIndex]
+		url := entry[atIndex+1:]
+		if url == "" {
+			return SlashCommandsRepo{}, fmt.Errorf("empty URL after alias in %q", entry)
+		}
+		return SlashCommandsRepo{Alias: alias, URL: url}, nil
+	}
+
+	// No alias, derive from URL
+	alias, err := deriveAliasFromURL(entry)
+	if err != nil {
+		return SlashCommandsRepo{}, err
+	}
+	return SlashCommandsRepo{Alias: alias, URL: entry}, nil
+}
+
+// parseSlashCommandsFlag parses the full --with-slash-commands flag value
+// Format: "[alias@]<git-url> [alias@]<git-url> ..."
+func parseSlashCommandsFlag(flag string) ([]SlashCommandsRepo, error) {
+	flag = strings.TrimSpace(flag)
+	if flag == "" {
+		return nil, nil
+	}
+
+	// Split on whitespace
+	entries := strings.Fields(flag)
+	var repos []SlashCommandsRepo
+
+	for _, entry := range entries {
+		repo, err := parseSlashCommandsEntry(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid slash commands entry %q: %v", entry, err)
+		}
+		repos = append(repos, repo)
+	}
+
+	return repos, nil
+}
+
 // parseAgentList parses a comma-separated agent list and validates agent names
 func parseAgentList(input string) ([]string, error) {
 	if input == "" {
