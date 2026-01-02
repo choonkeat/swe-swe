@@ -919,8 +919,29 @@ class TerminalUI extends HTMLElement {
                     this.showTemporaryStatus(`Upload failed: ${msg.error || 'Unknown error'}`, 5000);
                 }
                 break;
+            case 'exit':
+                // Process exited - prompt user to return to home
+                this.handleProcessExit(msg.exitCode);
+                break;
             default:
                 console.log('Unknown JSON message:', msg);
+        }
+    }
+
+    handleProcessExit(exitCode) {
+        // Update status bar to show exited state
+        this.updateStatus('', 'Session ended');
+
+        // Stop uptime timer
+        this.stopUptimeTimer();
+
+        // Show confirmation dialog
+        const message = exitCode === 0
+            ? 'The session has ended successfully.\n\nReturn to the home page to start a new session?'
+            : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
+
+        if (confirm(message)) {
+            window.location.href = '/';
         }
     }
 
