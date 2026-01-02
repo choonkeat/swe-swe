@@ -97,6 +97,12 @@ RUN ARCH="$(dpkg --print-architecture)" && \
     tar xz -C /usr/local/bin --strip-components=1 docker/docker
 # {{ENDIF}}
 
+# {{IF SLASH_COMMANDS}}
+# Clone slash commands repositories to temp location
+# (will be copied to home directory by entrypoint.sh)
+{{SLASH_COMMANDS_CLONE}}
+# {{ENDIF}}
+
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.

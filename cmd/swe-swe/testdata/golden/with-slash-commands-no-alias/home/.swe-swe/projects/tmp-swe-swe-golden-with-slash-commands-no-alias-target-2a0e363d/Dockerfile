@@ -59,6 +59,10 @@ RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_
 
 
 
+# Clone slash commands repositories to temp location
+# (will be copied to home directory by entrypoint.sh)
+RUN git clone --depth 1 https://github.com/choonkeat/slash-commands.git /tmp/slash-commands/choonkeat/slash-commands
+
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.

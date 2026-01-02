@@ -332,8 +332,8 @@ func agentInList(agent string, list []string) bool {
 }
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
-// based on selected agents, custom apt packages, custom npm packages, and Docker access
-func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool) string {
+// based on selected agents, custom apt packages, custom npm packages, Docker access, and slash commands
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, slashCommands []SlashCommandsRepo) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -344,6 +344,19 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 	// Check if we need Node.js (claude, gemini, codex, or playwright)
 	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex")
+
+	// Check if we have slash commands for supported agents (claude or codex)
+	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex"))
+
+	// Generate slash commands clone lines
+	var slashCommandsClone string
+	if hasSlashCommands {
+		var cloneLines []string
+		for _, repo := range slashCommands {
+			cloneLines = append(cloneLines, fmt.Sprintf("RUN git clone --depth 1 %s /tmp/slash-commands/%s", repo.URL, repo.Alias))
+		}
+		slashCommandsClone = strings.Join(cloneLines, "\n")
+	}
 
 	// Build the Dockerfile from template
 	lines := strings.Split(content, "\n")
@@ -377,6 +390,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = npmPackages == ""
 			case "DOCKER":
 				skip = !withDocker
+			case "SLASH_COMMANDS":
+				skip = !hasSlashCommands
 			}
 			continue
 		}
@@ -397,6 +412,13 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 		if strings.Contains(line, "{{NPM_PACKAGES}}") {
 			if npmPackages != "" {
 				line = strings.ReplaceAll(line, "{{NPM_PACKAGES}}", npmPackages)
+			}
+		}
+
+		// Handle SLASH_COMMANDS_CLONE placeholder
+		if strings.Contains(line, "{{SLASH_COMMANDS_CLONE}}") {
+			if slashCommandsClone != "" {
+				line = strings.ReplaceAll(line, "{{SLASH_COMMANDS_CLONE}}", slashCommandsClone)
 			}
 		}
 
@@ -574,8 +596,18 @@ func handleInit() {
 		if *withDocker {
 			fmt.Println("Docker access: enabled (container can run Docker commands on host)")
 		}
+
+		// Parse slash commands flag
+		var slashCmds []SlashCommandsRepo
 		if *slashCommands != "" {
-			fmt.Printf("Slash commands: %s\n", *slashCommands)
+			var err error
+			slashCmds, err = parseSlashCommandsFlag(*slashCommands)
+			if err != nil {
+				log.Fatalf("Invalid --with-slash-commands value: %v", err)
+			}
+			for _, repo := range slashCmds {
+				fmt.Printf("Slash commands: %s -> /tmp/slash-commands/%s\n", repo.URL, repo.Alias)
+			}
 		}
 
 		for _, hostFile := range hostFiles {
@@ -586,7 +618,7 @@ func handleInit() {
 
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker))
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, slashCmds))
 			}
 
 			// Process docker-compose.yml template with conditional sections
