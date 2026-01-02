@@ -73,6 +73,12 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-npm FLAGS="--npm-install typescript"
 	@$(MAKE) _golden-variant NAME=with-both-packages FLAGS="--apt-get-install vim --npm-install typescript"
 	@$(MAKE) _golden-variant NAME=with-docker FLAGS="--with-docker"
+	@$(MAKE) _golden-variant NAME=with-slash-commands FLAGS="--agents all --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-slash-commands-multi FLAGS='--agents all --with-slash-commands "ck@https://github.com/choonkeat/slash-commands.git https://github.com/org/team-cmds.git"'
+	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-only FLAGS="--agents claude --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-slash-commands-codex-only FLAGS="--agents codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-slash-commands-no-alias FLAGS="--agents all --with-slash-commands https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-codex FLAGS="--agents claude,codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@rm -f /tmp/swe-swe-golden
 	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
 
