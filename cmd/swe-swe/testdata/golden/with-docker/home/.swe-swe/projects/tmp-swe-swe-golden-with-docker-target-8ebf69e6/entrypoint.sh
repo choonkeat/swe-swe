@@ -41,6 +41,7 @@ if [ -S /var/run/docker.sock ]; then
     echo -e "${GREEN}✓ Added app user to docker group (GID $DOCKER_GID)${NC}"
 fi
 
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"

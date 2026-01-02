@@ -31,6 +31,18 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
 fi
 
 
+# Copy slash commands to agent directories
+if [ -d "/tmp/slash-commands/choonkeat/slash-commands" ] && [ ! -d "/home/app/.claude/commands/choonkeat/slash-commands" ]; then
+    mkdir -p /home/app/.claude/commands
+    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.claude/commands/choonkeat/slash-commands
+    chown -R app:app /home/app/.claude/commands/choonkeat/slash-commands
+fi
+if [ -d "/tmp/slash-commands/choonkeat/slash-commands" ] && [ ! -d "/home/app/.codex/prompts/choonkeat/slash-commands" ]; then
+    mkdir -p /home/app/.codex/prompts
+    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.codex/prompts/choonkeat/slash-commands
+    chown -R app:app /home/app/.codex/prompts/choonkeat/slash-commands
+fi
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"

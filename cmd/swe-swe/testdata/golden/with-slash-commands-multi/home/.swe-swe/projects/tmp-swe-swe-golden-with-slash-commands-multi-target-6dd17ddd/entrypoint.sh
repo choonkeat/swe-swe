@@ -31,6 +31,28 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
 fi
 
 
+# Copy slash commands to agent directories
+if [ -d "/tmp/slash-commands/ck" ] && [ ! -d "/home/app/.claude/commands/ck" ]; then
+    mkdir -p /home/app/.claude/commands
+    cp -r /tmp/slash-commands/ck /home/app/.claude/commands/ck
+    chown -R app:app /home/app/.claude/commands/ck
+fi
+if [ -d "/tmp/slash-commands/ck" ] && [ ! -d "/home/app/.codex/prompts/ck" ]; then
+    mkdir -p /home/app/.codex/prompts
+    cp -r /tmp/slash-commands/ck /home/app/.codex/prompts/ck
+    chown -R app:app /home/app/.codex/prompts/ck
+fi
+if [ -d "/tmp/slash-commands/org/team-cmds" ] && [ ! -d "/home/app/.claude/commands/org/team-cmds" ]; then
+    mkdir -p /home/app/.claude/commands
+    cp -r /tmp/slash-commands/org/team-cmds /home/app/.claude/commands/org/team-cmds
+    chown -R app:app /home/app/.claude/commands/org/team-cmds
+fi
+if [ -d "/tmp/slash-commands/org/team-cmds" ] && [ ! -d "/home/app/.codex/prompts/org/team-cmds" ]; then
+    mkdir -p /home/app/.codex/prompts
+    cp -r /tmp/slash-commands/org/team-cmds /home/app/.codex/prompts/org/team-cmds
+    chown -R app:app /home/app/.codex/prompts/org/team-cmds
+fi
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"

@@ -431,7 +431,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 }
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
-// This is used for docker-compose.yml and entrypoint.sh which only need the DOCKER condition
+// This is used for docker-compose.yml which only needs the DOCKER condition
 func processSimpleTemplate(content string, withDocker bool) string {
 	lines := strings.Split(content, "\n")
 	var result []string
@@ -449,6 +449,77 @@ func processSimpleTemplate(content string, withDocker bool) string {
 		if strings.Contains(trimmed, "{{ENDIF}}") {
 			skip = false
 			continue
+		}
+
+		if !skip {
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions
+func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo) string {
+	// Helper to check if agent is selected
+	hasAgent := func(agent string) bool {
+		return agentInList(agent, agents)
+	}
+
+	// Check if we have slash commands for supported agents (claude or codex)
+	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex"))
+
+	// Generate slash commands copy lines
+	var slashCommandsCopy string
+	if hasSlashCommands {
+		var copyLines []string
+		for _, repo := range slashCommands {
+			// Claude
+			if hasAgent("claude") {
+				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/tmp/slash-commands/%s" ] && [ ! -d "/home/app/.claude/commands/%s" ]; then
+    mkdir -p /home/app/.claude/commands
+    cp -r /tmp/slash-commands/%s /home/app/.claude/commands/%s
+    chown -R app:app /home/app/.claude/commands/%s
+fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+			}
+			// Codex
+			if hasAgent("codex") {
+				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/tmp/slash-commands/%s" ] && [ ! -d "/home/app/.codex/prompts/%s" ]; then
+    mkdir -p /home/app/.codex/prompts
+    cp -r /tmp/slash-commands/%s /home/app/.codex/prompts/%s
+    chown -R app:app /home/app/.codex/prompts/%s
+fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+			}
+		}
+		slashCommandsCopy = strings.Join(copyLines, "\n")
+	}
+
+	lines := strings.Split(content, "\n")
+	var result []string
+	skip := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Handle conditional markers
+		if strings.Contains(trimmed, "{{IF DOCKER}}") {
+			skip = !withDocker
+			continue
+		}
+		if strings.Contains(trimmed, "{{IF SLASH_COMMANDS}}") {
+			skip = !hasSlashCommands
+			continue
+		}
+		if strings.Contains(trimmed, "{{ENDIF}}") {
+			skip = false
+			continue
+		}
+
+		// Handle SLASH_COMMANDS_COPY placeholder
+		if strings.Contains(line, "{{SLASH_COMMANDS_COPY}}") {
+			if slashCommandsCopy != "" {
+				line = strings.ReplaceAll(line, "{{SLASH_COMMANDS_COPY}}", slashCommandsCopy)
+			}
 		}
 
 		if !skip {
@@ -628,7 +699,7 @@ func handleInit() {
 
 			// Process entrypoint.sh template with conditional sections
 			if hostFile == "templates/host/entrypoint.sh" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker))
+				content = []byte(processEntrypointTemplate(string(content), agents, *withDocker, slashCmds))
 			}
 
 			// Calculate destination path, preserving subdirectories

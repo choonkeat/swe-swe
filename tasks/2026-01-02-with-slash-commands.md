@@ -220,7 +220,7 @@ RUN git clone --depth 1 https://github.com/org/team-cmds.git /tmp/slash-commands
 
 ---
 
-### Phase 6: Entrypoint Template + Wiring
+### Phase 6: Entrypoint Template + Wiring ✅
 
 **What will be achieved**: Add copy + chown logic to entrypoint.sh that copies cloned repos to agent directories with correct ownership.
 
