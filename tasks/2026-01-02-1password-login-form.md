@@ -1,7 +1,7 @@
 # Task: Fix Password Managers Not Recognizing Login Form
 
 **Date**: 2026-01-02
-**Status**: Planning
+**Status**: Phase 1 Complete
 
 ## Goal
 
@@ -60,7 +60,66 @@ Update the login form HTML so password managers (1Password, iOS, Android) can de
 
 ## Research Findings
 
-*(To be filled in during Phase 1)*
+### Sources
+- [1Password Developer: Compatible Website Design](https://developer.1password.com/docs/web/compatible-website-design/)
+- [1Password Support: Unsecured HTTP Page Alert](https://support.1password.com/unsecured-webpage-alert/)
+- [Apple: Password AutoFill Documentation](https://developer.apple.com/documentation/security/password-autofill)
+- [Android: Autofill Framework](https://developer.android.com/identity/autofill)
+- [hidde.blog: Making password managers play ball](https://hidde.blog/making-password-managers-play-ball-with-your-login-form/)
+
+### 1Password Requirements
+- Use unique `id` or `name` for every field
+- Enclose `<input>` fields in `<form>` elements
+- Group related fields (username + password) in the same form
+- Every field should have a `<label>` element with `for` attribute
+- Use `autocomplete` attributes (`username`, `current-password`, `new-password`)
+- Avoid dynamically adding/removing fields
+
+### iOS/Safari Requirements
+- `autocomplete="current-password"` for password fields
+- `autocomplete="username"` for username fields
+- Works on multi-page login flows if autocomplete is explicit
+- HTTP pages show warnings but autofill still works
+
+### Android Requirements
+- Uses standard HTML autocomplete attributes
+- Chrome 135+ (2025) supports third-party password managers natively
+- Relies on Android Autofill Framework
+
+### HTTP vs HTTPS
+- 1Password warns on HTTP pages but does NOT block autofill
+- User can still choose to fill credentials
+- iOS autofill works on HTTP local addresses
+- **Not a blocker** - SSL is a deployment concern, not HTML markup
+
+### Gaps in Current Form
+
+| Requirement | Current Status | Issue |
+|-------------|---------------|-------|
+| Username field | ❌ Missing | Password managers expect username + password pairs |
+| `id` attribute on password | ❌ Missing | Only has `name`, should also have `id` |
+| `<label>` element | ❌ Missing | 1Password recommends labels for every field |
+| `autocomplete` attribute | ✅ Has `current-password` | Already correct |
+| Form structure | ✅ Proper `<form>` | Already correct |
+
+### Recommended Fix
+
+Add a hidden username field and `id` attribute:
+
+```html
+<form method="POST" action="/swe-swe-auth/login">
+    <input type="hidden" name="redirect" value="...">
+    <input type="text" name="username" id="username" value="admin" autocomplete="username" style="display:none">
+    <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required>
+    <button type="submit">Login</button>
+</form>
+```
+
+**Notes:**
+- Hidden username with `value="admin"` gives password managers an anchor
+- Using `style="display:none"` instead of `type="hidden"` because some password managers ignore hidden inputs
+- `id` attributes help password managers identify fields
+- Labels omitted since username is hidden and password has placeholder (minimal change)
 
 ## Changes Made
 
