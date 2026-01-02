@@ -410,7 +410,7 @@ CMD done`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processDockerfileTemplate(template, tt.agents, tt.apt, "")
+			result := processDockerfileTemplate(template, tt.agents, tt.apt, "", false)
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("result should contain %q, got:\n%s", s, result)
@@ -563,8 +563,8 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 
 	for _, v := range variants {
 		t.Run(v.name, func(t *testing.T) {
-			// Generate expected output from template
-			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm)
+			// Generate expected output from template (withDocker=false for these baseline tests)
+			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, false)
 
 			// Read golden file
 			goldenDir := filepath.Join("testdata", "golden", v.name, "home", ".swe-swe", "projects")
