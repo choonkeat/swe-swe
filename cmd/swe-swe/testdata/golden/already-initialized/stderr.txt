@@ -1,0 +1,7 @@
+Error: Project already initialized at /tmp/swe-swe-golden/already-initialized/target
+
+  To reapply saved configuration:
+    swe-swe init --previous-init-flags=reuse
+
+  To overwrite with new configuration:
+    swe-swe init --previous-init-flags=ignore [options]

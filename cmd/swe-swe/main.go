@@ -763,6 +763,20 @@ func handleInit() {
 		log.Fatalf("Failed to compute metadata directory: %v", err)
 	}
 
+	// Check if project is already initialized (init.json exists)
+	initConfigPath := filepath.Join(sweDir, "init.json")
+	if _, err := os.Stat(initConfigPath); err == nil {
+		// Project already initialized
+		if *previousInitFlags == "" {
+			fmt.Fprintf(os.Stderr, "Error: Project already initialized at %s\n\n", absPath)
+			fmt.Fprintf(os.Stderr, "  To reapply saved configuration:\n")
+			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=reuse\n\n")
+			fmt.Fprintf(os.Stderr, "  To overwrite with new configuration:\n")
+			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=ignore [options]\n")
+			os.Exit(1)
+		}
+	}
+
 	if err := os.MkdirAll(sweDir, 0755); err != nil {
 		log.Fatalf("Failed to create metadata directory: %v", err)
 	}
