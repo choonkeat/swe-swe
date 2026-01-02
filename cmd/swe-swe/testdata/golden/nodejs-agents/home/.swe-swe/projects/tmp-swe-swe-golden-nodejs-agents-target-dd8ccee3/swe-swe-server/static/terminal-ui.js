@@ -177,6 +177,9 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-bar.connected {
                     background: #007acc;
                 }
+                .terminal-ui__status-bar.error {
+                    background: #c62828;
+                }
                 .terminal-ui__status-bar.multiuser {
                     border-top-color: #4fc3f7;
                 }
