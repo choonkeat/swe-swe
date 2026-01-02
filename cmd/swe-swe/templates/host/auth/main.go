@@ -185,7 +185,8 @@ func renderLoginForm(redirectURL, errorMsg string) string {
         %s
         <form method="POST" action="/swe-swe-auth/login">
             %s
-            <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
+            <input type="text" name="username" id="username" value="admin" autocomplete="username" style="display:none">
+            <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required>
             <button type="submit">Login</button>
         </form>
     </div>
