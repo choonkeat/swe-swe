@@ -406,25 +406,25 @@ Verify the complete `--with-docker` feature works end-to-end.
   - [x] Update `processDockerfileTemplate()` for `withDocker` parameter
   - [x] Add unit test for template processing
 
-- [ ] Phase 3: docker-compose.yml template
-  - [ ] Add `{{IF DOCKER}}` block with socket mount
-  - [ ] Create `processDockerComposeTemplate()` function
-  - [ ] Add unit test for template processing
+- [x] Phase 3: docker-compose.yml template
+  - [x] Add `{{IF DOCKER}}` block with socket mount
+  - [x] Create `processSimpleTemplate()` function (shared with entrypoint.sh)
+  - [x] Add unit test for template processing
 
-- [ ] Phase 4: entrypoint.sh permissions
-  - [ ] Add `{{IF DOCKER}}` block with GID detection
-  - [ ] Create `processEntrypointTemplate()` function
-  - [ ] Add unit test for template processing
+- [x] Phase 4: entrypoint.sh permissions
+  - [x] Add `{{IF DOCKER}}` block with GID detection
+  - [x] Use `processSimpleTemplate()` function
+  - [x] Add unit test for template processing
 
-- [ ] Phase 5: Help text
-  - [ ] Verify `--help` shows new flag
-  - [ ] Add informational output when flag is used
+- [x] Phase 5: Help text
+  - [x] Verify `--help` shows new flag
+  - [x] Add informational output when flag is used
 
 - [ ] Phase 6: End-to-end testing
   - [ ] Test `--with-docker` variant builds and runs
   - [ ] Test `docker` commands work inside container
   - [ ] Test regression: non-docker variant still works
 
-- [ ] Add `with-docker` golden file variant
-  - [ ] Run `make golden-update` with new variant
-  - [ ] Commit updated golden files
+- [x] Add `with-docker` golden file variant
+  - [x] Run `make golden-update` with new variant
+  - [x] Commit updated golden files
