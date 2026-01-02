@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>swe-swe</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .selection-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100%;
+            padding: 24px;
+        }
+        .selection-page__header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .selection-page__title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        .selection-page__subtitle {
+            font-size: 14px;
+            color: #888;
+        }
+        .agents-list {
+            max-width: 600px;
+            width: 100%;
+        }
+        .agent-group {
+            margin-bottom: 24px;
+        }
+        .agent-group__header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid #404040;
+        }
+        .agent-group__icon {
+            font-size: 24px;
+        }
+        .agent-group__name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .agent-group__count {
+            font-size: 12px;
+            color: #888;
+            margin-left: auto;
+        }
+        .agent-group__sessions {
+            padding-left: 16px;
+        }
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            margin: 4px 0;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.15s ease;
+        }
+        .session-item:hover {
+            border-color: #007acc;
+            background: #333;
+        }
+        .session-item__uuid {
+            font-family: monospace;
+            font-size: 14px;
+            color: #9cdcfe;
+        }
+        .session-item__viewers {
+            font-size: 12px;
+            color: #888;
+        }
+        .session-item__duration {
+            font-size: 12px;
+            color: #888;
+            margin-left: auto;
+        }
+        .new-session {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            margin: 4px 0;
+            background: transparent;
+            border: 1px dashed #404040;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #888;
+            transition: all 0.15s ease;
+        }
+        .new-session:hover {
+            border-color: #007acc;
+            color: #fff;
+            background: #2d2d2d;
+        }
+        .new-session__icon {
+            font-size: 14px;
+        }
+        .new-session__text {
+            font-size: 14px;
+        }
+        /* Assistant-specific hover colors */
+        .agent-group[data-assistant="claude"] .session-item:hover,
+        .agent-group[data-assistant="claude"] .new-session:hover {
+            border-color: #d97706;
+        }
+        .agent-group[data-assistant="gemini"] .session-item:hover,
+        .agent-group[data-assistant="gemini"] .new-session:hover {
+            border-color: #4285f4;
+        }
+        .agent-group[data-assistant="codex"] .session-item:hover,
+        .agent-group[data-assistant="codex"] .new-session:hover {
+            border-color: #10a37f;
+        }
+        .agent-group[data-assistant="goose"] .session-item:hover,
+        .agent-group[data-assistant="goose"] .new-session:hover {
+            border-color: #f472b6;
+        }
+        .agent-group[data-assistant="aider"] .session-item:hover,
+        .agent-group[data-assistant="aider"] .new-session:hover {
+            border-color: #22c55e;
+        }
+        .agent-group[data-assistant="custom"] .session-item:hover,
+        .agent-group[data-assistant="custom"] .new-session:hover {
+            border-color: #a855f7;
+        }
+    </style>
+</head>
+<body>
+    <div class="selection-page">
+        <div class="selection-page__header">
+            <h1 class="selection-page__title">swe-swe</h1>
+            <p class="selection-page__subtitle">Join an existing session or start a new one</p>
+        </div>
+        <div class="agents-list">
+            {{range .Agents}}
+            <div class="agent-group" data-assistant="{{.Assistant.Binary}}">
+                <div class="agent-group__header">
+                    <span class="agent-group__icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
+                    <span class="agent-group__name">{{.Assistant.Name}}</span>
+                    {{if .Sessions}}<span class="agent-group__count">{{len .Sessions}} session{{if gt (len .Sessions) 1}}s{{end}}</span>{{end}}
+                </div>
+                <div class="agent-group__sessions">
+                    {{range .Sessions}}
+                    <a href="/session/{{.UUID}}?assistant={{.Assistant}}" class="session-item">
+                        <span class="session-item__uuid">{{.UUIDShort}}</span>
+                        <span class="session-item__viewers">{{.ClientCount}} viewer{{if ne .ClientCount 1}}s{{end}}</span>
+                        <span class="session-item__duration">{{.DurationStr}}</span>
+                    </a>
+                    {{end}}
+                    <a href="/session/{{$.NewUUID}}?assistant={{.Assistant.Binary}}" class="new-session">
+                        <span class="new-session__icon">+</span>
+                        <span class="new-session__text">Start new session</span>
+                    </a>
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>

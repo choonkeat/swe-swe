@@ -220,6 +220,8 @@ Global Option:
 
 Init Options:
   --project-directory PATH               Project directory (defaults to current directory)
+  --previous-init-flags=reuse            Reapply saved configuration from previous init
+  --previous-init-flags=ignore           Ignore saved configuration, use provided flags
   --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose (default: all)
   --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
@@ -667,7 +669,16 @@ func handleInit() {
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	listAgents := fs.Bool("list-agents", false, "List available agents and exit")
+	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
+
+	// Validate --previous-init-flags
+	if *previousInitFlags != "" && *previousInitFlags != "reuse" && *previousInitFlags != "ignore" {
+		fmt.Fprintf(os.Stderr, "Error: --previous-init-flags must be 'reuse' or 'ignore', got %q\n", *previousInitFlags)
+		os.Exit(1)
+	}
+	// TODO: implement --previous-init-flags behavior in later phases
+	_ = previousInitFlags
 
 	// Handle --list-agents
 	if *listAgents {
