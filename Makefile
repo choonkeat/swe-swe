@@ -27,7 +27,7 @@ SWE_SWE_CLI := ./dist/swe-swe.$(SWE_SWE_GOOS)-$(SWE_SWE_GOARCH)$(SWE_SWE_EXT)
 $(SWE_SWE_CLI): build-cli
 
 swe-swe-init: $(SWE_SWE_CLI)
-	$(SWE_SWE_CLI) init --path $(SWE_SWE_PATH)
+	$(SWE_SWE_CLI) init --project-directory $(SWE_SWE_PATH)
 
 swe-swe-test: swe-swe-init
 	cd $(SWE_SWE_PATH) && docker-compose -f .swe-swe/docker-compose.yml config > /dev/null
@@ -40,10 +40,10 @@ swe-swe-test: swe-swe-init
 	@echo "✓ docker-compose build successful"
 
 swe-swe-run: swe-swe-init
-	$(SWE_SWE_CLI) run --path $(SWE_SWE_PATH)
+	$(SWE_SWE_CLI) run --project-directory $(SWE_SWE_PATH)
 
 swe-swe-stop: $(SWE_SWE_CLI)
-	$(SWE_SWE_CLI) stop --path $(SWE_SWE_PATH)
+	$(SWE_SWE_CLI) stop --project-directory $(SWE_SWE_PATH)
 
 swe-swe-clean:
 	rm -rf $(SWE_SWE_PATH)/.swe-swe
@@ -85,4 +85,4 @@ golden-update: build-cli
 _golden-variant:
 	@rm -rf $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
 	@mkdir -p $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
-	@HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --path /tmp/swe-swe-golden/$(NAME)/target
+	@HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --project-directory /tmp/swe-swe-golden/$(NAME)/target
