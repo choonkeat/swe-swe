@@ -167,21 +167,22 @@ class TerminalUI extends HTMLElement {
                     align-items: center;
                     justify-content: space-between;
                     padding: 6px 12px;
-                    background: #007acc;
+                    background: #f57c00;
                     color: #fff;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     font-size: 12px;
-                    transition: background-color 0.3s ease;
+                    transition: background-color 0.3s ease, border-color 0.3s ease;
+                    border-top: 3px solid transparent;
+                }
+                .terminal-ui__status-bar.connected {
+                    background: #007acc;
+                }
+                .terminal-ui__status-bar.multiuser {
+                    border-top-color: #4fc3f7;
                 }
                 .terminal-ui__status-bar.error,
                 .terminal-ui__status-bar.reconnecting {
                     cursor: pointer;
-                }
-                .terminal-ui__status-bar.error {
-                    background: #d32f2f;
-                }
-                .terminal-ui__status-bar.reconnecting {
-                    background: #f57c00;
                 }
                 .terminal-ui__status-icon {
                     width: 8px;
@@ -757,12 +758,17 @@ class TerminalUI extends HTMLElement {
         const statusText = this.querySelector('.terminal-ui__status-text');
         const terminalEl = this.querySelector('.terminal-ui__terminal');
 
+        // Preserve multiuser class if present
+        const isMultiuser = statusBar.classList.contains('multiuser');
         statusBar.className = 'terminal-ui__status-bar ' + state;
+        if (isMultiuser) {
+            statusBar.classList.add('multiuser');
+        }
         statusText.textContent = message;
-        terminalEl.classList.toggle('disconnected', state !== '');
+        terminalEl.classList.toggle('disconnected', state !== 'connected' && state !== '');
 
         // Clear status info when not connected
-        if (state !== '') {
+        if (state !== 'connected') {
             const infoEl = this.querySelector('.terminal-ui__status-info');
             if (infoEl) infoEl.textContent = '';
         }
@@ -844,7 +850,7 @@ class TerminalUI extends HTMLElement {
 
         this.ws.onopen = () => {
             this.reconnectAttempts = 0;
-            this.updateStatus('', 'Connected');
+            this.updateStatus('connected', 'Connected');
             this.startUptimeTimer();
             this.sendResize();
             this.startHeartbeat();
@@ -946,10 +952,14 @@ class TerminalUI extends HTMLElement {
     }
 
     updateStatusInfo() {
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
         const statusText = this.querySelector('.terminal-ui__status-text');
         const dimsEl = this.querySelector('.terminal-ui__status-dims');
 
         if (!statusText) return;
+
+        // Toggle multiuser class based on viewer count
+        statusBar.classList.toggle('multiuser', this.viewers > 1);
 
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             // Build "Connected as {name} with {agent}" message with separate clickable parts
