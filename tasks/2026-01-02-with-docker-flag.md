@@ -428,3 +428,8 @@ Verify the complete `--with-docker` feature works end-to-end.
 - [x] Add `with-docker` golden file variant
   - [x] Run `make golden-update` with new variant
   - [x] Commit updated golden files
+
+- [x] Documentation
+  - [x] Add `--with-docker` to README.md options and examples
+  - [x] Add security note about Docker socket access
+  - [x] Create ADR-013 for Docker socket mounting decision

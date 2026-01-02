@@ -62,6 +62,8 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--agents AGENTS`: Comma-separated list of agents to include (default: all)
 - `--exclude AGENTS`: Comma-separated list of agents to exclude
 - `--apt-get-install PACKAGES`: Additional apt packages to install
+- `--npm-install PACKAGES`: Additional npm packages to install globally
+- `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
 - `--list-agents`: List available agents and exit
 
 **Available Agents**:
@@ -90,9 +92,14 @@ swe-swe init --path ~/my-project --exclude=aider
 # Initialize with additional system packages
 swe-swe init --path ~/my-project --apt-get-install="vim htop tmux"
 
+# Initialize with Docker access (for integration testing, building images)
+swe-swe init --path ~/my-project --with-docker
+
 # List available agents
 swe-swe init --list-agents
 ```
+
+**Security Note on `--with-docker`**: Mounting the Docker socket grants the container effective root access to the host. The container can mount host filesystems, run privileged containers, and access other containers. Only use this flag when you trust the code running inside the container (e.g., for your own projects, not untrusted third-party code).
 
 **Dependency Optimization**: The Dockerfile is automatically optimized based on selected agents:
 - Python/pip is only installed if `aider` is included

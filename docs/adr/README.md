@@ -38,3 +38,4 @@ Bad: ...
 | [010](0010-session-restart-behavior.md) | Session restart behavior | Accepted |
 | [011](0011-vt100-emulation-snapshots.md) | VT100 emulation for snapshots | Accepted |
 | [012](0012-enterprise-ssl-cert-handling.md) | Enterprise SSL certificate handling | Accepted |
+| [013](0013-docker-socket-mounting.md) | Docker socket mounting | Accepted |
