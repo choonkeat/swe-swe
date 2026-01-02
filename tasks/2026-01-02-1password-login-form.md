@@ -1,7 +1,7 @@
 # Task: Fix Password Managers Not Recognizing Login Form
 
 **Date**: 2026-01-02
-**Status**: Phase 1 Complete
+**Status**: Complete
 
 ## Goal
 
@@ -123,4 +123,28 @@ Add a hidden username field and `id` attribute:
 
 ## Changes Made
 
-*(To be filled in during Phase 2)*
+### File Modified
+`cmd/swe-swe/templates/host/auth/main.go:188-189`
+
+### Before
+```html
+<input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
+```
+
+### After
+```html
+<input type="text" name="username" id="username" value="admin" autocomplete="username" style="display:none">
+<input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required>
+```
+
+### Summary
+1. Added hidden username field with `value="admin"` and `autocomplete="username"` to anchor password managers
+2. Added `id="password"` attribute to help password managers identify the field
+3. Used `style="display:none"` instead of `type="hidden"` so password managers don't ignore it
+
+### Verification
+- [x] Build succeeds (`make build-cli`)
+- [x] All tests pass (`go test ./cmd/swe-swe/...`)
+- [ ] Manual test with 1Password on desktop
+- [ ] Manual test on iOS Safari
+- [ ] Manual test on Android
