@@ -12,7 +12,7 @@ Refactor the swe-swe CLI to:
 - [x] [Phase 1](#phase-1-update-flag-parsing): Update flag parsing (`--path` → `--project-directory`)
 - [x] [Phase 2](#phase-2-refactor-to-pass-through-model): Refactor to pass-through model
 - [x] [Phase 3](#phase-3-remove-delimiter-handling): Remove `--` delimiter handling (done as part of Phase 2)
-- [ ] [Phase 4](#phase-4-update-documentation): Update documentation and golden tests
+- [x] [Phase 4](#phase-4-update-documentation): Update documentation and golden tests
 
 ---
 
