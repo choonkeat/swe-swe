@@ -901,10 +901,14 @@ func handleInit() {
 
 	// Generate self-signed certificate if SSL mode is selfsign
 	if *sslFlag == "selfsign" {
-		if err := generateSelfSignedCert(certsDir); err != nil {
+		tlsDir := filepath.Join(sweDir, "tls")
+		if err := os.MkdirAll(tlsDir, 0755); err != nil {
+			log.Fatalf("Failed to create TLS directory: %v", err)
+		}
+		if err := generateSelfSignedCert(tlsDir); err != nil {
 			log.Fatalf("Failed to generate self-signed certificate: %v", err)
 		}
-		fmt.Printf("Generated self-signed SSL certificate in %s\n", certsDir)
+		fmt.Printf("Generated self-signed SSL certificate in %s\n", tlsDir)
 	}
 
 	// Extract embedded files
