@@ -79,6 +79,9 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-slash-commands-codex-only FLAGS="--agents codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-no-alias FLAGS="--agents all --with-slash-commands https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-codex FLAGS="--agents claude,codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-certs-no-certs
+	@$(MAKE) _golden-certs-node-extra-ca-certs
+	@$(MAKE) _golden-certs-ssl-cert-file
 	@$(MAKE) _golden-previous-init-flags-reuse
 	@$(MAKE) _golden-variant NAME=previous-init-flags-reuse-no-config FLAGS="--previous-init-flags=reuse"
 	@$(MAKE) _golden-previous-init-flags-ignore
@@ -121,3 +124,33 @@ _golden-already-initialized:
 		2> /dev/null || true
 	@HOME=/tmp/swe-swe-golden/already-initialized/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/already-initialized/target \
 		2> $(GOLDEN_TESTDATA)/already-initialized/stderr.txt || true
+
+# Certificate test variants: with and without enterprise certificates
+_golden-certs-no-certs:
+	@rm -rf $(GOLDEN_TESTDATA)/with-certs-no-certs/home $(GOLDEN_TESTDATA)/with-certs-no-certs/target
+	@mkdir -p $(GOLDEN_TESTDATA)/with-certs-no-certs/home $(GOLDEN_TESTDATA)/with-certs-no-certs/target
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/with-certs-no-certs/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/with-certs-no-certs/target \
+		2> $(GOLDEN_TESTDATA)/with-certs-no-certs/stderr.txt || true
+
+_golden-certs-node-extra-ca-certs:
+	@rm -rf $(GOLDEN_TESTDATA)/with-certs-node-extra-ca-certs/home $(GOLDEN_TESTDATA)/with-certs-node-extra-ca-certs/target
+	@mkdir -p $(GOLDEN_TESTDATA)/with-certs-node-extra-ca-certs/home $(GOLDEN_TESTDATA)/with-certs-node-extra-ca-certs/target
+	@mkdir -p /tmp/swe-swe-test-certs && \
+	echo "-----BEGIN CERTIFICATE-----" > /tmp/swe-swe-test-certs/test.pem && \
+	echo "test certificate content" >> /tmp/swe-swe-test-certs/test.pem && \
+	echo "-----END CERTIFICATE-----" >> /tmp/swe-swe-test-certs/test.pem && \
+	NODE_EXTRA_CA_CERTS=/tmp/swe-swe-test-certs/test.pem \
+	HOME=/tmp/swe-swe-golden/with-certs-node-extra-ca-certs/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/with-certs-node-extra-ca-certs/target \
+		2> $(GOLDEN_TESTDATA)/with-certs-node-extra-ca-certs/stderr.txt || true
+
+_golden-certs-ssl-cert-file:
+	@rm -rf $(GOLDEN_TESTDATA)/with-certs-ssl-cert-file/home $(GOLDEN_TESTDATA)/with-certs-ssl-cert-file/target
+	@mkdir -p $(GOLDEN_TESTDATA)/with-certs-ssl-cert-file/home $(GOLDEN_TESTDATA)/with-certs-ssl-cert-file/target
+	@mkdir -p /tmp/swe-swe-test-certs && \
+	echo "-----BEGIN CERTIFICATE-----" > /tmp/swe-swe-test-certs/test.pem && \
+	echo "test certificate content" >> /tmp/swe-swe-test-certs/test.pem && \
+	echo "-----END CERTIFICATE-----" >> /tmp/swe-swe-test-certs/test.pem && \
+	SSL_CERT_FILE=/tmp/swe-swe-test-certs/test.pem \
+	HOME=/tmp/swe-swe-golden/with-certs-ssl-cert-file/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/with-certs-ssl-cert-file/target \
+		2> $(GOLDEN_TESTDATA)/with-certs-ssl-cert-file/stderr.txt || true

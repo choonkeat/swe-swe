@@ -621,6 +621,9 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-slash-commands-codex-only", []string{"--agents", "codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-no-alias", []string{"--agents", "all", "--with-slash-commands", "https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-claude-codex", []string{"--agents", "claude,codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-certs-no-certs", []string{}},
+		{"with-certs-node-extra-ca-certs", []string{}},
+		{"with-certs-ssl-cert-file", []string{}},
 	}
 
 	for _, v := range variants {
