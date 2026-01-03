@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v2.4.1 - Documentation Fix
+
+- **Fix `--project-directory` documentation**: Correct argument order in help text and README—subcommand must come before the flag (e.g., `swe-swe up --project-directory /path`)
+
 ## v2.4.0 - CLI Improvements & Docker Integration
 
 - **`--with-docker` flag**: Enable Docker-in-Docker with socket mounting for agents to run Docker commands

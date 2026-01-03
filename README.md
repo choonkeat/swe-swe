@@ -169,8 +169,8 @@ swe-swe restart chrome        # docker compose restart chrome
 
 Use `--project-directory` to specify which project (defaults to current directory):
 ```bash
-swe-swe --project-directory ~/my-project up
-swe-swe --project-directory ~/my-project logs -f
+swe-swe up --project-directory ~/my-project
+swe-swe logs -f --project-directory ~/my-project
 ```
 
 #### `swe-swe up [--project-directory PATH]`
