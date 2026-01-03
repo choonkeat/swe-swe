@@ -175,12 +175,13 @@ swe-swe logs -f --project-directory ~/my-project
 
 #### `swe-swe up [--project-directory PATH]`
 
-Starts the swe-swe environment using `docker-compose up`. The environment includes:
+Starts the swe-swe environment using `docker compose up`. The environment includes:
 
-1. **swe-swe-server**: WebSocket-based AI terminal with session management
+1. **swe-swe**: WebSocket-based AI terminal with session management
 2. **chrome**: Headless Chromium with VNC for browser automation (used by MCP Playwright)
-3. **code-server**: VS Code running in a container
+3. **code-server**: VS Code running in a container (with nginx proxy)
 4. **traefik**: HTTP reverse proxy with routing rules
+5. **auth**: ForwardAuth service for unified password protection
 
 The workspace is mounted at `/workspace` inside containers, allowing bidirectional file access.
 
@@ -190,15 +191,17 @@ swe-swe up --project-directory ~/my-project
 # Press Ctrl+C to stop
 ```
 
-**Environment Variables**:
-- `ANTHROPIC_API_KEY`: Claude API key
-- `OPENAI_API_KEY`: OpenAI API key
-- `GEMINI_API_KEY`: Google Gemini API key
+**Environment Variables** (passed through automatically):
+- `ANTHROPIC_API_KEY`: Claude API key (passed by default)
 - `SWE_SWE_PASSWORD`: Authentication password for all services (defaults to `changeme`)
 - `SWE_PORT`: External port (defaults to 1977)
 - `NODE_EXTRA_CA_CERTS`: Enterprise CA certificate path (auto-copied during init)
 - `SSL_CERT_FILE`: SSL certificate file path (auto-copied during init)
 - `BROWSER_WS_ENDPOINT`: WebSocket endpoint for browser automation (auto-configured to `ws://chrome:9223`)
+
+**Additional API keys** (uncomment in docker-compose.yml if needed):
+- `OPENAI_API_KEY`: OpenAI API key (for Codex)
+- `GEMINI_API_KEY`: Google Gemini API key
 
 #### `swe-swe down [--project-directory PATH]`
 
@@ -221,7 +224,7 @@ Example:
 swe-swe build --project-directory ~/my-project
 ```
 
-#### `swe-swe help`
+#### `swe-swe -h` / `swe-swe --help`
 
 Displays the help message with all available commands.
 
@@ -236,12 +239,17 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 ├── Dockerfile              # Container image definition (multi-stage build)
 ├── docker-compose.yml      # Service orchestration
 ├── traefik-dynamic.yml     # HTTP routing rules
+├── .dockerignore           # Docker build exclusions
 ├── .path                   # Original project path (for discovery)
+├── init.json               # Saved init flags (for --previous-init-flags=reuse)
+├── entrypoint.sh           # Container entrypoint script
+├── nginx-vscode.conf       # Nginx config for VSCode proxy
 ├── swe-swe-server/         # Server source code (built at docker-compose time)
 │   ├── go.mod, go.sum
 │   ├── main.go
 │   └── static/
 ├── auth/                   # ForwardAuth service source code
+├── chrome/                 # Chrome/noVNC service (Dockerfile, configs)
 ├── home/                   # Persistent VSCode/shell home (volume)
 └── certs/                  # Enterprise certificates (if detected)
 ```
@@ -320,17 +328,26 @@ The Dockerfile is located in `$HOME/.swe-swe/projects/{sanitized-path}/Dockerfil
 
 ### API Keys
 
-Set API keys as environment variables before running:
-
+**Claude** (passed through by default):
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
+swe-swe up --project-directory ~/my-project
+```
+
+**Gemini/Codex** (requires editing docker-compose.yml to uncomment the env vars):
+```bash
+# First, edit $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml
+# Uncomment the GEMINI_API_KEY and/or OPENAI_API_KEY lines in the swe-swe service
+
+export GEMINI_API_KEY=...
 export OPENAI_API_KEY=sk-...
 swe-swe up --project-directory ~/my-project
 ```
 
-Or create a `.env` file in `$HOME/.swe-swe/projects/{sanitized-path}/`:
+Alternatively, create a `.env` file in `$HOME/.swe-swe/projects/{sanitized-path}/`:
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 OPENAI_API_KEY=sk-...
 ```
 
@@ -381,12 +398,12 @@ The swe-swe-server is built from source at `docker-compose build` time using a m
 ```
 .
 ├── cmd/
-│   ├── swe-swe/              # CLI tool
-│   │   ├── main.go
-│   │   └── templates/        # Embedded Docker files
-│   └── swe-swe-server/       # WebSocket server
+│   └── swe-swe/              # CLI tool
 │       ├── main.go
-│       └── static/           # Web UI assets
+│       └── templates/        # Embedded Docker/server files
+│           └── host/
+│               ├── Dockerfile, docker-compose.yml, etc.
+│               └── swe-swe-server/   # WebSocket server source
 ├── docs/                     # Technical documentation
 ├── Makefile                  # Build targets
 ├── go.mod, go.sum           # Go dependencies
@@ -406,7 +423,10 @@ The swe-swe-server is built from source at `docker-compose build` time using a m
 
 **Error**: `exec format error`
 
-**Solution**: Run `swe-swe init` again to copy the correct Linux binary for your system.
+**Solution**: Rebuild the container image which compiles the server from source:
+```bash
+swe-swe build --project-directory ~/my-project
+```
 
 ### Port Already in Use
 
@@ -434,8 +454,8 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 
 **Solution**:
 1. Verify Docker is running: `docker ps`
-2. Check containers are healthy: `docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml ps`
-3. Check Traefik logs: `docker logs <project-name>-traefik-1`
+2. Check containers are healthy: `swe-swe ps --project-directory ~/my-project`
+3. Check Traefik logs: `swe-swe logs traefik --project-directory ~/my-project`
 4. Verify you're using correct paths: `http://0.0.0.0:1977/`, `http://0.0.0.0:1977/vscode`, `http://0.0.0.0:1977/chrome`
 
 ### Persistent Home Issues
@@ -464,19 +484,19 @@ swe-swe up --project-directory ~/project2
 
 ### Custom Shell
 
-Use a custom shell with the `-shell` flag by modifying the Dockerfile:
+Use a custom shell by modifying the Dockerfile CMD:
 
 ```dockerfile
 ENV SHELL=/bin/zsh
-CMD ["/usr/local/bin/swe-swe-server", "-shell", "zsh", "-working-directory", "/workspace"]
+CMD ["/usr/local/bin/swe-swe-server", "-shell", "zsh", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
 ```
 
 ### Session TTL
 
-Control how long idle sessions persist (default 1 hour):
+Control how long idle sessions persist (default 1 hour) by modifying the Dockerfile CMD:
 
 ```dockerfile
-CMD ["/usr/local/bin/swe-swe-server", "-session-ttl", "30m"]
+CMD ["/usr/local/bin/swe-swe-server", "-session-ttl", "30m", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
 ```
 
 ### Authentication
