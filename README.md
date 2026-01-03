@@ -23,10 +23,10 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
    ```
 
 4. **Access the services**
-   - **swe-swe terminal**: http://0.0.0.0:9899
-   - **VSCode**: http://0.0.0.0:9899/vscode
-   - **Chrome VNC**: http://0.0.0.0:9899/chrome (browser automation viewer)
-   - **Traefik dashboard**: http://0.0.0.0:9899/dashboard/
+   - **swe-swe terminal**: http://0.0.0.0:1977
+   - **VSCode**: http://0.0.0.0:1977/vscode
+   - **Chrome VNC**: http://0.0.0.0:1977/chrome (browser automation viewer)
+   - **Traefik dashboard**: http://0.0.0.0:1977/dashboard/
 
 5. **View all initialized projects**
    ```bash
@@ -116,7 +116,7 @@ swe-swe init --previous-init-flags=ignore --agents=claude
 
 Services are accessible via path-based routing on `localhost` (or `0.0.0.0`) at the configured port.
 
-**Note on Port**: The port defaults to `9899` and can be customized via environment variables for `swe-swe up` (see below). Services are routed based on request paths (e.g., `/vscode`, `/chrome`) rather than subdomains, making it compatible with ngrok, cloudflared, and other tunnel services.
+**Note on Port**: The port defaults to `1977` and can be customized via the `SWE_PORT` environment variable (e.g., `SWE_PORT=8080 swe-swe up`). Services are routed based on request paths (e.g., `/vscode`, `/chrome`) rather than subdomains, making it compatible with ngrok, cloudflared, and other tunnel services.
 
 **Enterprise Certificate Support**: If you're behind a corporate firewall or VPN, the init command automatically detects and copies certificates from:
 - `NODE_EXTRA_CA_CERTS`
@@ -195,7 +195,7 @@ swe-swe up --project-directory ~/my-project
 - `OPENAI_API_KEY`: OpenAI API key
 - `GEMINI_API_KEY`: Google Gemini API key
 - `SWE_SWE_PASSWORD`: Authentication password for all services (defaults to `changeme`)
-- `SWE_PORT`: External port (defaults to 9899, use environment variable to customize)
+- `SWE_PORT`: External port (defaults to 1977)
 - `NODE_EXTRA_CA_CERTS`: Enterprise CA certificate path (auto-copied during init)
 - `SSL_CERT_FILE`: SSL certificate file path (auto-copied during init)
 - `BROWSER_WS_ENDPOINT`: WebSocket endpoint for browser automation (auto-configured to `ws://chrome:9223`)
@@ -270,7 +270,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 - **Purpose**: Headless Chromium browser for AI-driven browser automation
 - **Features**:
   - Chrome DevTools Protocol (CDP) access via nginx proxy
-  - VNC server for visual observation at `/chrome` path (e.g., http://0.0.0.0:9899/chrome)
+  - VNC server for visual observation at `/chrome` path (e.g., http://0.0.0.0:1977/chrome)
   - Used by MCP Playwright for browser automation tasks
   - Enterprise SSL certificate support via NSS database
 - **Documentation**: See `docs/browser-automation.md`
@@ -284,7 +284,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - Terminal integration
 
 #### traefik
-- **Port**: 7000 (external port 9899)
+- **Port**: 7000 (external port 1977)
 - **Purpose**: Reverse proxy and routing with path-based request matching
 - **Routing Rules**:
   - `/swe-swe-auth/*` path: Auth service for ForwardAuth (priority 200)
@@ -410,12 +410,12 @@ The swe-swe-server is built from source at `docker-compose build` time using a m
 
 ### Port Already in Use
 
-**Error**: `port 9899 already allocated`
+**Error**: `port 1977 already allocated`
 
 **Solution**: Stop other projects or use a custom port via environment variable:
 ```bash
 # Use a different port
-SWE_PORT=9900 swe-swe up --project-directory ~/my-project
+SWE_PORT=8080 swe-swe up --project-directory ~/my-project
 ```
 
 Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml` to change the port mapping.
@@ -430,13 +430,13 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 
 ### Network Issues
 
-**Error**: Service not accessible at configured port (default 9899)
+**Error**: Service not accessible at configured port (default 1977)
 
 **Solution**:
 1. Verify Docker is running: `docker ps`
 2. Check containers are healthy: `docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml ps`
 3. Check Traefik logs: `docker logs <project-name>-traefik-1`
-4. Verify you're using correct paths: `http://0.0.0.0:9899/`, `http://0.0.0.0:9899/vscode`, `http://0.0.0.0:9899/chrome`
+4. Verify you're using correct paths: `http://0.0.0.0:1977/`, `http://0.0.0.0:1977/vscode`, `http://0.0.0.0:1977/chrome`
 
 ### Persistent Home Issues
 
