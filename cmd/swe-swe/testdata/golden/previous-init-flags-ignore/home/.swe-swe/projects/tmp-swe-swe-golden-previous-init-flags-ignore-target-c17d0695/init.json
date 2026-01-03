@@ -1,9 +1,5 @@
 {
   "agents": [
-    "claude",
-    "gemini",
-    "codex",
-    "aider",
-    "goose"
+    "aider"
   ]
 }

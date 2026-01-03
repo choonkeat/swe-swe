@@ -31,33 +31,42 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
 # Ensure npm global packages are in PATH
 ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
 
-# Install Python and pip for AI assistants
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    && rm -rf /var/lib/apt/lists/*
 
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install Gemini CLI
-RUN npm install -g @google/gemini-cli
 
-# Install Codex CLI
-RUN npm install -g @openai/codex
 
 # Install MCP Playwright for browser automation
 # This enables the system to control browsers via Playwright CDP connections
 RUN npm install -g @playwright/mcp
 
-# Install aider
-RUN pip3 install --break-system-packages aider-chat
-
-# Install Goose (AI pair programmer from Block)
-RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
 
+
+# Install Docker CLI only (talks to host Docker via mounted socket)
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "${ARCH}" in \
+        amd64) DOCKER_ARCH="x86_64" ;; \
+        arm64) DOCKER_ARCH="aarch64" ;; \
+        armhf) DOCKER_ARCH="armhf" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.4.1.tgz" | \
+    tar xz -C /usr/local/bin --strip-components=1 docker/docker
+
+# Install Docker Compose plugin (enables `docker compose` command)
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "${ARCH}" in \
+        amd64) COMPOSE_ARCH="x86_64" ;; \
+        arm64) COMPOSE_ARCH="aarch64" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-${COMPOSE_ARCH}" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 
 # Enterprise certificate support

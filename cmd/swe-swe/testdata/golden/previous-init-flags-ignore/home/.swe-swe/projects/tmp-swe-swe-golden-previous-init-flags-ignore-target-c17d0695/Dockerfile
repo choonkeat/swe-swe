@@ -23,13 +23,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 24 LTS from NodeSource (Debian repos only have EOL Node.js 18)
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
-
-# Ensure npm global packages are in PATH
-ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
 
 # Install Python and pip for AI assistants
 RUN apt-get update && apt-get install -y \
@@ -38,24 +31,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
 
-# Install Gemini CLI
-RUN npm install -g @google/gemini-cli
 
-# Install Codex CLI
-RUN npm install -g @openai/codex
 
-# Install MCP Playwright for browser automation
-# This enables the system to control browsers via Playwright CDP connections
-RUN npm install -g @playwright/mcp
 
 # Install aider
 RUN pip3 install --break-system-packages aider-chat
 
-# Install Goose (AI pair programmer from Block)
-RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
 
 
