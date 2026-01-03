@@ -174,8 +174,13 @@ func handlePassthrough(command string, args []string) {
 	}
 
 	// Build arguments for docker compose
-	// docker compose -f <file> --project-directory <path> <command> <args...>
-	composeArgs := []string{"-f", composeFile, "--project-directory", absPath, command}
+	// docker compose -f <file> <command> <args...>
+	// Note: We intentionally don't pass --project-directory to docker compose.
+	// Our docker-compose.yml uses relative paths (e.g., ./auth) for build contexts,
+	// which docker compose resolves relative to the compose file location (metadata dir).
+	// Passing --project-directory would cause docker to look for these paths relative
+	// to the project dir instead, causing "path not found" errors.
+	composeArgs := []string{"-f", composeFile, command}
 	composeArgs = append(composeArgs, remainingArgs...)
 
 	// Replace process with docker compose on Unix/Linux/macOS
