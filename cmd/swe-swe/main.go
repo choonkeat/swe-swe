@@ -747,6 +747,15 @@ func handleInit() {
 		*path = "."
 	}
 
+	// Expand ~ in path
+	if strings.HasPrefix(*path, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get home directory: %v", err)
+		}
+		*path = filepath.Join(home, strings.TrimPrefix(*path, "~"))
+	}
+
 	// Resolve agent list
 	agents, err := resolveAgents(*agentsFlag, *excludeFlag)
 	if err != nil {
