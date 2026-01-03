@@ -183,6 +183,7 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-bar.multiuser {
                     border-top-color: #4fc3f7;
                 }
+                .terminal-ui__status-bar.connecting,
                 .terminal-ui__status-bar.error,
                 .terminal-ui__status-bar.reconnecting {
                     cursor: pointer;
@@ -194,6 +195,7 @@ class TerminalUI extends HTMLElement {
                     background: #4caf50;
                     margin-right: 8px;
                 }
+                .terminal-ui__status-bar.connecting .terminal-ui__status-icon,
                 .terminal-ui__status-bar.error .terminal-ui__status-icon,
                 .terminal-ui__status-bar.reconnecting .terminal-ui__status-icon {
                     background: #fff;
@@ -237,6 +239,7 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-link-sep {
                     opacity: 0.5;
                 }
+                .terminal-ui__status-bar.connecting:hover,
                 .terminal-ui__status-bar.error:hover,
                 .terminal-ui__status-bar.reconnecting:hover {
                     opacity: 0.9;
@@ -768,7 +771,7 @@ class TerminalUI extends HTMLElement {
         if (isMultiuser) {
             statusBar.classList.add('multiuser');
         }
-        statusText.textContent = message;
+        statusText.innerHTML = message;
         terminalEl.classList.toggle('disconnected', state !== 'connected' && state !== '');
 
         // Clear status info when not connected
@@ -801,17 +804,22 @@ class TerminalUI extends HTMLElement {
         return Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
     }
 
+    getAssistantLink() {
+        const name = this.assistantName || this.assistant;
+        return `<a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
+    }
+
     scheduleReconnect() {
         const delay = this.getReconnectDelay();
         this.reconnectAttempts++;
 
         let remaining = Math.ceil(delay / 1000);
-        this.updateStatus('reconnecting', `Reconnecting in ${remaining}s...`);
+        this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantLink()} in ${remaining}s...`);
 
         this.countdownInterval = setInterval(() => {
             remaining--;
             if (remaining > 0) {
-                this.updateStatus('reconnecting', `Reconnecting in ${remaining}s...`);
+                this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantLink()} in ${remaining}s...`);
             }
         }, 1000);
 
@@ -844,7 +852,7 @@ class TerminalUI extends HTMLElement {
             this.countdownInterval = null;
         }
 
-        this.updateStatus('', 'Connecting...');
+        this.updateStatus('connecting', `Connecting to ${this.getAssistantLink()}...`);
         const timerEl = this.querySelector('.terminal-ui__status-timer');
         if (timerEl) timerEl.textContent = '';
 
@@ -986,7 +994,7 @@ class TerminalUI extends HTMLElement {
                 dimsEl.textContent = `${this.ptyCols}×${this.ptyRows}`;
             }
         } else {
-            // For error/reconnecting states, updateStatus() handles the text
+            // For connecting/error/reconnecting states, updateStatus() handles the text
             if (dimsEl) {
                 dimsEl.textContent = '';
             }
@@ -1349,10 +1357,19 @@ class TerminalUI extends HTMLElement {
             this.term.focus();
         });
 
-        // Status bar click to reconnect immediately when disconnected
+        // Status bar click to reconnect immediately when disconnected or connecting
         const statusBar = this.querySelector('.terminal-ui__status-bar');
         statusBar.addEventListener('click', () => {
-            if (statusBar.classList.contains('error') || statusBar.classList.contains('reconnecting')) {
+            if (statusBar.classList.contains('connecting') || statusBar.classList.contains('error') || statusBar.classList.contains('reconnecting')) {
+                // Close existing connection attempt if any
+                if (this.ws) {
+                    this.ws.onclose = null; // Prevent triggering scheduleReconnect
+                    this.ws.onerror = null;
+                    this.ws.close();
+                    this.ws = null;
+                }
+                // Reset backoff on manual retry
+                this.reconnectAttempts = 0;
                 this.connect();
             }
         });
@@ -1361,12 +1378,18 @@ class TerminalUI extends HTMLElement {
         // Delegate to handle clicks on separate hyperlinks
         const statusText = this.querySelector('.terminal-ui__status-text');
         statusText.addEventListener('click', (e) => {
-            e.stopPropagation(); // Don't trigger status bar click handler
+            // If clicking on an anchor, let the link work but don't trigger reconnect
+            if (e.target.tagName === 'A') {
+                e.stopPropagation();
+                return;
+            }
 
             // Only handle clicks when WebSocket is open
             if (!(this.ws && this.ws.readyState === WebSocket.OPEN)) {
+                // Let click bubble to status bar handler for reconnect
                 return;
             }
+            e.stopPropagation(); // Don't trigger status bar click handler
 
             // Check if clicked on name link
             if (e.target.classList.contains('terminal-ui__status-name')) {
