@@ -113,6 +113,15 @@ func extractProjectDirectory(args []string) (string, []string) {
 		remaining = append(remaining, arg)
 	}
 
+	// Expand ~ in projectDir
+	if strings.HasPrefix(projectDir, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get home directory: %v", err)
+		}
+		projectDir = filepath.Join(home, strings.TrimPrefix(projectDir, "~"))
+	}
+
 	return projectDir, remaining
 }
 
