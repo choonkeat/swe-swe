@@ -490,8 +490,8 @@ func agentInList(agent string, list []string) bool {
 }
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
-// based on selected agents, custom apt packages, custom npm packages, Docker access, and slash commands
-func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, slashCommands []SlashCommandsRepo) string {
+// based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, and slash commands
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -546,6 +546,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = aptPackages == ""
 			case "NPM_PACKAGES":
 				skip = npmPackages == ""
+			case "CERTS":
+				skip = !hasCerts
 			case "DOCKER":
 				skip = !withDocker
 			case "SLASH_COMMANDS":
