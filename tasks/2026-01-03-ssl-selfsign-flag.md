@@ -42,24 +42,24 @@ Following the CLAUDE.md two-commit TDD approach.
 - Certificates stored in `certs/` directory
 
 ### Steps
-1. Add `generateSelfSignedCert(certsDir string)` function using Go's `crypto/x509`, `crypto/rsa`, `crypto/rand`
+1. [x] Add `generateSelfSignedCert(certsDir string)` function using Go's `crypto/x509`, `crypto/rsa`, `crypto/rand`
    - Generates `server.crt` and `server.key` in certsDir
    - Cert valid for `localhost`, `127.0.0.1`, and common local hostnames
-2. Call `generateSelfSignedCert()` in `handleInit()` when `ssl == "selfsign"`
-3. Update `traefik-dynamic.yml` template with `{{IF SSL}}` block for TLS config
-4. Update `docker-compose.yml` template:
+2. [x] Call `generateSelfSignedCert()` in `handleInit()` when `ssl == "selfsign"`
+3. [x] Update `traefik-dynamic.yml` template with `{{IF SSL}}` block for TLS config
+4. [x] Update `docker-compose.yml` template:
    - Change entrypoint from `:7000` to `:7443` when SSL
    - Mount certs volume to traefik
-5. Process templates with new `ssl` condition (similar to `withDocker`)
-6. Update golden variant to verify functional changes
+5. [x] Process templates with new `ssl` condition (similar to `withDocker`)
+6. [x] Update golden variant to verify functional changes
 
 ### Verification
-1. `make build golden-update`
-2. `git add -A cmd/swe-swe/testdata/golden && git diff --cached -- cmd/swe-swe/testdata/golden`
-3. **Expect**: `with-ssl-selfsign` shows changes in `docker-compose.yml`, `traefik-dynamic.yml`, and new cert files in `certs/`
-4. `go test ./cmd/swe-swe/...` passes
-5. **Commit**
-6. **Manual test**: `swe-swe init --ssl=selfsign && swe-swe up` → verify HTTPS works
+1. [x] `make build golden-update`
+2. [x] `git add -A cmd/swe-swe/testdata/golden && git diff --cached -- cmd/swe-swe/testdata/golden`
+3. [x] **Expect**: `with-ssl-selfsign` shows changes in `docker-compose.yml`, `traefik-dynamic.yml`, and new cert files in `certs/`
+4. [x] `go test ./cmd/swe-swe/...` passes
+5. [x] **Commit**
+6. [ ] **Manual test**: `swe-swe init --ssl=selfsign && swe-swe up` → verify HTTPS works
 
 ---
 

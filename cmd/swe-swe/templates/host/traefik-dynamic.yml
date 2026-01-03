@@ -17,3 +17,16 @@ http:
       middlewares:
         - "forwardauth"
       priority: 150
+# {{IF SSL}}
+      entryPoints:
+        - "websecure"
+      tls: {}
+# {{ENDIF}}
+
+# {{IF SSL}}
+# TLS configuration for self-signed certificate
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/server.crt
+      keyFile: /etc/traefik/certs/server.key
+# {{ENDIF}}
