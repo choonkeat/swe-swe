@@ -11,5 +11,6 @@
       "alias": "choonkeat/slash-commands",
       "url": "https://github.com/choonkeat/slash-commands.git"
     }
-  ]
+  ],
+  "ssl": "no"
 }

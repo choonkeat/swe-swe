@@ -6,5 +6,6 @@
     "aider",
     "goose"
   ],
-  "aptPackages": "vim curl"
+  "aptPackages": "vim curl",
+  "ssl": "no"
 }

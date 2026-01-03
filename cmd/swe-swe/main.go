@@ -254,6 +254,7 @@ Init Options:
   --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands (space-separated)
                                          Format: [alias@]<git-url>
+  --ssl MODE                             SSL mode: 'no' (default) or 'selfsign' for self-signed HTTPS
 
 Available Agents:
   claude, gemini, codex, aider, goose
@@ -271,6 +272,7 @@ Examples:
   swe-swe init --with-docker                     Initialize current directory with Docker-in-Docker
   swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
                                                  Initialize current directory with slash commands
+  swe-swe init --ssl=selfsign                    Initialize with self-signed HTTPS certificate
   swe-swe up                                     Start all services
   swe-swe up -d                                  Start all services in background
   swe-swe down                                   Stop all services
@@ -307,6 +309,7 @@ type InitConfig struct {
 	NpmPackages   string              `json:"npmPackages,omitempty"`
 	WithDocker    bool                `json:"withDocker,omitempty"`
 	SlashCommands []SlashCommandsRepo `json:"slashCommands,omitempty"`
+	SSL           string              `json:"ssl,omitempty"`
 }
 
 // saveInitConfig writes the init configuration to init.json
@@ -728,6 +731,7 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
+	sslFlag := fs.String("ssl", "no", "SSL mode: 'no' (default) or 'selfsign' for self-signed certificates")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -737,9 +741,15 @@ func handleInit() {
 		os.Exit(1)
 	}
 
+	// Validate --ssl flag
+	if *sslFlag != "no" && *sslFlag != "selfsign" {
+		fmt.Fprintf(os.Stderr, "Error: --ssl must be 'no' or 'selfsign', got %q\n", *sslFlag)
+		os.Exit(1)
+	}
+
 	// Validate that --previous-init-flags=reuse is not combined with other flags
 	if *previousInitFlags == "reuse" {
-		if *agentsFlag != "" || *excludeFlag != "" || *aptPackages != "" || *npmPackages != "" || *withDocker || *slashCommands != "" {
+		if *agentsFlag != "" || *excludeFlag != "" || *aptPackages != "" || *npmPackages != "" || *withDocker || *slashCommands != "" || *sslFlag != "no" {
 			fmt.Fprintf(os.Stderr, "Error: --previous-init-flags=reuse cannot be combined with other flags\n\n")
 			fmt.Fprintf(os.Stderr, "  To reapply saved configuration without changes:\n")
 			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=reuse\n\n")
@@ -829,6 +839,10 @@ func handleInit() {
 		npmPkgs = savedConfig.NpmPackages
 		*withDocker = savedConfig.WithDocker
 		slashCmds = savedConfig.SlashCommands
+		*sslFlag = savedConfig.SSL
+		if *sslFlag == "" {
+			*sslFlag = "no" // Default for old configs without SSL field
+		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
 
@@ -1004,6 +1018,7 @@ func handleInit() {
 		NpmPackages:   npmPkgs,
 		WithDocker:    *withDocker,
 		SlashCommands: slashCmds,
+		SSL:           *sslFlag,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)
@@ -1211,6 +1226,9 @@ func handleList() {
 				}
 				if len(info.config.SlashCommands) > 0 {
 					extras = append(extras, fmt.Sprintf("slash-cmds:%d", len(info.config.SlashCommands)))
+				}
+				if info.config.SSL != "" && info.config.SSL != "no" {
+					extras = append(extras, "ssl:"+info.config.SSL)
 				}
 				if len(extras) > 0 {
 					fmt.Printf("  %s [%s] (%s)\n", info.path, agents, strings.Join(extras, ", "))

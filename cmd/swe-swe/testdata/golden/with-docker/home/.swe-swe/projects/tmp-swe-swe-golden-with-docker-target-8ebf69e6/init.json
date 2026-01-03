@@ -6,5 +6,6 @@
     "aider",
     "goose"
   ],
-  "withDocker": true
+  "withDocker": true,
+  "ssl": "no"
 }

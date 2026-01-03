@@ -1,0 +1,10 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex",
+    "aider",
+    "goose"
+  ],
+  "ssl": "selfsign"
+}

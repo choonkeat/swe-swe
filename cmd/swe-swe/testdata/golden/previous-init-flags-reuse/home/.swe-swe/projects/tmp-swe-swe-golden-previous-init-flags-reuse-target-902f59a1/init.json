@@ -2,5 +2,6 @@
   "agents": [
     "claude"
   ],
-  "withDocker": true
+  "withDocker": true,
+  "ssl": "no"
 }

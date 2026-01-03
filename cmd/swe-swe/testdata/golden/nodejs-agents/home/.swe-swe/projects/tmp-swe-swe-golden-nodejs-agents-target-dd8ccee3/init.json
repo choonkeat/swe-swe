@@ -3,5 +3,6 @@
     "claude",
     "gemini",
     "codex"
-  ]
+  ],
+  "ssl": "no"
 }
