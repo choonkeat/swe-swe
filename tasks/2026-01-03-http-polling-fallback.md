@@ -160,7 +160,7 @@ Add HTTP polling fallback for xterm.js terminal to handle flaky mobile WebSocket
 
 ---
 
-### Phase 4: Client - Transport Abstraction
+### Phase 4: Client - Transport Abstraction ✅
 
 **What will be achieved**: Extract current WebSocket logic into `WebSocketTransport` class, preparing for polling transport.
 
@@ -210,7 +210,7 @@ Add HTTP polling fallback for xterm.js terminal to handle flaky mobile WebSocket
 
 ---
 
-### Phase 5: Client - Polling Transport
+### Phase 5: Client - Polling Transport ✅
 
 **What will be achieved**: Implement `PollingTransport` class that polls for snapshots and sends input via POST.
 
@@ -269,7 +269,7 @@ Add HTTP polling fallback for xterm.js terminal to handle flaky mobile WebSocket
 
 ---
 
-### Phase 6: Client - Polling Mode UI
+### Phase 6: Client - Polling Mode UI ✅
 
 **What will be achieved**: Show batch input textarea + quick-action buttons when in polling mode.
 
@@ -321,7 +321,7 @@ Add HTTP polling fallback for xterm.js terminal to handle flaky mobile WebSocket
 
 ---
 
-### Phase 7: Client - Connection State Machine
+### Phase 7: Client - Connection State Machine ✅
 
 **What will be achieved**: Automatic fallback from WebSocket to polling on connection failure, recovery when WS reconnects.
 
