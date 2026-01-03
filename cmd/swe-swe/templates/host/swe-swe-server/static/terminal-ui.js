@@ -3,6 +3,7 @@ class WebSocketTransport {
     constructor(ui) {
         this.ui = ui;
         this.ws = null;
+        this.connectTimeout = null;
     }
 
     connect() {
@@ -12,7 +13,18 @@ class WebSocketTransport {
         this.ws = new WebSocket(url);
         this.ws.binaryType = 'arraybuffer';
 
+        // Connection timeout - if WS doesn't connect within 5 seconds, trigger error
+        // This handles cases where WS gets stuck in CONNECTING state (common on mobile)
+        this.connectTimeout = setTimeout(() => {
+            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+                console.log('WebSocket connection timeout, triggering fallback');
+                this.ws.close();
+                this.ui.onTransportError();
+            }
+        }, 5000);
+
         this.ws.onopen = () => {
+            clearTimeout(this.connectTimeout);
             this.ui.onTransportOpen();
         };
 
@@ -30,15 +42,18 @@ class WebSocketTransport {
         };
 
         this.ws.onclose = () => {
+            clearTimeout(this.connectTimeout);
             this.ui.onTransportClose();
         };
 
         this.ws.onerror = () => {
+            clearTimeout(this.connectTimeout);
             this.ui.onTransportError();
         };
     }
 
     disconnect() {
+        clearTimeout(this.connectTimeout);
         if (this.ws) {
             this.ws.close();
             this.ws = null;
@@ -92,10 +107,51 @@ class PollingTransport {
         this.currentSize = { rows: 24, cols: 80 };
     }
 
-    connect() {
+    async connect() {
         this.active = true;
+
+        // Fetch initial snapshot BEFORE signaling "open"
+        // This ensures the terminal has content before showing "Connected"
+        try {
+            await this.initialPoll();
+        } catch (err) {
+            console.error('Initial poll failed:', err);
+            this.ui.onTransportError();
+            return;
+        }
+
         this.ui.onTransportOpen();
         this.pollLoop();
+    }
+
+    async initialPoll() {
+        const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}`;
+        const resp = await fetch(url);
+
+        if (!resp.ok) {
+            throw new Error('Poll failed: ' + resp.status);
+        }
+
+        const data = await resp.json();
+
+        // Decode base64 terminal snapshot and write to terminal
+        if (data.terminal) {
+            const terminalData = atob(data.terminal);
+            const bytes = new Uint8Array(terminalData.length);
+            for (let i = 0; i < terminalData.length; i++) {
+                bytes[i] = terminalData.charCodeAt(i);
+            }
+            this.ui.onTerminalData(bytes);
+        }
+
+        // Send status update
+        this.ui.onJSONMessage({
+            type: 'status',
+            viewers: data.viewers,
+            cols: data.cols,
+            rows: data.rows,
+            assistant: data.assistant
+        });
     }
 
     disconnect() {
@@ -917,7 +973,7 @@ class TerminalUI extends HTMLElement {
                     <button data-send="\t">Tab</button>
                     <button data-send="\x1b[A">↑</button>
                     <button data-send="\x1b[B">↓</button>
-                    <button data-send="\n">Enter</button>
+                    <button data-send="\r">Enter</button>
                 </div>
                 <div class="terminal-ui__polling-input">
                     <input type="text" placeholder="Type command..." class="terminal-ui__polling-command">
@@ -1705,8 +1761,8 @@ class TerminalUI extends HTMLElement {
         if (!text) return;
 
         if (this.transport && this.transport.isConnected()) {
-            // Send command + newline to execute
-            this.transport.send(text + '\n');
+            // Send command + carriage return to execute (terminals expect \r for Enter)
+            this.transport.send(text + '\r');
             // Clear input
             input.value = '';
             input.focus();
