@@ -211,12 +211,16 @@ func handlePassthrough(command string, args []string) {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options]
 
-Commands:
+Native Commands:
   init [options]                         Initialize a new swe-swe project
-  list                                   List all initialized swe-swe projects (auto-prunes missing paths)
-  <docker-compose-command>               Any docker compose command (up, down, build, ps, logs, exec, etc.)
+  list                                   List all initialized swe-swe projects (auto-prunes stale ones)
 
-Global Option:
+Docker Compose Pass-through:
+  All other commands (up, down, build, ps, logs, exec, etc.) are passed directly
+  to docker compose with the project's docker-compose.yml. Use --project-directory
+  to specify which project, or run from the project directory.
+
+Global Option (for pass-through commands):
   --project-directory PATH               Project directory (defaults to current directory)
 
 Init Options:
@@ -230,29 +234,23 @@ Init Options:
   --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands (space-separated)
                                          Format: [alias@]<git-url>
-  --list-agents                          List available agents and exit
 
 Available Agents:
-  claude   - Claude Code (requires Node.js)
-  gemini   - Gemini CLI (requires Node.js)
-  codex    - Codex CLI (requires Node.js)
-  aider    - Aider (requires Python)
-  goose    - Goose (standalone binary)
+  claude, gemini, codex, aider, goose
 
-Services (defined in docker-compose.yml):
+Services (defined in docker-compose.yml after init):
   swe-swe, vscode, chrome, traefik
 
 Examples:
-  swe-swe init                                   Initialize with all agents
-  swe-swe init --agents=claude                   Initialize with Claude only (minimal)
-  swe-swe init --agents=claude,gemini            Initialize with Claude and Gemini
-  swe-swe init --exclude-agents=aider,goose      Initialize without Aider and Goose
-  swe-swe init --apt-get-install="vim htop"      Add custom apt packages
-  swe-swe init --npm-install="typescript tsx"    Add custom npm packages
-  swe-swe init --with-docker                     Enable Docker-in-Docker access
+  swe-swe init                                   Initialize current directory with all agents
+  swe-swe init --agents=claude                   Initialize current directory with Claude only
+  swe-swe init --agents=claude,gemini            Initialize current directory with Claude and Gemini
+  swe-swe init --exclude-agents=aider,goose      Initialize current directory without Aider and Goose
+  swe-swe init --apt-get-install="vim htop"      Initialize current directory with custom apt packages
+  swe-swe init --npm-install="typescript tsx"    Initialize current directory with custom npm packages
+  swe-swe init --with-docker                     Initialize current directory with Docker-in-Docker
   swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
-                                                 Clone slash commands for Claude/Codex
-  swe-swe init --list-agents                     Show available agents
+                                                 Initialize current directory with slash commands
   swe-swe up                                     Start all services
   swe-swe up -d                                  Start all services in background
   swe-swe down                                   Stop all services
@@ -264,7 +262,9 @@ Examples:
   swe-swe --project-directory /path up           Run command for project at /path
 
 Environment Variables:
-  SWE_SWE_PASSWORD                       VSCode password (defaults to changeme)
+  SWE_SWE_PASSWORD                       Authentication password (defaults to changeme)
+  NODE_EXTRA_CA_CERTS                    Enterprise CA certificate path (auto-copied during init)
+  SSL_CERT_FILE                          SSL certificate file path (auto-copied during init)
 
 Requires: Docker with Compose plugin (docker compose) or standalone docker-compose
 `)
@@ -706,7 +706,6 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
-	listAgents := fs.Bool("list-agents", false, "List available agents and exit")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -715,18 +714,17 @@ func handleInit() {
 		fmt.Fprintf(os.Stderr, "Error: --previous-init-flags must be 'reuse' or 'ignore', got %q\n", *previousInitFlags)
 		os.Exit(1)
 	}
-	// TODO: implement --previous-init-flags behavior in later phases
-	_ = previousInitFlags
 
-	// Handle --list-agents
-	if *listAgents {
-		fmt.Println("Available agents:")
-		fmt.Println("  claude  - Claude Code (Node.js)")
-		fmt.Println("  gemini  - Gemini CLI (Node.js)")
-		fmt.Println("  codex   - Codex CLI (Node.js)")
-		fmt.Println("  aider   - Aider (Python)")
-		fmt.Println("  goose   - Goose (Go binary)")
-		return
+	// Validate that --previous-init-flags=reuse is not combined with other flags
+	if *previousInitFlags == "reuse" {
+		if *agentsFlag != "" || *excludeFlag != "" || *aptPackages != "" || *npmPackages != "" || *withDocker || *slashCommands != "" {
+			fmt.Fprintf(os.Stderr, "Error: --previous-init-flags=reuse cannot be combined with other flags\n\n")
+			fmt.Fprintf(os.Stderr, "  To reapply saved configuration without changes:\n")
+			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=reuse\n\n")
+			fmt.Fprintf(os.Stderr, "  To apply new configuration:\n")
+			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=ignore [options]\n")
+			os.Exit(1)
+		}
 	}
 
 	if *path == "" {
@@ -747,6 +745,16 @@ func handleInit() {
 	npmPkgs := strings.ReplaceAll(*npmPackages, ",", " ")
 	npmPkgs = strings.TrimSpace(npmPkgs)
 
+	// Parse slash commands flag early (may be overridden by --previous-init-flags=reuse)
+	var slashCmds []SlashCommandsRepo
+	if *slashCommands != "" {
+		var err error
+		slashCmds, err = parseSlashCommandsFlag(*slashCommands)
+		if err != nil {
+			log.Fatalf("Invalid --with-slash-commands value: %v", err)
+		}
+	}
+
 	// Create directory if it doesn't exist
 	absPath, err := filepath.Abs(*path)
 	if err != nil {
@@ -765,7 +773,9 @@ func handleInit() {
 
 	// Check if project is already initialized (init.json exists)
 	initConfigPath := filepath.Join(sweDir, "init.json")
+	initConfigExists := false
 	if _, err := os.Stat(initConfigPath); err == nil {
+		initConfigExists = true
 		// Project already initialized
 		if *previousInitFlags == "" {
 			fmt.Fprintf(os.Stderr, "Error: Project already initialized at %s\n\n", absPath)
@@ -775,6 +785,26 @@ func handleInit() {
 			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=ignore [options]\n")
 			os.Exit(1)
 		}
+	}
+
+	// Handle --previous-init-flags=reuse
+	if *previousInitFlags == "reuse" {
+		if !initConfigExists {
+			fmt.Fprintf(os.Stderr, "Error: No saved configuration to reuse at %s\n\n", absPath)
+			fmt.Fprintf(os.Stderr, "  Run init without --previous-init-flags first to create a configuration.\n")
+			os.Exit(1)
+		}
+		// Load saved config and override the parsed flags
+		savedConfig, err := loadInitConfig(sweDir)
+		if err != nil {
+			log.Fatalf("Failed to load saved config: %v", err)
+		}
+		agents = savedConfig.Agents
+		aptPkgs = savedConfig.AptPackages
+		npmPkgs = savedConfig.NpmPackages
+		*withDocker = savedConfig.WithDocker
+		slashCmds = savedConfig.SlashCommands
+		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
 
 	if err := os.MkdirAll(sweDir, 0755); err != nil {
@@ -862,17 +892,9 @@ func handleInit() {
 			fmt.Println("Docker access: enabled (container can run Docker commands on host)")
 		}
 
-		// Parse slash commands flag
-		var slashCmds []SlashCommandsRepo
-		if *slashCommands != "" {
-			var err error
-			slashCmds, err = parseSlashCommandsFlag(*slashCommands)
-			if err != nil {
-				log.Fatalf("Invalid --with-slash-commands value: %v", err)
-			}
-			for _, repo := range slashCmds {
-				fmt.Printf("Slash commands: %s -> /tmp/slash-commands/%s\n", repo.URL, repo.Alias)
-			}
+		// Print slash commands info (already parsed earlier)
+		for _, repo := range slashCmds {
+			fmt.Printf("Slash commands: %s -> /tmp/slash-commands/%s\n", repo.URL, repo.Alias)
 		}
 
 		for _, hostFile := range hostFiles {
@@ -1065,6 +1087,10 @@ func getMetadataDir(absPath string) (string, error) {
 
 // handleList lists all initialized swe-swe projects and auto-prunes missing ones
 func handleList() {
+	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	prune := fs.Bool("prune", false, "Remove orphaned project directories")
+	fs.Parse(os.Args[2:])
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get home directory: %v", err)
@@ -1082,7 +1108,12 @@ func handleList() {
 		log.Fatalf("Failed to read projects directory: %v", err)
 	}
 
-	var activeProjects []string
+	type projectInfo struct {
+		path       string
+		config     InitConfig
+		hasConfig  bool
+	}
+	var activeProjects []projectInfo
 	var prunedCount int
 
 	for _, entry := range entries {
@@ -1096,9 +1127,17 @@ func handleList() {
 		// Read the .path file
 		pathData, err := os.ReadFile(pathFile)
 		if err != nil {
-			// If .path file doesn't exist or can't be read, skip this entry
+			// If .path file doesn't exist or can't be read, handle based on prune flag
 			if os.IsNotExist(err) {
-				fmt.Printf("Warning: .path file missing in %s (skipping)\n", entry.Name())
+				if *prune {
+					if err := os.RemoveAll(metadataDir); err != nil {
+						fmt.Printf("Warning: failed to remove orphaned %s: %v\n", entry.Name(), err)
+					} else {
+						prunedCount++
+					}
+				} else {
+					fmt.Printf("Warning: .path file missing in %s (use --prune to remove)\n", entry.Name())
+				}
 			}
 			continue
 		}
@@ -1113,8 +1152,13 @@ func handleList() {
 			}
 			prunedCount++
 		} else {
-			// Project path exists, add to active list
-			activeProjects = append(activeProjects, projectPath)
+			// Project path exists, try to load init config
+			info := projectInfo{path: projectPath}
+			if cfg, err := loadInitConfig(metadataDir); err == nil {
+				info.config = cfg
+				info.hasConfig = true
+			}
+			activeProjects = append(activeProjects, info)
 		}
 	}
 
@@ -1123,8 +1167,30 @@ func handleList() {
 		fmt.Println("No projects initialized yet")
 	} else {
 		fmt.Printf("Initialized projects (%d):\n", len(activeProjects))
-		for _, projectPath := range activeProjects {
-			fmt.Printf("  %s\n", projectPath)
+		for _, info := range activeProjects {
+			if info.hasConfig {
+				agents := strings.Join(info.config.Agents, ",")
+				extras := []string{}
+				if info.config.AptPackages != "" {
+					extras = append(extras, "apt:"+info.config.AptPackages)
+				}
+				if info.config.NpmPackages != "" {
+					extras = append(extras, "npm:"+info.config.NpmPackages)
+				}
+				if info.config.WithDocker {
+					extras = append(extras, "docker")
+				}
+				if len(info.config.SlashCommands) > 0 {
+					extras = append(extras, fmt.Sprintf("slash-cmds:%d", len(info.config.SlashCommands)))
+				}
+				if len(extras) > 0 {
+					fmt.Printf("  %s [%s] (%s)\n", info.path, agents, strings.Join(extras, ", "))
+				} else {
+					fmt.Printf("  %s [%s]\n", info.path, agents)
+				}
+			} else {
+				fmt.Printf("  %s\n", info.path)
+			}
 		}
 	}
 
