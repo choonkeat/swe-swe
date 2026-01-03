@@ -912,7 +912,7 @@ func handleInit() {
 
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, slashCmds))
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, false, slashCmds))
 			}
 
 			// Process docker-compose.yml template with conditional sections
