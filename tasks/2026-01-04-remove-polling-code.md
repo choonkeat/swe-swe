@@ -2,6 +2,17 @@
 
 **Date**: 2026-01-04
 **Goal**: Remove the HTTP polling fallback feature from swe-swe-server, reverting to WebSocket-only terminal connections.
+**Research**: `research/2026-01-04-ios-safari-websocket-chunking.md`
+**ADR**: `docs/adr/0015-chunked-websocket-snapshots.md`
+
+## Why Remove Polling?
+
+Testing revealed iOS Safari's WebSocket instability was caused by **large binary messages** (>6-8KB), not WebSocket itself. The solution is **chunked snapshots with compression**, which:
+- Works reliably on iOS Safari
+- Reduces bandwidth (compression)
+- Is simpler than polling (~825 fewer lines of code)
+
+Polling is no longer needed as a fallback.
 
 ---
 
