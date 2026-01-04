@@ -654,9 +654,13 @@ class TerminalUI extends HTMLElement {
         this.fitAddon.fit();
 
         // Track focus state to dim status bar when terminal is blurred
+        // Use textarea focus/blur since xterm.js onFocus/onBlur may not be publicly exposed
         const statusBar = this.querySelector('.terminal-ui__status-bar');
-        this.term.onFocus(() => statusBar.classList.remove('blurred'));
-        this.term.onBlur(() => statusBar.classList.add('blurred'));
+        const textarea = terminalEl.querySelector('textarea');
+        if (textarea) {
+            textarea.addEventListener('focus', () => statusBar.classList.remove('blurred'));
+            textarea.addEventListener('blur', () => statusBar.classList.add('blurred'));
+        }
         // Start blurred since terminal doesn't have focus initially
         statusBar.classList.add('blurred');
 
