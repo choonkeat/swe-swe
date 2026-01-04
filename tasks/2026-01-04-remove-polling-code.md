@@ -5,7 +5,7 @@
 
 ---
 
-## Phase 1: Remove Client-Side Polling Code (JavaScript)
+## Phase 1: Remove Client-Side Polling Code (JavaScript) ✅ COMPLETED
 
 ### What will be achieved
 The browser will use direct WebSocket connections only, removing ~600 lines of transport abstraction, polling fallback, and polling-specific UI from `terminal-ui.js`.

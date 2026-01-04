@@ -1,284 +1,7 @@
-// Transport abstraction for WebSocket and polling fallback
-class WebSocketTransport {
-    constructor(ui) {
-        this.ui = ui;
-        this.ws = null;
-        this.connectTimeout = null;
-    }
-
-    connect() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = protocol + '//' + window.location.host + '/ws/' + this.ui.uuid + '?assistant=' + encodeURIComponent(this.ui.assistant);
-
-        this.ws = new WebSocket(url);
-        this.ws.binaryType = 'arraybuffer';
-
-        // Connection timeout - if WS doesn't connect within 5 seconds, trigger error
-        // This handles cases where WS gets stuck in CONNECTING state (common on mobile)
-        this.connectTimeout = setTimeout(() => {
-            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-                console.log('WebSocket connection timeout, triggering fallback');
-                this.ws.close();
-                this.ui.onTransportError();
-            }
-        }, 5000);
-
-        this.ws.onopen = () => {
-            clearTimeout(this.connectTimeout);
-            this.ui.onTransportOpen();
-        };
-
-        this.ws.onmessage = (event) => {
-            if (event.data instanceof ArrayBuffer) {
-                this.ui.onTerminalData(new Uint8Array(event.data));
-            } else if (typeof event.data === 'string') {
-                try {
-                    const msg = JSON.parse(event.data);
-                    this.ui.onJSONMessage(msg);
-                } catch (e) {
-                    console.error('Invalid JSON from server:', e);
-                }
-            }
-        };
-
-        this.ws.onclose = () => {
-            clearTimeout(this.connectTimeout);
-            this.ui.onTransportClose();
-        };
-
-        this.ws.onerror = () => {
-            clearTimeout(this.connectTimeout);
-            this.ui.onTransportError();
-        };
-    }
-
-    disconnect() {
-        clearTimeout(this.connectTimeout);
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-    }
-
-    isConnected() {
-        return this.ws && this.ws.readyState === WebSocket.OPEN;
-    }
-
-    // Send binary terminal input
-    send(data) {
-        if (this.isConnected()) {
-            if (typeof data === 'string') {
-                const encoder = new TextEncoder();
-                this.ws.send(encoder.encode(data));
-            } else {
-                this.ws.send(data);
-            }
-        }
-    }
-
-    // Send JSON control message
-    sendJSON(obj) {
-        if (this.isConnected()) {
-            this.ws.send(JSON.stringify(obj));
-        }
-    }
-
-    // Send resize message (binary with 0x00 prefix)
-    sendResize(rows, cols) {
-        if (this.isConnected()) {
-            const msg = new Uint8Array([
-                0x00,
-                (rows >> 8) & 0xFF, rows & 0xFF,
-                (cols >> 8) & 0xFF, cols & 0xFF
-            ]);
-            this.ws.send(msg);
-        }
-    }
-}
-
-// Polling transport for fallback when WebSocket fails
-class PollingTransport {
-    constructor(ui) {
-        this.ui = ui;
-        this.clientId = 'poll-' + Math.random().toString(36).substr(2, 9);
-        this.active = false;
-        this.pollInterval = 250;
-        this.pollTimeout = null;
-        this.currentSize = { rows: 24, cols: 80 };
-    }
-
-    async connect() {
-        this.active = true;
-
-        // Fetch initial snapshot BEFORE signaling "open"
-        // This ensures the terminal has content before showing "Connected"
-        try {
-            await this.initialPoll();
-        } catch (err) {
-            console.error('Initial poll failed:', err);
-            this.ui.onTransportError();
-            return;
-        }
-
-        this.ui.onTransportOpen();
-        this.pollLoop();
-    }
-
-    async initialPoll() {
-        // Include terminal size in initial poll so server creates session with correct size
-        const rows = this.ui.term ? this.ui.term.rows : 24;
-        const cols = this.ui.term ? this.ui.term.cols : 80;
-        const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}&rows=${rows}&cols=${cols}`;
-        const resp = await fetch(url);
-
-        if (!resp.ok) {
-            throw new Error('Poll failed: ' + resp.status);
-        }
-
-        const data = await resp.json();
-
-        // Decode base64 terminal snapshot and write to terminal
-        if (data.terminal) {
-            const terminalData = atob(data.terminal);
-            const bytes = new Uint8Array(terminalData.length);
-            for (let i = 0; i < terminalData.length; i++) {
-                bytes[i] = terminalData.charCodeAt(i);
-            }
-            this.ui.onTerminalData(bytes);
-        }
-
-        // Send status update
-        this.ui.onJSONMessage({
-            type: 'status',
-            viewers: data.viewers,
-            cols: data.cols,
-            rows: data.rows,
-            assistant: data.assistant
-        });
-    }
-
-    disconnect() {
-        this.active = false;
-        if (this.pollTimeout) {
-            clearTimeout(this.pollTimeout);
-            this.pollTimeout = null;
-        }
-    }
-
-    isConnected() {
-        return this.active;
-    }
-
-    async pollLoop() {
-        if (!this.active) return;
-
-        try {
-            // Always include terminal size in poll URL
-            const rows = this.ui.term ? this.ui.term.rows : 24;
-            const cols = this.ui.term ? this.ui.term.cols : 80;
-            const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}&rows=${rows}&cols=${cols}`;
-            const resp = await fetch(url);
-
-            if (!resp.ok) {
-                console.error('Poll failed:', resp.status);
-                this.ui.onTransportError();
-                return;
-            }
-
-            const data = await resp.json();
-
-            // Decode base64 terminal snapshot and write to terminal
-            if (data.terminal) {
-                const terminalData = atob(data.terminal);
-                const bytes = new Uint8Array(terminalData.length);
-                for (let i = 0; i < terminalData.length; i++) {
-                    bytes[i] = terminalData.charCodeAt(i);
-                }
-                this.ui.onTerminalData(bytes);
-            }
-
-            // Send status update
-            this.ui.onJSONMessage({
-                type: 'status',
-                viewers: data.viewers,
-                cols: data.cols,
-                rows: data.rows,
-                assistant: data.assistant
-            });
-
-        } catch (err) {
-            console.error('Poll error:', err);
-            this.ui.onTransportError();
-            return;
-        }
-
-        // Schedule next poll
-        this.pollTimeout = setTimeout(() => this.pollLoop(), this.pollInterval);
-    }
-
-    // Send terminal input
-    send(data) {
-        if (!this.active) return;
-
-        let inputData;
-        if (typeof data === 'string') {
-            inputData = data;
-        } else if (data instanceof Uint8Array) {
-            // Convert Uint8Array to string
-            inputData = new TextDecoder().decode(data);
-        } else {
-            console.warn('PollingTransport.send: unsupported data type');
-            return;
-        }
-
-        const url = `/session/${this.ui.uuid}/client/${this.clientId}/send`;
-        fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'input', data: inputData })
-        }).catch(err => console.error('Send error:', err));
-    }
-
-    // Send JSON control message
-    sendJSON(obj) {
-        if (!this.active) return;
-
-        // Handle ping locally (fake pong)
-        if (obj.type === 'ping') {
-            this.ui.onJSONMessage({ type: 'pong', data: obj.data });
-            return;
-        }
-
-        // Handle other JSON messages (currently not needed for polling)
-        console.log('PollingTransport.sendJSON (ignored):', obj);
-    }
-
-    // Send resize
-    sendResize(rows, cols) {
-        if (!this.active) return;
-
-        this.currentSize = { rows, cols };
-        const url = `/session/${this.ui.uuid}/client/${this.clientId}/send`;
-        fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'resize', rows, cols })
-        }).catch(err => console.error('Resize error:', err));
-    }
-}
-
-// Connection states for fallback logic
-const CONNECTION_STATES = {
-    DISCONNECTED: 'disconnected',
-    WS_CONNECTING: 'ws_connecting',
-    WS_ACTIVE: 'ws_active',
-    FALLBACK: 'fallback'  // Polling active, WS retrying in background
-};
-
 class TerminalUI extends HTMLElement {
     constructor() {
         super();
-        this.transport = null;
+        this.ws = null;
         this.term = null;
         this.fitAddon = null;
         this.connectedAt = null;
@@ -304,13 +27,6 @@ class TerminalUI extends HTMLElement {
         this.uploadQueue = [];
         this.isUploading = false;
         this.uploadStartTime = null;
-        // Polling mode
-        this.isPollingMode = false;
-        // Connection state machine
-        this.connectionState = CONNECTION_STATES.DISCONNECTED;
-        this.wsFailureCount = 0;
-        this.forcedPolling = false;  // True when ?transport=polling is set
-        this.wsRetryTimeout = null;  // For background WS retries during fallback
     }
 
     static get observedAttributes() {
@@ -366,9 +82,9 @@ class TerminalUI extends HTMLElement {
     }
 
     cleanup() {
-        if (this.transport) {
-            this.transport.disconnect();
-            this.transport = null;
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
         }
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
@@ -384,9 +100,6 @@ class TerminalUI extends HTMLElement {
         }
         if (this.statusRestoreTimeout) {
             clearTimeout(this.statusRestoreTimeout);
-        }
-        if (this.wsRetryTimeout) {
-            clearTimeout(this.wsRetryTimeout);
         }
         // Clean up chat message timeouts
         this.chatMessageTimeouts.forEach(timeout => clearTimeout(timeout));
@@ -555,75 +268,6 @@ class TerminalUI extends HTMLElement {
                 }
                 .terminal-ui__status-dims {
                     opacity: 0.9;
-                }
-                /* Polling Mode Styles */
-                .terminal-ui__status-bar.polling-mode {
-                    background: #795548;
-                }
-                .terminal-ui__polling-input {
-                    display: none;
-                    padding: 8px;
-                    background: #2d2d2d;
-                    border-top: 1px solid #404040;
-                    gap: 8px;
-                }
-                .terminal-ui__polling-input.visible {
-                    display: flex;
-                }
-                .terminal-ui__polling-input input {
-                    flex: 1;
-                    padding: 10px 12px;
-                    font-size: 14px;
-                    font-family: monospace;
-                    background: #1e1e1e;
-                    color: #d4d4d4;
-                    border: 1px solid #505050;
-                    border-radius: 4px;
-                    outline: none;
-                }
-                .terminal-ui__polling-input input:focus {
-                    border-color: #007acc;
-                }
-                .terminal-ui__polling-input button {
-                    padding: 10px 16px;
-                    font-size: 14px;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background: #007acc;
-                    color: #fff;
-                    border: none;
-                    border-radius: 4px;
-                    cursor: pointer;
-                }
-                .terminal-ui__polling-input button:hover {
-                    background: #005a9e;
-                }
-                .terminal-ui__polling-actions {
-                    display: none;
-                    padding: 8px;
-                    background: #2d2d2d;
-                    gap: 4px;
-                    flex-wrap: wrap;
-                }
-                .terminal-ui__polling-actions.visible {
-                    display: flex;
-                }
-                .terminal-ui__polling-actions button {
-                    flex: 1;
-                    min-width: 50px;
-                    padding: 10px 8px;
-                    font-size: 13px;
-                    font-family: monospace;
-                    background: #3c3c3c;
-                    color: #d4d4d4;
-                    border: 1px solid #505050;
-                    border-radius: 4px;
-                    cursor: pointer;
-                }
-                .terminal-ui__polling-actions button:hover {
-                    background: #505050;
-                }
-                .terminal-ui__polling-actions button:active {
-                    background: #007acc;
                 }
                 .terminal-ui__drop-overlay {
                     display: none;
@@ -976,18 +620,6 @@ class TerminalUI extends HTMLElement {
                     <button data-key="ArrowRight">→</button>
                     <button data-action="paste">Paste</button>
                 </div>
-                <div class="terminal-ui__polling-actions">
-                    <button data-send="\x03">Ctrl+C</button>
-                    <button data-send="\x04">Ctrl+D</button>
-                    <button data-send="\t">Tab</button>
-                    <button data-send="\x1b[A">↑</button>
-                    <button data-send="\x1b[B">↓</button>
-                    <button data-send="\r">Enter</button>
-                </div>
-                <div class="terminal-ui__polling-input">
-                    <input type="text" placeholder="Type command..." class="terminal-ui__polling-command">
-                    <button class="terminal-ui__polling-send">Send</button>
-                </div>
                 <div class="terminal-ui__status-bar">
                     <div class="terminal-ui__status-left">
                         <div class="terminal-ui__status-icon"></div>
@@ -1211,8 +843,13 @@ class TerminalUI extends HTMLElement {
     }
 
     sendResize() {
-        if (this.transport && this.transport.isConnected()) {
-            this.transport.sendResize(this.term.rows, this.term.cols);
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const msg = new Uint8Array([
+                0x00,
+                (this.term.rows >> 8) & 0xFF, this.term.rows & 0xFF,
+                (this.term.cols >> 8) & 0xFF, this.term.cols & 0xFF
+            ]);
+            this.ws.send(msg);
         }
     }
 
@@ -1230,224 +867,47 @@ class TerminalUI extends HTMLElement {
         const timerEl = this.querySelector('.terminal-ui__status-timer');
         if (timerEl) timerEl.textContent = '';
 
-        // Check for forced transport type via query param
-        const params = new URLSearchParams(window.location.search);
-        const transportType = params.get('transport');
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = protocol + '//' + window.location.host + '/ws/' + this.uuid + '?assistant=' + encodeURIComponent(this.assistant);
 
-        if (transportType === 'polling') {
-            // Forced polling mode - skip WebSocket entirely
-            this.forcedPolling = true;
-            this.forcedWebSocket = false;
-            this.connectionState = CONNECTION_STATES.FALLBACK;
-            this.setPollingMode(true);
-            this.transport = new PollingTransport(this);
-            this.transport.connect();
-            return;
-        }
+        this.ws = new WebSocket(url);
+        this.ws.binaryType = 'arraybuffer';
 
-        if (transportType === 'websocket') {
-            // Forced WebSocket mode - no fallback to polling
-            this.forcedWebSocket = true;
-            this.forcedPolling = false;
-            console.log('Forced WebSocket mode - no polling fallback');
-        } else {
-            this.forcedWebSocket = false;
-        }
-
-        // Default to WebSocket transport
-        this.forcedPolling = false;
-        this.connectionState = CONNECTION_STATES.WS_CONNECTING;
-        this.setPollingMode(false);
-        this.transport = new WebSocketTransport(this);
-        this.transport.connect();
-    }
-
-    // Transport callback: connection opened
-    onTransportOpen() {
-        // If we were in fallback and WS reconnected, handle recovery
-        if (this.connectionState === CONNECTION_STATES.FALLBACK && !this.forcedPolling) {
-            // This is WS recovery during fallback
-            console.log('WebSocket recovered, switching from polling');
-            this.wsFailureCount = 0;
-            // Cancel any pending WS retry
-            if (this.wsRetryTimeout) {
-                clearTimeout(this.wsRetryTimeout);
-                this.wsRetryTimeout = null;
-            }
-        }
-
-        this.connectionState = CONNECTION_STATES.WS_ACTIVE;
-        this.reconnectAttempts = 0;
-        this.updateStatus('connected', 'Connected');
-        this.startUptimeTimer();
-        this.sendResize();
-        this.startHeartbeat();
-    }
-
-    // Transport callback: connection closed
-    onTransportClose() {
-        this.stopUptimeTimer();
-        this.stopHeartbeat();
-
-        // If forced polling, just show error
-        if (this.forcedPolling) {
-            this.updateStatus('error', 'Connection closed');
-            return;
-        }
-
-        // If forced WebSocket, don't fallback - just retry WS
-        if (this.forcedWebSocket) {
-            this.wsFailureCount++;
-            this.updateStatus('connecting', `WebSocket closed, retrying... (${this.wsFailureCount})`);
-            setTimeout(() => {
-                if (this.transport) {
-                    this.transport.disconnect();
-                }
-                this.transport = new WebSocketTransport(this);
-                this.transport.connect();
-            }, Math.min(1000 * this.wsFailureCount, 10000));
-            return;
-        }
-
-        // If we're in WS_ACTIVE or WS_CONNECTING, enter fallback
-        if (this.connectionState === CONNECTION_STATES.WS_ACTIVE ||
-            this.connectionState === CONNECTION_STATES.WS_CONNECTING) {
-            this.enterFallbackMode();
-        }
-    }
-
-    // Transport callback: connection error
-    onTransportError() {
-        this.stopUptimeTimer();
-        this.stopHeartbeat();
-
-        // If forced polling, just show error
-        if (this.forcedPolling) {
-            this.updateStatus('error', 'Connection error');
-            return;
-        }
-
-        // If forced WebSocket, don't fallback - just retry WS
-        if (this.forcedWebSocket) {
-            this.wsFailureCount++;
-            this.updateStatus('connecting', `WebSocket failed, retrying... (${this.wsFailureCount})`);
-            setTimeout(() => {
-                if (this.transport) {
-                    this.transport.disconnect();
-                }
-                this.transport = new WebSocketTransport(this);
-                this.transport.connect();
-            }, Math.min(1000 * this.wsFailureCount, 10000));
-            return;
-        }
-
-        // If we're trying to connect via WS, enter fallback
-        if (this.connectionState === CONNECTION_STATES.WS_CONNECTING ||
-            this.connectionState === CONNECTION_STATES.WS_ACTIVE) {
-            this.wsFailureCount++;
-            this.enterFallbackMode();
-        }
-    }
-
-    // Enter fallback mode: start polling, schedule WS retries
-    enterFallbackMode() {
-        console.log('Entering fallback mode, wsFailureCount:', this.wsFailureCount);
-        this.connectionState = CONNECTION_STATES.FALLBACK;
-
-        // Start polling transport
-        this.setPollingMode(true);
-        if (this.transport) {
-            this.transport.disconnect();
-        }
-        this.transport = new PollingTransport(this);
-        this.transport.connect();
-
-        // Schedule background WS retry
-        this.scheduleWsRetry();
-    }
-
-    // Schedule a background WS reconnection attempt
-    scheduleWsRetry() {
-        if (this.wsRetryTimeout) {
-            clearTimeout(this.wsRetryTimeout);
-        }
-
-        // Backoff: 10s, 15s, 20s, 30s max
-        const delay = Math.min(10000 + (this.wsFailureCount * 5000), 30000);
-        console.log(`Scheduling WS retry in ${delay}ms`);
-
-        this.wsRetryTimeout = setTimeout(() => {
-            this.attemptWsReconnect();
-        }, delay);
-    }
-
-    // Attempt to reconnect WS while in fallback mode
-    attemptWsReconnect() {
-        if (this.connectionState !== CONNECTION_STATES.FALLBACK) {
-            return; // Not in fallback, don't retry
-        }
-        if (this.forcedPolling) {
-            return; // Forced polling, don't try WS
-        }
-
-        console.log('Attempting WS reconnect during fallback...');
-
-        // Create a new WS transport and try to connect
-        const wsTransport = new WebSocketTransport(this);
-
-        // Temporarily override callbacks to handle this probe
-        const originalOnOpen = this.onTransportOpen.bind(this);
-        const originalOnClose = this.onTransportClose.bind(this);
-        const originalOnError = this.onTransportError.bind(this);
-
-        wsTransport.ui = {
-            uuid: this.uuid,
-            assistant: this.assistant,
-            onTransportOpen: () => {
-                // WS connected! Switch from polling
-                console.log('WS probe succeeded, switching to WebSocket');
-
-                // Stop polling
-                if (this.transport) {
-                    this.transport.disconnect();
-                }
-
-                // Use the new WS transport
-                this.transport = wsTransport;
-                wsTransport.ui = this;
-
-                // Update state
-                this.connectionState = CONNECTION_STATES.WS_ACTIVE;
-                this.setPollingMode(false);
-                this.wsFailureCount = 0;
-
-                // Call original handler for uptime/heartbeat/etc
-                this.reconnectAttempts = 0;
-                this.updateStatus('connected', 'Connected');
-                this.startUptimeTimer();
-                this.sendResize();
-                this.startHeartbeat();
-            },
-            onTransportClose: () => {
-                // WS probe failed, stay in fallback
-                console.log('WS probe closed, staying in fallback');
-                this.wsFailureCount++;
-                this.scheduleWsRetry();
-            },
-            onTransportError: () => {
-                // WS probe failed, stay in fallback
-                console.log('WS probe error, staying in fallback');
-                this.wsFailureCount++;
-                this.scheduleWsRetry();
-            },
-            onTerminalData: () => {},  // Ignore, polling is handling terminal
-            onJSONMessage: () => {}    // Ignore, polling is handling status
+        this.ws.onopen = () => {
+            this.reconnectAttempts = 0;
+            this.updateStatus('connected', 'Connected');
+            this.startUptimeTimer();
+            this.sendResize();
+            this.startHeartbeat();
         };
 
-        wsTransport.connect();
+        this.ws.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                this.onTerminalData(new Uint8Array(event.data));
+            } else if (typeof event.data === 'string') {
+                try {
+                    const msg = JSON.parse(event.data);
+                    this.handleJSONMessage(msg);
+                } catch (e) {
+                    console.error('Invalid JSON from server:', e);
+                }
+            }
+        };
+
+        this.ws.onclose = () => {
+            this.stopUptimeTimer();
+            this.stopHeartbeat();
+            this.scheduleReconnect();
+        };
+
+        this.ws.onerror = () => {
+            this.stopUptimeTimer();
+            this.stopHeartbeat();
+            // onclose will be called after onerror, so reconnect is handled there
+        };
     }
 
-    // Transport callback: terminal data received
+    // Terminal data received
     // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
         if (!this.pendingWrites) {
@@ -1468,14 +928,9 @@ class TerminalUI extends HTMLElement {
         this.pendingWrites.push(data);
     }
 
-    // Transport callback: JSON message received
-    onJSONMessage(msg) {
-        this.handleJSONMessage(msg);
-    }
-
     sendJSON(obj) {
-        if (this.transport && this.transport.isConnected()) {
-            this.transport.sendJSON(obj);
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(obj));
         }
     }
 
@@ -1549,18 +1004,12 @@ class TerminalUI extends HTMLElement {
         // Toggle multiuser class based on viewer count
         statusBar.classList.toggle('multiuser', this.viewers > 1);
 
-        if (this.transport && this.transport.isConnected()) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             // Build "Connected as {name} with {agent}" message with separate clickable parts
             const userName = this.currentUserName;
-            let html = '';
-
-            if (this.isPollingMode) {
-                html = `Slow connection mode with <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName || this.assistant}</a>`;
-            } else {
-                html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
-                if (this.assistantName) {
-                    html += ` with <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
-                }
+            let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+            if (this.assistantName) {
+                html += ` with <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
 
             // Add viewer suffix if more than 1 viewer
@@ -1579,27 +1028,6 @@ class TerminalUI extends HTMLElement {
             if (dimsEl) {
                 dimsEl.textContent = '';
             }
-        }
-    }
-
-    setPollingMode(enabled) {
-        this.isPollingMode = enabled;
-        const statusBar = this.querySelector('.terminal-ui__status-bar');
-        const pollingInput = this.querySelector('.terminal-ui__polling-input');
-        const pollingActions = this.querySelector('.terminal-ui__polling-actions');
-        const extraKeys = this.querySelector('.terminal-ui__extra-keys');
-
-        if (enabled) {
-            statusBar.classList.add('polling-mode');
-            pollingInput.classList.add('visible');
-            pollingActions.classList.add('visible');
-            // Hide extra keys on mobile when in polling mode (we have polling actions instead)
-            extraKeys.style.display = 'none';
-        } else {
-            statusBar.classList.remove('polling-mode');
-            pollingInput.classList.remove('visible');
-            pollingActions.classList.remove('visible');
-            extraKeys.style.display = '';
         }
     }
 
@@ -1753,8 +1181,9 @@ class TerminalUI extends HTMLElement {
         const textarea = this.querySelector('.terminal-ui__paste-textarea');
         const text = textarea ? textarea.value : '';
 
-        if (text && this.transport && this.transport.isConnected()) {
-            this.transport.send(text);
+        if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const encoder = new TextEncoder();
+            this.ws.send(encoder.encode(text));
         }
 
         this.hidePasteOverlay();
@@ -1811,29 +1240,13 @@ class TerminalUI extends HTMLElement {
         }
 
         // Send to server
-        if (this.transport && this.transport.isConnected()) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.sendJSON({
                 type: 'chat',
                 userName: this.currentUserName,
                 text: text
             });
             // Clear input for next message
-            input.value = '';
-            input.focus();
-        }
-    }
-
-    sendPollingCommand() {
-        const input = this.querySelector('.terminal-ui__polling-command');
-        if (!input) return;
-
-        const text = input.value;
-        if (!text) return;
-
-        if (this.transport && this.transport.isConnected()) {
-            // Send command + carriage return to execute (terminals expect \r for Enter)
-            this.transport.send(text + '\r');
-            // Clear input
             input.value = '';
             input.focus();
         }
@@ -1879,7 +1292,7 @@ class TerminalUI extends HTMLElement {
     setupEventListeners() {
         // Terminal data handler - send as binary to distinguish from JSON control messages
         this.term.onData(data => {
-            if (this.transport && this.transport.isConnected()) {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 // Apply Ctrl modifier if active (for mobile keyboard input)
                 if (this.ctrlPressed && data.length === 1) {
                     const char = data.toUpperCase();
@@ -1892,8 +1305,9 @@ class TerminalUI extends HTMLElement {
                     }
                 }
 
-                // Send via transport (handles encoding)
-                this.transport.send(data);
+                // Send as binary
+                const encoder = new TextEncoder();
+                this.ws.send(encoder.encode(data));
             }
         });
 
@@ -1927,8 +1341,9 @@ class TerminalUI extends HTMLElement {
                 if (btn.dataset.action === 'paste') {
                     if (navigator.clipboard && navigator.clipboard.readText) {
                         navigator.clipboard.readText().then(text => {
-                            if (text && this.transport && this.transport.isConnected()) {
-                                this.transport.send(text);
+                            if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                const encoder = new TextEncoder();
+                                this.ws.send(encoder.encode(text));
                             }
                             this.term.focus();
                         }).catch(err => {
@@ -1951,8 +1366,9 @@ class TerminalUI extends HTMLElement {
                         data = String.fromCharCode(key.charCodeAt(0) - 64);
                     }
 
-                    if (this.transport && this.transport.isConnected()) {
-                        this.transport.send(data);
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        const encoder = new TextEncoder();
+                        this.ws.send(encoder.encode(data));
                     }
 
                     if (this.ctrlPressed) {
@@ -1975,9 +1391,9 @@ class TerminalUI extends HTMLElement {
         statusBar.addEventListener('click', () => {
             if (statusBar.classList.contains('connecting') || statusBar.classList.contains('error') || statusBar.classList.contains('reconnecting')) {
                 // Close existing connection attempt if any
-                if (this.transport) {
-                    this.transport.disconnect();
-                    this.transport = null;
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
                 }
                 // Reset backoff on manual retry
                 this.reconnectAttempts = 0;
@@ -1995,8 +1411,8 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
-            // Only handle clicks when transport is connected
-            if (!(this.transport && this.transport.isConnected())) {
+            // Only handle clicks when WebSocket is connected
+            if (!(this.ws && this.ws.readyState === WebSocket.OPEN)) {
                 // Let click bubble to status bar handler for reconnect
                 return;
             }
@@ -2080,42 +1496,6 @@ class TerminalUI extends HTMLElement {
                 this.hidePasteOverlay();
             });
         }
-
-        // Polling mode input handlers
-        const pollingInput = this.querySelector('.terminal-ui__polling-command');
-        const pollingSendBtn = this.querySelector('.terminal-ui__polling-send');
-
-        if (pollingInput) {
-            pollingInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this.sendPollingCommand();
-                }
-            });
-        }
-
-        if (pollingSendBtn) {
-            pollingSendBtn.addEventListener('click', () => {
-                this.sendPollingCommand();
-            });
-        }
-
-        // Polling mode quick action buttons
-        this.querySelectorAll('.terminal-ui__polling-actions button').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                const sendData = btn.dataset.send;
-                if (sendData && this.transport && this.transport.isConnected()) {
-                    // Unescape the data string (e.g., "\x03" -> actual Ctrl+C character)
-                    const unescaped = sendData
-                        .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-                        .replace(/\\t/g, '\t')
-                        .replace(/\\n/g, '\n')
-                        .replace(/\\r/g, '\r');
-                    this.transport.send(unescaped);
-                }
-            });
-        });
 
         // Upload overlay ESC key handler
         document.addEventListener('keydown', (e) => {
@@ -2221,7 +1601,7 @@ class TerminalUI extends HTMLElement {
     async handleFile(file) {
         console.log('File dropped:', file.name, file.type, file.size);
 
-        if (!this.transport || !this.transport.isConnected()) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
             this.showTemporaryStatus('Not connected', 3000);
             return;
         }
@@ -2233,7 +1613,8 @@ class TerminalUI extends HTMLElement {
                 this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
                 return;
             }
-            this.transport.send(text);
+            const encoder = new TextEncoder();
+            this.ws.send(encoder.encode(text));
             this.showTemporaryStatus(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
         } else {
             // Binary file: send as binary upload with 0x01 prefix
@@ -2255,7 +1636,7 @@ class TerminalUI extends HTMLElement {
             message.set(nameBytes, 3);
             message.set(fileData, 3 + nameLen);
 
-            this.transport.send(message);
+            this.ws.send(message);
             this.showTemporaryStatus(`Uploaded: ${file.name} (${this.formatFileSize(file.size)})`);
         }
     }
