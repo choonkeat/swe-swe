@@ -1022,9 +1022,14 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string) {
+	// Log client info for debugging
+	userAgent := r.Header.Get("User-Agent")
+	remoteAddr := r.RemoteAddr
+	log.Printf("WebSocket upgrade request: session=%s remote=%s UA=%s", sessionUUID, remoteAddr, userAgent)
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		log.Printf("WebSocket upgrade error: %v (remote=%s)", err, remoteAddr)
 		return
 	}
 	defer conn.Close()
@@ -1032,14 +1037,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Get assistant from query param
 	assistant := r.URL.Query().Get("assistant")
 	if assistant == "" {
-		log.Printf("WebSocket error: no assistant specified")
+		log.Printf("WebSocket error: no assistant specified (remote=%s)", remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error: no assistant specified"))
 		return
 	}
 
 	sess, isNew, err := getOrCreateSession(sessionUUID, assistant)
 	if err != nil {
-		log.Printf("Session creation error: %v", err)
+		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
 		return
 	}
@@ -1048,7 +1053,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	sess.AddClient(conn)
 	defer sess.RemoveClient(conn)
 
-	log.Printf("WebSocket connected: session=%s (new=%v)", sessionUUID, isNew)
+	log.Printf("WebSocket connected: session=%s (new=%v, remote=%s)", sessionUUID, isNew, remoteAddr)
 
 	// If this is a new session, start the PTY reader goroutine
 	if isNew {
@@ -1056,12 +1061,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	} else {
 		// Send snapshot to catch up the new client with existing screen state
 		// Snapshot is gzip-compressed, sent as chunked messages for iOS Safari compatibility
+		log.Printf("Generating snapshot for joining client (remote=%s)", remoteAddr)
 		snapshot := sess.GenerateSnapshot()
+		log.Printf("Sending %d byte snapshot to client (remote=%s)", len(snapshot), remoteAddr)
 		numChunks, err := sendChunked(conn, &sess.writeMu, snapshot, DefaultChunkSize)
 		if err != nil {
-			log.Printf("Failed to send snapshot chunks: %v", err)
+			log.Printf("Failed to send snapshot chunks: %v (remote=%s, sent %d chunks before error)", err, remoteAddr, numChunks)
 		} else {
-			log.Printf("Sent screen snapshot to new client (%d bytes in %d chunks)", len(snapshot), numChunks)
+			log.Printf("Sent screen snapshot to new client (%d bytes in %d chunks, remote=%s)", len(snapshot), numChunks, remoteAddr)
 		}
 	}
 
@@ -1074,7 +1081,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	for {
 		messageType, data, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("WebSocket read error: %v", err)
+			// Provide more context on disconnect reason
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				log.Printf("WebSocket closed: %v (remote=%s)", err, remoteAddr)
+			} else {
+				log.Printf("WebSocket read error: %v (remote=%s)", err, remoteAddr)
+			}
 			break
 		}
 
@@ -1181,7 +1193,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		}
 	}
 
-	log.Printf("WebSocket disconnected: session=%s", sessionUUID)
+	log.Printf("WebSocket disconnected: session=%s (remote=%s)", sessionUUID, remoteAddr)
 }
 
 // parseCommand splits a command string into executable and arguments

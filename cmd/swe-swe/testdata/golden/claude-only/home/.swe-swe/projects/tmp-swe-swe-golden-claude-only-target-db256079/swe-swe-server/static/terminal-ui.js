@@ -49,29 +49,53 @@ class TerminalUI extends HTMLElement {
     }
 
     connectedCallback() {
-        // Redirect to homepage if no assistant specified
-        if (!this.assistant) {
-            window.location.href = '/';
-            return;
-        }
-        // Load username from localStorage if available
-        let storedName = localStorage.getItem('swe-swe-username');
-        if (storedName) {
-            this.currentUserName = storedName;
-        } else {
-            // Auto-generate a random username and store it immediately
-            this.currentUserName = this.generateRandomUsername();
-            localStorage.setItem('swe-swe-username', this.currentUserName);
-        }
-        this.render();
-        this.initTerminal();
-        this.connect();
-        this.setupEventListeners();
-        this.renderLinks();
-        this.renderServiceLinks();
+        try {
+            // Redirect to homepage if no assistant specified
+            if (!this.assistant) {
+                window.location.href = '/';
+                return;
+            }
+            // Load username from localStorage if available
+            let storedName = null;
+            try {
+                storedName = localStorage.getItem('swe-swe-username');
+            } catch (e) {
+                console.warn('[TerminalUI] localStorage not available:', e);
+            }
+            if (storedName) {
+                this.currentUserName = storedName;
+            } else {
+                // Auto-generate a random username and store it immediately
+                this.currentUserName = this.generateRandomUsername();
+                try {
+                    localStorage.setItem('swe-swe-username', this.currentUserName);
+                } catch (e) {
+                    console.warn('[TerminalUI] Could not save username:', e);
+                }
+            }
+            this.render();
+            this.initTerminal();
+            // Debug: write to terminal to confirm code is running
+            this.term.write('[DEBUG] initTerminal done\r\n');
+            // iOS Safari needs a brief delay before WebSocket connection
+            // Without this, the connection silently fails (works with Web Inspector attached
+            // because the debugger adds enough delay)
+            this.term.write('[DEBUG] scheduling connect() in 200ms\r\n');
+            setTimeout(() => {
+                this.term.write('[DEBUG] setTimeout fired, calling connect()\r\n');
+                this.connect();
+            }, 200);
+            this.setupEventListeners();
+            this.renderLinks();
+            this.renderServiceLinks();
 
-        // Expose for console testing
-        window.terminalUI = this;
+            // Expose for console testing
+            window.terminalUI = this;
+        } catch (e) {
+            console.error('[TerminalUI] connectedCallback failed:', e);
+            // Show error in the UI since we might not have console
+            document.body.innerHTML = '<pre style="color:red;padding:20px;">Init error: ' + e.message + '\n' + e.stack + '</pre>';
+        }
     }
 
     disconnectedCallback() {
@@ -861,6 +885,7 @@ class TerminalUI extends HTMLElement {
     }
 
     connect() {
+        this.term.write('[DEBUG] connect() called\r\n');
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
@@ -877,10 +902,34 @@ class TerminalUI extends HTMLElement {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = protocol + '//' + window.location.host + '/ws/' + this.uuid + '?assistant=' + encodeURIComponent(this.assistant);
 
-        this.ws = new WebSocket(url);
+        this.term.write('[DEBUG] Creating WebSocket to: ' + url + '\r\n');
+        console.log('[WS] Connecting to', url);
+        try {
+            this.ws = new WebSocket(url);
+            this.term.write('[DEBUG] WebSocket created, readyState=' + this.ws.readyState + '\r\n');
+        } catch (e) {
+            this.term.write('[DEBUG] WebSocket constructor threw: ' + e.message + '\r\n');
+            console.error('[WS] Failed to create WebSocket:', e);
+            this.updateStatus('error', 'WebSocket creation failed: ' + e.message);
+            setTimeout(() => this.scheduleReconnect(), 1000);
+            return;
+        }
         this.ws.binaryType = 'arraybuffer';
 
+        // iOS Safari silently fails WebSocket connections to self-signed certs
+        // Detect stuck CONNECTING state and show helpful error
+        const connectTimeout = setTimeout(() => {
+            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+                this.term.write('[DEBUG] WebSocket stuck in CONNECTING state (iOS Safari self-signed cert issue)\r\n');
+                console.error('[WS] Connection timeout - stuck in CONNECTING state');
+                this.updateStatus('error', 'iOS Safari: WebSocket blocked (self-signed cert). Use Let\'s Encrypt or connect Mac Safari Web Inspector.');
+                this.ws.close();
+            }
+        }, 5000);
+
         this.ws.onopen = () => {
+            clearTimeout(connectTimeout);
+            console.log('[WS] Connected to', url);
             this.reconnectAttempts = 0;
             this.updateStatus('connected', 'Connected');
             this.startUptimeTimer();
@@ -907,13 +956,22 @@ class TerminalUI extends HTMLElement {
             }
         };
 
-        this.ws.onclose = () => {
+        this.ws.onclose = (event) => {
+            clearTimeout(connectTimeout);
+            const reason = event.reason || `code ${event.code}`;
+            console.log('[WS] Closed:', event.code, reason, 'wasClean:', event.wasClean);
+            // Show close reason in status bar for debugging
+            this.updateStatus('error', `Disconnected: ${reason}`);
             this.stopUptimeTimer();
             this.stopHeartbeat();
-            this.scheduleReconnect();
+            // Brief delay to show the error before scheduling reconnect
+            setTimeout(() => this.scheduleReconnect(), 1000);
         };
 
-        this.ws.onerror = () => {
+        this.ws.onerror = (event) => {
+            clearTimeout(connectTimeout);
+            console.error('[WS] Error:', event);
+            this.updateStatus('error', 'Connection error');
             this.stopUptimeTimer();
             this.stopHeartbeat();
             // onclose will be called after onerror, so reconnect is handled there
@@ -961,6 +1019,12 @@ class TerminalUI extends HTMLElement {
 
         // Check if all chunks received
         const receivedCount = this.chunks.filter(c => c !== undefined).length;
+
+        // Show chunk progress in status bar for debugging
+        if (totalChunks > 1) {
+            this.showTemporaryStatus(`Receiving snapshot: ${receivedCount}/${totalChunks}`, 2000);
+        }
+
         if (receivedCount === totalChunks) {
             this.reassembleChunks();
         }
@@ -987,9 +1051,11 @@ class TerminalUI extends HTMLElement {
         try {
             const decompressed = await this.decompressSnapshot(compressed);
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
+            this.showTemporaryStatus(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
             this.onTerminalData(decompressed);
         } catch (e) {
             console.error('Failed to decompress snapshot:', e);
+            this.showTemporaryStatus(`Decompress failed: ${e.message}`, 5000);
             // Try writing compressed data directly (fallback for uncompressed data)
             this.onTerminalData(compressed);
         }

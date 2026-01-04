@@ -6,7 +6,11 @@ services:
       - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=swe-network"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--log.level=DEBUG"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
       - "--entrypoints.websecure.address=:7443"
       - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
     ports:
@@ -17,6 +21,9 @@ services:
       - "${HOME}/.swe-swe/tls:/etc/traefik/tls:ro"
     networks:
       - swe-network
+    depends_on:
+      - auth
+      - swe-swe
     restart: unless-stopped
 
   auth:
