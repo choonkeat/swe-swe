@@ -26,6 +26,11 @@ http:
 # {{IF SSL}}
 # TLS configuration for self-signed certificate
 tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/traefik/tls/server.crt
+        keyFile: /etc/traefik/tls/server.key
   certificates:
     - certFile: /etc/traefik/tls/server.crt
       keyFile: /etc/traefik/tls/server.key
