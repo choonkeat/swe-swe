@@ -900,15 +900,26 @@ func handleInit() {
 	hasCerts := handleCertificates(sweDir, certsDir)
 
 	// Generate self-signed certificate if SSL mode is selfsign
+	// Certs are stored in shared location ~/.swe-swe/tls/ so users only need to trust once
 	if *sslFlag == "selfsign" {
-		tlsDir := filepath.Join(sweDir, "tls")
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get user home directory: %v", err)
+		}
+		tlsDir := filepath.Join(userHome, ".swe-swe", "tls")
 		if err := os.MkdirAll(tlsDir, 0755); err != nil {
 			log.Fatalf("Failed to create TLS directory: %v", err)
 		}
-		if err := generateSelfSignedCert(tlsDir); err != nil {
-			log.Fatalf("Failed to generate self-signed certificate: %v", err)
+		// Check if certificate already exists
+		certPath := filepath.Join(tlsDir, "server.crt")
+		if _, err := os.Stat(certPath); os.IsNotExist(err) {
+			if err := generateSelfSignedCert(tlsDir); err != nil {
+				log.Fatalf("Failed to generate self-signed certificate: %v", err)
+			}
+			fmt.Printf("Generated self-signed SSL certificate in %s\n", tlsDir)
+		} else {
+			fmt.Printf("Reusing existing SSL certificate from %s\n", tlsDir)
 		}
-		fmt.Printf("Generated self-signed SSL certificate in %s\n", tlsDir)
 	}
 
 	// Extract embedded files
