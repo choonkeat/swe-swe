@@ -478,6 +478,9 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-bar.reconnecting {
                     cursor: pointer;
                 }
+                .terminal-ui__status-bar.blurred {
+                    opacity: 0.6;
+                }
                 .terminal-ui__status-icon {
                     width: 8px;
                     height: 8px;
@@ -1017,6 +1020,13 @@ class TerminalUI extends HTMLElement {
         this.term.loadAddon(this.fitAddon);
         this.term.open(terminalEl);
         this.fitAddon.fit();
+
+        // Track focus state to dim status bar when terminal is blurred
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
+        this.term.onFocus(() => statusBar.classList.remove('blurred'));
+        this.term.onBlur(() => statusBar.classList.add('blurred'));
+        // Start blurred since terminal doesn't have focus initially
+        statusBar.classList.add('blurred');
 
         this.term.write('Session: ' + this.uuid + '\r\n');
     }
