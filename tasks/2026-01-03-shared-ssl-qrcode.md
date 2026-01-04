@@ -1,7 +1,7 @@
 # Shared Self-Signed SSL with QR Code Mobile Installation
 
 **Date:** 2026-01-03
-**Status:** In Progress (Phase 2 Complete)
+**Status:** Complete
 
 ## Goal
 
@@ -140,65 +140,29 @@ func TestSSLCertEndpoint(t *testing.T) {
 
 ---
 
-## Phase 3: QR Code Terminal Output
+## Phase 3: Homepage Certificate Link (Simplified)
 
-### What will be achieved
+### What was changed
 
-On server startup, a QR code is printed to terminal containing the certificate download URL. Users scan with phone camera and are taken directly to the cert download.
+Instead of QR code terminal output (which had issues with log visibility and hostname discovery),
+we added a simple download link to the homepage footer.
 
 ### Steps
 
-1. **Add QR code library dependency**
-   - Add `github.com/skip2/go-qrcode` to `swe-swe-server/go.mod`
+1. **[DONE] Simplify endpoint to fixed path `/ssl/ca.crt`**
+   - Removed random token (auth middleware already protects the endpoint)
+   - Certificate available at predictable URL
 
-2. **Create QR code generation function**
-   - Input: the full URL
-   - Output: ASCII/Unicode art string for terminal
-   - Use `qrcode.New(url, qrcode.Medium).ToSmallString(false)`
+2. **[DONE] Add download link to selection.html footer**
+   - Shows "📱 Install SSL Certificate" link when SSL cert exists
+   - Conditionally rendered based on `HasSSLCert` template variable
 
-3. **Determine the server's accessible URL**
-   - Use environment variable `SWE_SWE_HOST` (user provides, e.g., `192.168.1.5:443`)
-   - If not set, print URL without QR and note "Set SWE_SWE_HOST to enable QR code"
+### Why this is better
 
-4. **Print QR code on startup**
-   ```
-   ══════════════════════════════════════════
-   📱 Scan to install SSL certificate:
-
-   [QR CODE HERE]
-
-   Or visit: https://192.168.1.5/ssl/a3f2b1c9/ca.crt
-   ══════════════════════════════════════════
-   ```
-
-5. **Update docker-compose.yml to pass host info**
-   - Add `SWE_SWE_HOST` environment variable to swe-swe service
-
-### Verification
-
-**Red (failing test first):**
-```go
-func TestGenerateQRCode(t *testing.T) {
-    url := "https://example.com/ssl/abc123/ca.crt"
-    qr := generateQRCodeString(url)
-    // Verify non-empty
-    // Verify contains expected Unicode block characters
-    // Verify reasonable dimensions
-}
-```
-
-**Green (make it pass):**
-- Implement `generateQRCodeString()` function
-- Wire into startup sequence
-- Run tests
-
-**Manual verification:**
-```bash
-# Start server using ./scripts (ask user for host:port)
-# Observe terminal output - should see QR code
-# Scan QR with phone camera
-# Verify it opens the correct URL in browser
-```
+- No need to see server logs
+- No hostname discovery issues
+- URL doesn't change on restart
+- Users are already looking at the web UI
 
 ---
 
