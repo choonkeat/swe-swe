@@ -836,11 +836,13 @@ func main() {
 				UUIDShort     string
 				Assistant     string
 				AssistantName string
+				Version       string
 			}{
 				UUID:          sessionUUID,
 				UUIDShort:     uuidShort,
 				Assistant:     assistant,
 				AssistantName: assistantName,
+				Version:       Version,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)
