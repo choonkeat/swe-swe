@@ -97,6 +97,10 @@ services:
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+# {{IF SSL}}
+      # SSL certificate for download endpoint
+      - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
+# {{ENDIF}}
       # {{IF DOCKER}}
       # Mount Docker socket for container to run Docker commands on host
       - /var/run/docker.sock:/var/run/docker.sock
