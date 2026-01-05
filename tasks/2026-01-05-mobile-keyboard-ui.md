@@ -162,7 +162,7 @@ Add the mobile keyboard UI HTML elements to the terminal template, replacing the
 
 ---
 
-## Phase 2: CSS Styling
+## Phase 2: CSS Styling ✅
 
 ### What will be achieved
 Style the mobile keyboard UI with toggle states and input bar.
