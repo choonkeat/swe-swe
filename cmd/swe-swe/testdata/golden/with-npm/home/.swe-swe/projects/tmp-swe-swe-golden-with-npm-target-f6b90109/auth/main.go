@@ -231,12 +231,13 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set session cookie with security attributes
+	// Set session cookie with security attributes (7 day expiration)
 	isSecure := r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    signCookie(secret),
 		Path:     "/",
+		MaxAge:   7 * 24 * 60 * 60, // 7 days
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   isSecure,
