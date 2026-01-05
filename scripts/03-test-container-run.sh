@@ -5,6 +5,8 @@ set -euox pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+TMP_DIR="$WORKSPACE_DIR/tmp"
+EFFECTIVE_HOME="${EFFECTIVE_HOME:-$WORKSPACE_DIR/.home}"
 
 CONTAINER_NAME="swe-swe-test"
 HOST_PORT="${HOST_PORT:?HOST_PORT environment variable is required}"
@@ -16,22 +18,17 @@ HOST_WORKSPACE="/workspace/swe-swe"
 # Host IP for curl test (optional - localhost won't work from inside another container)
 HOST_IP="${HOST_IP:-}"
 
-# Persist home directory (default: tmp/home - set to empty string to disable)
-PERSIST_HOME="${PERSIST_HOME-$WORKSPACE_DIR/tmp/home}"
-
 # Stop and remove existing container if it exists (idempotent)
 docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
+# Prepare EFFECTIVE_HOME for container mount
+mkdir -p "$EFFECTIVE_HOME"
+chmod 777 "$EFFECTIVE_HOME"
+find "$EFFECTIVE_HOME" -type f -exec chmod 666 {} \; 2>/dev/null || true
+find "$EFFECTIVE_HOME" -type d -exec chmod 777 {} \; 2>/dev/null || true
+
 # Build volume args
-VOLUME_ARGS="-v $HOST_WORKSPACE:/workspace"
-if [[ -n "$PERSIST_HOME" ]]; then
-    mkdir -p "$PERSIST_HOME"
-    # Make world-writable so container's app user can write regardless of UID mapping
-    chmod 777 "$PERSIST_HOME"
-    find "$PERSIST_HOME" -type f -exec chmod 666 {} \; 2>/dev/null || true
-    find "$PERSIST_HOME" -type d -exec chmod 777 {} \; 2>/dev/null || true
-    VOLUME_ARGS="$VOLUME_ARGS -v $PERSIST_HOME:/home/app"
-fi
+VOLUME_ARGS="-v $HOST_WORKSPACE:/workspace -v $EFFECTIVE_HOME:/home/app"
 
 # Run the test container
 docker run -d \
@@ -44,11 +41,9 @@ docker run -d \
 echo "Waiting for container to start..."
 sleep 1
 
-# Fix home directory permissions if using persistent home
-if [[ -n "$PERSIST_HOME" ]]; then
-    docker exec swe-swe-test chown -R app:app /home/app
-    docker exec swe-swe-test chmod 755 /home/app
-fi
+# Fix home directory permissions
+docker exec swe-swe-test chown -R app:app /home/app
+docker exec swe-swe-test chmod 755 /home/app
 
 sleep 2
 

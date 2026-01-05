@@ -1,6 +1,7 @@
 dist/
 cmd/swe-swe/bin
 tmp/
+.home/
 .swe-swe/
 !cmd/swe-swe/templates/container/.swe-swe/
 !cmd/swe-swe/testdata/golden/**/.swe-swe/
