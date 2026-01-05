@@ -250,7 +250,7 @@ const KEY_CODES = {
 
 ---
 
-## Phase 4: Integration & Testing
+## Phase 4: Integration & Testing ✅
 
 ### What will be achieved
 End-to-end verification with running swe-swe server.
