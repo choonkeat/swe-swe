@@ -60,11 +60,11 @@ This research compares four AI-assisted development platforms with fundamentally
 **Philosophy:** Privacy-first terminal AI assistant with maximum model flexibility. "Does not store code or context data, enabling use in sensitive environments" ([opencode.ai](https://opencode.ai/)).
 
 **Key Design Decisions:**
-- Go-based TUI using Bubble Tea framework ([github.com/opencode-ai/opencode](https://github.com/opencode-ai/opencode))
+- Go-based TUI using Bubble Tea framework ([github.com/sst/opencode](https://github.com/sst/opencode))
 - Session persistence in SQLite
 - LSP integration for code diagnostics
 
-**Source Assessment:** GitHub and website - authoritative. Note: Project has transitioned to "Crush" maintained by Charm team.
+**Source Assessment:** GitHub ([sst/opencode](https://github.com/sst/opencode)) and website - authoritative. Note: In mid-2025, the project split into two forks: OpenCode (maintained by SST/Dax/Adam) and [Crush](https://github.com/charmbracelet/crush) (maintained by Charm team with original creator). This document covers OpenCode (sst/opencode).
 
 ---
 
@@ -90,7 +90,7 @@ This research compares four AI-assisted development platforms with fundamentally
 | **swe-swe** | Yes (init/up/down) | Web terminal | Embedded code-server | Via code-server |
 | **OpenHands** | Yes | Local React app | Cloud version | No native |
 | **Replit** | No | No | Primary interface | Partial (Ghostwriter) |
-| **OpenCode** | Primary | TUI (Bubble Tea) | No | Yes (extension) |
+| **OpenCode** | Primary | TUI (Bubble Tea) | Yes (`opencode web`) | Yes (extension) + Desktop (beta) |
 
 ### Real-time Visibility
 
@@ -142,7 +142,7 @@ This research compares four AI-assisted development platforms with fundamentally
 - Enterprise environments with SSL certificate requirements ([README.md:107-112](README.md:107))
 
 **OpenHands:**
-- Autonomous task execution (77.6 SWEBench score - [github.com/OpenHands/OpenHands](https://github.com/OpenHands/OpenHands))
+- Autonomous task execution (#1 on SWE-Bench Verified with 66.4% via critic model - [openhands.dev/blog](https://openhands.dev/blog/sota-on-swe-bench-verified-with-inference-time-scaling-and-critic-model))
 - Data science and linear regression tasks (CodeActAgent demo)
 - Projects requiring GitHub/GitLab/Jira integration (Cloud)
 
@@ -218,7 +218,7 @@ This research compares four AI-assisted development platforms with fundamentally
 - Large-scale code migrations
 - Building custom AI agents with SDK
 
-**Why:** OpenHands' SWEBench performance (77.6 score) demonstrates it can autonomously solve real software engineering tasks. The SDK enables building specialized agents for specific domains.
+**Why:** OpenHands' SWE-Bench Verified performance (#1 on leaderboard as of Nov 2025) demonstrates it can autonomously solve real software engineering tasks. The SDK enables building specialized agents for specific domains.
 
 ### Replit: Best For
 
@@ -348,10 +348,12 @@ OpenHands:
 - [OpenHands Docs - CLI](https://docs.openhands.dev/usage/cli) - CLI installation and usage
 - [OpenHands Docs - Local Setup](https://docs.openhands.dev/usage/run-openhands/local-setup) - Local GUI setup
 - [OpenHands Docs - Agents](https://docs.openhands.dev/usage/agents) - CodeActAgent details
+- [OpenHands Blog - SOTA on SWE-Bench Verified](https://openhands.dev/blog/sota-on-swe-bench-verified-with-inference-time-scaling-and-critic-model) - Nov 2025 benchmark results
 - [Replit Docs](https://docs.replit.com/) - Official documentation
 - [Replit Pricing Analysis](https://www.superblocks.com/blog/replit-pricing) - Third-party pricing breakdown
 - [OpenCode Website](https://opencode.ai/) - Official website
-- [OpenCode GitHub](https://github.com/opencode-ai/opencode) - Source repository
+- [OpenCode GitHub](https://github.com/sst/opencode) - Source repository (48.9k stars, active as of Jan 2026)
+- [Crush GitHub](https://github.com/charmbracelet/crush) - Fork by Charm team with original creator (12k stars)
 
 ### Local File Sources
 - [README.md](README.md) - swe-swe project documentation
