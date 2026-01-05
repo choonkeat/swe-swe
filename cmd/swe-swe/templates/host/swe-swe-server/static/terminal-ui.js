@@ -317,7 +317,8 @@ class TerminalUI extends HTMLElement {
                     cursor: pointer;
                 }
                 .terminal-ui__status-bar.blurred {
-                    opacity: 0.6;
+                    opacity: 0.4;
+                    filter: grayscale(0.5);
                 }
                 .terminal-ui__status-icon {
                     width: 8px;

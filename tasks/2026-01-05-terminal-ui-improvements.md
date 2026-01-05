@@ -14,7 +14,7 @@ Make three UI improvements to the terminal interface:
 
 ---
 
-## Phase 1: Dimmer Unfocused Status Bar
+## Phase 1: Dimmer Unfocused Status Bar ✅
 
 ### What Will Be Achieved
 
