@@ -108,7 +108,7 @@ Implement a mobile-friendly keyboard UI for the terminal that provides:
 
 ---
 
-## Phase 1: HTML Structure
+## Phase 1: HTML Structure ✅
 
 ### What will be achieved
 Add the mobile keyboard UI HTML elements to the terminal template, replacing the old `.terminal-ui__extra-keys`.

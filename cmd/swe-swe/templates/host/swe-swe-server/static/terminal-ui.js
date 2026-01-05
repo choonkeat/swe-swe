@@ -637,15 +637,32 @@ class TerminalUI extends HTMLElement {
                     </div>
                 </div>
                 <div class="terminal-ui__terminal"></div>
-                <div class="terminal-ui__extra-keys">
-                    <button data-key="Escape">ESC</button>
-                    <button data-key="Tab">TAB</button>
-                    <button data-modifier="ctrl" class="modifier">Ctrl</button>
-                    <button data-key="ArrowUp">↑</button>
-                    <button data-key="ArrowDown">↓</button>
-                    <button data-key="ArrowLeft">←</button>
-                    <button data-key="ArrowRight">→</button>
-                    <button data-action="paste">Paste</button>
+                <div class="mobile-keyboard">
+                    <div class="mobile-keyboard__main">
+                        <button data-key="Escape">Esc</button>
+                        <button data-key="Tab">Tab</button>
+                        <button data-key="ShiftTab">⇧Tab</button>
+                        <button data-toggle="ctrl" class="mobile-keyboard__toggle">Ctrl</button>
+                        <button data-toggle="nav" class="mobile-keyboard__toggle">Nav</button>
+                    </div>
+                    <div class="mobile-keyboard__ctrl">
+                        <button data-ctrl="a">A</button>
+                        <button data-ctrl="c">C</button>
+                        <button data-ctrl="d">D</button>
+                        <button data-ctrl="e">E</button>
+                        <button data-ctrl="k">K</button>
+                        <button data-ctrl="w">W</button>
+                    </div>
+                    <div class="mobile-keyboard__nav">
+                        <button data-key="ArrowLeft">←</button>
+                        <button data-key="ArrowRight">→</button>
+                        <button data-key="ArrowUp">↑</button>
+                        <button data-key="ArrowDown">↓</button>
+                    </div>
+                    <div class="mobile-keyboard__input">
+                        <input type="text" placeholder="Type command..." class="mobile-keyboard__text">
+                        <button class="mobile-keyboard__send">Enter</button>
+                    </div>
                 </div>
                 <div class="terminal-ui__status-bar">
                     <div class="terminal-ui__status-left">
