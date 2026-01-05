@@ -228,11 +228,15 @@ class TerminalUI extends HTMLElement {
                     border: 1px solid #505050;
                     border-radius: 4px;
                     outline: none;
+                    resize: none;
+                    overflow-y: auto;
+                    line-height: 1.4;
                 }
                 .mobile-keyboard__text:focus {
                     border-color: #007acc;
                 }
-                .mobile-keyboard__send {
+                .mobile-keyboard .mobile-keyboard__send {
+                    flex: none;
                     padding: 10px 16px;
                     font-size: 14px;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -243,10 +247,10 @@ class TerminalUI extends HTMLElement {
                     cursor: pointer;
                     min-width: 60px;
                 }
-                .mobile-keyboard__send:hover {
+                .mobile-keyboard .mobile-keyboard__send:hover {
                     background: #005a9e;
                 }
-                .mobile-keyboard__send:active {
+                .mobile-keyboard .mobile-keyboard__send:active {
                     background: #004578;
                 }
                 .terminal-ui__status-bar {
@@ -717,7 +721,7 @@ class TerminalUI extends HTMLElement {
                         <button data-key="ArrowDown">↓</button>
                     </div>
                     <div class="mobile-keyboard__input">
-                        <input type="text" placeholder="Type command..." class="mobile-keyboard__text">
+                        <textarea rows="1" placeholder="Type command..." class="mobile-keyboard__text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
                         <button class="mobile-keyboard__send">Enter</button>
                     </div>
                 </div>
@@ -1627,8 +1631,9 @@ class TerminalUI extends HTMLElement {
             e.preventDefault();
             const text = textInput.value;
             if (text) {
-                // Send text + Enter
-                this.sendKey(text + '\r');
+                // Send text, then Enter separately
+                this.sendKey(text);
+                this.sendKey('\r');
                 textInput.value = '';
                 sendBtn.textContent = 'Enter';
             } else {
