@@ -30,15 +30,15 @@ Remove the host-side `.swe-swe/uploads/` directory creation code. The tmpfs moun
 
 ### Steps
 
-1. [ ] Identify the code to remove in `cmd/swe-swe/main.go`
+1. [x] Identify the code to remove in `cmd/swe-swe/main.go`
    - Find the `os.MkdirAll` call for uploads directory
    - Find any associated logging/warning code
 
-2. [ ] Remove the pre-creation code
+2. [x] Remove the pre-creation code
    - Delete the uploads directory creation logic
    - Keep any other `.swe-swe` directory handling intact
 
-3. [ ] Update golden test files
+3. [x] Update golden test files
    - Run `make build golden-update`
    - Review golden diff shows only expected removal
    - Commit changes to testdata/golden
