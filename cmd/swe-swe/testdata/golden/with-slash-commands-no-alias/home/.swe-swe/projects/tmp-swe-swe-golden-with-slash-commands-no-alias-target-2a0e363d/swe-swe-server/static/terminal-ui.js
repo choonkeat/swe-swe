@@ -150,6 +150,7 @@ class TerminalUI extends HTMLElement {
                 }
                 .terminal-ui__terminal {
                     flex: 1;
+                    min-height: 0;
                     width: 100%;
                     overflow: hidden;
                     transition: opacity 0.3s ease;
@@ -210,6 +211,19 @@ class TerminalUI extends HTMLElement {
                 }
                 .mobile-keyboard__toggle.active::after {
                     content: '';
+                }
+                /* Ctrl button labels */
+                .mobile-keyboard__ctrl button {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 2px;
+                    padding: 8px 4px;
+                }
+                .mobile-keyboard__ctrl button small {
+                    font-size: 9px;
+                    opacity: 0.6;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 }
                 /* Input bar */
                 .mobile-keyboard__input {
@@ -707,16 +721,18 @@ class TerminalUI extends HTMLElement {
                         <button data-toggle="nav" class="mobile-keyboard__toggle">Nav</button>
                     </div>
                     <div class="mobile-keyboard__ctrl">
-                        <button data-ctrl="a">A</button>
-                        <button data-ctrl="c">C</button>
-                        <button data-ctrl="d">D</button>
-                        <button data-ctrl="e">E</button>
-                        <button data-ctrl="k">K</button>
-                        <button data-ctrl="w">W</button>
+                        <button data-ctrl="a"><span>A</span><small>begin</small></button>
+                        <button data-ctrl="c"><span>C</span><small>cancel</small></button>
+                        <button data-ctrl="d"><span>D</span><small>eof</small></button>
+                        <button data-ctrl="e"><span>E</span><small>end</small></button>
+                        <button data-ctrl="k"><span>K</span><small>kill</small></button>
+                        <button data-ctrl="w"><span>W</span><small>word</small></button>
                     </div>
                     <div class="mobile-keyboard__nav">
+                        <button data-key="AltLeft">⌥←</button>
                         <button data-key="ArrowLeft">←</button>
                         <button data-key="ArrowRight">→</button>
+                        <button data-key="AltRight">⌥→</button>
                         <button data-key="ArrowUp">↑</button>
                         <button data-key="ArrowDown">↓</button>
                     </div>
@@ -1569,7 +1585,9 @@ class TerminalUI extends HTMLElement {
             'ArrowLeft': '\x1b[D',
             'ArrowRight': '\x1b[C',
             'ArrowUp': '\x1b[A',
-            'ArrowDown': '\x1b[B'
+            'ArrowDown': '\x1b[B',
+            'AltLeft': '\x1bb',   // Option+Left = backward-word
+            'AltRight': '\x1bf'   // Option+Right = forward-word
         };
 
         const CTRL_CODES = {
@@ -1643,13 +1661,8 @@ class TerminalUI extends HTMLElement {
             this.term.focus();
         });
 
-        // Enter key in input sends the command
-        textInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendBtn.click();
-            }
-        });
+        // Enter key allows newlines in textarea (no auto-submit)
+        // User must tap Send/Enter button to submit
     }
 
     setupEventListeners() {
