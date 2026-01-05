@@ -86,6 +86,7 @@ services:
       - type: tmpfs
         target: /workspace/.swe-swe/uploads
         tmpfs:
+          size: 100M
           mode: 0755
     working_dir: /workspace
     networks:
