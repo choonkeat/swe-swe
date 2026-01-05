@@ -91,6 +91,11 @@ services:
       - ./certs:/swe-swe/certs:ro
       # SSL certificate for download endpoint
       - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
+      # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          mode: 0755
     working_dir: /workspace
     networks:
       - swe-network

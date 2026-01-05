@@ -42,7 +42,7 @@ When `swe-swe init` runs on the host, it will create the `.swe-swe/uploads/` dir
 
 ---
 
-## Phase 2: Add tmpfs mount for uploads in docker-compose template
+## Phase 2: Add tmpfs mount for uploads in docker-compose template ✅
 
 ### What will be achieved
 
