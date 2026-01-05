@@ -52,10 +52,17 @@ fi
 # (the .swe-swe directory may have been created by a different user on the host)
 if [ -d /workspace/.swe-swe ]; then
     mkdir -p /workspace/.swe-swe/uploads
-    chown -R app:app /workspace/.swe-swe
-    echo -e "${GREEN}✓ Ensured .swe-swe directory is writable${NC}"
+    if chown -R app:app /workspace/.swe-swe 2>/dev/null; then
+        echo -e "${GREEN}✓ Ensured .swe-swe directory is writable${NC}"
+    else
+        echo -e "${YELLOW}⚠ Warning: chown /workspace/.swe-swe failed; continuing anyway${NC}"
+    fi
 fi
 
-# Switch to app user and execute the original command
-# Use exec to replace this process, preserving signal handling
-exec su -s /bin/bash app -c "cd /workspace && exec $*"
+# Prefer running as app user, but fall back to root if bind-mount permissions prevent it.
+if su -s /bin/bash app -c "test -w /workspace && test -w /home/app" >/dev/null 2>&1; then
+    exec su -s /bin/bash app -c "cd /workspace && exec $*"
+fi
+
+echo -e "${YELLOW}⚠ Warning: /workspace or /home/app not writable as app; running as root${NC}"
+exec bash -lc "cd /workspace && exec $*"
