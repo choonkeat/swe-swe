@@ -83,14 +83,11 @@ services:
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
       # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
-      # uid/gid 1000 matches the 'app' user created in Dockerfile
       - type: tmpfs
         target: /workspace/.swe-swe/uploads
         tmpfs:
           size: 100M
-          mode: 0755
-          uid: 1000
-          gid: 1000
+          mode: 0777
     working_dir: /workspace
     networks:
       - swe-network
