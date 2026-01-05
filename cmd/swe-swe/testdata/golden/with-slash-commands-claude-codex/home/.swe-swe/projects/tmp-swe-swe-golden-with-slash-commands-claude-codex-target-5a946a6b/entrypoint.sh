@@ -57,14 +57,6 @@ elif [ -d "/tmp/slash-commands/ck" ]; then
     echo -e "${GREEN}✓ Installed slash commands: ck (codex)${NC}"
 fi
 
-# Ensure .swe-swe/uploads directory exists and is writable by app user
-# (the .swe-swe directory may have been created by a different user on the host)
-if [ -d /workspace/.swe-swe ]; then
-    mkdir -p /workspace/.swe-swe/uploads
-    chown -R app:app /workspace/.swe-swe
-    echo -e "${GREEN}✓ Ensured .swe-swe directory is writable${NC}"
-fi
-
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"

@@ -73,7 +73,7 @@ The generated `docker-compose.yml` will include a tmpfs mount at `/workspace/.sw
 
 ---
 
-## Phase 3: Remove the `chown` block from `entrypoint.sh`
+## Phase 3: Remove the `chown` block from `entrypoint.sh` ✅
 
 ### What will be achieved
 
