@@ -72,6 +72,7 @@ type AssistantConfig struct {
 type SessionInfo struct {
 	UUID        string
 	UUIDShort   string
+	Name        string // User-assigned session name (optional)
 	Assistant   string // binary name for URL
 	ClientCount int
 	CreatedAt   time.Time
@@ -138,16 +139,17 @@ var assistantConfigs = []AssistantConfig{
 // Session represents a terminal session with multiple clients
 type Session struct {
 	UUID            string
+	Name            string // User-assigned session name (optional)
 	Assistant       string // The assistant key (e.g., "claude", "gemini", "custom")
 	AssistantConfig AssistantConfig
 	Cmd             *exec.Cmd
 	PTY             *os.File
-	wsClients       map[*websocket.Conn]bool      // WebSocket clients
-	wsClientSizes   map[*websocket.Conn]TermSize  // WebSocket client terminal sizes
-	ptySize         TermSize                      // Current PTY dimensions (for dedup)
+	wsClients       map[*websocket.Conn]bool     // WebSocket clients
+	wsClientSizes   map[*websocket.Conn]TermSize // WebSocket client terminal sizes
+	ptySize         TermSize                     // Current PTY dimensions (for dedup)
 	mu              sync.RWMutex
-	writeMu         sync.Mutex     // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
-	CreatedAt       time.Time      // when the session was created
+	writeMu         sync.Mutex // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
+	CreatedAt       time.Time  // when the session was created
 	lastActive      time.Time
 	vt              vt10x.Terminal // virtual terminal for screen state tracking
 	vtMu            sync.Mutex     // separate mutex for VT operations
@@ -302,12 +304,18 @@ func (s *Session) BroadcastStatus() {
 	defer s.mu.RUnlock()
 
 	rows, cols := s.calculateMinSize()
+	uuidShort := s.UUID
+	if len(s.UUID) >= 5 {
+		uuidShort = s.UUID[:5]
+	}
 	status := map[string]interface{}{
-		"type":      "status",
-		"viewers":   len(s.wsClients),
-		"cols":      cols,
-		"rows":      rows,
-		"assistant": s.AssistantConfig.Name,
+		"type":        "status",
+		"viewers":     len(s.wsClients),
+		"cols":        cols,
+		"rows":        rows,
+		"assistant":   s.AssistantConfig.Name,
+		"sessionName": s.Name,
+		"uuidShort":   uuidShort,
 	}
 
 	data, err := json.Marshal(status)
@@ -473,8 +481,8 @@ func (s *Session) GenerateSnapshot() []byte {
 	cols, rows := s.vt.Size()
 
 	// Clear screen and move cursor to home
-	buf.WriteString("\x1b[2J")  // clear entire screen
-	buf.WriteString("\x1b[H")   // cursor to home (1,1)
+	buf.WriteString("\x1b[2J") // clear entire screen
+	buf.WriteString("\x1b[H")  // cursor to home (1,1)
 
 	// Track current attributes to minimize escape sequences
 	var lastFG, lastBG vt10x.Color = vt10x.DefaultFG, vt10x.DefaultBG
@@ -798,6 +806,7 @@ func main() {
 				info := SessionInfo{
 					UUID:        sess.UUID,
 					UUIDShort:   uuidShort,
+					Name:        sess.Name,
 					Assistant:   sess.Assistant,
 					ClientCount: sess.ClientCount(),
 					CreatedAt:   sess.CreatedAt,
@@ -1106,6 +1115,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				Data     json.RawMessage `json:"data,omitempty"`
 				UserName string          `json:"userName,omitempty"`
 				Text     string          `json:"text,omitempty"`
+				Name     string          `json:"name,omitempty"`
 			}
 			if err := json.Unmarshal(data, &msg); err != nil {
 				log.Printf("Invalid JSON message: %v", err)
@@ -1130,6 +1140,30 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					sess.BroadcastChatMessage(msg.UserName, msg.Text)
 					log.Printf("Chat message from %s: %s", msg.UserName, msg.Text)
 				}
+			case "rename_session":
+				// Handle session rename request
+				name := strings.TrimSpace(msg.Name)
+				// Validate: max 32 chars, alphanumeric + spaces + hyphens + underscores
+				if len(name) > 32 {
+					log.Printf("Session rename rejected: name too long (%d chars)", len(name))
+					continue
+				}
+				valid := true
+				for _, r := range name {
+					if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_') {
+						valid = false
+						break
+					}
+				}
+				if !valid {
+					log.Printf("Session rename rejected: invalid characters in name %q", name)
+					continue
+				}
+				sess.mu.Lock()
+				sess.Name = name
+				sess.mu.Unlock()
+				log.Printf("Session %s renamed to %q", sess.UUID, name)
+				sess.BroadcastStatus()
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
