@@ -1124,11 +1124,6 @@ class TerminalUI extends HTMLElement {
         const timeSinceLastOutput = this.lastOutputTime ? now - this.lastOutputTime : 0;
         this.lastOutputTime = now;
 
-        // Log output stats in debug mode
-        if (this.debugMode && timeSinceLastOutput > 100) {
-            this.debugLog(`Output: ${data.length}B after ${timeSinceLastOutput}ms idle`, 2000);
-        }
-
         // Reset idle timer
         if (this.outputIdleTimer) {
             clearTimeout(this.outputIdleTimer);

@@ -18,7 +18,6 @@ class TerminalUI extends HTMLElement {
         this.ptyRows = 0;
         this.ptyCols = 0;
         this.assistantName = '';
-        this.statusRestoreTimeout = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -32,6 +31,13 @@ class TerminalUI extends HTMLElement {
         // Chunked snapshot reassembly
         this.chunks = [];
         this.expectedChunks = 0;
+        // Debug mode from query string (accepts debug=true, debug=1, etc.)
+        const debugParam = new URLSearchParams(location.search).get('debug');
+        this.debugMode = debugParam === 'true' || debugParam === '1';
+        // PTY output instrumentation for idle detection
+        this.lastOutputTime = null;
+        this.outputIdleTimer = null;
+        this.outputIdleThreshold = 2000; // ms
     }
 
     static get observedAttributes() {
@@ -77,14 +83,13 @@ class TerminalUI extends HTMLElement {
             }
             this.render();
             this.initTerminal();
-            // Debug: write to terminal to confirm code is running
-            this.term.write('[DEBUG] initTerminal done\r\n');
+            this.debugLog('initTerminal done');
             // iOS Safari needs a brief delay before WebSocket connection
             // Without this, the connection silently fails (works with Web Inspector attached
             // because the debugger adds enough delay)
-            this.term.write('[DEBUG] scheduling connect() in 200ms\r\n');
+            this.debugLog('scheduling connect() in 200ms');
             setTimeout(() => {
-                this.term.write('[DEBUG] setTimeout fired, calling connect()\r\n');
+                this.debugLog('setTimeout fired, calling connect()');
                 this.connect();
             }, 200);
             this.setupEventListeners();
@@ -127,9 +132,6 @@ class TerminalUI extends HTMLElement {
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
         }
-        if (this.statusRestoreTimeout) {
-            clearTimeout(this.statusRestoreTimeout);
-        }
         // Clean up chat message timeouts
         this.chatMessageTimeouts.forEach(timeout => clearTimeout(timeout));
         this.chatMessageTimeouts = [];
@@ -161,10 +163,13 @@ class TerminalUI extends HTMLElement {
                 /* Mobile Keyboard */
                 .mobile-keyboard {
                     flex-shrink: 0;
-                    display: flex;
+                    display: none;
                     flex-direction: column;
                     background: #2d2d2d;
                     border-top: 1px solid #404040;
+                }
+                .mobile-keyboard.visible {
+                    display: flex;
                 }
                 .mobile-keyboard__main,
                 .mobile-keyboard__ctrl,
@@ -317,7 +322,8 @@ class TerminalUI extends HTMLElement {
                     cursor: pointer;
                 }
                 .terminal-ui__status-bar.blurred {
-                    opacity: 0.6;
+                    opacity: 0.4;
+                    filter: grayscale(0.5);
                 }
                 .terminal-ui__status-icon {
                     width: 8px;
@@ -544,6 +550,10 @@ class TerminalUI extends HTMLElement {
                 }
                 .terminal-ui__chat-message.other:hover {
                     background: rgba(100, 100, 100, 0.95);
+                }
+                .terminal-ui__chat-message.system {
+                    background: rgba(60, 60, 60, 0.85);
+                    font-style: italic;
                 }
                 .terminal-ui__chat-message-username {
                     font-weight: 600;
@@ -971,9 +981,14 @@ class TerminalUI extends HTMLElement {
         return Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
     }
 
+    getDebugQueryString() {
+        return this.debugMode ? '?debug=1' : '';
+    }
+
     getAssistantLink() {
         const name = this.assistantName || this.assistant;
-        return `<a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
+        const debugQS = this.getDebugQueryString();
+        return `<a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
     }
 
     scheduleReconnect() {
@@ -1008,7 +1023,7 @@ class TerminalUI extends HTMLElement {
     }
 
     connect() {
-        this.term.write('[DEBUG] connect() called\r\n');
+        this.debugLog('connect() called');
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
@@ -1025,13 +1040,13 @@ class TerminalUI extends HTMLElement {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = protocol + '//' + window.location.host + '/ws/' + this.uuid + '?assistant=' + encodeURIComponent(this.assistant);
 
-        this.term.write('[DEBUG] Creating WebSocket to: ' + url + '\r\n');
+        this.debugLog('Creating WebSocket to: ' + url);
         console.log('[WS] Connecting to', url);
         try {
             this.ws = new WebSocket(url);
-            this.term.write('[DEBUG] WebSocket created, readyState=' + this.ws.readyState + '\r\n');
+            this.debugLog('WebSocket created, readyState=' + this.ws.readyState);
         } catch (e) {
-            this.term.write('[DEBUG] WebSocket constructor threw: ' + e.message + '\r\n');
+            this.debugLog('WebSocket constructor threw: ' + e.message);
             console.error('[WS] Failed to create WebSocket:', e);
             this.updateStatus('error', 'WebSocket creation failed: ' + e.message);
             setTimeout(() => this.scheduleReconnect(), 1000);
@@ -1043,7 +1058,7 @@ class TerminalUI extends HTMLElement {
         // Detect stuck CONNECTING state and show helpful error
         const connectTimeout = setTimeout(() => {
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-                this.term.write('[DEBUG] WebSocket stuck in CONNECTING state (iOS Safari self-signed cert issue)\r\n');
+                this.debugLog('WebSocket stuck in CONNECTING state (iOS Safari self-signed cert issue)');
                 console.error('[WS] Connection timeout - stuck in CONNECTING state');
                 this.updateStatus('error', 'iOS Safari: WebSocket blocked (self-signed cert). Use Let\'s Encrypt or connect Mac Safari Web Inspector.');
                 this.ws.close();
@@ -1104,6 +1119,19 @@ class TerminalUI extends HTMLElement {
     // Terminal data received
     // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
+        // Track output timing for idle detection
+        const now = Date.now();
+        const timeSinceLastOutput = this.lastOutputTime ? now - this.lastOutputTime : 0;
+        this.lastOutputTime = now;
+
+        // Reset idle timer
+        if (this.outputIdleTimer) {
+            clearTimeout(this.outputIdleTimer);
+        }
+        this.outputIdleTimer = setTimeout(() => {
+            this.onOutputIdle();
+        }, this.outputIdleThreshold);
+
         if (!this.pendingWrites) {
             this.pendingWrites = [];
             requestAnimationFrame(() => {
@@ -1120,6 +1148,12 @@ class TerminalUI extends HTMLElement {
             });
         }
         this.pendingWrites.push(data);
+    }
+
+    // Called when no output received for outputIdleThreshold ms
+    onOutputIdle() {
+        const idleMs = Date.now() - this.lastOutputTime;
+        this.debugLog(`Output idle for ${idleMs}ms - user input needed?`, 5000);
     }
 
     // Handle chunked snapshot message
@@ -1145,7 +1179,7 @@ class TerminalUI extends HTMLElement {
 
         // Show chunk progress in status bar for debugging
         if (totalChunks > 1) {
-            this.showTemporaryStatus(`Receiving snapshot: ${receivedCount}/${totalChunks}`, 2000);
+            this.showStatusNotification(`Receiving snapshot: ${receivedCount}/${totalChunks}`, 2000);
         }
 
         if (receivedCount === totalChunks) {
@@ -1174,11 +1208,11 @@ class TerminalUI extends HTMLElement {
         try {
             const decompressed = await this.decompressSnapshot(compressed);
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
-            this.showTemporaryStatus(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
+            this.showStatusNotification(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
             this.onTerminalData(decompressed);
         } catch (e) {
             console.error('Failed to decompress snapshot:', e);
-            this.showTemporaryStatus(`Decompress failed: ${e.message}`, 5000);
+            this.showStatusNotification(`Decompress failed: ${e.message}`, 5000);
             // Try writing compressed data directly (fallback for uncompressed data)
             this.onTerminalData(compressed);
         }
@@ -1256,9 +1290,9 @@ class TerminalUI extends HTMLElement {
             case 'file_upload':
                 // File upload response
                 if (msg.success) {
-                    this.showTemporaryStatus(`Saved: ${msg.filename}`, 3000);
+                    this.showStatusNotification(`Saved: ${msg.filename}`, 3000);
                 } else {
-                    this.showTemporaryStatus(`Upload failed: ${msg.error || 'Unknown error'}`, 5000);
+                    this.showStatusNotification(`Upload failed: ${msg.error || 'Unknown error'}`, 5000);
                 }
                 break;
             case 'exit':
@@ -1283,7 +1317,7 @@ class TerminalUI extends HTMLElement {
             : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
 
         if (confirm(message)) {
-            window.location.href = '/';
+            window.location.href = '/' + this.getDebugQueryString();
         }
     }
 
@@ -1300,9 +1334,10 @@ class TerminalUI extends HTMLElement {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             // Build "Connected as {name} with {agent}" message with separate clickable parts
             const userName = this.currentUserName;
+            const debugQS = this.getDebugQueryString();
             let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
             if (this.assistantName) {
-                html += ` with <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
+                html += ` with <a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
 
             // Add viewer suffix if more than 1 viewer
@@ -1322,23 +1357,6 @@ class TerminalUI extends HTMLElement {
                 dimsEl.textContent = '';
             }
         }
-    }
-
-    showTemporaryStatus(message, durationMs = 3000) {
-        const infoEl = this.querySelector('.terminal-ui__status-info');
-        if (!infoEl) return;
-
-        // Clear any pending restore
-        if (this.statusRestoreTimeout) {
-            clearTimeout(this.statusRestoreTimeout);
-        }
-
-        infoEl.textContent = message;
-
-        // Restore normal status after duration
-        this.statusRestoreTimeout = setTimeout(() => {
-            this.updateStatusInfo();
-        }, durationMs);
     }
 
     generateRandomUsername() {
@@ -1519,6 +1537,28 @@ class TerminalUI extends HTMLElement {
         return div.innerHTML;
     }
 
+    showStatusNotification(message, durationMs = 3000) {
+        const overlay = this.querySelector('.terminal-ui__chat-overlay');
+        if (!overlay) return;
+
+        const msgEl = document.createElement('div');
+        msgEl.className = 'terminal-ui__chat-message system';
+        msgEl.textContent = message;
+
+        overlay.appendChild(msgEl);
+
+        // Auto-fade after duration
+        setTimeout(() => {
+            msgEl.classList.add('fading');
+            setTimeout(() => msgEl.remove(), 400);
+        }, durationMs);
+    }
+
+    debugLog(message, durationMs = 3000) {
+        if (!this.debugMode) return;
+        this.showStatusNotification(`[DEBUG] ${message}`, durationMs);
+    }
+
     sendChatMessage() {
         const input = this.querySelector('.terminal-ui__chat-input');
         if (!input) return;
@@ -1618,7 +1658,23 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    setupKeyboardVisibility() {
+        const keyboard = this.querySelector('.mobile-keyboard');
+        if (!keyboard) return;
+
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const isNarrow = window.matchMedia('(max-width: 768px)').matches;
+        const forceShow = new URLSearchParams(location.search).get('keyboard') === 'show';
+
+        if ((hasTouch && isNarrow) || forceShow) {
+            keyboard.classList.add('visible');
+        }
+    }
+
     setupMobileKeyboard() {
+        // Determine if keyboard should be visible
+        this.setupKeyboardVisibility();
+
         const KEY_CODES = {
             'Escape': '\x1b',
             'Tab': '\t',
@@ -1969,7 +2025,7 @@ class TerminalUI extends HTMLElement {
         console.log('File dropped:', file.name, file.type, file.size);
 
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            this.showTemporaryStatus('Not connected', 3000);
+            this.showStatusNotification('Not connected', 3000);
             return;
         }
 
@@ -1977,18 +2033,18 @@ class TerminalUI extends HTMLElement {
             // Read and paste text directly to terminal
             const text = await this.readFileAsText(file);
             if (text === null) {
-                this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
+                this.showStatusNotification(`Error reading: ${file.name}`, 5000);
                 return;
             }
             const encoder = new TextEncoder();
             this.ws.send(encoder.encode(text));
-            this.showTemporaryStatus(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
+            this.showStatusNotification(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
         } else {
             // Binary file: send as binary upload with 0x01 prefix
             // Format: [0x01, name_len_hi, name_len_lo, ...name_bytes, ...file_data]
             const fileData = await this.readFileAsBinary(file);
             if (fileData === null) {
-                this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
+                this.showStatusNotification(`Error reading: ${file.name}`, 5000);
                 return;
             }
             const encoder = new TextEncoder();
@@ -2004,7 +2060,7 @@ class TerminalUI extends HTMLElement {
             message.set(fileData, 3 + nameLen);
 
             this.ws.send(message);
-            this.showTemporaryStatus(`Uploaded: ${file.name} (${this.formatFileSize(file.size)}, temporary)`);
+            this.showStatusNotification(`Uploaded: ${file.name} (${this.formatFileSize(file.size)}, temporary)`);
         }
     }
 
