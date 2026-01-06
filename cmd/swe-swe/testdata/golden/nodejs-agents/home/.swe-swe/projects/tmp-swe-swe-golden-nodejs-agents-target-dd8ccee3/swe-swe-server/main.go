@@ -104,6 +104,23 @@ type AgentWithSessions struct {
 	Sessions  []SessionInfo // sorted by CreatedAt desc (most recent first)
 }
 
+// RecordingMetadata stores information about a terminal recording session
+type RecordingMetadata struct {
+	UUID      string     `json:"uuid"`
+	Name      string     `json:"name,omitempty"`
+	Agent     string     `json:"agent"`
+	StartedAt time.Time  `json:"started_at"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	Command   []string   `json:"command"`
+	Visitors  []Visitor  `json:"visitors,omitempty"`
+}
+
+// Visitor represents a client that joined the session
+type Visitor struct {
+	JoinedAt time.Time `json:"joined_at"`
+	IP       string    `json:"ip"`
+}
+
 // Predefined assistant configurations (ordered for consistent display)
 var assistantConfigs = []AssistantConfig{
 	{
@@ -166,7 +183,8 @@ type Session struct {
 	ringHead int    // write position (where next byte goes)
 	ringLen  int    // current bytes stored (0 to RingBufferSize)
 	// Recording
-	RecordingUUID string // UUID for recording files (separate from session UUID for restarts)
+	RecordingUUID string             // UUID for recording files (separate from session UUID for restarts)
+	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 }
 
 // AddClient adds a WebSocket client to the session
@@ -664,11 +682,32 @@ func (s *Session) startPTYReader() {
 
 				if clientCount == 0 {
 					log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
+					// Save ended_at in metadata
+					s.mu.Lock()
+					if s.Metadata != nil {
+						now := time.Now()
+						s.Metadata.EndedAt = &now
+					}
+					s.mu.Unlock()
+					if err := s.saveMetadata(); err != nil {
+						log.Printf("Failed to save metadata on exit: %v", err)
+					}
 					return
 				}
 
 				if exitCode == 0 {
 					log.Printf("Session %s: process exited successfully (code 0), not restarting", s.UUID)
+					// Save ended_at in metadata
+					s.mu.Lock()
+					if s.Metadata != nil {
+						now := time.Now()
+						s.Metadata.EndedAt = &now
+					}
+					s.mu.Unlock()
+					if err := s.saveMetadata(); err != nil {
+						log.Printf("Failed to save metadata on exit: %v", err)
+					}
+
 					exitMsg := []byte("\r\n[Process exited successfully]\r\n")
 					s.vtMu.Lock()
 					s.vt.Write(exitMsg)
@@ -1087,6 +1126,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 	// 	ptmx.Write([]byte(browserPrompt))
 	// }
 
+	now := time.Now()
 	sess := &Session{
 		UUID:            sessionUUID,
 		Assistant:       assistant,
@@ -1096,11 +1136,17 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		wsClients:       make(map[*websocket.Conn]bool),
 		wsClientSizes:   make(map[*websocket.Conn]TermSize),
 		ptySize:         TermSize{Rows: 24, Cols: 80},
-		CreatedAt:       time.Now(),
-		lastActive:      time.Now(),
+		CreatedAt:       now,
+		lastActive:      now,
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
+		Metadata: &RecordingMetadata{
+			UUID:      recordingUUID,
+			Agent:     cfg.Name,
+			StartedAt: now,
+			Command:   append([]string{cmdName}, cmdArgs...),
+		},
 	}
 	sessions[sessionUUID] = sess
 
@@ -1139,6 +1185,21 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Add this client to the session
 	sess.AddClient(conn)
 	defer sess.RemoveClient(conn)
+
+	// Track visitor in metadata (for non-first clients)
+	if !isNew {
+		sess.mu.Lock()
+		if sess.Metadata != nil {
+			sess.Metadata.Visitors = append(sess.Metadata.Visitors, Visitor{
+				JoinedAt: time.Now(),
+				IP:       remoteAddr,
+			})
+		}
+		sess.mu.Unlock()
+		if err := sess.saveMetadata(); err != nil {
+			log.Printf("Failed to save metadata for visitor: %v", err)
+		}
+	}
 
 	log.Printf("WebSocket connected: session=%s (new=%v, remote=%s)", sessionUUID, isNew, remoteAddr)
 
@@ -1252,8 +1313,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				}
 				sess.mu.Lock()
 				sess.Name = name
+				if sess.Metadata != nil {
+					sess.Metadata.Name = name
+				}
 				sess.mu.Unlock()
 				log.Printf("Session %s renamed to %q", sess.UUID, name)
+				// Save metadata with new name
+				if err := sess.saveMetadata(); err != nil {
+					log.Printf("Failed to save metadata: %v", err)
+				}
 				sess.BroadcastStatus()
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
@@ -1345,6 +1413,26 @@ const recordingsDir = "/workspace/.swe-swe/recordings"
 // ensureRecordingsDir creates the recordings directory if it doesn't exist
 func ensureRecordingsDir() error {
 	return os.MkdirAll(recordingsDir, 0755)
+}
+
+// saveMetadata writes the session's recording metadata to disk
+// Only writes if metadata exists (name was set or visitor joined)
+func (s *Session) saveMetadata() error {
+	s.mu.RLock()
+	metadata := s.Metadata
+	recordingUUID := s.RecordingUUID
+	s.mu.RUnlock()
+
+	if metadata == nil {
+		return nil // Nothing to save
+	}
+
+	path := fmt.Sprintf("%s/session-%s.metadata.json", recordingsDir, recordingUUID)
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 // wrapWithScript wraps a command with the Linux script command for recording

@@ -78,7 +78,7 @@ func wrapWithScript(cmdName string, cmdArgs []string, recordingUUID string) (str
 
 ---
 
-## Phase 2: Metadata Management
+## Phase 2: Metadata Management ✅
 
 ### What Will Be Achieved
 Create/update `session-{uuid}.metadata.json` when session name changes or visitors join.
