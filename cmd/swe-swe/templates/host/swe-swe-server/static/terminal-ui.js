@@ -18,7 +18,6 @@ class TerminalUI extends HTMLElement {
         this.ptyRows = 0;
         this.ptyCols = 0;
         this.assistantName = '';
-        this.statusRestoreTimeout = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -126,9 +125,6 @@ class TerminalUI extends HTMLElement {
         }
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
-        }
-        if (this.statusRestoreTimeout) {
-            clearTimeout(this.statusRestoreTimeout);
         }
         // Clean up chat message timeouts
         this.chatMessageTimeouts.forEach(timeout => clearTimeout(timeout));
@@ -548,6 +544,10 @@ class TerminalUI extends HTMLElement {
                 }
                 .terminal-ui__chat-message.other:hover {
                     background: rgba(100, 100, 100, 0.95);
+                }
+                .terminal-ui__chat-message.system {
+                    background: rgba(60, 60, 60, 0.85);
+                    font-style: italic;
                 }
                 .terminal-ui__chat-message-username {
                     font-weight: 600;
@@ -1149,7 +1149,7 @@ class TerminalUI extends HTMLElement {
 
         // Show chunk progress in status bar for debugging
         if (totalChunks > 1) {
-            this.showTemporaryStatus(`Receiving snapshot: ${receivedCount}/${totalChunks}`, 2000);
+            this.showStatusNotification(`Receiving snapshot: ${receivedCount}/${totalChunks}`, 2000);
         }
 
         if (receivedCount === totalChunks) {
@@ -1178,11 +1178,11 @@ class TerminalUI extends HTMLElement {
         try {
             const decompressed = await this.decompressSnapshot(compressed);
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
-            this.showTemporaryStatus(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
+            this.showStatusNotification(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
             this.onTerminalData(decompressed);
         } catch (e) {
             console.error('Failed to decompress snapshot:', e);
-            this.showTemporaryStatus(`Decompress failed: ${e.message}`, 5000);
+            this.showStatusNotification(`Decompress failed: ${e.message}`, 5000);
             // Try writing compressed data directly (fallback for uncompressed data)
             this.onTerminalData(compressed);
         }
@@ -1260,9 +1260,9 @@ class TerminalUI extends HTMLElement {
             case 'file_upload':
                 // File upload response
                 if (msg.success) {
-                    this.showTemporaryStatus(`Saved: ${msg.filename}`, 3000);
+                    this.showStatusNotification(`Saved: ${msg.filename}`, 3000);
                 } else {
-                    this.showTemporaryStatus(`Upload failed: ${msg.error || 'Unknown error'}`, 5000);
+                    this.showStatusNotification(`Upload failed: ${msg.error || 'Unknown error'}`, 5000);
                 }
                 break;
             case 'exit':
@@ -1326,23 +1326,6 @@ class TerminalUI extends HTMLElement {
                 dimsEl.textContent = '';
             }
         }
-    }
-
-    showTemporaryStatus(message, durationMs = 3000) {
-        const infoEl = this.querySelector('.terminal-ui__status-info');
-        if (!infoEl) return;
-
-        // Clear any pending restore
-        if (this.statusRestoreTimeout) {
-            clearTimeout(this.statusRestoreTimeout);
-        }
-
-        infoEl.textContent = message;
-
-        // Restore normal status after duration
-        this.statusRestoreTimeout = setTimeout(() => {
-            this.updateStatusInfo();
-        }, durationMs);
     }
 
     generateRandomUsername() {
@@ -1521,6 +1504,23 @@ class TerminalUI extends HTMLElement {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    showStatusNotification(message, durationMs = 3000) {
+        const overlay = this.querySelector('.terminal-ui__chat-overlay');
+        if (!overlay) return;
+
+        const msgEl = document.createElement('div');
+        msgEl.className = 'terminal-ui__chat-message system';
+        msgEl.textContent = message;
+
+        overlay.appendChild(msgEl);
+
+        // Auto-fade after duration
+        setTimeout(() => {
+            msgEl.classList.add('fading');
+            setTimeout(() => msgEl.remove(), 400);
+        }, durationMs);
     }
 
     sendChatMessage() {
@@ -1989,7 +1989,7 @@ class TerminalUI extends HTMLElement {
         console.log('File dropped:', file.name, file.type, file.size);
 
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            this.showTemporaryStatus('Not connected', 3000);
+            this.showStatusNotification('Not connected', 3000);
             return;
         }
 
@@ -1997,18 +1997,18 @@ class TerminalUI extends HTMLElement {
             // Read and paste text directly to terminal
             const text = await this.readFileAsText(file);
             if (text === null) {
-                this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
+                this.showStatusNotification(`Error reading: ${file.name}`, 5000);
                 return;
             }
             const encoder = new TextEncoder();
             this.ws.send(encoder.encode(text));
-            this.showTemporaryStatus(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
+            this.showStatusNotification(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
         } else {
             // Binary file: send as binary upload with 0x01 prefix
             // Format: [0x01, name_len_hi, name_len_lo, ...name_bytes, ...file_data]
             const fileData = await this.readFileAsBinary(file);
             if (fileData === null) {
-                this.showTemporaryStatus(`Error reading: ${file.name}`, 5000);
+                this.showStatusNotification(`Error reading: ${file.name}`, 5000);
                 return;
             }
             const encoder = new TextEncoder();
@@ -2024,7 +2024,7 @@ class TerminalUI extends HTMLElement {
             message.set(fileData, 3 + nameLen);
 
             this.ws.send(message);
-            this.showTemporaryStatus(`Uploaded: ${file.name} (${this.formatFileSize(file.size)}, temporary)`);
+            this.showStatusNotification(`Uploaded: ${file.name} (${this.formatFileSize(file.size)}, temporary)`);
         }
     }
 
