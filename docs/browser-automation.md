@@ -27,7 +27,7 @@ swe-swe includes a dedicated Chrome container that provides:
 │                        └──────────────┘                         │
 │                              │                                   │
 │                              ▼                                   │
-│                     chrome.lvh.me:1977                          │
+│                     localhost:1977/chrome                       │
 │                     (VNC web viewer)                            │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -51,7 +51,7 @@ The Chrome container runs multiple services via supervisord:
 
 | External | Internal | Description |
 |----------|----------|-------------|
-| `chrome.lvh.me:1977` | 6080 | noVNC web interface (via Traefik) |
+| `localhost:1977/chrome` | 6080 | noVNC web interface (via Traefik path-based routing) |
 | - | 9223 | CDP WebSocket (internal network only) |
 
 ### Environment Variables
@@ -68,7 +68,7 @@ This allows MCP Playwright to automatically connect to the Chrome container.
 
 ### Visual Observation
 
-Watch the browser in real-time at: **http://chrome.lvh.me:1977**
+Watch the browser in real-time at: **http://localhost:1977/chrome** (or **https://localhost:1977/chrome** if using `--ssl=selfsign`)
 
 The noVNC interface shows exactly what the AI assistant sees when automating the browser.
 
@@ -163,7 +163,9 @@ chrome:
     dockerfile: chrome/Dockerfile
   labels:
     - "traefik.enable=true"
-    - "traefik.http.routers.chrome.rule=HostRegexp(`chrome\\..*`)"
+    - "traefik.http.routers.chrome.rule=PathPrefix(`/chrome`)"
+    - "traefik.http.routers.chrome.middlewares=strip-chrome"
+    - "traefik.http.middlewares.strip-chrome.stripprefix.prefixes=/chrome"
     - "traefik.http.services.chrome.loadbalancer.server.port=6080"
   volumes:
     - ./certs:/swe-swe/certs:ro

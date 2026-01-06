@@ -43,3 +43,4 @@ Bad: ...
 | [015](0015-chunked-websocket-snapshots.md) | Chunked WebSocket snapshots | Accepted |
 | [016](0016-ios-safari-websocket-self-signed-certs.md) | iOS Safari WebSocket with self-signed certs | Accepted |
 | [017](0017-tmpfs-uploads.md) | Tmpfs for file uploads | Accepted |
+| [018](0018-session-naming.md) | Session naming | Accepted |
