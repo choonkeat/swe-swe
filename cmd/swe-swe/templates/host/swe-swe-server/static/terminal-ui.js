@@ -78,14 +78,13 @@ class TerminalUI extends HTMLElement {
             }
             this.render();
             this.initTerminal();
-            // Debug: write to terminal to confirm code is running
-            this.term.write('[DEBUG] initTerminal done\r\n');
+            this.debugLog('initTerminal done');
             // iOS Safari needs a brief delay before WebSocket connection
             // Without this, the connection silently fails (works with Web Inspector attached
             // because the debugger adds enough delay)
-            this.term.write('[DEBUG] scheduling connect() in 200ms\r\n');
+            this.debugLog('scheduling connect() in 200ms');
             setTimeout(() => {
-                this.term.write('[DEBUG] setTimeout fired, calling connect()\r\n');
+                this.debugLog('setTimeout fired, calling connect()');
                 this.connect();
             }, 200);
             this.setupEventListeners();
@@ -1014,7 +1013,7 @@ class TerminalUI extends HTMLElement {
     }
 
     connect() {
-        this.term.write('[DEBUG] connect() called\r\n');
+        this.debugLog('connect() called');
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
@@ -1031,13 +1030,13 @@ class TerminalUI extends HTMLElement {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = protocol + '//' + window.location.host + '/ws/' + this.uuid + '?assistant=' + encodeURIComponent(this.assistant);
 
-        this.term.write('[DEBUG] Creating WebSocket to: ' + url + '\r\n');
+        this.debugLog('Creating WebSocket to: ' + url);
         console.log('[WS] Connecting to', url);
         try {
             this.ws = new WebSocket(url);
-            this.term.write('[DEBUG] WebSocket created, readyState=' + this.ws.readyState + '\r\n');
+            this.debugLog('WebSocket created, readyState=' + this.ws.readyState);
         } catch (e) {
-            this.term.write('[DEBUG] WebSocket constructor threw: ' + e.message + '\r\n');
+            this.debugLog('WebSocket constructor threw: ' + e.message);
             console.error('[WS] Failed to create WebSocket:', e);
             this.updateStatus('error', 'WebSocket creation failed: ' + e.message);
             setTimeout(() => this.scheduleReconnect(), 1000);
@@ -1049,7 +1048,7 @@ class TerminalUI extends HTMLElement {
         // Detect stuck CONNECTING state and show helpful error
         const connectTimeout = setTimeout(() => {
             if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-                this.term.write('[DEBUG] WebSocket stuck in CONNECTING state (iOS Safari self-signed cert issue)\r\n');
+                this.debugLog('WebSocket stuck in CONNECTING state (iOS Safari self-signed cert issue)');
                 console.error('[WS] Connection timeout - stuck in CONNECTING state');
                 this.updateStatus('error', 'iOS Safari: WebSocket blocked (self-signed cert). Use Let\'s Encrypt or connect Mac Safari Web Inspector.');
                 this.ws.close();

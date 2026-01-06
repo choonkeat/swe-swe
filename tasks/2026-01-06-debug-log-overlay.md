@@ -7,7 +7,7 @@ Replace terminal-based debug logging with overlay notifications (like chat/file 
 ## Phases
 
 1. Phase 1: Add debug mode infrastructure ✅
-2. Phase 2: Migrate existing debug logs
+2. Phase 2: Migrate existing debug logs ✅
 3. Phase 3: Add PTY output instrumentation
 
 ---
