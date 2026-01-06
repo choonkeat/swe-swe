@@ -136,6 +136,12 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "aider --restore-chat-history",
 		Binary:          "aider",
 	},
+	{
+		Name:            "OpenCode",
+		ShellCmd:        "opencode",
+		ShellRestartCmd: "opencode --continue",
+		Binary:          "opencode",
+	},
 }
 
 // Session represents a terminal session with multiple clients

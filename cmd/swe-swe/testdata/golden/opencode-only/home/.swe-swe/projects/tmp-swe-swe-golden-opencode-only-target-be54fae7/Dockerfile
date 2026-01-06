@@ -33,6 +33,9 @@ RUN apt-get update && apt-get install -y \
 
 
 
+# Install OpenCode CLI (https://github.com/anomalyco/opencode)
+RUN curl -fsSL https://opencode.ai/install | bash
+
 
 
 

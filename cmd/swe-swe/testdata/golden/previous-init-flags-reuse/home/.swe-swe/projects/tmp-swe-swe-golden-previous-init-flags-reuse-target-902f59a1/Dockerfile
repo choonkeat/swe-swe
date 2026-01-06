@@ -46,6 +46,7 @@ RUN npm install -g @playwright/mcp
 
 
 
+
 # Install Docker CLI only (talks to host Docker via mounted socket)
 RUN ARCH="$(dpkg --print-architecture)" && \
     case "${ARCH}" in \
