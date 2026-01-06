@@ -1,6 +1,6 @@
 # swe-swe
 
-A containerized development environment for AI-assisted coding with integrated VSCode, browser automation, Traefik reverse proxy, and support for multiple AI assistants (Claude, Gemini, Codex, Goose, Aider).
+A containerized development environment for AI-assisted coding with integrated VSCode, browser automation, Traefik reverse proxy, and support for multiple AI assistants (Claude, Gemini, Codex, Goose, Aider, OpenCode).
 
 https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
 
@@ -73,7 +73,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`)
 - `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP) or `selfsign` (HTTPS with auto-generated self-signed certificate)
 
-**Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`
+**Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 
 **Examples**:
 ```bash
@@ -115,7 +115,7 @@ swe-swe init --previous-init-flags=ignore --agents=claude
 
 **Dependency Optimization**: The Dockerfile is automatically optimized based on selected agents:
 - Python/pip is only installed if `aider` is included
-- Node.js/npm is only installed if `claude`, `gemini`, or `codex` is included
+- Node.js/npm is only installed if `claude`, `gemini`, `codex`, or `opencode` is included
 - This can significantly reduce image size and build time
 
 Services are accessible via path-based routing on `localhost` (or `0.0.0.0`) at the configured port.
@@ -273,7 +273,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 - **Features**:
   - Real-time terminal with PTY support
   - Session management with configurable TTL
-  - Multiple AI assistant detection (claude, gemini, codex, goose, aider)
+  - Multiple AI assistant detection (claude, gemini, codex, goose, aider, opencode)
   - Automatic process restart on failure
   - File upload via drag-and-drop (saved to `.swe-swe/uploads/`)
   - In-session chat for collaboration
@@ -451,7 +451,7 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 
 **Solution**: The server didn't detect an installed assistant:
 1. Set API keys: `ANTHROPIC_API_KEY` (Claude), `GEMINI_API_KEY` (Gemini), `OPENAI_API_KEY` (Codex)
-2. Or install CLI tools: `claude`, `gemini`, `codex`, `goose`, `aider`
+2. Or install CLI tools: `claude`, `gemini`, `codex`, `goose`, `aider`, `opencode`
 
 ### Network Issues
 
