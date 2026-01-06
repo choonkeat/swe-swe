@@ -52,6 +52,8 @@ const (
 	DefaultChunkSize = 8192
 	// MinChunkSize prevents excessively small chunks
 	MinChunkSize = 512
+	// RingBufferSize is the size of the terminal scrollback ring buffer (512KB)
+	RingBufferSize = 512 * 1024
 )
 
 // TermSize represents terminal dimensions
@@ -153,6 +155,10 @@ type Session struct {
 	lastActive      time.Time
 	vt              vt10x.Terminal // virtual terminal for screen state tracking
 	vtMu            sync.Mutex     // separate mutex for VT operations
+	// Ring buffer for terminal scrollback history
+	ringBuf  []byte // circular buffer storage
+	ringHead int    // write position (where next byte goes)
+	ringLen  int    // current bytes stored (0 to RingBufferSize)
 }
 
 // AddClient adds a WebSocket client to the session
@@ -389,6 +395,38 @@ func (s *Session) BroadcastExit(exitCode int) {
 		}
 	}
 	log.Printf("Session %s: broadcast exit (code=%d)", s.UUID, exitCode)
+}
+
+// writeToRing writes data to the ring buffer, wrapping around when full.
+// Must be called with vtMu held (shares lock with VT operations).
+func (s *Session) writeToRing(data []byte) {
+	for _, b := range data {
+		s.ringBuf[s.ringHead] = b
+		s.ringHead = (s.ringHead + 1) % RingBufferSize
+		if s.ringLen < RingBufferSize {
+			s.ringLen++
+		}
+	}
+}
+
+// readRing returns a copy of the ring buffer contents in correct order (oldest to newest).
+// Must be called with vtMu held (shares lock with VT operations).
+func (s *Session) readRing() []byte {
+	if s.ringLen == 0 {
+		return nil
+	}
+
+	result := make([]byte, s.ringLen)
+	if s.ringLen < RingBufferSize {
+		// Buffer not full yet, data starts at 0
+		copy(result, s.ringBuf[:s.ringLen])
+	} else {
+		// Buffer is full, data starts at ringHead (oldest)
+		start := s.ringHead
+		copy(result, s.ringBuf[start:])
+		copy(result[RingBufferSize-start:], s.ringBuf[:start])
+	}
+	return result
 }
 
 // Close terminates the session
@@ -1032,6 +1070,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		CreatedAt:       time.Now(),
 		lastActive:      time.Now(),
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
+		ringBuf:         make([]byte, RingBufferSize),
 	}
 	sessions[sessionUUID] = sess
 
