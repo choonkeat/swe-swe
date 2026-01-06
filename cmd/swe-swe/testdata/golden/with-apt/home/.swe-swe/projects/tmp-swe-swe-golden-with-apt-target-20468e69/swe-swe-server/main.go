@@ -124,8 +124,8 @@ var assistantConfigs = []AssistantConfig{
 	},
 	{
 		Name:            "Goose",
-		ShellCmd:        "goose",
-		ShellRestartCmd: "goose",
+		ShellCmd:        "goose session",
+		ShellRestartCmd: "goose session -r",
 		Binary:          "goose",
 	},
 	{
