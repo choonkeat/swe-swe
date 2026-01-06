@@ -161,10 +161,13 @@ class TerminalUI extends HTMLElement {
                 /* Mobile Keyboard */
                 .mobile-keyboard {
                     flex-shrink: 0;
-                    display: flex;
+                    display: none;
                     flex-direction: column;
                     background: #2d2d2d;
                     border-top: 1px solid #404040;
+                }
+                .mobile-keyboard.visible {
+                    display: flex;
                 }
                 .mobile-keyboard__main,
                 .mobile-keyboard__ctrl,
@@ -1619,7 +1622,23 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    setupKeyboardVisibility() {
+        const keyboard = this.querySelector('.mobile-keyboard');
+        if (!keyboard) return;
+
+        const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const isNarrow = window.matchMedia('(max-width: 768px)').matches;
+        const forceShow = new URLSearchParams(location.search).get('keyboard') === 'show';
+
+        if ((hasTouch && isNarrow) || forceShow) {
+            keyboard.classList.add('visible');
+        }
+    }
+
     setupMobileKeyboard() {
+        // Determine if keyboard should be visible
+        this.setupKeyboardVisibility();
+
         const KEY_CODES = {
             'Escape': '\x1b',
             'Tab': '\t',
