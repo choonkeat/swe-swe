@@ -527,8 +527,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 	// Check if we need Python (only for aider)
 	needsPython := hasAgent("aider")
 
-	// Check if we need Node.js (claude, gemini, codex, or playwright)
-	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex")
+	// Check if we need Node.js (claude, gemini, codex, opencode, or playwright)
+	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex") || hasAgent("opencode")
 
 	// Check if we have slash commands for supported agents (claude or codex)
 	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex"))

@@ -52,7 +52,7 @@ RUN npm install -g @playwright/mcp
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
 # Install OpenCode CLI (https://github.com/anomalyco/opencode)
-RUN curl -fsSL https://opencode.ai/install | bash
+RUN npm install -g opencode-ai
 
 
 
