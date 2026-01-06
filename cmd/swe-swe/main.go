@@ -255,7 +255,7 @@ Init Options:
   --project-directory PATH               Project directory (defaults to current directory)
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
-  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose (default: all)
+  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose,opencode (default: all)
   --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
@@ -266,7 +266,7 @@ Init Options:
                                          Use selfsign@<ip-or-hostname> for remote access
 
 Available Agents:
-  claude, gemini, codex, aider, goose
+  claude, gemini, codex, aider, goose, opencode
 
 Services (defined in docker-compose.yml after init):
   swe-swe, vscode, chrome, traefik
@@ -302,7 +302,7 @@ Requires: Docker with Compose plugin (docker compose) or standalone docker-compo
 }
 
 // allAgents lists all available AI agents that can be installed
-var allAgents = []string{"claude", "gemini", "codex", "aider", "goose"}
+var allAgents = []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}
 
 // SlashCommandsRepo represents a git repository to clone for slash commands
 type SlashCommandsRepo struct {
@@ -744,7 +744,7 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("project-directory", ".", "Project directory to initialize")
-	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose) or 'all'")
+	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose,opencode) or 'all'")
 	excludeFlag := fs.String("exclude-agents", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
