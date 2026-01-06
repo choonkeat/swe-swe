@@ -1450,6 +1450,50 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    validateSessionName(name) {
+        name = name.trim();
+
+        // Empty name is valid (clears the session name)
+        if (name.length === 0) {
+            return { valid: true, name: '' };
+        }
+
+        if (name.length > 32) {
+            return { valid: false, error: 'Name must be 32 characters or less' };
+        }
+
+        if (!/^[a-zA-Z0-9 \-_]+$/.test(name)) {
+            return { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, and underscores' };
+        }
+
+        return { valid: true, name: name };
+    }
+
+    promptRenameSession() {
+        while (true) {
+            const newName = window.prompt('Enter session name (max 32 chars):', this.sessionName);
+
+            // User clicked Cancel
+            if (newName === null) {
+                return;
+            }
+
+            const validation = this.validateSessionName(newName);
+            if (validation.valid) {
+                // Send rename request to server
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({
+                        type: 'rename_session',
+                        name: validation.name
+                    }));
+                }
+                return;
+            } else {
+                alert('Invalid name: ' + validation.error + '\nPlease try again.');
+            }
+        }
+    }
+
     toggleChatInput() {
         if (this.chatInputOpen) {
             this.closeChatInput();
@@ -1862,6 +1906,11 @@ class TerminalUI extends HTMLElement {
             else if (e.target.classList.contains('terminal-ui__status-others')) {
                 // Open chat input
                 this.toggleChatInput();
+            }
+            // Check if clicked on session name link
+            else if (e.target.classList.contains('terminal-ui__status-session')) {
+                // Prompt to rename session
+                this.promptRenameSession();
             }
             // Note: agent link is a real <a> tag, no JS handler needed
         });
