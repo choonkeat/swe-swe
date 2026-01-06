@@ -14,7 +14,7 @@ Then MCP browser at `http://host.docker.internal:11977/`
 
 ---
 
-## Phase 1: Recording Infrastructure
+## Phase 1: Recording Infrastructure ✅
 
 ### What Will Be Achieved
 Wrap agent process execution with Linux `script` command to capture terminal output and timing data to `/workspace/.swe-swe/recordings/session-{uuid}.log` and `session-{uuid}.timing`.
