@@ -13,31 +13,31 @@ Allow users to name their sessions. The name appears in the homepage listing and
 
 ---
 
-## Phase 1: Server Data Model
+## Phase 1: Server Data Model ✅
 
 ### What will be achieved
 The server will store session names and broadcast them to connected clients via the status message.
 
 ### Steps
 
-1. **Add `Name` field to `Session` struct** (`main.go:139`)
+1. ✅ **Add `Name` field to `Session` struct** (`main.go:142`)
    - Add `Name string` field after `UUID`
 
-2. **Add `Name` field to `SessionInfo` struct** (`main.go:72`)
+2. ✅ **Add `Name` field to `SessionInfo` struct** (`main.go:75`)
    - Add `Name string` field for template rendering
 
-3. **Include `sessionName` and `uuidShort` in status broadcast** (`main.go:305`)
+3. ✅ **Include `sessionName` and `uuidShort` in status broadcast** (`main.go:317-318`)
    - Add `"sessionName": s.Name` to the status map
    - Add `"uuidShort": s.UUID[:5]` (with length check)
 
-4. **Populate `Name` in `SessionInfo` when building homepage data** (`main.go:798`)
+4. ✅ **Populate `Name` in `SessionInfo` when building homepage data** (`main.go:809`)
    - Add `Name: sess.Name` to the SessionInfo initialization
 
 ### Verification
 
 | Test | How |
 |------|-----|
-| **Build succeeds** | `make build` |
+| ✅ **Build succeeds** | `make build` |
 | **Test container runs** | `./scripts/02-test-container-build.sh && HOST_PORT=11977 HOST_IP=host.docker.internal ./scripts/03-test-container-run.sh` |
 | **New fields in WebSocket** | MCP browser -> join session -> verify `sessionName` and `uuidShort` in status message |
 | **No regression on homepage** | MCP browser -> verify homepage lists sessions with UUID short |
@@ -46,17 +46,17 @@ The server will store session names and broadcast them to connected clients via 
 
 ---
 
-## Phase 2: Server Rename Handler
+## Phase 2: Server Rename Handler ✅
 
 ### What will be achieved
 The server will accept `rename_session` WebSocket messages and update the session name, then broadcast the new name to all connected clients.
 
 ### Steps
 
-1. **Add `Name` field to WebSocket message struct** (`main.go:1104`)
+1. ✅ **Add `Name` field to WebSocket message struct** (`main.go:1118`)
    - Add `Name string` to the JSON message struct for parsing
 
-2. **Add `rename_session` case in message switch** (`main.go:1115`)
+2. ✅ **Add `rename_session` case in message switch** (`main.go:1143-1166`)
    - Handle `"rename_session"` message type
    - Validate name (max 32 chars, alphanumeric + spaces + hyphens + underscores)
    - Update `sess.Name` with lock
