@@ -660,6 +660,7 @@ func (s *Session) startPTYReader() {
 					exitMsg := []byte("\r\n[Process exited successfully]\r\n")
 					s.vtMu.Lock()
 					s.vt.Write(exitMsg)
+					s.writeToRing(exitMsg)
 					s.vtMu.Unlock()
 					s.Broadcast(exitMsg)
 
@@ -672,6 +673,7 @@ func (s *Session) startPTYReader() {
 				restartMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d, restarting...]\r\n", exitCode))
 				s.vtMu.Lock()
 				s.vt.Write(restartMsg)
+				s.writeToRing(restartMsg)
 				s.vtMu.Unlock()
 				s.Broadcast(restartMsg)
 
@@ -683,6 +685,7 @@ func (s *Session) startPTYReader() {
 					errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
 					s.vtMu.Lock()
 					s.vt.Write(errMsg)
+					s.writeToRing(errMsg)
 					s.vtMu.Unlock()
 					s.Broadcast(errMsg)
 					return
@@ -691,9 +694,10 @@ func (s *Session) startPTYReader() {
 				continue
 			}
 
-			// Update virtual terminal state
+			// Update virtual terminal state and ring buffer
 			s.vtMu.Lock()
 			s.vt.Write(buf[:n])
+			s.writeToRing(buf[:n])
 			s.vtMu.Unlock()
 
 			// Broadcast to all clients

@@ -47,7 +47,7 @@ go build ./cmd/swe-swe  # Compiles successfully
 
 ---
 
-## Phase 2: Capture PTY output to ring buffer
+## Phase 2: Capture PTY output to ring buffer ✅
 
 ### What will be achieved
 All PTY output will be written to the ring buffer as it's read, so the buffer accumulates terminal history. This happens alongside the existing VT emulator write and client broadcast.
