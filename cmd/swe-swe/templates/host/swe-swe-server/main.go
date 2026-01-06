@@ -1120,9 +1120,31 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	if isNew {
 		sess.startPTYReader()
 	} else {
-		// Send snapshot to catch up the new client with existing screen state
-		// Snapshot is gzip-compressed, sent as chunked messages for iOS Safari compatibility
-		log.Printf("Generating snapshot for joining client (remote=%s)", remoteAddr)
+		// Send ring buffer (scrollback history) first, then VT snapshot
+		// Both are gzip-compressed and sent as chunked messages for iOS Safari compatibility
+		log.Printf("Generating scrollback and snapshot for joining client (remote=%s)", remoteAddr)
+
+		// Send ring buffer contents (scrollback history) if any
+		sess.vtMu.Lock()
+		ringData := sess.readRing()
+		sess.vtMu.Unlock()
+
+		if len(ringData) > 0 {
+			compressed, err := compressSnapshot(ringData)
+			if err != nil {
+				log.Printf("Failed to compress scrollback: %v (remote=%s)", err, remoteAddr)
+			} else {
+				log.Printf("Sending %d bytes of scrollback history (compressed: %d bytes, remote=%s)", len(ringData), len(compressed), remoteAddr)
+				numChunks, err := sendChunked(conn, &sess.writeMu, compressed, DefaultChunkSize)
+				if err != nil {
+					log.Printf("Failed to send scrollback chunks: %v (remote=%s, sent %d chunks before error)", err, remoteAddr, numChunks)
+				} else {
+					log.Printf("Sent scrollback history (%d bytes raw, %d chunks, remote=%s)", len(ringData), numChunks, remoteAddr)
+				}
+			}
+		}
+
+		// Send VT snapshot (positions cursor correctly on current screen)
 		snapshot := sess.GenerateSnapshot()
 		log.Printf("Sending %d byte snapshot to client (remote=%s)", len(snapshot), remoteAddr)
 		numChunks, err := sendChunked(conn, &sess.writeMu, snapshot, DefaultChunkSize)
