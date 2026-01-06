@@ -1,22 +1,24 @@
 # Add OpenCode Agent Support
 
 **Date**: 2026-01-06
-**Status**: In Progress
+**Status**: Complete ✅
 **Repository**: https://github.com/anomalyco/opencode
 
 ## Goal
 
-Add **OpenCode** as the 6th supported AI agent in swe-swe, using the standalone binary installer with no Node.js dependency.
+Add **OpenCode** as the 6th supported AI agent in swe-swe.
 
 ## Key Details
 
 | Attribute | Value |
 |-----------|-------|
 | Binary name | `opencode` |
-| Install command | `curl -fsSL https://opencode.ai/install \| bash` |
+| Install command | `npm install -g opencode-ai` |
 | Resume command | `opencode --continue` |
-| Node.js required | No (standalone Go binary) |
+| Node.js required | Yes (npm package) |
 | MCP compatible | Yes |
+
+**Note**: Originally planned to use the standalone curl installer, but it had issues with GitHub API rate limits during Docker builds. Switched to npm package which is more reliable.
 
 ---
 
@@ -66,37 +68,32 @@ feat(agents): add opencode to agent list (baseline)
 
 ### What Will Be Achieved
 
-When `opencode` is in the selected agents list, the Dockerfile will include the curl installer to download and install the OpenCode binary.
+When `opencode` is in the selected agents list, the Dockerfile will include npm installation of OpenCode.
 
 ### Steps
 
-1. **Research installer behavior**: Fetch and analyze `https://opencode.ai/install` to determine:
-   - Where binary is installed (PATH location?)
-   - Environment variable overrides (e.g., `INSTALL_DIR`)
-   - Non-interactive/TTY compatibility
+1. **Research installer behavior**: The curl installer (`https://opencode.ai/install`) failed in Docker due to GitHub API rate limits. Switched to npm package.
 
-2. **`cmd/swe-swe/templates/host/Dockerfile`**: Add conditional block after GOOSE section (~line 91):
+2. **`cmd/swe-swe/templates/host/Dockerfile`**: Add conditional block after GOOSE section:
    ```dockerfile
    # {{IF OPENCODE}}
    # Install OpenCode CLI (https://github.com/anomalyco/opencode)
-   RUN curl -fsSL https://opencode.ai/install | bash
+   RUN npm install -g opencode-ai
    # {{ENDIF}}
    ```
-   *(Adjust based on installer research if needed)*
 
-3. **`cmd/swe-swe/main.go` `processDockerfileTemplate()`**: Add case for OPENCODE (~line 571):
-   ```go
-   case "OPENCODE":
-       skip = !hasAgent("opencode")
-   ```
+3. **`cmd/swe-swe/main.go` `processDockerfileTemplate()`**:
+   - Add case for OPENCODE in switch statement
+   - Add `opencode` to `needsNodeJS` check (since it now requires npm)
 
 ### Verification
 
 | Step | Command | Expected Result |
 |------|---------|-----------------|
 | **Golden update** | `make build golden-update` | Dockerfile in opencode tests includes install block |
-| **Verify isolation** | Check `testdata/golden/agents-opencode/Dockerfile` | Contains ONLY opencode install, no Node.js/Python |
-| **Verify default** | Check `testdata/golden/default/Dockerfile` | Now includes opencode install |
+| **Verify opencode-only** | Check golden Dockerfile | Contains Node.js + OpenCode install |
+| **Docker build** | `./scripts/02-test-container-build.sh` | Build succeeds |
+| **Binary present** | `docker run --rm swe-swe-test:latest which opencode` | Returns `/usr/bin/opencode` |
 
 **Regression check**: Existing agent Dockerfiles unchanged (claude, aider, etc.).
 
@@ -162,82 +159,57 @@ All user-facing help text includes OpenCode as an available agent.
 
 ---
 
-## Phase 5: Integration Test (Manual Verification)
+## Phase 5: Integration Test (Manual Verification) ✅
 
 ### What Will Be Achieved
 
 End-to-end verification that OpenCode works in the swe-swe container.
 
-### Steps
+### Automated Tests (Complete ✅)
 
-1. **Build and init**:
-   ```bash
-   make build
-   ./dist/swe-swe init --project-directory /tmp/test-opencode --agents=opencode
-   ```
+| Test | Result |
+|------|--------|
+| `make build` | ✅ Pass |
+| `make golden-update` | ✅ Pass |
+| `go test ./cmd/swe-swe/...` | ✅ All pass |
+| `./scripts/01-test-container-init.sh` | ✅ Pass |
+| `./scripts/02-test-container-build.sh` | ✅ Pass |
+| `docker run ... which opencode` | ✅ `/usr/bin/opencode` |
+| `docker run ... opencode --help` | ✅ Shows help |
 
-2. **Verify Dockerfile**:
-   ```bash
-   cat ~/.swe-swe/projects/tmp-test-opencode-*/Dockerfile | grep -A2 "Install OpenCode"
-   ```
+### Manual Tests (Complete ✅)
 
-3. **Build and start**:
-   ```bash
-   cd /tmp/test-opencode && swe-swe build && swe-swe up
-   ```
-
-4. **Verify detection**: Open `http://localhost:9898`, confirm OpenCode appears in UI
-
-5. **Spawn session**: Click OpenCode, verify TUI renders, accepts input
-
-6. **Test resume**: Exit session, verify `--continue` works
-
-7. **Multi-agent test**:
-   ```bash
-   ./dist/swe-swe init --project-directory /tmp/test-multi --agents=claude,opencode
-   # Verify both work
-   ```
-
-8. **Cleanup**:
-   ```bash
-   swe-swe down --project-directory /tmp/test-opencode
-   swe-swe down --project-directory /tmp/test-multi
-   rm -rf /tmp/test-opencode /tmp/test-multi
-   ```
-
-### Verification Checklist
-
-| Test | Pass Criteria |
-|------|---------------|
-| Dockerfile generation | Contains `curl -fsSL https://opencode.ai/install` |
-| Container build | No errors |
-| Binary installed | `docker exec <container> which opencode` returns path |
-| Agent detection | OpenCode appears in web UI |
-| Session spawn | TUI renders, accepts input |
-| Session resume | `--continue` restores session |
-| Multi-agent | OpenCode + other agents work together |
-| Unit tests | `go test ./cmd/swe-swe/...` all pass |
+- [x] Start container with `swe-swe up`
+- [x] Verify OpenCode appears in web UI
+- [x] Click OpenCode, verify TUI renders
+- [x] Test session resume with `--continue`
+- [x] Multi-agent test (claude + opencode)
 
 ---
 
 ## Commit Strategy
 
-Following CLAUDE.md two-commit TDD approach:
+Originally planned two-commit TDD approach, but implemented in a single iteration due to:
+- User had already made baseline changes before planning session
+- Curl installer issue required mid-implementation pivot to npm
 
-1. **Commit 1 (Baseline)**: Phase 1 only
-   - Flag parsing, test variants
-   - Golden files show `init.json` changes only
+**Recommended commit**:
+```
+feat(agents): implement OpenCode support
 
-2. **Commit 2 (Implementation)**: Phases 2-4
-   - Dockerfile, server config, documentation
-   - Golden files show functional changes
+- Add "opencode" to allAgents and help text
+- Install via npm (opencode-ai package)
+- Add AssistantConfig for swe-swe-server
+- OpenCode requires Node.js (shares NODEJS conditional)
+- Update golden tests
+```
 
 ---
 
-## Open Questions
+## Resolved Questions
 
-1. **Installer behavior**: Where does `opencode.ai/install` put the binary? Need to verify during Phase 2.
+1. **Installer behavior**: Curl installer failed due to GitHub API rate limits. Switched to `npm install -g opencode-ai` which installs to `/usr/bin/opencode`.
 
-2. **Session persistence**: Does `opencode --continue` work across container restarts? (SQLite DB location)
+2. **Session persistence**: ✅ Works - `opencode --continue` resumes sessions correctly.
 
-3. **First-run flow**: Does OpenCode have an interactive setup that might break in PTY?
+3. **First-run flow**: ✅ Works - TUI renders properly in web UI, accepts input.
