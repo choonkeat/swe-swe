@@ -222,6 +222,68 @@
             color: #fbbf24;
             text-decoration: underline;
         }
+        /* Recording items within agent groups */
+        .recording-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            margin: 4px 0;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+        .recording-item:hover {
+            border-color: #6b7280;
+            background: #333;
+        }
+        .recording-item__name {
+            font-family: monospace;
+            font-size: 14px;
+            color: #9cdcfe;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .recording-item__time {
+            font-size: 12px;
+            color: #888;
+        }
+        .recording-item__actions {
+            display: flex;
+            gap: 8px;
+        }
+        .recording-item__play {
+            padding: 4px 8px;
+            font-size: 12px;
+            color: #9cdcfe;
+            text-decoration: none;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }
+        .recording-item__play:hover {
+            border-color: #007acc;
+            background: #2d2d2d;
+        }
+        .recording-item__delete {
+            padding: 4px 8px;
+            font-size: 12px;
+            color: #888;
+            background: none;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .recording-item__delete:hover {
+            color: #ef4444;
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
     </style>
 </head>
 <body>
@@ -243,7 +305,7 @@
                 <div class="agent-group__header">
                     <span class="agent-group__icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
                     <span class="agent-group__name">{{.Assistant.Name}}</span>
-                    {{if .Sessions}}<span class="agent-group__count">{{len .Sessions}} session{{if gt (len .Sessions) 1}}s{{end}}</span>{{end}}
+                    {{if or .Sessions .Recordings}}<span class="agent-group__count">{{if .Sessions}}{{len .Sessions}} session{{if gt (len .Sessions) 1}}s{{end}}{{end}}{{if and .Sessions .Recordings}}, {{end}}{{if .Recordings}}{{len .Recordings}} recording{{if gt (len .Recordings) 1}}s{{end}}{{end}}</span>{{end}}
                 </div>
                 <div class="agent-group__sessions">
                     {{range .Sessions}}
@@ -252,6 +314,16 @@
                         <span class="session-item__viewers">{{.ClientCount}} viewer{{if ne .ClientCount 1}}s{{end}}</span>
                         <span class="session-item__duration">{{.DurationStr}}</span>
                     </a>
+                    {{end}}
+                    {{range .Recordings}}
+                    <div class="recording-item" data-uuid="{{.UUID}}">
+                        <span class="recording-item__name">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
+                        <span class="recording-item__time">{{.EndedAgo}}</span>
+                        <div class="recording-item__actions">
+                            <a href="/recording/{{.UUID}}" class="recording-item__play">View</a>
+                            <button class="recording-item__delete" onclick="deleteRecording('{{.UUID}}', this)">Delete</button>
+                        </div>
+                    </div>
                     {{end}}
                     <a href="/session/{{$.NewUUID}}?assistant={{.Assistant.Binary}}{{if $.Debug}}&debug=1{{end}}" class="new-session">
                         <span class="new-session__icon">+</span>
@@ -291,6 +363,46 @@
                 }
             }
         })();
+
+        function deleteRecording(uuid, button) {
+            if (!confirm('Delete this recording?')) {
+                return;
+            }
+            fetch('/api/recording/' + uuid, {
+                method: 'DELETE'
+            }).then(function(response) {
+                if (response.ok) {
+                    var item = button.closest('.recording-item');
+                    if (item) {
+                        item.remove();
+                    }
+                    // Update the count in the agent group header
+                    var agentGroup = button.closest('.agent-group');
+                    if (agentGroup) {
+                        var recordings = agentGroup.querySelectorAll('.recording-item').length;
+                        var sessions = agentGroup.querySelectorAll('.session-item').length;
+                        var countEl = agentGroup.querySelector('.agent-group__count');
+                        if (countEl) {
+                            var parts = [];
+                            if (sessions > 0) {
+                                parts.push(sessions + ' session' + (sessions > 1 ? 's' : ''));
+                            }
+                            if (recordings > 0) {
+                                parts.push(recordings + ' recording' + (recordings > 1 ? 's' : ''));
+                            }
+                            countEl.textContent = parts.join(', ');
+                            if (parts.length === 0) {
+                                countEl.textContent = '';
+                            }
+                        }
+                    }
+                } else {
+                    alert('Failed to delete recording');
+                }
+            }).catch(function(err) {
+                alert('Error: ' + err.message);
+            });
+        }
     </script>
 </body>
 </html>
