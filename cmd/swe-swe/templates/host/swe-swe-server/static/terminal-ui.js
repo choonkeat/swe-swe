@@ -18,6 +18,8 @@ class TerminalUI extends HTMLElement {
         this.ptyRows = 0;
         this.ptyCols = 0;
         this.assistantName = '';
+        this.sessionName = '';
+        this.uuidShort = '';
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1278,6 +1280,8 @@ class TerminalUI extends HTMLElement {
                 if (msg.assistant) {
                     this.assistantName = msg.assistant;
                 }
+                this.sessionName = msg.sessionName || '';
+                this.uuidShort = msg.uuidShort || '';
                 this.updateStatusInfo();
                 break;
             case 'chat':
@@ -1344,6 +1348,10 @@ class TerminalUI extends HTMLElement {
             if (this.viewers > 1) {
                 html += ` and <span class="terminal-ui__status-link terminal-ui__status-others">${this.viewers - 1} others</span>`;
             }
+
+            // Add session name display
+            const sessionDisplay = this.sessionName || `Unnamed session ${this.uuidShort}`;
+            html += ` on <span class="terminal-ui__status-link terminal-ui__status-session">${sessionDisplay}</span>`;
 
             statusText.innerHTML = html;
 
