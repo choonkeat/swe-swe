@@ -42,23 +42,23 @@ Create test file with helpers to mock sessions, recording files, and exercise ha
 
 ---
 
-## Phase 2: Recording List API Tests
+## Phase 2: Recording List API Tests [COMPLETED]
 
 ### Goal
 Test `GET /api/recording/list` with all session/recording states.
 
 ### Test Cases
-| Test | Setup | Expected |
-|------|-------|----------|
-| Empty recordings directory | No files | `{"recordings":[]}` |
-| Single ended recording with metadata | .log + .metadata.json | Recording with name, agent, dates |
-| Single ended recording without metadata | .log only | Recording with UUID and size only |
-| Multiple recordings sorted by date | Multiple .log files | Newest first |
-| Active recording (process running) | Session with ProcessState=nil | `is_active: true` |
-| Ended recording (session in map, process exited) | Session with ProcessState!=nil | `is_active: false` |
-| Recording with timing file | .log + .timing | `has_timing: true` |
-| Recording without timing file | .log only | `has_timing: false` |
-| Recordings directory doesn't exist | No directory | Empty list, not error |
+| Test | Setup | Expected | Status |
+|------|-------|----------|--------|
+| Empty recordings directory | No files | `{"recordings":[]}` | [x] |
+| Single ended recording with metadata | .log + .metadata.json | Recording with name, agent, dates | [x] |
+| Single ended recording without metadata | .log only | Recording with UUID and size only | [x] |
+| Multiple recordings sorted by date | Multiple .log files | Newest first | [x] |
+| Active recording (process running) | Session with ProcessState=nil | `is_active: true` | [x] |
+| Ended recording (session in map, process exited) | Session with ProcessState!=nil | `is_active: false` | [x] |
+| Recording with timing file | .log + .timing | `has_timing: true` | [x] |
+| Recording without timing file | .log only | `has_timing: false` | [x] |
+| Recordings directory doesn't exist | No directory | Empty list, not error | [x] |
 
 ---
 
