@@ -100,23 +100,27 @@ Test `GET /api/recording/{uuid}/download` for zip creation and edge cases.
 
 ---
 
-## Phase 5: Recording Playback Page Tests
+## Phase 5: Recording Playback Page Tests [COMPLETED]
 
 ### Goal
 Test `GET /recording/{uuid}` HTML rendering for animated and static modes.
 
 ### Test Cases
-| Test | Setup | Expected |
-|------|-------|----------|
-| Non-existent recording | No files | 404 |
-| Invalid UUID format | Short UUID | 400 |
-| Animated mode (with timing) | .log + .timing | HTML with play/pause, timeline, frame data |
-| Static mode (no timing) | .log only | HTML with static output, no controls |
-| Recording with metadata | .metadata.json with name | Page title uses name |
-| Recording without metadata | No .metadata.json | Page title uses `session-{uuid8}` |
-| Content-Type header | Any recording | `text/html; charset=utf-8` |
-| Back link | Any recording | Contains link to `/` |
-| Max dimensions from metadata | .metadata.json with max_cols/rows | Passed to renderer |
+| Test | Setup | Expected | Status |
+|------|-------|----------|--------|
+| Non-existent recording | No files | 404 | [x] |
+| Invalid UUID format | Short UUID | 400 | [x] |
+| Animated mode (with timing) | .log + .timing | HTML with play/pause, timeline, frame data | [x] |
+| Static mode (no timing) | .log only | HTML with static notice, xterm.js, no playback controls | [x] |
+| Recording with metadata | .metadata.json with name | Page title uses name | [x] |
+| Recording without metadata | No .metadata.json | Page title uses `session-{uuid8}` | [x] |
+| Content-Type header | Any recording | `text/html; charset=utf-8` | [x] |
+| Back link | Any recording | Contains link to `/` | [x] |
+| Max dimensions from metadata | .metadata.json with max_cols/rows | Passed to renderer | (covered in animated mode) |
+
+### Notes
+- Static mode shows "Timing data not available" notice and renders final state using xterm.js
+- Content is base64-encoded in JavaScript for proper handling of terminal escape sequences
 
 ---
 
