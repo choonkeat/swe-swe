@@ -1118,8 +1118,9 @@ func sessionReaper() {
 
 // getOrCreateSession returns an existing session or creates a new one
 // The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
+// The name parameter sets the session name (optional, can be empty)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
-func getOrCreateSession(sessionUUID string, assistant string, workDir string) (*Session, bool, error) {
+func getOrCreateSession(sessionUUID string, assistant string, name string, workDir string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -1185,6 +1186,7 @@ func getOrCreateSession(sessionUUID string, assistant string, workDir string) (*
 	now := time.Now()
 	sess := &Session{
 		UUID:            sessionUUID,
+		Name:            name,
 		WorkDir:         workDir,
 		Assistant:       assistant,
 		AssistantConfig: cfg,
@@ -1239,7 +1241,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		return
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, "")
+	// Get optional session name from query param
+	sessionName := r.URL.Query().Get("name")
+
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, "")
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
