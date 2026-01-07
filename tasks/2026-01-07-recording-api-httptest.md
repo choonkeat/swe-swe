@@ -62,22 +62,22 @@ Test `GET /api/recording/list` with all session/recording states.
 
 ---
 
-## Phase 3: Recording Delete API Tests
+## Phase 3: Recording Delete API Tests [COMPLETED]
 
 ### Goal
 Test `DELETE /api/recording/{uuid}` including the exact bug scenario we fixed.
 
 ### Test Cases
-| Test | Setup | Expected |
-|------|-------|----------|
-| Delete non-existent recording | No files | 404 |
-| Delete recording with no session | .log file, no session | 204, files removed |
-| Delete recording with active session | Session with ProcessState=nil | 409 Conflict |
-| Delete recording with ended session | Session with ProcessState!=nil | 204 (the bug fix) |
-| Delete removes all related files | .log + .timing + .metadata.json | All files deleted |
-| Delete with only .log file | .log only | 204 |
-| Invalid UUID format | Short UUID | 400 |
-| Wrong HTTP method | GET /api/recording/{uuid} | 404 |
+| Test | Setup | Expected | Status |
+|------|-------|----------|--------|
+| Delete non-existent recording | No files | 404 | [x] |
+| Delete recording with no session | .log file, no session | 204, files removed | [x] |
+| Delete recording with active session | Session with ProcessState=nil | 409 Conflict | [x] |
+| Delete recording with ended session | Session with ProcessState!=nil | 204 (the bug fix) | [x] |
+| Delete removes all related files | .log + .timing + .metadata.json | All files deleted | [x] |
+| Delete with only .log file | .log only | 204 | [x] |
+| Invalid UUID format | Short UUID | 400 | [x] |
+| Wrong HTTP method | GET /api/recording/{uuid} | 404 | [x] |
 
 ---
 
