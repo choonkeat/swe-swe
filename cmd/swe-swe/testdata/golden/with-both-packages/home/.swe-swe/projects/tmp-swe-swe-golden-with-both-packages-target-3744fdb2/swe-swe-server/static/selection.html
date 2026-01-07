@@ -325,7 +325,7 @@
                         </div>
                     </div>
                     {{end}}
-                    <a href="/session/{{$.NewUUID}}?assistant={{.Assistant.Binary}}{{if $.Debug}}&debug=1{{end}}" class="new-session">
+                    <a href="#" onclick="startNewSession('{{.Assistant.Binary}}', '{{$.NewUUID}}', {{$.Debug}}); return false;" class="new-session">
                         <span class="new-session__icon">+</span>
                         <span class="new-session__text">Start new session</span>
                     </a>
@@ -363,6 +363,42 @@
                 }
             }
         })();
+
+        function startNewSession(assistant, sessionUUID, debug) {
+            // Generate default timestamp: YYYYMMDD-HHMMSS
+            var now = new Date();
+            var defaultName = now.getFullYear().toString() +
+                String(now.getMonth() + 1).padStart(2, '0') +
+                String(now.getDate()).padStart(2, '0') + '-' +
+                String(now.getHours()).padStart(2, '0') +
+                String(now.getMinutes()).padStart(2, '0') +
+                String(now.getSeconds()).padStart(2, '0');
+
+            var name = prompt('Session name (optional, leave empty for no worktree):', defaultName);
+
+            // User clicked Cancel
+            if (name === null) {
+                return;
+            }
+
+            // Build URL
+            var url = '/session/' + sessionUUID + '?assistant=' + encodeURIComponent(assistant);
+            if (debug) {
+                url += '&debug=1';
+            }
+
+            // Add name if provided (trimmed)
+            name = name.trim();
+            if (name.length > 0) {
+                // Client-side validation: max 32 chars
+                if (name.length > 32) {
+                    name = name.substring(0, 32);
+                }
+                url += '&name=' + encodeURIComponent(name);
+            }
+
+            window.location.href = url;
+        }
 
         function deleteRecording(uuid, button) {
             if (!confirm('Delete this recording?')) {

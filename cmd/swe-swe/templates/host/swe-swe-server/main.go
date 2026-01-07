@@ -15,17 +15,22 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/choonkeat/swe-swe/cmd/swe-swe-server/playback"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hinshun/vt10x"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 //go:embed static/*
@@ -170,6 +175,7 @@ var assistantConfigs = []AssistantConfig{
 type Session struct {
 	UUID            string
 	Name            string // User-assigned session name (optional)
+	BranchName      string // Git branch name for this session's worktree (derived from Name)
 	WorkDir         string // Working directory for the session (empty = server cwd)
 	Assistant       string // The assistant key (e.g., "claude", "gemini", "custom")
 	AssistantConfig AssistantConfig
@@ -1097,6 +1103,91 @@ func main() {
 	}
 }
 
+// deriveBranchName converts a session name to a valid git branch name
+// - Lowercase
+// - Unicode normalized (NFD), diacritics removed
+// - Spaces, underscores preserved or converted to hyphens
+// - Special chars replaced with hyphens
+// - Multiple hyphens collapsed
+// - Leading/trailing hyphens removed
+func deriveBranchName(sessionName string) string {
+	if sessionName == "" {
+		return ""
+	}
+
+	// Normalize unicode and remove diacritics (e.g., é → e)
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	result, _, _ := transform.String(t, sessionName)
+
+	// Lowercase
+	result = strings.ToLower(result)
+
+	// Replace spaces with hyphens
+	result = strings.ReplaceAll(result, " ", "-")
+
+	// Remove any character that's not alphanumeric, hyphen, or underscore
+	re := regexp.MustCompile(`[^a-z0-9_-]+`)
+	result = re.ReplaceAllString(result, "-")
+
+	// Collapse multiple hyphens
+	re = regexp.MustCompile(`-+`)
+	result = re.ReplaceAllString(result, "-")
+
+	// Trim leading/trailing hyphens
+	result = strings.Trim(result, "-")
+
+	return result
+}
+
+// worktreeDir is the base directory for git worktrees
+const worktreeDir = "/workspace/.swe-swe/worktrees"
+
+// createWorktree creates a git worktree for the given branch name
+// If a branch/worktree with that name already exists, appends a random suffix
+// Returns the worktree path or an error
+func createWorktree(branchName string) (string, error) {
+	if branchName == "" {
+		return "", fmt.Errorf("branch name cannot be empty")
+	}
+
+	// Ensure worktree directory exists
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create worktree directory: %w", err)
+	}
+
+	// Check if branch already exists
+	finalBranch := branchName
+	cmd := exec.Command("git", "rev-parse", "--verify", branchName)
+	if err := cmd.Run(); err == nil {
+		// Branch exists, append random suffix
+		suffix := uuid.New().String()[:8]
+		finalBranch = branchName + "-" + suffix
+		log.Printf("Branch %s exists, using %s instead", branchName, finalBranch)
+	}
+
+	worktreePath := worktreeDir + "/" + finalBranch
+
+	// Check if worktree path already exists
+	if _, err := os.Stat(worktreePath); err == nil {
+		// Path exists, append random suffix if not already done
+		if finalBranch == branchName {
+			suffix := uuid.New().String()[:8]
+			finalBranch = branchName + "-" + suffix
+			worktreePath = worktreeDir + "/" + finalBranch
+		}
+	}
+
+	// Create the worktree with a new branch
+	cmd = exec.Command("git", "worktree", "add", worktreePath, "-b", finalBranch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
+	}
+
+	log.Printf("Created worktree at %s (branch: %s)", worktreePath, finalBranch)
+	return worktreePath, nil
+}
+
 // sessionReaper periodically cleans up expired sessions
 func sessionReaper() {
 	ticker := time.NewTicker(time.Minute)
@@ -1147,6 +1238,20 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		log.Printf("Warning: failed to create recordings directory: %v", err)
 	}
 
+	// If session has a name, create a git worktree for it
+	var branchName string
+	if name != "" && workDir == "" {
+		branchName = deriveBranchName(name)
+		if branchName != "" {
+			var err error
+			workDir, err = createWorktree(branchName)
+			if err != nil {
+				log.Printf("Warning: failed to create worktree for branch %s: %v", branchName, err)
+				// Continue without worktree - will use /workspace
+			}
+		}
+	}
+
 	// Generate recording UUID
 	recordingUUID := uuid.New().String()
 
@@ -1187,6 +1292,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	sess := &Session{
 		UUID:            sessionUUID,
 		Name:            name,
+		BranchName:      branchName,
 		WorkDir:         workDir,
 		Assistant:       assistant,
 		AssistantConfig: cfg,

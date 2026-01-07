@@ -1041,7 +1041,12 @@ class TerminalUI extends HTMLElement {
         if (timerEl) timerEl.textContent = '';
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = protocol + '//' + window.location.host + '/ws/' + this.uuid + '?assistant=' + encodeURIComponent(this.assistant);
+        let url = protocol + '//' + window.location.host + '/ws/' + this.uuid + '?assistant=' + encodeURIComponent(this.assistant);
+        // Forward name param from page URL to WebSocket URL (for session naming)
+        const nameParam = new URLSearchParams(location.search).get('name');
+        if (nameParam) {
+            url += '&name=' + encodeURIComponent(nameParam);
+        }
 
         this.debugLog('Creating WebSocket to: ' + url);
         console.log('[WS] Connecting to', url);
