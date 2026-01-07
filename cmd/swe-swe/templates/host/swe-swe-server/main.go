@@ -170,6 +170,7 @@ var assistantConfigs = []AssistantConfig{
 type Session struct {
 	UUID            string
 	Name            string // User-assigned session name (optional)
+	WorkDir         string // Working directory for the session (empty = server cwd)
 	Assistant       string // The assistant key (e.g., "claude", "gemini", "custom")
 	AssistantConfig AssistantConfig
 	Cmd             *exec.Cmd
@@ -656,6 +657,9 @@ func (s *Session) RestartProcess(cmdStr string) error {
 
 	cmd := exec.Command(cmdName, cmdArgs...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	if s.WorkDir != "" {
+		cmd.Dir = s.WorkDir
+	}
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -1114,7 +1118,8 @@ func sessionReaper() {
 
 // getOrCreateSession returns an existing session or creates a new one
 // The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
-func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, error) {
+// The workDir parameter sets the working directory for the session (empty = use server cwd)
+func getOrCreateSession(sessionUUID string, assistant string, workDir string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -1153,6 +1158,9 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 
 	cmd := exec.Command(cmdName, cmdArgs...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -1177,6 +1185,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 	now := time.Now()
 	sess := &Session{
 		UUID:            sessionUUID,
+		WorkDir:         workDir,
 		Assistant:       assistant,
 		AssistantConfig: cfg,
 		Cmd:             cmd,
@@ -1230,7 +1239,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		return
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant)
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, "")
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
