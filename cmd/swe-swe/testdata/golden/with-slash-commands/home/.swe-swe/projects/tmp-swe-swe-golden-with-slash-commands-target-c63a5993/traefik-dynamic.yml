@@ -11,8 +11,9 @@ http:
 
   routers:
     # Traefik dashboard protected by ForwardAuth
+    # Note: Only match traefik's internal API paths, not /api/recording/* which goes to swe-swe
     dashboard:
-      rule: "PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
+      rule: "PathPrefix(`/api/http`) || PathPrefix(`/api/tcp`) || PathPrefix(`/api/entrypoints`) || PathPrefix(`/api/overview`) || PathPrefix(`/dashboard`)"
       service: "api@internal"
       middlewares:
         - "forwardauth"
