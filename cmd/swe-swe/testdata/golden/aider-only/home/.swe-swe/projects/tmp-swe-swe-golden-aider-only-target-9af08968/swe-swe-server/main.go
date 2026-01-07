@@ -116,6 +116,8 @@ type RecordingMetadata struct {
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
 	Command   []string   `json:"command"`
 	Visitors  []Visitor  `json:"visitors,omitempty"`
+	MaxCols   uint16     `json:"max_cols,omitempty"` // Max terminal columns during recording
+	MaxRows   uint16     `json:"max_rows,omitempty"` // Max terminal rows during recording
 }
 
 // Visitor represents a client that joined the session
@@ -249,6 +251,16 @@ func (s *Session) UpdateClientSize(conn *websocket.Conn, rows, cols uint16) {
 	}
 
 	s.ptySize = TermSize{Rows: minRows, Cols: minCols}
+
+	// Track max dimensions for recording playback
+	if s.Metadata != nil {
+		if minCols > s.Metadata.MaxCols {
+			s.Metadata.MaxCols = minCols
+		}
+		if minRows > s.Metadata.MaxRows {
+			s.Metadata.MaxRows = minRows
+		}
+	}
 
 	// Apply to PTY
 	if s.PTY != nil {
@@ -1170,6 +1182,8 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 			Agent:     cfg.Name,
 			StartedAt: now,
 			Command:   append([]string{cmdName}, cmdArgs...),
+			MaxCols:   80, // Default starting size
+			MaxRows:   24,
 		},
 	}
 	sessions[sessionUUID] = sess
@@ -1667,7 +1681,23 @@ func loadEndedRecordings() []RecordingInfo {
 	return recordings
 }
 
-// loadEndedRecordingsByAgent returns ended recordings grouped by agent name
+// agentNameToBinary maps display names to binary names for recording grouping
+func agentNameToBinary(name string) string {
+	for _, cfg := range assistantConfigs {
+		if cfg.Name == name {
+			return cfg.Binary
+		}
+	}
+	// Check availableAssistants for custom assistants
+	for _, cfg := range availableAssistants {
+		if cfg.Name == name {
+			return cfg.Binary
+		}
+	}
+	return strings.ToLower(name)
+}
+
+// loadEndedRecordingsByAgent returns ended recordings grouped by agent binary name
 func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
 	recordings := loadEndedRecordings()
 	result := make(map[string][]RecordingInfo)
@@ -1676,7 +1706,9 @@ func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
 		if agent == "" {
 			agent = "unknown"
 		}
-		result[agent] = append(result[agent], rec)
+		// Convert display name to binary name for consistent grouping
+		binaryName := agentNameToBinary(agent)
+		result[binaryName] = append(result[binaryName], rec)
 	}
 	return result
 }
@@ -1723,6 +1755,13 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
 	timingContent, timingErr := os.ReadFile(timingPath)
 
+	// Get terminal dimensions from metadata (default to 0 for auto-fit)
+	var cols, rows uint16
+	if metadata != nil {
+		cols = metadata.MaxCols
+		rows = metadata.MaxRows
+	}
+
 	if timingErr == nil && len(timingContent) > 0 {
 		// Parse timing file and render animated playback
 		frames, err := playback.ParseTimingFile(logContent, timingContent)
@@ -1733,7 +1772,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 			return
 		}
 
-		html, err := playback.RenderPlaybackHTML(frames, name, "/")
+		html, err := playback.RenderPlaybackHTML(frames, name, "/", cols, rows)
 		if err != nil {
 			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
 			return

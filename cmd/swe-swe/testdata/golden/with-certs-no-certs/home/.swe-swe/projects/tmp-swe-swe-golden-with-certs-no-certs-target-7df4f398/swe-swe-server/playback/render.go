@@ -8,7 +8,8 @@ import (
 
 // RenderPlaybackHTML generates an HTML page with animated terminal playback.
 // Uses xterm.js for terminal rendering and includes playback controls.
-func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string) (string, error) {
+// If cols/rows are 0, the terminal will auto-fit to the container.
+func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows uint16) (string, error) {
 	// Encode frames as base64 to avoid escaping issues
 	framesJSON, err := json.Marshal(frames)
 	if err != nil {
@@ -178,8 +179,12 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string) (string, e
     const frames = JSON.parse(framesJson);
     const totalDuration = %f;
 
-    // Initialize terminal
-    const xterm = new Terminal({
+    // Terminal dimensions from recording (0 means auto-fit)
+    const recordedCols = %d;
+    const recordedRows = %d;
+
+    // Initialize terminal with recorded dimensions if available
+    const termOptions = {
       fontSize: 14,
       fontFamily: "'SF Mono', 'Menlo', 'Consolas', monospace",
       cursorBlink: false,
@@ -189,11 +194,19 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string) (string, e
         foreground: '#d4d4d4',
       },
       allowProposedApi: true,
-    });
+    };
+    if (recordedCols > 0) termOptions.cols = recordedCols;
+    if (recordedRows > 0) termOptions.rows = recordedRows;
+
+    const xterm = new Terminal(termOptions);
     const fitAddon = new FitAddon.FitAddon();
     xterm.loadAddon(fitAddon);
     xterm.open(document.getElementById('terminal'));
-    fitAddon.fit();
+
+    // Only auto-fit if no recorded dimensions
+    if (recordedCols === 0 && recordedRows === 0) {
+      fitAddon.fit();
+    }
 
     // Remove textarea to allow page interaction
     const textarea = document.querySelector('.xterm textarea');
@@ -316,9 +329,11 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string) (string, e
       }
     });
 
-    // Handle resize
+    // Handle resize (only auto-fit if no recorded dimensions)
     window.addEventListener('resize', function() {
-      fitAddon.fit();
+      if (recordedCols === 0 && recordedRows === 0) {
+        fitAddon.fit();
+      }
     });
 
     // Initial state
@@ -330,7 +345,7 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string) (string, e
     }
   </script>
 </body>
-</html>`, name, backURL, name, framesBase64, totalDuration)
+</html>`, name, backURL, name, framesBase64, totalDuration, cols, rows)
 
 	return html, nil
 }
