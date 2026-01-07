@@ -1935,10 +1935,11 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteRecording deletes a recording and its associated files
 func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) {
-	// Check if recording is active
+	// Check if recording is active (only block if process is still running)
 	sessionsMu.RLock()
 	for _, sess := range sessions {
-		if sess.RecordingUUID == uuid {
+		// Only consider recording "active" if the process is still running
+		if sess.RecordingUUID == uuid && sess.Cmd != nil && sess.Cmd.ProcessState == nil {
 			sessionsMu.RUnlock()
 			http.Error(w, "Cannot delete active recording", http.StatusConflict)
 			return
