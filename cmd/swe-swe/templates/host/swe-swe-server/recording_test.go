@@ -1,12 +1,16 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -829,5 +833,234 @@ func TestDeleteRecording_WrongMethod_GET(t *testing.T) {
 	// Verify file still exists
 	if !h.recordingFileExists(testUUID, ".log") {
 		t.Error("log file should NOT be deleted by GET request")
+	}
+}
+
+// ============================================================================
+// Phase 4: Recording Download API Tests (GET /api/recording/{uuid}/download)
+// ============================================================================
+
+func TestDownloadRecording_NotFound(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Use valid UUID format that doesn't exist
+	nonExistentUUID := "00000000-0000-0000-0000-000000000000"
+	resp, err := http.Get(server.URL + "/api/recording/" + nonExistentUUID + "/download")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestDownloadRecording_InvalidUUID(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/not-a-valid-uuid/download")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestDownloadRecording_AllFiles(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	logContent := "terminal output content"
+	timingContent := "0.1 5\n0.2 10\n"
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logContent:    logContent,
+		withTiming:    true,
+		timingContent: timingContent,
+		metadata: &RecordingMetadata{
+			UUID: testUUID,
+			Name: "Test Recording",
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/" + testUUID + "/download")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Check Content-Type header
+	contentType := resp.Header.Get("Content-Type")
+	if contentType != "application/zip" {
+		t.Errorf("expected Content-Type 'application/zip', got '%s'", contentType)
+	}
+
+	// Check Content-Disposition header
+	contentDisp := resp.Header.Get("Content-Disposition")
+	if !strings.HasPrefix(contentDisp, "attachment; filename=") {
+		t.Errorf("expected Content-Disposition with attachment, got '%s'", contentDisp)
+	}
+	if !strings.Contains(contentDisp, testUUID[:8]) {
+		t.Errorf("expected Content-Disposition to contain UUID prefix, got '%s'", contentDisp)
+	}
+
+	// Read zip content
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	// Open zip
+	zipReader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("failed to open zip: %v", err)
+	}
+
+	// Verify zip contains expected files
+	fileNames := make(map[string]bool)
+	fileContents := make(map[string]string)
+	for _, f := range zipReader.File {
+		fileNames[f.Name] = true
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("failed to open file in zip: %v", err)
+		}
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("failed to read file in zip: %v", err)
+		}
+		fileContents[f.Name] = string(content)
+	}
+
+	expectedFiles := []string{"session.log", "session.timing", "session.metadata.json"}
+	for _, name := range expectedFiles {
+		if !fileNames[name] {
+			t.Errorf("expected zip to contain '%s'", name)
+		}
+	}
+
+	// Verify log content matches
+	if fileContents["session.log"] != logContent {
+		t.Errorf("log content mismatch: expected '%s', got '%s'", logContent, fileContents["session.log"])
+	}
+
+	// Verify timing content matches
+	if fileContents["session.timing"] != timingContent {
+		t.Errorf("timing content mismatch: expected '%s', got '%s'", timingContent, fileContents["session.timing"])
+	}
+}
+
+func TestDownloadRecording_OnlyLogFile(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	logContent := "only log content"
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logContent: logContent,
+		withTiming: false,
+		// No metadata
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/" + testUUID + "/download")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("failed to open zip: %v", err)
+	}
+
+	// Verify only log file in zip
+	if len(zipReader.File) != 1 {
+		t.Errorf("expected 1 file in zip, got %d", len(zipReader.File))
+	}
+
+	if len(zipReader.File) > 0 && zipReader.File[0].Name != "session.log" {
+		t.Errorf("expected 'session.log', got '%s'", zipReader.File[0].Name)
+	}
+}
+
+func TestDownloadRecording_LogAndTimingOnly(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+		// No metadata
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/" + testUUID + "/download")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("failed to open zip: %v", err)
+	}
+
+	// Verify 2 files in zip
+	if len(zipReader.File) != 2 {
+		t.Errorf("expected 2 files in zip, got %d", len(zipReader.File))
+	}
+
+	fileNames := make(map[string]bool)
+	for _, f := range zipReader.File {
+		fileNames[f.Name] = true
+	}
+
+	if !fileNames["session.log"] {
+		t.Error("expected zip to contain 'session.log'")
+	}
+	if !fileNames["session.timing"] {
+		t.Error("expected zip to contain 'session.timing'")
+	}
+	if fileNames["session.metadata.json"] {
+		t.Error("expected zip NOT to contain 'session.metadata.json'")
 	}
 }
