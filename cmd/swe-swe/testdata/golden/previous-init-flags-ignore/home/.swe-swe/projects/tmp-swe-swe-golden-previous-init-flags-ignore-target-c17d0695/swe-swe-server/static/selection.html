@@ -484,16 +484,7 @@
         }
 
         function promptForName(assistant, sessionUUID, debug) {
-            // Generate default timestamp: YYYYMMDD-HHMMSS
-            var now = new Date();
-            var defaultName = now.getFullYear().toString() +
-                String(now.getMonth() + 1).padStart(2, '0') +
-                String(now.getDate()).padStart(2, '0') + '-' +
-                String(now.getHours()).padStart(2, '0') +
-                String(now.getMinutes()).padStart(2, '0') +
-                String(now.getSeconds()).padStart(2, '0');
-
-            var name = prompt('Session name (optional, leave empty for no worktree):', defaultName);
+            var name = prompt('Session name (optional, leave empty for no worktree):');
 
             // User clicked Cancel
             if (name === null) {
