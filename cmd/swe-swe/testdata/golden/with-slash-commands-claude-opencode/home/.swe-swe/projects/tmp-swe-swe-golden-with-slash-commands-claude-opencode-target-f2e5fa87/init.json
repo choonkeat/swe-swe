@@ -1,0 +1,13 @@
+{
+  "agents": [
+    "claude",
+    "opencode"
+  ],
+  "slashCommands": [
+    {
+      "alias": "ck",
+      "url": "https://github.com/choonkeat/slash-commands.git"
+    }
+  ],
+  "ssl": "no"
+}
