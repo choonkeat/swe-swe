@@ -19,4 +19,12 @@ docker rmi "$IMAGE_NAME" 2>/dev/null || true
 # Remove tmp directory
 rm -rf "$TMP_DIR"
 
+# --- Release semaphore lock ---
+LOCK_DIR="/tmp/swe-swe-test-container.lock"
+if [ -d "$LOCK_DIR" ]; then
+    rm -rf "$LOCK_DIR"
+    echo "Lock released"
+fi
+# --- End semaphore ---
+
 echo "Phase 5 complete: All test artifacts cleaned up"
