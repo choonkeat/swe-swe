@@ -36,8 +36,11 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
-// Version can be set at build time with: go build -ldflags "-X main.Version=<version>"
-var Version = "dev"
+// Version information set at build time via ldflags
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+)
 
 var indexTemplate *template.Template
 var selectionTemplate *template.Template
@@ -848,9 +851,11 @@ func main() {
 
 	// Handle --version flag
 	if *version {
-		fmt.Println("swe-swe-server version dev")
+		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
 		os.Exit(0)
 	}
+
+	log.Printf("swe-swe-server %s (%s)", Version, GitCommit)
 
 	// Change to working directory if specified
 	if workingDir != "" {
