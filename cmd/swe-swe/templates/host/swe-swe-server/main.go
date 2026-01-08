@@ -421,15 +421,31 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 	}
 }
 
+// buildExitMessage creates the exit message payload for a session.
+// Includes worktree info if the session is running in a worktree.
+func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
+	msg := map[string]interface{}{
+		"type":     "exit",
+		"exitCode": exitCode,
+	}
+
+	// Include worktree info if session is in a worktree
+	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
+		msg["worktree"] = map[string]string{
+			"path":   s.WorkDir,
+			"branch": s.BranchName,
+		}
+	}
+
+	return msg
+}
+
 // BroadcastExit sends a process exit notification to all connected clients
 func (s *Session) BroadcastExit(exitCode int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	exitJSON := map[string]interface{}{
-		"type":     "exit",
-		"exitCode": exitCode,
-	}
+	exitJSON := buildExitMessage(s, exitCode)
 
 	data, err := json.Marshal(exitJSON)
 	if err != nil {

@@ -654,6 +654,97 @@ func TestCopyFileOrDir(t *testing.T) {
 	})
 }
 
+func TestBuildExitMessage(t *testing.T) {
+	tests := []struct {
+		name           string
+		workDir        string
+		branchName     string
+		exitCode       int
+		expectWorktree bool
+	}{
+		{
+			name:           "worktree session includes worktree info",
+			workDir:        "/workspace/.swe-swe/worktrees/fix-bug",
+			branchName:     "fix-bug",
+			exitCode:       0,
+			expectWorktree: true,
+		},
+		{
+			name:           "empty workdir does not include worktree info",
+			workDir:        "",
+			branchName:     "",
+			exitCode:       0,
+			expectWorktree: false,
+		},
+		{
+			name:           "workspace root does not include worktree info",
+			workDir:        "/workspace",
+			branchName:     "",
+			exitCode:       0,
+			expectWorktree: false,
+		},
+		{
+			name:           "non-worktree path does not include worktree info",
+			workDir:        "/tmp/some-dir",
+			branchName:     "",
+			exitCode:       0,
+			expectWorktree: false,
+		},
+		{
+			name:           "worktree session with non-zero exit code",
+			workDir:        "/workspace/.swe-swe/worktrees/test-branch",
+			branchName:     "test-branch",
+			exitCode:       1,
+			expectWorktree: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sess := &Session{
+				WorkDir:    tt.workDir,
+				BranchName: tt.branchName,
+			}
+
+			msg := buildExitMessage(sess, tt.exitCode)
+
+			// Check exit code
+			if msg["exitCode"] != tt.exitCode {
+				t.Errorf("exitCode = %v, want %v", msg["exitCode"], tt.exitCode)
+			}
+
+			// Check type
+			if msg["type"] != "exit" {
+				t.Errorf("type = %v, want 'exit'", msg["type"])
+			}
+
+			// Check worktree field
+			worktree, hasWorktree := msg["worktree"]
+			if tt.expectWorktree {
+				if !hasWorktree {
+					t.Errorf("expected worktree field to be present")
+				} else {
+					wt, ok := worktree.(map[string]string)
+					if !ok {
+						t.Errorf("worktree is not map[string]string: %T", worktree)
+					} else {
+						if wt["path"] != tt.workDir {
+							t.Errorf("worktree.path = %v, want %v", wt["path"], tt.workDir)
+						}
+						if wt["branch"] != tt.branchName {
+							t.Errorf("worktree.branch = %v, want %v", wt["branch"], tt.branchName)
+						}
+					}
+				}
+			} else {
+				if hasWorktree {
+					t.Errorf("expected worktree field to NOT be present, got %v", worktree)
+				}
+			}
+		})
+	}
+}
+
 func TestGetGitRoot(t *testing.T) {
 	// Create a temp git repo
 	dir := t.TempDir()
