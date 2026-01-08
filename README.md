@@ -1,6 +1,8 @@
 # swe-swe
 
-A containerized development environment for AI-assisted coding with integrated VSCode, browser automation, Traefik reverse proxy, and support for multiple AI assistants (Claude, Gemini, Codex, Goose, Aider, OpenCode).
+Your agent: containerized with its own browser for manual testing. Your terminal: pair live or share recordings with teammates. Your sessions: run multiple in parallel, each on its own git branch.
+
+Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us know](https://github.com/choonkeat/swe-swe/issues)!
 
 https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
 
