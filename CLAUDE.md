@@ -22,3 +22,10 @@ Use a two-commit TDD approach:
 2. **Implementation**: Make flag take effect
    - Implement functionality (template changes, etc.)
    - Run `make build golden-update`, verify diff shows only functional changes, commit
+
+## Browser / Manual testing
+
+Agent will
+1. boot up test container with /workspace/.swe-swe/test-container-workflow.md
+2. use mcp browser to test
+3. shutdown the test container
