@@ -15,34 +15,41 @@ Result:
 
 ---
 
-## Phase 1 - Baseline: Flag Parsing Only
+## Phase 1 - Baseline: Flag Parsing + Config Storage ✅ COMPLETE
 
 ### What Will Be Achieved
 
-The `--copy-home-paths` flag is recognized and validated, but has zero side effects.
+The `--copy-home-paths` flag is recognized, validated, stored in `InitConfig`, and wired into `--previous-init-flags=reuse`. The flag does NOT yet copy files.
 
 ### Steps
 
-1. **Add flag definition** in `handleInit()`:
+1. ✅ **Add flag definition** in `handleInit()`:
    ```go
-   copyHomePaths := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
+   copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
    ```
 
-2. **Parse into slice** (split by comma, trim whitespace)
+2. ✅ **Parse into slice** (split by comma, trim whitespace)
 
-3. **Validate each path**:
+3. ✅ **Validate each path**:
    - Reject if starts with `/`
    - Reject if contains `..`
 
-4. **Add golden test variant** that uses the flag
+4. ✅ **Add field to `InitConfig` struct**:
+   ```go
+   CopyHomePaths []string `json:"copyHomePaths,omitempty"`
+   ```
+
+5. ✅ **Wire into reuse logic** - restore `CopyHomePaths` from saved config
+
+6. ✅ **Add golden test variant** that uses the flag
 
 ### Verification
 
-1. `make build golden-update`
-2. Golden diff should show:
-   - New test variant directory exists
-   - Files are identical to base variant (flag has no effect)
-3. `make test` passes
+1. ✅ `make build golden-update`
+2. ✅ Golden diff shows:
+   - New test variant directory `with-copy-home-paths` exists
+   - `init.json` contains `"copyHomePaths": [".gitconfig", ".ssh"]`
+3. ✅ `make test` passes
 
 ---
 
@@ -50,38 +57,24 @@ The `--copy-home-paths` flag is recognized and validated, but has zero side effe
 
 ### What Will Be Achieved
 
-The parsed paths are:
-1. Stored in `InitConfig` (persisted to `init.json`)
-2. Wired into `--previous-init-flags=reuse`
-3. Actually copied from `$HOME/<path>` to `{sweDir}/home/<path>`
+Files are actually copied from `$HOME/<path>` to `{sweDir}/home/<path>`.
+
+**Note:** Config storage and reuse wiring were completed in Phase 1.
 
 ### Steps
 
-1. **Add field to `InitConfig` struct**:
-   ```go
-   CopyHomePaths []string `json:"copyHomePaths,omitempty"`
-   ```
-
-2. **Save parsed paths to config** before writing `init.json`
-
-3. **Wire into reuse logic** - restore `CopyHomePaths` from saved config
-
-4. **Implement the copy logic**:
+1. **Implement the copy logic**:
    - For each path in `CopyHomePaths`:
      - Source: `$HOME/<path>`
      - Dest: `{sweDir}/home/<path>`
      - Check source exists (warn and skip if not)
      - Create parent directories at destination (`mkdir -p`)
-     - Use `rsync -a` (or `cp -r` with preserved permissions)
-
-5. **Update golden test variant** to verify files are copied (may need adjustments for test environment)
+     - Use recursive copy with preserved permissions
 
 ### Verification
 
 1. `make build golden-update`
-2. Golden diff should show:
-   - `init.json` now contains `"copyHomePaths": [...]`
-   - Any other expected changes from the copy taking effect
+2. Golden diff should be minimal (copy happens at runtime, golden test HOME is temp dir)
 3. `make test` passes
 4. Manual test:
    ```bash
