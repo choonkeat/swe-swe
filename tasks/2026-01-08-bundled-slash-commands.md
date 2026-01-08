@@ -42,16 +42,16 @@ During `swe-swe init`, embedded slash command files are extracted and written to
 
 ### Steps
 
-- [ ] Add unit test `TestParseSlashCommandsEntry` case for `swe-swe@https://...` expecting error (TDD red)
-- [ ] Add validation in `parseSlashCommandsEntry()` - return error if alias equals `swe-swe` (TDD green)
-- [ ] Add unit test `TestWriteBundledSlashCommands` (TDD red)
-- [ ] Add function `writeBundledSlashCommands(destDir string) error` that:
+- [x] Add unit test `TestParseSlashCommandsEntry` case for `swe-swe@https://...` expecting error (TDD red)
+- [x] Add validation in `parseSlashCommandsEntry()` - return error if alias equals `swe-swe` (TDD green)
+- [x] Add unit test `TestWriteBundledSlashCommands` (TDD red)
+- [x] Add function `writeBundledSlashCommands(destDir string) error` that:
   - Iterates over embedded filesystem
   - Creates `destDir/swe-swe/` directory
   - Writes each file (preserving subdirectory structure if any)
-- [ ] Implement function (TDD green)
-- [ ] Call function in `handleInit()` after creating `home/` directory
-- [ ] Destination: `filepath.Join(hostDir, "home", ".claude", "commands", "swe-swe")`
+- [x] Implement function (TDD green)
+- [x] Call function in `handleInit()` after creating `home/` directory
+- [x] Destination: `filepath.Join(hostDir, "home", ".claude", "commands", "swe-swe")`
 
 ### Verification
 
@@ -83,5 +83,5 @@ Golden tests verify bundled slash commands are correctly written during init.
 ## Status
 
 - [x] Phase 1: Embed placeholder in binary
-- [ ] Phase 2: Write bundled commands during init
+- [x] Phase 2: Write bundled commands during init
 - [ ] Phase 3: Golden tests

@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"math/big"
 	"net"
@@ -30,6 +31,45 @@ var assets embed.FS
 
 //go:embed all:slash-commands
 var slashCommandsFS embed.FS
+
+// writeBundledSlashCommands extracts bundled slash commands to the destination directory
+func writeBundledSlashCommands(destDir string) error {
+	return fs.WalkDir(slashCommandsFS, "slash-commands", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Get relative path from slash-commands/
+		relPath := strings.TrimPrefix(path, "slash-commands/")
+		if relPath == "" {
+			return nil // Skip root
+		}
+
+		destPath := filepath.Join(destDir, relPath)
+
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		// Read embedded file
+		content, err := slashCommandsFS.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading embedded %s: %w", path, err)
+		}
+
+		// Create parent directory if needed
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", destPath, err)
+		}
+
+		// Write file
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			return fmt.Errorf("writing %s: %w", destPath, err)
+		}
+
+		return nil
+	})
+}
 
 // dockerComposeCmd represents the detected docker compose command
 type dockerComposeCmd struct {
@@ -400,6 +440,9 @@ func parseSlashCommandsEntry(entry string) (SlashCommandsRepo, error) {
 		url := entry[atIndex+1:]
 		if url == "" {
 			return SlashCommandsRepo{}, fmt.Errorf("empty URL after alias in %q", entry)
+		}
+		if alias == "swe-swe" {
+			return SlashCommandsRepo{}, fmt.Errorf("alias %q is reserved for bundled slash commands", alias)
 		}
 		return SlashCommandsRepo{Alias: alias, URL: url}, nil
 	}
@@ -915,6 +958,12 @@ func handleInit() {
 		}
 		return nil
 	})
+
+	// Write bundled slash commands to home/.claude/commands/swe-swe/
+	bundledSlashCommandsDir := filepath.Join(homeDir, ".claude", "commands")
+	if err := writeBundledSlashCommands(bundledSlashCommandsDir); err != nil {
+		log.Fatalf("Failed to write bundled slash commands: %v", err)
+	}
 
 	// Write .path file to record the project path
 	pathFile := filepath.Join(sweDir, ".path")
