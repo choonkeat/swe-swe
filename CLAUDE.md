@@ -8,6 +8,8 @@ git add -A cmd/swe-swe/testdata/golden
 git diff --cached -- cmd/swe-swe/testdata/golden
 ```
 
+**Note**: Always use `make golden-update` (not individual `_golden-variant` targets). The Makefile manages a temporary symlink that only exists during the full run.
+
 ### Adding new flags
 
 Use a two-commit TDD approach:
