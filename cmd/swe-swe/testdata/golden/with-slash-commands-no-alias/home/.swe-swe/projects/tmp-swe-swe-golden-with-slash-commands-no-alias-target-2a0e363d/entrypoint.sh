@@ -56,6 +56,18 @@ elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
     chown -R app:app /home/app/.codex/prompts/choonkeat/slash-commands
     echo -e "${GREEN}✓ Installed slash commands: choonkeat/slash-commands (codex)${NC}"
 fi
+if [ -d "/home/app/.config/opencode/command/choonkeat/slash-commands/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.config/opencode/command/choonkeat/slash-commands 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.config/opencode/command/choonkeat/slash-commands && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: choonkeat/slash-commands (opencode)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (opencode)${NC}"
+elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
+    mkdir -p /home/app/.config/opencode/command
+    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.config/opencode/command/choonkeat/slash-commands
+    chown -R app:app /home/app/.config/opencode/command/choonkeat/slash-commands
+    echo -e "${GREEN}✓ Installed slash commands: choonkeat/slash-commands (opencode)${NC}"
+fi
 
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling

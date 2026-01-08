@@ -31,6 +31,19 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
 fi
 
 
+# Copy slash commands to agent directories
+if [ -d "/home/app/.config/opencode/command/ck/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.config/opencode/command/ck 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.config/opencode/command/ck && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: ck (opencode)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: ck (opencode)${NC}"
+elif [ -d "/tmp/slash-commands/ck" ]; then
+    mkdir -p /home/app/.config/opencode/command
+    cp -r /tmp/slash-commands/ck /home/app/.config/opencode/command/ck
+    chown -R app:app /home/app/.config/opencode/command/ck
+    echo -e "${GREEN}✓ Installed slash commands: ck (opencode)${NC}"
+fi
 
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
