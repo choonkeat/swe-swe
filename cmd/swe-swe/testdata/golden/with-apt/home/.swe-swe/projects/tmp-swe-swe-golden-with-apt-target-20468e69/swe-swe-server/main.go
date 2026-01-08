@@ -1635,6 +1635,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		RecordingUUID:   recordingUUID,
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
+			Name:      name,
 			Agent:     cfg.Name,
 			StartedAt: now,
 			Command:   append([]string{cmdName}, cmdArgs...),
