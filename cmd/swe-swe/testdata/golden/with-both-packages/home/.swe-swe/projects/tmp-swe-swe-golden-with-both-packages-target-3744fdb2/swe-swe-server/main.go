@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -39,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "23f0212"
+	GitCommit = "675f5a0"
 )
 
 var indexTemplate *template.Template
@@ -421,15 +422,31 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 	}
 }
 
+// buildExitMessage creates the exit message payload for a session.
+// Includes worktree info if the session is running in a worktree.
+func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
+	msg := map[string]interface{}{
+		"type":     "exit",
+		"exitCode": exitCode,
+	}
+
+	// Include worktree info if session is in a worktree
+	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
+		msg["worktree"] = map[string]string{
+			"path":   s.WorkDir,
+			"branch": s.BranchName,
+		}
+	}
+
+	return msg
+}
+
 // BroadcastExit sends a process exit notification to all connected clients
 func (s *Session) BroadcastExit(exitCode int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	exitJSON := map[string]interface{}{
-		"type":     "exit",
-		"exitCode": exitCode,
-	}
+	exitJSON := buildExitMessage(s, exitCode)
 
 	data, err := json.Marshal(exitJSON)
 	if err != nil {
@@ -1020,6 +1037,12 @@ func main() {
 			return
 		}
 
+		// Worktree API endpoints
+		if strings.HasPrefix(r.URL.Path, "/api/worktree/") {
+			handleWorktreeAPI(w, r)
+			return
+		}
+
 		// Recording playback page
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
 			recordingUUID := strings.TrimPrefix(r.URL.Path, "/recording/")
@@ -1163,6 +1186,10 @@ func deriveBranchName(sessionName string) string {
 			result = strings.ReplaceAll(result, pattern, "/")
 		}
 	}
+
+	// Collapse multiple slashes again (pattern cleanup above can create them)
+	re = regexp.MustCompile(`/+`)
+	result = re.ReplaceAllString(result, "/")
 
 	// Remove leading dots from each path component (git restriction)
 	// e.g., ".hidden/foo" -> "hidden/foo", "foo/.bar" -> "foo/bar"
@@ -1517,6 +1544,178 @@ func handleWorktreeCheckAPI(w http.ResponseWriter, r *http.Request) {
 			"exists": false,
 		})
 	}
+}
+
+// isValidWorktreePath checks if a path is a valid worktree path (under worktreeDir).
+// This is a security check to prevent path traversal attacks.
+func isValidWorktreePath(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	// Clean the path to resolve any .. or . components
+	cleanPath := filepath.Clean(path)
+
+	// Must start with worktreeDir
+	if !strings.HasPrefix(cleanPath, worktreeDir+"/") {
+		return false
+	}
+
+	// Must not contain path traversal after cleaning
+	if cleanPath != path && strings.Contains(path, "..") {
+		return false
+	}
+
+	return true
+}
+
+// buildMergeInstructions generates manual merge instructions for error recovery
+func buildMergeInstructions(branch, path string) string {
+	return fmt.Sprintf(`To resolve manually:
+  cd /workspace
+  git merge %s
+  # resolve any issues
+  git commit
+  git worktree remove %s
+  git branch -d %s`, branch, path, branch)
+}
+
+// buildDiscardInstructions generates manual discard instructions for error recovery
+func buildDiscardInstructions(branch, path string) string {
+	return fmt.Sprintf(`To discard manually:
+  git worktree remove --force %s
+  git branch -D %s`, path, branch)
+}
+
+// WorktreeRequest represents the JSON body for worktree API requests
+type WorktreeRequest struct {
+	Branch string `json:"branch"`
+	Path   string `json:"path"`
+}
+
+// WorktreeResponse represents the JSON response for worktree API requests
+type WorktreeResponse struct {
+	Success      bool   `json:"success"`
+	Error        string `json:"error,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// handleWorktreeAPI routes worktree API requests
+func handleWorktreeAPI(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/worktree/")
+
+	switch {
+	case path == "merge" && r.Method == http.MethodPost:
+		handleWorktreeMerge(w, r)
+	case path == "discard" && r.Method == http.MethodPost:
+		handleWorktreeDiscard(w, r)
+	default:
+		http.Error(w, "Not Found", http.StatusNotFound)
+	}
+}
+
+// handleWorktreeMerge handles POST /api/worktree/merge
+func handleWorktreeMerge(w http.ResponseWriter, r *http.Request) {
+	var req WorktreeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendWorktreeError(w, "Invalid request body: "+err.Error(), "")
+		return
+	}
+
+	if req.Branch == "" || req.Path == "" {
+		sendWorktreeError(w, "branch and path are required", "")
+		return
+	}
+
+	if !isValidWorktreePath(req.Path) {
+		sendWorktreeError(w, "invalid worktree path", "")
+		return
+	}
+
+	// Attempt merge
+	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", req.Branch, "--no-edit")
+	mergeOutput, mergeErr := mergeCmd.CombinedOutput()
+
+	if mergeErr != nil {
+		// Abort the failed merge
+		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
+		abortCmd.Run() // Ignore error, merge might not be in progress
+
+		sendWorktreeError(w, "git merge failed: "+string(mergeOutput), buildMergeInstructions(req.Branch, req.Path))
+		return
+	}
+
+	// Merge succeeded, remove worktree
+	removeCmd := exec.Command("git", "worktree", "remove", req.Path)
+	if removeOutput, err := removeCmd.CombinedOutput(); err != nil {
+		sendWorktreeError(w, "git worktree remove failed: "+string(removeOutput), buildMergeInstructions(req.Branch, req.Path))
+		return
+	}
+
+	// Delete branch
+	branchCmd := exec.Command("git", "branch", "-d", req.Branch)
+	if branchOutput, err := branchCmd.CombinedOutput(); err != nil {
+		// Branch deletion failed, but merge and worktree removal succeeded
+		// This is not critical, just log it
+		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
+	}
+
+	log.Printf("Worktree merged and cleaned up: branch=%s, path=%s", req.Branch, req.Path)
+	sendWorktreeSuccess(w)
+}
+
+// handleWorktreeDiscard handles POST /api/worktree/discard
+func handleWorktreeDiscard(w http.ResponseWriter, r *http.Request) {
+	var req WorktreeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendWorktreeError(w, "Invalid request body: "+err.Error(), "")
+		return
+	}
+
+	if req.Branch == "" || req.Path == "" {
+		sendWorktreeError(w, "branch and path are required", "")
+		return
+	}
+
+	if !isValidWorktreePath(req.Path) {
+		sendWorktreeError(w, "invalid worktree path", "")
+		return
+	}
+
+	// Force remove worktree
+	removeCmd := exec.Command("git", "worktree", "remove", "--force", req.Path)
+	if removeOutput, err := removeCmd.CombinedOutput(); err != nil {
+		sendWorktreeError(w, "git worktree remove failed: "+string(removeOutput), buildDiscardInstructions(req.Branch, req.Path))
+		return
+	}
+
+	// Force delete branch
+	branchCmd := exec.Command("git", "branch", "-D", req.Branch)
+	if branchOutput, err := branchCmd.CombinedOutput(); err != nil {
+		// Branch deletion failed, but worktree removal succeeded
+		// This is not critical, just log it
+		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
+	}
+
+	log.Printf("Worktree discarded: branch=%s, path=%s", req.Branch, req.Path)
+	sendWorktreeSuccess(w)
+}
+
+// sendWorktreeSuccess sends a successful worktree response
+func sendWorktreeSuccess(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(WorktreeResponse{Success: true})
+}
+
+// sendWorktreeError sends an error worktree response
+func sendWorktreeError(w http.ResponseWriter, errMsg, instructions string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(WorktreeResponse{
+		Success:      false,
+		Error:        errMsg,
+		Instructions: instructions,
+	})
 }
 
 // sessionReaper periodically cleans up sessions where the process has exited

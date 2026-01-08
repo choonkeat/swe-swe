@@ -1187,6 +1187,10 @@ func deriveBranchName(sessionName string) string {
 		}
 	}
 
+	// Collapse multiple slashes again (pattern cleanup above can create them)
+	re = regexp.MustCompile(`/+`)
+	result = re.ReplaceAllString(result, "/")
+
 	// Remove leading dots from each path component (git restriction)
 	// e.g., ".hidden/foo" -> "hidden/foo", "foo/.bar" -> "foo/bar"
 	re = regexp.MustCompile(`(^|/)\.+`)
