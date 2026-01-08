@@ -68,9 +68,9 @@ Golden tests verify bundled slash commands are correctly written during init.
 
 ### Steps
 
-- [ ] Run `make build golden-update` to regenerate expected outputs
-- [ ] Verify diff shows `home/.claude/commands/swe-swe/README.adoc` added to all variants
-- [ ] Commit golden test updates
+- [x] Run `make build golden-update` to regenerate expected outputs
+- [x] Verify diff shows `home/.claude/commands/swe-swe/README.adoc` added to all variants
+- [x] Commit golden test updates
 
 ### Verification
 
@@ -84,4 +84,4 @@ Golden tests verify bundled slash commands are correctly written during init.
 
 - [x] Phase 1: Embed placeholder in binary
 - [x] Phase 2: Write bundled commands during init
-- [ ] Phase 3: Golden tests
+- [x] Phase 3: Golden tests
