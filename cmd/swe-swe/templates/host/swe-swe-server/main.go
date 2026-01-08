@@ -1312,6 +1312,17 @@ func createWorktree(branchName string) (string, error) {
 	}
 
 	log.Printf("Created worktree at %s (branch: %s)", worktreePath, finalBranch)
+
+	// Copy untracked files to the worktree (graceful degradation on failure)
+	gitRoot, err := getGitRoot()
+	if err != nil {
+		log.Printf("Warning: could not determine git root for copying untracked files: %v", err)
+	} else {
+		if err := copyUntrackedFiles(gitRoot, worktreePath); err != nil {
+			log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
+		}
+	}
+
 	return worktreePath, nil
 }
 

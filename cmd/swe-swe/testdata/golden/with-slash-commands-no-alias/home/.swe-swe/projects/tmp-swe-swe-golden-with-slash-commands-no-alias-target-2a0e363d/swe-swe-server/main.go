@@ -1139,6 +1139,136 @@ func deriveBranchName(sessionName string) string {
 // worktreeDir is the base directory for git worktrees
 const worktreeDir = "/workspace/.swe-swe/worktrees"
 
+// excludeFromCopy lists directories that should never be copied to worktrees
+var excludeFromCopy = []string{".git", ".swe-swe"}
+
+// isTrackedInGit checks if a file is tracked in git
+// Returns true if the file is tracked, false otherwise
+func isTrackedInGit(repoDir, relativePath string) bool {
+	cmd := exec.Command("git", "ls-files", "--error-unmatch", relativePath)
+	cmd.Dir = repoDir
+	return cmd.Run() == nil
+}
+
+// copyFileOrDir copies a file or directory from src to dst, preserving permissions
+func copyFileOrDir(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+
+	// Handle symlinks
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, dst)
+	}
+
+	// Handle directories
+	if info.IsDir() {
+		if err := os.MkdirAll(dst, info.Mode()); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(src)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			srcPath := src + "/" + entry.Name()
+			dstPath := dst + "/" + entry.Name()
+			if err := copyFileOrDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Handle regular files
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
+}
+
+// copyUntrackedFiles copies untracked dotfiles, CLAUDE.md, and AGENTS.md from srcDir to destDir
+// Files in excludeFromCopy and files tracked in git are skipped
+func copyUntrackedFiles(srcDir, destDir string) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	var copied []string
+	for _, entry := range entries {
+		name := entry.Name()
+
+		// Check if this file matches our patterns: dotfiles, CLAUDE.md, AGENTS.md
+		shouldCopy := false
+		if strings.HasPrefix(name, ".") {
+			shouldCopy = true
+		} else if name == "CLAUDE.md" || name == "AGENTS.md" {
+			shouldCopy = true
+		}
+
+		if !shouldCopy {
+			continue
+		}
+
+		// Check exclusion list
+		excluded := false
+		for _, exc := range excludeFromCopy {
+			if name == exc {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
+
+		// Check if tracked in git
+		if isTrackedInGit(srcDir, name) {
+			continue
+		}
+
+		// Copy the file/directory
+		srcPath := srcDir + "/" + name
+		dstPath := destDir + "/" + name
+		if err := copyFileOrDir(srcPath, dstPath); err != nil {
+			log.Printf("Warning: failed to copy %s to worktree: %v", name, err)
+			continue
+		}
+		copied = append(copied, name)
+	}
+
+	if len(copied) > 0 {
+		log.Printf("Copied untracked files to worktree: %v", copied)
+	}
+	return nil
+}
+
+// getGitRoot returns the root directory of the git repository
+func getGitRoot() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git root: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 // createWorktree creates a git worktree for the given branch name
 // If a branch/worktree with that name already exists, appends a random suffix
 // Returns the worktree path or an error
@@ -1182,6 +1312,17 @@ func createWorktree(branchName string) (string, error) {
 	}
 
 	log.Printf("Created worktree at %s (branch: %s)", worktreePath, finalBranch)
+
+	// Copy untracked files to the worktree (graceful degradation on failure)
+	gitRoot, err := getGitRoot()
+	if err != nil {
+		log.Printf("Warning: could not determine git root for copying untracked files: %v", err)
+	} else {
+		if err := copyUntrackedFiles(gitRoot, worktreePath); err != nil {
+			log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
+		}
+	}
+
 	return worktreePath, nil
 }
 
