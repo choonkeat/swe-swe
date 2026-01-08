@@ -20,7 +20,7 @@ Reference: https://github.com/chuyeow/tiny-tools/blob/main/wt.sh
 
 ---
 
-## Phase 1: Add `copyUntrackedFiles` helper function
+## Phase 1: Add `copyUntrackedFiles` helper function ✅
 
 ### What will be achieved
 A reusable Go function that copies untracked files/directories from a source directory to a destination worktree, preserving relative paths.
