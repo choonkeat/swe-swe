@@ -39,10 +39,12 @@ Services are defined in docker-compose.yml:
 
 | Service | Description |
 |---------|-------------|
-| `swe-swe` | Claude Code container (runs swe-swe-server) |
-| `vscode` | VSCode/code-server IDE |
-| `chrome` | Chrome browser with VNC |
-| `traefik` | Reverse proxy (routing) |
+| `swe-swe` | AI terminal container (runs swe-swe-server) |
+| `chrome` | Chrome browser with VNC for browser automation |
+| `code-server` | VSCode IDE (code-server) |
+| `vscode-proxy` | Nginx proxy for VSCode path routing |
+| `traefik` | Reverse proxy (path-based routing) |
+| `auth` | ForwardAuth service for authentication |
 
 ### Pass-through Arguments
 
@@ -113,6 +115,7 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 | `--with-docker` | Mount Docker socket to allow container to run Docker commands on host |
 | `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
 | `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), or `selfsign@<host>` (for remote access) |
+| `--copy-home-paths PATHS` | Comma-separated paths relative to `$HOME` to copy into container home (e.g., `.gitconfig,.ssh/config`) |
 
 **Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 

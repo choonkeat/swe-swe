@@ -72,6 +72,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands for Claude, Codex, and OpenCode (space-separated, format: `[alias@]<git-url>`)
 - `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP) or `selfsign` (HTTPS with auto-generated self-signed certificate)
+- `--copy-home-paths PATHS`: Comma-separated paths relative to `$HOME` to copy into the container's home directory (e.g., `.gitconfig,.ssh/config`)
 
 **Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 
@@ -100,6 +101,9 @@ swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-command
 
 # Initialize with HTTPS (self-signed certificate)
 swe-swe init --ssl=selfsign
+
+# Initialize with git and SSH config copied from host
+swe-swe init --copy-home-paths=.gitconfig,.ssh/config
 
 # Initialize a specific directory
 swe-swe init --project-directory ~/my-project
@@ -183,9 +187,10 @@ Starts the swe-swe environment using `docker compose up`. The environment includ
 
 1. **swe-swe**: WebSocket-based AI terminal with session management
 2. **chrome**: Headless Chromium with VNC for browser automation (used by MCP Playwright)
-3. **code-server**: VS Code running in a container (with nginx proxy)
-4. **traefik**: HTTP reverse proxy with routing rules
-5. **auth**: ForwardAuth service for unified password protection
+3. **code-server**: VS Code IDE running in a container
+4. **vscode-proxy**: Nginx proxy for VSCode path routing
+5. **traefik**: HTTP reverse proxy with path-based routing rules
+6. **auth**: ForwardAuth service for unified password protection
 
 The workspace is mounted at `/workspace` inside containers, allowing bidirectional file access.
 
@@ -272,7 +277,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 - **Purpose**: WebSocket-based AI coding assistant terminal
 - **Features**:
   - Real-time terminal with PTY support
-  - Session management with configurable TTL
+  - Session management (sessions persist until process exits)
   - Multiple AI assistant detection (claude, gemini, codex, goose, aider, opencode)
   - Automatic process restart on failure
   - File upload via drag-and-drop (saved to `.swe-swe/uploads/`)
@@ -496,12 +501,14 @@ ENV SHELL=/bin/zsh
 CMD ["/usr/local/bin/swe-swe-server", "-shell", "zsh", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
 ```
 
-### Session TTL
+### Session Persistence
 
-Control how long idle sessions persist (default 1 hour) by modifying the Dockerfile CMD:
+Sessions persist until the shell process exits. When a shell exits with code 0 (success), the session ends cleanly. When a shell crashes or exits with a non-zero code, it automatically restarts after 500ms.
+
+To customize the shell command, modify the Dockerfile CMD:
 
 ```dockerfile
-CMD ["/usr/local/bin/swe-swe-server", "-session-ttl", "30m", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
+CMD ["/usr/local/bin/swe-swe-server", "-shell", "bash", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
 ```
 
 ### Authentication
