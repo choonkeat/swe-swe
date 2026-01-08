@@ -774,3 +774,237 @@ func TestHandleWorktreesAPI(t *testing.T) {
 		}
 	})
 }
+
+func TestWorktreeExists(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	tmpDir := t.TempDir()
+	worktreeDir = tmpDir
+
+	t.Run("returns false when dir doesn't exist", func(t *testing.T) {
+		if worktreeExists("nonexistent-branch") {
+			t.Error("expected false for nonexistent directory")
+		}
+	})
+
+	t.Run("returns true when dir exists", func(t *testing.T) {
+		os.Mkdir(filepath.Join(tmpDir, "existing-branch"), 0755)
+		if !worktreeExists("existing-branch") {
+			t.Error("expected true for existing directory")
+		}
+	})
+}
+
+func TestLocalBranchExists(t *testing.T) {
+	// Create a temp git repo
+	repoDir := t.TempDir()
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Create initial commit
+	testFile := filepath.Join(repoDir, "test.txt")
+	os.WriteFile(testFile, []byte("test"), 0644)
+	cmd = exec.Command("git", "add", "test.txt")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "initial")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Save and change directory
+	oldDir, _ := os.Getwd()
+	os.Chdir(repoDir)
+	defer os.Chdir(oldDir)
+
+	t.Run("returns false for non-existent branch", func(t *testing.T) {
+		if localBranchExists("nonexistent-branch") {
+			t.Error("expected false for nonexistent branch")
+		}
+	})
+
+	t.Run("returns true for existing branch", func(t *testing.T) {
+		// Create a branch
+		cmd = exec.Command("git", "branch", "test-branch")
+		cmd.Dir = repoDir
+		cmd.Run()
+
+		if !localBranchExists("test-branch") {
+			t.Error("expected true for existing branch")
+		}
+	})
+}
+
+func TestCreateWorktree_ReentryExisting(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	// Create temp dirs
+	tmpDir := t.TempDir()
+	worktreeDir = tmpDir
+
+	// Pre-create worktree directory (simulating existing worktree)
+	existingPath := filepath.Join(tmpDir, "existing-worktree")
+	os.Mkdir(existingPath, 0755)
+
+	// Create a marker file to verify we got the same directory back
+	markerFile := filepath.Join(existingPath, ".marker")
+	os.WriteFile(markerFile, []byte("marker"), 0644)
+
+	// Call createWorktree - should return existing path without creating new one
+	result, err := createWorktree("existing-worktree")
+	if err != nil {
+		t.Fatalf("createWorktree failed: %v", err)
+	}
+
+	if result != existingPath {
+		t.Errorf("expected path %s, got %s", existingPath, result)
+	}
+
+	// Verify marker file still exists (we reused the directory)
+	if _, err := os.Stat(markerFile); os.IsNotExist(err) {
+		t.Error("marker file missing - directory was not reused")
+	}
+}
+
+func TestCreateWorktree_Fresh(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	// Create a temp git repo
+	repoDir := t.TempDir()
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Create initial commit (required for worktree)
+	testFile := filepath.Join(repoDir, "test.txt")
+	os.WriteFile(testFile, []byte("test"), 0644)
+	cmd = exec.Command("git", "add", "test.txt")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "initial")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Set up worktree directory inside the temp repo
+	worktreeDir = filepath.Join(repoDir, ".worktrees")
+
+	// Save and change directory
+	oldDir, _ := os.Getwd()
+	os.Chdir(repoDir)
+	defer os.Chdir(oldDir)
+
+	// Call createWorktree with fresh branch name
+	result, err := createWorktree("fresh-branch")
+	if err != nil {
+		t.Fatalf("createWorktree failed: %v", err)
+	}
+
+	expectedPath := filepath.Join(worktreeDir, "fresh-branch")
+	if result != expectedPath {
+		t.Errorf("expected path %s, got %s", expectedPath, result)
+	}
+
+	// Verify worktree was created
+	if _, err := os.Stat(result); os.IsNotExist(err) {
+		t.Error("worktree directory was not created")
+	}
+
+	// Verify branch was created
+	cmd = exec.Command("git", "rev-parse", "--verify", "fresh-branch")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Error("branch was not created")
+	}
+}
+
+func TestCreateWorktree_AttachLocalBranch(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	// Create a temp git repo
+	repoDir := t.TempDir()
+
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Create initial commit
+	testFile := filepath.Join(repoDir, "test.txt")
+	os.WriteFile(testFile, []byte("test"), 0644)
+	cmd = exec.Command("git", "add", "test.txt")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "initial")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Create a local branch (without worktree)
+	cmd = exec.Command("git", "branch", "local-only-branch")
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git branch failed: %v\n%s", err, out)
+	}
+
+	// Set up worktree directory
+	worktreeDir = filepath.Join(repoDir, ".worktrees")
+
+	// Save and change directory
+	oldDir, _ := os.Getwd()
+	os.Chdir(repoDir)
+	defer os.Chdir(oldDir)
+
+	// Call createWorktree - should attach to existing local branch
+	result, err := createWorktree("local-only-branch")
+	if err != nil {
+		t.Fatalf("createWorktree failed: %v", err)
+	}
+
+	expectedPath := filepath.Join(worktreeDir, "local-only-branch")
+	if result != expectedPath {
+		t.Errorf("expected path %s, got %s", expectedPath, result)
+	}
+
+	// Verify worktree was created
+	if _, err := os.Stat(result); os.IsNotExist(err) {
+		t.Error("worktree directory was not created")
+	}
+}

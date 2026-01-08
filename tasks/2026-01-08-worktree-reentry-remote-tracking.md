@@ -126,15 +126,15 @@ Refactor `createWorktree()` to handle these scenarios:
 
 ### Small steps
 
-- [ ] 3a. Add `worktreeExists(branchName) bool` — checks if `worktreeDir + "/" + branchName` directory exists
-- [ ] 3b. Add `localBranchExists(branchName) bool` — runs `git rev-parse --verify <branch>`
-- [ ] 3c. Add `remoteBranchExists(branchName) bool` — runs `git rev-parse --verify origin/<branch>`
-- [ ] 3d. Refactor `createWorktree()` — implement priority logic:
+- [x] 3a. Add `worktreeExists(branchName) bool` — checks if `worktreeDir + "/" + branchName` directory exists
+- [x] 3b. Add `localBranchExists(branchName) bool` — runs `git rev-parse --verify <branch>`
+- [x] 3c. Add `remoteBranchExists(branchName) bool` — runs `git rev-parse --verify origin/<branch>`
+- [x] 3d. Refactor `createWorktree()` — implement priority logic:
   1. If worktree exists -> return existing path (no git commands)
   2. If local branch exists -> `git worktree add <path> <branch>` (no `-b`)
   3. If remote branch exists -> `git worktree add --track -b <branch> <path> origin/<branch>`
   4. Otherwise -> `git worktree add -b <branch> <path>` (current behavior)
-- [ ] 3e. Remove random suffix logic — no longer needed since we re-enter existing worktrees
+- [x] 3e. Remove random suffix logic — no longer needed since we re-enter existing worktrees
 
 ### Verification (TDD style with temp git repo)
 
@@ -299,6 +299,6 @@ HOST_PORT=9899 HOST_IP=host.docker.internal ./scripts/03-test-container-run.sh
 
 - [x] Phase 1: Backend - List existing worktrees API
 - [x] Phase 2: Frontend - Display worktree quick-start links
-- [ ] Phase 3: Backend - Smart worktree creation
+- [x] Phase 3: Backend - Smart worktree creation
 - [ ] Phase 4: Frontend - Conflict warning dialog
 - [ ] Phase 5: Integration testing
