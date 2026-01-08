@@ -1736,6 +1736,137 @@ func sessionReaper() {
 			}
 		}
 		sessionsMu.Unlock()
+
+		// Clean up old recent recordings
+		cleanupRecentRecordings()
+	}
+}
+
+// Constants for recording cleanup
+const (
+	maxRecentRecordingsPerAgent = 5
+	recentRecordingMaxAge       = time.Hour
+)
+
+// cleanupRecentRecordings deletes old/excess recent recordings (those without KeptAt set)
+// For each agent, keeps only the most recent maxRecentRecordingsPerAgent recordings
+// and deletes any unkept recordings older than recentRecordingMaxAge
+func cleanupRecentRecordings() {
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		return
+	}
+
+	// Build map of active recording UUIDs
+	activeRecordings := make(map[string]bool)
+	sessionsMu.RLock()
+	for _, sess := range sessions {
+		if sess.RecordingUUID != "" && sess.Cmd != nil && sess.Cmd.ProcessState == nil {
+			activeRecordings[sess.RecordingUUID] = true
+		}
+	}
+	sessionsMu.RUnlock()
+
+	// Collect all recent (unkept) recordings grouped by agent
+	type recentRecording struct {
+		uuid    string
+		endedAt time.Time
+	}
+	recentByAgent := make(map[string][]recentRecording)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".metadata.json") {
+			continue
+		}
+
+		// Extract UUID
+		uuid := strings.TrimPrefix(name, "session-")
+		uuid = strings.TrimSuffix(uuid, ".metadata.json")
+
+		// Skip active recordings
+		if activeRecordings[uuid] {
+			continue
+		}
+
+		// Read metadata
+		metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+		metaData, err := os.ReadFile(metadataPath)
+		if err != nil {
+			continue
+		}
+
+		var meta RecordingMetadata
+		if err := json.Unmarshal(metaData, &meta); err != nil {
+			continue
+		}
+
+		// Skip kept recordings
+		if meta.KeptAt != nil {
+			continue
+		}
+
+		// Determine end time
+		endedAt := meta.StartedAt
+		if meta.EndedAt != nil {
+			endedAt = *meta.EndedAt
+		}
+
+		agent := meta.Agent
+		if agent == "" {
+			agent = "unknown"
+		}
+		// Map display name to binary name
+		agent = agentNameToBinary(agent)
+
+		recentByAgent[agent] = append(recentByAgent[agent], recentRecording{
+			uuid:    uuid,
+			endedAt: endedAt,
+		})
+	}
+
+	// For each agent, delete old/excess recordings
+	now := time.Now()
+	for agent, recordings := range recentByAgent {
+		// Sort by endedAt descending (newest first)
+		sort.Slice(recordings, func(i, j int) bool {
+			return recordings[i].endedAt.After(recordings[j].endedAt)
+		})
+
+		for i, rec := range recordings {
+			shouldDelete := false
+
+			// Delete if beyond the per-agent limit
+			if i >= maxRecentRecordingsPerAgent {
+				shouldDelete = true
+			}
+
+			// Delete if older than max age
+			if now.Sub(rec.endedAt) > recentRecordingMaxAge {
+				shouldDelete = true
+			}
+
+			if shouldDelete {
+				deleteRecordingFiles(rec.uuid)
+				log.Printf("Auto-deleted recent recording %s (agent=%s, age=%v, position=%d)",
+					rec.uuid[:8], agent, now.Sub(rec.endedAt).Round(time.Minute), i+1)
+			}
+		}
+	}
+}
+
+// deleteRecordingFiles removes all files for a recording
+func deleteRecordingFiles(uuid string) {
+	patterns := []string{
+		recordingsDir + "/session-" + uuid + ".log",
+		recordingsDir + "/session-" + uuid + ".timing",
+		recordingsDir + "/session-" + uuid + ".metadata.json",
+	}
+	for _, path := range patterns {
+		os.Remove(path)
 	}
 }
 

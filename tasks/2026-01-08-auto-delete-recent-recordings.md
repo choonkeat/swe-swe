@@ -66,13 +66,13 @@ Implement auto-cleanup for recordings with a "Recent vs Kept" model:
 
 ## Phase 3: Cleanup logic - Add auto-deletion in `sessionReaper()`
 
-- [ ] Step 3.1: Add `cleanupRecentRecordings()` function that scans, groups by agent, deletes old/excess
-- [ ] Step 3.2: Call `cleanupRecentRecordings()` from `sessionReaper()` loop
-- [ ] Step 3.3: Add test `TestCleanupRecentRecordings_DeletesOldUnkept`
-- [ ] Step 3.4: Add test `TestCleanupRecentRecordings_KeepsKeptRecordings`
-- [ ] Step 3.5: Add test `TestCleanupRecentRecordings_KeepsRecentUnkept`
-- [ ] Step 3.6: Add test `TestCleanupRecentRecordings_DeletesBeyondLimit`
-- [ ] Step 3.7: Add test `TestCleanupRecentRecordings_LimitPerAgent`
+- [x] Step 3.1: Add `cleanupRecentRecordings()` function that scans, groups by agent, deletes old/excess
+- [x] Step 3.2: Call `cleanupRecentRecordings()` from `sessionReaper()` loop
+- [x] Step 3.3: Add test `TestCleanupRecentRecordings_DeletesOldUnkept`
+- [x] Step 3.4: Add test `TestCleanupRecentRecordings_KeepsKeptRecordings`
+- [x] Step 3.5: Add test `TestCleanupRecentRecordings_KeepsRecentUnkept`
+- [x] Step 3.6: Add test `TestCleanupRecentRecordings_DeletesBeyondLimit`
+- [x] Step 3.7: Add test `TestCleanupRecentRecordings_LimitPerAgent`
 
 ### Verification
 - Run `go test ./...` to ensure all tests pass
