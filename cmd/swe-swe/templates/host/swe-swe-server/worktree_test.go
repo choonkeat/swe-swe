@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -619,4 +622,155 @@ func TestGetGitRoot(t *testing.T) {
 	if actualRoot != expectedRoot {
 		t.Errorf("getGitRoot() = %q, want %q", actualRoot, expectedRoot)
 	}
+}
+
+func TestListWorktrees(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	t.Run("non-existent directory returns empty list", func(t *testing.T) {
+		worktreeDir = "/nonexistent/path/that/does/not/exist"
+
+		worktrees, err := listWorktrees()
+		if err != nil {
+			t.Fatalf("listWorktrees() returned error: %v", err)
+		}
+		if len(worktrees) != 0 {
+			t.Errorf("expected empty list, got %d items", len(worktrees))
+		}
+	})
+
+	t.Run("empty directory returns empty list", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		worktrees, err := listWorktrees()
+		if err != nil {
+			t.Fatalf("listWorktrees() returned error: %v", err)
+		}
+		if len(worktrees) != 0 {
+			t.Errorf("expected empty list, got %d items", len(worktrees))
+		}
+	})
+
+	t.Run("directory with subdirs returns them as worktrees", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		// Create some subdirectories
+		os.Mkdir(filepath.Join(tmpDir, "feat-hello"), 0755)
+		os.Mkdir(filepath.Join(tmpDir, "fix-bug-123"), 0755)
+
+		// Create a file (should be ignored)
+		os.WriteFile(filepath.Join(tmpDir, "somefile.txt"), []byte("ignored"), 0644)
+
+		worktrees, err := listWorktrees()
+		if err != nil {
+			t.Fatalf("listWorktrees() returned error: %v", err)
+		}
+		if len(worktrees) != 2 {
+			t.Errorf("expected 2 worktrees, got %d", len(worktrees))
+		}
+
+		// Check worktree names (order may vary)
+		names := make(map[string]bool)
+		for _, wt := range worktrees {
+			names[wt.Name] = true
+			expectedPath := filepath.Join(tmpDir, wt.Name)
+			if wt.Path != expectedPath {
+				t.Errorf("expected path %s, got %s", expectedPath, wt.Path)
+			}
+		}
+		if !names["feat-hello"] {
+			t.Error("expected feat-hello in worktrees")
+		}
+		if !names["fix-bug-123"] {
+			t.Error("expected fix-bug-123 in worktrees")
+		}
+	})
+}
+
+func TestHandleWorktreesAPI(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	t.Run("GET returns JSON with worktrees", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		// Create a worktree directory
+		os.Mkdir(filepath.Join(tmpDir, "test-branch"), 0755)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktrees", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		contentType := resp.Header.Get("Content-Type")
+		if contentType != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %s", contentType)
+		}
+
+		var result struct {
+			Worktrees []WorktreeInfo `json:"worktrees"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(result.Worktrees) != 1 {
+			t.Errorf("expected 1 worktree, got %d", len(result.Worktrees))
+		}
+		if result.Worktrees[0].Name != "test-branch" {
+			t.Errorf("expected worktree name 'test-branch', got %s", result.Worktrees[0].Name)
+		}
+	})
+
+	t.Run("POST returns method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/worktrees", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("empty worktrees returns empty array", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktrees", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result struct {
+			Worktrees []WorktreeInfo `json:"worktrees"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result.Worktrees == nil {
+			t.Error("expected empty array, got nil")
+		}
+		if len(result.Worktrees) != 0 {
+			t.Errorf("expected 0 worktrees, got %d", len(result.Worktrees))
+		}
+	})
 }
