@@ -649,7 +649,6 @@
                         worktrees.forEach(function(wt) {
                             var link = document.createElement('a');
                             link.className = 'worktree-link';
-                            link.href = '#';
 
                             // Generate a new UUID for this session
                             var uuid = crypto.randomUUID ? crypto.randomUUID() :
@@ -658,14 +657,12 @@
                                     return v.toString(16);
                                 });
 
-                            link.onclick = function(e) {
-                                e.preventDefault();
-                                var url = '/session/' + uuid + '?assistant=' + encodeURIComponent(assistant) + '&name=' + encodeURIComponent(wt.name);
-                                if (debug) {
-                                    url += '&debug=1';
-                                }
-                                window.location.href = url;
-                            };
+                            // Build URL and set href directly so cmd-click/middle-click work
+                            var url = '/session/' + uuid + '?assistant=' + encodeURIComponent(assistant) + '&name=' + encodeURIComponent(wt.name);
+                            if (debug) {
+                                url += '&debug=1';
+                            }
+                            link.href = url;
 
                             link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
                                 '<span class="worktree-link__text">Start new session in ' + wt.name + '</span>';
