@@ -867,8 +867,17 @@ func handleInit() {
 	}
 
 	// Validate that --previous-init-flags=reuse is not combined with other flags
+	// Uses allowlist approach: only --project-directory and --previous-init-flags are allowed with reuse.
+	// This is safer than blocklist - forgetting to update allowlist fails safely (rejects new flag),
+	// while forgetting to update blocklist would allow invalid combinations.
 	if *previousInitFlags == "reuse" {
-		if *agentsFlag != "" || *excludeFlag != "" || *aptPackages != "" || *npmPackages != "" || *withDocker || *slashCommands != "" || *sslFlag != "no" || *copyHomePathsFlag != "" {
+		hasOtherFlags := false
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name != "project-directory" && f.Name != "previous-init-flags" {
+				hasOtherFlags = true
+			}
+		})
+		if hasOtherFlags {
 			fmt.Fprintf(os.Stderr, "Error: --previous-init-flags=reuse cannot be combined with other flags\n\n")
 			fmt.Fprintf(os.Stderr, "  To reapply saved configuration without changes:\n")
 			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=reuse\n\n")

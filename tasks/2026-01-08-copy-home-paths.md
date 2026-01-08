@@ -87,7 +87,7 @@ Files are actually copied from `$HOME/<path>` to `{sweDir}/home/<path>`.
 
 ---
 
-## Phase 3 - Refactor: Reuse Validation to Allowlist
+## Phase 3 - Refactor: Reuse Validation to Allowlist ✅ COMPLETE
 
 ### What Will Be Achieved
 
@@ -95,15 +95,15 @@ Change `--previous-init-flags=reuse` validation from blocklist (what cannot be c
 
 ### Steps
 
-1. **Identify current blocklist check** (~line 840):
+1. ✅ **Identified current blocklist check** (~line 869):
    ```go
-   // Current: blocklist - breaks if we forget new flag
-   if *agentsFlag != "" || *excludeFlag != "" || ... {
+   // Old: blocklist - breaks if we forget new flag
+   if *agentsFlag != "" || *excludeFlag != "" || ... || *copyHomePathsFlag != "" {
        // error
    }
    ```
 
-2. **Refactor to allowlist**:
+2. ✅ **Refactored to allowlist**:
    ```go
    // New: allowlist - safe default if we forget new flag
    // Only --project-directory and --previous-init-flags are allowed with reuse
@@ -120,7 +120,7 @@ Change `--previous-init-flags=reuse` validation from blocklist (what cannot be c
 
 ### Verification
 
-1. `make build golden-update`
-2. Golden should be unchanged (same behavior, different implementation)
-3. `make test` passes
-4. Manual test: verify error still shown when combining `--previous-init-flags=reuse` with other flags
+1. ✅ `make build golden-update`
+2. ✅ Golden unchanged - stderr.txt for `previous-init-flags-reuse-with-other-flags` still shows same error
+3. ✅ `make test` passes
+4. ✅ Golden test `previous-init-flags-reuse-with-other-flags` verifies error is shown
