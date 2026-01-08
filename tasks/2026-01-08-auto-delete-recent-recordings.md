@@ -53,11 +53,11 @@ Implement auto-cleanup for recordings with a "Recent vs Kept" model:
 
 ## Phase 2: Keep API - Add endpoint to keep a recording
 
-- [ ] Step 2.1: Add route handling for `POST /api/recording/{uuid}/keep` in `handleRecordingAPI()`
-- [ ] Step 2.2: Implement `handleKeepRecording()` function that reads metadata, sets `KeptAt`, writes back
-- [ ] Step 2.3: Add test `TestKeepRecording_Success`
-- [ ] Step 2.4: Add test `TestKeepRecording_NotFound`
-- [ ] Step 2.5: Add test `TestKeepRecording_AlreadyKept`
+- [x] Step 2.1: Add route handling for `POST /api/recording/{uuid}/keep` in `handleRecordingAPI()`
+- [x] Step 2.2: Implement `handleKeepRecording()` function that reads metadata, sets `KeptAt`, writes back
+- [x] Step 2.3: Add test `TestKeepRecording_Success`
+- [x] Step 2.4: Add test `TestKeepRecording_NotFound`
+- [x] Step 2.5: Add test `TestKeepRecording_AlreadyKept`
 
 ### Verification
 - Run `go test ./...` to ensure all tests pass
