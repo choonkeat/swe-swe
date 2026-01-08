@@ -991,6 +991,54 @@ func handleInit() {
 		return nil
 	})
 
+	// Copy paths from user's $HOME to project home directory
+	if len(copyHomePaths) > 0 {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get user home directory: %v", err)
+		}
+		for _, relPath := range copyHomePaths {
+			srcPath := filepath.Join(userHome, relPath)
+			destPath := filepath.Join(homeDir, relPath)
+
+			// Check if source exists
+			srcInfo, err := os.Stat(srcPath)
+			if os.IsNotExist(err) {
+				fmt.Printf("Warning: %s does not exist, skipping\n", srcPath)
+				continue
+			}
+			if err != nil {
+				fmt.Printf("Warning: cannot access %s: %v, skipping\n", srcPath, err)
+				continue
+			}
+
+			// Create parent directories at destination
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				log.Fatalf("Failed to create parent directories for %s: %v", destPath, err)
+			}
+
+			// Copy the file or directory
+			if srcInfo.IsDir() {
+				if err := copyDir(srcPath, destPath); err != nil {
+					log.Fatalf("Failed to copy directory %s to %s: %v", srcPath, destPath, err)
+				}
+			} else {
+				if err := copyFile(srcPath, destPath); err != nil {
+					log.Fatalf("Failed to copy file %s to %s: %v", srcPath, destPath, err)
+				}
+			}
+			fmt.Printf("Copied %s → %s\n", srcPath, destPath)
+
+			// Set ownership to UID 1000 for the copied files
+			filepath.Walk(destPath, func(path string, info os.FileInfo, err error) error {
+				if err == nil {
+					os.Chown(path, 1000, 1000)
+				}
+				return nil
+			})
+		}
+	}
+
 	// Write bundled slash commands to home/.claude/commands/swe-swe/
 	bundledSlashCommandsDir := filepath.Join(homeDir, ".claude", "commands")
 	if err := writeBundledSlashCommands(bundledSlashCommandsDir); err != nil {
@@ -1347,13 +1395,52 @@ func handleCertificates(sweDir, certsDir string) bool {
 	return false
 }
 
-// copyFile copies source to destination
+// copyFile copies a single file, preserving permissions
 func copyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, 0644)
+	return os.WriteFile(dst, data, srcInfo.Mode())
+}
+
+// copyDir recursively copies a directory tree, preserving permissions
+func copyDir(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	// Create destination directory with same permissions
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // sanitizePath converts an absolute path into a sanitized directory name suitable

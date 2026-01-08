@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -36,8 +37,11 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
-// Version can be set at build time with: go build -ldflags "-X main.Version=<version>"
-var Version = "dev"
+// Version information set at build time via ldflags
+var (
+	Version   = "dev"
+	GitCommit = "2cdcd07"
+)
 
 var indexTemplate *template.Template
 var selectionTemplate *template.Template
@@ -107,9 +111,11 @@ func formatDuration(d time.Duration) string {
 
 // AgentWithSessions groups an assistant with its active sessions
 type AgentWithSessions struct {
-	Assistant  AssistantConfig
-	Sessions   []SessionInfo   // sorted by CreatedAt desc (most recent first)
-	Recordings []RecordingInfo // ended recordings for this agent
+	Assistant        AssistantConfig
+	Sessions         []SessionInfo   // sorted by CreatedAt desc (most recent first)
+	Recordings       []RecordingInfo // ended recordings for this agent (deprecated, use Recent/Kept)
+	RecentRecordings []RecordingInfo // recent recordings (auto-deletable, not kept)
+	KeptRecordings   []RecordingInfo // kept recordings (user explicitly kept)
 }
 
 // RecordingMetadata stores information about a terminal recording session
@@ -119,6 +125,7 @@ type RecordingMetadata struct {
 	Agent     string     `json:"agent"`
 	StartedAt time.Time  `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	KeptAt    *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
 	Command   []string   `json:"command"`
 	Visitors  []Visitor  `json:"visitors,omitempty"`
 	MaxCols   uint16     `json:"max_cols,omitempty"` // Max terminal columns during recording
@@ -418,15 +425,31 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 	}
 }
 
+// buildExitMessage creates the exit message payload for a session.
+// Includes worktree info if the session is running in a worktree.
+func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
+	msg := map[string]interface{}{
+		"type":     "exit",
+		"exitCode": exitCode,
+	}
+
+	// Include worktree info if session is in a worktree
+	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
+		msg["worktree"] = map[string]string{
+			"path":   s.WorkDir,
+			"branch": s.BranchName,
+		}
+	}
+
+	return msg
+}
+
 // BroadcastExit sends a process exit notification to all connected clients
 func (s *Session) BroadcastExit(exitCode int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	exitJSON := map[string]interface{}{
-		"type":     "exit",
-		"exitCode": exitCode,
-	}
+	exitJSON := buildExitMessage(s, exitCode)
 
 	data, err := json.Marshal(exitJSON)
 	if err != nil {
@@ -848,9 +871,11 @@ func main() {
 
 	// Handle --version flag
 	if *version {
-		fmt.Println("swe-swe-server version dev")
+		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
 		os.Exit(0)
 	}
+
+	log.Printf("swe-swe-server %s (%s)", Version, GitCommit)
 
 	// Change to working directory if specified
 	if workingDir != "" {
@@ -957,10 +982,22 @@ func main() {
 			// Build AgentWithSessions for all available assistants
 			agents := make([]AgentWithSessions, 0, len(availableAssistants))
 			for _, assistant := range availableAssistants {
+				recordings := recordingsByAgent[assistant.Binary]
+				// Split recordings into recent and kept
+				var recentRecordings, keptRecordings []RecordingInfo
+				for _, rec := range recordings {
+					if rec.IsKept {
+						keptRecordings = append(keptRecordings, rec)
+					} else {
+						recentRecordings = append(recentRecordings, rec)
+					}
+				}
 				agents = append(agents, AgentWithSessions{
-					Assistant:  assistant,
-					Sessions:   sessionsByAssistant[assistant.Binary], // nil if no sessions
-					Recordings: recordingsByAgent[assistant.Binary],   // nil if no recordings
+					Assistant:        assistant,
+					Sessions:         sessionsByAssistant[assistant.Binary], // nil if no sessions
+					Recordings:       recordings,                            // all recordings (for backward compat)
+					RecentRecordings: recentRecordings,
+					KeptRecordings:   keptRecordings,
 				})
 			}
 
@@ -997,9 +1034,27 @@ func main() {
 			return
 		}
 
+		// Worktrees API endpoint
+		if r.URL.Path == "/api/worktrees" {
+			handleWorktreesAPI(w, r)
+			return
+		}
+
+		// Worktree check API endpoint
+		if r.URL.Path == "/api/worktree/check" {
+			handleWorktreeCheckAPI(w, r)
+			return
+		}
+
 		// Recording API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 			handleRecordingAPI(w, r)
+			return
+		}
+
+		// Worktree API endpoints
+		if strings.HasPrefix(r.URL.Path, "/api/worktree/") {
+			handleWorktreeAPI(w, r)
 			return
 		}
 
@@ -1122,22 +1177,63 @@ func deriveBranchName(sessionName string) string {
 	// Replace spaces with hyphens
 	result = strings.ReplaceAll(result, " ", "-")
 
-	// Remove any character that's not alphanumeric, hyphen, or underscore
-	re := regexp.MustCompile(`[^a-z0-9_-]+`)
+	// Remove any character that's not alphanumeric, hyphen, underscore, dot, or slash
+	// These are the safe characters git allows in branch names
+	// (dots have restrictions: no leading dot per component, no "..", no ".lock" suffix)
+	re := regexp.MustCompile(`[^a-z0-9_./-]+`)
 	result = re.ReplaceAllString(result, "-")
 
 	// Collapse multiple hyphens
 	re = regexp.MustCompile(`-+`)
 	result = re.ReplaceAllString(result, "-")
 
-	// Trim leading/trailing hyphens
-	result = strings.Trim(result, "-")
+	// Clean up slashes: collapse multiple slashes
+	re = regexp.MustCompile(`/+`)
+	result = re.ReplaceAllString(result, "/")
+
+	// Clean up consecutive dots (git doesn't allow "..")
+	re = regexp.MustCompile(`\.+`)
+	result = re.ReplaceAllString(result, ".")
+
+	// Clean up patterns like "/-", "-/", "/.", "./"
+	for _, pattern := range []string{"/-", "-/", "/.", "./"} {
+		for strings.Contains(result, pattern) {
+			result = strings.ReplaceAll(result, pattern, "/")
+		}
+	}
+
+	// Collapse multiple slashes again (pattern cleanup above can create them)
+	re = regexp.MustCompile(`/+`)
+	result = re.ReplaceAllString(result, "/")
+
+	// Remove leading dots from each path component (git restriction)
+	// e.g., ".hidden/foo" -> "hidden/foo", "foo/.bar" -> "foo/bar"
+	re = regexp.MustCompile(`(^|/)\.+`)
+	result = re.ReplaceAllString(result, "$1")
+
+	// Remove .lock suffix if present (git restriction)
+	result = strings.TrimSuffix(result, ".lock")
+
+	// Trim leading/trailing hyphens, slashes, and dots
+	result = strings.Trim(result, "-/.")
 
 	return result
 }
 
+// worktreeDirName converts a branch name to a safe directory name.
+// Replaces "/" with "--" to keep a flat directory structure.
+func worktreeDirName(branchName string) string {
+	return strings.ReplaceAll(branchName, "/", "--")
+}
+
+// branchNameFromDir converts a directory name back to a branch name.
+// Replaces "--" with "/" to restore hierarchical branch names.
+func branchNameFromDir(dirName string) string {
+	return strings.ReplaceAll(dirName, "--", "/")
+}
+
 // worktreeDir is the base directory for git worktrees
-const worktreeDir = "/workspace/.swe-swe/worktrees"
+var worktreeDir = "/workspace/.swe-swe/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
 var excludeFromCopy = []string{".git", ".swe-swe"}
@@ -1269,12 +1365,44 @@ func getGitRoot() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// createWorktree creates a git worktree for the given branch name
-// If a branch/worktree with that name already exists, appends a random suffix
-// Returns the worktree path or an error
+// worktreeExists checks if a worktree directory already exists for the given branch name
+func worktreeExists(branchName string) bool {
+	worktreePath := worktreeDir + "/" + worktreeDirName(branchName)
+	_, err := os.Stat(worktreePath)
+	return err == nil
+}
+
+// localBranchExists checks if a local git branch exists with the given name
+func localBranchExists(branchName string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", branchName)
+	return cmd.Run() == nil
+}
+
+// remoteBranchExists checks if a remote git branch exists with the given name
+func remoteBranchExists(branchName string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "origin/"+branchName)
+	return cmd.Run() == nil
+}
+
+// createWorktree creates or re-enters a git worktree for the given branch name
+// Priority:
+// 1. If worktree exists -> return existing path (re-entry)
+// 2. If local branch exists -> git worktree add <path> <branch> (no -b)
+// 3. If remote branch exists -> git worktree add --track -b <branch> <path> origin/<branch>
+// 4. Otherwise -> git worktree add -b <branch> <path> (fresh branch)
 func createWorktree(branchName string) (string, error) {
 	if branchName == "" {
 		return "", fmt.Errorf("branch name cannot be empty")
+	}
+
+	// Use worktreeDirName for filesystem path (converts "/" to "--")
+	// but keep branchName unchanged for git operations
+	worktreePath := worktreeDir + "/" + worktreeDirName(branchName)
+
+	// Priority 1: Re-enter existing worktree
+	if worktreeExists(branchName) {
+		log.Printf("Re-entering existing worktree at %s", worktreePath)
+		return worktreePath, nil
 	}
 
 	// Ensure worktree directory exists
@@ -1282,36 +1410,37 @@ func createWorktree(branchName string) (string, error) {
 		return "", fmt.Errorf("failed to create worktree directory: %w", err)
 	}
 
-	// Check if branch already exists
-	finalBranch := branchName
-	cmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	if err := cmd.Run(); err == nil {
-		// Branch exists, append random suffix
-		suffix := uuid.New().String()[:8]
-		finalBranch = branchName + "-" + suffix
-		log.Printf("Branch %s exists, using %s instead", branchName, finalBranch)
-	}
+	var cmd *exec.Cmd
+	var output []byte
+	var err error
 
-	worktreePath := worktreeDir + "/" + finalBranch
-
-	// Check if worktree path already exists
-	if _, err := os.Stat(worktreePath); err == nil {
-		// Path exists, append random suffix if not already done
-		if finalBranch == branchName {
-			suffix := uuid.New().String()[:8]
-			finalBranch = branchName + "-" + suffix
-			worktreePath = worktreeDir + "/" + finalBranch
+	// Priority 2: Attach to existing local branch
+	if localBranchExists(branchName) {
+		log.Printf("Attaching worktree to existing local branch %s", branchName)
+		cmd = exec.Command("git", "worktree", "add", worktreePath, branchName)
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("failed to create worktree for existing branch: %w (output: %s)", err, string(output))
+		}
+	} else if remoteBranchExists(branchName) {
+		// Priority 3: Track remote branch
+		log.Printf("Creating worktree tracking remote branch origin/%s", branchName)
+		cmd = exec.Command("git", "worktree", "add", "--track", "-b", branchName, worktreePath, "origin/"+branchName)
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("failed to create worktree tracking remote: %w (output: %s)", err, string(output))
+		}
+	} else {
+		// Priority 4: Create fresh branch
+		log.Printf("Creating new worktree with fresh branch %s", branchName)
+		cmd = exec.Command("git", "worktree", "add", worktreePath, "-b", branchName)
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
 		}
 	}
 
-	// Create the worktree with a new branch
-	cmd = exec.Command("git", "worktree", "add", worktreePath, "-b", finalBranch)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
-	}
-
-	log.Printf("Created worktree at %s (branch: %s)", worktreePath, finalBranch)
+	log.Printf("Created worktree at %s (branch: %s)", worktreePath, branchName)
 
 	// Copy untracked files to the worktree (graceful degradation on failure)
 	gitRoot, err := getGitRoot()
@@ -1324,6 +1453,284 @@ func createWorktree(branchName string) (string, error) {
 	}
 
 	return worktreePath, nil
+}
+
+// WorktreeInfo contains information about an existing worktree
+type WorktreeInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// listWorktrees returns a list of existing worktree directories
+func listWorktrees() ([]WorktreeInfo, error) {
+	// Check if worktree directory exists
+	if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
+		return []WorktreeInfo{}, nil // No worktrees yet
+	}
+
+	entries, err := os.ReadDir(worktreeDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read worktree directory: %w", err)
+	}
+
+	var worktrees []WorktreeInfo
+	for _, entry := range entries {
+		if entry.IsDir() {
+			// Convert directory name back to branch name (e.g., "style--foo" -> "style/foo")
+			worktrees = append(worktrees, WorktreeInfo{
+				Name: branchNameFromDir(entry.Name()),
+				Path: worktreeDir + "/" + entry.Name(),
+			})
+		}
+	}
+
+	// Return empty slice instead of nil for consistent JSON encoding
+	if worktrees == nil {
+		worktrees = []WorktreeInfo{}
+	}
+
+	return worktrees, nil
+}
+
+// handleWorktreesAPI handles GET /api/worktrees
+func handleWorktreesAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	worktrees, err := listWorktrees()
+	if err != nil {
+		log.Printf("Error listing worktrees: %v", err)
+		http.Error(w, "Failed to list worktrees", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"worktrees": worktrees,
+	})
+}
+
+// handleWorktreeCheckAPI handles GET /api/worktree/check?name={branch}
+// Returns whether the branch/worktree exists and what type
+func handleWorktreeCheckAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name parameter required", http.StatusBadRequest)
+		return
+	}
+
+	// Derive branch name from session name
+	branchName := deriveBranchName(name)
+	if branchName == "" {
+		// No valid branch name derived
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exists": false,
+		})
+		return
+	}
+
+	// Check in priority order: worktree > local branch > remote branch
+	var conflictType string
+	if worktreeExists(branchName) {
+		conflictType = "worktree"
+	} else if localBranchExists(branchName) {
+		conflictType = "local"
+	} else if remoteBranchExists(branchName) {
+		conflictType = "remote"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if conflictType != "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exists": true,
+			"type":   conflictType,
+			"branch": branchName,
+		})
+	} else {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exists": false,
+		})
+	}
+}
+
+// isValidWorktreePath checks if a path is a valid worktree path (under worktreeDir).
+// This is a security check to prevent path traversal attacks.
+func isValidWorktreePath(path string) bool {
+	if path == "" {
+		return false
+	}
+
+	// Clean the path to resolve any .. or . components
+	cleanPath := filepath.Clean(path)
+
+	// Must start with worktreeDir
+	if !strings.HasPrefix(cleanPath, worktreeDir+"/") {
+		return false
+	}
+
+	// Must not contain path traversal after cleaning
+	if cleanPath != path && strings.Contains(path, "..") {
+		return false
+	}
+
+	return true
+}
+
+// buildMergeInstructions generates manual merge instructions for error recovery
+func buildMergeInstructions(branch, path string) string {
+	return fmt.Sprintf(`To resolve manually:
+  cd /workspace
+  git merge %s
+  # resolve any issues
+  git commit
+  git worktree remove %s
+  git branch -d %s`, branch, path, branch)
+}
+
+// buildDiscardInstructions generates manual discard instructions for error recovery
+func buildDiscardInstructions(branch, path string) string {
+	return fmt.Sprintf(`To discard manually:
+  git worktree remove --force %s
+  git branch -D %s`, path, branch)
+}
+
+// WorktreeRequest represents the JSON body for worktree API requests
+type WorktreeRequest struct {
+	Branch string `json:"branch"`
+	Path   string `json:"path"`
+}
+
+// WorktreeResponse represents the JSON response for worktree API requests
+type WorktreeResponse struct {
+	Success      bool   `json:"success"`
+	Error        string `json:"error,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// handleWorktreeAPI routes worktree API requests
+func handleWorktreeAPI(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/worktree/")
+
+	switch {
+	case path == "merge" && r.Method == http.MethodPost:
+		handleWorktreeMerge(w, r)
+	case path == "discard" && r.Method == http.MethodPost:
+		handleWorktreeDiscard(w, r)
+	default:
+		http.Error(w, "Not Found", http.StatusNotFound)
+	}
+}
+
+// handleWorktreeMerge handles POST /api/worktree/merge
+func handleWorktreeMerge(w http.ResponseWriter, r *http.Request) {
+	var req WorktreeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendWorktreeError(w, "Invalid request body: "+err.Error(), "")
+		return
+	}
+
+	if req.Branch == "" || req.Path == "" {
+		sendWorktreeError(w, "branch and path are required", "")
+		return
+	}
+
+	if !isValidWorktreePath(req.Path) {
+		sendWorktreeError(w, "invalid worktree path", "")
+		return
+	}
+
+	// Attempt merge
+	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", req.Branch, "--no-edit")
+	mergeOutput, mergeErr := mergeCmd.CombinedOutput()
+
+	if mergeErr != nil {
+		// Abort the failed merge
+		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
+		abortCmd.Run() // Ignore error, merge might not be in progress
+
+		sendWorktreeError(w, "git merge failed: "+string(mergeOutput), buildMergeInstructions(req.Branch, req.Path))
+		return
+	}
+
+	// Merge succeeded, remove worktree
+	removeCmd := exec.Command("git", "worktree", "remove", req.Path)
+	if removeOutput, err := removeCmd.CombinedOutput(); err != nil {
+		sendWorktreeError(w, "git worktree remove failed: "+string(removeOutput), buildMergeInstructions(req.Branch, req.Path))
+		return
+	}
+
+	// Delete branch
+	branchCmd := exec.Command("git", "branch", "-d", req.Branch)
+	if branchOutput, err := branchCmd.CombinedOutput(); err != nil {
+		// Branch deletion failed, but merge and worktree removal succeeded
+		// This is not critical, just log it
+		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
+	}
+
+	log.Printf("Worktree merged and cleaned up: branch=%s, path=%s", req.Branch, req.Path)
+	sendWorktreeSuccess(w)
+}
+
+// handleWorktreeDiscard handles POST /api/worktree/discard
+func handleWorktreeDiscard(w http.ResponseWriter, r *http.Request) {
+	var req WorktreeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendWorktreeError(w, "Invalid request body: "+err.Error(), "")
+		return
+	}
+
+	if req.Branch == "" || req.Path == "" {
+		sendWorktreeError(w, "branch and path are required", "")
+		return
+	}
+
+	if !isValidWorktreePath(req.Path) {
+		sendWorktreeError(w, "invalid worktree path", "")
+		return
+	}
+
+	// Force remove worktree
+	removeCmd := exec.Command("git", "worktree", "remove", "--force", req.Path)
+	if removeOutput, err := removeCmd.CombinedOutput(); err != nil {
+		sendWorktreeError(w, "git worktree remove failed: "+string(removeOutput), buildDiscardInstructions(req.Branch, req.Path))
+		return
+	}
+
+	// Force delete branch
+	branchCmd := exec.Command("git", "branch", "-D", req.Branch)
+	if branchOutput, err := branchCmd.CombinedOutput(); err != nil {
+		// Branch deletion failed, but worktree removal succeeded
+		// This is not critical, just log it
+		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
+	}
+
+	log.Printf("Worktree discarded: branch=%s, path=%s", req.Branch, req.Path)
+	sendWorktreeSuccess(w)
+}
+
+// sendWorktreeSuccess sends a successful worktree response
+func sendWorktreeSuccess(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(WorktreeResponse{Success: true})
+}
+
+// sendWorktreeError sends an error worktree response
+func sendWorktreeError(w http.ResponseWriter, errMsg, instructions string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(WorktreeResponse{
+		Success:      false,
+		Error:        errMsg,
+		Instructions: instructions,
+	})
 }
 
 // sessionReaper periodically cleans up sessions where the process has exited
@@ -1343,6 +1750,137 @@ func sessionReaper() {
 			}
 		}
 		sessionsMu.Unlock()
+
+		// Clean up old recent recordings
+		cleanupRecentRecordings()
+	}
+}
+
+// Constants for recording cleanup
+const (
+	maxRecentRecordingsPerAgent = 5
+	recentRecordingMaxAge       = time.Hour
+)
+
+// cleanupRecentRecordings deletes old/excess recent recordings (those without KeptAt set)
+// For each agent, keeps only the most recent maxRecentRecordingsPerAgent recordings
+// and deletes any unkept recordings older than recentRecordingMaxAge
+func cleanupRecentRecordings() {
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		return
+	}
+
+	// Build map of active recording UUIDs
+	activeRecordings := make(map[string]bool)
+	sessionsMu.RLock()
+	for _, sess := range sessions {
+		if sess.RecordingUUID != "" && sess.Cmd != nil && sess.Cmd.ProcessState == nil {
+			activeRecordings[sess.RecordingUUID] = true
+		}
+	}
+	sessionsMu.RUnlock()
+
+	// Collect all recent (unkept) recordings grouped by agent
+	type recentRecording struct {
+		uuid    string
+		endedAt time.Time
+	}
+	recentByAgent := make(map[string][]recentRecording)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".metadata.json") {
+			continue
+		}
+
+		// Extract UUID
+		uuid := strings.TrimPrefix(name, "session-")
+		uuid = strings.TrimSuffix(uuid, ".metadata.json")
+
+		// Skip active recordings
+		if activeRecordings[uuid] {
+			continue
+		}
+
+		// Read metadata
+		metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+		metaData, err := os.ReadFile(metadataPath)
+		if err != nil {
+			continue
+		}
+
+		var meta RecordingMetadata
+		if err := json.Unmarshal(metaData, &meta); err != nil {
+			continue
+		}
+
+		// Skip kept recordings
+		if meta.KeptAt != nil {
+			continue
+		}
+
+		// Determine end time
+		endedAt := meta.StartedAt
+		if meta.EndedAt != nil {
+			endedAt = *meta.EndedAt
+		}
+
+		agent := meta.Agent
+		if agent == "" {
+			agent = "unknown"
+		}
+		// Map display name to binary name
+		agent = agentNameToBinary(agent)
+
+		recentByAgent[agent] = append(recentByAgent[agent], recentRecording{
+			uuid:    uuid,
+			endedAt: endedAt,
+		})
+	}
+
+	// For each agent, delete old/excess recordings
+	now := time.Now()
+	for agent, recordings := range recentByAgent {
+		// Sort by endedAt descending (newest first)
+		sort.Slice(recordings, func(i, j int) bool {
+			return recordings[i].endedAt.After(recordings[j].endedAt)
+		})
+
+		for i, rec := range recordings {
+			shouldDelete := false
+
+			// Delete if beyond the per-agent limit
+			if i >= maxRecentRecordingsPerAgent {
+				shouldDelete = true
+			}
+
+			// Delete if older than max age
+			if now.Sub(rec.endedAt) > recentRecordingMaxAge {
+				shouldDelete = true
+			}
+
+			if shouldDelete {
+				deleteRecordingFiles(rec.uuid)
+				log.Printf("Auto-deleted recent recording %s (agent=%s, age=%v, position=%d)",
+					rec.uuid[:8], agent, now.Sub(rec.endedAt).Round(time.Minute), i+1)
+			}
+		}
+	}
+}
+
+// deleteRecordingFiles removes all files for a recording
+func deleteRecordingFiles(uuid string) {
+	patterns := []string{
+		recordingsDir + "/session-" + uuid + ".log",
+		recordingsDir + "/session-" + uuid + ".timing",
+		recordingsDir + "/session-" + uuid + ".metadata.json",
+	}
+	for _, path := range patterns {
+		os.Remove(path)
 	}
 }
 
@@ -1447,6 +1985,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		RecordingUUID:   recordingUUID,
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
+			Name:      name,
 			Agent:     cfg.Name,
 			StartedAt: now,
 			Command:   append([]string{cmdName}, cmdArgs...),
@@ -1838,6 +2377,7 @@ type RecordingListItem struct {
 	Agent     string     `json:"agent,omitempty"`
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	KeptAt    *time.Time `json:"kept_at,omitempty"`
 	HasTiming bool       `json:"has_timing"`
 	SizeBytes int64      `json:"size_bytes"`
 	IsActive  bool       `json:"is_active,omitempty"`
@@ -1849,8 +2389,10 @@ type RecordingInfo struct {
 	UUIDShort string
 	Name      string
 	Agent     string
-	EndedAgo  string    // "15m ago", "2h ago", "yesterday"
-	EndedAt   time.Time // actual timestamp for sorting
+	EndedAgo  string     // "15m ago", "2h ago", "yesterday"
+	EndedAt   time.Time  // actual timestamp for sorting
+	KeptAt    *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
+	IsKept    bool       // Convenience field for templates
 }
 
 // formatTimeAgo returns a human-readable relative time string
@@ -1935,6 +2477,8 @@ func loadEndedRecordings() []RecordingInfo {
 			if json.Unmarshal(metaData, &meta) == nil {
 				info.Name = meta.Name
 				info.Agent = meta.Agent
+				info.KeptAt = meta.KeptAt
+				info.IsKept = meta.KeptAt != nil
 				if meta.EndedAt != nil {
 					info.EndedAt = *meta.EndedAt
 					info.EndedAgo = formatTimeAgo(*meta.EndedAt)
@@ -2103,6 +2647,12 @@ func handleRecordingAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// POST /api/recording/{uuid}/keep
+	if len(parts) == 2 && parts[1] == "keep" && r.Method == http.MethodPost {
+		handleKeepRecording(w, r, recordingUUID)
+		return
+	}
+
 	http.Error(w, "Not Found", http.StatusNotFound)
 }
 
@@ -2174,6 +2724,7 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 				item.Agent = meta.Agent
 				item.StartedAt = &meta.StartedAt
 				item.EndedAt = meta.EndedAt
+				item.KeptAt = meta.KeptAt
 			}
 		}
 
@@ -2231,6 +2782,67 @@ func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleKeepRecording marks a recording as "kept" so it won't be auto-deleted
+func handleKeepRecording(w http.ResponseWriter, r *http.Request, uuid string) {
+	metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+
+	// Read existing metadata
+	metaData, err := os.ReadFile(metadataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Recording not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Failed to read metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	var meta RecordingMetadata
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		log.Printf("Failed to parse metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if already kept
+	if meta.KeptAt != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"kept_at":        meta.KeptAt,
+			"already_kept":   true,
+		})
+		return
+	}
+
+	// Set KeptAt to now
+	now := time.Now()
+	meta.KeptAt = &now
+
+	// Write back metadata
+	updatedMeta, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(metadataPath, updatedMeta, 0644); err != nil {
+		log.Printf("Failed to write metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Recording %s marked as kept", uuid)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"kept_at":      meta.KeptAt,
+		"already_kept": false,
+	})
 }
 
 // handleDownloadRecording creates a zip archive of the recording files

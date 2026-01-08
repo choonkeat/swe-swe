@@ -53,7 +53,7 @@ The `--copy-home-paths` flag is recognized, validated, stored in `InitConfig`, a
 
 ---
 
-## Phase 2 - Implementation: Make Flag Take Effect
+## Phase 2 - Implementation: Make Flag Take Effect ✅ COMPLETE
 
 ### What Will Be Achieved
 
@@ -63,7 +63,7 @@ Files are actually copied from `$HOME/<path>` to `{sweDir}/home/<path>`.
 
 ### Steps
 
-1. **Implement the copy logic**:
+1. ✅ **Implement the copy logic**:
    - For each path in `CopyHomePaths`:
      - Source: `$HOME/<path>`
      - Dest: `{sweDir}/home/<path>`
@@ -71,15 +71,18 @@ Files are actually copied from `$HOME/<path>` to `{sweDir}/home/<path>`.
      - Create parent directories at destination (`mkdir -p`)
      - Use recursive copy with preserved permissions
 
+   Added `copyDir()` function for recursive directory copy and updated `copyFile()` to preserve permissions.
+
 ### Verification
 
-1. `make build golden-update`
-2. Golden diff should be minimal (copy happens at runtime, golden test HOME is temp dir)
-3. `make test` passes
-4. Manual test:
+1. ✅ `make build golden-update`
+2. ✅ Golden diff shows minimal changes (copy happens at runtime, golden test HOME is temp dir)
+3. ✅ `make test` passes
+4. ✅ Manual test verified:
    ```bash
-   swe-swe init --copy-home-paths .gitconfig
-   ls ~/.swe-swe/projects/*/home/.gitconfig
+   swe-swe init --copy-home-paths .gitconfig,.ssh
+   # Output: "Copied /home/.gitconfig → .../home/.gitconfig"
+   # Output: "Copied /home/.ssh → .../home/.ssh"
    ```
 
 ---
