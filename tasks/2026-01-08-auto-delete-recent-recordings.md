@@ -39,10 +39,10 @@ Implement auto-cleanup for recordings with a "Recent vs Kept" model:
 
 ## Phase 1: Data model - Add `kept_at` field to `RecordingMetadata`
 
-- [ ] Step 1.1: Add `KeptAt *time.Time` field to `RecordingMetadata` struct in `main.go`
-- [ ] Step 1.2: Add `KeptAt` field to `RecordingInfo` struct (for homepage display)
-- [ ] Step 1.3: Add `KeptAt` field to `RecordingListItem` struct (for API response)
-- [ ] Step 1.4: Update `loadEndedRecordings()` to populate `KeptAt` from metadata
+- [x] Step 1.1: Add `KeptAt *time.Time` field to `RecordingMetadata` struct in `main.go`
+- [x] Step 1.2: Add `KeptAt` field to `RecordingInfo` struct (for homepage display)
+- [x] Step 1.3: Add `KeptAt` field to `RecordingListItem` struct (for API response)
+- [x] Step 1.4: Update `loadEndedRecordings()` to populate `KeptAt` from metadata
 
 ### Verification
 - Run `go build` to ensure no compilation errors
