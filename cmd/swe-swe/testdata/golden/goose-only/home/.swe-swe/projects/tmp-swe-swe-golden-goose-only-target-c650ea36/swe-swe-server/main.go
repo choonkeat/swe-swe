@@ -1134,18 +1134,39 @@ func deriveBranchName(sessionName string) string {
 	// Replace spaces with hyphens
 	result = strings.ReplaceAll(result, " ", "-")
 
-	// Remove any character that's not alphanumeric, hyphen, or underscore
-	re := regexp.MustCompile(`[^a-z0-9_-]+`)
+	// Remove any character that's not alphanumeric, hyphen, underscore, or slash
+	// Slash is allowed for hierarchical branch names like feature/foo
+	re := regexp.MustCompile(`[^a-z0-9_/-]+`)
 	result = re.ReplaceAllString(result, "-")
 
-	// Collapse multiple hyphens
+	// Collapse multiple hyphens (but not around slashes)
 	re = regexp.MustCompile(`-+`)
 	result = re.ReplaceAllString(result, "-")
 
-	// Trim leading/trailing hyphens
-	result = strings.Trim(result, "-")
+	// Clean up slashes: collapse multiple slashes
+	re = regexp.MustCompile(`/+`)
+	result = re.ReplaceAllString(result, "/")
+
+	// Clean up patterns like "/-" or "-/"
+	result = strings.ReplaceAll(result, "/-", "/")
+	result = strings.ReplaceAll(result, "-/", "/")
+
+	// Trim leading/trailing hyphens and slashes
+	result = strings.Trim(result, "-/")
 
 	return result
+}
+
+// worktreeDirName converts a branch name to a safe directory name.
+// Replaces "/" with "--" to keep a flat directory structure.
+func worktreeDirName(branchName string) string {
+	return strings.ReplaceAll(branchName, "/", "--")
+}
+
+// branchNameFromDir converts a directory name back to a branch name.
+// Replaces "--" with "/" to restore hierarchical branch names.
+func branchNameFromDir(dirName string) string {
+	return strings.ReplaceAll(dirName, "--", "/")
 }
 
 // worktreeDir is the base directory for git worktrees
@@ -1283,7 +1304,7 @@ func getGitRoot() (string, error) {
 
 // worktreeExists checks if a worktree directory already exists for the given branch name
 func worktreeExists(branchName string) bool {
-	worktreePath := worktreeDir + "/" + branchName
+	worktreePath := worktreeDir + "/" + worktreeDirName(branchName)
 	_, err := os.Stat(worktreePath)
 	return err == nil
 }
@@ -1311,7 +1332,9 @@ func createWorktree(branchName string) (string, error) {
 		return "", fmt.Errorf("branch name cannot be empty")
 	}
 
-	worktreePath := worktreeDir + "/" + branchName
+	// Use worktreeDirName for filesystem path (converts "/" to "--")
+	// but keep branchName unchanged for git operations
+	worktreePath := worktreeDir + "/" + worktreeDirName(branchName)
 
 	// Priority 1: Re-enter existing worktree
 	if worktreeExists(branchName) {
@@ -1390,8 +1413,9 @@ func listWorktrees() ([]WorktreeInfo, error) {
 	var worktrees []WorktreeInfo
 	for _, entry := range entries {
 		if entry.IsDir() {
+			// Convert directory name back to branch name (e.g., "style--foo" -> "style/foo")
 			worktrees = append(worktrees, WorktreeInfo{
-				Name: entry.Name(),
+				Name: branchNameFromDir(entry.Name()),
 				Path: worktreeDir + "/" + entry.Name(),
 			})
 		}

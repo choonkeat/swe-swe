@@ -41,8 +41,15 @@ func TestDeriveBranchName(t *testing.T) {
 		// Real-world examples
 		{"20260107-143052", "20260107-143052"},
 		{"Fix: user login #123", "fix-user-login-123"},
-		{"feat/add-new-feature", "feat-add-new-feature"},
 		{"bug_fix_issue", "bug_fix_issue"},
+
+		// Hierarchical branch names (slash preserved)
+		{"feat/add-new-feature", "feat/add-new-feature"},
+		{"style/email-receipt-formatting-issues", "style/email-receipt-formatting-issues"},
+		{"bugfix/login/oauth", "bugfix/login/oauth"},
+		{"///multiple///slashes///", "multiple/slashes"},
+		{"feature/-dash-after-slash", "feature/dash-after-slash"},
+		{"-/leading-slash-hyphen", "leading-slash-hyphen"},  // edge case: leading hyphen then slash
 	}
 
 	for _, tt := range tests {
@@ -50,6 +57,50 @@ func TestDeriveBranchName(t *testing.T) {
 			result := deriveBranchName(tt.input)
 			if result != tt.expected {
 				t.Errorf("deriveBranchName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWorktreeDirName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"simple-branch", "simple-branch"},
+		{"feat/add-feature", "feat--add-feature"},
+		{"style/email-receipt-formatting-issues", "style--email-receipt-formatting-issues"},
+		{"bugfix/login/oauth", "bugfix--login--oauth"},
+		{"no-slash", "no-slash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := worktreeDirName(tt.input)
+			if result != tt.expected {
+				t.Errorf("worktreeDirName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBranchNameFromDir(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"simple-branch", "simple-branch"},
+		{"feat--add-feature", "feat/add-feature"},
+		{"style--email-receipt-formatting-issues", "style/email-receipt-formatting-issues"},
+		{"bugfix--login--oauth", "bugfix/login/oauth"},
+		{"no-double-dash", "no-double-dash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := branchNameFromDir(tt.input)
+			if result != tt.expected {
+				t.Errorf("branchNameFromDir(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
 	}
