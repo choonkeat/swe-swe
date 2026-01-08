@@ -111,9 +111,11 @@ func formatDuration(d time.Duration) string {
 
 // AgentWithSessions groups an assistant with its active sessions
 type AgentWithSessions struct {
-	Assistant  AssistantConfig
-	Sessions   []SessionInfo   // sorted by CreatedAt desc (most recent first)
-	Recordings []RecordingInfo // ended recordings for this agent
+	Assistant        AssistantConfig
+	Sessions         []SessionInfo   // sorted by CreatedAt desc (most recent first)
+	Recordings       []RecordingInfo // ended recordings for this agent (deprecated, use Recent/Kept)
+	RecentRecordings []RecordingInfo // recent recordings (auto-deletable, not kept)
+	KeptRecordings   []RecordingInfo // kept recordings (user explicitly kept)
 }
 
 // RecordingMetadata stores information about a terminal recording session
@@ -980,10 +982,22 @@ func main() {
 			// Build AgentWithSessions for all available assistants
 			agents := make([]AgentWithSessions, 0, len(availableAssistants))
 			for _, assistant := range availableAssistants {
+				recordings := recordingsByAgent[assistant.Binary]
+				// Split recordings into recent and kept
+				var recentRecordings, keptRecordings []RecordingInfo
+				for _, rec := range recordings {
+					if rec.IsKept {
+						keptRecordings = append(keptRecordings, rec)
+					} else {
+						recentRecordings = append(recentRecordings, rec)
+					}
+				}
 				agents = append(agents, AgentWithSessions{
-					Assistant:  assistant,
-					Sessions:   sessionsByAssistant[assistant.Binary], // nil if no sessions
-					Recordings: recordingsByAgent[assistant.Binary],   // nil if no recordings
+					Assistant:        assistant,
+					Sessions:         sessionsByAssistant[assistant.Binary], // nil if no sessions
+					Recordings:       recordings,                            // all recordings (for backward compat)
+					RecentRecordings: recentRecordings,
+					KeptRecordings:   keptRecordings,
 				})
 			}
 
@@ -2378,6 +2392,7 @@ type RecordingInfo struct {
 	EndedAgo  string     // "15m ago", "2h ago", "yesterday"
 	EndedAt   time.Time  // actual timestamp for sorting
 	KeptAt    *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
+	IsKept    bool       // Convenience field for templates
 }
 
 // formatTimeAgo returns a human-readable relative time string
@@ -2463,6 +2478,7 @@ func loadEndedRecordings() []RecordingInfo {
 				info.Name = meta.Name
 				info.Agent = meta.Agent
 				info.KeptAt = meta.KeptAt
+				info.IsKept = meta.KeptAt != nil
 				if meta.EndedAt != nil {
 					info.EndedAt = *meta.EndedAt
 					info.EndedAgo = formatTimeAgo(*meta.EndedAt)
