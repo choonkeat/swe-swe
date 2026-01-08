@@ -1003,6 +1003,12 @@ func main() {
 			return
 		}
 
+		// Worktree check API endpoint
+		if r.URL.Path == "/api/worktree/check" {
+			handleWorktreeCheckAPI(w, r)
+			return
+		}
+
 		// Recording API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 			handleRecordingAPI(w, r)
@@ -1417,6 +1423,55 @@ func handleWorktreesAPI(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"worktrees": worktrees,
 	})
+}
+
+// handleWorktreeCheckAPI handles GET /api/worktree/check?name={branch}
+// Returns whether the branch/worktree exists and what type
+func handleWorktreeCheckAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "name parameter required", http.StatusBadRequest)
+		return
+	}
+
+	// Derive branch name from session name
+	branchName := deriveBranchName(name)
+	if branchName == "" {
+		// No valid branch name derived
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exists": false,
+		})
+		return
+	}
+
+	// Check in priority order: worktree > local branch > remote branch
+	var conflictType string
+	if worktreeExists(branchName) {
+		conflictType = "worktree"
+	} else if localBranchExists(branchName) {
+		conflictType = "local"
+	} else if remoteBranchExists(branchName) {
+		conflictType = "remote"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if conflictType != "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exists": true,
+			"type":   conflictType,
+			"branch": branchName,
+		})
+	} else {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exists": false,
+		})
+	}
 }
 
 // sessionReaper periodically cleans up sessions where the process has exited
