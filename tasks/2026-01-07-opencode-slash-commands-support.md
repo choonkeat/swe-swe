@@ -41,7 +41,7 @@ ADR-0014 (`docs/adr/0014-slash-commands-cloning.md`) will be updated to include 
 
 ---
 
-## Phase 2: Add Golden Test Variants for OpenCode
+## Phase 2: Add Golden Test Variants for OpenCode ✅
 
 ### What will be achieved
 New golden test cases that exercise `--with-slash-commands` with OpenCode enabled, ensuring the feature works correctly when OpenCode is among the selected agents.
