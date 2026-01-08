@@ -315,12 +315,14 @@ Init Options:
                                          Format: [alias@]<git-url> (space-separated)
   --ssl MODE                             SSL mode: 'no' (default), 'selfsign', or 'selfsign@<host>'
                                          Use selfsign@<ip-or-hostname> for remote access
+  --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
+                                         (e.g., .gitconfig,.ssh/config)
 
 Available Agents:
   claude, gemini, codex, aider, goose, opencode
 
 Services (defined in docker-compose.yml after init):
-  swe-swe, vscode, chrome, traefik
+  swe-swe, chrome, code-server, vscode-proxy, traefik, auth
 
 Examples:
   swe-swe init                                   Initialize current directory with all agents
@@ -333,6 +335,8 @@ Examples:
   swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
                                                  Initialize current directory with slash commands
   swe-swe init --ssl=selfsign                    Initialize with self-signed HTTPS certificate
+  swe-swe init --copy-home-paths=.gitconfig,.ssh/config
+                                                 Copy git and SSH config from host
   swe-swe up                                     Start all services
   swe-swe up -d                                  Start all services in background
   swe-swe down                                   Stop all services
