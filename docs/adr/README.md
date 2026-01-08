@@ -44,3 +44,5 @@ Bad: ...
 | [016](0016-ios-safari-websocket-self-signed-certs.md) | iOS Safari WebSocket with self-signed certs | Accepted |
 | [017](0017-tmpfs-uploads.md) | Tmpfs for file uploads | Accepted |
 | [018](0018-session-naming.md) | Session naming | Accepted |
+| [019](0019-terminal-recording.md) | Terminal recording with script command | Accepted |
+| [020](0020-git-worktree-integration.md) | Git worktree integration for sessions | Accepted |
