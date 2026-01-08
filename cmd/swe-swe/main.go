@@ -260,8 +260,8 @@ Init Options:
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
   --with-docker                          Mount Docker socket to allow container to run Docker commands
-  --with-slash-commands REPOS            Git repos to clone as slash commands (space-separated)
-                                         Format: [alias@]<git-url>
+  --with-slash-commands REPOS            Git repos to clone as slash commands for Claude/Codex/OpenCode
+                                         Format: [alias@]<git-url> (space-separated)
   --ssl MODE                             SSL mode: 'no' (default), 'selfsign', or 'selfsign@<host>'
                                          Use selfsign@<ip-or-hostname> for remote access
 
