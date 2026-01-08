@@ -1134,12 +1134,13 @@ func deriveBranchName(sessionName string) string {
 	// Replace spaces with hyphens
 	result = strings.ReplaceAll(result, " ", "-")
 
-	// Remove any character that's not alphanumeric, hyphen, underscore, or slash
-	// Slash is allowed for hierarchical branch names like feature/foo
-	re := regexp.MustCompile(`[^a-z0-9_/-]+`)
+	// Remove any character that's not alphanumeric, hyphen, underscore, dot, or slash
+	// These are the safe characters git allows in branch names
+	// (dots have restrictions: no leading dot per component, no "..", no ".lock" suffix)
+	re := regexp.MustCompile(`[^a-z0-9_./-]+`)
 	result = re.ReplaceAllString(result, "-")
 
-	// Collapse multiple hyphens (but not around slashes)
+	// Collapse multiple hyphens
 	re = regexp.MustCompile(`-+`)
 	result = re.ReplaceAllString(result, "-")
 
@@ -1147,12 +1148,27 @@ func deriveBranchName(sessionName string) string {
 	re = regexp.MustCompile(`/+`)
 	result = re.ReplaceAllString(result, "/")
 
-	// Clean up patterns like "/-" or "-/"
-	result = strings.ReplaceAll(result, "/-", "/")
-	result = strings.ReplaceAll(result, "-/", "/")
+	// Clean up consecutive dots (git doesn't allow "..")
+	re = regexp.MustCompile(`\.+`)
+	result = re.ReplaceAllString(result, ".")
 
-	// Trim leading/trailing hyphens and slashes
-	result = strings.Trim(result, "-/")
+	// Clean up patterns like "/-", "-/", "/.", "./"
+	for _, pattern := range []string{"/-", "-/", "/.", "./"} {
+		for strings.Contains(result, pattern) {
+			result = strings.ReplaceAll(result, pattern, "/")
+		}
+	}
+
+	// Remove leading dots from each path component (git restriction)
+	// e.g., ".hidden/foo" -> "hidden/foo", "foo/.bar" -> "foo/bar"
+	re = regexp.MustCompile(`(^|/)\.+`)
+	result = re.ReplaceAllString(result, "$1")
+
+	// Remove .lock suffix if present (git restriction)
+	result = strings.TrimSuffix(result, ".lock")
+
+	// Trim leading/trailing hyphens, slashes, and dots
+	result = strings.Trim(result, "-/.")
 
 	return result
 }

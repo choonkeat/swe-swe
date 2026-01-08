@@ -49,7 +49,23 @@ func TestDeriveBranchName(t *testing.T) {
 		{"bugfix/login/oauth", "bugfix/login/oauth"},
 		{"///multiple///slashes///", "multiple/slashes"},
 		{"feature/-dash-after-slash", "feature/dash-after-slash"},
-		{"-/leading-slash-hyphen", "leading-slash-hyphen"},  // edge case: leading hyphen then slash
+		{"-/leading-slash-hyphen", "leading-slash-hyphen"}, // edge case: leading hyphen then slash
+
+		// Dots preserved (git allows dots with restrictions)
+		{"release/v1.2.3", "release/v1.2.3"},
+		{"feature/issue.123", "feature/issue.123"},
+		{"hotfix/bug.fix.patch", "hotfix/bug.fix.patch"},
+		{"v1.0.0-rc.1", "v1.0.0-rc.1"},
+
+		// Git dot restrictions enforced
+		{"..consecutive-dots", "consecutive-dots"},  // ".." not allowed
+		{".hidden-start", "hidden-start"},           // no leading dot
+		{"foo/.hidden/bar", "foo/hidden/bar"},       // no leading dot per component
+		{"branch.lock", "branch"},                   // ".lock" suffix not allowed
+		{"foo/bar.lock", "foo/bar"},                 // ".lock" suffix not allowed
+		{"...multiple...dots...", "multiple.dots"},  // collapse consecutive dots
+		{"./dot-slash", "dot-slash"},                // clean up "./"
+		{"foo/./bar", "foo/bar"},                    // clean up component with just "."
 	}
 
 	for _, tt := range tests {
