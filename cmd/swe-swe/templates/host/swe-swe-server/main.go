@@ -435,10 +435,13 @@ func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
 
 	// Include worktree info if session is in a worktree
 	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
+		strategy := readMergeStrategy()
 		msg["worktree"] = map[string]string{
-			"path":         s.WorkDir,
-			"branch":       s.BranchName,
-			"targetBranch": getMainRepoBranch(),
+			"path":                       s.WorkDir,
+			"branch":                     s.BranchName,
+			"targetBranch":               getMainRepoBranch(),
+			"mergeStrategy":              strategy,
+			"mergeStrategyDescription":   getMergeStrategyDescription(strategy),
 		}
 	}
 
