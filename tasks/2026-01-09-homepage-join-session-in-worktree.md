@@ -8,7 +8,7 @@ This provides a clearer worktree-centric view, especially when sessions have bee
 
 ---
 
-## Phase 1: Backend - Extend `/api/worktrees` response
+## Phase 1: Backend - Extend `/api/worktrees` response [DONE]
 
 ### What will be achieved
 

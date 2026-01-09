@@ -11,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestDeriveBranchName(t *testing.T) {
@@ -932,6 +935,141 @@ func TestHandleWorktreesAPI(t *testing.T) {
 		}
 		if len(result.Worktrees) != 0 {
 			t.Errorf("expected 0 worktrees, got %d", len(result.Worktrees))
+		}
+	})
+}
+
+func TestHandleWorktreesAPI_WithActiveSession(t *testing.T) {
+	// Save original worktreeDir and sessions, restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	t.Run("returns activeSession for worktree with running session", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		// Create a worktree directory
+		branchName := "feat/test-session"
+		worktreeDirName := "feat--test-session" // as it would be stored on disk
+		os.Mkdir(filepath.Join(tmpDir, worktreeDirName), 0755)
+
+		// Create a mock session with this branch name
+		sessionUUID := "test-session-uuid-123"
+		sessionsMu.Lock()
+		sessions[sessionUUID] = &Session{
+			UUID:       sessionUUID,
+			Name:       "My Test Session",
+			BranchName: branchName,
+			Assistant:  "claude",
+			AssistantConfig: AssistantConfig{
+				Name:   "Claude",
+				Binary: "claude",
+			},
+			CreatedAt: time.Now().Add(-5 * time.Minute),
+			wsClients: make(map[*websocket.Conn]bool),
+		}
+		// Add 2 mock clients
+		sessions[sessionUUID].wsClients[nil] = true // Using nil as placeholder, won't be dereferenced
+		sessionsMu.Unlock()
+
+		defer func() {
+			sessionsMu.Lock()
+			delete(sessions, sessionUUID)
+			sessionsMu.Unlock()
+		}()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktrees", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result struct {
+			Worktrees []struct {
+				Name          string `json:"name"`
+				Path          string `json:"path"`
+				ActiveSession *struct {
+					UUID        string `json:"uuid"`
+					Name        string `json:"name"`
+					Assistant   string `json:"assistant"`
+					ClientCount int    `json:"clientCount"`
+					DurationStr string `json:"durationStr"`
+				} `json:"activeSession,omitempty"`
+			} `json:"worktrees"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(result.Worktrees) != 1 {
+			t.Fatalf("expected 1 worktree, got %d", len(result.Worktrees))
+		}
+
+		wt := result.Worktrees[0]
+		if wt.Name != branchName {
+			t.Errorf("expected worktree name %q, got %q", branchName, wt.Name)
+		}
+
+		if wt.ActiveSession == nil {
+			t.Fatal("expected activeSession to be populated, got nil")
+		}
+
+		if wt.ActiveSession.UUID != sessionUUID {
+			t.Errorf("expected UUID %q, got %q", sessionUUID, wt.ActiveSession.UUID)
+		}
+		if wt.ActiveSession.Name != "My Test Session" {
+			t.Errorf("expected name 'My Test Session', got %q", wt.ActiveSession.Name)
+		}
+		if wt.ActiveSession.Assistant != "claude" {
+			t.Errorf("expected assistant 'claude', got %q", wt.ActiveSession.Assistant)
+		}
+		if wt.ActiveSession.ClientCount != 1 {
+			t.Errorf("expected clientCount 1, got %d", wt.ActiveSession.ClientCount)
+		}
+		// Duration should be around 5 minutes
+		if wt.ActiveSession.DurationStr != "5m" {
+			t.Errorf("expected durationStr '5m', got %q", wt.ActiveSession.DurationStr)
+		}
+	})
+
+	t.Run("no activeSession for worktree without running session", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		// Create a worktree directory
+		os.Mkdir(filepath.Join(tmpDir, "test-branch"), 0755)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktrees", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result struct {
+			Worktrees []struct {
+				Name          string      `json:"name"`
+				Path          string      `json:"path"`
+				ActiveSession interface{} `json:"activeSession,omitempty"`
+			} `json:"worktrees"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(result.Worktrees) != 1 {
+			t.Fatalf("expected 1 worktree, got %d", len(result.Worktrees))
+		}
+
+		if result.Worktrees[0].ActiveSession != nil {
+			t.Error("expected activeSession to be nil for worktree without session")
 		}
 	})
 }
