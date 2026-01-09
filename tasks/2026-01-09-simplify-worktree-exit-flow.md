@@ -170,4 +170,4 @@ Remove `/api/worktree/merge` and `/api/worktree/discard` endpoints. Future merge
 - [x] Phase 2: Frontend - Prevent WebSocket reconnection after process exit
 - [x] Phase 3: Browser verification with test container
 - [x] Phase 4: Frontend - Clean up unused CSS and code
-- [ ] Phase 5: Backend - Remove worktree cleanup API endpoints
+- [x] Phase 5: Backend - Remove worktree cleanup API endpoints

@@ -11,6 +11,5 @@
   "copyHomePaths": [
     ".gitconfig",
     ".ssh"
-  ],
-  "mergeStrategy": "merge-commit"
+  ]
 }

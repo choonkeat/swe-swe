@@ -7,6 +7,5 @@
     "goose",
     "opencode"
   ],
-  "ssl": "selfsign",
-  "mergeStrategy": "merge-commit"
+  "ssl": "selfsign"
 }

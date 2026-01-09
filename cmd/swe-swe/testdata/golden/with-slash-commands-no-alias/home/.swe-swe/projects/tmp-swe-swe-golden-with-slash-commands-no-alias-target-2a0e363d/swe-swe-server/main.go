@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "b8a9801"
+	GitCommit = "a337d10"
 )
 
 var indexTemplate *template.Template
@@ -441,13 +441,10 @@ func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
 
 	// Include worktree info if session is in a worktree
 	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
-		strategy := readMergeStrategy()
 		msg["worktree"] = map[string]string{
-			"path":                       s.WorkDir,
-			"branch":                     s.BranchName,
-			"targetBranch":               getMainRepoBranch(),
-			"mergeStrategy":              strategy,
-			"mergeStrategyDescription":   getMergeStrategyDescription(strategy),
+			"path":         s.WorkDir,
+			"branch":       s.BranchName,
+			"targetBranch": getMainRepoBranch(),
 		}
 	}
 
@@ -1062,11 +1059,6 @@ func main() {
 			return
 		}
 
-		// Worktree API endpoints
-		if strings.HasPrefix(r.URL.Path, "/api/worktree/") {
-			handleWorktreeAPI(w, r)
-			return
-		}
 
 		// Recording playback page
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
@@ -1683,273 +1675,6 @@ func isValidWorktreePath(path string) bool {
 	}
 
 	return true
-}
-
-// buildMergeInstructions generates manual merge instructions for error recovery
-func buildMergeInstructions(branch, path string) string {
-	return fmt.Sprintf(`To resolve manually:
-  cd /workspace
-  git merge %s
-  # resolve any issues
-  git commit
-  git worktree remove %s
-  git branch -d %s`, branch, path, branch)
-}
-
-// buildDiscardInstructions generates manual discard instructions for error recovery
-func buildDiscardInstructions(branch, path string) string {
-	return fmt.Sprintf(`To discard manually:
-  git worktree remove --force %s
-  git branch -D %s`, path, branch)
-}
-
-// InitConfig represents the structure of init.json for reading merge strategy
-type InitConfig struct {
-	MergeStrategy string `json:"mergeStrategy"`
-}
-
-// readMergeStrategy reads the merge strategy from /workspace/.swe-swe/init.json
-// Returns "merge-commit" as default if not found or on error
-func readMergeStrategy() string {
-	data, err := os.ReadFile("/workspace/.swe-swe/init.json")
-	if err != nil {
-		return "merge-commit"
-	}
-	var config InitConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		return "merge-commit"
-	}
-	if config.MergeStrategy == "" {
-		return "merge-commit"
-	}
-	return config.MergeStrategy
-}
-
-// getMergeStrategyDescription returns a human-readable description of the merge strategy
-func getMergeStrategyDescription(strategy string) string {
-	switch strategy {
-	case "merge-commit":
-		return "Rebase then merge with commit"
-	case "merge-ff":
-		return "Fast-forward when possible"
-	case "squash":
-		return "Squash all commits into one"
-	default:
-		return "Rebase then merge with commit"
-	}
-}
-
-// executeMergeFFStrategy performs a standard git merge (fast-forward when possible)
-func executeMergeFFStrategy(branch string) (bool, string) {
-	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", branch, "--no-edit")
-	mergeOutput, err := mergeCmd.CombinedOutput()
-	if err != nil {
-		// Abort the failed merge
-		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
-		abortCmd.Run()
-		return false, string(mergeOutput)
-	}
-	return true, ""
-}
-
-// executeMergeCommitStrategy performs rebase then merge --no-ff
-// Falls back to regular merge --no-ff if rebase fails
-func executeMergeCommitStrategy(branch, targetBranch string) (bool, string) {
-	if targetBranch == "" {
-		return false, "target branch not specified"
-	}
-
-	// Try to rebase the feature branch onto target
-	rebaseCmd := exec.Command("git", "-C", "/workspace", "rebase", targetBranch, branch)
-	rebaseOutput, rebaseErr := rebaseCmd.CombinedOutput()
-
-	if rebaseErr != nil {
-		// Rebase failed, abort it
-		abortCmd := exec.Command("git", "-C", "/workspace", "rebase", "--abort")
-		abortCmd.Run()
-		log.Printf("Rebase failed, falling back to merge --no-ff: %s", string(rebaseOutput))
-	}
-
-	// Ensure we're on the target branch
-	checkoutCmd := exec.Command("git", "-C", "/workspace", "checkout", targetBranch)
-	if checkoutOutput, err := checkoutCmd.CombinedOutput(); err != nil {
-		return false, "failed to checkout target branch: " + string(checkoutOutput)
-	}
-
-	// Merge with --no-ff (always create merge commit)
-	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", "--no-ff", branch, "--no-edit")
-	mergeOutput, mergeErr := mergeCmd.CombinedOutput()
-	if mergeErr != nil {
-		// Abort the failed merge
-		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
-		abortCmd.Run()
-		return false, string(mergeOutput)
-	}
-	return true, ""
-}
-
-// executeSquashStrategy performs git merge --squash then commits
-func executeSquashStrategy(branch string) (bool, string) {
-	// Squash merge
-	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", "--squash", branch)
-	mergeOutput, err := mergeCmd.CombinedOutput()
-	if err != nil {
-		// Reset any partial squash state
-		resetCmd := exec.Command("git", "-C", "/workspace", "reset", "--hard", "HEAD")
-		resetCmd.Run()
-		return false, string(mergeOutput)
-	}
-
-	// Commit the squashed changes
-	commitCmd := exec.Command("git", "-C", "/workspace", "commit", "-m", fmt.Sprintf("Merge branch '%s' (squashed)", branch))
-	commitOutput, err := commitCmd.CombinedOutput()
-	if err != nil {
-		// Reset on commit failure
-		resetCmd := exec.Command("git", "-C", "/workspace", "reset", "--hard", "HEAD")
-		resetCmd.Run()
-		return false, string(commitOutput)
-	}
-	return true, ""
-}
-
-// WorktreeRequest represents the JSON body for worktree API requests
-type WorktreeRequest struct {
-	Branch       string `json:"branch"`
-	Path         string `json:"path"`
-	TargetBranch string `json:"targetBranch,omitempty"`
-}
-
-// WorktreeResponse represents the JSON response for worktree API requests
-type WorktreeResponse struct {
-	Success      bool   `json:"success"`
-	Error        string `json:"error,omitempty"`
-	Instructions string `json:"instructions,omitempty"`
-}
-
-// handleWorktreeAPI routes worktree API requests
-func handleWorktreeAPI(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/worktree/")
-
-	switch {
-	case path == "merge" && r.Method == http.MethodPost:
-		handleWorktreeMerge(w, r)
-	case path == "discard" && r.Method == http.MethodPost:
-		handleWorktreeDiscard(w, r)
-	default:
-		http.Error(w, "Not Found", http.StatusNotFound)
-	}
-}
-
-// handleWorktreeMerge handles POST /api/worktree/merge
-func handleWorktreeMerge(w http.ResponseWriter, r *http.Request) {
-	var req WorktreeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendWorktreeError(w, "Invalid request body: "+err.Error(), "")
-		return
-	}
-
-	if req.Branch == "" || req.Path == "" {
-		sendWorktreeError(w, "branch and path are required", "")
-		return
-	}
-
-	if !isValidWorktreePath(req.Path) {
-		sendWorktreeError(w, "invalid worktree path", "")
-		return
-	}
-
-	// Read merge strategy from init.json
-	strategy := readMergeStrategy()
-	log.Printf("Using merge strategy: %s", strategy)
-
-	// Execute the appropriate merge strategy
-	var success bool
-	var errOutput string
-	switch strategy {
-	case "merge-ff":
-		success, errOutput = executeMergeFFStrategy(req.Branch)
-	case "squash":
-		success, errOutput = executeSquashStrategy(req.Branch)
-	default: // "merge-commit"
-		success, errOutput = executeMergeCommitStrategy(req.Branch, req.TargetBranch)
-	}
-
-	if !success {
-		sendWorktreeError(w, "git merge failed: "+errOutput, buildMergeInstructions(req.Branch, req.Path))
-		return
-	}
-
-	// Merge succeeded, remove worktree
-	removeCmd := exec.Command("git", "worktree", "remove", req.Path)
-	if removeOutput, err := removeCmd.CombinedOutput(); err != nil {
-		sendWorktreeError(w, "git worktree remove failed: "+string(removeOutput), buildMergeInstructions(req.Branch, req.Path))
-		return
-	}
-
-	// Delete branch
-	branchCmd := exec.Command("git", "branch", "-d", req.Branch)
-	if branchOutput, err := branchCmd.CombinedOutput(); err != nil {
-		// Branch deletion failed, but merge and worktree removal succeeded
-		// This is not critical, just log it
-		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
-	}
-
-	log.Printf("Worktree merged and cleaned up: branch=%s, path=%s, strategy=%s", req.Branch, req.Path, strategy)
-	sendWorktreeSuccess(w)
-}
-
-// handleWorktreeDiscard handles POST /api/worktree/discard
-func handleWorktreeDiscard(w http.ResponseWriter, r *http.Request) {
-	var req WorktreeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendWorktreeError(w, "Invalid request body: "+err.Error(), "")
-		return
-	}
-
-	if req.Branch == "" || req.Path == "" {
-		sendWorktreeError(w, "branch and path are required", "")
-		return
-	}
-
-	if !isValidWorktreePath(req.Path) {
-		sendWorktreeError(w, "invalid worktree path", "")
-		return
-	}
-
-	// Force remove worktree
-	removeCmd := exec.Command("git", "worktree", "remove", "--force", req.Path)
-	if removeOutput, err := removeCmd.CombinedOutput(); err != nil {
-		sendWorktreeError(w, "git worktree remove failed: "+string(removeOutput), buildDiscardInstructions(req.Branch, req.Path))
-		return
-	}
-
-	// Force delete branch
-	branchCmd := exec.Command("git", "branch", "-D", req.Branch)
-	if branchOutput, err := branchCmd.CombinedOutput(); err != nil {
-		// Branch deletion failed, but worktree removal succeeded
-		// This is not critical, just log it
-		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
-	}
-
-	log.Printf("Worktree discarded: branch=%s, path=%s", req.Branch, req.Path)
-	sendWorktreeSuccess(w)
-}
-
-// sendWorktreeSuccess sends a successful worktree response
-func sendWorktreeSuccess(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(WorktreeResponse{Success: true})
-}
-
-// sendWorktreeError sends an error worktree response
-func sendWorktreeError(w http.ResponseWriter, errMsg, instructions string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(WorktreeResponse{
-		Success:      false,
-		Error:        errMsg,
-		Instructions: instructions,
-	})
 }
 
 // sessionReaper periodically cleans up sessions where the process has exited
