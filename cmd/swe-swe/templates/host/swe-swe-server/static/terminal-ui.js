@@ -41,6 +41,8 @@ class TerminalUI extends HTMLElement {
         this.lastOutputTime = null;
         this.outputIdleTimer = null;
         this.outputIdleThreshold = 2000; // ms
+        // Process exit state - prevents reconnection after session ends
+        this.processExited = false;
     }
 
     static get observedAttributes() {
@@ -1242,10 +1244,17 @@ class TerminalUI extends HTMLElement {
             clearTimeout(connectTimeout);
             const reason = event.reason || `code ${event.code}`;
             console.log('[WS] Closed:', event.code, reason, 'wasClean:', event.wasClean);
-            // Show close reason in status bar for debugging
-            this.updateStatus('error', `Disconnected: ${reason}`);
             this.stopUptimeTimer();
             this.stopHeartbeat();
+
+            // Don't reconnect if process has exited - let user review terminal output
+            if (this.processExited) {
+                console.log('[WS] Process exited, not reconnecting');
+                return;
+            }
+
+            // Show close reason in status bar for debugging
+            this.updateStatus('error', `Disconnected: ${reason}`);
             // Brief delay to show the error before scheduling reconnect
             setTimeout(() => this.scheduleReconnect(), 1000);
         };
@@ -1456,6 +1465,9 @@ class TerminalUI extends HTMLElement {
     }
 
     handleProcessExit(exitCode, worktree) {
+        // Mark process as exited to prevent WebSocket reconnection
+        this.processExited = true;
+
         // Update status bar to show exited state
         this.updateStatus('', 'Session ended');
 
