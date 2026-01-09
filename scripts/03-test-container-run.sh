@@ -1,68 +1,77 @@
 #!/bin/bash
 set -euox pipefail
 
-# Run the test container
+# Run the test container stack using docker-compose
+# The stack includes: traefik, auth, chrome, swe-swe, vscode-proxy, code-server
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
-TMP_DIR="$WORKSPACE_DIR/tmp"
-EFFECTIVE_HOME="${EFFECTIVE_HOME:-$WORKSPACE_DIR/.home}"
 
-CONTAINER_NAME="swe-swe-test"
-HOST_PORT="${HOST_PORT:?HOST_PORT environment variable is required}"
-CONTAINER_PORT=9898
+# Find active slot from lock files
+find_active_slot() {
+    for lock_dir in /tmp/swe-swe-test-slot-*.lock; do
+        if [ -d "$lock_dir" ] && [ -f "$lock_dir/pid" ]; then
+            local slot
+            slot=$(basename "$lock_dir" | sed 's/swe-swe-test-slot-//' | sed 's/.lock//')
+            echo "$slot"
+            return 0
+        fi
+    done
+    return 1
+}
 
-# Host path that maps to container /workspace
-HOST_WORKSPACE="/workspace/swe-swe"
+# Get slot from environment or find it
+if [ -z "${SWE_TEST_SLOT:-}" ]; then
+    SWE_TEST_SLOT=$(find_active_slot) || {
+        echo "ERROR: No active test slot found. Run 01-test-container-init.sh first."
+        exit 1
+    }
+fi
 
-# Host IP for curl test (optional - localhost won't work from inside another container)
-HOST_IP="${HOST_IP:-}"
+TEST_STACK_DIR="/tmp/swe-swe-test-${SWE_TEST_SLOT}"
+PROJECT_PATH=$(cat "$TEST_STACK_DIR/.swe-test-project" 2>/dev/null) || {
+    echo "ERROR: Could not find project path. Run 01-test-container-init.sh first."
+    exit 1
+}
 
-# Stop and remove existing container if it exists (idempotent)
-docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+# Read port from .env
+SWE_PORT=$(grep "^SWE_PORT=" "$PROJECT_PATH/.env" | cut -d= -f2)
+PROJECT_NAME=$(grep "^PROJECT_NAME=" "$PROJECT_PATH/.env" | cut -d= -f2)
 
-# Prepare EFFECTIVE_HOME for container mount
-mkdir -p "$EFFECTIVE_HOME"
-chmod 777 "$EFFECTIVE_HOME"
-find "$EFFECTIVE_HOME" -type f -exec chmod 666 {} \; 2>/dev/null || true
-find "$EFFECTIVE_HOME" -type d -exec chmod 777 {} \; 2>/dev/null || true
+echo "Running test stack for slot $SWE_TEST_SLOT"
+echo "  Project: $PROJECT_NAME"
+echo "  Port: $SWE_PORT"
+echo "  Path: $PROJECT_PATH"
 
-# Build volume args
-VOLUME_ARGS="-v $HOST_WORKSPACE:/workspace -v $EFFECTIVE_HOME:/home/app"
+cd "$PROJECT_PATH"
 
-# Run the test container
-docker run -d \
-    --name "$CONTAINER_NAME" \
-    -p "$HOST_PORT:$CONTAINER_PORT" \
-    $VOLUME_ARGS \
-    swe-swe-test:latest
+# Start the stack
+docker compose up -d
 
 # Wait for startup
-echo "Waiting for container to start..."
-sleep 1
-
-# Fix home directory permissions
-docker exec swe-swe-test chown -R app:app /home/app
-docker exec swe-swe-test chmod 755 /home/app
-
-sleep 2
+echo "Waiting for services to start..."
+sleep 5
 
 # Show container status
-docker ps --filter "name=$CONTAINER_NAME"
+docker compose ps
 
-# Show logs
-echo "Container logs:"
-docker logs "$CONTAINER_NAME"
+# Show logs (last 20 lines)
+echo "Recent logs:"
+docker compose logs --tail=20
 
-# Verify server responds (only if HOST_IP is set)
-if [[ -n "$HOST_IP" ]]; then
-    echo "Testing server response at http://$HOST_IP:$HOST_PORT/ ..."
-    if curl -s -o /dev/null -w "%{http_code}" "http://$HOST_IP:$HOST_PORT/" | grep -q "200\|302"; then
-        echo "Phase 3 complete: Test container running at http://$HOST_IP:$HOST_PORT/"
-    else
-        echo "Warning: Server may not be responding correctly, check logs above"
-        exit 1
-    fi
+# Test endpoint
+HOST_IP="${HOST_IP:-host.docker.internal}"
+echo "Testing server response at http://$HOST_IP:$SWE_PORT/ ..."
+
+# The auth endpoint returns 401 without credentials, which is expected
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$HOST_IP:$SWE_PORT/" 2>/dev/null || echo "000")
+if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" || "$HTTP_CODE" == "401" ]]; then
+    echo "Phase 3 complete: Test stack running at http://$HOST_IP:$SWE_PORT/"
+    echo ""
+    echo "For MCP browser testing, use:"
+    echo "  http://host.docker.internal:$SWE_PORT/"
 else
-    echo "Phase 3 complete: Test container running (set HOST_IP to enable curl check)"
+    echo "Warning: Server may not be responding correctly (HTTP $HTTP_CODE)"
+    echo "Check logs with: cd $PROJECT_PATH && docker compose logs"
+    exit 1
 fi
