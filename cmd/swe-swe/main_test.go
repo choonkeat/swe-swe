@@ -740,7 +740,8 @@ func TestGoldenFiles(t *testing.T) {
 			// Verify target files exist
 			targetFiles := []string{
 				filepath.Join(goldenDir, "target", ".mcp.json"),
-				filepath.Join(goldenDir, "target", ".swe-swe", "browser-automation.md"),
+				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "AGENTS.md"),
+				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "browser-automation.md"),
 			}
 			for _, tf := range targetFiles {
 				if _, err := os.Stat(tf); err != nil {

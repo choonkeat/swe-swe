@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "a337d10"
+	GitCommit = "16c30c7"
 )
 
 var indexTemplate *template.Template
@@ -1300,44 +1300,39 @@ func copyFileOrDir(src, dst string) error {
 	return err
 }
 
-// copySweSweMarkdownFiles copies .swe-swe/*.md files to the worktree
-// These files contain useful documentation (browser-automation.md, how-to-restart.md, etc.)
-func copySweSweMarkdownFiles(srcDir, destDir string) error {
-	sweSweDir := srcDir + "/.swe-swe"
-	entries, err := os.ReadDir(sweSweDir)
+// copySweSweDocsDir copies .swe-swe/docs/ directory to the worktree
+// This directory contains agent documentation (AGENTS.md, browser-automation.md, docker.md, etc.)
+func copySweSweDocsDir(srcDir, destDir string) error {
+	srcDocsDir := srcDir + "/.swe-swe/docs"
+	if _, err := os.Stat(srcDocsDir); os.IsNotExist(err) {
+		return nil // No .swe-swe/docs directory, nothing to copy
+	}
+
+	destDocsDir := destDir + "/.swe-swe/docs"
+	if err := os.MkdirAll(destDocsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .swe-swe/docs directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(srcDocsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // No .swe-swe directory, nothing to copy
-		}
-		return fmt.Errorf("failed to read .swe-swe directory: %w", err)
+		return fmt.Errorf("failed to read .swe-swe/docs directory: %w", err)
 	}
 
 	var copied []string
 	for _, entry := range entries {
 		name := entry.Name()
 
-		// Only copy markdown files at the root level of .swe-swe
-		if entry.IsDir() || !strings.HasSuffix(name, ".md") {
-			continue
-		}
-
-		// Create .swe-swe directory in destination if needed
-		destSweSweDir := destDir + "/.swe-swe"
-		if err := os.MkdirAll(destSweSweDir, 0755); err != nil {
-			return fmt.Errorf("failed to create .swe-swe directory: %w", err)
-		}
-
-		srcPath := sweSweDir + "/" + name
-		dstPath := destSweSweDir + "/" + name
+		srcPath := srcDocsDir + "/" + name
+		dstPath := destDocsDir + "/" + name
 		if err := copyFileOrDir(srcPath, dstPath); err != nil {
-			log.Printf("Warning: failed to copy .swe-swe/%s to worktree: %v", name, err)
+			log.Printf("Warning: failed to copy .swe-swe/docs/%s to worktree: %v", name, err)
 			continue
 		}
 		copied = append(copied, name)
 	}
 
 	if len(copied) > 0 {
-		log.Printf("Copied .swe-swe/*.md files to worktree: %v", copied)
+		log.Printf("Copied .swe-swe/docs/ files to worktree: %v", copied)
 	}
 	return nil
 }
@@ -1504,9 +1499,9 @@ func createWorktree(branchName string) (string, error) {
 		if err := copyUntrackedFiles(gitRoot, worktreePath); err != nil {
 			log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
 		}
-		// Also copy .swe-swe/*.md documentation files
-		if err := copySweSweMarkdownFiles(gitRoot, worktreePath); err != nil {
-			log.Printf("Warning: failed to copy .swe-swe/*.md files to worktree: %v", err)
+		// Also copy .swe-swe/docs/ directory
+		if err := copySweSweDocsDir(gitRoot, worktreePath); err != nil {
+			log.Printf("Warning: failed to copy .swe-swe/docs/ to worktree: %v", err)
 		}
 	}
 
