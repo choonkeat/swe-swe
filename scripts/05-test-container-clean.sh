@@ -12,7 +12,7 @@ echo "Cleaning up all test container artifacts..."
 for lock_dir in /tmp/swe-swe-test-slot-*.lock; do
     if [ -d "$lock_dir" ]; then
         slot=$(basename "$lock_dir" | sed 's/swe-swe-test-slot-//' | sed 's/.lock//')
-        TEST_STACK_DIR="/tmp/swe-swe-test-${slot}"
+        TEST_STACK_DIR="/workspace/.test-repos/swe-swe-test-${slot}"
 
         if [ -f "$TEST_STACK_DIR/.swe-test-project" ]; then
             PROJECT_PATH=$(cat "$TEST_STACK_DIR/.swe-test-project")
@@ -32,7 +32,7 @@ for lock_dir in /tmp/swe-swe-test-slot-*.lock; do
 done
 
 # Also clean up old-style lock (from previous implementation)
-rm -rf /tmp/swe-swe-test-container.lock 2>/dev/null || true
+rm -rf /workspace/.test-repos/swe-swe-test-container.lock 2>/dev/null || true
 
 # Clean up any dangling test images
 docker images --filter "reference=*swe-test*" -q | xargs -r docker rmi 2>/dev/null || true

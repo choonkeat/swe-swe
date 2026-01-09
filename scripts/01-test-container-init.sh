@@ -85,7 +85,8 @@ acquire_slot
 # --- End slot-based semaphore ---
 
 # Test stack directory based on slot
-TEST_STACK_DIR="/tmp/swe-swe-test-${SWE_TEST_SLOT}"
+# Use /workspace/.test-repos/ instead of /tmp/ so the path is accessible from sibling Docker containers
+TEST_STACK_DIR="/workspace/.test-repos/swe-swe-test-${SWE_TEST_SLOT}"
 
 # Docker-in-Docker path translation:
 # Container /workspace maps to host /home/app/workspace/swe-swe (or similar)
@@ -123,8 +124,16 @@ git config user.email "test@example.com"
 git config user.name "Test User"
 git commit --allow-empty -m "initial commit"
 
+# Copy .claude config from real home to test home for Claude auth (if exists)
+REAL_HOME="${REAL_HOME:-/home/app}"
+if [ -d "$REAL_HOME/.claude" ]; then
+    echo "Copying Claude config from $REAL_HOME/.claude to $EFFECTIVE_HOME/.claude"
+    cp -r "$REAL_HOME/.claude" "$EFFECTIVE_HOME/.claude"
+fi
+
 # Run swe-swe init with EFFECTIVE_HOME so project files are in host-visible path
-HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR"
+# Include --copy-home-paths=.claude to copy Claude auth config into the container
+HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR" --copy-home-paths=.claude
 
 # Find the generated metadata directory (match by test stack name)
 PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*swe-swe-test-${SWE_TEST_SLOT}*/ 2>/dev/null | head -1)
@@ -144,7 +153,10 @@ else
     echo "PROJECT_NAME=${PROJECT_NAME}" > "$ENV_FILE"
 fi
 echo "SWE_PORT=${SWE_PORT}" >> "$ENV_FILE"
-echo "Updated $ENV_FILE with PROJECT_NAME=$PROJECT_NAME, SWE_PORT=$SWE_PORT"
+# Set WORKSPACE_DIR to point to the test git repo (using host path for Docker-in-Docker)
+HOST_TEST_STACK_DIR="${TEST_STACK_DIR/#\/workspace\//${HOST_WORKSPACE}/}"
+echo "WORKSPACE_DIR=${HOST_TEST_STACK_DIR}" >> "$ENV_FILE"
+echo "Updated $ENV_FILE with PROJECT_NAME=$PROJECT_NAME, SWE_PORT=$SWE_PORT, WORKSPACE_DIR=$HOST_TEST_STACK_DIR"
 
 # Calculate HOST_PROJECT_PATH for Docker volume mounts
 # Container path: $PROJECT_PATH (e.g., /workspace/.test-home-0/.swe-swe/projects/...)

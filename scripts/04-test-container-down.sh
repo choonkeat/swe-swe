@@ -27,7 +27,7 @@ if [ -z "${SWE_TEST_SLOT:-}" ]; then
     }
 fi
 
-TEST_STACK_DIR="/tmp/swe-swe-test-${SWE_TEST_SLOT}"
+TEST_STACK_DIR="/workspace/.test-repos/swe-swe-test-${SWE_TEST_SLOT}"
 LOCK_DIR="/tmp/swe-swe-test-slot-${SWE_TEST_SLOT}.lock"
 
 if [ -f "$TEST_STACK_DIR/.swe-test-project" ]; then

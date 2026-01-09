@@ -28,7 +28,7 @@ if [ -z "${SWE_TEST_SLOT:-}" ]; then
     }
 fi
 
-TEST_STACK_DIR="/tmp/swe-swe-test-${SWE_TEST_SLOT}"
+TEST_STACK_DIR="/workspace/.test-repos/swe-swe-test-${SWE_TEST_SLOT}"
 PROJECT_PATH=$(cat "$TEST_STACK_DIR/.swe-test-project" 2>/dev/null) || {
     echo "ERROR: Could not find project path. Run 01-test-container-init.sh first."
     exit 1
