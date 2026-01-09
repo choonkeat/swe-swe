@@ -1,5 +1,7 @@
 # Test Container Workflow
 
+> **Note**: This document describes the original implementation. See `2026-01-09-docker-isolation.md` for the updated slot-based workflow that supports multiple concurrent test stacks with proper Traefik isolation.
+
 ## Goal
 
 Enable testing new swe-swe-server container builds without killing the current development container.
