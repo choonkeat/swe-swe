@@ -7,6 +7,8 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=swe-network"
+      # Only discover containers with matching project label (enables multi-project isolation)
+      - "--providers.docker.constraints=Label(`swe.project`,`${PROJECT_NAME}`)"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--log.level=DEBUG"
       - "--accesslog=true"
@@ -32,6 +34,9 @@ services:
 # {{IF SSL}}
       - "${HOME}/.swe-swe/tls:/etc/traefik/tls:ro"
 # {{ENDIF}}
+    labels:
+      # Project label for multi-instance isolation
+      - "swe.project=${PROJECT_NAME}"
     networks:
       - swe-network
     depends_on:
@@ -45,14 +50,15 @@ services:
     environment:
       - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
     labels:
+      - "swe.project=${PROJECT_NAME}"
       - "traefik.enable=true"
-      - "traefik.http.routers.auth.rule=PathPrefix(`/swe-swe-auth`)"
-      - "traefik.http.routers.auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.rule=PathPrefix(`/swe-swe-auth`)"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.priority=200"
 # {{IF SSL}}
-      - "traefik.http.routers.auth.entrypoints=websecure"
-      - "traefik.http.routers.auth.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.tls=true"
 # {{ENDIF}}
-      - "traefik.http.services.auth.loadbalancer.server.port=4180"
+      - "traefik.http.services.${PROJECT_NAME}-auth.loadbalancer.server.port=4180"
     networks:
       - swe-network
     restart: unless-stopped
@@ -64,18 +70,19 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
+      - "swe.project=${PROJECT_NAME}"
       - "traefik.enable=true"
-      - "traefik.http.routers.chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
-      - "traefik.http.routers.chrome.priority=100"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.priority=100"
 # {{IF SSL}}
-      - "traefik.http.routers.chrome.entrypoints=websecure"
-      - "traefik.http.routers.chrome.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.tls=true"
 # {{ENDIF}}
-      - "traefik.http.routers.chrome.middlewares=forwardauth@file,chrome-redirect@docker,chrome-strip@docker"
-      - "traefik.http.services.chrome.loadbalancer.server.port=6080"
-      - "traefik.http.middlewares.chrome-redirect.redirectregex.regex=^/chrome$$"
-      - "traefik.http.middlewares.chrome-redirect.redirectregex.replacement=/chrome/"
-      - "traefik.http.middlewares.chrome-strip.stripprefix.prefixes=/chrome"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.middlewares=forwardauth@file,${PROJECT_NAME}-chrome-redirect@docker,${PROJECT_NAME}-chrome-strip@docker"
+      - "traefik.http.services.${PROJECT_NAME}-chrome.loadbalancer.server.port=6080"
+      - "traefik.http.middlewares.${PROJECT_NAME}-chrome-redirect.redirectregex.regex=^/chrome$$"
+      - "traefik.http.middlewares.${PROJECT_NAME}-chrome-redirect.redirectregex.replacement=/chrome/"
+      - "traefik.http.middlewares.${PROJECT_NAME}-chrome-strip.stripprefix.prefixes=/chrome"
     volumes:
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
@@ -90,15 +97,16 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
+      - "swe.project=${PROJECT_NAME}"
       - "traefik.enable=true"
-      - "traefik.http.routers.swe-swe.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.swe-swe.priority=10"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.priority=10"
 # {{IF SSL}}
-      - "traefik.http.routers.swe-swe.entrypoints=websecure"
-      - "traefik.http.routers.swe-swe.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.tls=true"
 # {{ENDIF}}
-      - "traefik.http.routers.swe-swe.middlewares=forwardauth@file"
-      - "traefik.http.services.swe-swe.loadbalancer.server.port=9898"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
+      - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
     depends_on:
       - chrome
     volumes:
@@ -143,15 +151,16 @@ services:
     volumes:
       - ./nginx-vscode.conf:/etc/nginx/conf.d/default.conf:ro
     labels:
+      - "swe.project=${PROJECT_NAME}"
       - "traefik.enable=true"
-      - "traefik.http.routers.vscode.rule=PathPrefix(`/vscode`)"
-      - "traefik.http.routers.vscode.priority=100"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.rule=PathPrefix(`/vscode`)"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.priority=100"
 # {{IF SSL}}
-      - "traefik.http.routers.vscode.entrypoints=websecure"
-      - "traefik.http.routers.vscode.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.tls=true"
 # {{ENDIF}}
-      - "traefik.http.routers.vscode.middlewares=forwardauth@file"
-      - "traefik.http.services.vscode.loadbalancer.server.port=8081"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.middlewares=forwardauth@file"
+      - "traefik.http.services.${PROJECT_NAME}-vscode.loadbalancer.server.port=8081"
     depends_on:
       - code-server
     networks:
@@ -163,6 +172,8 @@ services:
     command:
       - "--bind-addr=0.0.0.0:8080"
       - "--auth=none"
+    labels:
+      - "swe.project=${PROJECT_NAME}"
     volumes:
       # Mount project directory (same path as swe-swe container for git worktree compatibility)
       - ${WORKSPACE_DIR:-.}:/workspace
