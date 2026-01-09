@@ -460,4 +460,4 @@ Verify the entire system works end-to-end.
 - [x] Phase 3: Create `swe-swe/` directory with `setup` command
 - [x] Phase 4: Create worktree-specific commands (generated)
 - [x] Phase 5: Terminal MOTD for discoverability
-- [ ] Phase 6: Browser verification with test container
+- [x] Phase 6: Browser verification with test container
