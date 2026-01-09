@@ -288,7 +288,7 @@ Verify the full merge strategy flow works end-to-end using the test container an
 
 ## Status
 
-- [ ] Phase 1: Baseline - Add flag parsing + golden test variants
+- [x] Phase 1: Baseline - Add flag parsing + golden test variants
 - [ ] Phase 2: Backend Implementation - Update merge endpoint
 - [ ] Phase 3: Frontend Update - Display merge strategy hint + golden-update
 - [ ] Phase 4: Integration Testing - Verify end-to-end

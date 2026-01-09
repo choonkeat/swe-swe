@@ -6,5 +6,6 @@
     "goose",
     "opencode"
   ],
-  "ssl": "no"
+  "ssl": "no",
+  "mergeStrategy": "merge-commit"
 }

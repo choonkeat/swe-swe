@@ -104,6 +104,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-opencode FLAGS="--agents claude,opencode --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-ssl-selfsign FLAGS="--ssl=selfsign"
 	@$(MAKE) _golden-variant NAME=with-copy-home-paths FLAGS="--copy-home-paths .gitconfig,.ssh"
+	@$(MAKE) _golden-variant NAME=with-merge-strategy-squash FLAGS="--merge-strategy squash"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs
 	@$(MAKE) _golden-certs-ssl-cert-file
