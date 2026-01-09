@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "2d494bb"
+	GitCommit = "a266cf9"
 )
 
 var indexTemplate *template.Template
@@ -1308,6 +1308,48 @@ func copyFileOrDir(src, dst string) error {
 	return err
 }
 
+// copySweSweMarkdownFiles copies .swe-swe/*.md files to the worktree
+// These files contain useful documentation (browser-automation.md, how-to-restart.md, etc.)
+func copySweSweMarkdownFiles(srcDir, destDir string) error {
+	sweSweDir := srcDir + "/.swe-swe"
+	entries, err := os.ReadDir(sweSweDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No .swe-swe directory, nothing to copy
+		}
+		return fmt.Errorf("failed to read .swe-swe directory: %w", err)
+	}
+
+	var copied []string
+	for _, entry := range entries {
+		name := entry.Name()
+
+		// Only copy markdown files at the root level of .swe-swe
+		if entry.IsDir() || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+
+		// Create .swe-swe directory in destination if needed
+		destSweSweDir := destDir + "/.swe-swe"
+		if err := os.MkdirAll(destSweSweDir, 0755); err != nil {
+			return fmt.Errorf("failed to create .swe-swe directory: %w", err)
+		}
+
+		srcPath := sweSweDir + "/" + name
+		dstPath := destSweSweDir + "/" + name
+		if err := copyFileOrDir(srcPath, dstPath); err != nil {
+			log.Printf("Warning: failed to copy .swe-swe/%s to worktree: %v", name, err)
+			continue
+		}
+		copied = append(copied, name)
+	}
+
+	if len(copied) > 0 {
+		log.Printf("Copied .swe-swe/*.md files to worktree: %v", copied)
+	}
+	return nil
+}
+
 // copyUntrackedFiles copies untracked dotfiles, CLAUDE.md, and AGENTS.md from srcDir to destDir
 // Files in excludeFromCopy and files tracked in git are skipped
 func copyUntrackedFiles(srcDir, destDir string) error {
@@ -1469,6 +1511,10 @@ func createWorktree(branchName string) (string, error) {
 	} else {
 		if err := copyUntrackedFiles(gitRoot, worktreePath); err != nil {
 			log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
+		}
+		// Also copy .swe-swe/*.md documentation files
+		if err := copySweSweMarkdownFiles(gitRoot, worktreePath); err != nil {
+			log.Printf("Warning: failed to copy .swe-swe/*.md files to worktree: %v", err)
 		}
 	}
 
