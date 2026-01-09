@@ -130,6 +130,7 @@ type RecordingMetadata struct {
 	Visitors  []Visitor  `json:"visitors,omitempty"`
 	MaxCols   uint16     `json:"max_cols,omitempty"` // Max terminal columns during recording
 	MaxRows   uint16     `json:"max_rows,omitempty"` // Max terminal rows during recording
+	WorkDir   string     `json:"work_dir,omitempty"` // Working directory for VS Code links in playback
 }
 
 // Visitor represents a client that joined the session
@@ -2163,6 +2164,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 			Command:   append([]string{cmdName}, cmdArgs...),
 			MaxCols:   80, // Default starting size
 			MaxRows:   24,
+			WorkDir:   workDir,
 		},
 	}
 	sessions[sessionUUID] = sess
@@ -2752,11 +2754,13 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
 	timingContent, timingErr := os.ReadFile(timingPath)
 
-	// Get terminal dimensions from metadata (default to 0 for auto-fit)
+	// Get terminal dimensions and workDir from metadata (default to 0 for auto-fit)
 	var cols, rows uint16
+	var workDir string
 	if metadata != nil {
 		cols = metadata.MaxCols
 		rows = metadata.MaxRows
+		workDir = metadata.WorkDir
 	}
 
 	if timingErr == nil && len(timingContent) > 0 {
@@ -2769,7 +2773,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 			return
 		}
 
-		html, err := playback.RenderPlaybackHTML(frames, name, "/", cols, rows)
+		html, err := playback.RenderPlaybackHTML(frames, name, "/", cols, rows, workDir)
 		if err != nil {
 			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
 			return
