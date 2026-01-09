@@ -25,10 +25,10 @@ Integrate git worktrees with named sessions:
    - Clicking enters existing worktree without prompts
    - Remote branch tracking: if `origin/{name}` exists, worktree tracks it
 
-4. **Exit prompt**: When session in worktree exits cleanly (exit code 0):
-   - Modal offers: "Not yet", "Merge to {target}", "Discard"
-   - Merge: squash-merge to target branch, delete worktree
-   - Discard: delete worktree and branch
+4. **Exit behavior**: Session exit is identical to non-worktree sessions.
+   - No modal or prompt - just return to homepage
+   - Worktree persists for later re-entry
+   - See ADR-0022 for how swe-swe assists with merge/discard
 
 5. **Conflict handling**: When name conflicts with existing branch/worktree:
    - Show warning dialog with conflict type
@@ -40,7 +40,7 @@ Good:
 - True branch isolation without full clones
 - Parallel work on multiple features
 - Dotfiles/env preserved in each worktree
-- Clean exit flow with merge/discard options
+- Worktrees persist for re-entry
 
 Bad:
 - Disk usage per worktree (but shared .git objects)
