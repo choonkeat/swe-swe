@@ -553,6 +553,94 @@ func TestCopyUntrackedFiles(t *testing.T) {
 	}
 }
 
+func TestCopySweSweMarkdownFiles(t *testing.T) {
+	tests := []struct {
+		name            string
+		files           map[string]string // path relative to srcDir -> content
+		expectedCopied  []string          // paths relative to destDir that should exist
+		expectedMissing []string          // paths relative to destDir that should NOT exist
+	}{
+		{
+			name: "copies markdown files from .swe-swe",
+			files: map[string]string{
+				".swe-swe/browser-automation.md":   "# Browser Automation",
+				".swe-swe/how-to-restart.md":       "# How to Restart",
+				".swe-swe/test-container-workflow.md": "# Test Container",
+			},
+			expectedCopied: []string{
+				".swe-swe/browser-automation.md",
+				".swe-swe/how-to-restart.md",
+				".swe-swe/test-container-workflow.md",
+			},
+		},
+		{
+			name: "ignores non-markdown files",
+			files: map[string]string{
+				".swe-swe/browser-automation.md": "# Browser Automation",
+				".swe-swe/error.log":             "error log content",
+				".swe-swe/restart-loop.sh":       "#!/bin/bash",
+			},
+			expectedCopied:  []string{".swe-swe/browser-automation.md"},
+			expectedMissing: []string{".swe-swe/error.log", ".swe-swe/restart-loop.sh"},
+		},
+		{
+			name: "ignores subdirectories",
+			files: map[string]string{
+				".swe-swe/browser-automation.md":       "# Browser Automation",
+				".swe-swe/recordings/session.log":      "recording data",
+				".swe-swe/worktrees/test/README.md":    "nested md",
+			},
+			expectedCopied:  []string{".swe-swe/browser-automation.md"},
+			expectedMissing: []string{".swe-swe/recordings", ".swe-swe/worktrees"},
+		},
+		{
+			name:            "handles missing .swe-swe directory gracefully",
+			files:           map[string]string{},
+			expectedCopied:  []string{},
+			expectedMissing: []string{".swe-swe"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srcDir := t.TempDir()
+			destDir := t.TempDir()
+
+			// Create source files
+			for path, content := range tt.files {
+				fullPath := filepath.Join(srcDir, path)
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+					t.Fatalf("failed to create parent dir: %v", err)
+				}
+				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+					t.Fatalf("failed to create file %s: %v", path, err)
+				}
+			}
+
+			err := copySweSweMarkdownFiles(srcDir, destDir)
+			if err != nil {
+				t.Fatalf("copySweSweMarkdownFiles failed: %v", err)
+			}
+
+			// Check expected copied files exist
+			for _, path := range tt.expectedCopied {
+				fullPath := filepath.Join(destDir, path)
+				if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+					t.Errorf("expected file %s to be copied, but it doesn't exist", path)
+				}
+			}
+
+			// Check expected missing files don't exist
+			for _, path := range tt.expectedMissing {
+				fullPath := filepath.Join(destDir, path)
+				if _, err := os.Stat(fullPath); err == nil {
+					t.Errorf("expected %s to NOT be copied, but it exists", path)
+				}
+			}
+		})
+	}
+}
+
 func TestCopyFileOrDir(t *testing.T) {
 	t.Run("copy regular file", func(t *testing.T) {
 		srcDir := t.TempDir()
