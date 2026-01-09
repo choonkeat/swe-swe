@@ -757,19 +757,17 @@
 
                             // Check if worktree has an active session for this assistant
                             if (wt.activeSession && wt.activeSession.assistant === assistant) {
-                                // Join existing session - use session-item styling to match existing sessions
-                                link.className = 'session-item';
+                                // Join existing session - use worktree-link styling (same as "Start new session in ...")
+                                link.className = 'worktree-link';
                                 var url = '/session/' + wt.activeSession.uuid + '?assistant=' + encodeURIComponent(assistant);
                                 if (debug) {
                                     url += '&debug=1';
                                 }
                                 link.href = url;
 
-                                // Build HTML matching session-item structure
-                                var displayName = 'Join session in ' + wt.name;
-                                link.innerHTML = '<span class="session-item__uuid">' + displayName + '</span>' +
-                                    '<span class="session-item__viewers">' + wt.activeSession.clientCount + ' viewer' + (wt.activeSession.clientCount !== 1 ? 's' : '') + '</span>' +
-                                    '<span class="session-item__duration">' + wt.activeSession.durationStr + '</span>';
+                                // Build HTML matching worktree-link structure
+                                link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
+                                    '<span class="worktree-link__text">Join session in ' + wt.name + '</span>';
                             } else {
                                 // Start new session in worktree
                                 link.className = 'worktree-link';
