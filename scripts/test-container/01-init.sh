@@ -133,7 +133,8 @@ fi
 
 # Run swe-swe init with EFFECTIVE_HOME so project files are in host-visible path
 # Include --copy-home-paths=.claude to copy Claude auth config into the container
-HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR" --copy-home-paths=.claude
+# Exclude aider to speed up container build (we primarily test with Claude)
+HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR" --copy-home-paths=.claude --exclude-agents=aider
 
 # Find the generated metadata directory (match by test stack name)
 PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*swe-swe-test-${SWE_TEST_SLOT}*/ 2>/dev/null | head -1)

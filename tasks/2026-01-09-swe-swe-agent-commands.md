@@ -414,9 +414,9 @@ Verify the entire system works end-to-end.
 1. `make build`
 
 2. Boot test container:
-   - `./scripts/01-test-container-init.sh`
-   - `./scripts/02-test-container-build.sh`
-   - `HOST_PORT=9899 HOST_IP=host.docker.internal ./scripts/03-test-container-run.sh`
+   - `./scripts/test-container/01-init.sh`
+   - `./scripts/test-container/02-build.sh`
+   - `HOST_PORT=9899 HOST_IP=host.docker.internal ./scripts/test-container/03-run.sh`
 
 3. Test Scenario A: Main workspace after init
    - Verify: `ls swe-swe/` shows only `setup`
@@ -440,7 +440,7 @@ Verify the entire system works end-to-end.
    - After running `@swe-swe/setup`
    - Verify: `/workspace/CLAUDE.md` contains pointer to `.swe-swe/docs/AGENTS.md`
 
-7. Shutdown: `./scripts/04-test-container-down.sh`
+7. Shutdown: `./scripts/test-container/04-down.sh`
 
 ### Pass criteria
 

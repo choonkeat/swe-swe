@@ -37,6 +37,6 @@ Inside the container's `/workspace/`:
 ## Browser / Manual testing
 
 Agent will
-1. boot up test container with /workspace/.swe-swe/test-container-workflow.md
+1. boot up test container with docs/dev/test-container-workflow.md
 2. use mcp browser to test
 3. shutdown the test container
