@@ -96,10 +96,12 @@ function registerFileLinkProvider(terminal, options) {
                         end: { x: startIndex + filePath.length + 1, y: bufferLineNumber }
                     },
                     activate: (event, text) => {
-                        // Copy path to clipboard
-                        navigator.clipboard.writeText(text).catch(err => {
-                            console.warn('Failed to copy to clipboard:', err);
-                        });
+                        // Copy path to clipboard (requires secure context)
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(text).catch(err => {
+                                console.warn('Failed to copy to clipboard:', err);
+                            });
+                        }
 
                         // Open VS Code
                         if (options.getVSCodeUrl) {
