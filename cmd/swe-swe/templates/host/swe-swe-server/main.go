@@ -1238,7 +1238,7 @@ func branchNameFromDir(dirName string) string {
 var worktreeDir = "/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
-var excludeFromCopy = []string{".git", ".swe-swe"}
+var excludeFromCopy = []string{".git", ".swe-swe", "swe-swe"}
 
 // isTrackedInGit checks if a file is tracked in git
 // Returns true if the file is tracked, false otherwise
