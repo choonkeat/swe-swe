@@ -12,7 +12,7 @@ Named sessions benefit from branch isolation to prevent conflicts when working o
 Integrate git worktrees with named sessions:
 
 1. **Worktree creation**: Named sessions auto-create worktrees
-   - Location: `/workspace/.swe-swe-worktrees/{sanitized-name}/`
+   - Location: `/worktrees/{sanitized-name}/` (mounted from host's `.swe-swe/worktrees/`)
    - Branch priority: existing worktree > local branch > remote branch > new branch
 
 2. **Untracked file copying**: New worktrees receive copies of:
