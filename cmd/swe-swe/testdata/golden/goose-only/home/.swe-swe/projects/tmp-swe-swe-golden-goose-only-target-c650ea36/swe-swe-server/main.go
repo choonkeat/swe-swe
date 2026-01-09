@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "e6a2b39"
+	GitCommit = "e8c01a5"
 )
 
 var indexTemplate *template.Template
@@ -1234,7 +1234,7 @@ func branchNameFromDir(dirName string) string {
 }
 
 // worktreeDir is the base directory for git worktrees
-var worktreeDir = "/workspace/.swe-swe/worktrees"
+var worktreeDir = "/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
 var excludeFromCopy = []string{".git", ".swe-swe"}
