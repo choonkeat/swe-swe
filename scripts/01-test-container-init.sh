@@ -87,9 +87,34 @@ acquire_slot
 # Test stack directory based on slot
 TEST_STACK_DIR="/tmp/swe-swe-test-${SWE_TEST_SLOT}"
 
-# Clean up previous test stack
+# Docker-in-Docker path translation:
+# Container /workspace maps to host /home/app/workspace/swe-swe (or similar)
+# We detect this by inspecting our own container's mount
+detect_host_workspace() {
+    local container_name
+    container_name=$(docker ps --filter "name=swe-swe" --format "{{.Names}}" | grep -v "test" | head -1)
+    if [ -n "$container_name" ]; then
+        docker inspect "$container_name" 2>/dev/null | jq -r '.[0].Mounts[] | select(.Destination=="/workspace") | .Source' 2>/dev/null || echo ""
+    fi
+}
+
+HOST_WORKSPACE="${HOST_WORKSPACE:-$(detect_host_workspace)}"
+if [ -z "$HOST_WORKSPACE" ]; then
+    echo "WARNING: Could not detect HOST_WORKSPACE, falling back to /home/app/workspace/swe-swe"
+    HOST_WORKSPACE="/home/app/workspace/swe-swe"
+fi
+echo "Detected HOST_WORKSPACE: $HOST_WORKSPACE"
+
+# EFFECTIVE_HOME must be inside /workspace so files exist on both container and host
+# Container path: /workspace/.test-home-{slot}
+# Host path: $HOST_WORKSPACE/.test-home-{slot}
+EFFECTIVE_HOME="${EFFECTIVE_HOME:-/workspace/.test-home-${SWE_TEST_SLOT}}"
+HOST_EFFECTIVE_HOME="${HOST_WORKSPACE}/.test-home-${SWE_TEST_SLOT}"
+
+# Clean up previous test stack and its metadata
 rm -rf "$TEST_STACK_DIR"
-mkdir -p "$TEST_STACK_DIR"
+rm -rf "$EFFECTIVE_HOME/.swe-swe/projects/"*swe-swe-test-${SWE_TEST_SLOT}* 2>/dev/null || true
+mkdir -p "$TEST_STACK_DIR" "$EFFECTIVE_HOME"
 
 # Initialize as git repo (required for swe-swe git worktree operations)
 cd "$TEST_STACK_DIR"
@@ -98,12 +123,15 @@ git config user.email "test@example.com"
 git config user.name "Test User"
 git commit --allow-empty -m "initial commit"
 
-# Run swe-swe init
-"$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR"
+# Run swe-swe init with EFFECTIVE_HOME so project files are in host-visible path
+HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR"
 
-# Find the generated metadata directory
-HOME_DIR="${HOME:-/home/app}"
-PROJECT_PATH=$(ls -d "$HOME_DIR/.swe-swe/projects/"*/ | head -1)
+# Find the generated metadata directory (match by test stack name)
+PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*swe-swe-test-${SWE_TEST_SLOT}*/ 2>/dev/null | head -1)
+if [ -z "$PROJECT_PATH" ]; then
+    echo "ERROR: Could not find project directory for swe-swe-test-${SWE_TEST_SLOT}"
+    exit 1
+fi
 echo "Generated project at: $PROJECT_PATH"
 
 # Update .env with our slot-specific values
@@ -118,9 +146,49 @@ fi
 echo "SWE_PORT=${SWE_PORT}" >> "$ENV_FILE"
 echo "Updated $ENV_FILE with PROJECT_NAME=$PROJECT_NAME, SWE_PORT=$SWE_PORT"
 
+# Calculate HOST_PROJECT_PATH for Docker volume mounts
+# Container path: $PROJECT_PATH (e.g., /workspace/.test-home-0/.swe-swe/projects/...)
+# Host path: translate /workspace/ -> $HOST_WORKSPACE/
+HOST_PROJECT_PATH="${PROJECT_PATH/#\/workspace\//${HOST_WORKSPACE}/}"
+echo "HOST_PROJECT_PATH=$HOST_PROJECT_PATH" >> "$ENV_FILE"
+echo "  Host path: $HOST_PROJECT_PATH"
+
+# Create docker-compose.override.yml with host paths for volume mounts
+# This fixes Docker-in-Docker path translation issues
+cat > "$PROJECT_PATH/docker-compose.override.yml" << EOF
+# Auto-generated for Docker-in-Docker compatibility
+# Translates container paths to host paths for volume mounts
+services:
+  traefik:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${HOST_PROJECT_PATH}traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
+
+  vscode-proxy:
+    volumes:
+      - ${HOST_PROJECT_PATH}nginx-vscode.conf:/etc/nginx/conf.d/default.conf:ro
+
+  swe-swe:
+    volumes:
+      - ${HOST_PROJECT_PATH}certs:/swe-swe/certs:ro
+      - ${HOST_PROJECT_PATH}home:/home/app
+
+  code-server:
+    volumes:
+      - ${HOST_PROJECT_PATH}certs:/swe-swe/certs:ro
+      - ${HOST_PROJECT_PATH}home:/home/coder
+
+  chrome:
+    volumes:
+      - ${HOST_PROJECT_PATH}certs:/swe-swe/certs:ro
+EOF
+echo "Created docker-compose.override.yml with host paths"
+
 # Write slot info for subsequent scripts
 echo "$SWE_TEST_SLOT" > "$TEST_STACK_DIR/.swe-test-slot"
 echo "$PROJECT_PATH" > "$TEST_STACK_DIR/.swe-test-project"
+echo "$EFFECTIVE_HOME" > "$TEST_STACK_DIR/.swe-test-home"
+echo "$HOST_PROJECT_PATH" > "$TEST_STACK_DIR/.swe-test-host-project"
 
 # Verify expected files exist
 for f in Dockerfile docker-compose.yml entrypoint.sh; do
