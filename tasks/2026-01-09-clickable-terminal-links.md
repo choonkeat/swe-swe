@@ -26,39 +26,21 @@ Add `workDir` to the existing `status` WebSocket message. Frontend stores it for
 
 ---
 
-## Phase 2: Refactor status bar VS Code link to use shared helper
+## Phase 2: Refactor status bar VS Code link to use shared helper ✅
 
 ### What will be achieved
 Create a `getVSCodeUrl()` helper function that uses `this.workDir` to construct the correct VS Code URL. Update the status bar link to use this helper.
 
 ### Steps
 
-1. **Create `getVSCodeUrl()` method** in `terminal-ui.js`:
-   ```javascript
-   getVSCodeUrl() {
-       const baseUrl = this.getBaseUrl();
-       if (this.workDir) {
-           return `${baseUrl}/vscode/?folder=${encodeURIComponent(this.workDir)}`;
-       }
-       return `${baseUrl}/vscode/`;
-   }
-   ```
-
-2. **Update `renderServiceLinks()`** (line ~1020) to use the helper:
-   ```javascript
-   const services = [
-       { name: 'vscode', url: this.getVSCodeUrl() },
-       { name: 'browser', url: `${baseUrl}/chrome/` }
-   ];
-   ```
-
-3. **Re-render service links when `workDir` changes** - Call `renderServiceLinks()` after receiving `status` message
+1. ✅ **Create `getBaseUrl()` and `getVSCodeUrl()` methods** in `terminal-ui.js`
+2. ✅ **Update `renderServiceLinks()`** to use `this.getVSCodeUrl()`
+3. ✅ **Re-render service links when `workDir` changes** - Call `renderServiceLinks()` in status handler
 
 ### Verification
 
-1. `make test` - ensure existing tests pass
-2. Manual: Verify VS Code link shows correct `?folder=` param for worktree sessions
-3. Click the link - VS Code should open with correct folder
+1. ✅ `make test` - tests pass
+2. Manual verification deferred to Phase 5
 
 ---
 
