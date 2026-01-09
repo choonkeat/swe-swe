@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "2d57610"
+	GitCommit = "7666dae"
 )
 
 var indexTemplate *template.Template
@@ -2047,12 +2047,6 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
-	// Display MOTD with available swe-swe commands (for human user discoverability)
-	motd := generateMOTD(workDir, branchName)
-	if motd != "" {
-		ptmx.Write([]byte(motd))
-	}
-
 	now := time.Now()
 	sess := &Session{
 		UUID:            sessionUUID,
@@ -2147,6 +2141,19 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 
 	// If this is a new session, start the PTY reader goroutine
 	if isNew {
+		// Display MOTD with available swe-swe commands (for human user discoverability)
+		// Send directly to websocket (not PTY) so ANSI escape codes are properly interpreted
+		motd := generateMOTD(sess.WorkDir, sess.BranchName)
+		if motd != "" {
+			motdBytes := []byte(motd)
+			// Write to VT and ring buffer so joining clients see it too
+			sess.vtMu.Lock()
+			sess.vt.Write(motdBytes)
+			sess.writeToRing(motdBytes)
+			sess.vtMu.Unlock()
+			// Send to first client
+			conn.WriteMessage(websocket.BinaryMessage, motdBytes)
+		}
 		sess.startPTYReader()
 	} else {
 		// Send ring buffer (scrollback history) first, then VT snapshot
