@@ -40,17 +40,17 @@ Change the server to use `/worktrees` as the base directory for git worktrees in
 
 ### Steps
 
-- [ ] Edit `cmd/swe-swe/templates/host/swe-swe-server/main.go`:
-  - [ ] Line ~1237: Change `var worktreeDir = "/workspace/.swe-swe/worktrees"` to `var worktreeDir = "/worktrees"`
+- [x] Edit `cmd/swe-swe/templates/host/swe-swe-server/main.go`:
+  - [x] Line ~1237: Change `var worktreeDir = "/workspace/.swe-swe/worktrees"` to `var worktreeDir = "/worktrees"`
 
-- [ ] Edit `cmd/swe-swe/templates/host/swe-swe-server/worktree_test.go`:
-  - [ ] Update all hardcoded `/workspace/.swe-swe/worktrees` paths to `/worktrees`
+- [x] Edit `cmd/swe-swe/templates/host/swe-swe-server/worktree_test.go`:
+  - [x] Update all hardcoded `/workspace/.swe-swe/worktrees` paths to `/worktrees`
 
 ### Verification
 
-- [ ] `make build` succeeds (compiles)
-- [ ] `make test` expected to fail - golden files still contain old paths
-- [ ] Phase 3 will regenerate golden files and restore green tests
+- [x] `make build` succeeds (compiles)
+- [x] `make test` passes (server tests aligned with new path)
+- [ ] Phase 3 will regenerate golden files to match
 
 ---
 
