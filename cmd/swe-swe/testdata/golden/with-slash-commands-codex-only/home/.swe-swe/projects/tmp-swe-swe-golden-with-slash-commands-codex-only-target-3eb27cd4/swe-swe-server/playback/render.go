@@ -1,15 +1,20 @@
 package playback
 
 import (
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
 
+//go:embed link-provider.js
+var linkProviderJS string
+
 // RenderPlaybackHTML generates an HTML page with animated terminal playback.
 // Uses xterm.js for terminal rendering and includes playback controls.
 // If cols/rows are 0, the terminal will auto-fit to the container.
-func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows uint16) (string, error) {
+// workDir is used to construct VS Code URLs for clickable file links.
+func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows uint16, workDir string) (string, error) {
 	// Encode frames as base64 to avoid escaping issues
 	framesJSON, err := json.Marshal(frames)
 	if err != nil {
@@ -215,6 +220,9 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
 
   <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <script>
+%s
+  </script>
   <script>
     // Decode frames
     const framesBase64 = '%s';
@@ -424,9 +432,24 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
       const overlay = document.getElementById('loadingOverlay');
       if (overlay) overlay.remove();
     }, 0);
+
+    // Register file link provider for clickable paths
+    const workDir = '%s';
+    function getVSCodeUrl() {
+      const protocol = window.location.protocol;
+      const port = window.location.port;
+      const baseUrl = port ? protocol + '//' + window.location.hostname + ':' + port : protocol + '//' + window.location.hostname;
+      if (workDir) {
+        return baseUrl + '/vscode/?folder=' + encodeURIComponent(workDir);
+      }
+      return baseUrl + '/vscode/';
+    }
+    if (typeof registerFileLinkProvider === 'function') {
+      registerFileLinkProvider(xterm, { getVSCodeUrl: getVSCodeUrl });
+    }
   </script>
 </body>
-</html>`, name, backURL, name, dataSizeStr, framesBase64, totalDuration, cols, rows)
+</html>`, name, backURL, name, dataSizeStr, linkProviderJS, framesBase64, totalDuration, cols, rows, workDir)
 
 	return html, nil
 }
