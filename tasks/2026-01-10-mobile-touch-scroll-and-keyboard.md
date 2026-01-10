@@ -220,7 +220,7 @@ this.scrollProxy.addEventListener('click', () => this.term.focus());
 
 ---
 
-## Phase 2: visualViewport Keyboard Handling
+## Phase 2: visualViewport Keyboard Handling ✅ COMPLETE
 
 ### What Will Be Achieved
 
@@ -400,6 +400,8 @@ User will handle deployment and iOS testing after each phase is complete.
 ---
 
 ## Success Criteria
+
+Code complete - awaiting iOS testing:
 
 - [ ] Touch scrolling has native iOS momentum
 - [ ] Rubber band effect on overscroll

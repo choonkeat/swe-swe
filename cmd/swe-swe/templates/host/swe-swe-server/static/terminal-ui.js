@@ -62,6 +62,11 @@ class TerminalUI extends HTMLElement {
     }
 
     connectedCallback() {
+        // Capture original window height BEFORE keyboard can appear
+        // This is critical for visualViewport keyboard detection
+        this.originalWindowHeight = window.innerHeight;
+        this.lastKeyboardHeight = 0;
+
         try {
             // Redirect to homepage if no assistant specified
             if (!this.assistant) {
@@ -140,6 +145,11 @@ class TerminalUI extends HTMLElement {
         // Clean up chat message timeouts
         this.chatMessageTimeouts.forEach(timeout => clearTimeout(timeout));
         this.chatMessageTimeouts = [];
+        // Clean up visualViewport listeners
+        if (window.visualViewport && this._viewportHandler) {
+            window.visualViewport.removeEventListener('resize', this._viewportHandler);
+            window.visualViewport.removeEventListener('scroll', this._viewportHandler);
+        }
         if (this.term) {
             this.term.dispose();
         }
@@ -161,9 +171,16 @@ class TerminalUI extends HTMLElement {
                     width: 100%;
                     overflow: hidden;
                     transition: opacity 0.3s ease, transform 0.1s ease-out;
+                    /* Position is controlled by JS for keyboard handling */
                 }
                 .terminal-ui__terminal.disconnected {
                     opacity: 0.5;
+                }
+                /* Mobile keyboard positioning for virtual keyboard handling */
+                @media (pointer: coarse) {
+                    .mobile-keyboard.visible {
+                        /* Position set dynamically by JS when keyboard visible */
+                    }
                 }
                 /* Touch Scroll Proxy - overlay for native iOS momentum scrolling */
                 .touch-scroll-proxy {
@@ -1910,6 +1927,74 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => { this.syncingFromTerm = false; });
     }
 
+    // === visualViewport Keyboard Handling ===
+    // Detects virtual keyboard and adjusts layout accordingly
+
+    setupViewportListeners() {
+        if (!window.visualViewport) return;
+
+        this._viewportHandler = () => this.updateViewport();
+        window.visualViewport.addEventListener('resize', this._viewportHandler);
+        window.visualViewport.addEventListener('scroll', this._viewportHandler);
+
+        // Also handle input focus/blur to prevent iOS scroll weirdness
+        const mobileInput = this.querySelector('.mobile-keyboard__text');
+        if (mobileInput) {
+            mobileInput.addEventListener('focus', () => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    this.updateViewport();
+                }, 100);
+            });
+            mobileInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    this.updateViewport();
+                }, 100);
+            });
+        }
+    }
+
+    updateViewport() {
+        const vv = window.visualViewport;
+        if (!vv) return;
+
+        // Calculate keyboard height using original window height as reference
+        // (interactive-widget=resizes-content causes window.innerHeight to shrink)
+        const keyboardHeight = Math.max(0, this.originalWindowHeight - vv.height);
+        const keyboardVisible = keyboardHeight > 50; // threshold to filter noise
+
+        // Only update layout if significant change (>20px)
+        if (Math.abs(keyboardHeight - this.lastKeyboardHeight) <= 20) {
+            return;
+        }
+        this.lastKeyboardHeight = keyboardHeight;
+
+        const mobileKeyboard = this.querySelector('.mobile-keyboard');
+        const terminalContainer = this.querySelector('.terminal-ui');
+
+        if (keyboardVisible) {
+            // Keyboard is showing - adjust layout
+            if (mobileKeyboard) {
+                // Move mobile keyboard above virtual keyboard
+                mobileKeyboard.style.marginBottom = `${keyboardHeight}px`;
+            }
+        } else {
+            // Keyboard hidden - reset layout
+            if (mobileKeyboard) {
+                mobileKeyboard.style.marginBottom = '0';
+            }
+        }
+
+        // Refit terminal immediately (no setTimeout - use rAF)
+        requestAnimationFrame(() => {
+            this.fitAddon.fit();
+            this.sendResize();
+            this.term.scrollToBottom();
+            this.updateSpacerHeight();
+        });
+    }
+
     setupMobileKeyboard() {
         // Determine if keyboard should be visible
         this.setupKeyboardVisibility();
@@ -2045,6 +2130,9 @@ class TerminalUI extends HTMLElement {
 
         // Touch scroll proxy for iOS momentum scrolling
         this.setupTouchScrollProxy();
+
+        // visualViewport keyboard handling for iOS
+        this.setupViewportListeners();
 
         // Terminal click to focus
         this.querySelector('.terminal-ui__terminal').addEventListener('click', () => {
