@@ -228,6 +228,9 @@ class TerminalUI extends HTMLElement {
                     flex-direction: column;
                     background: #2d2d2d;
                     border-top: 1px solid #404040;
+                    position: relative;
+                    z-index: 20;
+                    pointer-events: auto;
                 }
                 .mobile-keyboard.visible {
                     display: flex;
