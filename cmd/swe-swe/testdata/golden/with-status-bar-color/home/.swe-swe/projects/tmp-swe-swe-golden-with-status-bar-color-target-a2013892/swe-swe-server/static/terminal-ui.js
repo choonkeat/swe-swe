@@ -369,7 +369,7 @@ class TerminalUI extends HTMLElement {
                     border-top: 3px solid transparent;
                 }
                 .terminal-ui__status-bar.connected {
-                    background: #007acc;
+                    background: #dc2626;
                 }
                 .terminal-ui__status-bar.error {
                     background: #c62828;

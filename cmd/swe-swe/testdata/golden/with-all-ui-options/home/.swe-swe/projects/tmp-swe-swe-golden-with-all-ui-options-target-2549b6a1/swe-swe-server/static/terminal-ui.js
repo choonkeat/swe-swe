@@ -364,12 +364,12 @@ class TerminalUI extends HTMLElement {
                     background: #f57c00;
                     color: #fff;
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    font-size: 12px;
+                    font-size: 14px;
                     transition: background-color 0.3s ease, border-color 0.3s ease;
                     border-top: 3px solid transparent;
                 }
                 .terminal-ui__status-bar.connected {
-                    background: #007acc;
+                    background: red;
                 }
                 .terminal-ui__status-bar.error {
                     background: #c62828;
@@ -864,7 +864,7 @@ class TerminalUI extends HTMLElement {
 
         this.term = new Terminal({
             cursorBlink: true,
-            fontSize: 14,
+            fontSize: 18,
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
             scrollback: 5000,
             theme: {
