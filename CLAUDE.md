@@ -27,11 +27,11 @@ Use a two-commit TDD approach:
    - Implement functionality (template changes, etc.)
    - Run `make build golden-update`, verify diff shows only functional changes, commit
 
-## Directory Convention
+## swe-swe Directory Convention
 
 Inside the container's `/workspace/`:
 
-- **`agent/`** — Agent commands only. All files here are `@`-mentionable.
+- **`swe-swe/`** — Agent commands only. All files here are `@`-mentionable.
 - **`.swe-swe/`** — Internal. Only subdirectories (no loose files): `docs/`, `uploads/`, etc.
 
 ## Browser / Manual testing

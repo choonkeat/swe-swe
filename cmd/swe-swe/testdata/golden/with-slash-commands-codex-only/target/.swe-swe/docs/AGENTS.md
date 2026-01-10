@@ -1,8 +1,8 @@
-# Agent Commands
+# swe-swe
 
 ## Commands
 
-Use `@agent/<command>` to invoke:
+Use `@swe-swe/<command>` to invoke:
 
 | Command | Description | Where |
 |---------|-------------|-------|
@@ -24,5 +24,5 @@ Use `@agent/<command>` to invoke:
 
 ## For Agents
 
-When user mentions `@agent/<command>`, read that file and follow its instructions.
+When user mentions `@swe-swe/<command>`, read that file and follow its instructions.
 You may update the "Current Setup" section when configuration changes.
