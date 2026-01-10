@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <title>Touch Scroll Proxy v2</title>
+    <!-- BUILD: 2026-01-10T07:30:00Z -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script>
+        // Polyfill crypto.randomUUID for non-secure contexts (HTTP on LAN)
+        if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
+            crypto.randomUUID = function() {
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    const r = Math.random() * 16 | 0;
+                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            };
+        }
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            background: #1e1e1e;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100dvh;
+            height: 100vh; /* fallback */
+        }
+        .terminal-wrapper {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+            overflow: hidden;
+        }
+        #terminal {
+            position: absolute;
+            inset: 0;
+            transition: transform 0.1s ease-out;
+        }
+
+        /* === TOUCH SCROLL PROXY === */
+        .touch-scroll-proxy {
+            position: absolute;
+            inset: 0;
+            overflow-y: scroll;
+            overflow-x: hidden;
+            z-index: 10;
+            /* Make it invisible but interactive */
+            -webkit-overflow-scrolling: touch; /* iOS momentum */
+        }
+        .touch-scroll-proxy::-webkit-scrollbar {
+            display: none; /* Hide scrollbar - terminal has its own */
+        }
+        .scroll-spacer {
+            width: 100%;
+            /* Height set dynamically based on buffer */
+            pointer-events: none;
+            min-height: 3000px; /* Force scrollable for testing */
+        }
+        .scroll-marker {
+            height: 17px;
+            line-height: 17px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #0ff; /* bright cyan */
+            text-align: right;
+            padding-right: 10px;
+            opacity: 0.3;
+        }
+        .scroll-marker:nth-child(10n) {
+            opacity: 0.6;
+            font-weight: bold;
+        }
+        .scroll-marker:nth-child(50n) {
+            opacity: 1;
+            color: #ff0; /* yellow every 50 */
+        }
+
+        /* Only enable proxy on touch devices */
+        @media (pointer: coarse) {
+            .touch-scroll-proxy {
+                display: block;
+                pointer-events: auto !important;
+            }
+            /* Kill ALL pointer events on xterm and children */
+            #terminal,
+            #terminal *,
+            .xterm,
+            .xterm *,
+            .xterm-viewport,
+            .xterm-screen,
+            .xterm-helper-textarea {
+                pointer-events: none !important;
+            }
+        }
+        @media (pointer: fine) {
+            .touch-scroll-proxy {
+                display: none;
+                pointer-events: none;
+            }
+        }
+
+        /* === MOBILE KEYBOARD === */
+        .mobile-keyboard {
+            display: none;
+            flex-direction: column;
+            background: #2d2d2d;
+            border-top: 1px solid #404040;
+            flex-shrink: 0;
+        }
+        @media (pointer: coarse) {
+            .mobile-keyboard {
+                display: flex;
+            }
+        }
+        .mobile-keyboard__row {
+            display: flex;
+            gap: 4px;
+            padding: 8px;
+        }
+        .mobile-keyboard button {
+            flex: 1;
+            min-width: 44px;
+            min-height: 44px;
+            padding: 12px 8px;
+            font-size: 14px;
+            font-family: monospace;
+            background: #3c3c3c;
+            color: #d4d4d4;
+            border: 1px solid #505050;
+            border-radius: 4px;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .mobile-keyboard button:active {
+            background: #505050;
+        }
+        .mobile-keyboard__input {
+            display: flex;
+            gap: 8px;
+            padding: 8px;
+            padding-top: 0;
+        }
+        .mobile-keyboard__text {
+            flex: 1;
+            padding: 10px 12px;
+            font-size: 16px; /* Prevents iOS zoom */
+            font-family: monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid #505050;
+            border-radius: 4px;
+        }
+        .mobile-keyboard__send {
+            min-width: 60px;
+        }
+
+        /* === DEBUG OVERLAY === */
+        .debug {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.8);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 4px 8px;
+            z-index: 100;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="debug" id="debug">BUILD v2 07:30 | Loading...</div>
+    <div class="debug" id="debug2" style="top:20px;background:rgba(0,0,100,0.8);">touch info...</div>
+
+    <div class="container">
+        <div class="terminal-wrapper">
+            <div id="terminal"></div>
+            <div class="touch-scroll-proxy" id="scrollProxy">
+                <div class="scroll-spacer" id="scrollSpacer"></div>
+            </div>
+        </div>
+
+        <div class="mobile-keyboard">
+            <div class="mobile-keyboard__row">
+                <button data-key="Escape">Esc</button>
+                <button data-key="Tab">Tab</button>
+                <button data-ctrl="c">^C</button>
+                <button data-ctrl="d">^D</button>
+                <button data-key="ArrowUp">↑</button>
+                <button data-key="ArrowDown">↓</button>
+            </div>
+            <div class="mobile-keyboard__input">
+                <input type="text" class="mobile-keyboard__text" id="mobileInput"
+                    placeholder="Type command..."
+                    autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+                <button class="mobile-keyboard__send" id="sendBtn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script>
+        const debug = document.getElementById('debug');
+        const scrollProxy = document.getElementById('scrollProxy');
+        const scrollSpacer = document.getElementById('scrollSpacer');
+        const mobileInput = document.getElementById('mobileInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        // Xterm setup
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            scrollback: 5000,
+            theme: {
+                background: '#1e1e1e',
+                foreground: '#d4d4d4'
+            }
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+
+        // Get line height for scroll calculations
+        const lineHeight = Math.ceil(term._core._renderService.dimensions.css.cell.height);
+
+        // Debug: check if touch device detected
+        const debug2 = document.getElementById('debug2');
+        const isCoarse = window.matchMedia('(pointer: coarse)').matches;
+        const proxyStyle = getComputedStyle(scrollProxy);
+        const termStyle = getComputedStyle(document.getElementById('terminal'));
+        debug2.textContent = `v7 | rubber band effect + faster text gen`;
+
+        // WebSocket
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+        ws.onopen = () => {
+            debug.textContent = 'Connected - generating wall of text...';
+            sendResize();
+
+            // Auto-generate obvious terminal content (fast version)
+            setTimeout(() => {
+                ws.send('clear; seq -f "████ TERMINAL LINE %03g ████" 1 150\r');
+            }, 300);
+        };
+
+        ws.onmessage = (e) => {
+            if (e.data instanceof Blob) {
+                e.data.arrayBuffer().then(buf => {
+                    term.write(new Uint8Array(buf));
+                });
+            } else {
+                term.write(e.data);
+            }
+        };
+
+        ws.onclose = () => {
+            debug.textContent = 'Disconnected';
+            term.write('\r\n\x1b[31m[Connection closed]\x1b[0m\r\n');
+        };
+
+        term.onData(data => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(data);
+            }
+        });
+
+        function sendResize() {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(`resize:${term.cols}x${term.rows}`);
+            }
+        }
+
+        // === TOUCH SCROLL PROXY LOGIC ===
+
+        let syncingFromProxy = false;
+        let syncingFromTerm = false;
+
+        let lastMarkerCount = 0;
+
+        function updateSpacerHeight() {
+            const bufferLines = term.buffer.active.length;
+
+            // Only rebuild markers if count changed significantly
+            if (Math.abs(bufferLines - lastMarkerCount) > 10) {
+                // Generate visible line markers
+                let html = '';
+                for (let i = 1; i <= bufferLines; i++) {
+                    html += `<div class="scroll-marker">${i}</div>`;
+                }
+                scrollSpacer.innerHTML = html;
+                lastMarkerCount = bufferLines;
+            }
+
+            debug.textContent = `Lines: ${bufferLines}, Markers: ${lastMarkerCount}, LineH: ${lineHeight}px`;
+        }
+
+        const terminalEl = document.getElementById('terminal');
+
+        function syncProxyToTerm() {
+            if (syncingFromTerm) return;
+            syncingFromProxy = true;
+
+            const maxScroll = scrollProxy.scrollHeight - scrollProxy.clientHeight;
+            const scrollTop = scrollProxy.scrollTop;
+
+            // Rubber band effect for overscroll
+            let rubberBand = 0;
+            if (scrollTop < 0) {
+                // Top overscroll - push terminal down
+                rubberBand = Math.min(-scrollTop * 0.5, 100);
+                terminalEl.style.transform = `translateY(${rubberBand}px)`;
+            } else if (scrollTop > maxScroll) {
+                // Bottom overscroll - push terminal up
+                rubberBand = Math.max((maxScroll - scrollTop) * 0.5, -100);
+                terminalEl.style.transform = `translateY(${rubberBand}px)`;
+            } else {
+                // Normal scroll - reset transform
+                terminalEl.style.transform = 'translateY(0)';
+            }
+
+            if (maxScroll <= 0) {
+                syncingFromProxy = false;
+                return;
+            }
+
+            const scrollRatio = Math.max(0, Math.min(1, scrollTop / maxScroll));
+            const maxLine = term.buffer.active.length - term.rows;
+            const targetLine = Math.round(scrollRatio * maxLine);
+
+            // scrollToLine is 0-indexed from top of buffer
+            term.scrollToLine(targetLine);
+
+            debug.textContent = `Scroll: ${scrollTop.toFixed(0)}/${maxScroll.toFixed(0)} | Rubber: ${rubberBand.toFixed(0)}px`;
+
+            requestAnimationFrame(() => {
+                syncingFromProxy = false;
+            });
+        }
+
+        function syncTermToProxy() {
+            if (syncingFromProxy) return;
+            syncingFromTerm = true;
+
+            const maxLine = term.buffer.active.length - term.rows;
+            if (maxLine <= 0) {
+                syncingFromTerm = false;
+                return;
+            }
+
+            // term.buffer.active.viewportY is the top line in viewport
+            const currentLine = term.buffer.active.viewportY;
+            const scrollRatio = currentLine / maxLine;
+
+            const maxScroll = scrollProxy.scrollHeight - scrollProxy.clientHeight;
+            scrollProxy.scrollTop = scrollRatio * maxScroll;
+
+            requestAnimationFrame(() => {
+                syncingFromTerm = false;
+            });
+        }
+
+        // Initial spacer height
+        updateSpacerHeight();
+
+        // Keep spacer in sync with buffer
+        term.onWriteParsed(() => {
+            updateSpacerHeight();
+            // Auto-scroll to bottom when new content (if already at bottom)
+            const maxLine = term.buffer.active.length - term.rows;
+            const atBottom = term.buffer.active.viewportY >= maxLine - 1;
+            if (atBottom) {
+                syncTermToProxy();
+            }
+        });
+
+        // Proxy scroll -> xterm scroll
+        scrollProxy.addEventListener('scroll', syncProxyToTerm, { passive: true });
+
+        // xterm scroll -> proxy scroll (for programmatic scrolls)
+        term.onScroll(() => {
+            syncTermToProxy();
+        });
+
+        // Start at bottom
+        requestAnimationFrame(() => {
+            const maxScroll = scrollProxy.scrollHeight - scrollProxy.clientHeight;
+            scrollProxy.scrollTop = maxScroll;
+        });
+
+        // === MOBILE KEYBOARD ===
+
+        const KEY_CODES = {
+            'Escape': '\x1b',
+            'Tab': '\t',
+            'ArrowUp': '\x1b[A',
+            'ArrowDown': '\x1b[B',
+            'ArrowLeft': '\x1b[D',
+            'ArrowRight': '\x1b[C'
+        };
+
+        const CTRL_CODES = {
+            'c': '\x03',
+            'd': '\x04',
+            'a': '\x01',
+            'e': '\x05'
+        };
+
+        document.querySelectorAll('.mobile-keyboard button[data-key]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.key;
+                if (KEY_CODES[key] && ws.readyState === WebSocket.OPEN) {
+                    ws.send(KEY_CODES[key]);
+                }
+                term.focus();
+            });
+        });
+
+        document.querySelectorAll('.mobile-keyboard button[data-ctrl]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.ctrl;
+                if (CTRL_CODES[key] && ws.readyState === WebSocket.OPEN) {
+                    ws.send(CTRL_CODES[key]);
+                }
+                term.focus();
+            });
+        });
+
+        sendBtn.addEventListener('click', () => {
+            const text = mobileInput.value;
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(text + '\r');
+            }
+            mobileInput.value = '';
+            term.focus();
+        });
+
+        mobileInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendBtn.click();
+            }
+        });
+
+        // Tap on proxy to focus terminal (since xterm is pointer-events:none)
+        scrollProxy.addEventListener('click', (e) => {
+            // Only focus, don't interfere with scroll
+            term.focus();
+        });
+
+        // === RESIZE ===
+
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            sendResize();
+            updateSpacerHeight();
+        });
+
+        // Also handle visual viewport for keyboard
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => {
+                fitAddon.fit();
+                sendResize();
+            });
+        }
+    </script>
+</body>
+</html>
