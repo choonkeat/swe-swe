@@ -76,7 +76,7 @@ A complete Packer HCL configuration that can build a DigitalOcean snapshot, plus
 
 ---
 
-### Phase 2: Write Installation Scripts
+### Phase 2: Write Installation Scripts [DONE]
 
 **What Will Be Achieved**
 Shell scripts that install all required software onto the Droplet during the Packer build. These run at **image build time**, not at user deploy time.
