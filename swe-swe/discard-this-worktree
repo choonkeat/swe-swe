@@ -1,0 +1,24 @@
+# Discard This Worktree
+
+Branch: coloring-bottom-status
+Worktree: /worktrees/coloring-bottom-status
+Main repo: /workspace
+
+## Instructions
+
+Help the user discard this worktree and its branch.
+
+1. Check for uncommitted changes: `git status`
+   - If dirty, WARN user: "You have uncommitted changes that will be lost"
+   - List the files
+   - Ask for explicit confirmation
+
+2. Check for unpushed commits:
+   - `git log origin/coloring-bottom-status..coloring-bottom-status --oneline 2>/dev/null || git log --oneline`
+   - If unpushed commits exist, WARN user
+   - Ask for explicit confirmation
+
+3. After confirmation:
+   - `git -C /workspace worktree remove --force /worktrees/coloring-bottom-status`
+   - `git -C /workspace branch -D coloring-bottom-status`
+   - Confirm cleanup complete

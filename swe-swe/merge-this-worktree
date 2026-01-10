@@ -1,0 +1,33 @@
+# Merge This Worktree
+
+Branch: coloring-bottom-status
+Target: main
+Worktree: /worktrees/coloring-bottom-status
+Main repo: /workspace
+
+## Instructions
+
+Help the user merge this worktree branch to the target branch.
+
+1. Check for uncommitted changes: `git status`
+   - If dirty, ask user: commit, stash, or abort?
+
+2. Fetch latest: `git -C /workspace fetch origin`
+
+3. Check if target has moved:
+   - `git -C /workspace log main..origin/main --oneline`
+   - If commits exist, ask if user wants to update target first
+
+4. Perform merge:
+   - `git -C /workspace checkout main && git merge coloring-bottom-status`
+   - Ask user about merge strategy (ff, no-ff, squash) if they have preference
+
+5. If conflict:
+   - Show conflicted files
+   - Help resolve conversationally
+   - Don't leave user in broken state
+
+6. After successful merge:
+   - `git -C /workspace worktree remove /worktrees/coloring-bottom-status`
+   - `git -C /workspace branch -d coloring-bottom-status`
+   - Confirm cleanup complete
