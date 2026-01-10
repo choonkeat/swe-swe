@@ -277,6 +277,24 @@ func (s *Session) computeRestartCommand(yoloMode bool) string {
 	return s.AssistantConfig.ShellRestartCmd
 }
 
+// detectYoloMode checks if the given command contains YOLO mode flags.
+// Returns true if any known YOLO flag is present.
+func detectYoloMode(cmd string) bool {
+	yoloPatterns := []string{
+		"--dangerously-skip-permissions", // Claude
+		"--approval-mode=yolo",           // Gemini
+		"--yolo",                         // Codex
+		"--yes-always",                   // Aider
+		"GOOSE_MODE=auto",                // Goose
+	}
+	for _, pattern := range yoloPatterns {
+		if strings.Contains(cmd, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 // AddClient adds a WebSocket client to the session
 func (s *Session) AddClient(conn *SafeConn) {
 	s.mu.Lock()
@@ -2212,6 +2230,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
+		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
 			Name:      name,
