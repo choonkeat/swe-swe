@@ -1,7 +1,7 @@
 # Task: DigitalOcean Marketplace 1-Click App for swe-swe
 
 > **Date**: 2026-01-06
-> **Status**: Planned
+> **Status**: In Progress
 > **Research**: [2026-01-06-deploy-button-hosting.md](../research/2026-01-06-deploy-button-hosting.md)
 
 ---
@@ -43,7 +43,7 @@ deploy/digitalocean/
 
 ## Phases
 
-### Phase 1: Create Packer Template and Directory Structure
+### Phase 1: Create Packer Template and Directory Structure [DONE]
 
 **What Will Be Achieved**
 A complete Packer HCL configuration that can build a DigitalOcean snapshot, plus the directory structure for all files that will be provisioned onto the Droplet.
