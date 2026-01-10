@@ -160,10 +160,49 @@ class TerminalUI extends HTMLElement {
                     min-height: 0;
                     width: 100%;
                     overflow: hidden;
-                    transition: opacity 0.3s ease;
+                    transition: opacity 0.3s ease, transform 0.1s ease-out;
                 }
                 .terminal-ui__terminal.disconnected {
                     opacity: 0.5;
+                }
+                /* Touch Scroll Proxy - overlay for native iOS momentum scrolling */
+                .touch-scroll-proxy {
+                    position: absolute;
+                    inset: 0;
+                    overflow-y: scroll;
+                    overflow-x: hidden;
+                    z-index: 10;
+                    -webkit-overflow-scrolling: touch;
+                }
+                .touch-scroll-proxy::-webkit-scrollbar {
+                    display: none;
+                }
+                .scroll-spacer {
+                    width: 100%;
+                    pointer-events: none;
+                }
+                /* Touch devices: enable proxy, disable xterm touch */
+                @media (pointer: coarse) {
+                    .touch-scroll-proxy {
+                        display: block;
+                        pointer-events: auto !important;
+                    }
+                    .terminal-ui__terminal,
+                    .terminal-ui__terminal *,
+                    .xterm,
+                    .xterm *,
+                    .xterm-viewport,
+                    .xterm-screen,
+                    .xterm-helper-textarea {
+                        pointer-events: none !important;
+                    }
+                }
+                /* Desktop: hide proxy */
+                @media (pointer: fine) {
+                    .touch-scroll-proxy {
+                        display: none;
+                        pointer-events: none;
+                    }
                 }
                 /* Mobile Keyboard */
                 .mobile-keyboard {
@@ -750,6 +789,9 @@ class TerminalUI extends HTMLElement {
                     </div>
                 </div>
                 <div class="terminal-ui__terminal"></div>
+                <div class="touch-scroll-proxy">
+                    <div class="scroll-spacer"></div>
+                </div>
                 <div class="mobile-keyboard">
                     <div class="mobile-keyboard__main">
                         <button data-key="Escape">Esc</button>
@@ -1768,6 +1810,106 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    // === Touch Scroll Proxy ===
+    // Provides native iOS momentum scrolling by overlaying a scrollable div
+    // that syncs scroll position to xterm.js
+
+    setupTouchScrollProxy() {
+        this.scrollProxy = this.querySelector('.touch-scroll-proxy');
+        this.scrollSpacer = this.querySelector('.scroll-spacer');
+        this.terminalEl = this.querySelector('.terminal-ui__terminal');
+
+        if (!this.scrollProxy || !this.scrollSpacer || !this.terminalEl) return;
+
+        // State for preventing sync loops
+        this.syncingFromProxy = false;
+        this.syncingFromTerm = false;
+
+        // Approximate line height (xterm default ~17px)
+        this.scrollLineHeight = 17;
+
+        // Initial spacer height
+        this.updateSpacerHeight();
+
+        // Keep spacer in sync with buffer
+        this.term.onWriteParsed(() => {
+            this.updateSpacerHeight();
+            // Auto-scroll to bottom when new content (if already at bottom)
+            const maxLine = this.term.buffer.active.length - this.term.rows;
+            const atBottom = this.term.buffer.active.viewportY >= maxLine - 1;
+            if (atBottom) {
+                this.syncTermToProxy();
+            }
+        });
+
+        // Proxy scroll -> xterm scroll
+        this.scrollProxy.addEventListener('scroll', () => this.syncProxyToTerm(), { passive: true });
+
+        // xterm scroll -> proxy scroll (for programmatic scrolls)
+        this.term.onScroll(() => this.syncTermToProxy());
+
+        // Tap on proxy to focus terminal (since xterm has pointer-events: none on touch)
+        this.scrollProxy.addEventListener('click', () => this.term.focus());
+    }
+
+    updateSpacerHeight() {
+        if (!this.scrollSpacer || !this.scrollProxy) return;
+
+        const bufferLines = this.term.buffer.active.length;
+        // Spacer must EXCEED viewport height to be scrollable
+        const height = Math.max(
+            bufferLines * this.scrollLineHeight,
+            this.scrollProxy.clientHeight + 100
+        );
+        this.scrollSpacer.style.height = `${height}px`;
+    }
+
+    syncProxyToTerm() {
+        if (this.syncingFromTerm) return;
+        this.syncingFromProxy = true;
+
+        const maxScroll = this.scrollProxy.scrollHeight - this.scrollProxy.clientHeight;
+        const scrollTop = this.scrollProxy.scrollTop;
+
+        // Rubber band effect for overscroll
+        if (scrollTop < 0) {
+            // Top overscroll - push terminal down
+            const rubberBand = Math.min(-scrollTop * 0.5, 100);
+            this.terminalEl.style.transform = `translateY(${rubberBand}px)`;
+        } else if (scrollTop > maxScroll) {
+            // Bottom overscroll - push terminal up
+            const rubberBand = Math.max((maxScroll - scrollTop) * 0.5, -100);
+            this.terminalEl.style.transform = `translateY(${rubberBand}px)`;
+        } else {
+            // Normal scroll - reset transform
+            this.terminalEl.style.transform = 'translateY(0)';
+        }
+
+        // Sync scroll position to xterm
+        if (maxScroll > 0) {
+            const scrollRatio = Math.max(0, Math.min(1, scrollTop / maxScroll));
+            const maxLine = this.term.buffer.active.length - this.term.rows;
+            const targetLine = Math.round(scrollRatio * maxLine);
+            this.term.scrollToLine(targetLine);
+        }
+
+        requestAnimationFrame(() => { this.syncingFromProxy = false; });
+    }
+
+    syncTermToProxy() {
+        if (this.syncingFromProxy) return;
+        this.syncingFromTerm = true;
+
+        const maxLine = this.term.buffer.active.length - this.term.rows;
+        if (maxLine > 0) {
+            const scrollRatio = this.term.buffer.active.viewportY / maxLine;
+            const maxScroll = this.scrollProxy.scrollHeight - this.scrollProxy.clientHeight;
+            this.scrollProxy.scrollTop = scrollRatio * maxScroll;
+        }
+
+        requestAnimationFrame(() => { this.syncingFromTerm = false; });
+    }
+
     setupMobileKeyboard() {
         // Determine if keyboard should be visible
         this.setupKeyboardVisibility();
@@ -1900,6 +2042,9 @@ class TerminalUI extends HTMLElement {
 
         // Mobile keyboard setup
         this.setupMobileKeyboard();
+
+        // Touch scroll proxy for iOS momentum scrolling
+        this.setupTouchScrollProxy();
 
         // Terminal click to focus
         this.querySelector('.terminal-ui__terminal').addEventListener('click', () => {
