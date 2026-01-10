@@ -1,0 +1,16 @@
+[Unit]
+Description=swe-swe AI Development Environment
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/swe-swe/env
+WorkingDirectory=/workspace
+ExecStart=/usr/local/bin/swe-swe up --project-directory /workspace
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

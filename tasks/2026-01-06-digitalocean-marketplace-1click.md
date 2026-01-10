@@ -126,7 +126,7 @@ Shell scripts that install all required software onto the Droplet during the Pac
 
 ---
 
-### Phase 3: Write First-Boot Scripts
+### Phase 3: Write First-Boot Scripts [DONE]
 
 **What Will Be Achieved**
 Scripts and files that run when a **user deploys** the Droplet (not at image build time). This generates unique passwords, starts swe-swe, and shows the user their credentials.
