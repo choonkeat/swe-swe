@@ -479,14 +479,16 @@ func (s *Session) BroadcastStatus() {
 		workDir, _ = os.Getwd()
 	}
 	status := map[string]interface{}{
-		"type":        "status",
-		"viewers":     len(s.wsClients),
-		"cols":        cols,
-		"rows":        rows,
-		"assistant":   s.AssistantConfig.Name,
-		"sessionName": s.Name,
-		"uuidShort":   uuidShort,
-		"workDir":     workDir,
+		"type":          "status",
+		"viewers":       len(s.wsClients),
+		"cols":          cols,
+		"rows":          rows,
+		"assistant":     s.AssistantConfig.Name,
+		"sessionName":   s.Name,
+		"uuidShort":     uuidShort,
+		"workDir":       workDir,
+		"yoloMode":      s.yoloMode,
+		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
 	}
 
 	data, err := json.Marshal(status)
@@ -900,7 +902,16 @@ func (s *Session) startPTYReader() {
 				// Wait a bit before restarting
 				time.Sleep(500 * time.Millisecond)
 
-				if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
+				// Use pendingRestartCmd if set (from YOLO toggle), otherwise default
+				s.mu.Lock()
+				restartCmd := s.AssistantConfig.ShellRestartCmd
+				if s.pendingRestartCmd != "" {
+					restartCmd = s.pendingRestartCmd
+					s.pendingRestartCmd = "" // Clear after use
+				}
+				s.mu.Unlock()
+
+				if err := s.RestartProcess(restartCmd); err != nil {
 					log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
 					errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
 					s.vtMu.Lock()
@@ -2410,6 +2421,42 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					log.Printf("Failed to save metadata: %v", err)
 				}
 				sess.BroadcastStatus()
+			case "toggle_yolo":
+				// Handle YOLO mode toggle request
+				// Check if agent supports YOLO mode
+				if sess.AssistantConfig.YoloRestartCmd == "" {
+					log.Printf("Session %s: toggle_yolo ignored (agent %s doesn't support YOLO)", sess.UUID, sess.AssistantConfig.Name)
+					continue
+				}
+
+				sess.mu.Lock()
+				newYoloMode := !sess.yoloMode
+				sess.yoloMode = newYoloMode
+				sess.pendingRestartCmd = sess.computeRestartCommand(newYoloMode)
+				cmd := sess.Cmd
+				sess.mu.Unlock()
+
+				log.Printf("Session %s: toggling YOLO mode to %v", sess.UUID, newYoloMode)
+
+				// Broadcast status update with new YOLO state
+				sess.BroadcastStatus()
+
+				// Send visual feedback to terminal
+				modeStr := "OFF"
+				if newYoloMode {
+					modeStr = "ON"
+				}
+				feedbackMsg := []byte(fmt.Sprintf("\r\n[Switching YOLO mode %s, restarting agent...]\r\n", modeStr))
+				sess.vtMu.Lock()
+				sess.vt.Write(feedbackMsg)
+				sess.writeToRing(feedbackMsg)
+				sess.vtMu.Unlock()
+				sess.Broadcast(feedbackMsg)
+
+				// Kill process - will exit non-zero, triggering restart with pendingRestartCmd
+				if cmd != nil && cmd.Process != nil {
+					cmd.Process.Signal(syscall.SIGTERM)
+				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
