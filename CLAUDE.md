@@ -31,7 +31,7 @@ Use a two-commit TDD approach:
 
 Inside the container's `/workspace/`:
 
-- **`computer/`** — Computer commands only. All files here are `@`-mentionable.
+- **`agent/`** — Agent commands only. All files here are `@`-mentionable.
 - **`.swe-swe/`** — Internal. Only subdirectories (no loose files): `docs/`, `uploads/`, etc.
 
 ## Browser / Manual testing

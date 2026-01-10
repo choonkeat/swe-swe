@@ -1,8 +1,8 @@
-# Computer Commands
+# Agent Commands
 
 ## Commands
 
-Use `@computer/<command>` to invoke:
+Use `@agent/<command>` to invoke:
 
 | Command | Description | Where |
 |---------|-------------|-------|
@@ -24,5 +24,5 @@ Use `@computer/<command>` to invoke:
 
 ## For Agents
 
-When user mentions `@computer/<command>`, read that file and follow its instructions.
+When user mentions `@agent/<command>`, read that file and follow its instructions.
 You may update the "Current Setup" section when configuration changes.
