@@ -104,6 +104,10 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-opencode FLAGS="--agents claude,opencode --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-ssl-selfsign FLAGS="--ssl=selfsign"
 	@$(MAKE) _golden-variant NAME=with-copy-home-paths FLAGS="--copy-home-paths .gitconfig,.ssh"
+	@$(MAKE) _golden-variant NAME=with-status-bar-color FLAGS="--status-bar-color \#dc2626"
+	@$(MAKE) _golden-variant NAME=with-terminal-font FLAGS="--terminal-font-size 16 --terminal-font-family 'JetBrains Mono'"
+	@$(MAKE) _golden-variant NAME=with-status-bar-font FLAGS="--status-bar-font-size 14 --status-bar-font-family monospace"
+	@$(MAKE) _golden-variant NAME=with-all-ui-options FLAGS="--status-bar-color red --terminal-font-size 18 --status-bar-font-size 14"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs
 	@$(MAKE) _golden-certs-ssl-cert-file

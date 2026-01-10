@@ -1,0 +1,16 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex",
+    "aider",
+    "goose",
+    "opencode"
+  ],
+  "ssl": "no",
+  "statusBarColor": "#dc2626",
+  "terminalFontSize": 14,
+  "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
+  "statusBarFontSize": 12,
+  "statusBarFontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+}

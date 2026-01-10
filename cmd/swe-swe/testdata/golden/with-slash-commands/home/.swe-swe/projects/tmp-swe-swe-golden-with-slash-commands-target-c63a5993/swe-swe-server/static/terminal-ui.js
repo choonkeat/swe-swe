@@ -62,6 +62,11 @@ class TerminalUI extends HTMLElement {
     }
 
     connectedCallback() {
+        // Capture original window height BEFORE keyboard can appear
+        // This is critical for visualViewport keyboard detection
+        this.originalWindowHeight = window.innerHeight;
+        this.lastKeyboardHeight = 0;
+
         try {
             // Redirect to homepage if no assistant specified
             if (!this.assistant) {
@@ -140,6 +145,11 @@ class TerminalUI extends HTMLElement {
         // Clean up chat message timeouts
         this.chatMessageTimeouts.forEach(timeout => clearTimeout(timeout));
         this.chatMessageTimeouts = [];
+        // Clean up visualViewport listeners
+        if (window.visualViewport && this._viewportHandler) {
+            window.visualViewport.removeEventListener('resize', this._viewportHandler);
+            window.visualViewport.removeEventListener('scroll', this._viewportHandler);
+        }
         if (this.term) {
             this.term.dispose();
         }
@@ -160,10 +170,56 @@ class TerminalUI extends HTMLElement {
                     min-height: 0;
                     width: 100%;
                     overflow: hidden;
-                    transition: opacity 0.3s ease;
+                    transition: opacity 0.3s ease, transform 0.1s ease-out;
+                    /* Position is controlled by JS for keyboard handling */
                 }
                 .terminal-ui__terminal.disconnected {
                     opacity: 0.5;
+                }
+                /* Mobile keyboard positioning for virtual keyboard handling */
+                @media (pointer: coarse) {
+                    .mobile-keyboard.visible {
+                        /* Position set dynamically by JS when keyboard visible */
+                    }
+                }
+                /* Touch Scroll Proxy - overlay for native iOS momentum scrolling */
+                .touch-scroll-proxy {
+                    position: absolute;
+                    inset: 0;
+                    overflow-y: scroll;
+                    overflow-x: hidden;
+                    z-index: 10;
+                    -webkit-overflow-scrolling: touch;
+                }
+                .touch-scroll-proxy::-webkit-scrollbar {
+                    display: none;
+                }
+                .scroll-spacer {
+                    width: 100%;
+                    pointer-events: none;
+                }
+                /* Touch devices: enable proxy, disable xterm touch */
+                @media (pointer: coarse) {
+                    .touch-scroll-proxy {
+                        display: block;
+                        pointer-events: auto !important;
+                    }
+                    .terminal-ui__terminal,
+                    .terminal-ui__terminal *,
+                    .xterm,
+                    .xterm *,
+                    .xterm-viewport,
+                    .xterm-screen,
+                    .xterm-helper-textarea {
+                        pointer-events: none !important;
+                    }
+                }
+                /* Desktop: hide proxy */
+                @media (pointer: fine) {
+                    .touch-scroll-proxy {
+                        display: none;
+                        pointer-events: none;
+                    }
                 }
                 /* Mobile Keyboard */
                 .mobile-keyboard {
@@ -750,6 +806,9 @@ class TerminalUI extends HTMLElement {
                     </div>
                 </div>
                 <div class="terminal-ui__terminal"></div>
+                <div class="touch-scroll-proxy">
+                    <div class="scroll-spacer"></div>
+                </div>
                 <div class="mobile-keyboard">
                     <div class="mobile-keyboard__main">
                         <button data-key="Escape">Esc</button>
@@ -1768,6 +1827,174 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    // === Touch Scroll Proxy ===
+    // Provides native iOS momentum scrolling by overlaying a scrollable div
+    // that syncs scroll position to xterm.js
+
+    setupTouchScrollProxy() {
+        this.scrollProxy = this.querySelector('.touch-scroll-proxy');
+        this.scrollSpacer = this.querySelector('.scroll-spacer');
+        this.terminalEl = this.querySelector('.terminal-ui__terminal');
+
+        if (!this.scrollProxy || !this.scrollSpacer || !this.terminalEl) return;
+
+        // State for preventing sync loops
+        this.syncingFromProxy = false;
+        this.syncingFromTerm = false;
+
+        // Approximate line height (xterm default ~17px)
+        this.scrollLineHeight = 17;
+
+        // Initial spacer height
+        this.updateSpacerHeight();
+
+        // Keep spacer in sync with buffer
+        this.term.onWriteParsed(() => {
+            this.updateSpacerHeight();
+            // Auto-scroll to bottom when new content (if already at bottom)
+            const maxLine = this.term.buffer.active.length - this.term.rows;
+            const atBottom = this.term.buffer.active.viewportY >= maxLine - 1;
+            if (atBottom) {
+                this.syncTermToProxy();
+            }
+        });
+
+        // Proxy scroll -> xterm scroll
+        this.scrollProxy.addEventListener('scroll', () => this.syncProxyToTerm(), { passive: true });
+
+        // xterm scroll -> proxy scroll (for programmatic scrolls)
+        this.term.onScroll(() => this.syncTermToProxy());
+
+        // Tap on proxy to focus terminal (since xterm has pointer-events: none on touch)
+        this.scrollProxy.addEventListener('click', () => this.term.focus());
+    }
+
+    updateSpacerHeight() {
+        if (!this.scrollSpacer || !this.scrollProxy) return;
+
+        const bufferLines = this.term.buffer.active.length;
+        // Spacer must EXCEED viewport height to be scrollable
+        const height = Math.max(
+            bufferLines * this.scrollLineHeight,
+            this.scrollProxy.clientHeight + 100
+        );
+        this.scrollSpacer.style.height = `${height}px`;
+    }
+
+    syncProxyToTerm() {
+        if (this.syncingFromTerm) return;
+        this.syncingFromProxy = true;
+
+        const maxScroll = this.scrollProxy.scrollHeight - this.scrollProxy.clientHeight;
+        const scrollTop = this.scrollProxy.scrollTop;
+
+        // Rubber band effect for overscroll
+        if (scrollTop < 0) {
+            // Top overscroll - push terminal down
+            const rubberBand = Math.min(-scrollTop * 0.5, 100);
+            this.terminalEl.style.transform = `translateY(${rubberBand}px)`;
+        } else if (scrollTop > maxScroll) {
+            // Bottom overscroll - push terminal up
+            const rubberBand = Math.max((maxScroll - scrollTop) * 0.5, -100);
+            this.terminalEl.style.transform = `translateY(${rubberBand}px)`;
+        } else {
+            // Normal scroll - reset transform
+            this.terminalEl.style.transform = 'translateY(0)';
+        }
+
+        // Sync scroll position to xterm
+        if (maxScroll > 0) {
+            const scrollRatio = Math.max(0, Math.min(1, scrollTop / maxScroll));
+            const maxLine = this.term.buffer.active.length - this.term.rows;
+            const targetLine = Math.round(scrollRatio * maxLine);
+            this.term.scrollToLine(targetLine);
+        }
+
+        requestAnimationFrame(() => { this.syncingFromProxy = false; });
+    }
+
+    syncTermToProxy() {
+        if (this.syncingFromProxy) return;
+        this.syncingFromTerm = true;
+
+        const maxLine = this.term.buffer.active.length - this.term.rows;
+        if (maxLine > 0) {
+            const scrollRatio = this.term.buffer.active.viewportY / maxLine;
+            const maxScroll = this.scrollProxy.scrollHeight - this.scrollProxy.clientHeight;
+            this.scrollProxy.scrollTop = scrollRatio * maxScroll;
+        }
+
+        requestAnimationFrame(() => { this.syncingFromTerm = false; });
+    }
+
+    // === visualViewport Keyboard Handling ===
+    // Detects virtual keyboard and adjusts layout accordingly
+
+    setupViewportListeners() {
+        if (!window.visualViewport) return;
+
+        this._viewportHandler = () => this.updateViewport();
+        window.visualViewport.addEventListener('resize', this._viewportHandler);
+        window.visualViewport.addEventListener('scroll', this._viewportHandler);
+
+        // Also handle input focus/blur to prevent iOS scroll weirdness
+        const mobileInput = this.querySelector('.mobile-keyboard__text');
+        if (mobileInput) {
+            mobileInput.addEventListener('focus', () => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    this.updateViewport();
+                }, 100);
+            });
+            mobileInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    this.updateViewport();
+                }, 100);
+            });
+        }
+    }
+
+    updateViewport() {
+        const vv = window.visualViewport;
+        if (!vv) return;
+
+        // Calculate keyboard height using original window height as reference
+        // (interactive-widget=resizes-content causes window.innerHeight to shrink)
+        const keyboardHeight = Math.max(0, this.originalWindowHeight - vv.height);
+        const keyboardVisible = keyboardHeight > 50; // threshold to filter noise
+
+        // Only update layout if significant change (>20px)
+        if (Math.abs(keyboardHeight - this.lastKeyboardHeight) <= 20) {
+            return;
+        }
+        this.lastKeyboardHeight = keyboardHeight;
+
+        const mobileKeyboard = this.querySelector('.mobile-keyboard');
+        const terminalContainer = this.querySelector('.terminal-ui');
+
+        if (keyboardVisible) {
+            // Keyboard is showing - adjust layout
+            if (mobileKeyboard) {
+                // Move mobile keyboard above virtual keyboard
+                mobileKeyboard.style.marginBottom = `${keyboardHeight}px`;
+            }
+        } else {
+            // Keyboard hidden - reset layout
+            if (mobileKeyboard) {
+                mobileKeyboard.style.marginBottom = '0';
+            }
+        }
+
+        // Refit terminal immediately (no setTimeout - use rAF)
+        requestAnimationFrame(() => {
+            this.fitAddon.fit();
+            this.sendResize();
+            this.term.scrollToBottom();
+            this.updateSpacerHeight();
+        });
+    }
+
     setupMobileKeyboard() {
         // Determine if keyboard should be visible
         this.setupKeyboardVisibility();
@@ -1900,6 +2127,12 @@ class TerminalUI extends HTMLElement {
 
         // Mobile keyboard setup
         this.setupMobileKeyboard();
+
+        // Touch scroll proxy for iOS momentum scrolling
+        this.setupTouchScrollProxy();
+
+        // visualViewport keyboard handling for iOS
+        this.setupViewportListeners();
 
         // Terminal click to focus
         this.querySelector('.terminal-ui__terminal').addEventListener('click', () => {

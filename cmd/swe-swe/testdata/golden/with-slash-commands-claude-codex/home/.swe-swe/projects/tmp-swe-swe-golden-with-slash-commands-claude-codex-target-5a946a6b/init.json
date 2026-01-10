@@ -9,5 +9,10 @@
       "url": "https://github.com/choonkeat/slash-commands.git"
     }
   ],
-  "ssl": "no"
+  "ssl": "no",
+  "statusBarColor": "#007acc",
+  "terminalFontSize": 14,
+  "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
+  "statusBarFontSize": 12,
+  "statusBarFontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 }
