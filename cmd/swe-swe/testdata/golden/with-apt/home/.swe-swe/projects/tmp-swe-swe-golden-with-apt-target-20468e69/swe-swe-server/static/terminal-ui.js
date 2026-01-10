@@ -1247,6 +1247,8 @@ class TerminalUI extends HTMLElement {
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
             this.showStatusNotification(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
             this.onTerminalData(decompressed);
+            // Scroll to bottom after snapshot - the \x1b[2J clear screen can reset viewport
+            requestAnimationFrame(() => this.term.scrollToBottom());
         } catch (e) {
             console.error('Failed to decompress snapshot:', e);
             this.showStatusNotification(`Decompress failed: ${e.message}`, 5000);

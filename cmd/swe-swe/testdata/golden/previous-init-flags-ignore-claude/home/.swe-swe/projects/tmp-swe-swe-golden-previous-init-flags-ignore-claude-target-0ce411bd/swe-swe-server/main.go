@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "afceea6"
+	GitCommit = "87851c9"
 )
 
 var indexTemplate *template.Template
@@ -1445,17 +1445,17 @@ func generateMOTD(workDir, branchName string) string {
 		}
 	}
 
-	// Format the MOTD
+	// Format the MOTD (use \r\n for proper terminal line endings)
 	var sb strings.Builder
-	sb.WriteString("\n")
-	sb.WriteString(ansiDim("Tip: @swe-swe to see available commands") + "\n")
+	sb.WriteString("\r\n")
+	sb.WriteString(ansiDim("Tip: @swe-swe to see available commands") + "\r\n")
 
 	// Show "Try this" only if setup exists and hasn't been done
 	if hasSetup && !setupDone {
-		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@swe-swe/setup") + "\n")
+		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@swe-swe/setup") + "\r\n")
 	}
 
-	sb.WriteString("\n")
+	sb.WriteString("\r\n")
 	return sb.String()
 }
 
