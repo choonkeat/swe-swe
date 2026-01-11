@@ -10,6 +10,7 @@ User=swe-swe
 Group=swe-swe
 EnvironmentFile=/etc/swe-swe/env
 WorkingDirectory=/workspace
+ExecStartPre=/bin/bash -c 'test -d /workspace/.swe-swe || (echo "Workspace not initialized yet, retrying..."; exit 1)'
 ExecStart=/usr/local/bin/swe-swe up --project-directory /workspace
 Restart=always
 RestartSec=10
