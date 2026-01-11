@@ -1146,6 +1146,7 @@ class TerminalUI extends HTMLElement {
                         <button data-ctrl="d"><span>D</span><small>eof</small></button>
                         <button data-ctrl="e"><span>E</span><small>end</small></button>
                         <button data-ctrl="k"><span>K</span><small>kill</small></button>
+                        <button data-ctrl="o"><span>O</span><small>open</small></button>
                         <button data-ctrl="w"><span>W</span><small>word</small></button>
                     </div>
                     <div class="mobile-keyboard__nav">
@@ -1163,7 +1164,7 @@ class TerminalUI extends HTMLElement {
                             </svg>
                         </button>
                         <input type="file" class="mobile-keyboard__file-input" multiple hidden>
-                        <textarea rows="1" placeholder="Type command..." class="mobile-keyboard__text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+                        <textarea rows="1" placeholder="Type command..." class="mobile-keyboard__text" autocomplete="off"></textarea>
                         <button class="mobile-keyboard__send">Enter</button>
                     </div>
                 </div>
