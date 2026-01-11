@@ -13,3 +13,6 @@ swe-swe/
 cmd/swe-swe/templates/host/swe-swe-server/go.mod
 cmd/swe-swe/templates/host/swe-swe-server/go.sum
 .test-repos/
+
+# Packer build artifacts
+deploy/digitalocean/manifest.json
