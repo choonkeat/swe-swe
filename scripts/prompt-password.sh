@@ -9,6 +9,7 @@ set -e
 while true; do
     read -sp "Enter swe-swe password: " PASSWORD
     echo ""
+    echo ""
 
     if [ -z "$PASSWORD" ]; then
         echo "ERROR: Password cannot be empty" >&2
@@ -17,6 +18,7 @@ while true; do
     fi
 
     read -sp "Confirm password: " PASSWORD_CONFIRM
+    echo ""
     echo ""
 
     if [ -z "$PASSWORD_CONFIRM" ]; then
