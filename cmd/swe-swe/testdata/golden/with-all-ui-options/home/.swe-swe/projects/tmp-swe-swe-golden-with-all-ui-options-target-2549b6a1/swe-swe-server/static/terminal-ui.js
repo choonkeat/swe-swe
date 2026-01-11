@@ -389,6 +389,13 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-bar.multiuser {
                     border-color: var(--status-bar-text-color);
                 }
+                .terminal-ui__status-bar.yolo {
+                    border-color: {{STATUS_BAR_TEXT_COLOR}};
+                }
+                .terminal-ui__status-yolo-toggle {
+                    text-decoration: underline;
+                    cursor: pointer;
+                }
                 .terminal-ui__status-bar.connecting,
                 .terminal-ui__status-bar.error,
                 .terminal-ui__status-bar.reconnecting {
@@ -935,6 +942,43 @@ class TerminalUI extends HTMLElement {
                 .settings-panel__swatch.active {
                     border-color: #fff;
                 }
+                .settings-panel__toggle-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+                .settings-panel__toggle {
+                    position: relative;
+                    width: 44px;
+                    height: 24px;
+                    background: #505050;
+                    border-radius: 12px;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                }
+                .settings-panel__toggle.active {
+                    background: #f97316;
+                }
+                .settings-panel__toggle::after {
+                    content: '';
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 20px;
+                    height: 20px;
+                    background: #fff;
+                    border-radius: 50%;
+                    transition: transform 0.2s;
+                }
+                .settings-panel__toggle.active::after {
+                    transform: translateX(20px);
+                }
+                .settings-panel__field--yolo {
+                    display: none;
+                }
+                .settings-panel__field--yolo.supported {
+                    display: block;
+                }
                 .settings-panel__nav {
                     display: flex;
                     gap: 8px;
@@ -1023,6 +1067,12 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__swatch" style="background: #64748b" data-color="#64748b" title="Gray"></button>
                                         <button class="settings-panel__swatch" style="background: #eab308" data-color="#eab308" title="Yellow"></button>
                                         <button class="settings-panel__swatch" style="background: #ec4899" data-color="#ec4899" title="Pink"></button>
+                                    </div>
+                                </div>
+                                <div class="settings-panel__field settings-panel__field--yolo">
+                                    <div class="settings-panel__toggle-row">
+                                        <label class="settings-panel__label">YOLO Mode</label>
+                                        <div class="settings-panel__toggle" id="settings-yolo-toggle" role="switch" aria-checked="false" tabindex="0"></div>
                                     </div>
                                 </div>
                             </section>
@@ -1674,7 +1724,12 @@ class TerminalUI extends HTMLElement {
                 if (this.workDir !== prevWorkDir) {
                     this.renderServiceLinks();
                 }
+                // YOLO mode state
+                this.yoloMode = msg.yoloMode || false;
+                this.yoloSupported = msg.yoloSupported || false;
                 this.updateStatusInfo();
+                // Update settings panel toggle if open
+                this.updateSettingsYoloToggle();
                 break;
             case 'chat':
                 // Incoming chat message
@@ -1729,12 +1784,22 @@ class TerminalUI extends HTMLElement {
 
         // Toggle multiuser class based on viewer count
         statusBar.classList.toggle('multiuser', this.viewers > 1);
+        // Toggle yolo class based on YOLO mode
+        statusBar.classList.toggle('yolo', this.yoloMode);
 
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            // Build "Connected as {name} with {agent}" message with separate clickable parts
+            // Build "Connected/YOLO as {name} with {agent}" message with separate clickable parts
             const userName = this.currentUserName;
             const debugQS = this.getDebugQueryString();
-            let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+
+            // Show "YOLO" or "Connected" based on mode, make clickable if YOLO is supported
+            const statusWord = this.yoloMode ? 'YOLO' : 'Connected';
+            let html;
+            if (this.yoloSupported) {
+                html = `<span class="terminal-ui__status-link terminal-ui__status-yolo-toggle">${statusWord}</span> as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+            } else {
+                html = `${statusWord} as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+            }
             if (this.assistantName) {
                 html += ` with <a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
@@ -1881,6 +1946,19 @@ class TerminalUI extends HTMLElement {
                 return;
             } else {
                 alert('Invalid name: ' + validation.error + '\nPlease try again.');
+            }
+        }
+    }
+
+    toggleYoloMode() {
+        if (!this.yoloSupported) {
+            return;
+        }
+
+        const action = this.yoloMode ? 'Disable' : 'Enable';
+        if (confirm(`${action} YOLO mode? The agent will restart.`)) {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'toggle_yolo' }));
             }
         }
     }
@@ -2042,6 +2120,21 @@ class TerminalUI extends HTMLElement {
             });
         });
 
+        // YOLO toggle
+        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
+        if (yoloToggle) {
+            const handleYoloToggle = () => {
+                this.toggleYoloMode();
+            };
+            yoloToggle.addEventListener('click', handleYoloToggle);
+            yoloToggle.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleYoloToggle();
+                }
+            });
+        }
+
         // Restore saved color from localStorage
         this.restoreStatusBarColor();
     }
@@ -2115,6 +2208,17 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    // Update YOLO toggle in settings panel (called on status update)
+    updateSettingsYoloToggle() {
+        const yoloField = this.querySelector('.settings-panel__field--yolo');
+        const yoloToggle = this.querySelector('#settings-yolo-toggle');
+        if (yoloField && yoloToggle) {
+            yoloField.classList.toggle('supported', this.yoloSupported);
+            yoloToggle.classList.toggle('active', this.yoloMode);
+            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
+        }
+    }
+
     // Populate settings inputs when panel opens
     populateSettingsPanel() {
         const panel = this.querySelector('.settings-panel');
@@ -2153,6 +2257,17 @@ class TerminalUI extends HTMLElement {
         const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
         if (vscodeLink) {
             vscodeLink.href = this.getVSCodeUrl();
+        }
+
+        // YOLO toggle
+        const yoloField = panel.querySelector('.settings-panel__field--yolo');
+        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
+        if (yoloField && yoloToggle) {
+            // Show/hide based on agent support
+            yoloField.classList.toggle('supported', this.yoloSupported);
+            // Set toggle state
+            yoloToggle.classList.toggle('active', this.yoloMode);
+            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
         }
     }
 
@@ -2729,6 +2844,11 @@ class TerminalUI extends HTMLElement {
             else if (e.target.classList.contains('terminal-ui__status-session')) {
                 e.stopPropagation();
                 this.promptRenameSession();
+            }
+            // Check if clicked on YOLO toggle
+            else if (e.target.classList.contains('terminal-ui__status-yolo-toggle')) {
+                e.stopPropagation();
+                this.toggleYoloMode();
             }
             // Otherwise let click bubble to status bar handler to open settings panel
         });

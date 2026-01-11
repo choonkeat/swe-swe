@@ -41,7 +41,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "75c29fe0"
+	GitCommit = "1c564dd1"
 )
 
 var indexTemplate *template.Template
@@ -125,6 +125,7 @@ type AssistantConfig struct {
 	Name            string // Display name
 	ShellCmd        string // Command to start the assistant
 	ShellRestartCmd string // Command to restart (resume) the assistant
+	YoloRestartCmd  string // Command to restart in YOLO mode (empty = not supported)
 	Binary          string // Binary name to check with exec.LookPath
 }
 
@@ -192,36 +193,42 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Claude",
 		ShellCmd:        "claude",
 		ShellRestartCmd: "claude --continue",
+		YoloRestartCmd:  "claude --dangerously-skip-permissions --continue",
 		Binary:          "claude",
 	},
 	{
 		Name:            "Gemini",
 		ShellCmd:        "gemini",
 		ShellRestartCmd: "gemini --resume",
+		YoloRestartCmd:  "gemini --resume --approval-mode=yolo",
 		Binary:          "gemini",
 	},
 	{
 		Name:            "Codex",
 		ShellCmd:        "codex",
 		ShellRestartCmd: "codex resume --last",
+		YoloRestartCmd:  "codex --yolo resume --last",
 		Binary:          "codex",
 	},
 	{
 		Name:            "Goose",
 		ShellCmd:        "goose session",
 		ShellRestartCmd: "goose session -r",
+		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 	},
 	{
 		Name:            "Aider",
 		ShellCmd:        "aider",
 		ShellRestartCmd: "aider --restore-chat-history",
+		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 	},
 	{
 		Name:            "OpenCode",
 		ShellCmd:        "opencode",
 		ShellRestartCmd: "opencode --continue",
+		YoloRestartCmd:  "", // YOLO mode not supported
 		Binary:          "opencode",
 	},
 }
@@ -255,6 +262,37 @@ type Session struct {
 	inputBuffer   [][]byte  // buffered input during grace period
 	inputBufferMu sync.Mutex
 	graceUntil    time.Time // buffer input until this time
+	// YOLO mode state
+	yoloMode           bool   // Whether YOLO mode is active
+	pendingReplacement string // If set, replace process with this command instead of ending session
+}
+
+// computeRestartCommand returns the appropriate restart command based on YOLO mode.
+// If yoloMode is true and the agent supports YOLO, returns YoloRestartCmd.
+// Otherwise returns ShellRestartCmd.
+func (s *Session) computeRestartCommand(yoloMode bool) string {
+	if yoloMode && s.AssistantConfig.YoloRestartCmd != "" {
+		return s.AssistantConfig.YoloRestartCmd
+	}
+	return s.AssistantConfig.ShellRestartCmd
+}
+
+// detectYoloMode checks if the given command contains YOLO mode flags.
+// Returns true if any known YOLO flag is present.
+func detectYoloMode(cmd string) bool {
+	yoloPatterns := []string{
+		"--dangerously-skip-permissions", // Claude
+		"--approval-mode=yolo",           // Gemini
+		"--yolo",                         // Codex
+		"--yes-always",                   // Aider
+		"GOOSE_MODE=auto",                // Goose
+	}
+	for _, pattern := range yoloPatterns {
+		if strings.Contains(cmd, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // AddClient adds a WebSocket client to the session
@@ -459,14 +497,16 @@ func (s *Session) BroadcastStatus() {
 		workDir, _ = os.Getwd()
 	}
 	status := map[string]interface{}{
-		"type":        "status",
-		"viewers":     len(s.wsClients),
-		"cols":        cols,
-		"rows":        rows,
-		"assistant":   s.AssistantConfig.Name,
-		"sessionName": s.Name,
-		"uuidShort":   uuidShort,
-		"workDir":     workDir,
+		"type":          "status",
+		"viewers":       len(s.wsClients),
+		"cols":          cols,
+		"rows":          rows,
+		"assistant":     s.AssistantConfig.Name,
+		"sessionName":   s.Name,
+		"uuidShort":     uuidShort,
+		"workDir":       workDir,
+		"yoloMode":      s.yoloMode,
+		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
 	}
 
 	data, err := json.Marshal(status)
@@ -829,8 +869,30 @@ func (s *Session) startPTYReader() {
 					}
 				}
 
+				// Check for pending replacement (e.g., from YOLO toggle)
+				s.mu.Lock()
+				replacementCmd := s.pendingReplacement
+				s.pendingReplacement = "" // Clear after reading
+				s.mu.Unlock()
+
+				if replacementCmd != "" {
+					log.Printf("Session %s: replacing process with command: %s", s.UUID, replacementCmd)
+					if err := s.RestartProcess(replacementCmd); err != nil {
+						log.Printf("Session %s: failed to replace process: %v", s.UUID, err)
+						errMsg := []byte("\r\n[Failed to replace process: " + err.Error() + "]\r\n")
+						s.vtMu.Lock()
+						s.vt.Write(errMsg)
+						s.writeToRing(errMsg)
+						s.vtMu.Unlock()
+						s.Broadcast(errMsg)
+						// Fall through to end session
+					} else {
+						continue // Process replaced successfully, continue reading
+					}
+				}
+
 				if clientCount == 0 {
-					log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
+					log.Printf("Session %s: process exited with no clients", s.UUID)
 					// Save ended_at in metadata
 					s.mu.Lock()
 					if s.Metadata != nil {
@@ -844,54 +906,28 @@ func (s *Session) startPTYReader() {
 					return
 				}
 
-				if exitCode == 0 {
-					log.Printf("Session %s: process exited successfully (code 0), not restarting", s.UUID)
-					// Save ended_at in metadata
-					s.mu.Lock()
-					if s.Metadata != nil {
-						now := time.Now()
-						s.Metadata.EndedAt = &now
-					}
-					s.mu.Unlock()
-					if err := s.saveMetadata(); err != nil {
-						log.Printf("Failed to save metadata on exit: %v", err)
-					}
-
-					exitMsg := []byte("\r\n[Process exited successfully]\r\n")
-					s.vtMu.Lock()
-					s.vt.Write(exitMsg)
-					s.writeToRing(exitMsg)
-					s.vtMu.Unlock()
-					s.Broadcast(exitMsg)
-
-					// Send structured exit message so browser can prompt user
-					s.BroadcastExit(0)
-					return
+				// Session ends - save metadata and notify clients
+				log.Printf("Session %s: process exited (code %d)", s.UUID, exitCode)
+				s.mu.Lock()
+				if s.Metadata != nil {
+					now := time.Now()
+					s.Metadata.EndedAt = &now
+				}
+				s.mu.Unlock()
+				if err := s.saveMetadata(); err != nil {
+					log.Printf("Failed to save metadata on exit: %v", err)
 				}
 
-				// Notify clients of restart
-				restartMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d, restarting...]\r\n", exitCode))
+				exitMsg := []byte(fmt.Sprintf("\r\n[Process exited (code %d)]\r\n", exitCode))
 				s.vtMu.Lock()
-				s.vt.Write(restartMsg)
-				s.writeToRing(restartMsg)
+				s.vt.Write(exitMsg)
+				s.writeToRing(exitMsg)
 				s.vtMu.Unlock()
-				s.Broadcast(restartMsg)
+				s.Broadcast(exitMsg)
 
-				// Wait a bit before restarting
-				time.Sleep(500 * time.Millisecond)
-
-				if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
-					log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
-					errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
-					s.vtMu.Lock()
-					s.vt.Write(errMsg)
-					s.writeToRing(errMsg)
-					s.vtMu.Unlock()
-					s.Broadcast(errMsg)
-					return
-				}
-
-				continue
+				// Send structured exit message so browser can prompt user
+				s.BroadcastExit(exitCode)
+				return
 			}
 
 			// Update virtual terminal state and ring buffer
@@ -2181,6 +2217,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
+		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
 			Name:      name,
@@ -2390,6 +2427,42 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					log.Printf("Failed to save metadata: %v", err)
 				}
 				sess.BroadcastStatus()
+			case "toggle_yolo":
+				// Handle YOLO mode toggle request
+				// Check if agent supports YOLO mode
+				if sess.AssistantConfig.YoloRestartCmd == "" {
+					log.Printf("Session %s: toggle_yolo ignored (agent %s doesn't support YOLO)", sess.UUID, sess.AssistantConfig.Name)
+					continue
+				}
+
+				sess.mu.Lock()
+				newYoloMode := !sess.yoloMode
+				sess.yoloMode = newYoloMode
+				sess.pendingReplacement = sess.computeRestartCommand(newYoloMode)
+				cmd := sess.Cmd
+				sess.mu.Unlock()
+
+				log.Printf("Session %s: toggling YOLO mode to %v", sess.UUID, newYoloMode)
+
+				// Broadcast status update with new YOLO state
+				sess.BroadcastStatus()
+
+				// Send visual feedback to terminal
+				modeStr := "OFF"
+				if newYoloMode {
+					modeStr = "ON"
+				}
+				feedbackMsg := []byte(fmt.Sprintf("\r\n[Switching YOLO mode %s, restarting agent...]\r\n", modeStr))
+				sess.vtMu.Lock()
+				sess.vt.Write(feedbackMsg)
+				sess.writeToRing(feedbackMsg)
+				sess.vtMu.Unlock()
+				sess.Broadcast(feedbackMsg)
+
+				// Kill process - pendingReplacement will cause process to be replaced
+				if cmd != nil && cmd.Process != nil {
+					cmd.Process.Signal(syscall.SIGTERM)
+				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
