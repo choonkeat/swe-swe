@@ -64,6 +64,13 @@ build {
     destination = "/"
   }
 
+  # Copy swe-swe binary (must be built locally with `make build` at repo root)
+  # For amd64 architecture
+  provisioner "file" {
+    source      = "${path.root}/../../dist/swe-swe-linux-amd64"
+    destination = "/usr/local/bin/swe-swe"
+  }
+
   # Run installation scripts in order
   provisioner "shell" {
     scripts = [

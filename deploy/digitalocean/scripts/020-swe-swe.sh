@@ -1,22 +1,17 @@
 #!/bin/bash
-# Download and install swe-swe binary
+# Install swe-swe binary (pre-bundled by Packer from local ./dist/)
 set -euo pipefail
 
 echo "==> Installing swe-swe..."
 
-# Detect architecture
-ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64)  SWE_ARCH="amd64" ;;
-    aarch64) SWE_ARCH="arm64" ;;
-    *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
-esac
+# Binary should already be copied by Packer file provisioner
+if [ ! -f /usr/local/bin/swe-swe ]; then
+    echo "ERROR: swe-swe binary not found at /usr/local/bin/swe-swe"
+    echo "This means Packer did not copy the binary from ./dist/"
+    echo "Ensure you ran 'make build' at the repo root before building with Packer"
+    exit 1
+fi
 
-# Get latest release version
-SWE_VERSION=$(curl -fsSL https://api.github.com/repos/anthropics/swe-swe/releases/latest | grep '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
-
-# Download binary
-curl -fsSL "https://github.com/anthropics/swe-swe/releases/download/v${SWE_VERSION}/swe-swe-linux-${SWE_ARCH}" -o /usr/local/bin/swe-swe
 chmod +x /usr/local/bin/swe-swe
 
 # Verify installation
