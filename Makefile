@@ -71,20 +71,37 @@ deploy/digitalocean: build
 	@test -f ./dist/swe-swe.linux-amd64 || { echo "ERROR: binary not found at ./dist/swe-swe.linux-amd64"; echo "Run 'make build' first to create the binary"; exit 1; }
 	@test -f deploy/digitalocean/template.pkr.hcl || { echo "ERROR: Packer template not found"; exit 1; }
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
-	@echo ""
 	@echo "✓ All prerequisites met"
 	@echo ""
-	@echo "Next step: Build the image with Packer"
-	@echo ""
-	@IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
-	echo "Run this command (or choose your own region):"; \
+	@read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
+	if [ -z "$$REGION" ]; then \
+		echo ""; \
+		echo "ERROR: region is required"; \
+		echo ""; \
+		IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
+		echo "Run manually instead:"; \
+		echo ""; \
+		echo "  cd deploy/digitalocean && packer build \\"; \
+		echo "    -var \"region=nyc3\" \\"; \
+		echo "    -var \"image_version=$$IMAGE_VERSION\" \\"; \
+		echo "    template.pkr.hcl"; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	read -p "droplet_size (default: s-2vcpu-4gb): " DROPLET_SIZE; \
+	DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
+	IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
 	echo ""; \
-	echo "  cd deploy/digitalocean && packer build \\"; \
-	echo "    -var \"region=nyc3\" \\"; \
-	echo "    -var \"image_version=$$IMAGE_VERSION\" \\"; \
-	echo "    template.pkr.hcl"; \
+	echo "Building with:"; \
+	echo "  region: $$REGION"; \
+	echo "  droplet_size: $$DROPLET_SIZE"; \
+	echo "  image_version: $$IMAGE_VERSION"; \
 	echo ""; \
-	echo "See deploy/digitalocean/DEVELOPER.md for more options and troubleshooting"
+	cd deploy/digitalocean && packer build \
+		-var "region=$$REGION" \
+		-var "droplet_size=$$DROPLET_SIZE" \
+		-var "image_version=$$IMAGE_VERSION" \
+		template.pkr.hcl
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
