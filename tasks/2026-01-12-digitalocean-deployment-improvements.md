@@ -189,13 +189,14 @@ sysctl kernel.dmesg_restrict
 - [x] Update MOTD to Phase 2 when health check passes
 - [x] Modified 001_onboot to use Packer swe_swe_password variable if provided
 
-### Phase 3: ⏳ PENDING
-- [ ] Read Packer configuration for script selection
-- [ ] Create 011-hardening-moderate.sh script
-- [ ] Create 012-hardening-comprehensive.sh script
-- [ ] Extend password prompt to include hardening level prompt
-- [ ] Modify Makefile to capture hardening choice
-- [ ] Update Packer to conditionally include hardening scripts
+### Phase 3: ✅ COMPLETED
+- [x] Read Packer configuration for script selection
+- [x] Added swe_swe_password and hardening_level variables to Packer template
+- [x] Created 011-hardening-moderate.sh with UFW, Fail2ban, SSH hardening, auto-updates
+- [x] Created 012-hardening-comprehensive.sh with auditd, AIDE, rkhunter, sysctl hardening
+- [x] Extended password prompt script to include hardening level selection (1-3)
+- [x] Modified Makefile to capture both password and hardening level from prompt
+- [x] Updated Packer provisioner to conditionally include hardening scripts based on level
 
 ## Implementation Order
 
