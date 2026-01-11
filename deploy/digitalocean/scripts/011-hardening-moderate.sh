@@ -56,7 +56,7 @@ echo "==> Fail2ban configured"
 # 4. Enable auto-updates
 echo "==> Enabling automatic security updates..."
 apt-get install -y unattended-upgrades
-systemctl enable apt-daily-upgrade.service
-systemctl enable apt-daily.service
+systemctl enable apt-daily-upgrade.timer
+systemctl enable apt-daily.timer
 
 echo "==> Moderate hardening complete!"
