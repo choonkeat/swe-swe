@@ -75,7 +75,7 @@ deploy/digitalocean: build
 	@echo ""
 	@PROMPTS=$$(scripts/prompt-password.sh); \
 	SWE_SWE_PASSWORD=$$(echo "$$PROMPTS" | sed -n '1p'); \
-	HARDENING_LEVEL=$$(echo "$$PROMPTS" | sed -n '2p'); \
+	ENABLE_HARDENING=$$(echo "$$PROMPTS" | sed -n '2p'); \
 	echo ""; \
 	read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
 	if [ -z "$$REGION" ]; then \
@@ -111,7 +111,7 @@ deploy/digitalocean: build
 	echo "  init_flags: $$INIT_FLAGS"; \
 	echo "  image_name: $$IMAGE_NAME"; \
 	echo "  image_version: $$IMAGE_VERSION"; \
-	echo "  hardening_level: $$HARDENING_LEVEL"; \
+	echo "  enable_hardening: $$ENABLE_HARDENING"; \
 	echo ""; \
 	cd deploy/digitalocean && packer build \
 		-var "region=$$REGION" \
@@ -120,7 +120,7 @@ deploy/digitalocean: build
 		-var "image_name=$$IMAGE_NAME" \
 		-var "image_version=$$IMAGE_VERSION" \
 		-var "swe_swe_password=$$SWE_SWE_PASSWORD" \
-		-var "hardening_level=$$HARDENING_LEVEL" \
+		-var "enable_hardening=$$ENABLE_HARDENING" \
 		template.pkr.hcl
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")

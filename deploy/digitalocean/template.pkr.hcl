@@ -49,13 +49,13 @@ variable "swe_swe_password" {
   sensitive   = true
 }
 
-variable "hardening_level" {
+variable "enable_hardening" {
   type        = string
-  description = "OS hardening level: none, moderate (default), or comprehensive"
-  default     = "moderate"
+  description = "Enable OS hardening (UFW, Fail2ban, SSH hardening, auto-updates)"
+  default     = "yes"
   validation {
-    condition     = contains(["none", "moderate", "comprehensive"], var.hardening_level)
-    error_message = "The hardening_level must be 'none', 'moderate', or 'comprehensive'."
+    condition     = contains(["yes", "no"], var.enable_hardening)
+    error_message = "The enable_hardening must be 'yes' or 'no'."
   }
 }
 
@@ -113,8 +113,7 @@ build {
         "scripts/030-systemd.sh",
         "scripts/090-ufw.sh"
       ],
-      var.hardening_level == "none" ? [] : ["scripts/011-hardening-moderate.sh"],
-      var.hardening_level == "comprehensive" ? ["scripts/012-hardening-comprehensive.sh"] : [],
+      var.enable_hardening == "yes" ? ["scripts/011-hardening-moderate.sh"] : [],
       [
         "scripts/900-cleanup.sh"
       ]
