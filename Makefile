@@ -73,12 +73,16 @@ deploy/digitalocean: build
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
 	@echo ""
-	@PROMPTS=$$(scripts/prompt-password.sh); \
+	@PROMPTS=$$(SWE_SWE_PASSWORD="$(SWE_SWE_PASSWORD)" ENABLE_HARDENING="$(ENABLE_HARDENING)" GIT_CLONE_URL="$(GIT_CLONE_URL)" scripts/prompt-password.sh); \
 	SWE_SWE_PASSWORD=$$(echo "$$PROMPTS" | sed -n '1p'); \
 	ENABLE_HARDENING=$$(echo "$$PROMPTS" | sed -n '2p'); \
 	GIT_CLONE_URL=$$(echo "$$PROMPTS" | sed -n '3p'); \
 	echo ""; \
-	read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
+	if [ -z "$(REGION)" ]; then \
+		read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
+	else \
+		REGION="$(REGION)"; \
+	fi; \
 	if [ -z "$$REGION" ]; then \
 		echo ""; \
 		echo "ERROR: region is required"; \
@@ -93,17 +97,29 @@ deploy/digitalocean: build
 		echo ""; \
 		exit 1; \
 	fi; \
-	read -p "droplet_size (default: s-2vcpu-4gb): " DROPLET_SIZE; \
-	DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
+	if [ -z "$(DROPLET_SIZE)" ]; then \
+		read -p "droplet_size (default: s-2vcpu-4gb): " DROPLET_SIZE; \
+		DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
+	else \
+		DROPLET_SIZE="$(DROPLET_SIZE)"; \
+	fi; \
 	echo ""; \
 	echo "==> Available swe-swe init flags:"; \
 	echo ""; \
 	$(SWE_SWE_CLI) init -h 2>&1; \
 	echo ""; \
-	read -p "swe-swe init flags (default: --with-docker --ssl=selfsign): " INIT_FLAGS; \
-	INIT_FLAGS=$${INIT_FLAGS:---with-docker --ssl=selfsign}; \
-	read -p "image_name (default: swe-swe): " IMAGE_NAME; \
-	IMAGE_NAME=$${IMAGE_NAME:-swe-swe}; \
+	if [ -z "$(INIT_FLAGS)" ]; then \
+		read -p "swe-swe init flags (default: --with-docker --ssl=selfsign): " INIT_FLAGS; \
+		INIT_FLAGS=$${INIT_FLAGS:---with-docker --ssl=selfsign}; \
+	else \
+		INIT_FLAGS="$(INIT_FLAGS)"; \
+	fi; \
+	if [ -z "$(IMAGE_NAME)" ]; then \
+		read -p "image_name (default: swe-swe): " IMAGE_NAME; \
+		IMAGE_NAME=$${IMAGE_NAME:-swe-swe}; \
+	else \
+		IMAGE_NAME="$(IMAGE_NAME)"; \
+	fi; \
 	IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
 	echo ""; \
 	echo "Building with:"; \
