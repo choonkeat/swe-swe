@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update
+.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean
 
 build: build-cli
 
@@ -62,6 +62,29 @@ swe-swe-stop: $(SWE_SWE_CLI)
 
 swe-swe-clean:
 	rm -rf $(SWE_SWE_PATH)/.swe-swe
+
+# DigitalOcean Packer build target
+deploy/digitalocean: build
+	@echo "==> Checking prerequisites for DigitalOcean Packer build..."
+	@command -v packer >/dev/null 2>&1 || { echo "ERROR: packer not found"; echo "See deploy/digitalocean/DEVELOPER.md for installation instructions"; exit 1; }
+	@packer -version | grep -qE 'Packer v1\.(1[4-9]|[2-9][0-9])' || { echo "ERROR: packer version must be >= v1.14.0"; echo "See https://developer.hashicorp.com/packer/install"; exit 1; }
+	@test -f ./dist/swe-swe.linux-amd64 || { echo "ERROR: binary not found at ./dist/swe-swe.linux-amd64"; echo "Run 'make build' first to create the binary"; exit 1; }
+	@test -f deploy/digitalocean/template.pkr.hcl || { echo "ERROR: Packer template not found"; exit 1; }
+	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
+	@echo ""
+	@echo "✓ All prerequisites met"
+	@echo ""
+	@echo "Next step: Build the image with Packer"
+	@echo ""
+	@IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
+	echo "Run this command (or choose your own region):"; \
+	echo ""; \
+	echo "  cd deploy/digitalocean && packer build \\"; \
+	echo "    -var \"region=nyc3\" \\"; \
+	echo "    -var \"image_version=$$IMAGE_VERSION\" \\"; \
+	echo "    template.pkr.hcl"; \
+	echo ""; \
+	echo "See deploy/digitalocean/DEVELOPER.md for more options and troubleshooting"
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
