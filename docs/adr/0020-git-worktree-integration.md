@@ -15,11 +15,16 @@ Integrate git worktrees with named sessions:
    - Location: `/worktrees/{sanitized-name}/` (mounted from host's `.swe-swe/worktrees/`)
    - Branch priority: existing worktree > local branch > remote branch > new branch
 
-2. **Untracked file copying**: New worktrees receive copies of:
-   - `.env`, `.env.local`, `.env.*` - environment variables
-   - `.claude/` - Claude Code settings and MCP configs
-   - `CLAUDE.md`, `AGENTS.md` - agent instructions (if gitignored)
-   - Other agent configs (`.aider.conf.yml`, `.codex/`, etc.)
+2. **Untracked file handling**: New worktrees receive untracked dotfiles:
+   - **Directories are symlinked** (absolute path to `/workspace`):
+     - `.claude/` - Claude Code settings and MCP configs
+     - `.codex/`, `.aider/` - other agent config directories
+     - Rationale: Shared permissions/settings stay in sync across worktrees
+   - **Files are copied**:
+     - `.env`, `.env.local`, `.env.*` - environment variables
+     - `CLAUDE.md`, `AGENTS.md` - agent instructions (if gitignored)
+     - `.aider.conf.yml` - single-file configs
+     - Rationale: Allows per-worktree isolation for environment-specific settings
 
 3. **Worktree re-entry**: Homepage shows existing worktrees as quick-start links
    - Clicking enters existing worktree without prompts
