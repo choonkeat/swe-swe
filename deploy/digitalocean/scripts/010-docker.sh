@@ -1,14 +1,25 @@
 #!/bin/bash
-# Install Docker Engine and Docker Compose plugin
+# Install Docker Engine and Docker Compose plugin with recent versions
 set -euo pipefail
 
 echo "==> Installing Docker Engine..."
 
-# Install Docker using the convenience script
+# Update apt cache
+apt-get update
+
+# Install Docker using the convenience script (installs latest version)
 curl -fsSL https://get.docker.com | sh
+
+# Upgrade Docker to ensure we have API version 1.44+ (required by traefik v3)
+echo "==> Upgrading Docker to latest version..."
+apt-get install -y --only-upgrade docker-ce docker-ce-cli containerd.io
 
 # Verify Docker installation
 docker --version
+
+# Ensure Docker daemon is started and enabled
+systemctl start docker
+systemctl enable docker
 
 echo "==> Installing Docker Compose plugin..."
 
