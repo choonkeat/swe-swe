@@ -7,7 +7,6 @@ set -e
 
 # Phase 1: Password prompt
 while true; do
-    echo "" >&2
     read -sp "Set new swe-swe password: " PASSWORD
     echo "" >&2
 
@@ -38,12 +37,11 @@ while true; do
 done
 
 # Phase 2: Hardening level prompt
-echo ""
-echo "Choose OS hardening level:"
-echo "  (1) None"
-echo "  (2) Moderate (default) - UFW, Fail2ban, auto-updates, SSH hardening"
-echo "  (3) Comprehensive - All moderate + auditd, AIDE, rkhunter, kernel hardening"
-echo ""
+echo "Choose OS hardening level:" >&2
+echo "  (1) None" >&2
+echo "  (2) Moderate (default) - UFW, Fail2ban, auto-updates, SSH hardening" >&2
+echo "  (3) Comprehensive - All moderate + auditd, AIDE, rkhunter, kernel hardening" >&2
+echo "" >&2
 
 while true; do
     read -p "Hardening level (1-3, default 2): " HARDENING_CHOICE
