@@ -18,7 +18,6 @@ chmod +x /usr/local/bin/swe-swe
 if [ -n "${GIT_CLONE_URL:-}" ]; then
     echo "==> Cloning git repository to /workspace..."
     git clone "$GIT_CLONE_URL" /workspace
-    chown -R swe-swe:swe-swe /workspace
 else
     # Create workspace directory
     mkdir -p /workspace
