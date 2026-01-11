@@ -55,7 +55,7 @@ variable "hardening_level" {
   default     = "moderate"
   validation {
     condition     = contains(["none", "moderate", "comprehensive"], var.hardening_level)
-    error_message = "hardening_level must be 'none', 'moderate', or 'comprehensive'"
+    error_message = "The hardening_level must be 'none', 'moderate', or 'comprehensive'."
   }
 }
 
