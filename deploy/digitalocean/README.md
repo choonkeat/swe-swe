@@ -4,7 +4,7 @@ Build a DigitalOcean Marketplace image for swe-swe using Packer.
 
 ## Prerequisites
 
-- [Packer](https://developer.hashicorp.com/packer/downloads) (v1.9+)
+- [Packer](https://developer.hashicorp.com/packer/install) (v1.14.0+)
 - DigitalOcean account with API token
 
 ## Getting a DigitalOcean API Token
@@ -12,7 +12,12 @@ Build a DigitalOcean Marketplace image for swe-swe using Packer.
 1. Go to https://cloud.digitalocean.com/account/api/tokens
 2. Click **Generate New Token**
 3. Name it (e.g., "packer-swe-swe")
-4. Select **Read + Write** scope
+4. Select **Custom Scopes** and grant minimum permissions:
+   - `droplet:create` — Create temporary build Droplet
+   - `droplet:read` — Monitor Droplet status
+   - `droplet:delete` — Destroy Droplet and create snapshot
+   - `ssh_key:create` — Create temporary SSH key
+   - `ssh_key:delete` — Remove temporary SSH key
 5. Copy the token (shown only once)
 6. Export it:
 
@@ -24,6 +29,8 @@ export DIGITALOCEAN_API_TOKEN=dop_v1_xxxxx
 
 ## Building the Image
 
+First, initialize Packer and validate the configuration:
+
 ```bash
 cd deploy/digitalocean
 
@@ -32,26 +39,58 @@ packer init template.pkr.hcl
 
 # Validate the template
 packer validate template.pkr.hcl
-
-# Build the image
-packer build template.pkr.hcl
 ```
 
-### Build Variables
+### Build Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `do_token` | `$DIGITALOCEAN_API_TOKEN` | DigitalOcean API token |
-| `image_name` | `swe-swe` | Base name for the snapshot |
-| `image_version` | `1.0.0` | Version tag |
-| `droplet_size` | `s-1vcpu-2gb` | Droplet size during build |
-| `region` | `nyc3` | Build region |
+**Required variables**:
+- `region` — DigitalOcean region (e.g., `nyc3`, `sfo3`, `lon1`)
+- `image_version` — Version tag for the snapshot
 
-Override variables with `-var`:
+Generate a dynamic image version using git:
 
 ```bash
-packer build -var "image_version=1.2.0" template.pkr.hcl
+# Use git tag (if available) + short SHA, or fall back to YYYYMMDD + short SHA
+IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
+echo "Building version: $IMAGE_VERSION"
 ```
+
+**Example build command**:
+
+```bash
+IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
+
+packer build \
+  -var "region=nyc3" \
+  -var "image_version=$IMAGE_VERSION" \
+  template.pkr.hcl
+```
+
+To customize the build droplet size (default: `s-2vcpu-4gb`):
+
+```bash
+packer build \
+  -var "region=sfo3" \
+  -var "droplet_size=s-4vcpu-8gb" \
+  -var "image_version=$IMAGE_VERSION" \
+  template.pkr.hcl
+```
+
+**Available regions**: Visit the [DigitalOcean API docs](https://docs.digitalocean.com/reference/api/list-regions/) to see all available regions (e.g., `nyc1`, `nyc3`, `sfo3`, `lon1`, `sgp1`, `tor1`, etc.).
+
+**Available droplet sizes** (for building): Common sizes:
+- `s-1vcpu-1gb` — 1 vCPU, 1GB RAM ($6/month) — minimum
+- `s-1vcpu-2gb` — 1 vCPU, 2GB RAM ($12/month)
+- `s-2vcpu-2gb` — 2 vCPU, 2GB RAM ($18/month)
+- `s-2vcpu-4gb` — 2 vCPU, 4GB RAM ($24/month) — **default (recommended)**
+- `s-4vcpu-8gb` — 4 vCPU, 8GB RAM ($48/month)
+
+See the [DigitalOcean API docs](https://docs.digitalocean.com/reference/api/list-sizes/) for the complete list.
+
+**Optional variables**:
+- `image_name` (default: `swe-swe`) — Base name for the snapshot
+- `droplet_size` (default: `s-2vcpu-4gb`) — Build Droplet size
+- `do_token` (from `$DIGITALOCEAN_API_TOKEN`) — DigitalOcean API token
 
 ## Testing the Image
 
@@ -131,19 +170,27 @@ deploy/digitalocean/
 
 ### Build fails with authentication error
 
-Ensure your API token has Read + Write scope and is correctly exported:
+Ensure your API token has the required Custom Scopes and is correctly exported:
 
 ```bash
 echo $DIGITALOCEAN_API_TOKEN
 ```
+
+Verify the token has: `droplet:create`, `droplet:read`, `droplet:delete`, `ssh_key:create`, `ssh_key:delete`
 
 ### Build fails with "image not found"
 
 The base image `ubuntu-24-04-x64` must be available in the selected region. Try a different region:
 
 ```bash
-packer build -var "region=sfo3" template.pkr.hcl
+IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
+packer build \
+  -var "region=sfo3" \
+  -var "image_version=$IMAGE_VERSION" \
+  template.pkr.hcl
 ```
+
+Available regions: `nyc1`, `nyc3`, `sfo2`, `sfo3`, `lon1`, `sgp1`, `blr1`, `tor1`, `ams3`, `fra1`, `jpt1`, `mad1`
 
 ### swe-swe doesn't start on first boot
 

@@ -22,20 +22,18 @@ variable "image_name" {
 
 variable "image_version" {
   type        = string
-  description = "Version tag for the snapshot"
-  default     = "1.0.0"
+  description = "Version tag for the snapshot (required)"
 }
 
 variable "droplet_size" {
   type        = string
-  description = "Droplet size for building"
-  default     = "s-1vcpu-2gb"
+  description = "Droplet size for building (see https://docs.digitalocean.com/reference/api/list-regions/)"
+  default     = "s-2vcpu-4gb"
 }
 
 variable "region" {
   type        = string
-  description = "DigitalOcean region"
-  default     = "nyc3"
+  description = "DigitalOcean region (required; see https://docs.digitalocean.com/reference/api/list-regions/)"
 }
 
 locals {

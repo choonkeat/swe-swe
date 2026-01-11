@@ -61,10 +61,11 @@ A complete Packer HCL configuration that can build a DigitalOcean snapshot, plus
 
 **Packer Configuration**
 - Source: `ubuntu-24-04-x64`
-- Size: `s-1vcpu-2gb` (minimum for swe-swe)
-- Region: `nyc3` (default)
+- Size: `s-2vcpu-4gb` (2 vCPU, 4GB RAM - default, customizable)
+- Region: **required** — must be specified via `-var "region=..."`
+- Image version: **required** — must be specified via `-var "image_version=..."` (recommend using git tag or YYYYMMDD-SHA format)
 - SSH username: `root`
-- Snapshot naming: `swe-swe-{{timestamp}}`
+- Snapshot naming: `swe-swe-{image_version}-{timestamp}`
 
 **Verification**
 
@@ -226,33 +227,34 @@ Scripts that prepare the image for marketplace submission by removing sensitive 
 A fully tested DigitalOcean snapshot that can be deployed as a Droplet with swe-swe running.
 
 **Cost Estimate**
-- Packer build (~10 min): ~$0.02
-- Test Droplet (~30 min): ~$0.01
-- Snapshot storage: ~$0.05/GB/mo
-- **Total: < $0.10**
+- Packer build (~10 min, `s-2vcpu-4gb`): ~$0.01
+- Test Droplet (~30 min, `s-1vcpu-2gb`): ~$0.01
+- Snapshot storage: ~$0.05/GB/month
+- **Total: < $0.15** (or less if you delete test resources promptly)
 
 ---
 
 #### Step 5.1: Install Packer
 
-Download Packer from https://developer.hashicorp.com/packer/downloads
+See https://developer.hashicorp.com/packer/install for the latest installation methods.
 
-On macOS with Homebrew:
+**On macOS with Homebrew:**
 ```bash
-brew install packer
+brew tap hashicorp/tap
+brew install hashicorp/tap/packer
 ```
 
-On Linux:
+**On Linux (Ubuntu/Debian):**
 ```bash
-wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 sudo apt update && sudo apt install packer
 ```
 
-Verify installation:
+**Verify installation:**
 ```bash
 packer --version
-# Should show v1.9.0 or higher
+# Should show v1.14.0 or higher
 ```
 
 ---
@@ -273,11 +275,19 @@ packer --version
 3. Click **Generate New Token**
 4. Enter a name: `packer-swe-swe`
 5. Set expiration (e.g., 90 days)
-6. Check **Write** scope (Read is auto-selected)
+6. **Scopes**: Select **Custom Scopes** (recommended for security)
+   - Search for and select the following minimum permissions:
+     - `droplet:create` — Create temporary build Droplet (includes snapshot:read as required scope)
+     - `droplet:read` — Monitor Droplet status during build
+     - `droplet:delete` — Destroy temporary Droplet and create snapshot
+     - `ssh_key:create` — Create temporary SSH key for Packer
+     - `ssh_key:delete` — Remove temporary SSH key after build
 7. Click **Generate Token**
 8. **IMPORTANT**: Copy the token immediately - it's shown only once!
 
 The token looks like: `dop_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+
+> **Note**: Custom scopes follow the principle of least privilege. If you prefer simpler setup, you can use "Full Access" instead, but fine-grained permissions are recommended for security.
 
 ---
 
@@ -298,12 +308,21 @@ packer init template.pkr.hcl
 # Validate the template (should show "The configuration is valid.")
 packer validate template.pkr.hcl
 
-# Build the image (takes ~10 minutes)
-packer build template.pkr.hcl
+# Generate dynamic image version (git tag + SHA, or YYYYMMDD + SHA)
+IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
+echo "Building version: $IMAGE_VERSION"
+
+# Build the image (takes ~10 minutes) with required variables
+packer build \
+  -var "region=nyc3" \
+  -var "image_version=$IMAGE_VERSION" \
+  template.pkr.hcl
 ```
 
+Replace `nyc3` with your preferred region (e.g., `sfo3`, `lon1`, `sgp1`). See the [DigitalOcean regions API](https://docs.digitalocean.com/reference/api/list-regions/) for available options.
+
 **What happens during build:**
-1. Packer creates a temporary Droplet in NYC3
+1. Packer creates a temporary Droplet in the specified region
 2. Runs all installation scripts (Docker, swe-swe, firewall, etc.)
 3. Runs cleanup script to remove sensitive data
 4. Creates a snapshot of the Droplet
@@ -330,7 +349,7 @@ A `manifest.json` file is created with the snapshot ID.
 2. Click **Create** → **Droplets**
 3. In **Choose an image**, click the **Snapshots** tab
 4. Select the snapshot named `swe-swe-1.0.0-YYYYMMDD-HHMMSS`
-5. **Choose Size**: Select **Basic** → **Regular** → **$12/mo** (2GB RAM minimum)
+5. **Choose Size**: Select **Basic** → **Regular** → **$12/mo** (`s-1vcpu-2gb` or larger)
 6. **Choose Region**: Any region (e.g., New York 1)
 7. **Authentication**: Choose **SSH Key** and select your key (or create one)
    - If you don't have an SSH key, click **New SSH Key** and follow the instructions
@@ -508,7 +527,7 @@ Complete documentation and a deploy button badge for the README.
 | 1 | Go to https://cloud.digitalocean.com/account/api/tokens |
 | 2 | Click "Generate New Token" |
 | 3 | Name it (e.g., "packer-swe-swe") |
-| 4 | Select **Read + Write** scope |
+| 4 | Select **Custom Scopes** and grant: `droplet:create`, `droplet:read`, `droplet:delete`, `ssh_key:create`, `ssh_key:delete` |
 | 5 | Copy the token (shown only once) |
 | 6 | Export: `export DIGITALOCEAN_API_TOKEN=dop_v1_xxxxx` |
 
