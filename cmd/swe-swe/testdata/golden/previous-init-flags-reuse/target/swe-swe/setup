@@ -11,7 +11,7 @@ Help the user configure their development environment conversationally.
      ## swe-swe
      See `.swe-swe/docs/AGENTS.md` for commands and setup.
      ```
-   - If neither exists, create /workspace/CLAUDE.md or /workspace/CLAUDE.md
+   - If neither exists, create /workspace/CLAUDE.md or /workspace/AGENT.md
      (whichever is applicable to the current agent) with the pointer
 
 2. **Git identity**
