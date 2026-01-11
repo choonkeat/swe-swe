@@ -1180,6 +1180,13 @@ class TerminalUI extends HTMLElement {
             });
         }
 
+        // Register color link provider for clickable CSS colors
+        if (typeof registerColorLinkProvider === 'function') {
+            registerColorLinkProvider(this.term, {
+                onColorClick: (color) => this.setStatusBarColor(color)
+            });
+        }
+
         this.term.write('Session: ' + this.uuid + '\r\n');
     }
 

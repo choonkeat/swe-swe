@@ -220,7 +220,7 @@
 
 ---
 
-## Phase 4b: Terminal Color Links
+## Phase 4b: Terminal Color Links [DONE]
 
 ### What will be achieved
 - xterm.js recognizes CSS colors as clickable links

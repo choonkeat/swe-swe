@@ -1,7 +1,84 @@
 /**
- * File path link provider for xterm.js
- * Makes file paths clickable - copies to clipboard and opens VS Code on click.
+ * Link providers for xterm.js
+ * Makes file paths and CSS colors clickable.
  */
+
+/**
+ * Register a CSS color link provider with the terminal.
+ * Makes CSS colors clickable to set the status bar color.
+ * @param {Terminal} terminal - xterm.js Terminal instance
+ * @param {Object} options - Configuration options
+ * @param {Function} options.onColorClick - Callback when a color is clicked (receives color string)
+ */
+function registerColorLinkProvider(terminal, options) {
+    // Match CSS colors:
+    // - Hex: #rgb, #rrggbb (with or without alpha)
+    // - Functional: rgb(), rgba(), hsl(), hsla(), oklch()
+    const hexColorRegex = /#(?:[0-9a-fA-F]{3}){1,2}(?:[0-9a-fA-F]{2})?\b/g;
+    const functionalColorRegex = /(?:rgb|rgba|hsl|hsla|oklch)\([^)]+\)/gi;
+
+    function findColors(lineText) {
+        const colors = [];
+
+        // Find hex colors
+        let match;
+        hexColorRegex.lastIndex = 0;
+        while ((match = hexColorRegex.exec(lineText)) !== null) {
+            colors.push({
+                text: match[0],
+                startIndex: match.index
+            });
+        }
+
+        // Find functional colors
+        functionalColorRegex.lastIndex = 0;
+        while ((match = functionalColorRegex.exec(lineText)) !== null) {
+            colors.push({
+                text: match[0],
+                startIndex: match.index
+            });
+        }
+
+        return colors;
+    }
+
+    terminal.registerLinkProvider({
+        provideLinks: (bufferLineNumber, callback) => {
+            const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
+            if (!line) {
+                callback(undefined);
+                return;
+            }
+
+            const lineText = line.translateToString(true);
+            const colors = findColors(lineText);
+
+            if (colors.length === 0) {
+                callback(undefined);
+                return;
+            }
+
+            const links = colors.map(color => ({
+                text: color.text,
+                range: {
+                    start: { x: color.startIndex + 1, y: bufferLineNumber },
+                    end: { x: color.startIndex + color.text.length + 1, y: bufferLineNumber }
+                },
+                activate: (event, text) => {
+                    if (options.onColorClick) {
+                        options.onColorClick(text);
+                    }
+                },
+                // Tooltip on hover
+                decorations: {
+                    pointerCursor: true
+                }
+            }));
+
+            callback(links);
+        }
+    });
+}
 
 /**
  * Register a file link provider with the terminal.
