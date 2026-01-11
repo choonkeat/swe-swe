@@ -190,12 +190,21 @@ This means `make build` wasn't run at the repo root. The binary must exist befor
 ```bash
 # At repo root
 make build
-ls -lh ./dist/swe-swe-linux-amd64
+ls -lh ./dist/swe-swe.linux-amd64
 
 # Then run Packer again
 cd deploy/digitalocean
 packer build ...
 ```
+
+### Build fails: "Could not get lock /var/lib/dpkg/lock-frontend"
+
+This is a race condition where Packer tries to install packages while cloud-init is still running background updates. The template includes a `cloud-init status --wait` step to prevent this.
+
+If you see this error:
+- It's safe to retry — Packer will destroy the temporary Droplet and start fresh
+- Run `make deploy/digitalocean` again or `packer build` directly with the same variables
+- The wait mechanism will prevent the lock issue on the next attempt
 
 ### Build fails with authentication error
 
