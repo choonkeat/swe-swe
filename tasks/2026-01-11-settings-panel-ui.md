@@ -164,7 +164,7 @@
 
 ---
 
-## Phase 4: Settings Functionality
+## Phase 4: Settings Functionality [DONE]
 
 ### What will be achieved
 - Username input syncs with existing username logic

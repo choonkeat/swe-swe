@@ -1802,9 +1802,7 @@ class TerminalUI extends HTMLElement {
 
             const validation = this.validateUsername(name);
             if (validation.valid) {
-                this.currentUserName = validation.name;
-                localStorage.setItem('swe-swe-username', validation.name);
-                this.updateUsernameDisplay();
+                this.setUsername(validation.name);
                 return validation.name;
             } else {
                 alert('Invalid name: ' + validation.error + '\nPlease try again.');
@@ -1828,9 +1826,7 @@ class TerminalUI extends HTMLElement {
 
             const validation = this.validateUsername(newName);
             if (validation.valid) {
-                this.currentUserName = validation.name;
-                localStorage.setItem('swe-swe-username', validation.name);
-                this.updateUsernameDisplay();
+                this.setUsername(validation.name);
                 return;
             } else {
                 alert('Invalid name: ' + validation.error + '\nPlease try again.');
@@ -1916,6 +1912,9 @@ class TerminalUI extends HTMLElement {
         const statusBar = this.querySelector('.terminal-ui__status-bar');
         if (!panel) return;
 
+        // Populate inputs with current values before showing
+        this.populateSettingsPanel();
+
         panel.removeAttribute('hidden');
         statusBar.setAttribute('aria-expanded', 'true');
 
@@ -1975,6 +1974,172 @@ class TerminalUI extends HTMLElement {
                 this.closeSettingsPanel();
             }
         });
+
+        // Username input
+        const usernameInput = panel.querySelector('#settings-username');
+        if (usernameInput) {
+            usernameInput.addEventListener('change', (e) => {
+                const validation = this.validateUsername(e.target.value);
+                if (validation.valid) {
+                    this.setUsername(validation.name);
+                } else {
+                    // Restore previous value
+                    e.target.value = this.currentUserName || '';
+                }
+            });
+        }
+
+        // Session name input
+        const sessionInput = panel.querySelector('#settings-session');
+        if (sessionInput) {
+            sessionInput.addEventListener('change', (e) => {
+                const validation = this.validateSessionName(e.target.value);
+                if (validation.valid) {
+                    this.setSessionName(validation.name);
+                } else {
+                    // Restore previous value
+                    e.target.value = this.sessionName || '';
+                }
+            });
+        }
+
+        // Color picker
+        const colorPicker = panel.querySelector('.settings-panel__color-picker');
+        const colorInput = panel.querySelector('.settings-panel__color-input');
+        const swatches = panel.querySelectorAll('.settings-panel__swatch');
+
+        if (colorPicker) {
+            colorPicker.addEventListener('input', (e) => {
+                this.setStatusBarColor(e.target.value);
+                if (colorInput) colorInput.value = e.target.value;
+            });
+        }
+
+        if (colorInput) {
+            colorInput.addEventListener('change', (e) => {
+                const color = e.target.value.trim();
+                if (color) {
+                    this.setStatusBarColor(color);
+                    if (colorPicker) colorPicker.value = this.normalizeColorForPicker(color);
+                }
+            });
+        }
+
+        swatches.forEach(swatch => {
+            swatch.addEventListener('click', () => {
+                const color = swatch.dataset.color;
+                this.setStatusBarColor(color);
+                if (colorPicker) colorPicker.value = color;
+                if (colorInput) colorInput.value = color;
+                this.updateActiveSwatches(color);
+            });
+        });
+
+        // Restore saved color from localStorage
+        this.restoreStatusBarColor();
+    }
+
+    // Set username helper
+    setUsername(name) {
+        this.currentUserName = name;
+        localStorage.setItem('swe-swe-username', name);
+        this.updateUsernameDisplay();
+    }
+
+    // Set session name helper (sends to server)
+    setSessionName(name) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'rename_session',
+                name: name
+            }));
+        }
+    }
+
+    // Set status bar color with live preview and persistence
+    setStatusBarColor(color) {
+        document.documentElement.style.setProperty('--status-bar-color', color);
+        try {
+            localStorage.setItem('settings:statusBarColor', color);
+        } catch (e) {
+            console.warn('[TerminalUI] Could not save color:', e);
+        }
+        this.updateActiveSwatches(color);
+    }
+
+    // Restore status bar color from localStorage
+    restoreStatusBarColor() {
+        try {
+            const savedColor = localStorage.getItem('settings:statusBarColor');
+            if (savedColor) {
+                document.documentElement.style.setProperty('--status-bar-color', savedColor);
+            }
+        } catch (e) {
+            console.warn('[TerminalUI] Could not restore color:', e);
+        }
+    }
+
+    // Normalize a CSS color to hex for the color picker input
+    normalizeColorForPicker(color) {
+        // Try to convert to hex using a temporary element
+        const temp = document.createElement('div');
+        temp.style.color = color;
+        document.body.appendChild(temp);
+        const computed = getComputedStyle(temp).color;
+        document.body.removeChild(temp);
+
+        // Parse rgb(r, g, b) format
+        const match = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+        if (match) {
+            const r = parseInt(match[1]).toString(16).padStart(2, '0');
+            const g = parseInt(match[2]).toString(16).padStart(2, '0');
+            const b = parseInt(match[3]).toString(16).padStart(2, '0');
+            return `#${r}${g}${b}`;
+        }
+
+        return color;
+    }
+
+    // Update active swatch highlighting
+    updateActiveSwatches(activeColor) {
+        const swatches = this.querySelectorAll('.settings-panel__swatch');
+        swatches.forEach(swatch => {
+            swatch.classList.toggle('active', swatch.dataset.color === activeColor);
+        });
+    }
+
+    // Populate settings inputs when panel opens
+    populateSettingsPanel() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+
+        // Username
+        const usernameInput = panel.querySelector('#settings-username');
+        if (usernameInput) {
+            usernameInput.value = this.currentUserName || '';
+        }
+
+        // Session name
+        const sessionInput = panel.querySelector('#settings-session');
+        if (sessionInput) {
+            sessionInput.value = this.sessionName || '';
+        }
+
+        // Color
+        const colorPicker = panel.querySelector('.settings-panel__color-picker');
+        const colorInput = panel.querySelector('.settings-panel__color-input');
+        let currentColor = '#007acc';
+        try {
+            currentColor = localStorage.getItem('settings:statusBarColor') || '#007acc';
+        } catch (e) {}
+
+        if (colorPicker) {
+            colorPicker.value = this.normalizeColorForPicker(currentColor);
+        }
+        if (colorInput) {
+            colorInput.value = currentColor;
+        }
+        this.updateActiveSwatches(currentColor);
     }
 
     showPasteOverlay() {
