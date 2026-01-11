@@ -73,6 +73,10 @@ deploy/digitalocean: build
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
 	@echo ""
+	@echo "==> Available swe-swe init flags:"
+	@echo ""
+	@./dist/swe-swe.linux-amd64 init -h 2>&1 | tail -n +3 || true
+	@echo ""
 	@read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
 	if [ -z "$$REGION" ]; then \
 		echo ""; \
@@ -90,16 +94,20 @@ deploy/digitalocean: build
 	fi; \
 	read -p "droplet_size (default: s-2vcpu-4gb): " DROPLET_SIZE; \
 	DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
+	read -p "swe-swe init flags (default: --agents=claude): " INIT_FLAGS; \
+	INIT_FLAGS=$${INIT_FLAGS:---agents=claude}; \
 	IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
 	echo ""; \
 	echo "Building with:"; \
 	echo "  region: $$REGION"; \
 	echo "  droplet_size: $$DROPLET_SIZE"; \
+	echo "  init_flags: $$INIT_FLAGS"; \
 	echo "  image_version: $$IMAGE_VERSION"; \
 	echo ""; \
 	cd deploy/digitalocean && packer build \
 		-var "region=$$REGION" \
 		-var "droplet_size=$$DROPLET_SIZE" \
+		-var "init_flags=$$INIT_FLAGS" \
 		-var "image_version=$$IMAGE_VERSION" \
 		template.pkr.hcl
 
