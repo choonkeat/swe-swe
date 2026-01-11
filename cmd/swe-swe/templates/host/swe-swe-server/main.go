@@ -870,7 +870,7 @@ func (s *Session) startPTYReader() {
 				}
 
 				if clientCount == 0 {
-					log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
+					log.Printf("Session %s: process exited with no clients", s.UUID)
 					// Save ended_at in metadata
 					s.mu.Lock()
 					if s.Metadata != nil {
@@ -884,63 +884,28 @@ func (s *Session) startPTYReader() {
 					return
 				}
 
-				if exitCode == 0 {
-					log.Printf("Session %s: process exited successfully (code 0), not restarting", s.UUID)
-					// Save ended_at in metadata
-					s.mu.Lock()
-					if s.Metadata != nil {
-						now := time.Now()
-						s.Metadata.EndedAt = &now
-					}
-					s.mu.Unlock()
-					if err := s.saveMetadata(); err != nil {
-						log.Printf("Failed to save metadata on exit: %v", err)
-					}
-
-					exitMsg := []byte("\r\n[Process exited successfully]\r\n")
-					s.vtMu.Lock()
-					s.vt.Write(exitMsg)
-					s.writeToRing(exitMsg)
-					s.vtMu.Unlock()
-					s.Broadcast(exitMsg)
-
-					// Send structured exit message so browser can prompt user
-					s.BroadcastExit(0)
-					return
-				}
-
-				// Notify clients of restart
-				restartMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d, restarting...]\r\n", exitCode))
-				s.vtMu.Lock()
-				s.vt.Write(restartMsg)
-				s.writeToRing(restartMsg)
-				s.vtMu.Unlock()
-				s.Broadcast(restartMsg)
-
-				// Wait a bit before restarting
-				time.Sleep(500 * time.Millisecond)
-
-				// Use pendingRestartCmd if set (from YOLO toggle), otherwise default
+				// Session ends - save metadata and notify clients
+				log.Printf("Session %s: process exited (code %d)", s.UUID, exitCode)
 				s.mu.Lock()
-				restartCmd := s.AssistantConfig.ShellRestartCmd
-				if s.pendingRestartCmd != "" {
-					restartCmd = s.pendingRestartCmd
-					s.pendingRestartCmd = "" // Clear after use
+				if s.Metadata != nil {
+					now := time.Now()
+					s.Metadata.EndedAt = &now
 				}
 				s.mu.Unlock()
-
-				if err := s.RestartProcess(restartCmd); err != nil {
-					log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
-					errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
-					s.vtMu.Lock()
-					s.vt.Write(errMsg)
-					s.writeToRing(errMsg)
-					s.vtMu.Unlock()
-					s.Broadcast(errMsg)
-					return
+				if err := s.saveMetadata(); err != nil {
+					log.Printf("Failed to save metadata on exit: %v", err)
 				}
 
-				continue
+				exitMsg := []byte(fmt.Sprintf("\r\n[Process exited (code %d)]\r\n", exitCode))
+				s.vtMu.Lock()
+				s.vt.Write(exitMsg)
+				s.writeToRing(exitMsg)
+				s.vtMu.Unlock()
+				s.Broadcast(exitMsg)
+
+				// Send structured exit message so browser can prompt user
+				s.BroadcastExit(exitCode)
+				return
 			}
 
 			// Update virtual terminal state and ring buffer

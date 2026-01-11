@@ -225,24 +225,24 @@ Remove crash-restart behavior entirely. Check for pending replacement BEFORE end
 
 ---
 
-### Phase 5.1: Remove crash-restart behavior
+### Phase 5.1: Remove crash-restart behavior [DONE]
 
 #### Goal
 All process exits end the session, regardless of exit code. Simplifies mental model.
 
 #### Steps
 
-| Step | Description | File |
-|------|-------------|------|
-| 5.1.1 | Remove the `exitCode != 0` restart branch (lines 912-943) | main.go |
-| 5.1.2 | Unify exit handling: all exits go through same path (save metadata, broadcast exit) | main.go |
-| 5.1.3 | Change exit message to include exit code for all exits | main.go |
-| 5.1.4 | Call `BroadcastExit(exitCode)` for all exits (not just code 0) | main.go |
+| Step | Description | File | Status |
+|------|-------------|------|--------|
+| 5.1.1 | Remove the `exitCode != 0` restart branch (lines 912-943) | main.go | Done |
+| 5.1.2 | Unify exit handling: all exits go through same path (save metadata, broadcast exit) | main.go | Done |
+| 5.1.3 | Change exit message to include exit code for all exits | main.go | Done |
+| 5.1.4 | Call `BroadcastExit(exitCode)` for all exits (not just code 0) | main.go | Done |
 
 #### Verification
-- `make test` passes
-- Browser test (test container): Start session → exit agent → "session ended" dialog → OK → redirects to homepage
-- Manual: Kill agent with `kill -9` → should show "session ended" dialog (not restart)
+- [x] `make test` passes
+- [ ] Browser test (test container): Start session → exit agent → "session ended" dialog → OK → redirects to homepage
+- [ ] Manual: Kill agent with `kill -9` → should show "session ended" dialog (not restart)
 
 ---
 
