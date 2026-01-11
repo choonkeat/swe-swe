@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 func TestDeriveBranchName(t *testing.T) {
@@ -1131,7 +1129,7 @@ func TestHandleWorktreesAPI_WithActiveSession(t *testing.T) {
 				Binary: "claude",
 			},
 			CreatedAt: time.Now().Add(-5 * time.Minute),
-			wsClients: make(map[*websocket.Conn]bool),
+			wsClients: make(map[*SafeConn]bool),
 		}
 		// Add 2 mock clients
 		sessions[sessionUUID].wsClients[nil] = true // Using nil as placeholder, won't be dereferenced

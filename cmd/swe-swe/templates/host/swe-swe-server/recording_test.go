@@ -14,8 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // testHelper provides utilities for recording API tests
@@ -122,8 +120,8 @@ func (h *testHelper) createMockSession(sessionUUID, recordingUUID string, proces
 		UUID:          sessionUUID,
 		RecordingUUID: recordingUUID,
 		Cmd:           &exec.Cmd{},
-		wsClients:     make(map[*websocket.Conn]bool),
-		wsClientSizes: make(map[*websocket.Conn]TermSize),
+		wsClients:     make(map[*SafeConn]bool),
+		wsClientSizes: make(map[*SafeConn]TermSize),
 		CreatedAt:     time.Now(),
 		lastActive:    time.Now(),
 	}
