@@ -53,7 +53,7 @@
 
 ---
 
-## Phase 2: Settings Panel Markup & Styling
+## Phase 2: Settings Panel Markup & Styling [DONE]
 
 ### What will be achieved
 - HTML structure for the settings panel (hidden by default)
