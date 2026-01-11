@@ -13,7 +13,7 @@
 
 ---
 
-## Phase 1: CSS Variable Foundation
+## Phase 1: CSS Variable Foundation [DONE]
 
 ### What will be achieved
 - Replace static template placeholders (`{{STATUS_BAR_COLOR}}`) with CSS custom properties

@@ -831,10 +831,8 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 
 // processTerminalUITemplate processes the terminal-ui.js template with UI customization values
 func processTerminalUITemplate(content string, statusBarColor string, statusBarFontSize int, statusBarFontFamily string, terminalFontSize int, terminalFontFamily string) string {
-	textColor := ContrastingTextColor(statusBarColor)
-
+	// Note: STATUS_BAR_TEXT_COLOR is now computed via CSS oklch() auto-contrast
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_COLOR}}", statusBarColor)
-	content = strings.ReplaceAll(content, "{{STATUS_BAR_TEXT_COLOR}}", textColor)
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_SIZE}}", strconv.Itoa(statusBarFontSize))
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_FAMILY}}", statusBarFontFamily)
 	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_SIZE}}", strconv.Itoa(terminalFontSize))

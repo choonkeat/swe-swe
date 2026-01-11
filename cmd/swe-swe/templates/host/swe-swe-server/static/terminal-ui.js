@@ -158,6 +158,14 @@ class TerminalUI extends HTMLElement {
     render() {
         this.innerHTML = `
             <style>
+                :root {
+                    --status-bar-color: {{STATUS_BAR_COLOR}};
+                    /* Auto-contrast text: light text on dark bg, dark text on light bg */
+                    --status-bar-text-color: oklch(from var(--status-bar-color) clamp(0, (0.5 - l) * 999, 1) 0 0);
+                    /* Border shades using color-mix */
+                    --status-bar-border-light: color-mix(in oklch, var(--status-bar-color), white 25%);
+                    --status-bar-border-dark: color-mix(in oklch, var(--status-bar-color), black 25%);
+                }
                 .terminal-ui {
                     display: flex;
                     flex-direction: column;
@@ -368,18 +376,18 @@ class TerminalUI extends HTMLElement {
                     justify-content: space-between;
                     padding: 6px 12px;
                     background: #f57c00;
-                    color: {{STATUS_BAR_TEXT_COLOR}};
+                    color: var(--status-bar-text-color);
                     font-family: {{STATUS_BAR_FONT_FAMILY}};
                     font-size: {{STATUS_BAR_FONT_SIZE}}px;
                     transition: background-color 0.3s ease, border-color 0.3s ease;
-                    border-top: 3px solid transparent;
-                    border-bottom: 3px solid transparent;
+                    border-top: 3px solid var(--status-bar-border-light);
+                    border-bottom: 3px solid var(--status-bar-border-dark);
                 }
                 .terminal-ui__status-bar.connected {
-                    background: {{STATUS_BAR_COLOR}};
+                    background: var(--status-bar-color);
                 }
                 .terminal-ui__status-bar.multiuser {
-                    border-color: {{STATUS_BAR_TEXT_COLOR}};
+                    border-color: var(--status-bar-text-color);
                 }
                 .terminal-ui__status-bar.connecting,
                 .terminal-ui__status-bar.error,
