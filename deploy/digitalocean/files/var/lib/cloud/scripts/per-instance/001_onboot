@@ -12,7 +12,8 @@ echo "==> Starting swe-swe first-boot initialization..."
 mkdir -p "$CONFIG_DIR"
 
 # Generate random password (16 alphanumeric characters)
-SWE_SWE_PASSWORD=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 16)
+# Use openssl to avoid SIGPIPE issues with piped commands
+SWE_SWE_PASSWORD=$(openssl rand -base64 12 | tr -d '=/+')
 
 # Save environment file for systemd
 cat > "$CONFIG_DIR/env" <<EOF
