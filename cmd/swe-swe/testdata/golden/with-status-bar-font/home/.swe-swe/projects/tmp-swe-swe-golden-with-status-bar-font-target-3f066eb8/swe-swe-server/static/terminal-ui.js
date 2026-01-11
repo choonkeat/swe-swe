@@ -2147,6 +2147,13 @@ class TerminalUI extends HTMLElement {
             colorInput.value = currentColor;
         }
         this.updateActiveSwatches(currentColor);
+
+        // Update navigation links with dynamic URLs
+        const baseUrl = this.getBaseUrl();
+        const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
+        if (vscodeLink) {
+            vscodeLink.href = this.getVSCodeUrl();
+        }
     }
 
     showPasteOverlay() {
