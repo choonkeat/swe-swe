@@ -26,6 +26,14 @@ chmod 755 /workspace
 # (Docker group is created by docker.sh script)
 usermod -aG docker swe-swe || true
 
+# Save init flags for first-boot script to use
+# This allows user-provided init flags (via make deploy/digitalocean) to be applied
+mkdir -p /etc/swe-swe
+cat > /etc/swe-swe/init-flags <<EOF
+SWE_SWE_INIT_FLAGS="${SWE_SWE_INIT_FLAGS}"
+EOF
+chmod 644 /etc/swe-swe/init-flags
+
 # Reload systemd to pick up the new service file
 systemctl daemon-reload
 
