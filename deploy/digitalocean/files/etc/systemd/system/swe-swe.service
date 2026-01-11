@@ -1,0 +1,19 @@
+[Unit]
+Description=swe-swe AI Development Environment
+After=cloud-final.target docker.service network-online.target
+Requires=docker.service
+Wants=cloud-final.target network-online.target
+
+[Service]
+Type=simple
+User=swe-swe
+Group=swe-swe
+EnvironmentFile=/etc/swe-swe/env
+WorkingDirectory=/workspace
+ExecStartPre=/bin/bash -c 'test -d /workspace/.swe-swe || (echo "Workspace not initialized yet, retrying..."; exit 1)'
+ExecStart=/usr/local/bin/swe-swe up --project-directory /workspace
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
