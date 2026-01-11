@@ -96,18 +96,22 @@ deploy/digitalocean: build
 	DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
 	read -p "swe-swe init flags (default: --agents=claude): " INIT_FLAGS; \
 	INIT_FLAGS=$${INIT_FLAGS:---agents=claude}; \
+	read -p "image_name (default: swe-swe): " IMAGE_NAME; \
+	IMAGE_NAME=$${IMAGE_NAME:-swe-swe}; \
 	IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
 	echo ""; \
 	echo "Building with:"; \
 	echo "  region: $$REGION"; \
 	echo "  droplet_size: $$DROPLET_SIZE"; \
 	echo "  init_flags: $$INIT_FLAGS"; \
+	echo "  image_name: $$IMAGE_NAME"; \
 	echo "  image_version: $$IMAGE_VERSION"; \
 	echo ""; \
 	cd deploy/digitalocean && packer build \
 		-var "region=$$REGION" \
 		-var "droplet_size=$$DROPLET_SIZE" \
 		-var "init_flags=$$INIT_FLAGS" \
+		-var "image_name=$$IMAGE_NAME" \
 		-var "image_version=$$IMAGE_VERSION" \
 		template.pkr.hcl
 
