@@ -72,11 +72,6 @@ deploy/digitalocean: build
 	@test -f deploy/digitalocean/template.pkr.hcl || { echo "ERROR: Packer template not found"; exit 1; }
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
-	@echo ""
-	@echo "==> Available swe-swe init flags:"
-	@echo ""
-	@./dist/swe-swe.linux-amd64 init -h 2>&1 | tail -n +3 || true
-	@echo ""
 	@read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
 	if [ -z "$$REGION" ]; then \
 		echo ""; \
@@ -94,6 +89,11 @@ deploy/digitalocean: build
 	fi; \
 	read -p "droplet_size (default: s-2vcpu-4gb): " DROPLET_SIZE; \
 	DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
+	echo ""; \
+	echo "==> Available swe-swe init flags:"; \
+	echo ""; \
+	./dist/swe-swe.linux-amd64 init -h 2>&1; \
+	echo ""; \
 	read -p "swe-swe init flags (default: --agents=claude): " INIT_FLAGS; \
 	INIT_FLAGS=$${INIT_FLAGS:---agents=claude}; \
 	read -p "image_name (default: swe-swe): " IMAGE_NAME; \
