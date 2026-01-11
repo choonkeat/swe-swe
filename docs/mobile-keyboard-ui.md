@@ -1,209 +1,251 @@
-# Mobile Keyboard UI (Reference)
+# Mobile & Touch Device Support
 
-This document preserves the polling-mode keyboard UI code for potential future use with mobile WebSocket connections.
+This document describes the mobile-optimized UI features for touch devices (iOS, Android, tablets).
 
 ## Overview
 
-The polling fallback feature included a specialized mobile keyboard UI with:
-- Quick-action buttons (Ctrl+C, Ctrl+D, Tab, arrows, Enter)
-- Text input bar with Send button
-- Brown "Slow connection mode" status bar theme
+The terminal UI automatically detects touch devices and enables:
+- Mobile keyboard bar with control keys, navigation, and text input
+- Touch scroll proxy for native iOS momentum scrolling
+- Visual viewport handling for on-screen keyboard
+- iOS Safari-specific workarounds
 
-This UI was designed for mobile devices where:
-1. On-screen keyboards don't easily send control characters
-2. Touch input benefits from large, tappable buttons
+## Touch Detection
 
-## HTML Structure
-
-```html
-<!-- Quick-action buttons for common terminal controls -->
-<div class="terminal-ui__polling-actions">
-    <button data-send="\x03">Ctrl+C</button>
-    <button data-send="\x04">Ctrl+D</button>
-    <button data-send="\t">Tab</button>
-    <button data-send="\x1b[A">↑</button>
-    <button data-send="\x1b[B">↓</button>
-    <button data-send="\r">Enter</button>
-</div>
-
-<!-- Text input bar for typing commands -->
-<div class="terminal-ui__polling-input">
-    <input type="text" placeholder="Type command..." class="terminal-ui__polling-command">
-    <button class="terminal-ui__polling-send">Send</button>
-</div>
-```
-
-## CSS Styles
-
-```css
-/* Status bar styling for slow connection mode */
-.terminal-ui__status-bar.polling-mode {
-    background: #795548;
-}
-
-/* Text input bar */
-.terminal-ui__polling-input {
-    display: none;
-    padding: 8px;
-    background: #2d2d2d;
-    border-top: 1px solid #404040;
-    gap: 8px;
-}
-.terminal-ui__polling-input.visible {
-    display: flex;
-}
-.terminal-ui__polling-input input {
-    flex: 1;
-    padding: 10px 12px;
-    font-size: 14px;
-    font-family: monospace;
-    background: #1e1e1e;
-    color: #d4d4d4;
-    border: 1px solid #505050;
-    border-radius: 4px;
-    outline: none;
-}
-.terminal-ui__polling-input input:focus {
-    border-color: #007acc;
-}
-.terminal-ui__polling-input button {
-    padding: 10px 16px;
-    font-size: 14px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #007acc;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-.terminal-ui__polling-input button:hover {
-    background: #005a9e;
-}
-
-/* Quick-action buttons */
-.terminal-ui__polling-actions {
-    display: none;
-    padding: 8px;
-    background: #2d2d2d;
-    gap: 4px;
-    flex-wrap: wrap;
-}
-.terminal-ui__polling-actions.visible {
-    display: flex;
-}
-.terminal-ui__polling-actions button {
-    flex: 1;
-    min-width: 50px;
-    padding: 10px 8px;
-    font-size: 13px;
-    font-family: monospace;
-    background: #3c3c3c;
-    color: #d4d4d4;
-    border: 1px solid #505050;
-    border-radius: 4px;
-    cursor: pointer;
-}
-.terminal-ui__polling-actions button:hover {
-    background: #505050;
-}
-.terminal-ui__polling-actions button:active {
-    background: #007acc;
-}
-```
-
-## JavaScript Event Handlers
+Touch devices are detected via:
 
 ```javascript
-// Toggle mobile keyboard UI visibility
-setPollingMode(enabled) {
-    this.isPollingMode = enabled;
-    const statusBar = this.querySelector('.terminal-ui__status-bar');
-    const pollingInput = this.querySelector('.terminal-ui__polling-input');
-    const pollingActions = this.querySelector('.terminal-ui__polling-actions');
-    const extraKeys = this.querySelector('.terminal-ui__extra-keys');
+const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+```
 
-    if (enabled) {
-        statusBar.classList.add('polling-mode');
-        pollingInput.classList.add('visible');
-        pollingActions.classList.add('visible');
-        // Hide extra keys on mobile when in polling mode (we have polling actions instead)
-        extraKeys.style.display = 'none';
+When detected, the mobile keyboard is shown and touch scrolling is enabled.
+
+**Code reference:** `static/terminal-ui.js` (setupMobileKeyboard method)
+
+## Mobile Keyboard Bar
+
+The mobile keyboard provides touch-friendly controls that are difficult to type on virtual keyboards.
+
+### Layout
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ [Tab] [Esc] [Ctrl] [Nav]                                   │  Main row
+├────────────────────────────────────────────────────────────┤
+│ [C] [D] [Z] [L] [R]                                        │  Ctrl row (toggleable)
+│  ^C  ^D  ^Z  ^L  ^R                                        │
+├────────────────────────────────────────────────────────────┤
+│ [←] [→] [↑] [↓] [Home] [End]                               │  Nav row (toggleable)
+├────────────────────────────────────────────────────────────┤
+│ [📎] [Type command...                        ] [Enter]     │  Input bar
+└────────────────────────────────────────────────────────────┘
+```
+
+### Main Row Buttons
+
+| Button | Action | Description |
+|--------|--------|-------------|
+| Tab | `\t` | Tab completion |
+| Esc | `\x1b` | Escape key |
+| Ctrl | Toggle | Shows/hides Ctrl key row |
+| Nav | Toggle | Shows/hides navigation row |
+
+### Ctrl Row (Toggle)
+
+Sends Ctrl+key combinations:
+
+| Button | Sequence | Description |
+|--------|----------|-------------|
+| A | `\x01` | Ctrl+A - Beginning of line |
+| C | `\x03` | Ctrl+C - Interrupt |
+| D | `\x04` | Ctrl+D - EOF |
+| E | `\x05` | Ctrl+E - End of line |
+| K | `\x0b` | Ctrl+K - Kill to end of line |
+| O | `\x0f` | Ctrl+O - Open |
+| W | `\x17` | Ctrl+W - Delete word backward |
+
+### Nav Row (Toggle)
+
+Sends ANSI escape sequences for cursor movement:
+
+| Button | Sequence | Description |
+|--------|----------|-------------|
+| ← | `\x1b[D` | Cursor left |
+| → | `\x1b[C` | Cursor right |
+| ↑ | `\x1b[A` | History previous |
+| ↓ | `\x1b[B` | History next |
+| Home | `\x1b[H` | Line start |
+| End | `\x1b[F` | Line end |
+
+### Input Bar
+
+- **Attach button (📎)**: Opens file picker for uploads
+- **Text input**: Multi-line textarea for typing commands
+- **Enter button**: Sends text + carriage return to terminal
+
+Text input features:
+- `autocomplete="off"` - No form autofill suggestions
+- Autocapitalize and autocorrect enabled for mobile usability
+
+**Code reference:** `static/terminal-ui.js` (setupMobileKeyboardInput method)
+
+## Touch Scroll Proxy
+
+iOS Safari doesn't support smooth scrolling in xterm.js. A transparent overlay provides native momentum scrolling.
+
+### How It Works
+
+1. A `<div class="touch-scroll-proxy">` overlays the terminal
+2. Contains a tall inner div to create scrollable area
+3. On touch devices, xterm gets `pointer-events: none`
+4. Scroll events on proxy are translated to terminal scroll
+
+```css
+.touch-scroll-proxy {
+    position: absolute;
+    inset: 0;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;  /* iOS momentum */
+}
+
+@media (pointer: coarse) {
+    .touch-scroll-proxy {
+        pointer-events: auto;
+    }
+    .xterm {
+        pointer-events: none;
+    }
+}
+```
+
+### Scroll Translation
+
+Scroll position changes are converted to terminal scroll lines:
+
+```javascript
+const scrollDelta = newScrollTop - this.lastScrollTop;
+const linesToScroll = Math.round(scrollDelta / this.lineHeight);
+this.term.scrollLines(linesToScroll);
+```
+
+**Code reference:** `static/terminal-ui.js` (setupTouchScrollProxy method)
+
+## Visual Viewport Keyboard Handling
+
+When the on-screen keyboard appears, the mobile keyboard bar moves above it.
+
+### Detection
+
+Uses `visualViewport` API to detect keyboard:
+
+```javascript
+window.visualViewport.addEventListener('resize', () => {
+    const keyboardHeight = window.innerHeight - window.visualViewport.height;
+    if (keyboardHeight > 100) {
+        // Keyboard visible
+        mobileKeyboard.style.marginBottom = `${keyboardHeight}px`;
     } else {
-        statusBar.classList.remove('polling-mode');
-        pollingInput.classList.remove('visible');
-        pollingActions.classList.remove('visible');
-        extraKeys.style.display = '';
+        // Keyboard hidden
+        mobileKeyboard.style.marginBottom = '0';
     }
-}
-
-// Send command from text input
-sendPollingCommand() {
-    const input = this.querySelector('.terminal-ui__polling-command');
-    if (!input) return;
-
-    const text = input.value;
-    if (!text) return;
-
-    if (this.transport && this.transport.isConnected()) {
-        // Send command + carriage return to execute (terminals expect \r for Enter)
-        this.transport.send(text + '\r');
-        // Clear input
-        input.value = '';
-        input.focus();
-    }
-}
-
-// Event listener setup for input bar
-const pollingInput = this.querySelector('.terminal-ui__polling-command');
-const pollingSendBtn = this.querySelector('.terminal-ui__polling-send');
-
-if (pollingInput) {
-    pollingInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            this.sendPollingCommand();
-        }
-    });
-}
-
-if (pollingSendBtn) {
-    pollingSendBtn.addEventListener('click', () => {
-        this.sendPollingCommand();
-    });
-}
-
-// Quick-action button handlers
-this.querySelectorAll('.terminal-ui__polling-actions button').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const sendData = btn.dataset.send;
-        if (sendData && this.transport && this.transport.isConnected()) {
-            // Unescape the data string (e.g., "\x03" -> actual Ctrl+C character)
-            const unescaped = sendData
-                .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-                .replace(/\\t/g, '\t')
-                .replace(/\\n/g, '\n')
-                .replace(/\\r/g, '\r');
-            this.transport.send(unescaped);
-        }
-    });
 });
 ```
 
-## Escape Sequence Reference
+**Code reference:** `static/terminal-ui.js` (setupVisualViewportHandler method)
 
-The `data-send` attribute uses escape sequences:
-- `\x03` - Ctrl+C (ETX, interrupt)
-- `\x04` - Ctrl+D (EOT, end of transmission)
-- `\t` - Tab character
-- `\x1b[A` - Arrow Up (ANSI escape)
-- `\x1b[B` - Arrow Down (ANSI escape)
-- `\r` - Carriage Return (Enter)
+## iOS Safari Specifics
 
-## Future Implementation Notes
+### WebSocket Connection Delay
 
-To re-implement for mobile WebSocket:
-1. Detect mobile devices via user agent or touch capability
-2. Show the keyboard UI conditionally (not tied to polling mode)
-3. Wire up the event handlers to send via WebSocket transport
-4. Consider adding more buttons (Ctrl+A, Ctrl+E, Ctrl+L, etc.)
+iOS Safari needs a brief delay before WebSocket connections:
+
+```javascript
+// iOS Safari needs a brief delay before WebSocket connection
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+if (isIOS) {
+    setTimeout(() => this.connect(), 100);
+} else {
+    this.connect();
+}
+```
+
+### Self-Signed Certificate Issues
+
+iOS Safari silently fails WebSocket connections to self-signed certs. The UI detects this and shows a warning:
+
+```javascript
+// WebSocket stuck in CONNECTING state = iOS Safari self-signed cert issue
+setTimeout(() => {
+    if (this.ws.readyState === WebSocket.CONNECTING) {
+        this.updateStatus('error', 'iOS Safari: WebSocket blocked (self-signed cert)');
+    }
+}, 5000);
+```
+
+**Workaround**: Use Let's Encrypt certificates or a different browser on iOS.
+
+### Chunked Snapshots
+
+Screen snapshots are sent in chunks for iOS Safari compatibility (large binary messages can fail):
+
+```go
+// Chunk format: [0x02, chunk_index, total_chunks, ...data]
+func sendChunked(conn *websocket.Conn, data []byte, chunkSize int) {
+    totalChunks := (len(data) + chunkSize - 1) / chunkSize
+    for i := 0; i < totalChunks; i++ {
+        chunk := []byte{0x02, byte(i), byte(totalChunks)}
+        chunk = append(chunk, data[start:end]...)
+        conn.WriteMessage(websocket.BinaryMessage, chunk)
+    }
+}
+```
+
+## Status Bar Touch Interaction
+
+The status bar supports touch interactions:
+
+| Element | Tap Action |
+|---------|------------|
+| "Connected" / "YOLO" text | Toggle YOLO mode (if supported by agent) |
+| Session name | Open rename dialog |
+| Settings icon | Open settings panel |
+
+**Code reference:** `static/terminal-ui.js` (status bar click handlers)
+
+## CSS Media Queries
+
+Touch-specific styles use `pointer: coarse` media query:
+
+```css
+@media (pointer: coarse) {
+    /* Touch device styles */
+    .touch-scroll-proxy { pointer-events: auto; }
+    .xterm { pointer-events: none; }
+}
+
+@media (pointer: fine) {
+    /* Mouse/trackpad styles */
+    .touch-scroll-proxy { pointer-events: none; }
+}
+```
+
+## File Uploads on Mobile
+
+The attach button (📎) opens the native file picker:
+
+```html
+<input type="file" class="mobile-keyboard__file-input" multiple hidden>
+```
+
+Files are uploaded via WebSocket binary message (0x01 prefix). See `websocket-protocol.md` for details.
+
+## Known Limitations
+
+1. **iOS Safari + Self-Signed Certs**: WebSocket connections fail silently. Use proper TLS or different browser.
+2. **Virtual Keyboard Detection**: Relies on `visualViewport` API which may not be available on older browsers.
+3. **Scroll Accuracy**: Touch scroll proxy approximates scroll position; may drift on very long outputs.
+
+## Related Documentation
+
+- [WebSocket Protocol](websocket-protocol.md) - Message format for terminal I/O and file uploads
+- [Connection Lifecycle](connection-lifecycle.md) - Connection states and reconnection behavior

@@ -328,7 +328,7 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 
 #### status (Session Status Broadcast)
 
-**Server → Client (Sent when client connects/disconnects, terminal resizes, or session is renamed):**
+**Server → Client (Sent when client connects/disconnects, terminal resizes, session is renamed, or YOLO mode changes):**
 ```json
 {
   "type": "status",
@@ -337,7 +337,9 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
   "rows": 30,
   "assistant": "Claude",
   "sessionName": "my-feature",
-  "uuidShort": "a3c12"
+  "uuidShort": "a3c12",
+  "yoloMode": false,
+  "yoloSupported": true
 }
 ```
 
@@ -348,6 +350,8 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 - `assistant`: Display name of the AI assistant (e.g., "Claude", "Gemini")
 - `sessionName`: User-assigned session name (empty string if unnamed)
 - `uuidShort`: First 5 characters of session UUID
+- `yoloMode`: Whether YOLO mode is currently active
+- `yoloSupported`: Whether the current agent supports YOLO mode
 
 **Server implementation:** `main.go` (Session.BroadcastStatus method)
 ```go
@@ -513,7 +517,7 @@ case "rename_session":
 
 #### exit (Process Exit Notification)
 
-**Server → Client (Sent when shell process exits cleanly with code 0):**
+**Server → Client (Sent when shell process exits):**
 ```json
 {
   "type": "exit",
@@ -522,11 +526,11 @@ case "rename_session":
 ```
 
 **Fields:**
-- `exitCode`: The exit code of the process (0 for success)
+- `exitCode`: The exit code of the process (0 for success, non-zero for error/crash)
 
 **When sent:**
-- When the shell process exits with code 0 (success)
-- NOT sent for non-zero exits (process auto-restarts instead)
+- When the shell process exits (any exit code)
+- NOT sent when process is being replaced (e.g., YOLO toggle)
 
 **Server implementation:** `main.go` (Session.BroadcastExit method)
 ```go
@@ -542,7 +546,43 @@ func (s *Session) BroadcastExit(exitCode int) {
 }
 ```
 
-**Client behavior:** Can prompt user to start a new session or reconnect.
+**Client behavior:** Shows "Session ended" dialog prompting user to return to session selection.
+
+---
+
+#### toggle_yolo (YOLO Mode Toggle)
+
+**Client → Server:**
+```json
+{
+  "type": "toggle_yolo"
+}
+```
+
+**Server behavior:**
+1. If agent doesn't support YOLO mode (`YoloRestartCmd == ""`): Ignored
+2. Toggle `session.yoloMode` boolean
+3. Set `session.pendingReplacement` to appropriate restart command
+4. Broadcast updated status to all clients
+5. Write `[Switching YOLO mode ON/OFF, restarting agent...]` to terminal
+6. Send SIGTERM to current process
+7. When process exits, replacement starts (see exit handling)
+
+**Fields:**
+- None required (toggle is stateless from client perspective)
+
+**Server response:** Broadcasts `status` message with updated `yoloMode` and `yoloSupported` fields.
+
+**Supported agents:**
+
+| Agent | YOLO Command |
+|-------|--------------|
+| Claude | `claude --dangerously-skip-permissions --continue` |
+| Gemini | `gemini --resume --approval-mode=yolo` |
+| Codex | `codex --yolo resume --last` |
+| Goose | `GOOSE_MODE=auto goose session -r` |
+| Aider | `aider --yes-always --restore-chat-history` |
+| OpenCode | Not supported (toggle ignored) |
 
 ---
 
@@ -584,6 +624,7 @@ if isNew {
 | `file_upload` | Server → Client | Control | ✅ Implemented |
 | `rename_session` | Client → Server | Control | ✅ Implemented |
 | `exit` | Server → Client | Control | ✅ Implemented |
+| `toggle_yolo` | Client → Server | Control | ✅ Implemented |
 | Terminal resize (0x00) | Client → Server | Binary | ✅ Implemented |
 | File upload (0x01) | Client → Server | Binary | ✅ Implemented |
 | Chunked message (0x02) | Server → Client | Binary | ✅ Implemented |

@@ -142,42 +142,29 @@ getReconnectDelay() {
 
 ---
 
-### 3. Shell Exits Normally (exit 0)
+### 3. Shell Exits (Any Exit Code)
 
-**Trigger:** User types `exit`, shell script completes, or process terminates cleanly with exit code 0
+**Trigger:** User types `exit`, shell script completes, process crashes, or is killed
 
 **Server behavior:**
 1. PTY read returns EOF or error
-2. Check exit code:
-   - **Exit code 0** (success): Process is NOT restarted, session remains
-   - **Non-zero exit code** (error): Process is restarted after 500ms
-3. Broadcasts appropriate message to clients
-4. If no clients connected: PTY reader exits immediately
+2. Check for pending replacement (YOLO toggle):
+   - **If pending replacement set**: Start new process with replacement command, continue
+   - **If no pending replacement**: Session ends
+3. Broadcasts exit message to clients
+4. If no clients connected: PTY reader exits silently
 
-**Client behavior on exit 0:**
-- Sees `[Process exited successfully]` in terminal
-- WebSocket remains connected
-- Shell does NOT restart
-- User can start a new command or session
-- No status bar change (still "Connected")
-
-**Client behavior on non-zero exit:**
-- Sees `[Process exited with code X, restarting...]` in terminal
-- WebSocket remains connected
-- New shell prompt appears after 500ms restart
-- No status bar change (still "Connected")
+**Client behavior:**
+- Sees `[Process exited with code X]` in terminal
+- Receives `exit` JSON message with exit code
+- Browser shows "Session ended" dialog
+- User can click OK to return to session selection
 
 **Code reference:** `main.go` (startPTYReader, exit code handling)
 ```go
 n, err := ptyFile.Read(buf)
 if err != nil {
-    clientCount := len(s.wsClients)
-    if clientCount == 0 {
-        log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
-        return
-    }
-
-    // Check exit code to determine restart behavior
+    // Get exit code
     exitCode := 0
     if cmd != nil {
         if err := cmd.Wait(); err != nil {
@@ -187,28 +174,34 @@ if err != nil {
         }
     }
 
-    if exitCode == 0 {
-        // Successful exit - don't restart
-        exitMsg := []byte("\r\n[Process exited successfully]\r\n")
-        s.Broadcast(exitMsg)
-        // Send structured exit message so browser can prompt user
-        s.BroadcastExit(0)
-        return
+    // Check for pending replacement (e.g., YOLO toggle)
+    s.mu.Lock()
+    replacement := s.pendingReplacement
+    s.pendingReplacement = ""
+    s.mu.Unlock()
+
+    if replacement != "" {
+        // Start replacement process (YOLO toggle case)
+        if err := s.RestartProcess(replacement); err != nil {
+            // Handle restart failure
+        }
+        continue  // Don't end session
     }
 
-    // Non-zero exit - restart with message
-    restartMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d, restarting...]\r\n", exitCode))
-    s.Broadcast(restartMsg)
-
-    // Wait before restarting
-    time.Sleep(500 * time.Millisecond)
-    if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
-        // ... handle restart failure (see scenario 5)
+    // No replacement - session ends
+    clientCount := len(s.wsClients)
+    if clientCount == 0 {
+        return  // No viewers, exit silently
     }
+
+    exitMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d]\r\n", exitCode))
+    s.Broadcast(exitMsg)
+    s.BroadcastExit(exitCode)
+    return
 }
 ```
 
-**Key Difference from Prior Behavior:** Earlier versions restarted on all exits. Current version only restarts on non-zero exit codes, allowing sessions to terminate cleanly on successful exit.
+**Note:** Process replacement (via pending replacement) is used by the YOLO toggle feature. When YOLO is toggled, the current process is killed and a new one starts with the YOLO flag.
 
 ---
 
@@ -216,60 +209,43 @@ if err != nil {
 
 **Trigger:** Shell crashes, killed by signal, or exits with non-zero code
 
-**Server behavior:**
-1. Detects non-zero exit code
-2. Broadcasts `[Process exited with code X, restarting...]` message
-3. Waits 500ms
-4. Restarts shell automatically
-5. Sends new prompt
+**Server behavior:** Same as scenario 3 - all exits end the session (no automatic restart).
 
 **Client behavior:**
-- Sees `[Process exited with code X, restarting...]` in terminal
-- WebSocket remains connected
-- New shell prompt appears after 500ms
-- No status bar change (still "Connected")
+- Sees `[Process exited with code X]` in terminal
+- Receives `exit` JSON message with exit code
+- Browser shows "Session ended" dialog
 
-**Note:** The server treats exit 0 and non-zero exits differently (see scenario 3). Exit 0 does NOT trigger restart, while non-zero exits always restart.
+**Note:** Earlier versions auto-restarted on non-zero exits. Current behavior treats all exits the same - session ends regardless of exit code. Process replacement only happens via explicit user action (YOLO toggle).
 
 ---
 
-### 5. Shell Restart Fails
+### 5. Process Replacement Fails (YOLO Toggle)
 
-**Trigger:** Cannot spawn new shell (e.g., shell binary missing, permission denied)
+**Trigger:** YOLO toggle requested but cannot spawn new shell (e.g., shell binary missing, permission denied)
 
 **Server behavior:**
 1. Writes error to virtual terminal and broadcasts to all clients
 2. Logs error
 3. PTY reader goroutine exits (returns)
-4. Session remains in memory but is "dead" (no subprocess)
-5. WebSocket connections remain open
+4. Session ends
 
 **Client behavior:**
 - Sees error message in terminal: `[Failed to restart process: <error_details>]`
-- WebSocket stays connected
-- Status bar still shows "Connected"
-- User input keystrokes are accepted but discarded (PTY is dead)
-- No visual indication that shell is dead (potential UX issue)
+- Browser shows "Session ended" dialog
 
 **Code reference:** `main.go` (startPTYReader, RestartProcess error handling)
 ```go
-if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
-    log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
-    errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
-    s.vtMu.Lock()
-    s.vt.Write(errMsg)
-    s.vtMu.Unlock()
-    s.Broadcast(errMsg)
-    return  // PTY reader exits, session becomes dead
+if replacement != "" {
+    if err := s.RestartProcess(replacement); err != nil {
+        log.Printf("Session %s: failed to start replacement: %v", s.UUID, err)
+        errMsg := []byte("\r\n[Failed to restart process: " + err.Error() + "]\r\n")
+        s.Broadcast(errMsg)
+        s.BroadcastExit(1)
+        return
+    }
 }
 ```
-
-**Known Issue:** Client appears "Connected" even though shell is dead. The session shows as healthy while it cannot process any input. Keystrokes are silently discarded because PTY is no longer reading/writing.
-
-**Potential Improvements:**
-- Send JSON error message instead of (or in addition to) broadcast
-- Close WebSocket to force client reconnection
-- Set a "session dead" flag to reject further input attempts
 
 ---
 
@@ -429,8 +405,8 @@ this.ws.onopen = () => {
 | Connected | OPEN | Blue "Connected" | 100% | Sent | Running |
 | Network drop | CLOSED | Red "Connection closed" | 50% | Dropped | Running (server) |
 | Reconnecting | CONNECTING | Orange "Reconnecting..." | 50% | Dropped | Running (server) |
-| Shell exit | OPEN | Blue "Connected" | 100% | Sent | Restarting |
-| Shell restart fail | OPEN | Blue "Connected" | 100% | Dead | Dead |
+| Shell exit | OPEN → Dialog | Blue "Connected" | 100% | N/A | Ended |
+| YOLO toggle | OPEN | Blue "YOLO" | 100% | Sent | Replaced |
 | Server killed | CLOSED | Red "Connection closed" | 50% | Dropped | Dead |
 | Tab closed | N/A | N/A | N/A | N/A | Running (server) |
 

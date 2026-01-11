@@ -75,6 +75,11 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands for Claude, Codex, and OpenCode (space-separated, format: `[alias@]<git-url>`)
 - `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP) or `selfsign` (HTTPS with auto-generated self-signed certificate)
 - `--copy-home-paths PATHS`: Comma-separated paths relative to `$HOME` to copy into the container's home directory (e.g., `.gitconfig,.ssh/config`)
+- `--status-bar-color COLOR`: Status bar background color (default: `#007acc`). Use `--status-bar-color=list` to see available preset colors.
+- `--terminal-font-size SIZE`: Terminal font size in pixels (default: `14`)
+- `--terminal-font-family FONT`: Terminal font family (default: `Menlo, Monaco, "Courier New", monospace`)
+- `--status-bar-font-size SIZE`: Status bar font size in pixels (default: `12`)
+- `--status-bar-font-family FONT`: Status bar font family (default: system sans-serif)
 
 **Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 
@@ -281,9 +286,10 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - Real-time terminal with PTY support
   - Session management (sessions persist until process exits)
   - Multiple AI assistant detection (claude, gemini, codex, goose, aider, opencode)
-  - Automatic process restart on failure
+  - Automatic process restart on error exit (non-zero exit code); clean exit (code 0) ends session
   - File upload via drag-and-drop (saved to `.swe-swe/uploads/`)
   - In-session chat for collaboration
+  - YOLO mode toggle for supported agents (auto-approve actions)
 
 #### chrome
 - **Ports**: 9223 (CDP), 6080 (VNC/noVNC)
@@ -389,6 +395,8 @@ SWE_SWE_PASSWORD='my-secure-password' swe-swe up --project-directory ~/my-projec
 ```
 
 ## Development
+
+> For detailed build architecture and troubleshooting, see [docs/cli-commands-and-binary-management.md](docs/cli-commands-and-binary-management.md).
 
 ### Building from Source
 
@@ -512,6 +520,25 @@ To customize the shell command, modify the Dockerfile CMD:
 ```dockerfile
 CMD ["/usr/local/bin/swe-swe-server", "-shell", "bash", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
 ```
+
+### YOLO Mode
+
+YOLO mode allows agents to auto-approve actions without user confirmation. Toggle it via:
+- **Status bar**: Click "Connected" text (changes to "YOLO" when active)
+- **Settings panel**: Use the YOLO toggle switch
+
+**Supported agents and their YOLO commands:**
+
+| Agent | YOLO Command |
+|-------|--------------|
+| Claude | `--dangerously-skip-permissions` |
+| Gemini | `--approval-mode=yolo` |
+| Codex | `--yolo` |
+| Goose | `GOOSE_MODE=auto` |
+| Aider | `--yes-always` |
+| OpenCode | Not supported (toggle hidden) |
+
+When toggled, the agent restarts with the appropriate YOLO flag. The status bar shows "YOLO" with a border indicator when active.
 
 ### Authentication
 
