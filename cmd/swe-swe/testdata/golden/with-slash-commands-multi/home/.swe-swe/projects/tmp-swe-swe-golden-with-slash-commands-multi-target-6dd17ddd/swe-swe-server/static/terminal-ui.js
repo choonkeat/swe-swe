@@ -1910,6 +1910,73 @@ class TerminalUI extends HTMLElement {
         overlay.classList.remove('active');
     }
 
+    // Settings Panel Methods
+    openSettingsPanel() {
+        const panel = this.querySelector('.settings-panel');
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
+        if (!panel) return;
+
+        panel.removeAttribute('hidden');
+        statusBar.setAttribute('aria-expanded', 'true');
+
+        // Focus first input
+        const firstInput = panel.querySelector('input');
+        if (firstInput) {
+            firstInput.focus();
+        }
+
+        // Store the element that opened the panel to restore focus on close
+        this._settingsPanelOpener = document.activeElement;
+    }
+
+    closeSettingsPanel() {
+        const panel = this.querySelector('.settings-panel');
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
+        if (!panel) return;
+
+        panel.setAttribute('hidden', '');
+        statusBar.setAttribute('aria-expanded', 'false');
+
+        // Restore focus to the element that opened the panel
+        if (this._settingsPanelOpener && typeof this._settingsPanelOpener.focus === 'function') {
+            this._settingsPanelOpener.focus();
+        } else {
+            this.term.focus();
+        }
+    }
+
+    isSettingsPanelOpen() {
+        const panel = this.querySelector('.settings-panel');
+        return panel && !panel.hasAttribute('hidden');
+    }
+
+    setupSettingsPanel() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+
+        const backdrop = panel.querySelector('.settings-panel__backdrop');
+        const closeBtn = panel.querySelector('.settings-panel__close');
+
+        // Close on backdrop click
+        if (backdrop) {
+            backdrop.addEventListener('click', () => this.closeSettingsPanel());
+        }
+
+        // Close on × button click
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.closeSettingsPanel());
+        }
+
+        // Close on Escape key
+        panel.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.closeSettingsPanel();
+            }
+        });
+    }
+
     showPasteOverlay() {
         const overlay = this.querySelector('.terminal-ui__paste-overlay');
         const textarea = this.querySelector('.terminal-ui__paste-textarea');
@@ -2423,9 +2490,17 @@ class TerminalUI extends HTMLElement {
             this.term.focus();
         });
 
-        // Status bar click to reconnect immediately when disconnected or connecting
+        // Settings panel setup
+        this.setupSettingsPanel();
+
+        // Status bar click: reconnect when disconnected, open settings when connected
         const statusBar = this.querySelector('.terminal-ui__status-bar');
-        statusBar.addEventListener('click', () => {
+        statusBar.addEventListener('click', (e) => {
+            // Don't trigger if clicking on interactive child elements
+            if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') {
+                return;
+            }
+
             if (statusBar.classList.contains('connecting') || statusBar.classList.contains('error') || statusBar.classList.contains('reconnecting')) {
                 // Close existing connection attempt if any
                 if (this.ws) {
@@ -2435,6 +2510,9 @@ class TerminalUI extends HTMLElement {
                 // Reset backoff on manual retry
                 this.reconnectAttempts = 0;
                 this.connect();
+            } else if (statusBar.classList.contains('connected')) {
+                // When connected, open settings panel
+                this.openSettingsPanel();
             }
         });
 
@@ -2442,22 +2520,21 @@ class TerminalUI extends HTMLElement {
         // Delegate to handle clicks on separate hyperlinks
         const statusText = this.querySelector('.terminal-ui__status-text');
         statusText.addEventListener('click', (e) => {
-            // If clicking on an anchor, let the link work but don't trigger reconnect
+            // If clicking on an anchor, let the link work but don't open settings
             if (e.target.tagName === 'A') {
                 e.stopPropagation();
                 return;
             }
 
-            // Only handle clicks when WebSocket is connected
+            // Only handle specific interactive elements when WebSocket is connected
             if (!(this.ws && this.ws.readyState === WebSocket.OPEN)) {
                 // Let click bubble to status bar handler for reconnect
                 return;
             }
-            e.stopPropagation(); // Don't trigger status bar click handler
 
-            // Check if clicked on name link
+            // Check if clicked on name link - stop propagation and handle
             if (e.target.classList.contains('terminal-ui__status-name')) {
-                // Prompt to set or rename username
+                e.stopPropagation();
                 if (!this.currentUserName) {
                     this.getUserName();
                 } else {
@@ -2466,15 +2543,15 @@ class TerminalUI extends HTMLElement {
             }
             // Check if clicked on "others" link
             else if (e.target.classList.contains('terminal-ui__status-others')) {
-                // Open chat input
+                e.stopPropagation();
                 this.toggleChatInput();
             }
             // Check if clicked on session name link
             else if (e.target.classList.contains('terminal-ui__status-session')) {
-                // Prompt to rename session
+                e.stopPropagation();
                 this.promptRenameSession();
             }
-            // Note: agent link is a real <a> tag, no JS handler needed
+            // Otherwise let click bubble to status bar handler to open settings panel
         });
 
         // Chat input handlers
