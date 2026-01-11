@@ -73,7 +73,7 @@ deploy/digitalocean: build
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
 	@echo ""
-	PROMPTS=$$(scripts/prompt-password.sh); \
+	@PROMPTS=$$(scripts/prompt-password.sh); \
 	SWE_SWE_PASSWORD=$$(echo "$$PROMPTS" | sed -n '1p'); \
 	HARDENING_LEVEL=$$(echo "$$PROMPTS" | sed -n '2p'); \
 	echo ""; \
