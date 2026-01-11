@@ -94,8 +94,8 @@ deploy/digitalocean: build
 	echo ""; \
 	$(SWE_SWE_CLI) init -h 2>&1; \
 	echo ""; \
-	read -p "swe-swe init flags (default: --with-docker): " INIT_FLAGS; \
-	INIT_FLAGS=$${INIT_FLAGS:---with-docker}; \
+	read -p "swe-swe init flags (default: --with-docker --ssl=selfsign): " INIT_FLAGS; \
+	INIT_FLAGS=$${INIT_FLAGS:---with-docker --ssl=selfsign}; \
 	read -p "image_name (default: swe-swe): " IMAGE_NAME; \
 	IMAGE_NAME=$${IMAGE_NAME:-swe-swe}; \
 	IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
