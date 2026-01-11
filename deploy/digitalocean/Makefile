@@ -10,7 +10,10 @@ build:
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
 	@echo ""
-	@PROMPTS=$$(SWE_SWE_PASSWORD="$(SWE_SWE_PASSWORD)" ENABLE_HARDENING="$(ENABLE_HARDENING)" GIT_CLONE_URL="$(GIT_CLONE_URL)" ../../scripts/prompt-password.sh); \
+	@export SWE_SWE_PASSWORD="$(SWE_SWE_PASSWORD)"; \
+	export ENABLE_HARDENING="$(ENABLE_HARDENING)"; \
+	export GIT_CLONE_URL="$(GIT_CLONE_URL)"; \
+	PROMPTS=$$(../../scripts/prompt-password.sh); \
 	SWE_SWE_PASSWORD=$$(echo "$$PROMPTS" | sed -n '1p'); \
 	ENABLE_HARDENING=$$(echo "$$PROMPTS" | sed -n '2p'); \
 	GIT_CLONE_URL=$$(echo "$$PROMPTS" | sed -n '3p'); \
