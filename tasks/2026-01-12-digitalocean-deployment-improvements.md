@@ -180,13 +180,14 @@ sysctl kernel.dmesg_restrict
 - [x] Modified Makefile deploy/digitalocean target to call password prompt
 - [x] Password variable passed to Packer as `-var swe_swe_password=<password>`
 
-### Phase 2: 🚧 IN PROGRESS
-- [ ] Read current 001_onboot provisioning script
-- [ ] Create Phase 1 MOTD template (initialization in progress)
-- [ ] Create Phase 2 MOTD template (ready with credentials)
-- [ ] Modify 001_onboot to write initial MOTD
-- [ ] Add background health check loop with timeout
-- [ ] Update MOTD when service is healthy
+### Phase 2: ✅ COMPLETED
+- [x] Read current 001_onboot provisioning script
+- [x] Create Phase 1 MOTD template (initialization in progress)
+- [x] Create Phase 2 MOTD template (ready with credentials)
+- [x] Modify 001_onboot to write initial MOTD at script start
+- [x] Add background health check loop with timeout (120 attempts, 10s intervals)
+- [x] Update MOTD to Phase 2 when health check passes
+- [x] Modified 001_onboot to use Packer swe_swe_password variable if provided
 
 ### Phase 3: ⏳ PENDING
 - [ ] Read Packer configuration for script selection
