@@ -67,8 +67,18 @@ build {
   # Copy swe-swe binary (must be built locally with `make build` at repo root)
   # For amd64 architecture
   provisioner "file" {
-    source      = "${path.root}/../../dist/swe-swe-linux-amd64"
+    source      = "${path.root}/../../dist/swe-swe.linux-amd64"
     destination = "/usr/local/bin/swe-swe"
+  }
+
+  # Wait for cloud-init to complete before running provisioners
+  # Prevents "dpkg lock" errors from concurrent package updates
+  provisioner "shell" {
+    inline = [
+      "echo 'Waiting for cloud-init to complete...'",
+      "cloud-init status --wait",
+      "echo 'Cloud-init completed'"
+    ]
   }
 
   # Run installation scripts in order
