@@ -451,7 +451,7 @@ class TerminalUI extends HTMLElement {
                     margin-right: 8px;
                 }
                 .terminal-ui__status-link {
-                    color: #fff;
+                    color: var(--status-bar-text-color);
                     text-decoration: none;
                     cursor: pointer;
                     transition: opacity 0.2s;
@@ -475,7 +475,7 @@ class TerminalUI extends HTMLElement {
                 }
                 .terminal-ui__status-link {
                     cursor: pointer;
-                    text-decoration: dotted underline #fff;
+                    text-decoration: dotted underline var(--status-bar-text-color);
                     text-underline-offset: 2px;
                     transition: opacity 0.2s;
                 }
