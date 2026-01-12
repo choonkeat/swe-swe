@@ -1102,7 +1102,7 @@ func TestPlaybackPage_InvalidUUID(t *testing.T) {
 	}
 }
 
-func TestPlaybackPage_WithTiming_AnimatedMode(t *testing.T) {
+func TestPlaybackPage_WithTiming_StaticHTML(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1112,7 +1112,7 @@ func TestPlaybackPage_WithTiming_AnimatedMode(t *testing.T) {
 		timingContent: "0.1 5\n0.5 6\n",
 		metadata: &RecordingMetadata{
 			UUID:    testUUID,
-			Name:    "Animated Recording",
+			Name:    "Test Recording",
 			MaxCols: 80,
 			MaxRows: 24,
 		},
@@ -1143,28 +1143,23 @@ func TestPlaybackPage_WithTiming_AnimatedMode(t *testing.T) {
 	}
 	html := string(body)
 
-	// Should have play/pause controls
-	if !strings.Contains(html, "play") && !strings.Contains(html, "Play") {
-		t.Error("expected animated playback to contain play controls")
+	// Should use xterm.js for rendering
+	if !strings.Contains(html, "xterm") {
+		t.Error("expected playback page to use xterm.js")
 	}
 
-	// Should have timeline/progress
-	if !strings.Contains(html, "timeline") && !strings.Contains(html, "progress") && !strings.Contains(html, "slider") {
-		t.Error("expected animated playback to contain timeline/progress")
+	// Should have proper HTML structure
+	if !strings.Contains(html, "<!DOCTYPE html>") {
+		t.Error("expected valid HTML document")
 	}
 
-	// Should contain recording name in title or heading
-	if !strings.Contains(html, "Animated Recording") {
-		t.Error("expected page to contain recording name")
-	}
-
-	// Should have back link to homepage
-	if !strings.Contains(html, `href="/"`) && !strings.Contains(html, `href='/'`) {
-		t.Error("expected page to contain back link to homepage")
+	// Should have record-tui footer
+	if !strings.Contains(html, "record-tui") {
+		t.Error("expected page to contain record-tui reference")
 	}
 }
 
-func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
+func TestPlaybackPage_WithoutTiming_StaticHTML(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1198,20 +1193,9 @@ func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
 	}
 	html := string(body)
 
-	// Static mode embeds content as base64 in JavaScript
-	// Check that the page has the static mode notice
-	if !strings.Contains(html, "Timing data not available") {
-		t.Error("expected static mode to show 'Timing data not available' notice")
-	}
-
-	// Should have the recording name
-	if !strings.Contains(html, "Static Recording") {
-		t.Error("expected static mode to contain recording name")
-	}
-
 	// Should have xterm.js for rendering
 	if !strings.Contains(html, "xterm") {
-		t.Error("expected static mode to use xterm.js")
+		t.Error("expected playback to use xterm.js")
 	}
 
 	// Should NOT have play button (static mode shows final state only)
@@ -1226,19 +1210,19 @@ func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
 
 	// Verify the ENTIRE content is embedded (not just first frame)
 	// Extract the base64 content from the HTML and decode it
-	// Look for: const contentBase64 = '...';
-	contentMatch := strings.Index(html, "const contentBase64 = '")
+	// record-tui uses: const framesBase64 = '...';
+	contentMatch := strings.Index(html, "const framesBase64 = '")
 	if contentMatch == -1 {
-		t.Fatal("could not find contentBase64 in static HTML")
+		t.Fatal("could not find framesBase64 in HTML")
 	}
-	start := contentMatch + len("const contentBase64 = '")
+	start := contentMatch + len("const framesBase64 = '")
 	end := strings.Index(html[start:], "'")
 	if end == -1 {
-		t.Fatal("could not find end of contentBase64 string")
+		t.Fatal("could not find end of framesBase64 string")
 	}
 	base64Content := html[start : start+end]
 
-	// Decode base64
+	// Decode base64 (it's JSON-encoded frames)
 	decoded, err := base64.StdEncoding.DecodeString(base64Content)
 	if err != nil {
 		t.Fatalf("failed to decode base64 content: %v", err)
@@ -1251,7 +1235,7 @@ func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
 		t.Error("expected decoded content to contain FIRST_LINE")
 	}
 	if !strings.Contains(decodedStr, "LAST_LINE") {
-		t.Error("expected decoded content to contain LAST_LINE - static mode should show ALL content, not just first frame")
+		t.Error("expected decoded content to contain LAST_LINE - should show ALL content")
 	}
 	if !strings.Contains(decodedStr, "middle content") {
 		t.Error("expected decoded content to contain middle content")
@@ -1322,34 +1306,7 @@ func TestPlaybackPage_WithoutMetadata_ShowsUUIDShort(t *testing.T) {
 	}
 }
 
-func TestPlaybackPage_BackLink(t *testing.T) {
-	h := newTestHelper(t)
-
-	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	h.createRecordingFiles(testUUID, recordingOpts{
-		withTiming: true,
-	})
-
-	server := h.createTestServer()
-	defer server.Close()
-
-	resp, err := http.Get(server.URL + "/recording/" + testUUID)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to read response body: %v", err)
-	}
-	html := string(body)
-
-	// Should have a link back to homepage
-	if !strings.Contains(html, `href="/"`) && !strings.Contains(html, `href='/'`) {
-		t.Error("expected page to contain back link to homepage '/'")
-	}
-}
+// TestPlaybackPage_BackLink removed - record-tui's static HTML doesn't include navigation
 
 // ============================================================================
 // Phase 6: Homepage Recording Display Tests (loadEndedRecordings, loadEndedRecordingsByAgent)

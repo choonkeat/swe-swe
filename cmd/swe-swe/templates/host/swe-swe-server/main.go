@@ -25,7 +25,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/choonkeat/swe-swe/cmd/swe-swe-server/playback"
+	recordtui "github.com/choonkeat/record-tui/playback"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -2860,40 +2860,15 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Try to load timing file for animated playback
-	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
-	timingContent, timingErr := os.ReadFile(timingPath)
-
-	// Get terminal dimensions and workDir from metadata (default to 0 for auto-fit)
-	var cols, rows uint16
-	var workDir string
-	if metadata != nil {
-		cols = metadata.MaxCols
-		rows = metadata.MaxRows
-		workDir = metadata.WorkDir
+	// Strip script metadata and render HTML using record-tui
+	cleaned := recordtui.StripMetadata(string(logContent))
+	frames := []recordtui.Frame{{Timestamp: 0, Content: cleaned}}
+	html, err := recordtui.RenderHTML(frames, recordtui.Options{Title: name})
+	if err != nil {
+		http.Error(w, "Failed to render playback", http.StatusInternalServerError)
+		return
 	}
-
-	if timingErr == nil && len(timingContent) > 0 {
-		// Parse timing file and render animated playback
-		frames, err := playback.ParseTimingFile(logContent, timingContent)
-		if err != nil || len(frames) == 0 {
-			// Fallback to static if parsing fails
-			html := playback.RenderStaticHTML(logContent, name, "/")
-			w.Write([]byte(html))
-			return
-		}
-
-		html, err := playback.RenderPlaybackHTML(frames, name, "/", cols, rows, workDir)
-		if err != nil {
-			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
-			return
-		}
-		w.Write([]byte(html))
-	} else {
-		// No timing file - show static content
-		html := playback.RenderStaticHTML(logContent, name, "/")
-		w.Write([]byte(html))
-	}
+	w.Write([]byte(html))
 }
 
 // handleRecordingAPI routes recording API requests
