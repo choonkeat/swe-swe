@@ -447,6 +447,9 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
     if (typeof registerFileLinkProvider === 'function') {
       registerFileLinkProvider(xterm, { getVSCodeUrl: getVSCodeUrl });
     }
+    if (typeof registerUrlLinkProvider === 'function') {
+      registerUrlLinkProvider(xterm);
+    }
   </script>
 </body>
 </html>`, name, backURL, name, dataSizeStr, linkProviderJS, framesBase64, totalDuration, cols, rows, workDir)
