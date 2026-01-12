@@ -12,7 +12,7 @@ build:
 	@echo ""
 	@export SWE_SWE_PASSWORD="$(SWE_SWE_PASSWORD)"; \
 	export ENABLE_HARDENING="$(ENABLE_HARDENING)"; \
-	export GIT_CLONE_URL="$(GIT_CLONE_URL)"; \
+	[ -n "$(GIT_CLONE_URL)" ] && export GIT_CLONE_URL="$(GIT_CLONE_URL)" || :; \
 	PROMPTS=$$(../../scripts/prompt-password.sh); \
 	SWE_SWE_PASSWORD=$$(echo "$$PROMPTS" | sed -n '1p'); \
 	ENABLE_HARDENING=$$(echo "$$PROMPTS" | sed -n '2p'); \
@@ -22,6 +22,7 @@ build:
 		read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
 	else \
 		REGION="$(REGION)"; \
+		echo "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): $$REGION [from REGION]"; \
 	fi; \
 	if [ -z "$$REGION" ]; then \
 		echo ""; \
@@ -42,23 +43,28 @@ build:
 		DROPLET_SIZE=$${DROPLET_SIZE:-s-2vcpu-4gb}; \
 	else \
 		DROPLET_SIZE="$(DROPLET_SIZE)"; \
+		echo "droplet_size (default: s-2vcpu-4gb): $$DROPLET_SIZE [from DROPLET_SIZE]"; \
 	fi; \
 	echo ""; \
 	echo "==> Available swe-swe init flags:"; \
 	echo ""; \
-	../../dist/swe-swe.linux-amd64 init -h 2>&1; \
+	GOOS=$$(go env GOOS 2>/dev/null || uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/darwin/'); \
+	GOARCH=$$(go env GOARCH 2>/dev/null || uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/'); \
+	../../dist/swe-swe.$${GOOS}-$${GOARCH} init -h 2>&1; \
 	echo ""; \
 	if [ -z "$(INIT_FLAGS)" ]; then \
 		read -p "swe-swe init flags (default: --with-docker --ssl=selfsign): " INIT_FLAGS; \
 		INIT_FLAGS=$${INIT_FLAGS:---with-docker --ssl=selfsign}; \
 	else \
 		INIT_FLAGS="$(INIT_FLAGS)"; \
+		echo "swe-swe init flags (default: --with-docker --ssl=selfsign): $$INIT_FLAGS [from INIT_FLAGS]"; \
 	fi; \
 	if [ -z "$(IMAGE_NAME)" ]; then \
 		read -p "image_name (default: swe-swe): " IMAGE_NAME; \
 		IMAGE_NAME=$${IMAGE_NAME:-swe-swe}; \
 	else \
 		IMAGE_NAME="$(IMAGE_NAME)"; \
+		echo "image_name (default: swe-swe): $$IMAGE_NAME [from IMAGE_NAME]"; \
 	fi; \
 	IMAGE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$$(git rev-parse --short HEAD); \
 	echo ""; \

@@ -72,7 +72,7 @@ deploy/digitalocean: build
 		IMAGE_NAME="$(IMAGE_NAME)" \
 		SWE_SWE_PASSWORD="$(SWE_SWE_PASSWORD)" \
 		ENABLE_HARDENING="$(ENABLE_HARDENING)" \
-		GIT_CLONE_URL="$(GIT_CLONE_URL)"
+		$(if $(GIT_CLONE_URL), GIT_CLONE_URL="$(GIT_CLONE_URL)")
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
