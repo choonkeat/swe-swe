@@ -78,16 +78,16 @@ The swe-swe container includes `@playwright/mcp` which provides browser automati
 
 ```javascript
 // Example: Navigate to a URL
-mcp__playwright__browser_navigate({ url: "https://example.com" })
+mcp__swe-swe-playwright__browser_navigate({ url: "https://example.com" })
 
 // Example: Take a screenshot
-mcp__playwright__browser_take_screenshot({ filename: "screenshot.png" })
+mcp__swe-swe-playwright__browser_take_screenshot({ filename: "screenshot.png" })
 
 // Example: Click an element
-mcp__playwright__browser_click({ element: "Login button", ref: "e5" })
+mcp__swe-swe-playwright__browser_click({ element: "Login button", ref: "e5" })
 
 // Example: Get page snapshot (accessibility tree)
-mcp__playwright__browser_snapshot()
+mcp__swe-swe-playwright__browser_snapshot()
 ```
 
 ### Available MCP Tools
