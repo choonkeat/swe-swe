@@ -160,8 +160,12 @@ class TerminalUI extends HTMLElement {
             <style>
                 :root {
                     --status-bar-color: #007acc;
-                    /* Auto-contrast text: light text on dark bg, dark text on light bg */
-                    --status-bar-text-color: oklch(from var(--status-bar-color) clamp(0, (0.5 - l) * 999, 1) 0 0);
+                    /* Auto-contrast text: white text unless background is very light (l > 0.62)
+                       Using 0.62 threshold instead of 0.5 because:
+                       - Black text needs high lightness backgrounds to be legible
+                       - White text works well on dark AND medium-brightness saturated colors
+                       - APCA research shows polarity matters: dark-on-light needs more contrast */
+                    --status-bar-text-color: oklch(from var(--status-bar-color) clamp(0, (0.62 - l) * 999, 1) 0 0);
                     /* Border shades using color-mix */
                     --status-bar-border-light: color-mix(in oklch, var(--status-bar-color), white 25%);
                     --status-bar-border-dark: color-mix(in oklch, var(--status-bar-color), black 25%);
@@ -2239,12 +2243,19 @@ class TerminalUI extends HTMLElement {
             sessionInput.value = this.sessionName || '';
         }
 
-        // Color
+        // Color - read from CSS variable first (set by server), then localStorage
         const colorPicker = panel.querySelector('.settings-panel__color-picker');
         const colorInput = panel.querySelector('.settings-panel__color-input');
         let currentColor = '#007acc';
         try {
-            currentColor = localStorage.getItem('settings:statusBarColor') || '#007acc';
+            // First try to get the actual CSS variable (set by server template)
+            const cssColor = getComputedStyle(document.documentElement).getPropertyValue('--status-bar-color').trim();
+            if (cssColor) {
+                currentColor = cssColor;
+            } else {
+                // Fall back to localStorage
+                currentColor = localStorage.getItem('settings:statusBarColor') || '#007acc';
+            }
         } catch (e) {}
 
         if (colorPicker) {
