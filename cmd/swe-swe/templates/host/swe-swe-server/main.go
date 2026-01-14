@@ -120,14 +120,24 @@ func (sc *SafeConn) Close() error {
 	return sc.conn.Close()
 }
 
+// SlashCommandFormat represents the slash command format supported by an assistant
+type SlashCommandFormat string
+
+const (
+	SlashCmdMD   SlashCommandFormat = "md"   // Markdown format (Claude, Codex, OpenCode)
+	SlashCmdTOML SlashCommandFormat = "toml" // TOML format (Gemini)
+	SlashCmdNone SlashCommandFormat = ""     // No slash command support (Goose, Aider)
+)
+
 // AssistantConfig holds the configuration for an AI coding assistant
 type AssistantConfig struct {
-	Name            string // Display name
-	ShellCmd        string // Command to start the assistant
-	ShellRestartCmd string // Command to restart (resume) the assistant
-	YoloRestartCmd  string // Command to restart in YOLO mode (empty = not supported)
-	Binary          string // Binary name to check with exec.LookPath
-	Homepage        bool   // Whether to show on homepage (false = hidden, e.g., shell)
+	Name            string             // Display name
+	ShellCmd        string             // Command to start the assistant
+	ShellRestartCmd string             // Command to restart (resume) the assistant
+	YoloRestartCmd  string             // Command to restart in YOLO mode (empty = not supported)
+	Binary          string             // Binary name to check with exec.LookPath
+	Homepage        bool               // Whether to show on homepage (false = hidden, e.g., shell)
+	SlashCmdFormat  SlashCommandFormat // Slash command format ("md", "toml", or "" for none)
 }
 
 // SessionInfo holds session data for template rendering
@@ -197,6 +207,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "claude --dangerously-skip-permissions --continue",
 		Binary:          "claude",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
 		Name:            "Gemini",
@@ -205,6 +216,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "gemini --resume --approval-mode=yolo",
 		Binary:          "gemini",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdTOML,
 	},
 	{
 		Name:            "Codex",
@@ -213,6 +225,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "codex --yolo resume --last",
 		Binary:          "codex",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
 		Name:            "Goose",
@@ -221,6 +234,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdNone,
 	},
 	{
 		Name:            "Aider",
@@ -229,6 +243,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdNone,
 	},
 	{
 		Name:            "OpenCode",
@@ -237,6 +252,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "", // YOLO mode not supported
 		Binary:          "opencode",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
 		Name:     "Shell",
@@ -1497,30 +1513,46 @@ func generateWorktreeCommands(worktreePath, branchName string) error {
 }
 
 // generateMOTD creates the terminal MOTD displaying available swe-swe commands
-func generateMOTD(workDir, branchName string) string {
+func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
 	// Determine the workspace directory
 	wsDir := "/workspace"
 	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
 		wsDir = workDir
 	}
-	sweSweDir := wsDir + "/swe-swe"
 
-	// Check if swe-swe directory exists
-	entries, err := os.ReadDir(sweSweDir)
-	if err != nil {
-		return "" // No swe-swe directory, no MOTD
+	// Determine command invocation syntax based on agent's slash command support
+	// Slash-command agents use /swe-swe:cmd, file-mention agents use @swe-swe/cmd
+	useSlashCmd := cfg.SlashCmdFormat != SlashCmdNone
+	tipText := "Tip: @swe-swe to see available commands"
+	setupCmd := "@swe-swe/setup"
+	if useSlashCmd {
+		tipText = "Tip: type /swe-swe to see commands available"
+		setupCmd = "/swe-swe:setup"
 	}
 
-	// Check if any command files exist
-	hasCommands := false
-	hasSetup := false
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		hasCommands = true
-		if entry.Name() == "setup" {
-			hasSetup = true
+	// For slash-command agents, we don't need the /workspace/swe-swe directory
+	// since commands are installed in agent-specific directories
+	sweSweDir := wsDir + "/swe-swe"
+
+	// Check if swe-swe directory exists (required for file-mention agents)
+	entries, err := os.ReadDir(sweSweDir)
+	if err != nil && !useSlashCmd {
+		return "" // No swe-swe directory and no slash command support - no MOTD
+	}
+
+	// For slash-command agents, always show MOTD (commands are in home directory)
+	// For file-mention agents, check if command files exist
+	hasCommands := useSlashCmd
+	hasSetup := useSlashCmd // Slash-command agents always have bundled setup
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			hasCommands = true
+			if entry.Name() == "setup" {
+				hasSetup = true
+			}
 		}
 	}
 
@@ -1541,11 +1573,11 @@ func generateMOTD(workDir, branchName string) string {
 	// Format the MOTD (use \r\n for proper terminal line endings)
 	var sb strings.Builder
 	sb.WriteString("\r\n")
-	sb.WriteString(ansiDim("Tip: @swe-swe to see available commands") + "\r\n")
+	sb.WriteString(ansiDim(tipText) + "\r\n")
 
 	// Show "Try this" only if setup exists and hasn't been done
 	if hasSetup && !setupDone {
-		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@swe-swe/setup") + "\r\n")
+		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan(setupCmd) + "\r\n")
 	}
 
 	sb.WriteString("\r\n")
@@ -2347,7 +2379,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	if isNew {
 		// Display MOTD with available swe-swe commands (for human user discoverability)
 		// Send directly to websocket (not PTY) so ANSI escape codes are properly interpreted
-		motd := generateMOTD(sess.WorkDir, sess.BranchName)
+		motd := generateMOTD(sess.WorkDir, sess.BranchName, sess.AssistantConfig)
 		if motd != "" {
 			motdBytes := []byte(motd)
 			// Write to VT and ring buffer so joining clients see it too

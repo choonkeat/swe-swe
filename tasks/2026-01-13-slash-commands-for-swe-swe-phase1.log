@@ -6,3 +6,22 @@
 - Will set format for each agent (Claude=md, Codex=md, OpenCode=md, Gemini=toml, Goose=none, Aider=none)
 - Will update generateMOTD to show agent-appropriate invocation syntax
 - Expected: MOTD shows "/swe-swe" for slash-command agents, "@swe-swe" for file-mention agents
+
+011921: Phase 1 implementation complete
+- Added SlashCommandFormat type with constants: SlashCmdMD, SlashCmdTOML, SlashCmdNone
+- Added SlashCmdFormat field to AssistantConfig struct
+- Set SlashCmdFormat for each agent:
+  - Claude: SlashCmdMD
+  - Gemini: SlashCmdTOML
+  - Codex: SlashCmdMD
+  - Goose: SlashCmdNone
+  - Aider: SlashCmdNone
+  - OpenCode: SlashCmdMD
+  - Shell: (none, default)
+- Updated generateMOTD signature to accept AssistantConfig
+- Updated generateMOTD to show:
+  - "/swe-swe:setup" for slash-command agents (md/toml)
+  - "@swe-swe/setup" for file-mention agents (none)
+- Updated call site at line ~2382 to pass sess.AssistantConfig
+- make build: SUCCESS
+- make test: ALL TESTS PASS
