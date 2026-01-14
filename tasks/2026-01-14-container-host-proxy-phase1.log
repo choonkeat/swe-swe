@@ -39,3 +39,7 @@ Observed:
 - Test with nonexistent command -> stderr="Failed to execute...", exit="127"
 - Exit file written last to signal completion.
 Got: As expected. Request processing works correctly with stdout/stderr separation and exit code propagation.
+
+110145 - Phase 1 Step 5: Add graceful shutdown
+Action: Handle SIGINT/SIGTERM signals, clean up PID file on exit. Use context for cancellation.
+Expected: Ctrl+C or kill -TERM causes clean exit with PID file removed.
