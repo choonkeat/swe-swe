@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -51,8 +53,22 @@ func handleProxy() {
 		os.Exit(1)
 	}
 
-	// Ensure PID file is cleaned up on exit
-	defer os.Remove(pidFile)
+	// Set up signal handling for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\n[proxy] Received signal %v, shutting down...\n", sig)
+		cancel()
+	}()
+
+	// Ensure cleanup on exit
+	defer func() {
+		os.Remove(pidFile)
+		fmt.Printf("[proxy] Cleaned up PID file\n")
+	}()
 
 	fmt.Printf("[proxy] Starting proxy for command: %s\n", command)
 	fmt.Printf("[proxy] PID file: %s\n", pidFile)
@@ -72,11 +88,15 @@ func handleProxy() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("[proxy] Listening for '%s' commands...\n", command)
+	fmt.Printf("[proxy] Listening for '%s' commands... (Ctrl+C to stop)\n", command)
 
 	// Main event loop
 	for {
 		select {
+		case <-ctx.Done():
+			fmt.Printf("[proxy] Shutting down gracefully\n")
+			return
+
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
