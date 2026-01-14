@@ -5,3 +5,13 @@
 - Will remove "For Agents" section with @swe-swe/<command> syntax
 - Will simplify to just list available commands without invocation syntax
 - Expected: MOTD teaches syntax, AGENTS.md just lists what's available
+
+012640: Phase 4 implementation complete
+- Simplified AGENTS.md content:
+  - Removed "Use @swe-swe/<command> to invoke:" instructions
+  - Removed "Where" column from commands table
+  - Removed worktree commands (merge-this-worktree, discard-this-worktree)
+  - Removed "For Agents" section entirely
+  - Kept: Commands table, Current Setup section, Documentation list
+- make build: SUCCESS
+- make test: ALL TESTS PASS

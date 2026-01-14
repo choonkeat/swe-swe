@@ -159,7 +159,7 @@ The `/workspace/swe-swe/` directory (with file-based commands) will only be crea
 
 ---
 
-## Phase 4: Simplify `.swe-swe/docs/AGENTS.md`
+## Phase 4: Simplify `.swe-swe/docs/AGENTS.md` ✅
 
 ### What will be achieved
 The AGENTS.md file will be simplified to just list available commands without specifying invocation syntax. The MOTD (Phase 1) handles teaching the correct syntax per agent.
