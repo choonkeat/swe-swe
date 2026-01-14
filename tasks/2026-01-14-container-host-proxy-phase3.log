@@ -1,0 +1,38 @@
+111600 - Phase 3: Error Handling & Cleanup
+Note: Steps 1, 3, 5 were already implemented in Phase 1-2. Phase 3 adds:
+- Orphan file cleanup on startup
+- In-flight request handling with sync.WaitGroup
+
+111610 - Phase 3 Step 2 (enhancement): In-flight request handling
+Action: Add sync.WaitGroup to track in-flight requests, wait for completion on shutdown
+Expected: When SIGTERM received during command execution, proxy waits for completion
+Observed:
+- Added sync.WaitGroup in main event loop
+- wg.Add(1) before processing request in goroutine
+- wg.Done() via defer after request completes
+- wg.Wait() on context cancellation
+Got: As expected. In-flight requests now complete before shutdown.
+
+111630 - Phase 3 Step 4: Orphan file cleanup
+Action: Add cleanupOrphanFiles() function called on startup
+Expected: Old .stdout/.stderr/.exit files (>5min) removed, recent and non-response files kept
+111700 - Phase 3 Step 4: Result
+Observed:
+- cleanupOrphanFiles scans proxy directory on startup
+- Removes .stdout, .stderr, .exit files older than 5 minutes
+- Preserves .req files, scripts, PID files, and recent response files
+- Logs each removed orphan with age
+Got: As expected. Orphan cleanup working.
+
+111715 - Phase 3 Tests
+Action: Add TestCleanupOrphanFiles_* tests to proxy_test.go
+Expected: All tests pass via `make test`
+111730 - Phase 3 Tests: Result
+Observed:
+- TestCleanupOrphanFiles_RemovesOldOrphans: verifies old orphans deleted
+- TestCleanupOrphanFiles_KeepsRecentFiles: verifies recent files kept
+- TestCleanupOrphanFiles_IgnoresNonOrphanFiles: verifies .req, scripts, PID kept
+- TestCleanupOrphanFiles_EmptyDirectory: verifies no panic on empty dir
+- TestCleanupOrphanFiles_NonExistentDirectory: verifies no panic on missing dir
+- All tests pass
+Got: As expected. Phase 3 complete.

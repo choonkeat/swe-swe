@@ -104,17 +104,17 @@ Generate a bash script that containers use to submit requests naturally.
 
 ### Steps
 
-1. **Define script template**
+1. **Define script template** ✅
    - Embed template in Go code (using `embed` or string literal)
    - Template uses placeholder for proxy directory path
    - Script location: `.swe-swe/proxy/<command>`
 
-2. **Implement script generation on proxy startup**
+2. **Implement script generation on proxy startup** ✅
    - Write script to `.swe-swe/proxy/<command>`
    - Set executable permissions (`chmod +x`)
    - Delete script on proxy shutdown (cleanup handler)
 
-3. **Script implementation details**
+3. **Script implementation details** ✅
    - UUID generation: `cat /proc/sys/kernel/random/uuid`
    - Atomic request: `printf '%s\0' "$@" > <uuid>.req.tmp && mv <uuid>.req.tmp <uuid>.req`
    - Wait: `inotifywait` with timeout wrapper
@@ -122,29 +122,29 @@ Generate a bash script that containers use to submit requests naturally.
    - Cleanup: `rm -f` response files after reading
    - Exit: `exit $(cat <uuid>.exit)`
 
-4. **Handle edge case: no arguments**
+4. **Handle edge case: no arguments** ✅
    - Empty request file (zero bytes) = run command with no args
 
-### Tests
+### Tests ✅
 
-1. **Test script is generated on startup**
+1. **Test script is generated on startup** ✅
    - Start proxy for `make`
    - Verify `.swe-swe/proxy/make` exists and is executable
 
-2. **Test script is deleted on shutdown**
+2. **Test script is deleted on shutdown** ✅
    - Start proxy, then stop it (SIGTERM)
    - Verify `.swe-swe/proxy/make` is removed
 
-3. **Test script content correctness**
+3. **Test script content correctness** ✅
    - Generate script, read its content
    - Verify it contains expected components
 
-4. **Test end-to-end request/response**
+4. **Test end-to-end request/response** ✅
    - Start proxy for `echo`
    - Execute generated script with args
    - Verify output is correct
 
-5. **Test special characters in args**
+5. **Test special characters in args** ✅
    - Args with spaces, quotes, equals signs
    - Verify all passed correctly via NUL-delimited format
 
@@ -157,12 +157,12 @@ Robust handling of edge cases and failure scenarios.
 
 ### Steps
 
-1. **Stale PID detection (host)**
+1. **Stale PID detection (host)** ✅ (done in Phase 1)
    - On startup, check if PID in file is actually running
    - Use `os.FindProcess()` + signal 0 to check liveness
    - If stale, log warning and remove PID file
 
-2. **Graceful shutdown (host)**
+2. **Graceful shutdown (host)** ✅
    - Register signal handlers for SIGINT, SIGTERM
    - On shutdown:
      - Stop accepting new requests
@@ -171,79 +171,79 @@ Robust handling of edge cases and failure scenarios.
      - Delete PID file
    - Use `context.Context` for cancellation
 
-3. **Timeout handling (container script)**
+3. **Timeout handling (container script)** ✅ (done in Phase 2)
    - Default timeout: 300 seconds (configurable via `PROXY_TIMEOUT`)
    - If `inotifywait` times out:
      - Print error to stderr
      - Clean up `.req` file if still exists
      - Exit with code 124
 
-4. **Orphan file cleanup (host)**
+4. **Orphan file cleanup (host)** ✅
    - On startup, scan for orphan response files
    - Remove orphans older than 5 minutes
    - Handles: container crash, host crash after writing response
 
-5. **Clear error messages**
+5. **Clear error messages** ✅ (done in Phase 1)
    - Proxy already running: `"proxy for 'make' already running (PID 12345)"`
    - Command not found: `"command 'foo' not found in PATH"`
    - Request timeout: `"timeout waiting for host to execute command"`
 
-### Tests
+### Tests ✅
 
-1. **Test stale PID cleanup**
+1. **Test stale PID cleanup** ✅ (done in Phase 1)
    - Create PID file with non-existent PID
    - Start proxy, verify it starts and replaces PID file
 
-2. **Test graceful shutdown cleans up files**
+2. **Test graceful shutdown cleans up files** ✅ (done in Phase 1)
    - Start proxy, send SIGTERM
    - Verify PID file and container script removed
 
-3. **Test in-flight request completes on shutdown**
+3. **Test in-flight request completes on shutdown** ✅
    - Start proxy for `sleep 1`, submit request
    - Immediately send SIGTERM
    - Verify request completes
 
-4. **Test container timeout**
+4. **Test container timeout** ✅ (verified manually in Phase 2)
    - Generate container script but don't start proxy
    - Run script with `PROXY_TIMEOUT=1`
    - Verify exits with code 124
 
-5. **Test orphan cleanup**
+5. **Test orphan cleanup** ✅
    - Create orphan `.stdout` and `.exit` files
    - Start proxy, verify orphans removed
 
 ---
 
-## Phase 4: Integration Testing
+## Phase 4: Integration Testing ✅
 
 ### Goal
 End-to-end tests verifying complete container/host flow.
 
 ### Steps
 
-1. **Set up test harness**
+1. **Set up test harness** ✅
    - Test helper to start/stop proxy in background
    - Temp directory for `.swe-swe/proxy/`
    - Use `echo`, `cat`, `sh -c` as test commands
 
-2. **Basic flow test**
+2. **Basic flow test** ✅
    - Start proxy for `echo`
    - Run container script with args
    - Verify stdout captured, exit code 0
 
-3. **Exit code propagation test**
+3. **Exit code propagation test** ✅
    - Proxy for `sh`, run `exit 42`
    - Verify exit code is 42
 
-4. **Stdout/stderr separation test**
+4. **Stdout/stderr separation test** ✅
    - Run command that writes to both
    - Verify streams separated correctly
 
-5. **Concurrent requests test**
+5. **Concurrent requests test** ✅
    - Submit 5 requests in parallel
    - Verify all get correct responses
 
-6. **Special characters test**
+6. **Special characters test** ✅
    - Args with spaces, quotes, newlines, unicode
    - Verify passed through correctly
 

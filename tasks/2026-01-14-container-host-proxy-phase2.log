@@ -15,3 +15,16 @@ Observed:
 - Exit code test: sh -c "exit 42" -> exits with 42
 - Stderr test: stdout and stderr correctly separated
 Got: As expected. Container script generation working with all edge cases handled.
+
+111502 - Phase 2 Tests: Unit tests for generateContainerScript
+Action: Add TestGenerateContainerScript, TestGenerateContainerScript_Content, TestGenerateContainerScript_Cleanup to proxy_test.go
+Expected: All tests pass via `make test`
+111530 - Phase 2 Tests: Result
+Observed:
+- TestGenerateContainerScript: verifies script file created with executable permissions
+- TestGenerateContainerScript_Content: 10 subtests checking script components
+  - shebang, strict mode, command name, uuid generation, NUL-delimited args
+  - atomic rename, inotifywait, timeout check, exit code, cleanup
+- TestGenerateContainerScript_Cleanup: verifies script removal on shutdown
+- All tests pass
+Got: As expected. Phase 2 complete - all functionality implemented and tested.
