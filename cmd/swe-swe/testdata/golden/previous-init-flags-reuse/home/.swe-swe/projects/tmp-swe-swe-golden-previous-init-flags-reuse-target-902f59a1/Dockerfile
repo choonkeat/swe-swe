@@ -85,6 +85,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Create non-root user for running swe-swe-server
 RUN useradd -m -s /bin/bash app
 
+# Create worktrees directory with app ownership (used for git worktrees)
+RUN mkdir -p /worktrees && chown app:app /worktrees
+
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

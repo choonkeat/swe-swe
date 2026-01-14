@@ -42,6 +42,12 @@ if [ -S /var/run/docker.sock ]; then
 fi
 
 
+# Ensure /worktrees directory exists and is owned by app user
+# (bind mount from host may create it with root ownership)
+if [ -d /worktrees ]; then
+    chown app:app /worktrees
+fi
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"

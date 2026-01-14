@@ -41,7 +41,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "154fa555"
+	GitCommit = "48e0eace"
 )
 
 var indexTemplate *template.Template
@@ -1374,7 +1374,10 @@ func branchNameFromDir(dirName string) string {
 	return strings.ReplaceAll(dirName, "--", "/")
 }
 
-// worktreeDir is the base directory for git worktrees
+// worktreeDir is the base directory for git worktrees.
+// This is intentionally at /worktrees (not under /workspace) to keep worktrees
+// separate from the main workspace. The container Dockerfile/entrypoint must
+// ensure this directory exists with proper permissions for the app user.
 var worktreeDir = "/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
