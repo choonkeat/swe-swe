@@ -27,3 +27,7 @@ Observed:
 - Atomic rename (mv .tmp .req) detected: "[proxy] Received request: uuid-456"
 - Both fsnotify.Create and fsnotify.Rename events handled correctly.
 Got: As expected. File watcher working for both direct create and atomic rename patterns.
+
+105926 - Phase 1 Step 4: Implement request processing
+Action: Read NUL-delimited args from .req file, delete it (claim), execute command, write .stdout/.stderr/.exit
+Expected: Creating .req file with NUL-delimited args causes command execution, response files appear with correct content.
