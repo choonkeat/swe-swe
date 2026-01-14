@@ -9,6 +9,7 @@ This document describes the swe-swe CLI commands and how the swe-swe-server is b
 **Native Commands:**
 - `swe-swe init [options]` — Initialize a new swe-swe project
 - `swe-swe list` — List all initialized projects (auto-prunes stale ones)
+- `swe-swe proxy <command>` — Proxy host commands to containers with real-time streaming
 
 **Docker Compose Pass-through:**
 All other commands are passed directly to `docker compose` with the project's configuration:
@@ -199,9 +200,61 @@ swe-swe list
 # Removed 1 stale project(s)
 ```
 
+#### `swe-swe proxy <command>`
+
+**Purpose:** Create a file-based proxy that allows containers to execute host commands with real-time stdout/stderr streaming.
+
+**What it does:**
+1. Creates `.swe-swe/proxy/` directory if needed
+2. Checks for existing proxy (via PID file) to prevent duplicates
+3. Generates a container script at `.swe-swe/proxy/<command>`
+4. Watches for `.req` files using fsnotify
+5. Executes commands and streams output to `.stdout`/`.stderr` files
+6. Writes `.exit` file to signal completion
+7. Cleans up on shutdown (removes script and PID file)
+
+**File Protocol:**
+| File | Created by | Purpose |
+|------|-----------|---------|
+| `<command>` | Host | Container script (executable) |
+| `<command>.pid` | Host | PID file (prevents duplicate proxies) |
+| `<uuid>.req` | Container | Request (NUL-delimited args) |
+| `<uuid>.stdout` | Host | Response stdout (streamed) |
+| `<uuid>.stderr` | Host | Response stderr (streamed) |
+| `<uuid>.exit` | Host | Exit code (signals completion) |
+
+**Environment Variables:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROXY_TIMEOUT` | 300 | Timeout in seconds for container script |
+| `PROXY_DIR` | `.swe-swe/proxy` | Override proxy directory path |
+
+**Examples:**
+```bash
+# Start proxy for make command
+swe-swe proxy make
+# [proxy] Listening for 'make' commands... (Ctrl+C to stop)
+
+# In container: run make with arguments
+.swe-swe/proxy/make build TARGET=hello
+
+# Multiple proxies (separate terminals)
+swe-swe proxy make
+swe-swe proxy docker
+swe-swe proxy npm
+```
+
+**When to use:**
+- Commands that must run on the host (e.g., Docker, make with host-specific config)
+- Commands that need access to host resources not available in container
+- Build systems that depend on host environment
+
+**Requirements:**
+- Container needs `inotify-tools` for efficient file watching (falls back to polling)
+
 ### Docker Compose Pass-through Commands
 
-All commands other than `init` and `list` are passed directly to `docker compose` using the project's generated `docker-compose.yml`. The `--project-directory` flag specifies which project (defaults to current directory).
+All commands other than `init`, `list`, and `proxy` are passed directly to `docker compose` using the project's generated `docker-compose.yml`. The `--project-directory` flag specifies which project (defaults to current directory).
 
 #### `swe-swe up [--project-directory PATH] [services...] [-- docker-compose-args...]`
 

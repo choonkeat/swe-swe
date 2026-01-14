@@ -130,21 +130,21 @@ exit "$exit_code"
 // It creates a file-based proxy that allows containers to execute
 // the specified command on the host and receive stdout/stderr/exit code.
 func handleProxy() {
-	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: swe-swe proxy <command>\n\n")
-		fmt.Fprintf(os.Stderr, "Starts a proxy that allows containers to execute <command> on the host.\n")
-		fmt.Fprintf(os.Stderr, "The container can then run .swe-swe/proxy/<command> with arguments.\n\n")
-		fmt.Fprintf(os.Stderr, "Example:\n")
-		fmt.Fprintf(os.Stderr, "  Host:      swe-swe proxy make\n")
-		fmt.Fprintf(os.Stderr, "  Container: .swe-swe/proxy/make build TARGET=hello\n")
+	// Handle help flags
+	if len(os.Args) < 3 || os.Args[2] == "-h" || os.Args[2] == "--help" {
+		printProxyHelp()
+		if len(os.Args) >= 3 && (os.Args[2] == "-h" || os.Args[2] == "--help") {
+			os.Exit(0)
+		}
 		os.Exit(1)
 	}
 
 	command := os.Args[2]
 
-	// Validate command is not empty
-	if command == "" {
-		fmt.Fprintf(os.Stderr, "Error: command cannot be empty\n")
+	// Validate command is not empty or a flag
+	if command == "" || strings.HasPrefix(command, "-") {
+		fmt.Fprintf(os.Stderr, "Error: invalid command %q\n\n", command)
+		printProxyHelp()
 		os.Exit(1)
 	}
 
@@ -260,6 +260,49 @@ func generateContainerScript(path, command string) error {
 		return fmt.Errorf("failed to write script: %w", err)
 	}
 	return nil
+}
+
+// printProxyHelp prints the help message for the proxy subcommand.
+func printProxyHelp() {
+	fmt.Fprintf(os.Stderr, `Usage: swe-swe proxy <command>
+
+Starts a file-based proxy that allows containers to execute <command> on the host
+and receive stdout/stderr/exit code in real-time.
+
+Arguments:
+  <command>    The host command to proxy (e.g., make, docker, npm)
+
+Environment Variables:
+  PROXY_TIMEOUT    Timeout in seconds for container script (default: 300)
+  PROXY_DIR        Override proxy directory (default: .swe-swe/proxy)
+
+How It Works:
+  1. Host runs 'swe-swe proxy <command>' which watches .swe-swe/proxy/ for requests
+  2. Container runs '.swe-swe/proxy/<command> [args...]' to submit a request
+  3. Host executes the command and streams stdout/stderr back to container
+  4. Container receives output in real-time and exits with the command's exit code
+
+File Protocol:
+  .swe-swe/proxy/<command>       Generated container script (executable)
+  .swe-swe/proxy/<command>.pid   Host PID file (prevents duplicate proxies)
+  .swe-swe/proxy/<uuid>.req      Request file (NUL-delimited args)
+  .swe-swe/proxy/<uuid>.stdout   Response stdout (streamed)
+  .swe-swe/proxy/<uuid>.stderr   Response stderr (streamed)
+  .swe-swe/proxy/<uuid>.exit     Exit code (signals completion)
+
+Examples:
+  # Host: start proxy for 'make' command
+  swe-swe proxy make
+
+  # Container: run make with arguments (output streams in real-time)
+  .swe-swe/proxy/make build TARGET=hello
+
+  # Multiple proxies (run in separate terminals)
+  swe-swe proxy make
+  swe-swe proxy docker
+  swe-swe proxy npm
+
+`)
 }
 
 // processRequest handles a single proxy request:
