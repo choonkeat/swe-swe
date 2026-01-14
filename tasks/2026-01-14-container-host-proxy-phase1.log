@@ -15,3 +15,7 @@ Observed:
 - Stale cleanup: Created PID file with 999999 -> "Removing stale PID file" message, continues normally.
 - PID file cleanup on exit: After proxy exits, PID file is removed (defer os.Remove works).
 Got: As expected after fixing TrimSpace bug. PID file management working correctly.
+
+105731 - Phase 1 Step 3: Set up fsnotify watcher
+Action: Add github.com/fsnotify/fsnotify dependency, implement file watcher for *.req files in proxy directory.
+Expected: Proxy starts and waits, detects when .req files are created/moved into directory.
