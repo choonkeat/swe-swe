@@ -19,3 +19,11 @@ Got: As expected after fixing TrimSpace bug. PID file management working correct
 105731 - Phase 1 Step 3: Set up fsnotify watcher
 Action: Add github.com/fsnotify/fsnotify dependency, implement file watcher for *.req files in proxy directory.
 Expected: Proxy starts and waits, detects when .req files are created/moved into directory.
+105851 - Phase 1 Step 3: Result
+Observed:
+- Added github.com/fsnotify/fsnotify v1.9.0 dependency (also pulled golang.org/x/sys).
+- Proxy now starts, creates watcher, and waits in event loop.
+- Direct file creation (echo > .req) detected: "[proxy] Received request: test-uuid-123"
+- Atomic rename (mv .tmp .req) detected: "[proxy] Received request: uuid-456"
+- Both fsnotify.Create and fsnotify.Rename events handled correctly.
+Got: As expected. File watcher working for both direct create and atomic rename patterns.
