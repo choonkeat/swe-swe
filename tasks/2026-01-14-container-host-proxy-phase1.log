@@ -4,3 +4,7 @@ Expected: `swe-swe proxy` without args shows usage error, `swe-swe proxy echo` i
 105408 - Phase 1 Step 1: Result
 Observed: Build succeeded. `swe-swe proxy` (no args) shows usage and exits 1. `swe-swe proxy echo` is recognized, prints TODO message, exits 0.
 Got: As expected - proxy subcommand skeleton working.
+
+105444 - Phase 1 Step 2: Implement PID file management
+Action: Add PID file check/creation in proxy.go. Check if existing PID is alive (signal 0), fail fast if running, clean stale.
+Expected: Running proxy twice fails with "already running" error. Stale PID file gets cleaned up.
