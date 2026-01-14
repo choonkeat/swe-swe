@@ -32,6 +32,25 @@ fi
 
 
 
+# Create OpenCode MCP configuration
+# OpenCode uses a different schema: type="local" and command as array
+mkdir -p /home/app/.config/opencode
+cat > /home/app/.config/opencode/opencode.json << 'EOF'
+{
+  "mcp": {
+    "swe-swe-playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    }
+  }
+}
+EOF
+chown -R app:app /home/app/.config/opencode
+echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
+
+
+
+
 # Ensure /worktrees directory exists and is owned by app user
 # (bind mount from host may create it with root ownership)
 if [ -d /worktrees ]; then

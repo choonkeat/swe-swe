@@ -32,6 +32,25 @@ fi
 
 
 
+
+
+
+# Create Goose MCP configuration (YAML format)
+mkdir -p /home/app/.config/goose
+cat > /home/app/.config/goose/config.yaml << 'EOF'
+extensions:
+  swe-swe-playwright:
+    type: stdio
+    cmd: npx
+    args:
+      - "-y"
+      - "@playwright/mcp@latest"
+      - "--cdp-endpoint"
+      - "http://chrome:9223"
+EOF
+chown -R app:app /home/app/.config/goose
+echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"
+
 # Ensure /worktrees directory exists and is owned by app user
 # (bind mount from host may create it with root ownership)
 if [ -d /worktrees ]; then

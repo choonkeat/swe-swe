@@ -851,6 +851,22 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 			skip = !hasSlashCommands
 			continue
 		}
+		if strings.Contains(trimmed, "{{IF OPENCODE}}") {
+			skip = !hasAgent("opencode")
+			continue
+		}
+		if strings.Contains(trimmed, "{{IF CODEX}}") {
+			skip = !hasAgent("codex")
+			continue
+		}
+		if strings.Contains(trimmed, "{{IF GEMINI}}") {
+			skip = !hasAgent("gemini")
+			continue
+		}
+		if strings.Contains(trimmed, "{{IF GOOSE}}") {
+			skip = !hasAgent("goose")
+			continue
+		}
 		if strings.Contains(trimmed, "{{ENDIF}}") {
 			skip = false
 			continue

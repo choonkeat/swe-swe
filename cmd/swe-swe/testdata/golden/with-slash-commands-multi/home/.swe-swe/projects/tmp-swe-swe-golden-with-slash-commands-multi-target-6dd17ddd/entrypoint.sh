@@ -105,6 +105,62 @@ elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
     echo -e "${GREEN}✓ Installed slash commands: org/team-cmds (opencode)${NC}"
 fi
 
+# Create OpenCode MCP configuration
+# OpenCode uses a different schema: type="local" and command as array
+mkdir -p /home/app/.config/opencode
+cat > /home/app/.config/opencode/opencode.json << 'EOF'
+{
+  "mcp": {
+    "swe-swe-playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    }
+  }
+}
+EOF
+chown -R app:app /home/app/.config/opencode
+echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
+
+# Create Codex MCP configuration (TOML format)
+mkdir -p /home/app/.codex
+cat > /home/app/.codex/config.toml << 'EOF'
+[mcp_servers.swe-swe-playwright]
+command = ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+EOF
+chown -R app:app /home/app/.codex
+echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
+
+# Create Gemini MCP configuration
+mkdir -p /home/app/.gemini
+cat > /home/app/.gemini/settings.json << 'EOF'
+{
+  "mcpServers": {
+    "swe-swe-playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    }
+  }
+}
+EOF
+chown -R app:app /home/app/.gemini
+echo -e "${GREEN}✓ Created Gemini MCP configuration${NC}"
+
+# Create Goose MCP configuration (YAML format)
+mkdir -p /home/app/.config/goose
+cat > /home/app/.config/goose/config.yaml << 'EOF'
+extensions:
+  swe-swe-playwright:
+    type: stdio
+    cmd: npx
+    args:
+      - "-y"
+      - "@playwright/mcp@latest"
+      - "--cdp-endpoint"
+      - "http://chrome:9223"
+EOF
+chown -R app:app /home/app/.config/goose
+echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"
+
 # Ensure /worktrees directory exists and is owned by app user
 # (bind mount from host may create it with root ownership)
 if [ -d /worktrees ]; then
