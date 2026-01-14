@@ -1,0 +1,11 @@
+# Phase 6 Execution Log: Golden tests and verification
+
+013045: Starting Phase 6 execution
+- Will run make build golden-update
+- Will review golden test diffs by category
+- Expected changes:
+  - MOTD changes in swe-swe-server/main.go (SlashCmdFormat)
+  - New slash command files in home directories
+  - Conditional /workspace/swe-swe/ presence
+  - Simplified AGENTS.md
+  - Removed worktree commands
