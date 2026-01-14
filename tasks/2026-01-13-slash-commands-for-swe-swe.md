@@ -211,7 +211,7 @@ The AGENTS.md file will be simplified to just list available commands without sp
 
 ---
 
-## Phase 5: Remove worktree commands
+## Phase 5: Remove worktree commands ✅
 
 ### What will be achieved
 The `merge-this-worktree` and `discard-this-worktree` commands will be removed, along with the worktree-specific `swe-swe/` installation code. Worktrees will inherit `swe-swe/` from the main workspace via normal worktree mechanics (or not have it at all for slash-command agents).
