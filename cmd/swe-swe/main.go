@@ -150,6 +150,8 @@ func main() {
 		handleInit()
 	case "list":
 		handleList()
+	case "proxy":
+		handleProxy()
 	case "-h", "--help":
 		printUsage()
 	default:
