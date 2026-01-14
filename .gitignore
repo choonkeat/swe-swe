@@ -16,3 +16,7 @@ cmd/swe-swe/templates/host/swe-swe-server/go.sum
 
 # Packer build artifacts
 deploy/digitalocean/manifest.json
+
+# Local dev artifacts
+.aider.*
+.test-home*
