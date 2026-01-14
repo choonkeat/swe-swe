@@ -63,7 +63,7 @@ The backend will recognize `shell` as a valid assistant type, filter it from the
 
 ---
 
-## Phase 2: Frontend - Add Shell link to status bar
+## Phase 2: Frontend - Add Shell link to status bar ✅ COMPLETE
 
 ### What will be achieved
 The status bar in AI sessions will show a "Shell" link alongside VSCode and Browser. Clicking it opens a shell session that inherits the parent session's working directory. Shell sessions will not show the Shell link.
@@ -104,7 +104,7 @@ The status bar in AI sessions will show a "Shell" link alongside VSCode and Brow
 
 ---
 
-## Phase 3: Integration testing & polish
+## Phase 3: Integration testing & polish ✅ COMPLETE
 
 ### What will be achieved
 End-to-end verification that all pieces work together, edge cases are handled gracefully, and the feature is production-ready.
