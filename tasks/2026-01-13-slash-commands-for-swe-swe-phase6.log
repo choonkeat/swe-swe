@@ -9,3 +9,20 @@
   - Conditional /workspace/swe-swe/ presence
   - Simplified AGENTS.md
   - Removed worktree commands
+
+013322: Phase 6 verification complete
+- Ran make build golden-update: SUCCESS
+- Golden diff verified:
+  a. swe-swe-server/main.go: SlashCmdFormat field added, generateMOTD updated
+  b. New slash command files created:
+     - home/.claude/commands/swe-swe/setup.md (for variants with Claude)
+     - home/.codex/prompts/swe-swe/setup.md (for variants with Codex)
+     - home/.config/opencode/command/swe-swe/setup.md (for variants with OpenCode)
+     - home/.gemini/commands/swe-swe/setup.toml (for variants with Gemini)
+  c. Conditional swe-swe/ presence:
+     - claude-only: NO target/swe-swe/ directory (verified)
+     - aider-only: HAS target/swe-swe/setup (verified)
+  d. Simplified AGENTS.md: All variants show simplified content
+  e. Removed worktree commands: No merge-this-worktree or discard-this-worktree
+- Updated test to verify conditional swe-swe/setup presence
+- make test: ALL TESTS PASS

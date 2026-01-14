@@ -41,7 +41,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "82fdbec0"
+	GitCommit = "31cea78c"
 )
 
 var indexTemplate *template.Template
@@ -120,14 +120,24 @@ func (sc *SafeConn) Close() error {
 	return sc.conn.Close()
 }
 
+// SlashCommandFormat represents the slash command format supported by an assistant
+type SlashCommandFormat string
+
+const (
+	SlashCmdMD   SlashCommandFormat = "md"   // Markdown format (Claude, Codex, OpenCode)
+	SlashCmdTOML SlashCommandFormat = "toml" // TOML format (Gemini)
+	SlashCmdNone SlashCommandFormat = ""     // No slash command support (Goose, Aider)
+)
+
 // AssistantConfig holds the configuration for an AI coding assistant
 type AssistantConfig struct {
-	Name            string // Display name
-	ShellCmd        string // Command to start the assistant
-	ShellRestartCmd string // Command to restart (resume) the assistant
-	YoloRestartCmd  string // Command to restart in YOLO mode (empty = not supported)
-	Binary          string // Binary name to check with exec.LookPath
-	Homepage        bool   // Whether to show on homepage (false = hidden, e.g., shell)
+	Name            string             // Display name
+	ShellCmd        string             // Command to start the assistant
+	ShellRestartCmd string             // Command to restart (resume) the assistant
+	YoloRestartCmd  string             // Command to restart in YOLO mode (empty = not supported)
+	Binary          string             // Binary name to check with exec.LookPath
+	Homepage        bool               // Whether to show on homepage (false = hidden, e.g., shell)
+	SlashCmdFormat  SlashCommandFormat // Slash command format ("md", "toml", or "" for none)
 }
 
 // SessionInfo holds session data for template rendering
@@ -197,6 +207,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "claude --dangerously-skip-permissions --continue",
 		Binary:          "claude",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
 		Name:            "Gemini",
@@ -205,6 +216,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "gemini --resume --approval-mode=yolo",
 		Binary:          "gemini",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdTOML,
 	},
 	{
 		Name:            "Codex",
@@ -213,6 +225,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "codex --yolo resume --last",
 		Binary:          "codex",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
 		Name:            "Goose",
@@ -221,6 +234,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdNone,
 	},
 	{
 		Name:            "Aider",
@@ -229,6 +243,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdNone,
 	},
 	{
 		Name:            "OpenCode",
@@ -237,6 +252,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "", // YOLO mode not supported
 		Binary:          "opencode",
 		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
 		Name:     "Shell",
@@ -1381,146 +1397,49 @@ func branchNameFromDir(dirName string) string {
 var worktreeDir = "/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
-var excludeFromCopy = []string{".git", ".swe-swe", "swe-swe"}
-
-// worktreeCommandTemplates contains templates for generated worktree commands
-var worktreeCommandTemplates = map[string]string{
-	"merge-this-worktree": `# Merge This Worktree
-
-Branch: {{.BranchName}}
-Target: {{.TargetBranch}}
-Worktree: {{.WorktreePath}}
-Main repo: /workspace
-
-## Instructions
-
-Help the user merge this worktree branch to the target branch.
-
-1. Check for uncommitted changes: ` + "`git status`" + `
-   - If dirty, ask user: commit, stash, or abort?
-
-2. Fetch latest: ` + "`git -C /workspace fetch origin`" + `
-
-3. Check if target has moved:
-   - ` + "`git -C /workspace log {{.TargetBranch}}..origin/{{.TargetBranch}} --oneline`" + `
-   - If commits exist, ask if user wants to update target first
-
-4. Perform merge:
-   - ` + "`git -C /workspace checkout {{.TargetBranch}} && git merge {{.BranchName}}`" + `
-   - Ask user about merge strategy (ff, no-ff, squash) if they have preference
-
-5. If conflict:
-   - Show conflicted files
-   - Help resolve conversationally
-   - Don't leave user in broken state
-
-6. After successful merge:
-   - ` + "`git -C /workspace worktree remove {{.WorktreePath}}`" + `
-   - ` + "`git -C /workspace branch -d {{.BranchName}}`" + `
-   - Confirm cleanup complete
-`,
-	"discard-this-worktree": `# Discard This Worktree
-
-Branch: {{.BranchName}}
-Worktree: {{.WorktreePath}}
-Main repo: /workspace
-
-## Instructions
-
-Help the user discard this worktree and its branch.
-
-1. Check for uncommitted changes: ` + "`git status`" + `
-   - If dirty, WARN user: "You have uncommitted changes that will be lost"
-   - List the files
-   - Ask for explicit confirmation
-
-2. Check for unpushed commits:
-   - ` + "`git log origin/{{.BranchName}}..{{.BranchName}} --oneline 2>/dev/null || git log --oneline`" + `
-   - If unpushed commits exist, WARN user
-   - Ask for explicit confirmation
-
-3. After confirmation:
-   - ` + "`git -C /workspace worktree remove --force {{.WorktreePath}}`" + `
-   - ` + "`git -C /workspace branch -D {{.BranchName}}`" + `
-   - Confirm cleanup complete
-`,
-}
-
-// worktreeCommandData contains the data for rendering worktree command templates
-type worktreeCommandData struct {
-	BranchName   string
-	TargetBranch string
-	WorktreePath string
-}
-
-// generateWorktreeCommands creates the swe-swe/ directory with commands in the worktree
-func generateWorktreeCommands(worktreePath, branchName string) error {
-	sweSweDir := worktreePath + "/swe-swe"
-	if err := os.MkdirAll(sweSweDir, 0755); err != nil {
-		return fmt.Errorf("failed to create swe-swe directory: %w", err)
-	}
-
-	// Copy setup from main workspace
-	srcSetup := "/workspace/swe-swe/setup"
-	dstSetup := sweSweDir + "/setup"
-	if err := copyFileOrDir(srcSetup, dstSetup); err != nil {
-		log.Printf("Warning: failed to copy swe-swe/setup to worktree: %v", err)
-	}
-
-	// Prepare template data
-	data := worktreeCommandData{
-		BranchName:   branchName,
-		TargetBranch: getMainRepoBranch(),
-		WorktreePath: worktreePath,
-	}
-
-	// Generate merge and discard commands
-	for name, tmplStr := range worktreeCommandTemplates {
-		tmpl, err := template.New(name).Parse(tmplStr)
-		if err != nil {
-			return fmt.Errorf("failed to parse template %s: %w", name, err)
-		}
-
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, data); err != nil {
-			return fmt.Errorf("failed to execute template %s: %w", name, err)
-		}
-
-		cmdPath := sweSweDir + "/" + name
-		if err := os.WriteFile(cmdPath, buf.Bytes(), 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", name, err)
-		}
-		log.Printf("Generated worktree command: %s", cmdPath)
-	}
-
-	return nil
-}
+var excludeFromCopy = []string{".git", ".swe-swe"}
 
 // generateMOTD creates the terminal MOTD displaying available swe-swe commands
-func generateMOTD(workDir, branchName string) string {
+func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
 	// Determine the workspace directory
 	wsDir := "/workspace"
 	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
 		wsDir = workDir
 	}
-	sweSweDir := wsDir + "/swe-swe"
 
-	// Check if swe-swe directory exists
-	entries, err := os.ReadDir(sweSweDir)
-	if err != nil {
-		return "" // No swe-swe directory, no MOTD
+	// Determine command invocation syntax based on agent's slash command support
+	// Slash-command agents use /swe-swe:cmd, file-mention agents use @swe-swe/cmd
+	useSlashCmd := cfg.SlashCmdFormat != SlashCmdNone
+	tipText := "Tip: @swe-swe to see available commands"
+	setupCmd := "@swe-swe/setup"
+	if useSlashCmd {
+		tipText = "Tip: type /swe-swe to see commands available"
+		setupCmd = "/swe-swe:setup"
 	}
 
-	// Check if any command files exist
-	hasCommands := false
-	hasSetup := false
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		hasCommands = true
-		if entry.Name() == "setup" {
-			hasSetup = true
+	// For slash-command agents, we don't need the /workspace/swe-swe directory
+	// since commands are installed in agent-specific directories
+	sweSweDir := wsDir + "/swe-swe"
+
+	// Check if swe-swe directory exists (required for file-mention agents)
+	entries, err := os.ReadDir(sweSweDir)
+	if err != nil && !useSlashCmd {
+		return "" // No swe-swe directory and no slash command support - no MOTD
+	}
+
+	// For slash-command agents, always show MOTD (commands are in home directory)
+	// For file-mention agents, check if command files exist
+	hasCommands := useSlashCmd
+	hasSetup := useSlashCmd // Slash-command agents always have bundled setup
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			hasCommands = true
+			if entry.Name() == "setup" {
+				hasSetup = true
+			}
 		}
 	}
 
@@ -1541,11 +1460,11 @@ func generateMOTD(workDir, branchName string) string {
 	// Format the MOTD (use \r\n for proper terminal line endings)
 	var sb strings.Builder
 	sb.WriteString("\r\n")
-	sb.WriteString(ansiDim("Tip: @swe-swe to see available commands") + "\r\n")
+	sb.WriteString(ansiDim(tipText) + "\r\n")
 
 	// Show "Try this" only if setup exists and hasn't been done
 	if hasSetup && !setupDone {
-		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@swe-swe/setup") + "\r\n")
+		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan(setupCmd) + "\r\n")
 	}
 
 	sb.WriteString("\r\n")
@@ -1830,11 +1749,6 @@ func createWorktree(branchName string) (string, error) {
 		if err := copySweSweDocsDir(gitRoot, worktreePath); err != nil {
 			log.Printf("Warning: failed to copy .swe-swe/docs/ to worktree: %v", err)
 		}
-	}
-
-	// Generate swe-swe/ commands for the worktree
-	if err := generateWorktreeCommands(worktreePath, branchName); err != nil {
-		log.Printf("Warning: failed to generate swe-swe commands for worktree: %v", err)
 	}
 
 	return worktreePath, nil
@@ -2347,7 +2261,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	if isNew {
 		// Display MOTD with available swe-swe commands (for human user discoverability)
 		// Send directly to websocket (not PTY) so ANSI escape codes are properly interpreted
-		motd := generateMOTD(sess.WorkDir, sess.BranchName)
+		motd := generateMOTD(sess.WorkDir, sess.BranchName, sess.AssistantConfig)
 		if motd != "" {
 			motdBytes := []byte(motd)
 			// Write to VT and ring buffer so joining clients see it too

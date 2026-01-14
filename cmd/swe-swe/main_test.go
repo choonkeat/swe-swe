@@ -781,11 +781,44 @@ func TestGoldenFiles(t *testing.T) {
 				filepath.Join(goldenDir, "target", ".mcp.json"),
 				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "AGENTS.md"),
 				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "browser-automation.md"),
-				filepath.Join(goldenDir, "target", "swe-swe", "setup"),
 			}
 			for _, tf := range targetFiles {
 				if _, err := os.Stat(tf); err != nil {
 					t.Errorf("Target file missing: %s", tf)
+				}
+			}
+
+			// Check swe-swe/setup exists only for variants with non-slash agents
+			// (aider, goose, or default which includes both)
+			sweSweSetup := filepath.Join(goldenDir, "target", "swe-swe", "setup")
+			hasNonSlashAgents := strings.Contains(v.name, "aider") ||
+				strings.Contains(v.name, "goose") ||
+				v.name == "default" ||
+				v.name == "exclude-aider" ||
+				v.name == "with-apt" ||
+				v.name == "with-npm" ||
+				v.name == "with-both-packages" ||
+				v.name == "with-ssl-selfsign" ||
+				v.name == "with-certs-no-certs" ||
+				v.name == "with-certs-node-extra-ca-certs" ||
+				v.name == "with-certs-ssl-cert-file" ||
+				v.name == "with-copy-home-paths" ||
+				v.name == "with-status-bar-color" ||
+				v.name == "with-terminal-font" ||
+				v.name == "with-status-bar-font" ||
+				v.name == "with-all-ui-options" ||
+				v.name == "with-slash-commands" ||
+				v.name == "with-slash-commands-multi" ||
+				v.name == "with-slash-commands-no-alias" ||
+				v.name == "with-docker"
+			if hasNonSlashAgents {
+				if _, err := os.Stat(sweSweSetup); err != nil {
+					t.Errorf("Target file missing (expected for variant with non-slash agents): %s", sweSweSetup)
+				}
+			} else {
+				// Slash-command-only variants should NOT have swe-swe/setup
+				if _, err := os.Stat(sweSweSetup); err == nil {
+					t.Errorf("Target file should NOT exist for slash-command-only variant: %s", sweSweSetup)
 				}
 			}
 		})
