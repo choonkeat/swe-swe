@@ -126,7 +126,8 @@ type SlashCommandFormat string
 const (
 	SlashCmdMD   SlashCommandFormat = "md"   // Markdown format (Claude, Codex, OpenCode)
 	SlashCmdTOML SlashCommandFormat = "toml" // TOML format (Gemini)
-	SlashCmdNone SlashCommandFormat = ""     // No slash command support (Goose, Aider)
+	SlashCmdFile SlashCommandFormat = "file" // File mention (Goose, Aider)
+	SlashCmdNone SlashCommandFormat = ""     // No commands (Shell)
 )
 
 // AssistantConfig holds the configuration for an AI coding assistant
@@ -234,7 +235,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 		Homepage:        true,
-		SlashCmdFormat:  SlashCmdNone,
+		SlashCmdFormat:  SlashCmdFile,
 	},
 	{
 		Name:            "Aider",
@@ -243,7 +244,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 		Homepage:        true,
-		SlashCmdFormat:  SlashCmdNone,
+		SlashCmdFormat:  SlashCmdFile,
 	},
 	{
 		Name:            "OpenCode",
@@ -1401,6 +1402,11 @@ var excludeFromCopy = []string{".git", ".swe-swe"}
 
 // generateMOTD creates the terminal MOTD displaying available swe-swe commands
 func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
+	// Shell sessions don't need MOTD - they're not AI agents
+	if cfg.SlashCmdFormat == SlashCmdNone {
+		return ""
+	}
+
 	// Determine the workspace directory
 	wsDir := "/workspace"
 	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
@@ -1408,13 +1414,21 @@ func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
 	}
 
 	// Determine command invocation syntax based on agent's slash command support
-	// Slash-command agents use /swe-swe:cmd, file-mention agents use @swe-swe/cmd
-	useSlashCmd := cfg.SlashCmdFormat != SlashCmdNone
-	tipText := "Tip: @swe-swe to see available commands"
-	setupCmd := "@swe-swe/setup"
-	if useSlashCmd {
+	var tipText, setupCmd string
+	var isSlashCmd bool
+	switch cfg.SlashCmdFormat {
+	case SlashCmdMD, SlashCmdTOML:
+		// Slash-command agents use /swe-swe:cmd
 		tipText = "Tip: type /swe-swe to see commands available"
 		setupCmd = "/swe-swe:setup"
+		isSlashCmd = true
+	case SlashCmdFile:
+		// File-mention agents use @swe-swe/cmd
+		tipText = "Tip: @swe-swe to see available commands"
+		setupCmd = "@swe-swe/setup"
+		isSlashCmd = false
+	default:
+		return "" // Safety: unknown format gets no MOTD
 	}
 
 	// For slash-command agents, we don't need the /workspace/swe-swe directory
@@ -1423,14 +1437,14 @@ func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
 
 	// Check if swe-swe directory exists (required for file-mention agents)
 	entries, err := os.ReadDir(sweSweDir)
-	if err != nil && !useSlashCmd {
+	if err != nil && !isSlashCmd {
 		return "" // No swe-swe directory and no slash command support - no MOTD
 	}
 
 	// For slash-command agents, always show MOTD (commands are in home directory)
 	// For file-mention agents, check if command files exist
-	hasCommands := useSlashCmd
-	hasSetup := useSlashCmd // Slash-command agents always have bundled setup
+	hasCommands := isSlashCmd
+	hasSetup := isSlashCmd // Slash-command agents always have bundled setup
 	if err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
