@@ -40,8 +40,9 @@ var assets embed.FS
 //go:embed all:slash-commands
 var slashCommandsFS embed.FS
 
-// writeBundledSlashCommands extracts bundled slash commands to the destination directory
-func writeBundledSlashCommands(destDir string) error {
+// writeBundledSlashCommands extracts bundled slash commands to the destination directory.
+// If ext is non-empty, only files with that extension are copied.
+func writeBundledSlashCommands(destDir string, ext string) error {
 	return fs.WalkDir(slashCommandsFS, "slash-commands", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -57,6 +58,17 @@ func writeBundledSlashCommands(destDir string) error {
 
 		if d.IsDir() {
 			return os.MkdirAll(destPath, 0755)
+		}
+
+		// Skip non-command files (like README.adoc)
+		fileExt := filepath.Ext(path)
+		if fileExt != ".md" && fileExt != ".toml" {
+			return nil
+		}
+
+		// Filter by extension if specified
+		if ext != "" && fileExt != ext {
+			return nil
 		}
 
 		// Read embedded file
@@ -1103,10 +1115,22 @@ func handleInit() {
 		}
 	}
 
-	// Write bundled slash commands to home/.claude/commands/swe-swe/
-	bundledSlashCommandsDir := filepath.Join(homeDir, ".claude", "commands")
-	if err := writeBundledSlashCommands(bundledSlashCommandsDir); err != nil {
-		log.Fatalf("Failed to write bundled slash commands: %v", err)
+	// Write bundled slash commands to agent-specific directories
+	// .md files go to Claude, Codex, and OpenCode directories
+	// .toml files go to Gemini directory
+	slashCmdAgentDirs := []struct {
+		dir string
+		ext string
+	}{
+		{filepath.Join(homeDir, ".claude", "commands"), ".md"},
+		{filepath.Join(homeDir, ".codex", "prompts"), ".md"},
+		{filepath.Join(homeDir, ".config", "opencode", "command"), ".md"},
+		{filepath.Join(homeDir, ".gemini", "commands"), ".toml"},
+	}
+	for _, agent := range slashCmdAgentDirs {
+		if err := writeBundledSlashCommands(agent.dir, agent.ext); err != nil {
+			log.Fatalf("Failed to write bundled slash commands to %s: %v", agent.dir, err)
+		}
 	}
 
 	// Write .path file to record the project path

@@ -144,30 +144,65 @@ func TestParseSlashCommandsFlag(t *testing.T) {
 
 // TestWriteBundledSlashCommands verifies bundled slash commands are extracted correctly
 func TestWriteBundledSlashCommands(t *testing.T) {
-	tempDir := t.TempDir()
+	t.Run("md files only", func(t *testing.T) {
+		tempDir := t.TempDir()
 
-	err := writeBundledSlashCommands(tempDir)
-	if err != nil {
-		t.Fatalf("writeBundledSlashCommands() error = %v", err)
-	}
+		err := writeBundledSlashCommands(tempDir, ".md")
+		if err != nil {
+			t.Fatalf("writeBundledSlashCommands() error = %v", err)
+		}
 
-	// Check that swe-swe/README.adoc exists
-	readmePath := filepath.Join(tempDir, "swe-swe", "README.adoc")
-	if _, err := os.Stat(readmePath); os.IsNotExist(err) {
-		t.Errorf("expected %s to exist", readmePath)
-	}
+		// Check that swe-swe/setup.md exists
+		setupPath := filepath.Join(tempDir, "swe-swe", "setup.md")
+		if _, err := os.Stat(setupPath); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist", setupPath)
+		}
 
-	// Verify content is not empty
-	content, err := os.ReadFile(readmePath)
-	if err != nil {
-		t.Fatalf("failed to read %s: %v", readmePath, err)
-	}
-	if len(content) == 0 {
-		t.Errorf("expected %s to have content", readmePath)
-	}
-	if !strings.Contains(string(content), "swe-swe") {
-		t.Errorf("expected %s to contain 'swe-swe'", readmePath)
-	}
+		// Verify content contains expected text
+		content, err := os.ReadFile(setupPath)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", setupPath, err)
+		}
+		if !strings.Contains(string(content), "Setup swe-swe Environment") {
+			t.Errorf("expected %s to contain 'Setup swe-swe Environment'", setupPath)
+		}
+
+		// Verify .toml file was NOT copied
+		tomlPath := filepath.Join(tempDir, "swe-swe", "setup.toml")
+		if _, err := os.Stat(tomlPath); !os.IsNotExist(err) {
+			t.Errorf("expected %s to NOT exist when filtering for .md only", tomlPath)
+		}
+	})
+
+	t.Run("toml files only", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		err := writeBundledSlashCommands(tempDir, ".toml")
+		if err != nil {
+			t.Fatalf("writeBundledSlashCommands() error = %v", err)
+		}
+
+		// Check that swe-swe/setup.toml exists
+		setupPath := filepath.Join(tempDir, "swe-swe", "setup.toml")
+		if _, err := os.Stat(setupPath); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist", setupPath)
+		}
+
+		// Verify content contains expected text
+		content, err := os.ReadFile(setupPath)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", setupPath, err)
+		}
+		if !strings.Contains(string(content), "Setup swe-swe Environment") {
+			t.Errorf("expected %s to contain 'Setup swe-swe Environment'", setupPath)
+		}
+
+		// Verify .md file was NOT copied
+		mdPath := filepath.Join(tempDir, "swe-swe", "setup.md")
+		if _, err := os.Stat(mdPath); !os.IsNotExist(err) {
+			t.Errorf("expected %s to NOT exist when filtering for .toml only", mdPath)
+		}
+	})
 }
 
 // TestSanitizePathConsistent verifies sanitizePath returns the same hash for same path
