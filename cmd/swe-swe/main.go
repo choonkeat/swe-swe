@@ -401,6 +401,36 @@ type InitConfig struct {
 	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
 }
 
+// slashCmdAgents are agents that support slash commands (md or toml format)
+var slashCmdAgents = map[string]bool{
+	"claude":   true,
+	"codex":    true,
+	"opencode": true,
+	"gemini":   true,
+}
+
+// HasNonSlashAgents returns true if any enabled agent requires file-based commands
+// (Goose, Aider, or any unknown agent)
+func (c *InitConfig) HasNonSlashAgents() bool {
+	for _, agent := range c.Agents {
+		if !slashCmdAgents[agent] {
+			return true
+		}
+	}
+	return false
+}
+
+// HasSlashAgents returns true if any enabled agent supports slash commands
+// (Claude, Codex, OpenCode, or Gemini)
+func (c *InitConfig) HasSlashAgents() bool {
+	for _, agent := range c.Agents {
+		if slashCmdAgents[agent] {
+			return true
+		}
+	}
+	return false
+}
+
 // saveInitConfig writes the init configuration to init.json
 func saveInitConfig(sweDir string, config InitConfig) error {
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -1208,8 +1238,15 @@ func handleInit() {
 			"templates/container/.mcp.json",
 			"templates/container/.swe-swe/docs/AGENTS.md",
 			"templates/container/.swe-swe/docs/browser-automation.md",
-			"templates/container/swe-swe/setup",
 		}
+
+		// Only include swe-swe/setup for agents that don't support slash commands
+		// (Goose, Aider, or any unknown agent). Slash-command agents get /swe-swe:setup instead.
+		tempConfig := InitConfig{Agents: agents}
+		if tempConfig.HasNonSlashAgents() {
+			containerFiles = append(containerFiles, "templates/container/swe-swe/setup")
+		}
+
 		if *withDocker {
 			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
 		}

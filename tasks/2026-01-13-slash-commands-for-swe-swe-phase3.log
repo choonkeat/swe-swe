@@ -5,3 +5,12 @@
 - Will make /workspace/swe-swe/ directory conditional in container templates
 - Expected: claude-only variant should NOT have /workspace/swe-swe/ directory
 - Expected: aider-only variant SHOULD have /workspace/swe-swe/setup
+
+012518: Phase 3 implementation complete
+- Added slashCmdAgents map (claude, codex, opencode, gemini)
+- Added HasNonSlashAgents() method to InitConfig
+- Added HasSlashAgents() method to InitConfig
+- Made swe-swe/setup conditional in containerFiles list
+- Only agents without slash command support (goose, aider) get /workspace/swe-swe/
+- make build: SUCCESS
+- make test: ALL TESTS PASS
