@@ -52,7 +52,7 @@ A working `swe-swe proxy <command>` subcommand that watches for requests and exe
    - Register subcommand in main command dispatch
    - Parse `<command>` argument, validate it's provided
 
-2. **Implement PID file management**
+2. **Implement PID file management** ✅
    - Check for existing `<command>.pid` file
    - If exists and process alive → fail fast with error message
    - If exists but process dead → remove stale file
