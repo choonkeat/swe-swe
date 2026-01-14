@@ -63,7 +63,7 @@ A working `swe-swe proxy <command>` subcommand that watches for requests and exe
    - Initialize fsnotify watcher on the directory
    - Filter for `*.req` file creation events
 
-4. **Implement request processing**
+4. **Implement request processing** ✅
    - Read NUL-delimited args from `<uuid>.req`
    - Delete `.req` file (claim the request)
    - Execute command with `exec.Command()`
