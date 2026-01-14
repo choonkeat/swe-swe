@@ -31,3 +31,11 @@ Got: As expected. File watcher working for both direct create and atomic rename 
 105926 - Phase 1 Step 4: Implement request processing
 Action: Read NUL-delimited args from .req file, delete it (claim), execute command, write .stdout/.stderr/.exit
 Expected: Creating .req file with NUL-delimited args causes command execution, response files appear with correct content.
+110103 - Phase 1 Step 4: Result
+Observed:
+- processRequest() reads NUL-delimited args, deletes .req, executes command, writes response files.
+- Test with "echo hello\0world\0" -> stdout="hello world\n", stderr="", exit="0"
+- Test with "sh -c exit 42" -> stdout="", stderr="error", exit="42"
+- Test with nonexistent command -> stderr="Failed to execute...", exit="127"
+- Exit file written last to signal completion.
+Got: As expected. Request processing works correctly with stdout/stderr separation and exit code propagation.
