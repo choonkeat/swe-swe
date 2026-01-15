@@ -170,7 +170,16 @@ swe-swe list
 
 #### `swe-swe proxy <command>`
 
-Creates a file-based proxy that allows containers to execute a host command and receive stdout/stderr/exit code in real-time. This is useful for commands that must run on the host (e.g., `make`, `docker`, `npm` with host-specific configurations).
+Bridges the container-host boundary by letting containers execute specific host commands with real-time output streaming. This is the **secure alternative to `--with-docker`** when you only need access to specific commands rather than full Docker socket access.
+
+**When to use proxy vs `--with-docker`:**
+
+| Scenario | Solution |
+|----------|----------|
+| AI agent needs to run `make` with host toolchain | `swe-swe proxy make` |
+| Need `docker build` without exposing full Docker socket | `swe-swe proxy docker` |
+| Access host's SSH agent for git operations | `swe-swe proxy git` |
+| Full Docker/container management needed | `--with-docker` flag |
 
 **How it works:**
 1. Host runs `swe-swe proxy <command>` which watches `.swe-swe/proxy/` for requests
@@ -178,6 +187,12 @@ Creates a file-based proxy that allows containers to execute a host command and 
 3. Container runs `.swe-swe/proxy/<command> [args...]` to submit a request
 4. Host executes the command and streams stdout/stderr back to container in real-time
 5. Container exits with the command's exit code
+
+**Key features:**
+- **Real-time streaming**: Output appears immediately, not after command completes
+- **Exit code propagation**: Container script exits with the host command's exit code
+- **Concurrent requests**: Multiple container processes can use the same proxy simultaneously
+- **Efficient file watching**: Uses inotify when available, falls back to polling
 
 **Examples:**
 ```bash
@@ -195,12 +210,44 @@ swe-swe proxy docker
 swe-swe proxy npm
 ```
 
+**Real-world use cases:**
+```bash
+# Cross-compile with host toolchain
+swe-swe proxy make
+# In container: .swe-swe/proxy/make build-linux-arm64
+
+# Run Docker commands without --with-docker
+swe-swe proxy docker
+# In container: .swe-swe/proxy/docker build -t myapp .
+
+# Use host's authenticated npm registry
+swe-swe proxy npm
+# In container: .swe-swe/proxy/npm publish
+```
+
 **Environment Variables:**
 - `PROXY_TIMEOUT`: Timeout in seconds for container script (default: 300)
 - `PROXY_DIR`: Override proxy directory (default: `.swe-swe/proxy`)
 
-**Requirements:**
-- Container needs `inotify-tools` package for efficient file watching (falls back to polling if not available)
+**File protocol:**
+```
+.swe-swe/proxy/
+├── <command>           # Generated container script (executable)
+├── <command>.pid       # Host PID file (prevents duplicate proxies)
+├── <uuid>.req          # Request file (NUL-delimited args)
+├── <uuid>.stdout       # Response stdout (streamed)
+├── <uuid>.stderr       # Response stderr (streamed)
+└── <uuid>.exit         # Exit code (signals completion)
+```
+
+**Cleanup responsibilities:**
+
+| File | Cleaned up by | When |
+|------|---------------|------|
+| `<uuid>.req` | Host | After reading (claims the request) |
+| `<uuid>.stdout/stderr/exit` | Container | On script exit (via trap) |
+| `<command>`, `<command>.pid` | Host | On proxy shutdown (Ctrl+C) |
+| Orphan response files | Host | On startup (files older than 5 min) |
 
 ### Docker Compose Pass-through
 
