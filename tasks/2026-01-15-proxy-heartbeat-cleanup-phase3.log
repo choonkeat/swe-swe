@@ -1,0 +1,3 @@
+073709 Starting Phase 3: Signal Escalation
+073709 Step 3.1: Implement killProcessGroup with SIGTERM -> SIGKILL escalation
+073709 Expected: Process receives SIGTERM first, then SIGKILL after grace period if still alive
