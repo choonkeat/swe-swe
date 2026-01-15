@@ -1,0 +1,3 @@
+074254 Starting Phase 4: Graceful Shutdown
+074254 Step 4.1: Replace simple cancel() with staged shutdown (grace period -> kill)
+074254 Expected: On SIGTERM/SIGINT, proxy stops accepting new requests, waits for grace period, then kills remaining
