@@ -1,0 +1,3 @@
+072917 Starting Phase 1: Host Infrastructure
+072917 Step 1.1: Add activeRequests atomic counter and processEntry struct
+072917 Expected: Code compiles, existing tests pass
