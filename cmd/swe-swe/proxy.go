@@ -11,11 +11,26 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
+
+// processEntry tracks an in-flight process for heartbeat-based cleanup.
+type processEntry struct {
+	cmd          *exec.Cmd
+	pgid         int
+	killedByHost bool
+	killSignal   string
+}
+
+// activeRequests tracks the number of in-flight requests.
+var activeRequests atomic.Int32
+
+// inFlightProcesses maps uuid -> *processEntry for kill operations.
+var inFlightProcesses sync.Map
 
 const proxyDir = ".swe-swe/proxy"
 
@@ -311,6 +326,10 @@ Examples:
 // 3. Execute command with args, streaming stdout/stderr to files
 // 4. Write exit code to signal completion
 func processRequest(command, uuid string) {
+	// Track active requests for heartbeat-based cleanup
+	activeRequests.Add(1)
+	defer activeRequests.Add(-1)
+
 	reqFile := filepath.Join(proxyDir, uuid+".req")
 	stdoutFile := filepath.Join(proxyDir, uuid+".stdout")
 	stderrFile := filepath.Join(proxyDir, uuid+".stderr")
@@ -352,11 +371,31 @@ func processRequest(command, uuid string) {
 	defer stderrF.Close()
 
 	// Execute the command with output streaming directly to files
+	// Use process group so we can kill the entire tree if needed
 	cmd := exec.Command(command, args...)
 	cmd.Stdout = stdoutF
 	cmd.Stderr = stderrF
+	setSysProcAttr(cmd) // Platform-specific process group setup
 
-	err = cmd.Run()
+	// Start the command (don't use Run so we can get the PID)
+	if err := cmd.Start(); err != nil {
+		exitCode := 127
+		stderrF.WriteString(fmt.Sprintf("Failed to execute command: %v\n", err))
+		fmt.Printf("[proxy] Command failed to start: %v\n", err)
+		os.WriteFile(exitFile, []byte(strconv.Itoa(exitCode)), 0644)
+		return
+	}
+
+	// Register process for potential kill operations
+	entry := &processEntry{
+		cmd:  cmd,
+		pgid: getProcessGroupID(cmd),
+	}
+	inFlightProcesses.Store(uuid, entry)
+	defer inFlightProcesses.Delete(uuid)
+
+	// Wait for command to complete
+	err = cmd.Wait()
 
 	// Determine exit code
 	exitCode := 0
@@ -364,9 +403,8 @@ func processRequest(command, uuid string) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
-			// Command failed to start (e.g., not found)
-			exitCode = 127
-			stderrF.WriteString(fmt.Sprintf("Failed to execute command: %v\n", err))
+			// Unexpected error
+			exitCode = 1
 		}
 	}
 
