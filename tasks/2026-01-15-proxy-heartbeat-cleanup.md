@@ -70,7 +70,7 @@ When the underlying program hangs and the container stops responding (dies, time
 
 ---
 
-## Phase 2: Heartbeat Watcher
+## Phase 2: Heartbeat Watcher ✅ COMPLETE
 
 ### What will be achieved
 - Goroutine that periodically checks `.heartbeat` file freshness
