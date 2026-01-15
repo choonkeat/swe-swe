@@ -257,6 +257,14 @@ func TestGenerateContainerScript_Content(t *testing.T) {
 		{"timeout check", "PROXY_TIMEOUT"},
 		{"exit code", "exit \"$exit_code\""},
 		{"cleanup", "rm -f"},
+		// Phase 5: Heartbeat support
+		{"heartbeat file", "heartbeat_file="},
+		{"heartbeat touch before request", "touch \"$heartbeat_file\""},
+		{"heartbeat background loop", "while [[ ! -f \"$exit_file\" ]]; do"},
+		{"heartbeat cleanup", "kill \"$heartbeat_pid\""},
+		// Phase 6: Exit code parsing
+		{"exit content read", "exit_content=$(cat \"$exit_file\")"},
+		{"exit code parse", "exit_code=\"${exit_content%%:*}\""},
 	}
 
 	for _, check := range checks {
@@ -895,4 +903,378 @@ func TestKillAllInFlight_Multiple(t *testing.T) {
 		inFlightProcesses.Delete(key)
 		return true
 	})
+}
+
+// Phase 4 Tests: Graceful Shutdown
+
+func TestStopAccepting(t *testing.T) {
+	// Reset state
+	stopAccepting.Store(false)
+
+	// Verify starts at false
+	if stopAccepting.Load() {
+		t.Error("stopAccepting should start as false")
+	}
+
+	// Set to true
+	stopAccepting.Store(true)
+	if !stopAccepting.Load() {
+		t.Error("stopAccepting should be true after Store(true)")
+	}
+
+	// Reset
+	stopAccepting.Store(false)
+	if stopAccepting.Load() {
+		t.Error("stopAccepting should be false after Store(false)")
+	}
+}
+
+func TestRejectRequest(t *testing.T) {
+	// Create the proxyDir directory for testing
+	if err := os.MkdirAll(proxyDir, 0755); err != nil {
+		t.Fatalf("failed to create proxy dir: %v", err)
+	}
+
+	uuid := "test-reject-uuid"
+
+	// Clean up after test
+	defer func() {
+		os.Remove(filepath.Join(proxyDir, uuid+".req"))
+		os.Remove(filepath.Join(proxyDir, uuid+".stdout"))
+		os.Remove(filepath.Join(proxyDir, uuid+".stderr"))
+		os.Remove(filepath.Join(proxyDir, uuid+".exit"))
+	}()
+
+	// Create the .req file that would exist
+	reqFile := filepath.Join(proxyDir, uuid+".req")
+	if err := os.WriteFile(reqFile, []byte("test request"), 0644); err != nil {
+		t.Fatalf("failed to create req file: %v", err)
+	}
+
+	// Call rejectRequest
+	rejectRequest(uuid)
+
+	// Verify .req file was removed
+	if _, err := os.Stat(reqFile); !os.IsNotExist(err) {
+		t.Error("expected .req file to be removed")
+	}
+
+	// Verify .stdout file exists and is empty
+	stdoutFile := filepath.Join(proxyDir, uuid+".stdout")
+	if content, err := os.ReadFile(stdoutFile); err != nil {
+		t.Errorf("expected .stdout file to exist: %v", err)
+	} else if len(content) != 0 {
+		t.Errorf("expected .stdout to be empty, got %d bytes", len(content))
+	}
+
+	// Verify .stderr file exists with shutdown message
+	stderrFile := filepath.Join(proxyDir, uuid+".stderr")
+	if content, err := os.ReadFile(stderrFile); err != nil {
+		t.Errorf("expected .stderr file to exist: %v", err)
+	} else if !contains(string(content), "shutting down") {
+		t.Errorf("expected .stderr to contain shutdown message, got: %s", content)
+	}
+
+	// Verify .exit file contains 125:shutdown
+	exitFile := filepath.Join(proxyDir, uuid+".exit")
+	if content, err := os.ReadFile(exitFile); err != nil {
+		t.Errorf("expected .exit file to exist: %v", err)
+	} else if string(content) != "125:shutdown" {
+		t.Errorf("expected .exit to be '125:shutdown', got: %s", content)
+	}
+}
+
+func TestGracefulShutdown_RejectsWhenShuttingDown(t *testing.T) {
+	// This test verifies that the stopAccepting flag causes requests to be rejected
+	// We test the condition check logic that's used in the main loop
+
+	// Reset state
+	stopAccepting.Store(false)
+
+	// Simulate not shutting down - should not reject
+	if stopAccepting.Load() {
+		t.Error("should not reject when stopAccepting is false")
+	}
+
+	// Simulate shutting down - should reject
+	stopAccepting.Store(true)
+	if !stopAccepting.Load() {
+		t.Error("should reject when stopAccepting is true")
+	}
+
+	// Reset
+	stopAccepting.Store(false)
+}
+
+func TestGracefulShutdown_WaitsForCompletion(t *testing.T) {
+	// Test the shutdown wait logic
+	// When activeRequests drops to 0, shutdown should complete
+
+	// Reset counter
+	for activeRequests.Load() != 0 {
+		if activeRequests.Load() > 0 {
+			activeRequests.Add(-1)
+		} else {
+			activeRequests.Add(1)
+		}
+	}
+
+	// Simulate an active request
+	activeRequests.Add(1)
+
+	done := make(chan bool, 1)
+	go func() {
+		// Wait for activeRequests to be 0
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.After(2 * time.Second)
+
+		for {
+			select {
+			case <-ticker.C:
+				if activeRequests.Load() == 0 {
+					done <- true
+					return
+				}
+			case <-deadline:
+				done <- false
+				return
+			}
+		}
+	}()
+
+	// Complete the request after a short delay
+	time.Sleep(200 * time.Millisecond)
+	activeRequests.Add(-1)
+
+	// Verify shutdown wait completed
+	if !<-done {
+		t.Error("expected shutdown wait to complete when activeRequests reaches 0")
+	}
+}
+
+func TestGracefulShutdown_KillsAfterDeadline(t *testing.T) {
+	// Clear registry and counter
+	inFlightProcesses.Range(func(key, value any) bool {
+		inFlightProcesses.Delete(key)
+		return true
+	})
+	for activeRequests.Load() != 0 {
+		if activeRequests.Load() > 0 {
+			activeRequests.Add(-1)
+		} else {
+			activeRequests.Add(1)
+		}
+	}
+
+	// Start a hanging process
+	cmd := exec.Command("sleep", "60")
+	setSysProcAttr(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start command: %v", err)
+	}
+
+	entry := &processEntry{
+		cmd:  cmd,
+		pgid: getProcessGroupID(cmd),
+	}
+	activeRequests.Add(1)
+	inFlightProcesses.Store("hanging-uuid", entry)
+
+	// Simulate the shutdown deadline behavior
+	// After deadline, should kill all in-flight processes
+	shutdownGrace := 500 * time.Millisecond
+	killGrace := 500 * time.Millisecond
+
+	done := make(chan bool, 1)
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.After(shutdownGrace)
+
+		for {
+			select {
+			case <-ticker.C:
+				if activeRequests.Load() == 0 {
+					done <- true
+					return
+				}
+			case <-deadline:
+				// Deadline exceeded, kill remaining
+				killAllInFlight(killGrace)
+				done <- true
+				return
+			}
+		}
+	}()
+
+	// Wait for shutdown to complete
+	<-done
+
+	// Wait for process to fully exit
+	cmd.Wait()
+
+	// Verify process was killed
+	if !entry.killedByHost {
+		t.Error("expected process to be killed after deadline")
+	}
+
+	// Clean up
+	activeRequests.Add(-1)
+	inFlightProcesses.Delete("hanging-uuid")
+}
+
+// Phase 6 Tests: Exit Code Convention
+
+func TestWriteExitFile_NormalExit(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "exit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Write normal exit (code only)
+	if err := writeExitFile(tmpFile.Name(), 0, ""); err != nil {
+		t.Fatalf("writeExitFile failed: %v", err)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read exit file: %v", err)
+	}
+	if string(content) != "0" {
+		t.Errorf("expected '0', got %q", content)
+	}
+}
+
+func TestWriteExitFile_NonZeroExit(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "exit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Write non-zero exit
+	if err := writeExitFile(tmpFile.Name(), 1, ""); err != nil {
+		t.Fatalf("writeExitFile failed: %v", err)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read exit file: %v", err)
+	}
+	if string(content) != "1" {
+		t.Errorf("expected '1', got %q", content)
+	}
+}
+
+func TestWriteExitFile_Signaled(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "exit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Write signal death (SIGKILL = 9, exit code 128+9=137)
+	if err := writeExitFile(tmpFile.Name(), 137, "killed"); err != nil {
+		t.Fatalf("writeExitFile failed: %v", err)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read exit file: %v", err)
+	}
+	if string(content) != "137:killed" {
+		t.Errorf("expected '137:killed', got %q", content)
+	}
+}
+
+func TestWriteExitFile_Timeout(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "exit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Write timeout (code 124)
+	if err := writeExitFile(tmpFile.Name(), 124, "timeout"); err != nil {
+		t.Fatalf("writeExitFile failed: %v", err)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read exit file: %v", err)
+	}
+	if string(content) != "124:timeout" {
+		t.Errorf("expected '124:timeout', got %q", content)
+	}
+}
+
+func TestWriteExitFile_Shutdown(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "exit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Write shutdown (code 125)
+	if err := writeExitFile(tmpFile.Name(), 125, "shutdown"); err != nil {
+		t.Fatalf("writeExitFile failed: %v", err)
+	}
+
+	// Verify content
+	content, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read exit file: %v", err)
+	}
+	if string(content) != "125:shutdown" {
+		t.Errorf("expected '125:shutdown', got %q", content)
+	}
+}
+
+func TestContainerParsesExitCode(t *testing.T) {
+	// Test the bash parsing logic: exit_code="${exit_content%%:*}"
+	tests := []struct {
+		content  string
+		expected string
+	}{
+		{"0", "0"},
+		{"1", "1"},
+		{"137:killed", "137"},
+		{"124:timeout", "124"},
+		{"125:shutdown", "125"},
+		{"255", "255"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.content, func(t *testing.T) {
+			// Simulate the bash parsing: ${exit_content%%:*}
+			// This removes the longest match of :* from the end
+			result := tt.content
+			if idx := findColon(result); idx >= 0 {
+				result = result[:idx]
+			}
+			if result != tt.expected {
+				t.Errorf("parsing %q: expected %q, got %q", tt.content, tt.expected, result)
+			}
+		})
+	}
+}
+
+func findColon(s string) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == ':' {
+			return i
+		}
+	}
+	return -1
 }

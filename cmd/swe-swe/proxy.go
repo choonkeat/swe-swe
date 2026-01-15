@@ -32,6 +32,9 @@ var activeRequests atomic.Int32
 // inFlightProcesses maps uuid -> *processEntry for kill operations.
 var inFlightProcesses sync.Map
 
+// stopAccepting is set to true during graceful shutdown to reject new requests.
+var stopAccepting atomic.Bool
+
 // Default configuration values for heartbeat-based cleanup.
 const (
 	defaultHeartbeatStale  = 5 * time.Second
@@ -84,6 +87,36 @@ func killProcessGroup(pgid int, grace time.Duration) string {
 	return killProcessGroupPlatform(pgid, grace)
 }
 
+// writeExitFile writes the exit code to a file, optionally including a signal name.
+// Format: "{code}" for normal exits, "{code}:{signal}" when killed by signal.
+// Special codes: 124:timeout (host heartbeat timeout), 125:shutdown (host shutdown).
+func writeExitFile(exitFile string, code int, signal string) error {
+	var content string
+	if signal != "" {
+		content = fmt.Sprintf("%d:%s", code, signal)
+	} else {
+		content = fmt.Sprintf("%d", code)
+	}
+	return os.WriteFile(exitFile, []byte(content), 0644)
+}
+
+// rejectRequest writes error response files for a request that is being rejected
+// (e.g., during shutdown). It uses exit code 125 with "shutdown" suffix.
+func rejectRequest(uuid string) {
+	reqFile := filepath.Join(proxyDir, uuid+".req")
+	stdoutFile := filepath.Join(proxyDir, uuid+".stdout")
+	stderrFile := filepath.Join(proxyDir, uuid+".stderr")
+	exitFile := filepath.Join(proxyDir, uuid+".exit")
+
+	// Remove the request file (claim it)
+	os.Remove(reqFile)
+
+	// Write response files
+	os.WriteFile(stdoutFile, []byte{}, 0644)
+	os.WriteFile(stderrFile, []byte("Request rejected: proxy is shutting down\n"), 0644)
+	writeExitFile(exitFile, 125, "shutdown")
+}
+
 // containerScriptTemplate is the bash script generated for containers to submit requests.
 // It uses NUL-delimited arguments and streams stdout/stderr in real-time.
 const containerScriptTemplate = `#!/usr/bin/env bash
@@ -102,9 +135,16 @@ tmp_file="$PROXY_DIR/$uuid.req.tmp"
 exit_file="$PROXY_DIR/$uuid.exit"
 stdout_file="$PROXY_DIR/$uuid.stdout"
 stderr_file="$PROXY_DIR/$uuid.stderr"
+heartbeat_file="$PROXY_DIR/.heartbeat"
+heartbeat_pid=""
 
-# Cleanup function to remove response files
+# Cleanup function to remove response files and stop heartbeat
 cleanup() {
+    # Stop heartbeat background process if running
+    if [[ -n "$heartbeat_pid" ]]; then
+        kill "$heartbeat_pid" 2>/dev/null || true
+        wait "$heartbeat_pid" 2>/dev/null || true
+    fi
     rm -f "$stdout_file" "$stderr_file" "$exit_file"
 }
 trap cleanup EXIT
@@ -149,7 +189,19 @@ else
     # No arguments - create empty request file
     touch "$tmp_file"
 fi
+
+# Touch heartbeat BEFORE submitting request (prevents race condition)
+touch "$heartbeat_file"
 mv "$tmp_file" "$req_file"
+
+# Start background heartbeat loop
+(
+    while [[ ! -f "$exit_file" ]]; do
+        touch "$heartbeat_file"
+        sleep 1
+    done
+) &
+heartbeat_pid=$!
 
 # Wait for stdout/stderr files to be created by host
 deadline=$((SECONDS + TIMEOUT))
@@ -187,7 +239,9 @@ wait "$stdout_pid" 2>/dev/null || true
 wait "$stderr_pid" 2>/dev/null || true
 
 # Read exit code (cleanup trap will handle file removal)
-exit_code=$(cat "$exit_file")
+# Format: "{code}" or "{code}:{signal}" - extract code before colon
+exit_content=$(cat "$exit_file")
+exit_code="${exit_content%%%%:*}"
 exit "$exit_code"
 `
 
@@ -240,10 +294,42 @@ func handleProxy() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// Get shutdown grace period from environment
+	shutdownGrace := getEnvDuration("PROXY_SHUTDOWN_GRACE", defaultShutdownGrace)
+	killGrace := getEnvDuration("PROXY_KILL_GRACE", defaultKillGrace)
+
 	go func() {
 		sig := <-sigChan
-		fmt.Printf("\n[proxy] Received signal %v, shutting down...\n", sig)
-		cancel()
+		fmt.Printf("\n[proxy] Received signal %v, starting graceful shutdown...\n", sig)
+
+		// Stop accepting new requests
+		stopAccepting.Store(true)
+
+		// Wait for natural completion or deadline
+		deadline := time.After(shutdownGrace)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				remaining := activeRequests.Load()
+				if remaining == 0 {
+					fmt.Printf("[proxy] All requests completed\n")
+					cancel()
+					return
+				}
+				fmt.Printf("[proxy] Waiting for %d in-flight requests...\n", remaining)
+			case <-deadline:
+				remaining := activeRequests.Load()
+				if remaining > 0 {
+					fmt.Printf("[proxy] Shutdown deadline exceeded, killing %d remaining processes\n", remaining)
+					killAllInFlight(killGrace)
+				}
+				cancel()
+				return
+			}
+		}
 	}()
 
 	// Ensure cleanup on exit
@@ -258,7 +344,6 @@ func handleProxy() {
 
 	// Get configuration from environment
 	staleThreshold := getEnvDuration("PROXY_HEARTBEAT_STALE", defaultHeartbeatStale)
-	killGrace := getEnvDuration("PROXY_KILL_GRACE", defaultKillGrace)
 	heartbeatFile := filepath.Join(proxyDir, ".heartbeat")
 
 	// Start heartbeat watcher goroutine
@@ -329,6 +414,14 @@ func handleProxy() {
 			if event.Op&(fsnotify.Create|fsnotify.Rename) != 0 {
 				if strings.HasSuffix(event.Name, ".req") {
 					uuid := strings.TrimSuffix(filepath.Base(event.Name), ".req")
+
+					// Reject new requests during shutdown
+					if stopAccepting.Load() {
+						fmt.Printf("[proxy] Rejecting request %s (shutting down)\n", uuid)
+						rejectRequest(uuid)
+						continue
+					}
+
 					fmt.Printf("[proxy] Received request: %s\n", uuid)
 					wg.Add(1)
 					go func(uuid string) {
@@ -422,7 +515,7 @@ func processRequest(command, uuid string) {
 		// Write error to response files
 		os.WriteFile(stderrFile, []byte(fmt.Sprintf("Failed to read request: %v\n", err)), 0644)
 		os.WriteFile(stdoutFile, []byte{}, 0644)
-		os.WriteFile(exitFile, []byte("1"), 0644)
+		writeExitFile(exitFile, 1, "")
 		return
 	}
 
@@ -437,7 +530,7 @@ func processRequest(command, uuid string) {
 	stdoutF, err := os.Create(stdoutFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[proxy] Failed to create stdout file: %v\n", err)
-		os.WriteFile(exitFile, []byte("1"), 0644)
+		writeExitFile(exitFile, 1, "")
 		return
 	}
 	defer stdoutF.Close()
@@ -445,7 +538,7 @@ func processRequest(command, uuid string) {
 	stderrF, err := os.Create(stderrFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[proxy] Failed to create stderr file: %v\n", err)
-		os.WriteFile(exitFile, []byte("1"), 0644)
+		writeExitFile(exitFile, 1, "")
 		return
 	}
 	defer stderrF.Close()
@@ -459,10 +552,9 @@ func processRequest(command, uuid string) {
 
 	// Start the command (don't use Run so we can get the PID)
 	if err := cmd.Start(); err != nil {
-		exitCode := 127
 		stderrF.WriteString(fmt.Sprintf("Failed to execute command: %v\n", err))
 		fmt.Printf("[proxy] Command failed to start: %v\n", err)
-		os.WriteFile(exitFile, []byte(strconv.Itoa(exitCode)), 0644)
+		writeExitFile(exitFile, 127, "")
 		return
 	}
 
@@ -477,21 +569,41 @@ func processRequest(command, uuid string) {
 	// Wait for command to complete
 	err = cmd.Wait()
 
-	// Determine exit code
+	// Determine exit code and signal (if killed)
 	exitCode := 0
-	if err != nil {
+	signalName := ""
+
+	// Check if process was killed by host (heartbeat timeout or shutdown)
+	if entry.killedByHost && entry.killSignal != "" {
+		// Use timeout code (124) for heartbeat-based kills
+		exitCode = 124
+		signalName = "timeout"
+		fmt.Printf("[proxy] Command killed by host (heartbeat stale): exit %d:%s\n", exitCode, signalName)
+	} else if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+			// Check if process was killed by a signal
+			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+				if status.Signaled() {
+					signalName = status.Signal().String()
+					// Use signal-based exit code: 128 + signal number
+					exitCode = 128 + int(status.Signal())
+				}
+			}
 		} else {
 			// Unexpected error
 			exitCode = 1
 		}
 	}
 
-	fmt.Printf("[proxy] Command exited with code: %d\n", exitCode)
+	if signalName != "" {
+		fmt.Printf("[proxy] Command exited with code: %d (signal: %s)\n", exitCode, signalName)
+	} else {
+		fmt.Printf("[proxy] Command exited with code: %d\n", exitCode)
+	}
 
 	// Write exit file last to signal completion
-	if err := os.WriteFile(exitFile, []byte(strconv.Itoa(exitCode)), 0644); err != nil {
+	if err := writeExitFile(exitFile, exitCode, signalName); err != nil {
 		fmt.Fprintf(os.Stderr, "[proxy] Failed to write exit code: %v\n", err)
 	}
 }

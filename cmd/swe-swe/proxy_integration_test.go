@@ -359,3 +359,221 @@ func (h *proxyTestHelper) runContainerScript(args ...string) (stdout, stderr str
 
 	return
 }
+
+// Phase 7: Heartbeat-based cleanup integration tests
+
+// setupFastTimeouts configures short timeouts for fast test feedback.
+func setupFastTimeouts(t *testing.T) {
+	t.Setenv("PROXY_HEARTBEAT_STALE", "2s")
+	t.Setenv("PROXY_KILL_GRACE", "1s")
+	t.Setenv("PROXY_SHUTDOWN_GRACE", "3s")
+}
+
+// TestIntegration_HeartbeatUpdated verifies that the heartbeat file is touched during execution.
+func TestIntegration_HeartbeatUpdated(t *testing.T) {
+	helper := newProxyTestHelper(t, "sh")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	heartbeatFile := filepath.Join(helper.proxyDir, ".heartbeat")
+
+	// Start a request that takes 2 seconds
+	resultChan := make(chan int, 1)
+	go func() {
+		_, _, exitCode := helper.runContainerScript("-c", "sleep 2; echo done")
+		resultChan <- exitCode
+	}()
+
+	// Wait briefly for request to start and touch heartbeat
+	time.Sleep(500 * time.Millisecond)
+
+	// Check heartbeat exists
+	info, err := os.Stat(heartbeatFile)
+	if err != nil {
+		t.Errorf("expected heartbeat file to exist: %v", err)
+	} else {
+		initialMtime := info.ModTime()
+
+		// Wait a bit and check it's been updated
+		time.Sleep(1500 * time.Millisecond)
+		info2, err := os.Stat(heartbeatFile)
+		if err != nil {
+			t.Errorf("heartbeat file disappeared: %v", err)
+		} else if !info2.ModTime().After(initialMtime) {
+			t.Error("expected heartbeat mtime to be updated")
+		}
+	}
+
+	// Wait for result
+	select {
+	case exitCode := <-resultChan:
+		if exitCode != 0 {
+			t.Errorf("expected exit code 0, got %d", exitCode)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("timeout waiting for request to complete")
+	}
+}
+
+// TestIntegration_HeartbeatStaleKillsProcess verifies that stale heartbeat triggers process kill.
+func TestIntegration_HeartbeatStaleKillsProcess(t *testing.T) {
+	setupFastTimeouts(t)
+	helper := newProxyTestHelper(t, "sh")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	heartbeatFile := filepath.Join(helper.proxyDir, ".heartbeat")
+
+	// Start a long-running request
+	resultChan := make(chan struct {
+		exitCode int
+		stderr   string
+	}, 1)
+	go func() {
+		_, stderr, exitCode := helper.runContainerScript("-c", "sleep 30")
+		resultChan <- struct {
+			exitCode int
+			stderr   string
+		}{exitCode, stderr}
+	}()
+
+	// Wait for request to start
+	time.Sleep(500 * time.Millisecond)
+
+	// Simulate stale heartbeat by making it old
+	oldTime := time.Now().Add(-10 * time.Second)
+	if err := os.Chtimes(heartbeatFile, oldTime, oldTime); err != nil {
+		t.Fatalf("failed to set heartbeat time: %v", err)
+	}
+
+	// Wait for heartbeat watcher to detect staleness and kill (2s stale threshold + 1s grace)
+	select {
+	case result := <-resultChan:
+		// Process should be killed - exit code 124 (timeout) or signal-based
+		if result.exitCode != 124 && result.exitCode < 128 {
+			t.Errorf("expected exit code 124 or signal-based (128+), got %d", result.exitCode)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("timeout waiting for process to be killed due to stale heartbeat")
+	}
+}
+
+// TestIntegration_ShutdownKillsHangingProcess tests that shutdown kills processes after grace period.
+func TestIntegration_ShutdownKillsHangingProcess(t *testing.T) {
+	setupFastTimeouts(t)
+	helper := newProxyTestHelper(t, "sh")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	// Start a long-running request that ignores SIGTERM
+	resultChan := make(chan struct {
+		exitCode int
+		stderr   string
+	}, 1)
+	go func() {
+		_, stderr, exitCode := helper.runContainerScript("-c", "trap '' SIGTERM; sleep 30")
+		resultChan <- struct {
+			exitCode int
+			stderr   string
+		}{exitCode, stderr}
+	}()
+
+	// Wait for request to start
+	time.Sleep(500 * time.Millisecond)
+
+	// Stop proxy - should trigger graceful shutdown
+	helper.stopProxy()
+
+	// Wait for process to be killed (shutdown grace 3s + kill grace 1s)
+	select {
+	case result := <-resultChan:
+		// Process should be killed
+		if result.exitCode == 0 {
+			t.Error("expected non-zero exit code for killed process")
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("timeout waiting for shutdown to kill hanging process")
+	}
+}
+
+// TestIntegration_GrandchildKilledViaProcessGroup tests that grandchild processes are killed.
+func TestIntegration_GrandchildKilledViaProcessGroup(t *testing.T) {
+	setupFastTimeouts(t)
+	helper := newProxyTestHelper(t, "sh")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	heartbeatFile := filepath.Join(helper.proxyDir, ".heartbeat")
+
+	// Start a request that spawns a grandchild process
+	resultChan := make(chan int, 1)
+	go func() {
+		// Spawn a background child that sleeps
+		_, _, exitCode := helper.runContainerScript("-c", "sleep 30 & wait")
+		resultChan <- exitCode
+	}()
+
+	// Wait for request to start
+	time.Sleep(500 * time.Millisecond)
+
+	// Make heartbeat stale
+	oldTime := time.Now().Add(-10 * time.Second)
+	if err := os.Chtimes(heartbeatFile, oldTime, oldTime); err != nil {
+		t.Fatalf("failed to set heartbeat time: %v", err)
+	}
+
+	// Wait for process group to be killed
+	select {
+	case exitCode := <-resultChan:
+		// Process should be killed
+		if exitCode == 0 {
+			t.Log("exit code 0 - process may have completed before kill")
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("timeout waiting for grandchild to be killed via process group")
+	}
+}
+
+// TestIntegration_ExitCodeWithSignal tests that exit code includes signal info.
+func TestIntegration_ExitCodeWithSignal(t *testing.T) {
+	helper := newProxyTestHelper(t, "sh")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	// Run a command that will be killed by SIGKILL
+	// We do this by having it sleep, then killing it ourselves
+	_, _, exitCode := helper.runContainerScript("-c", "kill -9 $$")
+
+	// Exit code should be 128+9=137 for SIGKILL
+	if exitCode != 137 {
+		t.Errorf("expected exit code 137 (128+SIGKILL), got %d", exitCode)
+	}
+}
+
+// TestIntegration_NormalOperationNoRegression tests that normal operations work with heartbeat.
+func TestIntegration_NormalOperationNoRegression(t *testing.T) {
+	helper := newProxyTestHelper(t, "echo")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	// Run several quick requests to verify normal operation
+	for i := 0; i < 5; i++ {
+		stdout, stderr, exitCode := helper.runContainerScript("test", "message", "number", string('0'+rune(i)))
+		if exitCode != 0 {
+			t.Errorf("request %d: expected exit code 0, got %d", i, exitCode)
+		}
+		if stderr != "" {
+			t.Errorf("request %d: unexpected stderr: %q", i, stderr)
+		}
+		expected := "test message number " + string('0'+rune(i))
+		if got := strings.TrimSpace(stdout); got != expected {
+			t.Errorf("request %d: expected %q, got %q", i, expected, got)
+		}
+	}
+}

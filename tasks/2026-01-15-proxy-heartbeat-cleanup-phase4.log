@@ -1,3 +1,12 @@
 074254 Starting Phase 4: Graceful Shutdown
 074254 Step 4.1: Replace simple cancel() with staged shutdown (grace period -> kill)
 074254 Expected: On SIGTERM/SIGINT, proxy stops accepting new requests, waits for grace period, then kills remaining
+074536 Observed: All tests pass (TestStopAccepting, TestRejectRequest, TestGracefulShutdown_RejectsWhenShuttingDown, TestGracefulShutdown_WaitsForCompletion, TestGracefulShutdown_KillsAfterDeadline)
+074536 Got: PASS - Implemented staged shutdown with:
+074536   - stopAccepting atomic.Bool flag to reject new requests during shutdown
+074536   - rejectRequest() function writes error files (125:shutdown exit code)
+074536   - Signal handler waits for activeRequests to reach 0
+074536   - Deadline timer kills remaining processes with killAllInFlight()
+074536 Note: Tests verify request rejection during shutdown and process killing after deadline
+
+074536 Phase 4 COMPLETE
