@@ -9,10 +9,10 @@ Refactor the swe-swe CLI to:
 
 ## Phases
 
-- [Phase 1](#phase-1-update-flag-parsing): Update flag parsing (`--path` → `--project-directory`)
-- [Phase 2](#phase-2-refactor-to-pass-through-model): Refactor to pass-through model
-- [Phase 3](#phase-3-remove-delimiter-handling): Remove `--` delimiter handling
-- [Phase 4](#phase-4-update-documentation): Update documentation and golden tests
+- [x] [Phase 1](#phase-1-update-flag-parsing): Update flag parsing (`--path` → `--project-directory`)
+- [ ] [Phase 2](#phase-2-refactor-to-pass-through-model): Refactor to pass-through model
+- [ ] [Phase 3](#phase-3-remove-delimiter-handling): Remove `--` delimiter handling
+- [ ] [Phase 4](#phase-4-update-documentation): Update documentation and golden tests
 
 ---
 

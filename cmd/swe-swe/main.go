@@ -108,15 +108,15 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options] [services...] [-- docker-args...]
 
 Commands:
-  init [options]                         Initialize a new swe-swe project
-  up [--path PATH] [services...]         Start the swe-swe environment (or specific services)
-  down [--path PATH] [services...]       Stop the swe-swe environment (or specific services)
-  build [--path PATH] [services...]      Rebuild Docker images (fresh build, no cache)
-  list                                   List all initialized swe-swe projects (auto-prunes missing paths)
-  help                                   Show this help message
+  init [options]                               Initialize a new swe-swe project
+  up [--project-directory PATH] [services...]  Start the swe-swe environment (or specific services)
+  down [--project-directory PATH] [services...] Stop the swe-swe environment (or specific services)
+  build [--project-directory PATH] [services...] Rebuild Docker images (fresh build, no cache)
+  list                                         List all initialized swe-swe projects (auto-prunes missing paths)
+  help                                         Show this help message
 
 Init Options:
-  --path PATH                            Project directory (defaults to current directory)
+  --project-directory PATH               Project directory (defaults to current directory)
   --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose (default: all)
   --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
@@ -552,7 +552,7 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	path := fs.String("path", ".", "Path to initialize")
+	path := fs.String("project-directory", ".", "Project directory to initialize")
 	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose) or 'all'")
 	excludeFlag := fs.String("exclude-agents", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
@@ -786,7 +786,7 @@ func handleInit() {
 
 func handleUp() {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
-	path := fs.String("path", ".", "Path to run from")
+	path := fs.String("project-directory", ".", "Project directory to run from")
 	fs.Parse(os.Args[2:])
 
 	if *path == "" {
@@ -910,7 +910,7 @@ func runDockerComposeWindows(dc *dockerComposeCmd, composeArgs []string, env []s
 
 func handleDown() {
 	fs := flag.NewFlagSet("down", flag.ExitOnError)
-	path := fs.String("path", ".", "Path to stop from")
+	path := fs.String("project-directory", ".", "Project directory to stop from")
 	fs.Parse(os.Args[2:])
 
 	if *path == "" {
@@ -989,7 +989,7 @@ func handleDown() {
 
 func handleBuild() {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
-	path := fs.String("path", ".", "Path to build from")
+	path := fs.String("project-directory", ".", "Project directory to build from")
 	fs.Parse(os.Args[2:])
 
 	if *path == "" {
