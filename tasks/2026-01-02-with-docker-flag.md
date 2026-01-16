@@ -391,20 +391,20 @@ Verify the complete `--with-docker` feature works end-to-end.
 
 ## Implementation Checklist
 
-- [ ] Phase 0: Golden files infrastructure
-  - [ ] Add Makefile `golden-update` target
-  - [ ] Generate 9 variant golden files
-  - [ ] Add golden comparison test in `main_test.go`
-  - [ ] Run `make golden-update` and commit baseline
+- [x] Phase 0: Golden files infrastructure
+  - [x] Add Makefile `golden-update` target
+  - [x] Generate 9 variant golden files
+  - [x] Add golden comparison test in `main_test.go`
+  - [x] Run `make golden-update` and commit baseline
 
-- [ ] Phase 1: Flag parsing
-  - [ ] Add `--with-docker` flag to `handleInit()`
-  - [ ] Add unit test for flag parsing
+- [x] Phase 1: Flag parsing
+  - [x] Add `--with-docker` flag to `handleInit()`
+  - [x] Add DOCKER condition to `processDockerfileTemplate()`
 
-- [ ] Phase 2: Dockerfile template
-  - [ ] Add `{{IF DOCKER}}` block with Docker CLI installation
-  - [ ] Update `processDockerfileTemplate()` for `withDocker` parameter
-  - [ ] Add unit test for template processing
+- [x] Phase 2: Dockerfile template
+  - [x] Add `{{IF DOCKER}}` block with Docker CLI installation
+  - [x] Update `processDockerfileTemplate()` for `withDocker` parameter
+  - [x] Add unit test for template processing
 
 - [ ] Phase 3: docker-compose.yml template
   - [ ] Add `{{IF DOCKER}}` block with socket mount
