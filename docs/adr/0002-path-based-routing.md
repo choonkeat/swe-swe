@@ -8,7 +8,7 @@
 Services (terminal, VSCode, Chrome VNC) need to be accessible via a single entry point. Subdomain routing (`vscode.lvh.me`) requires DNS wildcards and doesn't work with raw IPs.
 
 ## Decision
-Use path-based routing: `/` for terminal, `/vscode` for code-server, `/chrome` for noVNC. All services accessible via `http://host:9899/path`.
+Use path-based routing: `/` for terminal, `/vscode` for code-server, `/chrome` for noVNC. All services accessible via `http://host:1977/path`.
 
 ## Consequences
 Good: Works with any hostname including `localhost` and raw IPs, no DNS configuration needed, single port.

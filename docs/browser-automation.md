@@ -27,7 +27,7 @@ swe-swe includes a dedicated Chrome container that provides:
 │                        └──────────────┘                         │
 │                              │                                   │
 │                              ▼                                   │
-│                     chrome.lvh.me:9899                          │
+│                     chrome.lvh.me:1977                          │
 │                     (VNC web viewer)                            │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -51,7 +51,7 @@ The Chrome container runs multiple services via supervisord:
 
 | External | Internal | Description |
 |----------|----------|-------------|
-| `chrome.lvh.me:9899` | 6080 | noVNC web interface (via Traefik) |
+| `chrome.lvh.me:1977` | 6080 | noVNC web interface (via Traefik) |
 | - | 9223 | CDP WebSocket (internal network only) |
 
 ### Environment Variables
@@ -68,7 +68,7 @@ This allows MCP Playwright to automatically connect to the Chrome container.
 
 ### Visual Observation
 
-Watch the browser in real-time at: **http://chrome.lvh.me:9899**
+Watch the browser in real-time at: **http://chrome.lvh.me:1977**
 
 The noVNC interface shows exactly what the AI assistant sees when automating the browser.
 

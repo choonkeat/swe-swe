@@ -328,7 +328,7 @@ func TestVerifyHandler_NoCookie_RedirectsToLogin(t *testing.T) {
 	secret = "test-secret"
 	req := httptest.NewRequest(http.MethodGet, "/swe-swe-auth/verify", nil)
 	req.Header.Set("X-Forwarded-Uri", "/vscode")
-	req.Header.Set("X-Forwarded-Host", "localhost:9899")
+	req.Header.Set("X-Forwarded-Host", "localhost:1977")
 	req.Header.Set("X-Forwarded-Proto", "http")
 	w := httptest.NewRecorder()
 
@@ -338,7 +338,7 @@ func TestVerifyHandler_NoCookie_RedirectsToLogin(t *testing.T) {
 		t.Errorf("expected status 302, got %d", w.Code)
 	}
 	location := w.Header().Get("Location")
-	if location != "http://localhost:9899/swe-swe-auth/login?redirect=%2Fvscode" {
+	if location != "http://localhost:1977/swe-swe-auth/login?redirect=%2Fvscode" {
 		t.Errorf("expected redirect to login with redirect param, got %s", location)
 	}
 }

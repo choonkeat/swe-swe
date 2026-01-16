@@ -26,27 +26,28 @@ Users can still override at runtime: `SWE_PORT=8080 swe-swe up`
 
 ---
 
-## Phase 2: Update documentation
+## Phase 2: Update documentation ✅
 
 ### What will be achieved
 - All docs reflect new default port 1977
 
 ### Steps
-1. Update `README.md` (~10 occurrences of 9899)
-2. Update `docs/adr/0002-path-based-routing.md`
-3. Update `docs/browser-automation.md`
-4. Update `cmd/swe-swe/templates/host/swe-swe-server/main.go` (VNC URL comment)
-5. Update `cmd/swe-swe/templates/container/.swe-swe/browser-automation.md`
-6. Run `make build golden-update` (for template changes)
-7. Commit all changes
+1. ✅ Update `README.md` (~10 occurrences of 9899)
+2. ✅ Update `docs/adr/0002-path-based-routing.md`
+3. ✅ Update `docs/browser-automation.md`
+4. ✅ Update `cmd/swe-swe/templates/host/swe-swe-server/main.go` (VNC URL comment)
+5. ✅ Update `cmd/swe-swe/templates/container/.swe-swe/browser-automation.md`
+6. ✅ Update `cmd/swe-swe/templates/host/auth/main_test.go` (test expectations)
+7. ✅ Run `make build golden-update` (for template changes)
+8. ✅ Commit all changes
 
 ### Verification
-- `make test` passes
-- `grep -r 9899` shows only `research/` and `tasks/` (historical files)
+- ✅ `make test` passes
+- ✅ `grep -r 9899` shows only `research/` and `tasks/` (historical files)
 
 ---
 
-## Final Verification
+## Final Verification ✅
 
-- All tests pass
-- No 9899 in active code/templates/docs (only historical research/tasks files)
+- ✅ All tests pass
+- ✅ No 9899 in active code/templates/docs (only historical research/tasks files)

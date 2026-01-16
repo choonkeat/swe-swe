@@ -13,7 +13,7 @@ claude-code container  -->  chrome container
 ```
 
 - Chrome runs in a separate container with Xvfb (virtual display)
-- User can watch via VNC at http://chrome.lvh.me:9899/vnc_auto.html
+- User can watch via VNC at http://chrome.lvh.me:1977/vnc_auto.html
 - CDP (Chrome DevTools Protocol) is exposed on port 9223 via socat forwarder
 
 ## Available Tools
@@ -38,7 +38,7 @@ cat .claude/mcp.json
 Should show playwright config with `PLAYWRIGHT_CDP_ENDPOINT: http://chrome:9223`
 
 ### 2. Is Chrome container running?
-From host: VNC should work at http://chrome.lvh.me:9899/vnc_auto.html
+From host: VNC should work at http://chrome.lvh.me:1977/vnc_auto.html
 
 ### 3. Is CDP port accessible?
 From inside claude-code container:
