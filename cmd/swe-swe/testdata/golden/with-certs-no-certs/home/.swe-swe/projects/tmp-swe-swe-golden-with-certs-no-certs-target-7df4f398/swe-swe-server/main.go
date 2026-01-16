@@ -797,10 +797,9 @@ func (s *Session) startPTYReader() {
 var (
 	sessions            = make(map[string]*Session)
 	sessionsMu          sync.RWMutex
-	shellCmd            string
-	shellRestartCmd     string
-	sessionTTL          time.Duration
-	workingDir          string
+	shellCmd        string
+	shellRestartCmd string
+	workingDir      string
 	availableAssistants []AssistantConfig // Populated at startup by detectAvailableAssistants
 
 	// SSL certificate download endpoint
@@ -844,7 +843,6 @@ func main() {
 	version := flag.Bool("version", false, "Show version and exit")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
-	flag.DurationVar(&sessionTTL, "session-ttl", time.Hour, "Session keepalive after last disconnect")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
 	flag.Parse()
 
@@ -1094,7 +1092,6 @@ func main() {
 	if shellRestartCmd != shellCmd {
 		log.Printf("  shell-restart: %s", shellRestartCmd)
 	}
-	log.Printf("  session-ttl: %v", sessionTTL)
 	if workingDir != "" {
 		log.Printf("  working-directory: %s", workingDir)
 	}
@@ -1188,7 +1185,8 @@ func createWorktree(branchName string) (string, error) {
 	return worktreePath, nil
 }
 
-// sessionReaper periodically cleans up expired sessions
+// sessionReaper periodically cleans up sessions where the process has exited
+// Sessions persist until the process exits (no TTL-based expiry)
 func sessionReaper() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -1196,9 +1194,9 @@ func sessionReaper() {
 	for range ticker.C {
 		sessionsMu.Lock()
 		for uuid, sess := range sessions {
-			// Only expire sessions with no clients that have been idle for TTL
-			if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
-				log.Printf("Session expired: %s (idle for %v)", uuid, time.Since(sess.LastActive()))
+			// Only clean up sessions where the process has exited
+			if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
+				log.Printf("Session cleaned up (process exited): %s", uuid)
 				sess.Close()
 				delete(sessions, uuid)
 			}
