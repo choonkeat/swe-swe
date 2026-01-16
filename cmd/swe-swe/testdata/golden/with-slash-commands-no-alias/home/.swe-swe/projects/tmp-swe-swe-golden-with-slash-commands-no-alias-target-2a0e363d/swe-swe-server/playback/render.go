@@ -17,6 +17,17 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
 	}
 	framesBase64 := base64.StdEncoding.EncodeToString(framesJSON)
 
+	// Calculate data size for loading indicator
+	dataSize := len(framesJSON)
+	var dataSizeStr string
+	if dataSize >= 1024*1024 {
+		dataSizeStr = fmt.Sprintf("%.1f MB", float64(dataSize)/(1024*1024))
+	} else if dataSize >= 1024 {
+		dataSizeStr = fmt.Sprintf("%.1f KB", float64(dataSize)/1024)
+	} else {
+		dataSizeStr = fmt.Sprintf("%d bytes", dataSize)
+	}
+
 	// Calculate total duration
 	var totalDuration float64
 	if len(frames) > 0 {
@@ -72,6 +83,7 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      position: relative;
     }
     #terminal {
       flex: 1;
@@ -139,6 +151,35 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
       cursor: pointer;
     }
     .speed-select:focus { outline: none; border-color: #007acc; }
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+    }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #007acc;
+      border-radius: 50%%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .loading-text {
+      color: #888;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -148,6 +189,10 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
       <span class="title">%s</span>
     </div>
     <div class="terminal-wrapper">
+      <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading %s...</div>
+      </div>
       <div id="terminal"></div>
       <div class="controls">
         <button id="playBtn" class="play-btn" title="Play/Pause">▶</button>
@@ -373,11 +418,15 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
     }
     updateProgress();
 
-    // Trim blank rows after initial render
-    setTimeout(trimEmptyRows, 0);
+    // Trim blank rows after initial render and hide loading overlay
+    setTimeout(function() {
+      trimEmptyRows();
+      const overlay = document.getElementById('loadingOverlay');
+      if (overlay) overlay.remove();
+    }, 0);
   </script>
 </body>
-</html>`, name, backURL, name, framesBase64, totalDuration, cols, rows)
+</html>`, name, backURL, name, dataSizeStr, framesBase64, totalDuration, cols, rows)
 
 	return html, nil
 }
