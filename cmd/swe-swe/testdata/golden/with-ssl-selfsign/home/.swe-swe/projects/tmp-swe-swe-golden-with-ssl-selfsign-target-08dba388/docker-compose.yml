@@ -7,13 +7,14 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
-      - "--entrypoints.web.address=:7000"
-      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=60s"
+      - "--entrypoints.websecure.address=:7443"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
     ports:
-      - "${SWE_PORT:-1977}:7000"
+      - "${SWE_PORT:-1977}:7443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "./certs:/etc/traefik/certs:ro"
     networks:
       - swe-network
     restart: unless-stopped
@@ -27,6 +28,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.auth.rule=PathPrefix(`/swe-swe-auth`)"
       - "traefik.http.routers.auth.priority=200"
+      - "traefik.http.routers.auth.entrypoints=websecure"
+      - "traefik.http.routers.auth.tls=true"
       - "traefik.http.services.auth.loadbalancer.server.port=4180"
     networks:
       - swe-network
@@ -40,6 +43,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
       - "traefik.http.routers.chrome.priority=100"
+      - "traefik.http.routers.chrome.entrypoints=websecure"
+      - "traefik.http.routers.chrome.tls=true"
       - "traefik.http.routers.chrome.middlewares=forwardauth@file,chrome-redirect@docker,chrome-strip@docker"
       - "traefik.http.services.chrome.loadbalancer.server.port=6080"
       - "traefik.http.middlewares.chrome-redirect.redirectregex.regex=^/chrome$$"
@@ -60,6 +65,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.swe-swe.rule=PathPrefix(`/`)"
       - "traefik.http.routers.swe-swe.priority=10"
+      - "traefik.http.routers.swe-swe.entrypoints=websecure"
+      - "traefik.http.routers.swe-swe.tls=true"
       - "traefik.http.routers.swe-swe.middlewares=forwardauth@file"
       - "traefik.http.services.swe-swe.loadbalancer.server.port=9898"
     depends_on:
@@ -95,6 +102,8 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.vscode.rule=PathPrefix(`/vscode`)"
       - "traefik.http.routers.vscode.priority=100"
+      - "traefik.http.routers.vscode.entrypoints=websecure"
+      - "traefik.http.routers.vscode.tls=true"
       - "traefik.http.routers.vscode.middlewares=forwardauth@file"
       - "traefik.http.services.vscode.loadbalancer.server.port=8081"
     depends_on:

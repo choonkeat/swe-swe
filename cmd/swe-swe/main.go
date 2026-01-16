@@ -2,11 +2,18 @@ package main
 
 import (
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"embed"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,6 +22,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 )
 
 //go:embed all:templates
@@ -610,7 +618,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml which only needs the DOCKER condition
-func processSimpleTemplate(content string, withDocker bool) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -621,6 +629,16 @@ func processSimpleTemplate(content string, withDocker bool) string {
 		// Handle conditional markers (support both # and yaml-style comments)
 		if strings.Contains(trimmed, "{{IF DOCKER}}") {
 			skip = !withDocker
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF SSL}}") {
+			skip = ssl != "selfsign"
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF NO_SSL}}") {
+			skip = ssl == "selfsign"
 			continue
 		}
 
@@ -881,6 +899,14 @@ func handleInit() {
 	// This allows the certificate detection to inform the Dockerfile template
 	hasCerts := handleCertificates(sweDir, certsDir)
 
+	// Generate self-signed certificate if SSL mode is selfsign
+	if *sslFlag == "selfsign" {
+		if err := generateSelfSignedCert(certsDir); err != nil {
+			log.Fatalf("Failed to generate self-signed certificate: %v", err)
+		}
+		fmt.Printf("Generated self-signed SSL certificate in %s\n", certsDir)
+	}
+
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	hostFiles := []string{
@@ -953,7 +979,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag))
+			}
+
+			// Process traefik-dynamic.yml template with SSL conditional sections
+			if hostFile == "templates/host/traefik-dynamic.yml" {
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag))
 			}
 
 			// Process entrypoint.sh template with conditional sections
@@ -1027,6 +1058,75 @@ func handleInit() {
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")
 	fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
+}
+
+// generateSelfSignedCert creates a self-signed TLS certificate and key for HTTPS.
+// The certificate is valid for localhost, 127.0.0.1, and common local hostnames.
+// Files are written to certsDir as server.crt and server.key.
+func generateSelfSignedCert(certsDir string) error {
+	// Generate RSA private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return fmt.Errorf("failed to generate private key: %w", err)
+	}
+
+	// Create certificate template
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"swe-swe"},
+			CommonName:   "localhost",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(10, 0, 0), // Valid for 10 years
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost", "*.localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+	}
+
+	// Create certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to create certificate: %w", err)
+	}
+
+	// Write certificate to file
+	certPath := filepath.Join(certsDir, "server.crt")
+	certFile, err := os.Create(certPath)
+	if err != nil {
+		return fmt.Errorf("failed to create certificate file: %w", err)
+	}
+	defer certFile.Close()
+
+	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		return fmt.Errorf("failed to write certificate: %w", err)
+	}
+
+	// Write private key to file
+	keyPath := filepath.Join(certsDir, "server.key")
+	keyFile, err := os.Create(keyPath)
+	if err != nil {
+		return fmt.Errorf("failed to create key file: %w", err)
+	}
+	defer keyFile.Close()
+
+	privBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return fmt.Errorf("failed to marshal private key: %w", err)
+	}
+
+	if err := pem.Encode(keyFile, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
+		return fmt.Errorf("failed to write private key: %w", err)
+	}
+
+	return nil
 }
 
 // handleCertificates detects and copies enterprise certificates for Docker builds
