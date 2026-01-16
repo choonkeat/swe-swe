@@ -772,6 +772,13 @@ func main() {
 		// Root path: show assistant selection page
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// No-cache for homepage to ensure latest version
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+
+			// Check for debug query param
+			debugParam := r.URL.Query().Get("debug")
+			debugMode := debugParam == "true" || debugParam == "1"
 
 			// Build agents with their sessions
 			sessionsByAssistant := make(map[string][]SessionInfo)
@@ -822,10 +829,12 @@ func main() {
 				Agents     []AgentWithSessions
 				NewUUID    string
 				HasSSLCert bool
+				Debug      bool
 			}{
 				Agents:     agents,
 				NewUUID:    uuid.New().String(),
 				HasSSLCert: hasSSLCert == nil,
+				Debug:      debugMode,
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)

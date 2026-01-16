@@ -219,13 +219,13 @@
                 </div>
                 <div class="agent-group__sessions">
                     {{range .Sessions}}
-                    <a href="/session/{{.UUID}}?assistant={{.Assistant}}" class="session-item">
+                    <a href="/session/{{.UUID}}?assistant={{.Assistant}}{{if $.Debug}}&debug=1{{end}}" class="session-item">
                         <span class="session-item__uuid">{{.UUIDShort}}</span>
                         <span class="session-item__viewers">{{.ClientCount}} viewer{{if ne .ClientCount 1}}s{{end}}</span>
                         <span class="session-item__duration">{{.DurationStr}}</span>
                     </a>
                     {{end}}
-                    <a href="/session/{{$.NewUUID}}?assistant={{.Assistant.Binary}}" class="new-session">
+                    <a href="/session/{{$.NewUUID}}?assistant={{.Assistant.Binary}}{{if $.Debug}}&debug=1{{end}}" class="new-session">
                         <span class="new-session__icon">+</span>
                         <span class="new-session__text">Start new session</span>
                     </a>
