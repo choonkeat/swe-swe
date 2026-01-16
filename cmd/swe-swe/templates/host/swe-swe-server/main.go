@@ -436,8 +436,9 @@ func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
 	// Include worktree info if session is in a worktree
 	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
 		msg["worktree"] = map[string]string{
-			"path":   s.WorkDir,
-			"branch": s.BranchName,
+			"path":         s.WorkDir,
+			"branch":       s.BranchName,
+			"targetBranch": getMainRepoBranch(),
 		}
 	}
 
@@ -1363,6 +1364,16 @@ func getGitRoot() (string, error) {
 		return "", fmt.Errorf("failed to get git root: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// getMainRepoBranch returns the current branch of the main repo (/workspace)
+func getMainRepoBranch() string {
+	cmd := exec.Command("git", "-C", "/workspace", "branch", "--show-current")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // worktreeExists checks if a worktree directory already exists for the given branch name
