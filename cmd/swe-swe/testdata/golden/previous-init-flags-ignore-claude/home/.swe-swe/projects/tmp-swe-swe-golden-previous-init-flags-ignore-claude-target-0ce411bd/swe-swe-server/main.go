@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -45,6 +46,13 @@ var upgrader = websocket.Upgrader{
 type TermSize struct {
 	Rows uint16
 	Cols uint16
+}
+
+// PollingClient represents an HTTP polling client
+type PollingClient struct {
+	ID       string
+	Size     TermSize
+	LastPoll time.Time
 }
 
 // AssistantConfig holds the configuration for an AI coding assistant
@@ -131,6 +139,7 @@ type Session struct {
 	PTY             *os.File
 	clients         map[*websocket.Conn]bool
 	clientSizes     map[*websocket.Conn]TermSize
+	pollClients     map[string]*PollingClient // HTTP polling clients by clientId
 	mu              sync.RWMutex
 	writeMu         sync.Mutex     // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
 	CreatedAt       time.Time      // when the session was created
@@ -718,6 +727,26 @@ func main() {
 			return
 		}
 
+		// Polling paths: /session/{uuid}/client/{clientId}/poll and /send
+		if strings.HasPrefix(r.URL.Path, "/session/") && strings.Contains(r.URL.Path, "/client/") {
+			// Parse path: /session/{uuid}/client/{clientId}/{action}
+			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/session/"), "/")
+			if len(parts) >= 4 && parts[1] == "client" {
+				sessionUUID := parts[0]
+				clientID := parts[2]
+				action := parts[3]
+
+				switch action {
+				case "poll":
+					handlePollRecv(w, r, sessionUUID, clientID)
+					return
+				case "send":
+					handlePollSend(w, r, sessionUUID, clientID)
+					return
+				}
+			}
+		}
+
 		// Session path: serve template with UUID and assistant
 		if strings.HasPrefix(r.URL.Path, "/session/") {
 			sessionUUID := strings.TrimPrefix(r.URL.Path, "/session/")
@@ -803,7 +832,7 @@ func main() {
 	}
 }
 
-// sessionReaper periodically cleans up expired sessions
+// sessionReaper periodically cleans up expired sessions and stale polling clients
 func sessionReaper() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -811,6 +840,16 @@ func sessionReaper() {
 	for range ticker.C {
 		sessionsMu.Lock()
 		for uuid, sess := range sessions {
+			// Clean up stale polling clients (no poll in 60 seconds)
+			sess.mu.Lock()
+			for clientID, pc := range sess.pollClients {
+				if time.Since(pc.LastPoll) > 60*time.Second {
+					delete(sess.pollClients, clientID)
+					log.Printf("Polling client expired: session=%s client=%s", uuid, clientID)
+				}
+			}
+			sess.mu.Unlock()
+
 			// Only expire sessions with no clients that have been idle for TTL
 			if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
 				log.Printf("Session expired: %s (idle for %v)", uuid, time.Since(sess.LastActive()))
@@ -879,6 +918,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		PTY:             ptmx,
 		clients:         make(map[*websocket.Conn]bool),
 		clientSizes:     make(map[*websocket.Conn]TermSize),
+		pollClients:     make(map[string]*PollingClient),
 		CreatedAt:       time.Now(),
 		lastActive:      time.Now(),
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
@@ -1099,5 +1139,146 @@ func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, f
 	if err != nil {
 		log.Printf("Failed to send file upload response: %v", err)
 	}
+}
+
+// handlePollRecv handles GET requests for polling terminal snapshots
+func handlePollRecv(w http.ResponseWriter, r *http.Request, sessionUUID, clientID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get assistant from query param
+	assistant := r.URL.Query().Get("assistant")
+	if assistant == "" {
+		http.Error(w, "Missing assistant parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Get or create session
+	sess, _, err := getOrCreateSession(sessionUUID, assistant)
+	if err != nil {
+		log.Printf("Poll error: %v", err)
+		http.Error(w, "Session error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Register/update polling client
+	sess.mu.Lock()
+	if sess.pollClients[clientID] == nil {
+		sess.pollClients[clientID] = &PollingClient{
+			ID:       clientID,
+			Size:     TermSize{Rows: 24, Cols: 80}, // default size
+			LastPoll: time.Now(),
+		}
+		log.Printf("Polling client registered: session=%s client=%s", sessionUUID, clientID)
+	} else {
+		sess.pollClients[clientID].LastPoll = time.Now()
+	}
+	sess.lastActive = time.Now()
+	sess.mu.Unlock()
+
+	// Generate terminal snapshot
+	snapshot := sess.GenerateSnapshot()
+
+	// Get current terminal size
+	sess.mu.RLock()
+	rows, cols := sess.calculateMinSize()
+	viewerCount := len(sess.clients) + len(sess.pollClients)
+	sess.mu.RUnlock()
+
+	// Return JSON response
+	response := map[string]interface{}{
+		"terminal":  base64.StdEncoding.EncodeToString(snapshot),
+		"viewers":   viewerCount,
+		"cols":      cols,
+		"rows":      rows,
+		"assistant": sess.AssistantConfig.Name,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Poll response encode error: %v", err)
+	}
+}
+
+// handlePollSend handles POST requests for sending input from polling clients
+func handlePollSend(w http.ResponseWriter, r *http.Request, sessionUUID, clientID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get session
+	sessionsMu.RLock()
+	sess, exists := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify polling client exists
+	sess.mu.RLock()
+	pollClient := sess.pollClients[clientID]
+	sess.mu.RUnlock()
+	if pollClient == nil {
+		http.Error(w, "Polling client not found - call poll endpoint first", http.StatusBadRequest)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		Type string `json:"type"` // "input" or "resize"
+		Data string `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	sess.mu.Lock()
+	sess.lastActive = time.Now()
+	pollClient.LastPoll = time.Now()
+	sess.mu.Unlock()
+
+	switch req.Type {
+	case "input":
+		// Write to PTY
+		if _, err := sess.PTY.Write([]byte(req.Data)); err != nil {
+			log.Printf("Poll send PTY write error: %v", err)
+			http.Error(w, "PTY write error", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("Poll send input: session=%s client=%s len=%d", sessionUUID, clientID, len(req.Data))
+
+	case "resize":
+		// Parse resize data: "rows,cols"
+		var rows, cols uint16
+		if _, err := fmt.Sscanf(req.Data, "%d,%d", &rows, &cols); err != nil {
+			http.Error(w, "Invalid resize format, expected 'rows,cols'", http.StatusBadRequest)
+			return
+		}
+
+		sess.mu.Lock()
+		pollClient.Size = TermSize{Rows: rows, Cols: cols}
+		sess.mu.Unlock()
+
+		// Recalculate PTY size
+		sess.mu.RLock()
+		minRows, minCols := sess.calculateMinSize()
+		sess.mu.RUnlock()
+
+		if sess.PTY != nil {
+			pty.Setsize(sess.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
+			log.Printf("Poll resize: session=%s client=%s size=%dx%d", sessionUUID, clientID, minCols, minRows)
+		}
+
+	default:
+		http.Error(w, "Unknown type: "+req.Type, http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 

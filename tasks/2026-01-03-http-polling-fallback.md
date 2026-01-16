@@ -13,7 +13,7 @@ Add HTTP polling fallback for xterm.js terminal to handle flaky mobile WebSocket
 
 ## Phases
 
-### Phase 1: Server - Polling Endpoints
+### Phase 1: Server - Polling Endpoints ✅
 
 **What will be achieved**: Server gains two new HTTP endpoints for polling-based terminal access.
 
