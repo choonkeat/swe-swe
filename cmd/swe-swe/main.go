@@ -500,6 +500,11 @@ func handleInit() {
 				content = []byte(processSimpleTemplate(string(content), *withDocker))
 			}
 
+			// Process entrypoint.sh template with conditional sections
+			if hostFile == "templates/host/entrypoint.sh" {
+				content = []byte(processSimpleTemplate(string(content), *withDocker))
+			}
+
 			// Calculate destination path, preserving subdirectories
 			relPath := strings.TrimPrefix(hostFile, "templates/host/")
 			// Rename go.mod.txt and go.sum.txt back to go.mod/go.sum

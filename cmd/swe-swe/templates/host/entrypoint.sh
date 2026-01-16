@@ -30,6 +30,19 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
     fi
 fi
 
+# {{IF DOCKER}}
+# Add app user to docker socket's group for permission to use Docker CLI
+if [ -S /var/run/docker.sock ]; then
+    DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+    if ! getent group $DOCKER_GID > /dev/null 2>&1; then
+        groupadd -g $DOCKER_GID docker-host
+        echo -e "${GREEN}✓ Created docker-host group with GID $DOCKER_GID${NC}"
+    fi
+    usermod -aG $DOCKER_GID app
+    echo -e "${GREEN}✓ Added app user to docker group (GID $DOCKER_GID)${NC}"
+fi
+# {{ENDIF}}
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"
