@@ -1008,3 +1008,105 @@ func TestCreateWorktree_AttachLocalBranch(t *testing.T) {
 		t.Error("worktree directory was not created")
 	}
 }
+
+func TestHandleWorktreeCheckAPI(t *testing.T) {
+	// Save original worktreeDir and restore after test
+	originalWorktreeDir := worktreeDir
+	defer func() { worktreeDir = originalWorktreeDir }()
+
+	t.Run("missing name parameter returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/worktree/check", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreeCheckAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("POST returns method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/worktree/check?name=test", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreeCheckAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("no conflict returns exists false", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktree/check?name=new-branch", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreeCheckAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["exists"] != false {
+			t.Errorf("expected exists=false, got %v", result["exists"])
+		}
+	})
+
+	t.Run("worktree exists returns type worktree", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		// Create worktree directory
+		os.Mkdir(filepath.Join(tmpDir, "existing-worktree"), 0755)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktree/check?name=existing-worktree", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreeCheckAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["exists"] != true {
+			t.Errorf("expected exists=true, got %v", result["exists"])
+		}
+		if result["type"] != "worktree" {
+			t.Errorf("expected type=worktree, got %v", result["type"])
+		}
+		if result["branch"] != "existing-worktree" {
+			t.Errorf("expected branch=existing-worktree, got %v", result["branch"])
+		}
+	})
+
+	t.Run("empty name returns exists false", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		worktreeDir = tmpDir
+
+		req := httptest.NewRequest(http.MethodGet, "/api/worktree/check?name=", nil)
+		w := httptest.NewRecorder()
+
+		handleWorktreeCheckAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+	})
+}

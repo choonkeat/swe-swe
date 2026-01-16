@@ -209,17 +209,17 @@ When user clicks generic "+ Start new session" and enters a name that conflicts 
 
 ### Small steps
 
-- [ ] 4a. Add `GET /api/worktree/check?name={branch}` endpoint — returns conflict info:
+- [x] 4a. Add `GET /api/worktree/check?name={branch}` endpoint — returns conflict info:
   ```json
   {"exists": false}
   // or
   {"exists": true, "type": "worktree|local|remote"}
   ```
-- [ ] 4b. Add handler `handleWorktreeCheckAPI()` — calls helper functions from Phase 3, returns JSON
-- [ ] 4c. Wire up route — add to main HTTP handler
-- [ ] 4d. Update `startNewSession()` in JS — after user enters name, call check endpoint before navigating
-- [ ] 4e. Show warning dialog — if conflict exists, display type-specific message with two buttons
-- [ ] 4f. Handle button clicks:
+- [x] 4b. Add handler `handleWorktreeCheckAPI()` — calls helper functions from Phase 3, returns JSON
+- [x] 4c. Wire up route — add to main HTTP handler
+- [x] 4d. Update `startNewSession()` in JS — after user enters name, call check endpoint before navigating
+- [x] 4e. Show warning dialog — if conflict exists, display type-specific message with two buttons
+- [x] 4f. Handle button clicks:
   - "Rename" -> re-prompt for new name (loop back)
   - "Use existing" -> proceed with session creation
 
@@ -264,11 +264,11 @@ Full end-to-end verification that all features work together correctly.
 
 ### Small steps
 
-- [ ] 5a. Boot test container
-- [ ] 5b. Execute test scenarios via MCP browser
-- [ ] 5c. Document any bugs found
-- [ ] 5d. Fix bugs, re-test
-- [ ] 5e. Shutdown test container
+- [x] 5a. Boot test container
+- [x] 5b. Execute test scenarios via MCP browser
+- [x] 5c. Document any bugs found (none found)
+- [x] 5d. Fix bugs, re-test (no bugs to fix)
+- [x] 5e. Shutdown test container
 
 ### Test scenarios
 
@@ -300,5 +300,5 @@ HOST_PORT=9899 HOST_IP=host.docker.internal ./scripts/03-test-container-run.sh
 - [x] Phase 1: Backend - List existing worktrees API
 - [x] Phase 2: Frontend - Display worktree quick-start links
 - [x] Phase 3: Backend - Smart worktree creation
-- [ ] Phase 4: Frontend - Conflict warning dialog
-- [ ] Phase 5: Integration testing
+- [x] Phase 4: Frontend - Conflict warning dialog
+- [x] Phase 5: Integration testing
