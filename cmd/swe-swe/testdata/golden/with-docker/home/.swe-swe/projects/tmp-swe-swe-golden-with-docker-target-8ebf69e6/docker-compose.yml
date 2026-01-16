@@ -70,6 +70,8 @@ services:
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+      # Mount Docker socket for container to run Docker commands on host
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /workspace
     networks:
       - swe-network
