@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,21 @@ type AssistantConfig struct {
 	ShellCmd        string // Command to start the assistant
 	ShellRestartCmd string // Command to restart (resume) the assistant
 	Binary          string // Binary name to check with exec.LookPath
+}
+
+// SessionInfo holds session data for template rendering
+type SessionInfo struct {
+	UUID        string
+	UUIDShort   string
+	Assistant   string // binary name for URL
+	ClientCount int
+	CreatedAt   time.Time
+}
+
+// AgentWithSessions groups an assistant with its active sessions
+type AgentWithSessions struct {
+	Assistant AssistantConfig
+	Sessions  []SessionInfo // sorted by CreatedAt desc (most recent first)
 }
 
 // Predefined assistant configurations (ordered for consistent display)
@@ -619,12 +635,55 @@ func main() {
 		// Root path: show assistant selection page
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+			// Build agents with their sessions
+			sessionsByAssistant := make(map[string][]SessionInfo)
+
+			sessionsMu.RLock()
+			for _, sess := range sessions {
+				// Skip sessions where process has exited
+				if sess.Cmd.ProcessState != nil {
+					continue
+				}
+
+				uuidShort := sess.UUID
+				if len(sess.UUID) >= 5 {
+					uuidShort = sess.UUID[:5]
+				}
+
+				info := SessionInfo{
+					UUID:        sess.UUID,
+					UUIDShort:   uuidShort,
+					Assistant:   sess.Assistant,
+					ClientCount: sess.ClientCount(),
+					CreatedAt:   sess.CreatedAt,
+				}
+				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
+			}
+			sessionsMu.RUnlock()
+
+			// Sort sessions within each assistant by CreatedAt desc (most recent first)
+			for assistant := range sessionsByAssistant {
+				sort.Slice(sessionsByAssistant[assistant], func(i, j int) bool {
+					return sessionsByAssistant[assistant][i].CreatedAt.After(sessionsByAssistant[assistant][j].CreatedAt)
+				})
+			}
+
+			// Build AgentWithSessions for all available assistants
+			agents := make([]AgentWithSessions, 0, len(availableAssistants))
+			for _, assistant := range availableAssistants {
+				agents = append(agents, AgentWithSessions{
+					Assistant: assistant,
+					Sessions:  sessionsByAssistant[assistant.Binary], // nil if no sessions
+				})
+			}
+
 			data := struct {
-				Assistants []AssistantConfig
-				NewUUID    string
+				Agents  []AgentWithSessions
+				NewUUID string
 			}{
-				Assistants: availableAssistants,
-				NewUUID:    uuid.New().String(),
+				Agents:  agents,
+				NewUUID: uuid.New().String(),
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
