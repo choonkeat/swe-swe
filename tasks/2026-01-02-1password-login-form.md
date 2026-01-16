@@ -104,22 +104,22 @@ Update the login form HTML so password managers (1Password, iOS, Android) can de
 
 ### Recommended Fix
 
-Add a hidden username field and `id` attribute:
+Add a visible readonly username field, `id` attributes, and autofocus:
 
 ```html
 <form method="POST" action="/swe-swe-auth/login">
     <input type="hidden" name="redirect" value="...">
-    <input type="text" name="username" id="username" value="admin" autocomplete="username" style="display:none">
-    <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required>
+    <input type="text" name="username" id="username" value="admin" autocomplete="username" readonly>
+    <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required autofocus>
     <button type="submit">Login</button>
 </form>
 ```
 
 **Notes:**
-- Hidden username with `value="admin"` gives password managers an anchor
-- Using `style="display:none"` instead of `type="hidden"` because some password managers ignore hidden inputs
+- Visible readonly username with `value="admin"` gives password managers an anchor
+- Visible field looks like a standard login form (less suspicious than hidden)
 - `id` attributes help password managers identify fields
-- Labels omitted since username is hidden and password has placeholder (minimal change)
+- `autofocus` on password field for better UX since username is readonly
 
 ## Changes Made
 
@@ -133,14 +133,15 @@ Add a hidden username field and `id` attribute:
 
 ### After
 ```html
-<input type="text" name="username" id="username" value="admin" autocomplete="username" style="display:none">
-<input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required>
+<input type="text" name="username" id="username" value="admin" autocomplete="username" readonly>
+<input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required autofocus>
 ```
 
 ### Summary
-1. Added hidden username field with `value="admin"` and `autocomplete="username"` to anchor password managers
+1. Added visible readonly username field with `value="admin"` and `autocomplete="username"` to anchor password managers
 2. Added `id="password"` attribute to help password managers identify the field
-3. Used `style="display:none"` instead of `type="hidden"` so password managers don't ignore it
+3. Added `autofocus` to password field for better UX
+4. Username is visible (not hidden) to look like a standard login form
 
 ### Verification
 - [x] Build succeeds (`make build-cli`)
