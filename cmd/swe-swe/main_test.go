@@ -541,7 +541,7 @@ CMD done`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processDockerfileTemplate(template, tt.agents, tt.apt, "", false)
+			result := processDockerfileTemplate(template, tt.agents, tt.apt, "", false, nil)
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("result should contain %q, got:\n%s", s, result)
@@ -586,7 +586,7 @@ CMD done`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processDockerfileTemplate(template, []string{}, "", "", tt.withDocker)
+			result := processDockerfileTemplate(template, []string{}, "", "", tt.withDocker, nil)
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("result should contain %q, got:\n%s", s, result)
@@ -722,24 +722,29 @@ func TestGoldenFiles(t *testing.T) {
 // TestGoldenFilesMatchTemplate verifies golden Dockerfiles match template processing
 func TestGoldenFilesMatchTemplate(t *testing.T) {
 	variants := []struct {
-		name       string
-		agents     []string
-		apt        string
-		npm        string
-		withDocker bool
+		name          string
+		agents        []string
+		apt           string
+		npm           string
+		withDocker    bool
+		slashCommands []SlashCommandsRepo
 	}{
-		{"default", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", false},
-		{"claude-only", []string{"claude"}, "", "", false},
-		{"aider-only", []string{"aider"}, "", "", false},
-		{"goose-only", []string{"goose"}, "", "", false},
-		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", "", false},
-		{"exclude-aider", []string{"claude", "gemini", "codex", "goose"}, "", "", false},
-		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim curl", "", false},
-		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "typescript", false},
-		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim", "typescript", false},
-		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", true},
-		// Note: with-slash-commands variants are not included here because they don't affect
-		// Dockerfile template processing yet (slash commands functionality not implemented)
+		{"default", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", false, nil},
+		{"claude-only", []string{"claude"}, "", "", false, nil},
+		{"aider-only", []string{"aider"}, "", "", false, nil},
+		{"goose-only", []string{"goose"}, "", "", false, nil},
+		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", "", false, nil},
+		{"exclude-aider", []string{"claude", "gemini", "codex", "goose"}, "", "", false, nil},
+		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim curl", "", false, nil},
+		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "typescript", false, nil},
+		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim", "typescript", false, nil},
+		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", true, nil},
+		{"with-slash-commands", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-multi", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}, {Alias: "org/team-cmds", URL: "https://github.com/org/team-cmds.git"}}},
+		{"with-slash-commands-claude-only", []string{"claude"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-codex-only", []string{"codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-no-alias", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", false, []SlashCommandsRepo{{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-claude-codex", []string{"claude", "codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 	}
 
 	// Read the template
@@ -751,7 +756,7 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 	for _, v := range variants {
 		t.Run(v.name, func(t *testing.T) {
 			// Generate expected output from template
-			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker)
+			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, v.slashCommands)
 
 			// Read golden file
 			goldenDir := filepath.Join("testdata", "golden", v.name, "home", ".swe-swe", "projects")

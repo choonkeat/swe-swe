@@ -69,6 +69,7 @@ RUN ARCH="$(dpkg --print-architecture)" && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.4.1.tgz" | \
     tar xz -C /usr/local/bin --strip-components=1 docker/docker
 
+
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.

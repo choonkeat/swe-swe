@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,39 @@ type AssistantConfig struct {
 	ShellCmd        string // Command to start the assistant
 	ShellRestartCmd string // Command to restart (resume) the assistant
 	Binary          string // Binary name to check with exec.LookPath
+}
+
+// SessionInfo holds session data for template rendering
+type SessionInfo struct {
+	UUID        string
+	UUIDShort   string
+	Assistant   string // binary name for URL
+	ClientCount int
+	CreatedAt   time.Time
+	DurationStr string // human-readable duration (e.g., "5m", "1h 23m")
+}
+
+// formatDuration returns a human-readable duration string
+func formatDuration(d time.Duration) string {
+	d = d.Truncate(time.Minute)
+	if d < time.Minute {
+		return "<1m"
+	}
+	h := d / time.Hour
+	m := (d % time.Hour) / time.Minute
+	if h > 0 {
+		if m > 0 {
+			return fmt.Sprintf("%dh %dm", h, m)
+		}
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
+// AgentWithSessions groups an assistant with its active sessions
+type AgentWithSessions struct {
+	Assistant AssistantConfig
+	Sessions  []SessionInfo // sorted by CreatedAt desc (most recent first)
 }
 
 // Predefined assistant configurations (ordered for consistent display)
@@ -99,6 +133,7 @@ type Session struct {
 	clientSizes     map[*websocket.Conn]TermSize
 	mu              sync.RWMutex
 	writeMu         sync.Mutex     // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
+	CreatedAt       time.Time      // when the session was created
 	lastActive      time.Time
 	vt              vt10x.Terminal // virtual terminal for screen state tracking
 	vtMu            sync.Mutex     // separate mutex for VT operations
@@ -618,12 +653,56 @@ func main() {
 		// Root path: show assistant selection page
 		if r.URL.Path == "/" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+			// Build agents with their sessions
+			sessionsByAssistant := make(map[string][]SessionInfo)
+
+			sessionsMu.RLock()
+			for _, sess := range sessions {
+				// Skip sessions where process has exited
+				if sess.Cmd.ProcessState != nil {
+					continue
+				}
+
+				uuidShort := sess.UUID
+				if len(sess.UUID) >= 5 {
+					uuidShort = sess.UUID[:5]
+				}
+
+				info := SessionInfo{
+					UUID:        sess.UUID,
+					UUIDShort:   uuidShort,
+					Assistant:   sess.Assistant,
+					ClientCount: sess.ClientCount(),
+					CreatedAt:   sess.CreatedAt,
+					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
+				}
+				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
+			}
+			sessionsMu.RUnlock()
+
+			// Sort sessions within each assistant by CreatedAt desc (most recent first)
+			for assistant := range sessionsByAssistant {
+				sort.Slice(sessionsByAssistant[assistant], func(i, j int) bool {
+					return sessionsByAssistant[assistant][i].CreatedAt.After(sessionsByAssistant[assistant][j].CreatedAt)
+				})
+			}
+
+			// Build AgentWithSessions for all available assistants
+			agents := make([]AgentWithSessions, 0, len(availableAssistants))
+			for _, assistant := range availableAssistants {
+				agents = append(agents, AgentWithSessions{
+					Assistant: assistant,
+					Sessions:  sessionsByAssistant[assistant.Binary], // nil if no sessions
+				})
+			}
+
 			data := struct {
-				Assistants []AssistantConfig
-				NewUUID    string
+				Agents  []AgentWithSessions
+				NewUUID string
 			}{
-				Assistants: availableAssistants,
-				NewUUID:    uuid.New().String(),
+				Agents:  agents,
+				NewUUID: uuid.New().String(),
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
@@ -800,6 +879,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		PTY:             ptmx,
 		clients:         make(map[*websocket.Conn]bool),
 		clientSizes:     make(map[*websocket.Conn]TermSize),
+		CreatedAt:       time.Now(),
 		lastActive:      time.Now(),
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 	}

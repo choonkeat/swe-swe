@@ -20,7 +20,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
             min-height: 100%;
             padding: 24px;
         }
@@ -38,66 +37,115 @@
             font-size: 14px;
             color: #888;
         }
-        .selection-page__grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            max-width: 800px;
+        .agents-list {
+            max-width: 600px;
             width: 100%;
         }
-        .selection-page__card {
+        .agent-group {
+            margin-bottom: 24px;
+        }
+        .agent-group__header {
             display: flex;
-            flex-direction: column;
             align-items: center;
-            padding: 24px;
-            background: #2d2d2d;
-            border: 2px solid #404040;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-decoration: none;
-            color: inherit;
+            gap: 8px;
+            margin-bottom: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid #404040;
         }
-        .selection-page__card:hover {
-            border-color: #007acc;
-            background: #333;
-            transform: translateY(-2px);
+        .agent-group__icon {
+            font-size: 24px;
         }
-        .selection-page__card:active {
-            transform: translateY(0);
-        }
-        .selection-page__card-icon {
-            font-size: 32px;
-            margin-bottom: 12px;
-        }
-        .selection-page__card-name {
+        .agent-group__name {
             font-size: 18px;
             font-weight: 600;
             color: #fff;
-            margin-bottom: 4px;
         }
-        .selection-page__card-desc {
+        .agent-group__count {
             font-size: 12px;
             color: #888;
-            text-align: center;
+            margin-left: auto;
         }
-        /* Assistant-specific colors */
-        .selection-page__card[data-assistant="claude"]:hover {
+        .agent-group__sessions {
+            padding-left: 16px;
+        }
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            margin: 4px 0;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.15s ease;
+        }
+        .session-item:hover {
+            border-color: #007acc;
+            background: #333;
+        }
+        .session-item__uuid {
+            font-family: monospace;
+            font-size: 14px;
+            color: #9cdcfe;
+        }
+        .session-item__viewers {
+            font-size: 12px;
+            color: #888;
+        }
+        .session-item__duration {
+            font-size: 12px;
+            color: #888;
+            margin-left: auto;
+        }
+        .new-session {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            margin: 4px 0;
+            background: transparent;
+            border: 1px dashed #404040;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #888;
+            transition: all 0.15s ease;
+        }
+        .new-session:hover {
+            border-color: #007acc;
+            color: #fff;
+            background: #2d2d2d;
+        }
+        .new-session__icon {
+            font-size: 14px;
+        }
+        .new-session__text {
+            font-size: 14px;
+        }
+        /* Assistant-specific hover colors */
+        .agent-group[data-assistant="claude"] .session-item:hover,
+        .agent-group[data-assistant="claude"] .new-session:hover {
             border-color: #d97706;
         }
-        .selection-page__card[data-assistant="gemini"]:hover {
+        .agent-group[data-assistant="gemini"] .session-item:hover,
+        .agent-group[data-assistant="gemini"] .new-session:hover {
             border-color: #4285f4;
         }
-        .selection-page__card[data-assistant="codex"]:hover {
+        .agent-group[data-assistant="codex"] .session-item:hover,
+        .agent-group[data-assistant="codex"] .new-session:hover {
             border-color: #10a37f;
         }
-        .selection-page__card[data-assistant="goose"]:hover {
+        .agent-group[data-assistant="goose"] .session-item:hover,
+        .agent-group[data-assistant="goose"] .new-session:hover {
             border-color: #f472b6;
         }
-        .selection-page__card[data-assistant="aider"]:hover {
+        .agent-group[data-assistant="aider"] .session-item:hover,
+        .agent-group[data-assistant="aider"] .new-session:hover {
             border-color: #22c55e;
         }
-        .selection-page__card[data-assistant="custom"]:hover {
+        .agent-group[data-assistant="custom"] .session-item:hover,
+        .agent-group[data-assistant="custom"] .new-session:hover {
             border-color: #a855f7;
         }
     </style>
@@ -105,16 +153,31 @@
 <body>
     <div class="selection-page">
         <div class="selection-page__header">
-            <h1 class="selection-page__title">Select AI Assistant</h1>
-            <p class="selection-page__subtitle">Choose an assistant to start a new terminal session</p>
+            <h1 class="selection-page__title">AI Assistants</h1>
+            <p class="selection-page__subtitle">Join an existing session or start a new one</p>
         </div>
-        <div class="selection-page__grid">
-            {{range .Assistants}}
-            <a href="/session/{{$.NewUUID}}?assistant={{.Binary}}" class="selection-page__card" data-assistant="{{.Binary}}">
-                <div class="selection-page__card-icon">{{if eq .Binary "claude"}}🧠{{else if eq .Binary "gemini"}}✨{{else if eq .Binary "codex"}}🤖{{else if eq .Binary "goose"}}🪿{{else if eq .Binary "aider"}}🛠{{else}}⚙️{{end}}</div>
-                <div class="selection-page__card-name">{{.Name}}</div>
-                <div class="selection-page__card-desc">{{.ShellCmd}}</div>
-            </a>
+        <div class="agents-list">
+            {{range .Agents}}
+            <div class="agent-group" data-assistant="{{.Assistant.Binary}}">
+                <div class="agent-group__header">
+                    <span class="agent-group__icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
+                    <span class="agent-group__name">{{.Assistant.Name}}</span>
+                    {{if .Sessions}}<span class="agent-group__count">{{len .Sessions}} session{{if gt (len .Sessions) 1}}s{{end}}</span>{{end}}
+                </div>
+                <div class="agent-group__sessions">
+                    {{range .Sessions}}
+                    <a href="/session/{{.UUID}}?assistant={{.Assistant}}" class="session-item">
+                        <span class="session-item__uuid">{{.UUIDShort}}</span>
+                        <span class="session-item__viewers">{{.ClientCount}} viewer{{if ne .ClientCount 1}}s{{end}}</span>
+                        <span class="session-item__duration">{{.DurationStr}}</span>
+                    </a>
+                    {{end}}
+                    <a href="/session/{{$.NewUUID}}?assistant={{.Assistant.Binary}}" class="new-session">
+                        <span class="new-session__icon">+</span>
+                        <span class="new-session__text">Start new session</span>
+                    </a>
+                </div>
+            </div>
             {{end}}
         </div>
     </div>
