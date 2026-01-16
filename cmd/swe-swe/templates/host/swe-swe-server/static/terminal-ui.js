@@ -151,7 +151,7 @@ class TerminalUI extends HTMLElement {
                     background: #505050;
                 }
                 .terminal-ui__extra-keys button.modifier {
-                    background: #4a4a4a;
+                    /* No special background when inactive - matches other buttons */
                 }
                 .terminal-ui__extra-keys button.modifier.active {
                     background: #007acc;
