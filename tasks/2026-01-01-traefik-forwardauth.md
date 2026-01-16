@@ -138,10 +138,10 @@ Production-ready login experience with:
 | Step | Description |
 |------|-------------|
 | **3.1** | ✅ Cookie security attributes — `HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` if HTTPS (detect via `X-Forwarded-Proto`) |
-| **3.2** | Original URL redirect — read `X-Forwarded-Uri` from ForwardAuth request, pass to login form as query param `?redirect=`, redirect there after successful login |
-| **3.3** | Mobile-responsive login — inline CSS with viewport meta, touch-friendly input sizes, centered form |
-| **3.4** | Password field attributes — `autocomplete="current-password"` for password manager compatibility |
-| **3.5** | Error feedback — wrong password shows inline error message on login page (not just 401 status) |
+| **3.2** | ✅ Original URL redirect — read `X-Forwarded-Uri` from ForwardAuth request, pass to login form as query param `?redirect=`, redirect there after successful login |
+| **3.3** | ✅ Mobile-responsive login — inline CSS with viewport meta, touch-friendly input sizes, centered form |
+| **3.4** | ✅ Password field attributes — `autocomplete="current-password"` for password manager compatibility |
+| **3.5** | ✅ Error feedback — wrong password shows inline error message on login page (not just 401 status) |
 
 ### Verification (MCP Playwright)
 
