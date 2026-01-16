@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -1169,7 +1170,8 @@ func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	logContent := "Static terminal output\r\n"
+	// Content with distinctive first and last parts to verify ENTIRE content is embedded
+	logContent := "FIRST_LINE\r\n...middle content...\r\nLAST_LINE\r\n"
 	h.createRecordingFiles(testUUID, recordingOpts{
 		logContent: logContent,
 		withTiming: false,
@@ -1222,6 +1224,39 @@ func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
 	// Should NOT have timeline/progress controls
 	if strings.Contains(html, "progressBar") || strings.Contains(html, "progress-bar") {
 		t.Error("expected static mode NOT to have progress bar")
+	}
+
+	// Verify the ENTIRE content is embedded (not just first frame)
+	// Extract the base64 content from the HTML and decode it
+	// Look for: const contentBase64 = '...';
+	contentMatch := strings.Index(html, "const contentBase64 = '")
+	if contentMatch == -1 {
+		t.Fatal("could not find contentBase64 in static HTML")
+	}
+	start := contentMatch + len("const contentBase64 = '")
+	end := strings.Index(html[start:], "'")
+	if end == -1 {
+		t.Fatal("could not find end of contentBase64 string")
+	}
+	base64Content := html[start : start+end]
+
+	// Decode base64
+	decoded, err := base64.StdEncoding.DecodeString(base64Content)
+	if err != nil {
+		t.Fatalf("failed to decode base64 content: %v", err)
+	}
+	decodedStr := string(decoded)
+
+	// CRITICAL: Verify both first AND last parts are present
+	// This confirms we're showing the entire recording, not just first frame
+	if !strings.Contains(decodedStr, "FIRST_LINE") {
+		t.Error("expected decoded content to contain FIRST_LINE")
+	}
+	if !strings.Contains(decodedStr, "LAST_LINE") {
+		t.Error("expected decoded content to contain LAST_LINE - static mode should show ALL content, not just first frame")
+	}
+	if !strings.Contains(decodedStr, "middle content") {
+		t.Error("expected decoded content to contain middle content")
 	}
 }
 
@@ -1315,5 +1350,202 @@ func TestPlaybackPage_BackLink(t *testing.T) {
 	// Should have a link back to homepage
 	if !strings.Contains(html, `href="/"`) && !strings.Contains(html, `href='/'`) {
 		t.Error("expected page to contain back link to homepage '/'")
+	}
+}
+
+// ============================================================================
+// Phase 6: Homepage Recording Display Tests (loadEndedRecordings, loadEndedRecordingsByAgent)
+// ============================================================================
+
+func TestLoadEndedRecordings_EmptyDirectory(t *testing.T) {
+	h := newTestHelper(t)
+	_ = h // Just initialize the test helper to set up recordings dir
+
+	recordings := loadEndedRecordings()
+
+	if len(recordings) != 0 {
+		t.Errorf("expected 0 recordings, got %d", len(recordings))
+	}
+}
+
+func TestLoadEndedRecordings_DirectoryMissing(t *testing.T) {
+	h := newTestHelper(t)
+
+	// Remove the recordings directory
+	os.RemoveAll(h.recordingDir)
+
+	recordings := loadEndedRecordings()
+
+	// Should return nil, not panic
+	if recordings != nil && len(recordings) != 0 {
+		t.Errorf("expected nil or empty slice, got %d recordings", len(recordings))
+	}
+}
+
+func TestLoadEndedRecordings_ExcludesActiveRecordings(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	sessionUUID := "session-1234"
+
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	// Create session with RUNNING process (ProcessState = nil)
+	h.createMockSession(sessionUUID, recordingUUID, false) // processExited=false
+
+	recordings := loadEndedRecordings()
+
+	// Should NOT include active recording
+	for _, rec := range recordings {
+		if rec.UUID == recordingUUID {
+			t.Error("expected active recording to be excluded from loadEndedRecordings")
+		}
+	}
+}
+
+func TestLoadEndedRecordings_IncludesEndedRecordings(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	sessionUUID := "session-1234"
+
+	h.createRecordingFiles(recordingUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID: recordingUUID,
+			Name: "Ended Recording",
+		},
+	})
+
+	// Create session with EXITED process (ProcessState != nil)
+	// This is the bug scenario we fixed - session still in map but process exited
+	h.createMockSession(sessionUUID, recordingUUID, true) // processExited=true
+
+	recordings := loadEndedRecordings()
+
+	found := false
+	for _, rec := range recordings {
+		if rec.UUID == recordingUUID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("expected ended recording (process exited) to be included in loadEndedRecordings")
+	}
+}
+
+func TestLoadEndedRecordings_IncludesOrphanRecordings(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	// Create recording files but NO session in map (orphan)
+	h.createRecordingFiles(recordingUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID: recordingUUID,
+			Name: "Orphan Recording",
+		},
+	})
+
+	recordings := loadEndedRecordings()
+
+	found := false
+	for _, rec := range recordings {
+		if rec.UUID == recordingUUID {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("expected orphan recording (no session) to be included in loadEndedRecordings")
+	}
+}
+
+func TestLoadEndedRecordings_EndedAgoFromMetadata(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	endTime := time.Now().Add(-time.Hour)
+
+	h.createRecordingFiles(recordingUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:    recordingUUID,
+			EndedAt: &endTime,
+		},
+	})
+
+	recordings := loadEndedRecordings()
+
+	if len(recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(recordings))
+	}
+
+	// EndedAgo should be populated from metadata.ended_at
+	if recordings[0].EndedAgo == "" {
+		t.Error("expected EndedAgo to be populated from metadata")
+	}
+}
+
+func TestLoadEndedRecordingsByAgent_GroupsByAgent(t *testing.T) {
+	h := newTestHelper(t)
+
+	// Create recordings for different agents
+	claudeUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	geminiUUID := "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	h.createRecordingFiles(claudeUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:  claudeUUID,
+			Name:  "Claude Session",
+			Agent: "Claude",
+		},
+	})
+
+	h.createRecordingFiles(geminiUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:  geminiUUID,
+			Name:  "Gemini Session",
+			Agent: "Gemini",
+		},
+	})
+
+	grouped := loadEndedRecordingsByAgent()
+
+	// Should have entries for both agents
+	claudeRecordings := grouped["claude"]
+	geminiRecordings := grouped["gemini"]
+
+	if len(claudeRecordings) != 1 {
+		t.Errorf("expected 1 Claude recording, got %d", len(claudeRecordings))
+	}
+	if len(geminiRecordings) != 1 {
+		t.Errorf("expected 1 Gemini recording, got %d", len(geminiRecordings))
+	}
+}
+
+func TestLoadEndedRecordingsByAgent_MapsDisplayNamesToBinaryNames(t *testing.T) {
+	h := newTestHelper(t)
+
+	// Create recording with display name "Claude" (should map to binary name "claude")
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:  testUUID,
+			Name:  "Test Session",
+			Agent: "Claude", // Display name
+		},
+	})
+
+	grouped := loadEndedRecordingsByAgent()
+
+	// Should be grouped under "claude" (binary name), not "Claude"
+	if _, ok := grouped["Claude"]; ok {
+		t.Error("expected display name 'Claude' to be mapped to binary name 'claude'")
+	}
+	if recordings, ok := grouped["claude"]; !ok || len(recordings) != 1 {
+		t.Error("expected recording to be grouped under 'claude'")
 	}
 }

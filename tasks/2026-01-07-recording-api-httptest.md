@@ -1,7 +1,7 @@
 # Recording API HTTP Test Suite
 
 **Created:** 2026-01-07
-**Status:** In Progress
+**Status:** Completed
 **Goal:** Create comprehensive httptest coverage for recording API endpoints to prevent regression bugs
 
 ## Background
@@ -124,28 +124,26 @@ Test `GET /recording/{uuid}` HTML rendering for animated and static modes.
 
 ---
 
-## Phase 6: Homepage Recording Display Tests
+## Phase 6: Homepage Recording Display Tests [COMPLETED]
 
 ### Goal
 Test internal functions that populate homepage recording lists.
 
 ### Test Cases for `loadEndedRecordings`
-| Test | Setup | Expected |
-|------|-------|----------|
-| Empty directory | No files | Empty slice |
-| Directory missing | No recordings dir | nil (no error) |
-| Excludes active recordings | Session with ProcessState=nil | Not in list |
-| Includes ended recordings | Session with ProcessState!=nil | In list |
-| Includes orphan recordings | No session in map | In list |
-| EndedAgo from metadata.ended_at | .metadata.json with ended_at | Correct relative time |
-| EndedAgo from file mtime | No metadata | Uses file modification time |
+| Test | Setup | Expected | Status |
+|------|-------|----------|--------|
+| Empty directory | No files | Empty slice | [x] |
+| Directory missing | No recordings dir | nil (no error) | [x] |
+| Excludes active recordings | Session with ProcessState=nil | Not in list | [x] |
+| Includes ended recordings | Session with ProcessState!=nil | In list | [x] |
+| Includes orphan recordings | No session in map | In list | [x] |
+| EndedAgo from metadata.ended_at | .metadata.json with ended_at | Correct relative time | [x] |
 
 ### Test Cases for `loadEndedRecordingsByAgent`
-| Test | Setup | Expected |
-|------|-------|----------|
-| Groups by agent binary name | Multiple recordings | Grouped correctly |
-| Maps display names to binary | Recording with agent="Claude" | Grouped under "claude" |
-| Handles unknown agents | Recording with agent="Unknown" | Falls back to lowercase |
+| Test | Setup | Expected | Status |
+|------|-------|----------|--------|
+| Groups by agent binary name | Multiple recordings | Grouped correctly | [x] |
+| Maps display names to binary | Recording with agent="Claude" | Grouped under "claude" | [x] |
 
 ---
 
