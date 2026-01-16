@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
    swe-swe up --project-directory /path/to/your/project
    ```
 
-4. **Access the services**
+4. **Access the services** (use `https://` if initialized with `--ssl=selfsign`)
    - **swe-swe terminal**: http://0.0.0.0:1977
    - **VSCode**: http://0.0.0.0:1977/vscode
    - **Chrome VNC**: http://0.0.0.0:1977/chrome (browser automation viewer)
@@ -71,6 +71,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`)
+- `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP) or `selfsign` (HTTPS with auto-generated self-signed certificate)
 
 **Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`
 
@@ -96,6 +97,9 @@ swe-swe init --with-docker
 
 # Initialize current directory with custom slash commands for Claude/Codex
 swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
+
+# Initialize with HTTPS (self-signed certificate)
+swe-swe init --ssl=selfsign
 
 # Initialize a specific directory
 swe-swe init --project-directory ~/my-project
@@ -251,7 +255,8 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 ├── auth/                   # ForwardAuth service source code
 ├── chrome/                 # Chrome/noVNC service (Dockerfile, configs)
 ├── home/                   # Persistent VSCode/shell home (volume)
-└── certs/                  # Enterprise certificates (if detected)
+├── certs/                  # Enterprise certificates (if detected)
+└── tls/                    # Self-signed TLS certificates (if --ssl=selfsign)
 ```
 
 **Why metadata is stored outside the project:**
@@ -292,7 +297,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - Terminal integration
 
 #### traefik
-- **Port**: 7000 (external port 1977)
+- **Port**: 7000 HTTP or 7443 HTTPS (external port 1977)
 - **Purpose**: Reverse proxy and routing with path-based request matching
 - **Routing Rules**:
   - `/swe-swe-auth/*` path: Auth service for ForwardAuth (priority 200)

@@ -39,7 +39,7 @@ Following the CLAUDE.md two-commit TDD approach.
 ### What will be achieved
 - When `--ssl=selfsign`, self-signed certificates are generated using Go crypto
 - Traefik configured to serve HTTPS instead of HTTP
-- Certificates stored in `certs/` directory
+- TLS certificates stored in `tls/` directory (separate from enterprise CA certs in `certs/`)
 
 ### Steps
 1. [x] Add `generateSelfSignedCert(certsDir string)` function using Go's `crypto/x509`, `crypto/rsa`, `crypto/rand`
@@ -56,10 +56,10 @@ Following the CLAUDE.md two-commit TDD approach.
 ### Verification
 1. [x] `make build golden-update`
 2. [x] `git add -A cmd/swe-swe/testdata/golden && git diff --cached -- cmd/swe-swe/testdata/golden`
-3. [x] **Expect**: `with-ssl-selfsign` shows changes in `docker-compose.yml`, `traefik-dynamic.yml`, and new cert files in `certs/`
+3. [x] **Expect**: `with-ssl-selfsign` shows changes in `docker-compose.yml`, `traefik-dynamic.yml`, and new cert files in `tls/`
 4. [x] `go test ./cmd/swe-swe/...` passes
 5. [x] **Commit**
-6. [ ] **Manual test**: `swe-swe init --ssl=selfsign && swe-swe up` → verify HTTPS works
+6. [x] **Manual test**: `swe-swe init --ssl=selfsign && swe-swe up` → verify HTTPS works
 
 ---
 
