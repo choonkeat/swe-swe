@@ -845,6 +845,10 @@ func handleInit() {
 		log.Fatalf("Failed to write path file: %v", err)
 	}
 
+	// Handle enterprise certificates early (before Dockerfile processing)
+	// This allows the certificate detection to inform the Dockerfile template
+	hasCerts := handleCertificates(sweDir, certsDir)
+
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	hostFiles := []string{
@@ -912,7 +916,7 @@ func handleInit() {
 
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, false, slashCmds))
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, hasCerts, slashCmds))
 			}
 
 			// Process docker-compose.yml template with conditional sections
@@ -974,9 +978,6 @@ func handleInit() {
 			}
 			fmt.Printf("Created %s\n", destPath)
 		}
-
-	// Handle enterprise certificates
-	handleCertificates(sweDir, certsDir)
 
 	// Save init configuration for --previous-init-flags=reuse
 	initConfig := InitConfig{
