@@ -734,6 +734,7 @@ class TerminalUI extends HTMLElement {
         services.forEach((service, index) => {
             const a = document.createElement('a');
             a.href = service.url;
+            a.target = `swe-swe-${service.name}`;
             a.className = 'terminal-ui__status-link';
             a.textContent = service.name;
             container.appendChild(a);
@@ -970,7 +971,7 @@ class TerminalUI extends HTMLElement {
             let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
 
             if (this.assistantName) {
-                html += ` with <a href="/" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
+                html += ` with <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
 
             // Add viewer suffix if more than 1 viewer
