@@ -68,7 +68,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=aider-only FLAGS="--agents aider"
 	@$(MAKE) _golden-variant NAME=goose-only FLAGS="--agents goose"
 	@$(MAKE) _golden-variant NAME=nodejs-agents FLAGS="--agents claude,gemini,codex"
-	@$(MAKE) _golden-variant NAME=exclude-aider FLAGS="--exclude aider"
+	@$(MAKE) _golden-variant NAME=exclude-aider FLAGS="--exclude-agents aider"
 	@$(MAKE) _golden-variant NAME=with-apt FLAGS="--apt-get-install vim,curl"
 	@$(MAKE) _golden-variant NAME=with-npm FLAGS="--npm-install typescript"
 	@$(MAKE) _golden-variant NAME=with-both-packages FLAGS="--apt-get-install vim --npm-install typescript"
