@@ -994,9 +994,10 @@ func handleInit() {
 }
 
 // handleCertificates detects and copies enterprise certificates for Docker builds
-// Supports NODE_EXTRA_CA_CERTS and SSL_CERT_FILE environment variables
+// Supports NODE_EXTRA_CA_CERTS, SSL_CERT_FILE, and NODE_EXTRA_CA_CERTS_BUNDLE environment variables
 // for users behind corporate firewalls or VPNs (Cloudflare Warp, etc)
-func handleCertificates(sweDir, certsDir string) {
+// Returns true if any certificates were found and copied, false otherwise
+func handleCertificates(sweDir, certsDir string) bool {
 	// Check for certificate environment variables
 	certEnvVars := []string{
 		"NODE_EXTRA_CA_CERTS",
@@ -1045,10 +1046,12 @@ func handleCertificates(sweDir, certsDir string) {
 		envFilePath := filepath.Join(sweDir, ".env")
 		if err := os.WriteFile(envFilePath, []byte(envFileContent), 0644); err != nil {
 			fmt.Printf("Warning: Failed to create .env file: %v\n", err)
-			return
+			return false
 		}
 		fmt.Printf("Created %s with certificate configuration\n", envFilePath)
+		return true
 	}
+	return false
 }
 
 // copyFile copies source to destination
