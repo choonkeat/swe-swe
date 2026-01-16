@@ -472,6 +472,18 @@ func (s *Session) readRing() []byte {
 
 // Close terminates the session
 func (s *Session) Close() {
+	// Set EndedAt and save metadata before closing (must be done before acquiring lock
+	// since saveMetadata also uses the lock)
+	s.mu.Lock()
+	if s.Metadata != nil && s.Metadata.EndedAt == nil {
+		now := time.Now()
+		s.Metadata.EndedAt = &now
+	}
+	s.mu.Unlock()
+	if err := s.saveMetadata(); err != nil {
+		log.Printf("Failed to save metadata on close: %v", err)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1188,6 +1200,11 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 	}
 	sessions[sessionUUID] = sess
 
+	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly
+	if err := sess.saveMetadata(); err != nil {
+		log.Printf("Failed to save initial metadata: %v", err)
+	}
+
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sessionUUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
 }
@@ -1609,11 +1626,12 @@ func loadEndedRecordings() []RecordingInfo {
 		return nil
 	}
 
-	// Build map of active recording UUIDs
+	// Build map of active recording UUIDs (only for sessions with running processes)
 	activeRecordings := make(map[string]bool)
 	sessionsMu.RLock()
 	for _, sess := range sessions {
-		if sess.RecordingUUID != "" {
+		// Only consider recording "active" if the process is still running
+		if sess.RecordingUUID != "" && sess.Cmd != nil && sess.Cmd.ProcessState == nil {
 			activeRecordings[sess.RecordingUUID] = true
 		}
 	}
@@ -1840,11 +1858,12 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build map of active recording UUIDs
+	// Build map of active recording UUIDs (only for sessions with running processes)
 	activeRecordings := make(map[string]bool)
 	sessionsMu.RLock()
 	for _, sess := range sessions {
-		if sess.RecordingUUID != "" {
+		// Only consider recording "active" if the process is still running
+		if sess.RecordingUUID != "" && sess.Cmd != nil && sess.Cmd.ProcessState == nil {
 			activeRecordings[sess.RecordingUUID] = true
 		}
 	}
