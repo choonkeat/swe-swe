@@ -287,7 +287,7 @@ Final verification that changes integrate cleanly with the codebase after prereq
 
 ## Status
 
-- [ ] Phase 1: Backend - Extend exit broadcast with worktree info
+- [x] Phase 1: Backend - Extend exit broadcast with worktree info
 - [ ] Phase 2: Backend - Add worktree cleanup API endpoints
 - [ ] Phase 3: Frontend - Worktree-aware exit prompt
 - [ ] Phase 4: Integration testing
