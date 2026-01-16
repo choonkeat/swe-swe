@@ -69,6 +69,18 @@ RUN ARCH="$(dpkg --print-architecture)" && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.4.1.tgz" | \
     tar xz -C /usr/local/bin --strip-components=1 docker/docker
 
+# Install Docker Compose plugin (enables `docker compose` command)
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "${ARCH}" in \
+        amd64) COMPOSE_ARCH="x86_64" ;; \
+        arm64) COMPOSE_ARCH="aarch64" ;; \
+        *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+    esac && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-${COMPOSE_ARCH}" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
 
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
