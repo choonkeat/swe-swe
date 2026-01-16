@@ -149,6 +149,20 @@ func (h *testHelper) recordingFileExists(uuid, suffix string) bool {
 }
 
 // ============================================================================
+// Test server helper
+// ============================================================================
+
+func (h *testHelper) createTestServer() *httptest.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/recording/", handleRecordingAPI)
+	mux.HandleFunc("/recording/", func(w http.ResponseWriter, r *http.Request) {
+		recordingUUID := r.URL.Path[len("/recording/"):]
+		handleRecordingPage(w, r, recordingUUID)
+	})
+	return httptest.NewServer(mux)
+}
+
+// ============================================================================
 // Phase 1: Smoke Test - Verify test infrastructure works
 // ============================================================================
 
@@ -215,5 +229,359 @@ func TestRecordingAPI_SmokeTest(t *testing.T) {
 		if !rec.HasTiming {
 			t.Error("expected HasTiming to be true")
 		}
+	}
+}
+
+// ============================================================================
+// Phase 2: Recording List API Tests (GET /api/recording/list)
+// ============================================================================
+
+func TestListRecordings_EmptyDirectory(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 0 {
+		t.Errorf("expected 0 recordings, got %d", len(result.Recordings))
+	}
+}
+
+func TestListRecordings_DirectoryMissing(t *testing.T) {
+	h := newTestHelper(t)
+
+	// Remove the recordings directory
+	os.RemoveAll(h.recordingDir)
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200 (empty list), got %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 0 {
+		t.Errorf("expected 0 recordings, got %d", len(result.Recordings))
+	}
+}
+
+func TestListRecordings_WithMetadata(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	startTime := time.Date(2026, 1, 7, 10, 0, 0, 0, time.UTC)
+	endTime := time.Date(2026, 1, 7, 11, 0, 0, 0, time.UTC)
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:      testUUID,
+			Name:      "My Test Session",
+			Agent:     "Claude",
+			StartedAt: startTime,
+			EndedAt:   &endTime,
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(result.Recordings))
+	}
+
+	rec := result.Recordings[0]
+	if rec.UUID != testUUID {
+		t.Errorf("expected UUID %s, got %s", testUUID, rec.UUID)
+	}
+	if rec.Name != "My Test Session" {
+		t.Errorf("expected name 'My Test Session', got %s", rec.Name)
+	}
+	if rec.Agent != "Claude" {
+		t.Errorf("expected agent 'Claude', got %s", rec.Agent)
+	}
+	if rec.StartedAt == nil {
+		t.Error("expected StartedAt to be set")
+	}
+	if rec.EndedAt == nil {
+		t.Error("expected EndedAt to be set")
+	}
+}
+
+func TestListRecordings_WithoutMetadata(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logContent: "test content",
+		// No metadata
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(result.Recordings))
+	}
+
+	rec := result.Recordings[0]
+	if rec.UUID != testUUID {
+		t.Errorf("expected UUID %s, got %s", testUUID, rec.UUID)
+	}
+	if rec.Name != "" {
+		t.Errorf("expected empty name, got %s", rec.Name)
+	}
+	if rec.SizeBytes <= 0 {
+		t.Error("expected SizeBytes > 0")
+	}
+}
+
+func TestListRecordings_WithTimingFile(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(result.Recordings))
+	}
+
+	if !result.Recordings[0].HasTiming {
+		t.Error("expected HasTiming to be true")
+	}
+}
+
+func TestListRecordings_WithoutTimingFile(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: false,
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(result.Recordings))
+	}
+
+	if result.Recordings[0].HasTiming {
+		t.Error("expected HasTiming to be false")
+	}
+}
+
+func TestListRecordings_ActiveRecording_ProcessRunning(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	sessionUUID := "session-1234"
+
+	// Create recording files
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	// Create session with RUNNING process (ProcessState = nil)
+	h.createMockSession(sessionUUID, recordingUUID, false) // processExited=false
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(result.Recordings))
+	}
+
+	if !result.Recordings[0].IsActive {
+		t.Error("expected IsActive to be true for running process")
+	}
+}
+
+func TestListRecordings_EndedRecording_ProcessExited(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	sessionUUID := "session-1234"
+
+	// Create recording files
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	// Create session with EXITED process (ProcessState != nil)
+	// This is the bug scenario we fixed - session still in map but process exited
+	h.createMockSession(sessionUUID, recordingUUID, true) // processExited=true
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(result.Recordings))
+	}
+
+	if result.Recordings[0].IsActive {
+		t.Error("expected IsActive to be false for exited process")
+	}
+}
+
+func TestListRecordings_MultipleRecordingsSortedByDate(t *testing.T) {
+	h := newTestHelper(t)
+
+	// Create recordings with different dates
+	oldUUID := "old-uuid-1234-5678-9abc-def012345678"
+	newUUID := "new-uuid-1234-5678-9abc-def012345678"
+
+	oldTime := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	newTime := time.Date(2026, 1, 7, 10, 0, 0, 0, time.UTC)
+
+	h.createRecordingFiles(oldUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:      oldUUID,
+			Name:      "Old Recording",
+			StartedAt: oldTime,
+		},
+	})
+
+	h.createRecordingFiles(newUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:      newUUID,
+			Name:      "New Recording",
+			StartedAt: newTime,
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(result.Recordings) != 2 {
+		t.Fatalf("expected 2 recordings, got %d", len(result.Recordings))
+	}
+
+	// Newest first
+	if result.Recordings[0].Name != "New Recording" {
+		t.Errorf("expected first recording to be 'New Recording', got %s", result.Recordings[0].Name)
+	}
+	if result.Recordings[1].Name != "Old Recording" {
+		t.Errorf("expected second recording to be 'Old Recording', got %s", result.Recordings[1].Name)
 	}
 }
