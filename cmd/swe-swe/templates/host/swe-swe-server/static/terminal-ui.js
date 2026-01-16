@@ -31,6 +31,8 @@ class TerminalUI extends HTMLElement {
         // Chunked snapshot reassembly
         this.chunks = [];
         this.expectedChunks = 0;
+        // Debug mode from query string
+        this.debugMode = new URLSearchParams(location.search).get('debug') === 'true';
     }
 
     static get observedAttributes() {
@@ -1521,6 +1523,11 @@ class TerminalUI extends HTMLElement {
             msgEl.classList.add('fading');
             setTimeout(() => msgEl.remove(), 400);
         }, durationMs);
+    }
+
+    debugLog(message, durationMs = 3000) {
+        if (!this.debugMode) return;
+        this.showStatusNotification(`[DEBUG] ${message}`, durationMs);
     }
 
     sendChatMessage() {
