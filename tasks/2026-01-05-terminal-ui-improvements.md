@@ -125,7 +125,7 @@ This allows desktop users to have a cleaner UI while mobile users still get the 
 
 ---
 
-## Phase 3: Status Notifications via Chat Overlay
+## Phase 3: Status Notifications via Chat Overlay ✅
 
 ### What Will Be Achieved
 
