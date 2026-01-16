@@ -262,7 +262,8 @@ Init Options:
   --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands (space-separated)
                                          Format: [alias@]<git-url>
-  --ssl MODE                             SSL mode: 'no' (default) or 'selfsign' for self-signed HTTPS
+  --ssl MODE                             SSL mode: 'no' (default), 'selfsign', or 'selfsign@<host>'
+                                         Use selfsign@<ip-or-hostname> for remote access
 
 Available Agents:
   claude, gemini, codex, aider, goose
@@ -633,12 +634,12 @@ func processSimpleTemplate(content string, withDocker bool, ssl string) string {
 		}
 
 		if strings.Contains(trimmed, "{{IF SSL}}") {
-			skip = ssl != "selfsign"
+			skip = !strings.HasPrefix(ssl, "selfsign")
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF NO_SSL}}") {
-			skip = ssl == "selfsign"
+			skip = strings.HasPrefix(ssl, "selfsign")
 			continue
 		}
 
@@ -759,9 +760,15 @@ func handleInit() {
 		os.Exit(1)
 	}
 
-	// Validate --ssl flag
-	if *sslFlag != "no" && *sslFlag != "selfsign" {
-		fmt.Fprintf(os.Stderr, "Error: --ssl must be 'no' or 'selfsign', got %q\n", *sslFlag)
+	// Validate --ssl flag: 'no', 'selfsign', or 'selfsign@hostname/ip'
+	sslMode := *sslFlag
+	sslHost := ""
+	if strings.HasPrefix(*sslFlag, "selfsign@") {
+		sslMode = "selfsign"
+		sslHost = strings.TrimPrefix(*sslFlag, "selfsign@")
+	}
+	if sslMode != "no" && sslMode != "selfsign" {
+		fmt.Fprintf(os.Stderr, "Error: --ssl must be 'no', 'selfsign', or 'selfsign@<hostname/ip>', got %q\n", *sslFlag)
 		os.Exit(1)
 	}
 
@@ -901,7 +908,7 @@ func handleInit() {
 
 	// Generate self-signed certificate if SSL mode is selfsign
 	// Certs are stored in shared location ~/.swe-swe/tls/ so users only need to trust once
-	if *sslFlag == "selfsign" {
+	if sslMode == "selfsign" {
 		userHome, err := os.UserHomeDir()
 		if err != nil {
 			log.Fatalf("Failed to get user home directory: %v", err)
@@ -913,10 +920,14 @@ func handleInit() {
 		// Check if certificate already exists
 		certPath := filepath.Join(tlsDir, "server.crt")
 		if _, err := os.Stat(certPath); os.IsNotExist(err) {
-			if err := generateSelfSignedCert(tlsDir); err != nil {
+			if err := generateSelfSignedCert(tlsDir, sslHost); err != nil {
 				log.Fatalf("Failed to generate self-signed certificate: %v", err)
 			}
-			fmt.Printf("Generated self-signed SSL certificate in %s\n", tlsDir)
+			if sslHost != "" {
+				fmt.Printf("Generated self-signed SSL certificate for %s in %s\n", sslHost, tlsDir)
+			} else {
+				fmt.Printf("Generated self-signed SSL certificate in %s\n", tlsDir)
+			}
 		} else {
 			fmt.Printf("Reusing existing SSL certificate from %s\n", tlsDir)
 		}
@@ -1076,9 +1087,9 @@ func handleInit() {
 }
 
 // generateSelfSignedCert creates a self-signed TLS certificate and key for HTTPS.
-// The certificate is valid for localhost, 127.0.0.1, and common local hostnames.
+// The certificate is valid for localhost, 127.0.0.1, and optionally an extra host.
 // Files are written to certsDir as server.crt and server.key.
-func generateSelfSignedCert(certsDir string) error {
+func generateSelfSignedCert(certsDir string, extraHost string) error {
 	// Generate RSA private key
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -1091,19 +1102,37 @@ func generateSelfSignedCert(certsDir string) error {
 		return fmt.Errorf("failed to generate serial number: %w", err)
 	}
 
+	// Base DNS names and IPs
+	dnsNames := []string{"localhost", "*.localhost"}
+	ipAddresses := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+
+	// Add extra host if provided (can be IP or hostname)
+	commonName := "localhost"
+	if extraHost != "" {
+		if ip := net.ParseIP(extraHost); ip != nil {
+			// It's an IP address
+			ipAddresses = append(ipAddresses, ip)
+		} else {
+			// It's a hostname
+			dnsNames = append(dnsNames, extraHost)
+		}
+		commonName = extraHost
+	}
+
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"swe-swe"},
-			CommonName:   "localhost",
+			CommonName:   commonName,
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(10, 0, 0), // Valid for 10 years
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{"localhost", "*.localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		IsCA:                  true, // Required for iOS to show trust toggle in Certificate Trust Settings
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
 	}
 
 	// Create certificate
