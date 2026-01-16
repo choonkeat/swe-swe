@@ -83,6 +83,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=previous-init-flags-ignore FLAGS="--previous-init-flags=ignore"
 	@$(MAKE) _golden-variant NAME=previous-init-flags-ignore-claude FLAGS="--previous-init-flags=ignore --agents=claude"
 	@$(MAKE) _golden-variant NAME=previous-init-flags-invalid FLAGS="--previous-init-flags=invalid"
+	@$(MAKE) _golden-already-initialized
 	@rm -f /tmp/swe-swe-golden
 	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
 
@@ -91,3 +92,12 @@ _golden-variant:
 	@mkdir -p $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
 	@HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --project-directory /tmp/swe-swe-golden/$(NAME)/target \
 		2> $(GOLDEN_TESTDATA)/$(NAME)/stderr.txt || true
+
+# Multi-step golden test: init twice to test "already initialized" error
+_golden-already-initialized:
+	@rm -rf $(GOLDEN_TESTDATA)/already-initialized/home $(GOLDEN_TESTDATA)/already-initialized/target
+	@mkdir -p $(GOLDEN_TESTDATA)/already-initialized/home $(GOLDEN_TESTDATA)/already-initialized/target
+	@HOME=/tmp/swe-swe-golden/already-initialized/home $(SWE_SWE_CLI) init --agents=claude --project-directory /tmp/swe-swe-golden/already-initialized/target \
+		2> /dev/null || true
+	@HOME=/tmp/swe-swe-golden/already-initialized/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/already-initialized/target \
+		2> $(GOLDEN_TESTDATA)/already-initialized/stderr.txt || true
