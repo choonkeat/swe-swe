@@ -60,7 +60,7 @@ When the terminal loses focus, the status bar will become more visually muted â€
 
 ---
 
-## Phase 2: Conditional Mobile Keyboard Visibility
+## Phase 2: Conditional Mobile Keyboard Visibility âœ…
 
 ### What Will Be Achieved
 
