@@ -12,7 +12,7 @@ Add `--previous-init-flags` flag to `swe-swe init` that:
 ## Phases
 
 - [x] [Phase 1](#phase-1-parse-flag-and-add-golden-scenarios): Parse `--previous-init-flags` flag + add golden test scenarios
-- [ ] [Phase 2](#phase-2-store-init-configuration): Store init configuration after successful init
+- [x] [Phase 2](#phase-2-store-init-configuration): Store init configuration after successful init
 - [ ] [Phase 3](#phase-3-detect-already-initialized): Detect already-initialized projects and error
 - [ ] [Phase 4](#phase-4-implement-reuse): Implement `--previous-init-flags=reuse`
 - [ ] [Phase 5](#phase-5-implement-ignore): Implement `--previous-init-flags=ignore`

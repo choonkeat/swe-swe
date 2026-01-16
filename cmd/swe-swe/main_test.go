@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -885,5 +887,116 @@ func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
 	info, err := os.Stat(projectDir)
 	if err == nil && info.IsDir() {
 		t.Errorf("Project dir should not exist after deletion")
+	}
+}
+
+// TestInitConfigRoundTrip verifies that InitConfig can be marshaled and unmarshaled
+func TestInitConfigRoundTrip(t *testing.T) {
+	original := InitConfig{
+		Agents:      []string{"claude", "aider"},
+		AptPackages: "vim htop",
+		NpmPackages: "typescript tsx",
+		WithDocker:  true,
+		SlashCommands: []SlashCommandsRepo{
+			{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"},
+		},
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %v", err)
+	}
+
+	// Unmarshal back
+	var restored InitConfig
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
+
+	// Verify all fields match
+	if !reflect.DeepEqual(original, restored) {
+		t.Errorf("Round trip failed:\noriginal: %+v\nrestored: %+v", original, restored)
+	}
+}
+
+// TestInitConfigBackwardsCompatibility ensures we can load init.json
+// files created by older versions of swe-swe.
+//
+// ⚠️  IF THIS TEST FAILS AFTER YOUR CHANGES:
+//
+//	DO NOT edit the JSON fixture below to make the test pass.
+//	Instead, fix your code to remain compatible with existing init.json files.
+//	Users have real projects with these files - breaking compatibility
+//	means their `swe-swe init --previous-init-flags=reuse` will fail.
+//
+// If you need to add new fields:
+//   - Add them with zero-value defaults (omitempty or default handling)
+//   - Old init.json files without the field should still work
+func TestInitConfigBackwardsCompatibility(t *testing.T) {
+	// JSON fixture representing v1 format (DO NOT MODIFY)
+	const v1JSON = `{
+  "agents": ["claude", "gemini"],
+  "aptPackages": "vim",
+  "npmPackages": "",
+  "withDocker": true,
+  "slashCommands": [
+    {"alias": "ck", "url": "https://github.com/choonkeat/slash-commands.git"}
+  ]
+}`
+
+	var config InitConfig
+	if err := json.Unmarshal([]byte(v1JSON), &config); err != nil {
+		t.Fatalf("Failed to parse v1 JSON - backwards compatibility broken: %v", err)
+	}
+
+	// Verify expected values
+	if len(config.Agents) != 2 || config.Agents[0] != "claude" || config.Agents[1] != "gemini" {
+		t.Errorf("Agents mismatch: got %v", config.Agents)
+	}
+	if config.AptPackages != "vim" {
+		t.Errorf("AptPackages mismatch: got %q", config.AptPackages)
+	}
+	if config.NpmPackages != "" {
+		t.Errorf("NpmPackages mismatch: got %q", config.NpmPackages)
+	}
+	if !config.WithDocker {
+		t.Errorf("WithDocker should be true")
+	}
+	if len(config.SlashCommands) != 1 || config.SlashCommands[0].Alias != "ck" {
+		t.Errorf("SlashCommands mismatch: got %v", config.SlashCommands)
+	}
+}
+
+// TestSaveLoadInitConfig verifies save and load work together
+func TestSaveLoadInitConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	original := InitConfig{
+		Agents:      []string{"claude"},
+		AptPackages: "git",
+		WithDocker:  false,
+	}
+
+	// Save
+	if err := saveInitConfig(tmpDir, original); err != nil {
+		t.Fatalf("Failed to save: %v", err)
+	}
+
+	// Verify file exists
+	configPath := filepath.Join(tmpDir, "init.json")
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("init.json not created: %v", err)
+	}
+
+	// Load
+	loaded, err := loadInitConfig(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to load: %v", err)
+	}
+
+	// Verify
+	if !reflect.DeepEqual(original, loaded) {
+		t.Errorf("Save/Load mismatch:\noriginal: %+v\nloaded: %+v", original, loaded)
 	}
 }

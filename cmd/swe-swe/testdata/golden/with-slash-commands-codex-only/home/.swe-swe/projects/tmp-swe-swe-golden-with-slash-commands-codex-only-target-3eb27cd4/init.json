@@ -1,0 +1,11 @@
+{
+  "agents": [
+    "codex"
+  ],
+  "slashCommands": [
+    {
+      "alias": "ck",
+      "url": "https://github.com/choonkeat/slash-commands.git"
+    }
+  ]
+}
