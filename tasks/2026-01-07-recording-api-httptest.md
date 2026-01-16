@@ -81,22 +81,22 @@ Test `DELETE /api/recording/{uuid}` including the exact bug scenario we fixed.
 
 ---
 
-## Phase 4: Recording Download API Tests
+## Phase 4: Recording Download API Tests [COMPLETED]
 
 ### Goal
 Test `GET /api/recording/{uuid}/download` for zip creation and edge cases.
 
 ### Test Cases
-| Test | Setup | Expected |
-|------|-------|----------|
-| Download non-existent recording | No files | 404 |
-| Download with all files | .log + .timing + .metadata.json | Zip with all 3 files |
-| Download with only .log | .log only | Zip with session.log |
-| Download with .log and .timing | .log + .timing | Zip with 2 files |
-| Content-Type header | Any recording | `application/zip` |
-| Content-Disposition header | Any recording | `attachment; filename="recording-{uuid8}.zip"` |
-| Invalid UUID format | Short UUID | 400 |
-| Zip contents valid | Any recording | Unzip succeeds, contents match |
+| Test | Setup | Expected | Status |
+|------|-------|----------|--------|
+| Download non-existent recording | No files | 404 | [x] |
+| Download with all files | .log + .timing + .metadata.json | Zip with all 3 files | [x] |
+| Download with only .log | .log only | Zip with session.log | [x] |
+| Download with .log and .timing | .log + .timing | Zip with 2 files | [x] |
+| Content-Type header | Any recording | `application/zip` | [x] |
+| Content-Disposition header | Any recording | `attachment; filename="recording-{uuid8}.zip"` | [x] |
+| Invalid UUID format | Short UUID | 400 | [x] |
+| Zip contents valid | Any recording | Unzip succeeds, contents match | [x] |
 
 ---
 
