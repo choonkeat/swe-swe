@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -1267,4 +1268,85 @@ func TestHandleWorktreeCheckAPI(t *testing.T) {
 			t.Errorf("expected status 400, got %d", resp.StatusCode)
 		}
 	})
+}
+
+// TestWorktreeMerge_InvalidPath tests security check for paths outside worktreeDir
+func TestWorktreeMerge_InvalidPath(t *testing.T) {
+	// Test that paths outside worktreeDir are rejected
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"path traversal", "/workspace/.swe-swe/worktrees/../../../etc/passwd"},
+		{"absolute path outside", "/tmp/malicious"},
+		{"relative path", "worktrees/test"},
+		{"empty path", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isValidWorktreePath(tt.path)
+			if result {
+				t.Errorf("isValidWorktreePath(%q) = true, want false", tt.path)
+			}
+		})
+	}
+}
+
+// TestWorktreeMerge_ValidPath tests that valid worktree paths are accepted
+func TestWorktreeMerge_ValidPath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"valid worktree path", "/workspace/.swe-swe/worktrees/fix-bug"},
+		{"valid worktree path with uuid", "/workspace/.swe-swe/worktrees/fix-bug-abc12345"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isValidWorktreePath(tt.path)
+			if !result {
+				t.Errorf("isValidWorktreePath(%q) = false, want true", tt.path)
+			}
+		})
+	}
+}
+
+// TestBuildMergeInstructions tests that merge instructions are correctly generated
+func TestBuildMergeInstructions(t *testing.T) {
+	branch := "fix-bug"
+	path := "/workspace/.swe-swe/worktrees/fix-bug"
+
+	instructions := buildMergeInstructions(branch, path)
+
+	// Check that instructions contain key commands
+	if !strings.Contains(instructions, "cd /workspace") {
+		t.Error("instructions should contain 'cd /workspace'")
+	}
+	if !strings.Contains(instructions, "git merge fix-bug") {
+		t.Error("instructions should contain 'git merge fix-bug'")
+	}
+	if !strings.Contains(instructions, "git worktree remove") {
+		t.Error("instructions should contain 'git worktree remove'")
+	}
+	if !strings.Contains(instructions, "git branch -d fix-bug") {
+		t.Error("instructions should contain 'git branch -d fix-bug'")
+	}
+}
+
+// TestBuildDiscardInstructions tests that discard instructions are correctly generated
+func TestBuildDiscardInstructions(t *testing.T) {
+	branch := "test-feature"
+	path := "/workspace/.swe-swe/worktrees/test-feature"
+
+	instructions := buildDiscardInstructions(branch, path)
+
+	// Check that instructions contain key commands
+	if !strings.Contains(instructions, "git worktree remove --force") {
+		t.Error("instructions should contain 'git worktree remove --force'")
+	}
+	if !strings.Contains(instructions, "git branch -D test-feature") {
+		t.Error("instructions should contain 'git branch -D test-feature'")
+	}
 }
