@@ -1064,3 +1064,256 @@ func TestDownloadRecording_LogAndTimingOnly(t *testing.T) {
 		t.Error("expected zip NOT to contain 'session.metadata.json'")
 	}
 }
+
+// ============================================================================
+// Phase 5: Recording Playback Page Tests (GET /recording/{uuid})
+// ============================================================================
+
+func TestPlaybackPage_NotFound(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Use valid UUID format that doesn't exist
+	nonExistentUUID := "00000000-0000-0000-0000-000000000000"
+	resp, err := http.Get(server.URL + "/recording/" + nonExistentUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPlaybackPage_InvalidUUID(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/not-a-valid-uuid")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPlaybackPage_WithTiming_AnimatedMode(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logContent:    "Hello\r\nWorld\r\n",
+		withTiming:    true,
+		timingContent: "0.1 5\n0.5 6\n",
+		metadata: &RecordingMetadata{
+			UUID:    testUUID,
+			Name:    "Animated Recording",
+			MaxCols: 80,
+			MaxRows: 24,
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + testUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Check Content-Type header
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type 'text/html', got '%s'", contentType)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	html := string(body)
+
+	// Should have play/pause controls
+	if !strings.Contains(html, "play") && !strings.Contains(html, "Play") {
+		t.Error("expected animated playback to contain play controls")
+	}
+
+	// Should have timeline/progress
+	if !strings.Contains(html, "timeline") && !strings.Contains(html, "progress") && !strings.Contains(html, "slider") {
+		t.Error("expected animated playback to contain timeline/progress")
+	}
+
+	// Should contain recording name in title or heading
+	if !strings.Contains(html, "Animated Recording") {
+		t.Error("expected page to contain recording name")
+	}
+
+	// Should have back link to homepage
+	if !strings.Contains(html, `href="/"`) && !strings.Contains(html, `href='/'`) {
+		t.Error("expected page to contain back link to homepage")
+	}
+}
+
+func TestPlaybackPage_WithoutTiming_StaticMode(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	logContent := "Static terminal output\r\n"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logContent: logContent,
+		withTiming: false,
+		metadata: &RecordingMetadata{
+			UUID: testUUID,
+			Name: "Static Recording",
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + testUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	html := string(body)
+
+	// Static mode embeds content as base64 in JavaScript
+	// Check that the page has the static mode notice
+	if !strings.Contains(html, "Timing data not available") {
+		t.Error("expected static mode to show 'Timing data not available' notice")
+	}
+
+	// Should have the recording name
+	if !strings.Contains(html, "Static Recording") {
+		t.Error("expected static mode to contain recording name")
+	}
+
+	// Should have xterm.js for rendering
+	if !strings.Contains(html, "xterm") {
+		t.Error("expected static mode to use xterm.js")
+	}
+
+	// Should NOT have play button (static mode shows final state only)
+	if strings.Contains(html, "playBtn") || strings.Contains(html, "play-btn") {
+		t.Error("expected static mode NOT to have play button")
+	}
+
+	// Should NOT have timeline/progress controls
+	if strings.Contains(html, "progressBar") || strings.Contains(html, "progress-bar") {
+		t.Error("expected static mode NOT to have progress bar")
+	}
+}
+
+func TestPlaybackPage_WithMetadata_ShowsName(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+		metadata: &RecordingMetadata{
+			UUID: testUUID,
+			Name: "My Named Session",
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + testUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	html := string(body)
+
+	// Title should contain the session name
+	if !strings.Contains(html, "My Named Session") {
+		t.Error("expected page title to contain session name")
+	}
+}
+
+func TestPlaybackPage_WithoutMetadata_ShowsUUIDShort(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+		// No metadata - should fall back to showing UUID prefix
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + testUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	html := string(body)
+
+	// Should contain UUID prefix (first 8 chars) or "session-{uuid8}"
+	uuidPrefix := testUUID[:8]
+	if !strings.Contains(html, uuidPrefix) && !strings.Contains(html, "session-"+uuidPrefix) {
+		t.Errorf("expected page to contain UUID prefix '%s'", uuidPrefix)
+	}
+}
+
+func TestPlaybackPage_BackLink(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + testUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	html := string(body)
+
+	// Should have a link back to homepage
+	if !strings.Contains(html, `href="/"`) && !strings.Contains(html, `href='/'`) {
+		t.Error("expected page to contain back link to homepage '/'")
+	}
+}
