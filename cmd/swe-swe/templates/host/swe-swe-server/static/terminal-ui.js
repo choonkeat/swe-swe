@@ -1220,6 +1220,18 @@ class TerminalUI extends HTMLElement {
         // Terminal data handler - send as binary to distinguish from JSON control messages
         this.term.onData(data => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                // Apply Ctrl modifier if active (for mobile keyboard input)
+                if (this.ctrlPressed && data.length === 1) {
+                    const char = data.toUpperCase();
+                    if (char >= 'A' && char <= 'Z') {
+                        // Convert to Ctrl sequence (Ctrl+A = 1, Ctrl+C = 3, etc.)
+                        data = String.fromCharCode(char.charCodeAt(0) - 64);
+                        // Reset Ctrl state after use
+                        this.ctrlPressed = false;
+                        this.querySelector('[data-modifier="ctrl"]').classList.remove('active');
+                    }
+                }
+
                 // Convert string to Uint8Array for binary transmission
                 const encoder = new TextEncoder();
                 this.ws.send(encoder.encode(data));
