@@ -532,6 +532,7 @@ class TerminalUI extends HTMLElement {
                     <button data-key="ArrowDown">↓</button>
                     <button data-key="ArrowLeft">←</button>
                     <button data-key="ArrowRight">→</button>
+                    <button data-action="paste">Paste</button>
                 </div>
                 <div class="terminal-ui__status-bar">
                     <div class="terminal-ui__status-left">
@@ -1146,6 +1147,26 @@ class TerminalUI extends HTMLElement {
                 if (btn.dataset.modifier === 'ctrl') {
                     this.ctrlPressed = !this.ctrlPressed;
                     btn.classList.toggle('active', this.ctrlPressed);
+                    return;
+                }
+
+                if (btn.dataset.action === 'paste') {
+                    if (!navigator.clipboard || !navigator.clipboard.readText) {
+                        this.showTemporaryStatus('Clipboard access requires HTTPS', 3000);
+                        this.term.focus();
+                        return;
+                    }
+                    navigator.clipboard.readText().then(text => {
+                        if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            const encoder = new TextEncoder();
+                            this.ws.send(encoder.encode(text));
+                        }
+                        this.term.focus();
+                    }).catch(err => {
+                        console.error('Failed to read clipboard:', err);
+                        this.showTemporaryStatus('Clipboard access denied', 3000);
+                        this.term.focus();
+                    });
                     return;
                 }
 
