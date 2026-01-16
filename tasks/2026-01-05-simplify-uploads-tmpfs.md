@@ -109,9 +109,9 @@ Create an Architecture Decision Record capturing all learnings from this scenari
 
 ### Steps
 
-1. [ ] Create `docs/adr/0017-tmpfs-uploads.md` with ADR format
+1. [x] Create `docs/adr/0017-tmpfs-uploads.md` with ADR format
 
-2. [ ] Document the following learnings:
+2. [x] Document the following learnings:
    - **Original problem**: macOS Docker Desktop VirtioFS doesn't support `chown`
    - **Solution**: tmpfs mount bypasses VirtioFS (Docker-created filesystem)
    - **Why pre-creation was removed**: shadowed by tmpfs, misleading to users
@@ -120,7 +120,7 @@ Create an Architecture Decision Record capturing all learnings from this scenari
    - **OS detection rejected**: adds complexity, reduces portability, tmpfs works everywhere
    - **UX considerations**: users need to know uploads are temporary
 
-3. [ ] Update `docs/adr/README.md` index with ADR-0017
+3. [x] Update `docs/adr/README.md` index with ADR-0017
 
 ### Verification
 
