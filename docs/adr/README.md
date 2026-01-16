@@ -41,3 +41,4 @@ Bad: ...
 | [013](0013-docker-socket-mounting.md) | Docker socket mounting | Accepted |
 | [014](0014-slash-commands-cloning.md) | Slash commands cloning | Accepted |
 | [015](0015-chunked-websocket-snapshots.md) | Chunked WebSocket snapshots | Accepted |
+| [016](0016-ios-safari-websocket-self-signed-certs.md) | iOS Safari WebSocket with self-signed certs | Accepted |
