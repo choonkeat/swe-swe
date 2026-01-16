@@ -170,26 +170,26 @@ Clicking the session name in the status bar opens a prompt to rename it. The nam
 
 ---
 
-## Phase 6: Golden Update & Commit
+## Phase 6: Golden Update & Commit ✅
 
 ### What will be achieved
 Golden test files are updated to reflect the template changes, and all changes are committed.
 
 ### Steps
 
-1. **Run golden update**
+1. ✅ **Run golden update**
    - `make build golden-update`
 
-2. **Review golden diff**
+2. ✅ **Review golden diff**
    - `git add -A cmd/swe-swe/testdata/golden`
    - `git diff --cached -- cmd/swe-swe/testdata/golden`
-   - Verify diff shows only expected changes (new `Name` field in structs, status broadcast changes, template changes)
+   - Verified diff shows only expected changes (new `Name` field in structs, status broadcast changes, template changes)
 
-3. **Commit all changes**
-   - Commit server changes (main.go)
-   - Commit frontend changes (terminal-ui.js)
-   - Commit template changes (selection.html)
-   - Commit golden files
+3. ✅ **Commit all changes**
+   - Server changes (main.go) - committed in phases 1-2
+   - Frontend changes (terminal-ui.js) - committed in phases 4-5
+   - Template changes (selection.html) - committed in phase 3
+   - Golden files - committed in this phase
 
 ### Verification
 

@@ -220,7 +220,7 @@
                 <div class="agent-group__sessions">
                     {{range .Sessions}}
                     <a href="/session/{{.UUID}}?assistant={{.Assistant}}{{if $.Debug}}&debug=1{{end}}" class="session-item">
-                        <span class="session-item__uuid">{{.UUIDShort}}</span>
+                        <span class="session-item__uuid">{{if .Name}}{{.Name}} ({{.UUIDShort}}){{else}}{{.UUIDShort}}{{end}}</span>
                         <span class="session-item__viewers">{{.ClientCount}} viewer{{if ne .ClientCount 1}}s{{end}}</span>
                         <span class="session-item__duration">{{.DurationStr}}</span>
                     </a>
