@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"embed"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -47,13 +46,6 @@ var upgrader = websocket.Upgrader{
 type TermSize struct {
 	Rows uint16
 	Cols uint16
-}
-
-// PollingClient represents an HTTP polling client
-type PollingClient struct {
-	ID       string
-	Size     TermSize
-	LastPoll time.Time
 }
 
 // AssistantConfig holds the configuration for an AI coding assistant
@@ -140,7 +132,6 @@ type Session struct {
 	PTY             *os.File
 	wsClients       map[*websocket.Conn]bool      // WebSocket clients
 	wsClientSizes   map[*websocket.Conn]TermSize  // WebSocket client terminal sizes
-	pollClients     map[string]*PollingClient     // HTTP polling clients by clientId
 	ptySize         TermSize                      // Current PTY dimensions (for dedup)
 	mu              sync.RWMutex
 	writeMu         sync.Mutex     // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
@@ -171,15 +162,15 @@ func (s *Session) RemoveClient(conn *websocket.Conn) {
 	s.lastActive = time.Now()
 	log.Printf("Client removed from session %s (total: %d)", s.UUID, len(s.wsClients))
 
-	// Recalculate PTY size based on remaining clients (WS + polling)
-	if (len(s.wsClientSizes) > 0 || len(s.pollClients) > 0) && s.PTY != nil {
+	// Recalculate PTY size based on remaining clients
+	if len(s.wsClientSizes) > 0 && s.PTY != nil {
 		minRows, minCols := s.calculateMinSize()
 
 		// Only resize if session's min size actually changed
 		if s.ptySize.Rows != minRows || s.ptySize.Cols != minCols {
 			s.ptySize = TermSize{Rows: minRows, Cols: minCols}
 			pty.Setsize(s.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
-			log.Printf("Session %s: resized PTY to %dx%d (from %d WS + %d polling clients)", s.UUID, minCols, minRows, len(s.wsClientSizes), len(s.pollClients))
+			log.Printf("Session %s: resized PTY to %dx%d (from %d clients)", s.UUID, minCols, minRows, len(s.wsClientSizes))
 
 			// Also resize the virtual terminal for accurate snapshots
 			s.vtMu.Lock()
@@ -229,7 +220,7 @@ func (s *Session) UpdateClientSize(conn *websocket.Conn, rows, cols uint16) {
 // Must be called with lock held
 func (s *Session) calculateMinSize() (uint16, uint16) {
 	// Return default if no clients at all
-	if len(s.wsClientSizes) == 0 && len(s.pollClients) == 0 {
+	if len(s.wsClientSizes) == 0 {
 		return 24, 80 // default size
 	}
 
@@ -242,16 +233,6 @@ func (s *Session) calculateMinSize() (uint16, uint16) {
 		}
 		if size.Cols < minCols {
 			minCols = size.Cols
-		}
-	}
-
-	// Include polling client sizes
-	for _, pc := range s.pollClients {
-		if pc.Size.Rows < minRows {
-			minRows = pc.Size.Rows
-		}
-		if pc.Size.Cols < minCols {
-			minCols = pc.Size.Cols
 		}
 	}
 
@@ -274,11 +255,11 @@ func (s *Session) calculateMinSize() (uint16, uint16) {
 	return minRows, minCols
 }
 
-// ClientCount returns the number of connected clients (WebSocket + polling)
+// ClientCount returns the number of connected WebSocket clients
 func (s *Session) ClientCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.wsClients) + len(s.pollClients)
+	return len(s.wsClients)
 }
 
 // LastActive returns the last activity time
@@ -311,7 +292,7 @@ func (s *Session) BroadcastStatus() {
 	rows, cols := s.calculateMinSize()
 	status := map[string]interface{}{
 		"type":      "status",
-		"viewers":   len(s.wsClients) + len(s.pollClients),
+		"viewers":   len(s.wsClients),
 		"cols":      cols,
 		"rows":      rows,
 		"assistant": s.AssistantConfig.Name,
@@ -331,7 +312,7 @@ func (s *Session) BroadcastStatus() {
 			log.Printf("BroadcastStatus write error: %v", err)
 		}
 	}
-	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.wsClients)+len(s.pollClients), cols, rows)
+	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.wsClients), cols, rows)
 }
 
 // BroadcastChatMessage broadcasts a chat message to all connected clients
@@ -400,7 +381,6 @@ func (s *Session) Close() {
 		conn.Close()
 	}
 	s.wsClients = make(map[*websocket.Conn]bool)
-	s.pollClients = make(map[string]*PollingClient)
 
 	// Kill the process and close PTY
 	if s.Cmd != nil && s.Cmd.Process != nil {
@@ -785,26 +765,6 @@ func main() {
 			return
 		}
 
-		// Polling paths: /session/{uuid}/client/{clientId}/poll and /send
-		if strings.HasPrefix(r.URL.Path, "/session/") && strings.Contains(r.URL.Path, "/client/") {
-			// Parse path: /session/{uuid}/client/{clientId}/{action}
-			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/session/"), "/")
-			if len(parts) >= 4 && parts[1] == "client" {
-				sessionUUID := parts[0]
-				clientID := parts[2]
-				action := parts[3]
-
-				switch action {
-				case "poll":
-					handlePollRecv(w, r, sessionUUID, clientID)
-					return
-				case "send":
-					handlePollSend(w, r, sessionUUID, clientID)
-					return
-				}
-			}
-		}
-
 		// Session path: serve template with UUID and assistant
 		if strings.HasPrefix(r.URL.Path, "/session/") {
 			sessionUUID := strings.TrimPrefix(r.URL.Path, "/session/")
@@ -892,7 +852,7 @@ func main() {
 	}
 }
 
-// sessionReaper periodically cleans up expired sessions and stale polling clients
+// sessionReaper periodically cleans up expired sessions
 func sessionReaper() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -900,39 +860,6 @@ func sessionReaper() {
 	for range ticker.C {
 		sessionsMu.Lock()
 		for uuid, sess := range sessions {
-			// Clean up stale polling clients (no poll in 60 seconds)
-			sess.mu.Lock()
-			expiredCount := 0
-			for clientID, pc := range sess.pollClients {
-				if time.Since(pc.LastPoll) > 60*time.Second {
-					delete(sess.pollClients, clientID)
-					expiredCount++
-					log.Printf("Polling client expired: session=%s client=%s", uuid, clientID)
-				}
-			}
-			sess.mu.Unlock()
-
-			// Resize PTY/VT and broadcast status if any polling clients were removed
-			if expiredCount > 0 {
-				// Recalculate size after removing polling clients
-				sess.mu.Lock()
-				minRows, minCols := sess.calculateMinSize()
-				hasClients := len(sess.wsClientSizes) > 0 || len(sess.pollClients) > 0
-				sizeChanged := sess.ptySize.Rows != minRows || sess.ptySize.Cols != minCols
-
-				if hasClients && sess.PTY != nil && sizeChanged {
-					sess.ptySize = TermSize{Rows: minRows, Cols: minCols}
-					pty.Setsize(sess.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
-					sess.vtMu.Lock()
-					sess.vt.Resize(int(minCols), int(minRows))
-					sess.vtMu.Unlock()
-					log.Printf("Session %s: resized PTY to %dx%d after %d polling clients expired", uuid, minCols, minRows, expiredCount)
-				}
-				sess.mu.Unlock()
-
-				go sess.BroadcastStatus()
-			}
-
 			// Only expire sessions with no clients that have been idle for TTL
 			if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
 				log.Printf("Session expired: %s (idle for %v)", uuid, time.Since(sess.LastActive()))
@@ -1001,7 +928,6 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		PTY:             ptmx,
 		wsClients:       make(map[*websocket.Conn]bool),
 		wsClientSizes:   make(map[*websocket.Conn]TermSize),
-		pollClients:     make(map[string]*PollingClient),
 		ptySize:         TermSize{Rows: 24, Cols: 80},
 		CreatedAt:       time.Now(),
 		lastActive:      time.Now(),
@@ -1223,232 +1149,6 @@ func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, f
 	if err != nil {
 		log.Printf("Failed to send file upload response: %v", err)
 	}
-}
-
-// handlePollRecv handles GET requests for polling terminal snapshots
-func handlePollRecv(w http.ResponseWriter, r *http.Request, sessionUUID, clientID string) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Get assistant from query param
-	assistant := r.URL.Query().Get("assistant")
-	if assistant == "" {
-		http.Error(w, "Missing assistant parameter", http.StatusBadRequest)
-		return
-	}
-
-	// Get or create session
-	sess, isNewSession, err := getOrCreateSession(sessionUUID, assistant)
-	if err != nil {
-		log.Printf("Poll error: %v", err)
-		http.Error(w, "Session error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Parse optional size from query params (used by initial poll)
-	initialRows := uint16(24)
-	initialCols := uint16(80)
-	if rowsStr := r.URL.Query().Get("rows"); rowsStr != "" {
-		if v, err := strconv.ParseUint(rowsStr, 10, 16); err == nil && v > 0 {
-			initialRows = uint16(v)
-		}
-	}
-	if colsStr := r.URL.Query().Get("cols"); colsStr != "" {
-		if v, err := strconv.ParseUint(colsStr, 10, 16); err == nil && v > 0 {
-			initialCols = uint16(v)
-		}
-	}
-
-	// Register/update polling client
-	sess.mu.Lock()
-	isNewClient := sess.pollClients[clientID] == nil
-	sizeChanged := false
-	if isNewClient {
-		sess.pollClients[clientID] = &PollingClient{
-			ID:       clientID,
-			Size:     TermSize{Rows: initialRows, Cols: initialCols},
-			LastPoll: time.Now(),
-		}
-		log.Printf("Polling client registered: session=%s client=%s size=%dx%d", sessionUUID, clientID, initialCols, initialRows)
-	} else {
-		// Check if size changed (client may have rotated device, etc.)
-		pc := sess.pollClients[clientID]
-		if pc.Size.Rows != initialRows || pc.Size.Cols != initialCols {
-			pc.Size = TermSize{Rows: initialRows, Cols: initialCols}
-			sizeChanged = true
-			log.Printf("Polling client size changed: session=%s client=%s size=%dx%d", sessionUUID, clientID, initialCols, initialRows)
-		}
-		pc.LastPoll = time.Now()
-	}
-	sess.lastActive = time.Now()
-	sess.mu.Unlock()
-
-	// When a polling client joins or size changes, recalculate PTY size
-	if isNewClient || sizeChanged {
-		if isNewClient {
-			go sess.BroadcastStatus()
-		}
-
-		// Recalculate minimum size across all clients and resize PTY + VT
-		sess.mu.Lock()
-		minRows, minCols := sess.calculateMinSize()
-		ptySizeChanged := sess.ptySize.Rows != minRows || sess.ptySize.Cols != minCols
-
-		if sess.PTY != nil && ptySizeChanged {
-			sess.ptySize = TermSize{Rows: minRows, Cols: minCols}
-			pty.Setsize(sess.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
-			log.Printf("Polling client %s: resized PTY to %dx%d", clientID, minCols, minRows)
-
-			// Also resize the virtual terminal for accurate snapshots
-			sess.vtMu.Lock()
-			sess.vt.Resize(int(minCols), int(minRows))
-			sess.vtMu.Unlock()
-		}
-		sess.mu.Unlock()
-
-		// For new sessions created by polling client, start the PTY reader
-		// This is critical: without it, PTY output never gets written to VT
-		if isNewSession {
-			sess.startPTYReader()
-			log.Printf("New polling session %s: waiting for initial PTY output...", sessionUUID)
-			waited := 0
-			for i := 0; i < 40; i++ { // Wait up to 4 seconds
-				sess.vtMu.Lock()
-				// Check for non-whitespace content (VT initializes with spaces)
-				vtContent := strings.TrimSpace(sess.vt.String())
-				hasContent := vtContent != ""
-				sess.vtMu.Unlock()
-				if hasContent {
-					log.Printf("New polling session %s: got content after %dms", sessionUUID, waited)
-					break
-				}
-				time.Sleep(100 * time.Millisecond)
-				waited += 100
-			}
-			if waited >= 4000 {
-				log.Printf("New polling session %s: timeout waiting for PTY output", sessionUUID)
-			}
-		}
-	}
-
-	// Generate terminal snapshot
-	snapshot := sess.GenerateSnapshot()
-	log.Printf("Poll snapshot: session=%s size=%d bytes", sessionUUID, len(snapshot))
-
-	// Get current terminal size
-	sess.mu.RLock()
-	rows, cols := sess.calculateMinSize()
-	viewerCount := len(sess.wsClients) + len(sess.pollClients)
-	sess.mu.RUnlock()
-
-	// Return JSON response
-	response := map[string]interface{}{
-		"terminal":  base64.StdEncoding.EncodeToString(snapshot),
-		"viewers":   viewerCount,
-		"cols":      cols,
-		"rows":      rows,
-		"assistant": sess.AssistantConfig.Name,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("Poll response encode error: %v", err)
-	}
-}
-
-// handlePollSend handles POST requests for sending input from polling clients
-func handlePollSend(w http.ResponseWriter, r *http.Request, sessionUUID, clientID string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Get session
-	sessionsMu.RLock()
-	sess, exists := sessions[sessionUUID]
-	sessionsMu.RUnlock()
-	if !exists {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	}
-
-	// Verify polling client exists
-	sess.mu.RLock()
-	pollClient := sess.pollClients[clientID]
-	sess.mu.RUnlock()
-	if pollClient == nil {
-		http.Error(w, "Polling client not found - call poll endpoint first", http.StatusBadRequest)
-		return
-	}
-
-	// Parse request body
-	var req struct {
-		Type string `json:"type"` // "input" or "resize"
-		Data string `json:"data"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	sess.mu.Lock()
-	sess.lastActive = time.Now()
-	pollClient.LastPoll = time.Now()
-	sess.mu.Unlock()
-
-	switch req.Type {
-	case "input":
-		// Write to PTY character-by-character with small delays
-		// This simulates typing and helps TUIs that expect gradual input
-		data := []byte(req.Data)
-		for i, b := range data {
-			if _, err := sess.PTY.Write([]byte{b}); err != nil {
-				log.Printf("Poll send PTY write error: %v", err)
-				http.Error(w, "PTY write error", http.StatusInternalServerError)
-				return
-			}
-			// Small delay between characters (skip delay after last char)
-			if i < len(data)-1 {
-				time.Sleep(5 * time.Millisecond)
-			}
-		}
-		log.Printf("Poll send input: session=%s client=%s len=%d", sessionUUID, clientID, len(req.Data))
-
-	case "resize":
-		// Parse resize data: "rows,cols"
-		var rows, cols uint16
-		if _, err := fmt.Sscanf(req.Data, "%d,%d", &rows, &cols); err != nil {
-			http.Error(w, "Invalid resize format, expected 'rows,cols'", http.StatusBadRequest)
-			return
-		}
-
-		sess.mu.Lock()
-		pollClient.Size = TermSize{Rows: rows, Cols: cols}
-
-		// Recalculate PTY size
-		minRows, minCols := sess.calculateMinSize()
-
-		// Only resize if session's min size actually changed
-		if sess.PTY != nil && (sess.ptySize.Rows != minRows || sess.ptySize.Cols != minCols) {
-			sess.ptySize = TermSize{Rows: minRows, Cols: minCols}
-			pty.Setsize(sess.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
-			log.Printf("Poll resize: session=%s client=%s size=%dx%d", sessionUUID, clientID, minCols, minRows)
-
-			// Also resize the virtual terminal for accurate snapshots
-			sess.vtMu.Lock()
-			sess.vt.Resize(int(minCols), int(minRows))
-			sess.vtMu.Unlock()
-		}
-		sess.mu.Unlock()
-
-	default:
-		http.Error(w, "Unknown type: "+req.Type, http.StatusBadRequest)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 // handleSSLCertDownload serves the SSL certificate for mobile installation
