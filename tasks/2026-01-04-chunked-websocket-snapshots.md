@@ -85,22 +85,22 @@ grep -n "func sendChunked" main.go
 
 ---
 
-## Phase 3: Client - Chunk reassembly & decompression
+## Phase 3: Client - Chunk reassembly & decompression ✅ DONE
 
 ### What will be achieved
 The browser client will collect incoming chunks, reassemble them, decompress with the DecompressionStream API, and write the terminal data to xterm.js.
 
 ### Steps
 
-1. **Add chunk state variables** - `this.chunks = []`, `this.expectedChunks = 0` in TerminalUI constructor
-2. **Detect chunk messages** - In `onmessage` handler, check if binary data starts with `0x02`
-3. **Implement `handleChunk(data)`** - Extract index, total, payload; store in `chunks[index]`
-4. **Detect completion** - When all chunks received, trigger reassembly
-5. **Implement `reassembleChunks()`** - Concatenate all chunk payloads into single Uint8Array
-6. **Implement `decompressSnapshot(data)`** - Use `DecompressionStream('gzip')` API to decompress
-7. **Write to terminal** - Pass decompressed data to `this.term.write()`
-8. **Reset chunk state** - Clear `chunks` and `expectedChunks` after successful processing
-9. **Handle non-chunk binary** - Existing binary messages (terminal output, resize) still work as before
+1. ✅ **Add chunk state variables** - `this.chunks = []`, `this.expectedChunks = 0` in TerminalUI constructor
+2. ✅ **Detect chunk messages** - In `onmessage` handler, check if binary data starts with `0x02`
+3. ✅ **Implement `handleChunk(data)`** - Extract index, total, payload; store in `chunks[index]`
+4. ✅ **Detect completion** - When all chunks received, trigger reassembly
+5. ✅ **Implement `reassembleChunks()`** - Concatenate all chunk payloads into single Uint8Array
+6. ✅ **Implement `decompressSnapshot(data)`** - Use `DecompressionStream('gzip')` API to decompress
+7. ✅ **Write to terminal** - Pass decompressed data via `onTerminalData()`
+8. ✅ **Reset chunk state** - Clear `chunks` and `expectedChunks` after successful processing
+9. ✅ **Handle non-chunk binary** - Existing binary messages (terminal output, resize) still work as before
 
 ### Reference Implementation (from ws-test)
 
