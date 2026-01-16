@@ -264,7 +264,7 @@ Examples:
   swe-swe logs -f swe-swe                        Follow logs for swe-swe service
   swe-swe exec swe-swe bash                      Open shell in swe-swe container
   swe-swe build --no-cache                       Rebuild all images without cache
-  swe-swe --project-directory /path up           Run command for project at /path
+  swe-swe up --project-directory /path            Run command for project at /path
 
 Environment Variables:
   SWE_SWE_PASSWORD                       Authentication password (defaults to changeme)
