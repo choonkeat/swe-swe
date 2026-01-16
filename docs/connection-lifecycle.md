@@ -10,7 +10,7 @@ This document describes all WebSocket connection states, disconnection scenarios
 - **Terminal**: Full opacity (100%)
 - **Timer**: Shows uptime (e.g., "5m 32s")
 
-**Code reference:** `static/terminal-ui.js:117-121`
+**Code reference:** `static/terminal-ui.js` (status bar CSS)
 ```css
 .terminal-ui__status-bar {
     background: #007acc;
@@ -23,7 +23,7 @@ This document describes all WebSocket connection states, disconnection scenarios
 - **Terminal**: Faded to 50% opacity
 - **Timer**: Cleared (empty)
 
-**Code reference:** `static/terminal-ui.js:72-74, 123-124`
+**Code reference:** `static/terminal-ui.js` (disconnected and error CSS classes)
 ```css
 .terminal-ui__terminal.disconnected {
     opacity: 0.5;
@@ -39,7 +39,7 @@ This document describes all WebSocket connection states, disconnection scenarios
 - **Terminal**: Faded to 50% opacity
 - **Timer**: Shows countdown to next reconnect attempt
 
-**Code reference:** `static/terminal-ui.js:126-128`
+**Code reference:** `static/terminal-ui.js` (reconnecting CSS class)
 ```css
 .terminal-ui__status-bar.reconnecting {
     background: #f57c00;
@@ -55,7 +55,7 @@ This document describes all WebSocket connection states, disconnection scenarios
 
 The terminal input handler checks WebSocket state before sending:
 
-**Code reference:** `static/terminal-ui.js:362-367`
+**Code reference:** `static/terminal-ui.js` (term.onData handler)
 ```javascript
 this.term.onData(data => {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -90,7 +90,7 @@ this.term.onData(data => {
 
 **Client behavior:** N/A (client is gone)
 
-**Code reference:** `main.go:1100-1108`
+**Code reference:** `main.go` (handleWebSocket ReadMessage error handling)
 ```go
 messageType, data, err := conn.ReadMessage()
 if err != nil {
@@ -133,7 +133,7 @@ this.ws.onclose = () => {
 
 **Reconnect timing:** 1s → 2s → 4s → 8s → 16s → 32s → 60s (max)
 
-**Code reference:** `static/terminal-ui.js:234-236`
+**Code reference:** `static/terminal-ui.js` (getReconnectDelay method)
 ```javascript
 getReconnectDelay() {
     return Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
@@ -167,7 +167,7 @@ getReconnectDelay() {
 - New shell prompt appears after 500ms restart
 - No status bar change (still "Connected")
 
-**Code reference:** `main.go:584-665` (PTY reader with exit code checking)
+**Code reference:** `main.go` (startPTYReader, exit code handling)
 ```go
 n, err := ptyFile.Read(buf)
 if err != nil {
@@ -251,7 +251,7 @@ if err != nil {
 - User input keystrokes are accepted but discarded (PTY is dead)
 - No visual indication that shell is dead (potential UX issue)
 
-**Code reference:** `main.go:643-651` (PTY reader error handling)
+**Code reference:** `main.go` (startPTYReader, RestartProcess error handling)
 ```go
 if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
     log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
@@ -299,7 +299,7 @@ if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
 
 **Client behavior:** Same as network disconnection - auto-reconnect triggered
 
-**Code reference:** `main.go:394-414` (Session.Close method)
+**Code reference:** `main.go` (Session.Close method)
 ```go
 func (s *Session) Close() {
     s.mu.Lock()
@@ -322,19 +322,21 @@ func (s *Session) Close() {
 
 ---
 
-### 8. Session TTL Expiration
+### 8. Session Cleanup (Process Exit)
 
-**Trigger:** Session has 0 clients for longer than TTL (default: 1 hour)
+**Trigger:** Shell process exits and session reaper detects it
 
 **Server behavior:**
 1. Session reaper runs every minute
-2. Finds sessions with 0 clients idle > TTL
-3. Calls `sess.Close()` (kills process, closes PTY)
+2. Finds sessions where the process has exited (`ProcessState.Exited()`)
+3. Calls `sess.Close()` (closes PTY, cleans up resources)
 4. Removes session from map
 
-**Client behavior:** N/A (no clients connected)
+**Note:** Sessions persist until the process exits - there is no TTL-based expiration. Sessions with active processes remain available indefinitely, even with 0 clients connected.
 
-**Code reference:** `main.go:955-972` (sessionReaper goroutine)
+**Client behavior:** N/A (session cleaned up after process exit)
+
+**Code reference:** `main.go` (sessionReaper goroutine)
 ```go
 func sessionReaper() {
     ticker := time.NewTicker(time.Minute)
@@ -343,8 +345,9 @@ func sessionReaper() {
     for range ticker.C {
         sessionsMu.Lock()
         for uuid, sess := range sessions {
-            if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
-                log.Printf("Session expired: %s (idle for %v)", uuid, time.Since(sess.LastActive()))
+            // Only clean up sessions where the process has exited
+            if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
+                log.Printf("Session cleaned up (process exited): %s", uuid)
                 sess.Close()
                 delete(sessions, uuid)
             }
@@ -354,7 +357,7 @@ func sessionReaper() {
 }
 ```
 
-**After TTL:** If client reconnects to same UUID, a new session is created (fresh shell, no history).
+**After process exit:** If client reconnects to same UUID, a new session is created (fresh shell, no history).
 
 ---
 
@@ -367,7 +370,7 @@ func sessionReaper() {
 - Logged but connection not explicitly closed
 - Client may be removed on next read error
 
-**Code reference:** `main.go:294-297`
+**Code reference:** `main.go` (Session.Broadcast write error logging)
 ```go
 if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
     log.Printf("Broadcast write error: %v", err)
@@ -390,7 +393,7 @@ if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
    - If same session exists: receives screen snapshot
    - If session expired: new session created (fresh shell)
 
-**Code reference:** `static/terminal-ui.js:238-256`
+**Code reference:** `static/terminal-ui.js` (scheduleReconnect method)
 ```javascript
 scheduleReconnect() {
     const delay = this.getReconnectDelay();
@@ -409,7 +412,7 @@ scheduleReconnect() {
 
 Counter resets to 0 on successful connection:
 
-**Code reference:** `static/terminal-ui.js:290`
+**Code reference:** `static/terminal-ui.js` (ws.onopen handler)
 ```javascript
 this.ws.onopen = () => {
     this.reconnectAttempts = 0;

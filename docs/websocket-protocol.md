@@ -30,7 +30,7 @@ The `assistant` query parameter specifies which AI assistant to use (e.g., `clau
 | `0x02` + index + total + data | Chunked message: `[0x02, chunk_index, total_chunks, ...chunk_data]` (used for snapshots) |
 | Other | Terminal input (keystrokes and raw shell I/O) |
 
-**Resize message client implementation:** `static/terminal-ui.js:686-697`
+**Resize message client implementation:** `static/terminal-ui.js` (sendResize method)
 ```javascript
 sendResize() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -46,7 +46,7 @@ sendResize() {
 }
 ```
 
-**Terminal input client implementation:** `static/terminal-ui.js:1063-1069`
+**Terminal input client implementation:** `static/terminal-ui.js` (term.onData handler)
 ```javascript
 this.term.onData(data => {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -57,7 +57,7 @@ this.term.onData(data => {
 });
 ```
 
-**File upload client implementation:** `static/terminal-ui.js:1295-1336` (handleFile method)
+**File upload client implementation:** `static/terminal-ui.js` (handleFile method)
 ```javascript
 async handleFile(file) {
     console.log('File dropped:', file.name, file.type, file.size);
@@ -108,7 +108,7 @@ async handleFile(file) {
 - Raw PTY output bytes, sent directly to xterm.js
 - Chunked snapshots for joining clients (gzip-compressed, 0x02 prefix)
 
-**Server binary message handler:** `main.go:1175-1237`
+**Server binary message handler:** `main.go` (handleWebSocket function)
 ```go
 // Check for terminal resize message (0x00 prefix)
 if len(data) >= 5 && data[0] == 0x00 {
@@ -149,7 +149,7 @@ When a client joins an existing session, the server sends a gzip-compressed scre
 - `total_chunks` - Total number of chunks (1-255)
 - `compressed_data` - gzip-compressed ANSI escape sequences
 
-**Server implementation:** `main.go:429-471`
+**Server implementation:** `main.go` (sendChunked function)
 ```go
 func sendChunked(conn *websocket.Conn, writeMu *sync.Mutex, data []byte, chunkSize int) (int, error) {
     totalChunks := (len(data) + chunkSize - 1) / chunkSize
@@ -165,7 +165,7 @@ func sendChunked(conn *websocket.Conn, writeMu *sync.Mutex, data []byte, chunkSi
 }
 ```
 
-**Broadcast to clients:** `main.go:287-299`
+**Broadcast to clients:** `main.go` (Session.Broadcast method)
 ```go
 func (s *Session) Broadcast(data []byte) {
 	s.mu.RLock()
@@ -198,7 +198,7 @@ All text messages are JSON objects with a `type` field.
 {"type": "pong", "data": {"ts": 1703318400000}}
 ```
 
-**Client implementation:** `static/terminal-ui.js:1047-1052`
+**Client implementation:** `static/terminal-ui.js` (startHeartbeat method)
 ```javascript
 startHeartbeat() {
     this.stopHeartbeat();
@@ -208,7 +208,7 @@ startHeartbeat() {
 }
 ```
 
-**Server implementation:** `main.go:1112-1170`
+**Server implementation:** `main.go` (handleWebSocket text message handler)
 ```go
 if messageType == websocket.TextMessage {
     var msg struct {
@@ -268,7 +268,7 @@ if messageType == websocket.TextMessage {
 }
 ```
 
-**Client implementation:** `static/terminal-ui.js:998-1022`
+**Client implementation:** `static/terminal-ui.js` (sendChatMessage method)
 ```javascript
 sendChatMessage() {
     const input = this.querySelector('.terminal-ui__chat-input');
@@ -297,7 +297,7 @@ sendChatMessage() {
 }
 ```
 
-**Server implementation:** `main.go:1137-1141`
+**Server implementation:** `main.go` (chat case in handleWebSocket)
 ```go
 case "chat":
     if msg.UserName != "" && msg.Text != "" {
@@ -305,7 +305,7 @@ case "chat":
     }
 ```
 
-**Server broadcast:** `main.go:340-365`
+**Server broadcast:** `main.go` (Session.BroadcastChatMessage method)
 ```go
 func (s *Session) BroadcastChatMessage(userName, text string) {
 	s.mu.RLock()
@@ -349,7 +349,7 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 - `sessionName`: User-assigned session name (empty string if unnamed)
 - `uuidShort`: First 5 characters of session UUID
 
-**Server implementation:** `main.go:301-336` (BroadcastStatus function)
+**Server implementation:** `main.go` (Session.BroadcastStatus method)
 ```go
 func (s *Session) BroadcastStatus() {
 	s.mu.RLock()
@@ -378,7 +378,7 @@ func (s *Session) BroadcastStatus() {
 }
 ```
 
-**Client implementation:** `static/terminal-ui.js:769-778`
+**Client implementation:** `static/terminal-ui.js` (status message handler in ws.onmessage)
 ```javascript
 case 'status':
     if (msg.viewers !== undefined) {
@@ -395,10 +395,10 @@ case 'status':
 ```
 
 **When sent:**
-- After client connects (`main.go:159-168`, AddClient method)
-- After client disconnects (`main.go:171-198`, RemoveClient method)
-- After terminal is resized (`main.go:201-231`, UpdateClientSize method)
-- After session is renamed (`main.go:1143-1166`, rename_session handler)
+- After client connects (Session.AddClient method)
+- After client disconnects (Session.RemoveClient method)
+- After terminal is resized (Session.UpdateClientSize method)
+- After session is renamed (rename_session case in handleWebSocket)
 
 ---
 
@@ -436,7 +436,7 @@ or on error:
 3. File path is written to PTY for assistant to access
 4. Server sends this JSON response confirming success or error
 
-**Server implementation:** `main.go:1271-1288` (sendFileUploadResponse function)
+**Server implementation:** `main.go` (sendFileUploadResponse function)
 ```go
 func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, filename, errMsg string) {
     response := map[string]interface{}{
@@ -455,7 +455,7 @@ func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, f
 }
 ```
 
-**Client implementation:** `static/terminal-ui.js:786-793`
+**Client implementation:** `static/terminal-ui.js` (file_upload message handler in ws.onmessage)
 ```javascript
 case 'file_upload':
     if (msg.success) {
@@ -491,7 +491,7 @@ case 'file_upload':
 2. Updates session name
 3. Broadcasts updated `status` message to all clients
 
-**Server implementation:** `main.go:1143-1166`
+**Server implementation:** `main.go` (rename_session case in handleWebSocket)
 ```go
 case "rename_session":
     name := strings.TrimSpace(msg.Name)
@@ -528,7 +528,7 @@ case "rename_session":
 - When the shell process exits with code 0 (success)
 - NOT sent for non-zero exits (process auto-restarts instead)
 
-**Server implementation:** `main.go:368-392` (BroadcastExit function)
+**Server implementation:** `main.go` (Session.BroadcastExit method)
 ```go
 func (s *Session) BroadcastExit(exitCode int) {
     exitJSON := map[string]interface{}{
@@ -556,7 +556,7 @@ func (s *Session) BroadcastExit(exitCode int) {
 6. **Rename**: Client can rename session, server broadcasts status
 7. **Disconnect**: WebSocket closes, client auto-reconnects
 
-**Snapshot on join:** `main.go:1076-1091`
+**Snapshot on join:** `main.go` (handleWebSocket, after AddClient)
 ```go
 // If this is a new session, start the PTY reader goroutine
 if isNew {

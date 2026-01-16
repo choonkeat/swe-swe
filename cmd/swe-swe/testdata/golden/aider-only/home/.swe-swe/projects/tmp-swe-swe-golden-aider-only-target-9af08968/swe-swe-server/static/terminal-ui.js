@@ -1457,7 +1457,7 @@ class TerminalUI extends HTMLElement {
                 <p class="terminal-ui__worktree-branch">Branch: <strong>${this.escapeHtml(worktree.branch)}</strong></p>
                 <div class="terminal-ui__worktree-buttons">
                     <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--secondary" data-action="not-yet">Not yet</button>
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--primary" data-action="merge">Merge to dev</button>
+                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--primary" data-action="merge">Merge to ${this.escapeHtml(worktree.targetBranch || 'main')}</button>
                     <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--danger" data-action="discard">Discard</button>
                 </div>
             </div>
