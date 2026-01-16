@@ -170,6 +170,30 @@
             border-color: #007acc;
             background: #2d2d2d;
         }
+        .ios-safari-warning {
+            display: none;
+            max-width: 600px;
+            width: 100%;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            background: #442c00;
+            border: 1px solid #d97706;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .ios-safari-warning__title {
+            font-weight: 600;
+            color: #fbbf24;
+            margin-bottom: 4px;
+        }
+        .ios-safari-warning__text {
+            color: #fcd34d;
+        }
+        .ios-safari-warning a {
+            color: #fbbf24;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -177,6 +201,13 @@
         <div class="selection-page__header">
             <h1 class="selection-page__title">swe-swe</h1>
             <p class="selection-page__subtitle">Join an existing session or start a new one</p>
+        </div>
+        <div class="ios-safari-warning" id="ios-safari-warning">
+            <div class="ios-safari-warning__title">iOS Safari + Self-Signed Certs</div>
+            <div class="ios-safari-warning__text">
+                WebSocket connections may not work in Safari with self-signed certificates.
+                Please use <strong>Chrome</strong> or another browser on iOS for best results.
+            </div>
         </div>
         <div class="agents-list">
             {{range .Agents}}
@@ -211,5 +242,21 @@
         </div>
         {{end}}
     </div>
+    <script>
+        // Detect iOS Safari and show warning for self-signed cert scenarios
+        (function() {
+            var ua = navigator.userAgent;
+            var isIOS = /iPad|iPhone|iPod/.test(ua);
+            var isSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua);
+            var isHTTPS = location.protocol === 'https:';
+
+            if (isIOS && isSafari && isHTTPS) {
+                var warning = document.getElementById('ios-safari-warning');
+                if (warning) {
+                    warning.style.display = 'block';
+                }
+            }
+        })();
+    </script>
 </body>
 </html>
