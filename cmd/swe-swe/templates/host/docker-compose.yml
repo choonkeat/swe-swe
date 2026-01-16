@@ -36,15 +36,6 @@ services:
     networks:
       - swe-network
     restart: unless-stopped
-    # Resource limits for X11/VNC rendering
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
 
   swe-swe:
     build:
