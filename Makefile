@@ -106,6 +106,9 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=previous-init-flags-invalid FLAGS="--previous-init-flags=invalid"
 	@$(MAKE) _golden-variant NAME=previous-init-flags-reuse-with-other-flags FLAGS="--previous-init-flags=reuse --agents=claude"
 	@$(MAKE) _golden-already-initialized
+	@# Normalize TLS files to avoid flip-flopping due to random cert generation
+	@find $(GOLDEN_TESTDATA) -name "server.crt" -exec cp $(GOLDEN_TESTDATA)/../standard-tls/server.crt {} \;
+	@find $(GOLDEN_TESTDATA) -name "server.key" -exec cp $(GOLDEN_TESTDATA)/../standard-tls/server.key {} \;
 	@rm -f /tmp/swe-swe-golden
 	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
 
