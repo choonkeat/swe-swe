@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -41,6 +42,17 @@ var upgrader = websocket.Upgrader{
 		return true // Allow all origins for development
 	},
 }
+
+// Chunked WebSocket constants for iOS Safari compatibility
+// See: research/2026-01-04-ios-safari-websocket-chunking.md
+const (
+	// ChunkMarker identifies a chunked binary message (0x02)
+	ChunkMarker = 0x02
+	// DefaultChunkSize is 8KB - safe for iOS Safari WebSocket
+	DefaultChunkSize = 8192
+	// MinChunkSize prevents excessively small chunks
+	MinChunkSize = 512
+)
 
 // TermSize represents terminal dimensions
 type TermSize struct {
@@ -393,7 +405,65 @@ func (s *Session) Close() {
 	}
 }
 
+// compressSnapshot compresses data using gzip for efficient WebSocket transmission
+func compressSnapshot(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// sendChunked sends compressed data as multiple chunks for iOS Safari compatibility.
+// Each chunk: [0x02, chunkIndex, totalChunks, ...data]
+// Returns the number of chunks sent, or error.
+func sendChunked(conn *websocket.Conn, writeMu *sync.Mutex, data []byte, chunkSize int) (int, error) {
+	if chunkSize < MinChunkSize {
+		chunkSize = MinChunkSize
+	}
+
+	totalChunks := (len(data) + chunkSize - 1) / chunkSize
+	if totalChunks > 255 {
+		// Cap at 255 chunks (protocol limit with single byte for count)
+		totalChunks = 255
+		chunkSize = (len(data) + 254) / 255
+	}
+	if totalChunks == 0 {
+		totalChunks = 1 // At least one chunk even for empty data
+	}
+
+	writeMu.Lock()
+	defer writeMu.Unlock()
+
+	for i := 0; i < totalChunks; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+
+		// Build chunk: [marker, index, total, ...payload]
+		chunk := make([]byte, 3+end-start)
+		chunk[0] = ChunkMarker
+		chunk[1] = byte(i)
+		chunk[2] = byte(totalChunks)
+		copy(chunk[3:], data[start:end])
+
+		if err := conn.WriteMessage(websocket.BinaryMessage, chunk); err != nil {
+			return i, err
+		}
+		log.Printf("Sent chunk %d/%d (%d bytes)", i+1, totalChunks, len(chunk)-3)
+	}
+
+	return totalChunks, nil
+}
+
 // GenerateSnapshot creates ANSI escape sequences to recreate the current screen state
+// Returns gzip-compressed data for efficient transmission
 func (s *Session) GenerateSnapshot() []byte {
 	s.vtMu.Lock()
 	defer s.vtMu.Unlock()
@@ -449,7 +519,19 @@ func (s *Session) GenerateSnapshot() []byte {
 	cursor := s.vt.Cursor()
 	fmt.Fprintf(&buf, "\x1b[%d;%dH", cursor.Y+1, cursor.X+1)
 
-	return buf.Bytes()
+	rawData := buf.Bytes()
+
+	// Compress the snapshot
+	compressed, err := compressSnapshot(rawData)
+	if err != nil {
+		log.Printf("Failed to compress snapshot, sending uncompressed: %v", err)
+		return rawData
+	}
+
+	ratio := float64(len(compressed)) * 100 / float64(len(rawData))
+	log.Printf("Snapshot compressed: %d -> %d bytes (%.1f%%)", len(rawData), len(compressed), ratio)
+
+	return compressed
 }
 
 // RestartProcess restarts the shell process for this session
@@ -973,14 +1055,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sess.startPTYReader()
 	} else {
 		// Send snapshot to catch up the new client with existing screen state
+		// Snapshot is gzip-compressed, sent as chunked messages for iOS Safari compatibility
 		snapshot := sess.GenerateSnapshot()
-		sess.writeMu.Lock()
-		err := conn.WriteMessage(websocket.BinaryMessage, snapshot)
-		sess.writeMu.Unlock()
+		numChunks, err := sendChunked(conn, &sess.writeMu, snapshot, DefaultChunkSize)
 		if err != nil {
-			log.Printf("Failed to send snapshot: %v", err)
+			log.Printf("Failed to send snapshot chunks: %v", err)
 		} else {
-			log.Printf("Sent screen snapshot to new client (%d bytes)", len(snapshot))
+			log.Printf("Sent screen snapshot to new client (%d bytes in %d chunks)", len(snapshot), numChunks)
 		}
 	}
 

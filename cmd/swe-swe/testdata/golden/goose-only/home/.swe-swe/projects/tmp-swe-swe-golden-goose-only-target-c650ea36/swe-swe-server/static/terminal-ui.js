@@ -27,6 +27,9 @@ class TerminalUI extends HTMLElement {
         this.uploadQueue = [];
         this.isUploading = false;
         this.uploadStartTime = null;
+        // Chunked snapshot reassembly
+        this.chunks = [];
+        this.expectedChunks = 0;
     }
 
     static get observedAttributes() {
@@ -887,7 +890,13 @@ class TerminalUI extends HTMLElement {
 
         this.ws.onmessage = (event) => {
             if (event.data instanceof ArrayBuffer) {
-                this.onTerminalData(new Uint8Array(event.data));
+                const data = new Uint8Array(event.data);
+                // Check for chunk message (0x02 prefix)
+                if (data.length >= 3 && data[0] === 0x02) {
+                    this.handleChunk(data);
+                } else {
+                    this.onTerminalData(data);
+                }
             } else if (typeof event.data === 'string') {
                 try {
                     const msg = JSON.parse(event.data);
@@ -930,6 +939,97 @@ class TerminalUI extends HTMLElement {
             });
         }
         this.pendingWrites.push(data);
+    }
+
+    // Handle chunked snapshot message
+    // Format: [0x02, chunkIndex, totalChunks, ...payload]
+    handleChunk(data) {
+        const chunkIndex = data[1];
+        const totalChunks = data[2];
+        const payload = data.slice(3);
+
+        console.log(`CHUNK ${chunkIndex + 1}/${totalChunks} (${payload.length} bytes)`);
+
+        // Initialize chunks array if this is the first chunk or a new sequence
+        if (this.expectedChunks !== totalChunks) {
+            this.chunks = new Array(totalChunks);
+            this.expectedChunks = totalChunks;
+        }
+
+        // Store chunk payload
+        this.chunks[chunkIndex] = payload;
+
+        // Check if all chunks received
+        const receivedCount = this.chunks.filter(c => c !== undefined).length;
+        if (receivedCount === totalChunks) {
+            this.reassembleChunks();
+        }
+    }
+
+    // Reassemble chunks and decompress
+    async reassembleChunks() {
+        // Combine all chunks
+        const totalSize = this.chunks.reduce((sum, c) => sum + c.length, 0);
+        const compressed = new Uint8Array(totalSize);
+        let offset = 0;
+        for (const chunk of this.chunks) {
+            compressed.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        console.log(`REASSEMBLED: ${this.chunks.length} chunks, ${compressed.length} bytes compressed`);
+
+        // Reset chunk state
+        this.chunks = [];
+        this.expectedChunks = 0;
+
+        // Decompress and write to terminal
+        try {
+            const decompressed = await this.decompressSnapshot(compressed);
+            console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
+            this.onTerminalData(decompressed);
+        } catch (e) {
+            console.error('Failed to decompress snapshot:', e);
+            // Try writing compressed data directly (fallback for uncompressed data)
+            this.onTerminalData(compressed);
+        }
+    }
+
+    // Decompress gzip data using DecompressionStream API
+    async decompressSnapshot(compressed) {
+        // Check for gzip magic bytes (0x1f 0x8b)
+        if (compressed.length < 2 || compressed[0] !== 0x1f || compressed[1] !== 0x8b) {
+            // Not gzip compressed, return as-is
+            return compressed;
+        }
+
+        // Use DecompressionStream API (available in modern browsers)
+        const ds = new DecompressionStream('gzip');
+        const writer = ds.writable.getWriter();
+        const reader = ds.readable.getReader();
+
+        // Write compressed data
+        writer.write(compressed);
+        writer.close();
+
+        // Read decompressed data
+        const chunks = [];
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+        }
+
+        // Combine chunks
+        const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+        const result = new Uint8Array(totalLength);
+        let pos = 0;
+        for (const chunk of chunks) {
+            result.set(chunk, pos);
+            pos += chunk.length;
+        }
+
+        return result;
     }
 
     sendJSON(obj) {
