@@ -2500,6 +2500,12 @@ func handleRecordingAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// POST /api/recording/{uuid}/keep
+	if len(parts) == 2 && parts[1] == "keep" && r.Method == http.MethodPost {
+		handleKeepRecording(w, r, recordingUUID)
+		return
+	}
+
 	http.Error(w, "Not Found", http.StatusNotFound)
 }
 
@@ -2629,6 +2635,67 @@ func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleKeepRecording marks a recording as "kept" so it won't be auto-deleted
+func handleKeepRecording(w http.ResponseWriter, r *http.Request, uuid string) {
+	metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+
+	// Read existing metadata
+	metaData, err := os.ReadFile(metadataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Recording not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Failed to read metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	var meta RecordingMetadata
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		log.Printf("Failed to parse metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if already kept
+	if meta.KeptAt != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"kept_at":        meta.KeptAt,
+			"already_kept":   true,
+		})
+		return
+	}
+
+	// Set KeptAt to now
+	now := time.Now()
+	meta.KeptAt = &now
+
+	// Write back metadata
+	updatedMeta, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(metadataPath, updatedMeta, 0644); err != nil {
+		log.Printf("Failed to write metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Recording %s marked as kept", uuid)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"kept_at":      meta.KeptAt,
+		"already_kept": false,
+	})
 }
 
 // handleDownloadRecording creates a zip archive of the recording files

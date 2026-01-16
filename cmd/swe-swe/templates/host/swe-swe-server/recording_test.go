@@ -1549,3 +1549,121 @@ func TestLoadEndedRecordingsByAgent_MapsDisplayNamesToBinaryNames(t *testing.T) 
 		t.Error("expected recording to be grouped under 'claude'")
 	}
 }
+
+// ============================================================================
+// Keep Recording API Tests
+// ============================================================================
+
+func TestKeepRecording_Success(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	startedAt := time.Now().Add(-1 * time.Hour)
+	endedAt := time.Now().Add(-30 * time.Minute)
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:      testUUID,
+			Name:      "Test Session",
+			Agent:     "claude",
+			StartedAt: startedAt,
+			EndedAt:   &endedAt,
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/recording/"+testUUID+"/keep", nil)
+	w := httptest.NewRecorder()
+
+	handleRecordingAPI(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	body, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if result["already_kept"].(bool) != false {
+		t.Error("expected already_kept to be false")
+	}
+	if result["kept_at"] == nil {
+		t.Error("expected kept_at to be set")
+	}
+
+	// Verify metadata was updated
+	metadataPath := filepath.Join(h.recordingDir, "session-"+testUUID+".metadata.json")
+	metaData, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to read metadata: %v", err)
+	}
+	var meta RecordingMetadata
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		t.Fatalf("failed to parse metadata: %v", err)
+	}
+	if meta.KeptAt == nil {
+		t.Error("expected KeptAt to be set in metadata")
+	}
+}
+
+func TestKeepRecording_NotFound(t *testing.T) {
+	h := newTestHelper(t)
+	_ = h // use helper for test isolation
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	req := httptest.NewRequest(http.MethodPost, "/api/recording/"+testUUID+"/keep", nil)
+	w := httptest.NewRecorder()
+
+	handleRecordingAPI(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestKeepRecording_AlreadyKept(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	startedAt := time.Now().Add(-1 * time.Hour)
+	endedAt := time.Now().Add(-30 * time.Minute)
+	keptAt := time.Now().Add(-15 * time.Minute)
+
+	h.createRecordingFiles(testUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:      testUUID,
+			Name:      "Test Session",
+			Agent:     "claude",
+			StartedAt: startedAt,
+			EndedAt:   &endedAt,
+			KeptAt:    &keptAt,
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/recording/"+testUUID+"/keep", nil)
+	w := httptest.NewRecorder()
+
+	handleRecordingAPI(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	body, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if result["already_kept"].(bool) != true {
+		t.Error("expected already_kept to be true")
+	}
+}
