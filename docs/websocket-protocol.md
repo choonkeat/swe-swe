@@ -11,9 +11,11 @@ The protocol uses WebSocket frame types to distinguish between terminal I/O and 
 
 ## Connection
 
-WebSocket endpoint: `/ws/{session-uuid}`
+WebSocket endpoint: `/ws/{session-uuid}?assistant={assistant}`
 
-Example: `ws://localhost:9898/ws/abc123-def456`
+Example: `ws://localhost:1977/ws/abc123-def456?assistant=claude`
+
+The `assistant` query parameter specifies which AI assistant to use (e.g., `claude`, `gemini`, `codex`, `aider`, `goose`).
 
 ## Message Types
 
@@ -25,6 +27,7 @@ Example: `ws://localhost:9898/ws/abc123-def456`
 |-------|-------------|
 | `0x00` + 4 bytes | Terminal resize: `[0x00, rows_hi, rows_lo, cols_hi, cols_lo]` |
 | `0x01` + 2 bytes + name + data | File upload: `[0x01, name_len_hi, name_len_lo, ...filename_bytes, ...file_data]` |
+| `0x02` + index + total + data | Chunked message: `[0x02, chunk_index, total_chunks, ...chunk_data]` (used for snapshots) |
 | Other | Terminal input (keystrokes and raw shell I/O) |
 
 **Resize message client implementation:** `static/terminal-ui.js:686-697`
@@ -102,9 +105,10 @@ async handleFile(file) {
 
 #### Server → Client
 
-Raw PTY output bytes, sent directly to xterm.js.
+- Raw PTY output bytes, sent directly to xterm.js
+- Chunked snapshots for joining clients (gzip-compressed, 0x02 prefix)
 
-**Server binary message handler:** `main.go:849-914`
+**Server binary message handler:** `main.go:1175-1237`
 ```go
 // Check for terminal resize message (0x00 prefix)
 if len(data) >= 5 && data[0] == 0x00 {
@@ -117,19 +121,11 @@ if len(data) >= 5 && data[0] == 0x00 {
 // Check for file upload message (0x01 prefix)
 if len(data) >= 3 && data[0] == 0x01 {
     nameLen := int(data[1])<<8 | int(data[2])
-    if len(data) < 3+nameLen {
-        sendFileUploadResponse(conn, false, "", "Invalid upload format")
-        continue
-    }
-    filename := string(data[3 : 3+nameLen])
-    fileData := data[3+nameLen:]
-
-    // Sanitize, save to .swe-swe/uploads/, send response
+    // ... parse filename and file data
     filename = sanitizeFilename(filename)
     filePath := ".swe-swe/uploads/" + filename
     os.WriteFile(filePath, fileData, 0644)
-    sendFileUploadResponse(conn, true, filename, "")
-
+    sendFileUploadResponse(sess, conn, true, filename, "")
     // Write file path to PTY for assistant to see
     sess.PTY.Write([]byte(absFilePath))
     continue
@@ -142,7 +138,34 @@ if _, err := sess.PTY.Write(data); err != nil {
 }
 ```
 
-**Broadcast to clients:** `main.go:213-225`
+#### Chunked Snapshots (Server → Client)
+
+When a client joins an existing session, the server sends a gzip-compressed screen snapshot using chunked messages for iOS Safari compatibility.
+
+**Chunk format:** `[0x02, chunk_index, total_chunks, ...compressed_data]`
+
+- `0x02` - Chunk marker
+- `chunk_index` - 0-based index (0-254)
+- `total_chunks` - Total number of chunks (1-255)
+- `compressed_data` - gzip-compressed ANSI escape sequences
+
+**Server implementation:** `main.go:429-471`
+```go
+func sendChunked(conn *websocket.Conn, writeMu *sync.Mutex, data []byte, chunkSize int) (int, error) {
+    totalChunks := (len(data) + chunkSize - 1) / chunkSize
+    for i := 0; i < totalChunks; i++ {
+        chunk := make([]byte, 3+end-start)
+        chunk[0] = ChunkMarker  // 0x02
+        chunk[1] = byte(i)
+        chunk[2] = byte(totalChunks)
+        copy(chunk[3:], data[start:end])
+        conn.WriteMessage(websocket.BinaryMessage, chunk)
+    }
+    return totalChunks, nil
+}
+```
+
+**Broadcast to clients:** `main.go:287-299`
 ```go
 func (s *Session) Broadcast(data []byte) {
 	s.mu.RLock()
@@ -151,7 +174,7 @@ func (s *Session) Broadcast(data []byte) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	for conn := range s.clients {
+	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
 			log.Printf("Broadcast write error: %v", err)
 		}
@@ -185,7 +208,7 @@ startHeartbeat() {
 }
 ```
 
-**Server implementation:** `main.go:807-837`
+**Server implementation:** `main.go:1112-1170`
 ```go
 if messageType == websocket.TextMessage {
     var msg struct {
@@ -193,6 +216,7 @@ if messageType == websocket.TextMessage {
         Data     json.RawMessage `json:"data,omitempty"`
         UserName string          `json:"userName,omitempty"`
         Text     string          `json:"text,omitempty"`
+        Name     string          `json:"name,omitempty"`
     }
     if err := json.Unmarshal(data, &msg); err != nil {
         log.Printf("Invalid JSON message: %v", err)
@@ -205,15 +229,17 @@ if messageType == websocket.TextMessage {
         if msg.Data != nil {
             response["data"] = msg.Data
         }
-        if err := conn.WriteJSON(response); err != nil {
-            log.Printf("Failed to send pong: %v", err)
-        }
+        conn.WriteJSON(response)
     case "chat":
-        // Handle incoming chat message
         if msg.UserName != "" && msg.Text != "" {
             sess.BroadcastChatMessage(msg.UserName, msg.Text)
-            log.Printf("Chat message from %s: %s", msg.UserName, msg.Text)
         }
+    case "rename_session":
+        // Validate and update session name
+        name := strings.TrimSpace(msg.Name)
+        // Max 32 chars, alphanumeric + spaces + hyphens + underscores
+        sess.Name = name
+        sess.BroadcastStatus()
     default:
         log.Printf("Unknown message type: %s", msg.Type)
     }
@@ -271,17 +297,15 @@ sendChatMessage() {
 }
 ```
 
-**Server implementation:** `main.go:828-833`
+**Server implementation:** `main.go:1137-1141`
 ```go
 case "chat":
-    // Handle incoming chat message
     if msg.UserName != "" && msg.Text != "" {
         sess.BroadcastChatMessage(msg.UserName, msg.Text)
-        log.Printf("Chat message from %s: %s", msg.UserName, msg.Text)
     }
 ```
 
-**Server broadcast:** `main.go:260-285`
+**Server broadcast:** `main.go:340-365`
 ```go
 func (s *Session) BroadcastChatMessage(userName, text string) {
 	s.mu.RLock()
@@ -295,32 +319,25 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 	}
 
 	data, err := json.Marshal(chatJSON)
-	if err != nil {
-		log.Printf("BroadcastChatMessage marshal error: %v", err)
-		return
-	}
-
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-
-	for conn := range s.clients {
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			log.Printf("BroadcastChatMessage write error: %v", err)
-		}
+	// ...
+	for conn := range s.wsClients {
+		conn.WriteMessage(websocket.TextMessage, data)
 	}
 }
 ```
 
 #### status (Session Status Broadcast)
 
-**Server → Client (Sent when client connects/disconnects or terminal resizes):**
+**Server → Client (Sent when client connects/disconnects, terminal resizes, or session is renamed):**
 ```json
 {
   "type": "status",
   "viewers": 2,
   "cols": 120,
   "rows": 30,
-  "assistant": "claude"
+  "assistant": "Claude",
+  "sessionName": "my-feature",
+  "uuidShort": "a3c12"
 }
 ```
 
@@ -328,38 +345,36 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 - `viewers`: Number of active clients connected to this session
 - `cols`: Terminal width in columns
 - `rows`: Terminal height in rows
-- `assistant`: Name of the detected AI assistant (or empty string if none)
+- `assistant`: Display name of the AI assistant (e.g., "Claude", "Gemini")
+- `sessionName`: User-assigned session name (empty string if unnamed)
+- `uuidShort`: First 5 characters of session UUID
 
-**Server implementation:** `main.go:228-256` (BroadcastStatus function)
+**Server implementation:** `main.go:301-336` (BroadcastStatus function)
 ```go
 func (s *Session) BroadcastStatus() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	rows, cols := s.calculateMinSize()
+	uuidShort := s.UUID
+	if len(s.UUID) >= 5 {
+		uuidShort = s.UUID[:5]
+	}
 	status := map[string]interface{}{
-		"type":      "status",
-		"viewers":   len(s.clients),
-		"cols":      cols,
-		"rows":      rows,
-		"assistant": s.AssistantConfig.Name,
+		"type":        "status",
+		"viewers":     len(s.wsClients),
+		"cols":        cols,
+		"rows":        rows,
+		"assistant":   s.AssistantConfig.Name,
+		"sessionName": s.Name,
+		"uuidShort":   uuidShort,
 	}
 
 	data, err := json.Marshal(status)
-	if err != nil {
-		log.Printf("BroadcastStatus marshal error: %v", err)
-		return
+	// ...
+	for conn := range s.wsClients {
+		conn.WriteMessage(websocket.TextMessage, data)
 	}
-
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-
-	for conn := range s.clients {
-		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-			log.Printf("BroadcastStatus write error: %v", err)
-		}
-	}
-	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.clients), cols, rows)
 }
 ```
 
@@ -380,9 +395,10 @@ case 'status':
 ```
 
 **When sent:**
-- After client connects (`main.go:116`, AddClient method)
-- After client disconnects (`main.go:141`, RemoveClient method)
-- After terminal is resized (`main.go:167`, UpdateClientSize method)
+- After client connects (`main.go:159-168`, AddClient method)
+- After client disconnects (`main.go:171-198`, RemoveClient method)
+- After terminal is resized (`main.go:201-231`, UpdateClientSize method)
+- After session is renamed (`main.go:1143-1166`, rename_session handler)
 
 ---
 
@@ -420,9 +436,9 @@ or on error:
 3. File path is written to PTY for assistant to access
 4. Server sends this JSON response confirming success or error
 
-**Server implementation:** `main.go:949-964` (sendFileUploadResponse function)
+**Server implementation:** `main.go:1271-1288` (sendFileUploadResponse function)
 ```go
-func sendFileUploadResponse(conn *websocket.Conn, success bool, filename, errMsg string) {
+func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, filename, errMsg string) {
     response := map[string]interface{}{
         "type":    "file_upload",
         "success": success,
@@ -433,7 +449,9 @@ func sendFileUploadResponse(conn *websocket.Conn, success bool, filename, errMsg
     if errMsg != "" {
         response["error"] = errMsg
     }
+    sess.writeMu.Lock()
     conn.WriteJSON(response)
+    sess.writeMu.Unlock()
 }
 ```
 
@@ -449,34 +467,109 @@ case 'file_upload':
 ```
 
 **File storage location:**
-- Uploaded files are saved to `.swe-swe/uploads/` directory in metadata
+- Uploaded files are saved to `.swe-swe/uploads/` directory in the workspace
 - Filenames are sanitized to prevent directory traversal
 - File path is printed to PTY so assistant can see where file was saved
 
+---
+
+#### rename_session (Session Rename)
+
+**Client → Server:**
+```json
+{
+  "type": "rename_session",
+  "name": "my-feature"
+}
+```
+
+**Fields:**
+- `name`: New session name (max 32 chars, alphanumeric + spaces + hyphens + underscores)
+
+**Server behavior:**
+1. Validates name (max 32 chars, allowed characters)
+2. Updates session name
+3. Broadcasts updated `status` message to all clients
+
+**Server implementation:** `main.go:1143-1166`
+```go
+case "rename_session":
+    name := strings.TrimSpace(msg.Name)
+    if len(name) > 32 {
+        continue // reject
+    }
+    // Validate characters
+    for _, r := range name {
+        if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+             (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_') {
+            continue // reject
+        }
+    }
+    sess.Name = name
+    sess.BroadcastStatus()
+```
+
+---
+
+#### exit (Process Exit Notification)
+
+**Server → Client (Sent when shell process exits cleanly with code 0):**
+```json
+{
+  "type": "exit",
+  "exitCode": 0
+}
+```
+
+**Fields:**
+- `exitCode`: The exit code of the process (0 for success)
+
+**When sent:**
+- When the shell process exits with code 0 (success)
+- NOT sent for non-zero exits (process auto-restarts instead)
+
+**Server implementation:** `main.go:368-392` (BroadcastExit function)
+```go
+func (s *Session) BroadcastExit(exitCode int) {
+    exitJSON := map[string]interface{}{
+        "type":     "exit",
+        "exitCode": exitCode,
+    }
+    data, _ := json.Marshal(exitJSON)
+    for conn := range s.wsClients {
+        conn.WriteMessage(websocket.TextMessage, data)
+    }
+}
+```
+
+**Client behavior:** Can prompt user to start a new session or reconnect.
+
+---
+
 ## Session Lifecycle
 
-1. **Connect**: Client connects to `/ws/{uuid}`
-2. **Snapshot** (existing session): Server sends screen snapshot as binary
+1. **Connect**: Client connects to `/ws/{uuid}?assistant={assistant}`
+2. **Snapshot** (existing session): Server sends gzip-compressed screen snapshot as chunked binary messages
 3. **Resize**: Client sends resize message
 4. **Heartbeat**: Client sends ping every 30s
 5. **Terminal I/O**: Bidirectional binary messages
-6. **Disconnect**: WebSocket closes, client auto-reconnects
+6. **Rename**: Client can rename session, server broadcasts status
+7. **Disconnect**: WebSocket closes, client auto-reconnects
 
-**Snapshot on join:** `main.go:778-791`
+**Snapshot on join:** `main.go:1076-1091`
 ```go
 // If this is a new session, start the PTY reader goroutine
 if isNew {
     sess.startPTYReader()
 } else {
     // Send snapshot to catch up the new client with existing screen state
+    // Snapshot is gzip-compressed, sent as chunked messages for iOS Safari compatibility
     snapshot := sess.GenerateSnapshot()
-    sess.writeMu.Lock()
-    err := conn.WriteMessage(websocket.BinaryMessage, snapshot)
-    sess.writeMu.Unlock()
+    numChunks, err := sendChunked(conn, &sess.writeMu, snapshot, DefaultChunkSize)
     if err != nil {
-        log.Printf("Failed to send snapshot: %v", err)
+        log.Printf("Failed to send snapshot chunks: %v", err)
     } else {
-        log.Printf("Sent screen snapshot to new client (%d bytes)", len(snapshot))
+        log.Printf("Sent screen snapshot (%d bytes in %d chunks)", len(snapshot), numChunks)
     }
 }
 ```
@@ -489,8 +582,11 @@ if isNew {
 | `chat` | Client → Server → Client | Control | ✅ Implemented |
 | `status` | Server → Client | Control | ✅ Implemented |
 | `file_upload` | Server → Client | Control | ✅ Implemented |
+| `rename_session` | Client → Server | Control | ✅ Implemented |
+| `exit` | Server → Client | Control | ✅ Implemented |
 | Terminal resize (0x00) | Client → Server | Binary | ✅ Implemented |
 | File upload (0x01) | Client → Server | Binary | ✅ Implemented |
+| Chunked message (0x02) | Server → Client | Binary | ✅ Implemented |
 | Terminal I/O | Client ↔ Server | Binary | ✅ Implemented |
 
 ## Extensibility

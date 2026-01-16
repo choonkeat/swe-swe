@@ -73,8 +73,13 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 ├── docker-compose.yml           # Compose configuration
 ├── entrypoint.sh                # Container startup script
 ├── traefik-dynamic.yml          # Traefik routing rules
+├── init.json                    # Saved init flags (for --previous-init-flags=reuse)
 ├── .path                        # Original project path (for discovery)
 └── .env                         # Environment variables (if using enterprise certs)
+
+$HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
+├── server.crt                   # Self-signed certificate
+└── server.key                   # Private key
 ```
 
 **Note**: Metadata is stored outside your project directory for security. Your project directory remains clean (no `.swe-swe/` folder).
@@ -107,6 +112,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 | `--npm-install PACKAGES` | Additional npm packages to install globally (comma or space separated) |
 | `--with-docker` | Mount Docker socket to allow container to run Docker commands on host |
 | `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
+| `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), or `selfsign@<host>` (for remote access) |
 
 **Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`
 
@@ -135,6 +141,12 @@ swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-command
 
 # Initialize a specific directory
 swe-swe init --project-directory ~/my-project
+
+# Initialize with HTTPS (self-signed certificate)
+swe-swe init --ssl=selfsign
+
+# Initialize with HTTPS for remote access (includes IP/hostname in cert)
+swe-swe init --ssl=selfsign@192.168.1.100
 
 # Reinitialize with same configuration (after updates)
 swe-swe init --previous-init-flags=reuse

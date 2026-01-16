@@ -90,11 +90,15 @@ this.term.onData(data => {
 
 **Client behavior:** N/A (client is gone)
 
-**Code reference:** `main.go:521-524`
+**Code reference:** `main.go:1100-1108`
 ```go
 messageType, data, err := conn.ReadMessage()
 if err != nil {
-    log.Printf("WebSocket read error: %v", err)
+    if websocket.IsCloseError(err, websocket.CloseNormalClosure, ...) {
+        log.Printf("WebSocket closed: %v", err)
+    } else {
+        log.Printf("WebSocket read error: %v", err)
+    }
     break
 }
 ```
@@ -117,7 +121,7 @@ if err != nil {
 4. Heartbeat stops
 5. Auto-reconnect scheduled with exponential backoff
 
-**Code reference:** `static/terminal-ui.js:312-317`
+**Code reference:** `static/terminal-ui.js` (onclose handler)
 ```javascript
 this.ws.onclose = () => {
     this.stopUptimeTimer();
@@ -163,37 +167,37 @@ getReconnectDelay() {
 - New shell prompt appears after 500ms restart
 - No status bar change (still "Connected")
 
-**Code reference:** `main.go:397-462` (PTY reader with exit code checking)
+**Code reference:** `main.go:584-665` (PTY reader with exit code checking)
 ```go
 n, err := ptyFile.Read(buf)
 if err != nil {
-    clientCount := sess.ClientCount()
+    clientCount := len(s.wsClients)
     if clientCount == 0 {
         log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
         return
     }
 
     // Check exit code to determine restart behavior
-    var exitCode int
-    if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
-        exitCode = status.ExitStatus()
+    exitCode := 0
+    if cmd != nil {
+        if err := cmd.Wait(); err != nil {
+            if exitErr, ok := err.(*exec.ExitError); ok {
+                exitCode = exitErr.ExitCode()
+            }
+        }
     }
 
     if exitCode == 0 {
         // Successful exit - don't restart
-        successMsg := []byte("\r\n[Process exited successfully]\r\n")
-        s.vtMu.Lock()
-        s.vt.Write(successMsg)
-        s.vtMu.Unlock()
-        s.Broadcast(successMsg)
+        exitMsg := []byte("\r\n[Process exited successfully]\r\n")
+        s.Broadcast(exitMsg)
+        // Send structured exit message so browser can prompt user
+        s.BroadcastExit(0)
         return
     }
 
     // Non-zero exit - restart with message
     restartMsg := []byte(fmt.Sprintf("\r\n[Process exited with code %d, restarting...]\r\n", exitCode))
-    s.vtMu.Lock()
-    s.vt.Write(restartMsg)
-    s.vtMu.Unlock()
     s.Broadcast(restartMsg)
 
     // Wait before restarting
@@ -247,7 +251,7 @@ if err != nil {
 - User input keystrokes are accepted but discarded (PTY is dead)
 - No visual indication that shell is dead (potential UX issue)
 
-**Code reference:** `main.go:451-459` (PTY reader error handling)
+**Code reference:** `main.go:643-651` (PTY reader error handling)
 ```go
 if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
     log.Printf("Session %s: failed to restart process: %v", s.UUID, err)
@@ -295,12 +299,25 @@ if err := s.RestartProcess(s.AssistantConfig.ShellRestartCmd); err != nil {
 
 **Client behavior:** Same as network disconnection - auto-reconnect triggered
 
-**Code reference:** `main.go:159-163` (Session.Close method)
+**Code reference:** `main.go:394-414` (Session.Close method)
 ```go
-for conn := range s.clients {
-    conn.Close()
+func (s *Session) Close() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    for conn := range s.wsClients {
+        conn.Close()
+    }
+    s.wsClients = make(map[*websocket.Conn]bool)
+
+    if s.Cmd != nil && s.Cmd.Process != nil {
+        s.Cmd.Process.Kill()
+        s.Cmd.Wait()
+    }
+    if s.PTY != nil {
+        s.PTY.Close()
+    }
 }
-s.clients = make(map[*websocket.Conn]bool)
 ```
 
 ---
@@ -317,7 +334,7 @@ s.clients = make(map[*websocket.Conn]bool)
 
 **Client behavior:** N/A (no clients connected)
 
-**Code reference:** `main.go:675-692` (sessionReaper goroutine)
+**Code reference:** `main.go:955-972` (sessionReaper goroutine)
 ```go
 func sessionReaper() {
     ticker := time.NewTicker(time.Minute)
@@ -350,7 +367,7 @@ func sessionReaper() {
 - Logged but connection not explicitly closed
 - Client may be removed on next read error
 
-**Code reference:** `main.go:148-151`
+**Code reference:** `main.go:294-297`
 ```go
 if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
     log.Printf("Broadcast write error: %v", err)
