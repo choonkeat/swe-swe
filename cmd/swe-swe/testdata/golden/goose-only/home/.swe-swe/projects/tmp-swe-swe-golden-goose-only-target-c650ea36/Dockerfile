@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y \
 
 
 
+
 # Install Goose (AI pair programmer from Block)
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
