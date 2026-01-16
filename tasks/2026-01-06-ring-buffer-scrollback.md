@@ -83,7 +83,7 @@ go build ./cmd/swe-swe  # Compiles successfully
 
 ---
 
-## Phase 3: Replay ring buffer to new joiners
+## Phase 3: Replay ring buffer to new joiners ✅
 
 ### What will be achieved
 When a new client joins an existing session, they receive the ring buffer contents (scrollback history) before the VT snapshot. This gives them terminal history they can scroll back through.
