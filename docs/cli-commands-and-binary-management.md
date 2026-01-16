@@ -1,14 +1,13 @@
-# CLI Commands and Binary Management
+# CLI Commands and Build Architecture
 
-This document describes the swe-swe CLI commands and how the swe-swe-server binary is managed across the project lifecycle.
+This document describes the swe-swe CLI commands and how the swe-swe-server is built and deployed.
 
 ## Quick Summary
 
 - `swe-swe init [--agents=...] [--exclude=...] [--apt-get-install=...]` — Initialize a new swe-swe project with customizable agent selection
-- `swe-swe up [services...]` — Start the environment (or specific services) AND **always update the server binary**
+- `swe-swe up [services...]` — Start the environment (or specific services)
 - `swe-swe down [services...]` — Stop the environment (or specific services)
 - `swe-swe build [services...]` — Force a fresh Docker image rebuild (no cache)
-- `swe-swe update` — Update the server binary without starting containers
 - `swe-swe list` — List all initialized projects (auto-prunes stale ones)
 
 ## Service Targeting
@@ -53,11 +52,16 @@ After `swe-swe init`, metadata is stored in `$HOME/.swe-swe/projects/{sanitized-
 
 ```
 $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
-├── bin/
-│   └── swe-swe-server          # Server binary (volume-mounted into container)
+├── swe-swe-server/              # Server source code (built at docker-compose time)
+│   ├── go.mod, go.sum
+│   ├── main.go
+│   └── static/
+├── auth/                        # ForwardAuth service source code
+│   ├── go.mod, go.sum
+│   └── main.go
 ├── home/                        # Persistent home directory for apps
 ├── certs/                       # Enterprise certificates (if configured)
-├── Dockerfile                   # Docker image definition
+├── Dockerfile                   # Docker image definition (multi-stage build)
 ├── docker-compose.yml           # Compose configuration
 ├── entrypoint.sh                # Container startup script
 ├── traefik-dynamic.yml          # Traefik routing rules
@@ -74,11 +78,11 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 **Purpose:** Initialize a new swe-swe project at PATH (defaults to current directory).
 
 **What it does:**
-1. Creates metadata directory structure in `$HOME/.swe-swe/projects/{sanitized-path}/` (bin/, home/, certs/)
+1. Creates metadata directory structure in `$HOME/.swe-swe/projects/{sanitized-path}/` (swe-swe-server/, auth/, home/, certs/)
 2. Writes `.path` file with original project path
 3. Processes Dockerfile template based on selected agents (conditional sections)
 4. Extracts Docker templates (Dockerfile, docker-compose.yml, entrypoint.sh, traefik-dynamic.yml)
-5. Extracts swe-swe-server binary from embedded assets to metadata directory
+5. Extracts swe-swe-server and auth service source code from embedded assets
 6. Handles enterprise certificates if `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, or `NODE_EXTRA_CA_CERTS_BUNDLE` environment variables are set
 
 **Options:**
@@ -89,7 +93,6 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 | `--exclude AGENTS` | Comma-separated list of agents to exclude |
 | `--apt-get-install PACKAGES` | Additional apt packages to install (comma or space separated) |
 | `--list-agents` | List available agents and exit |
-| `--update-binary-only` | Update only the binary, skip template files |
 
 **Available Agents:**
 | Agent | Description | Dependencies |
@@ -138,13 +141,10 @@ This optimization can significantly reduce Docker build time and final image siz
 
 **What it does:**
 1. Validates that metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/` (fails if project not initialized)
-2. **Always extracts the current swe-swe-server binary** from the CLI's embedded assets to metadata directory
-3. Validates Docker and docker-compose are available
-4. Runs `docker-compose up` to start/resume containers (or specific services if specified)
-5. On Unix/Linux/macOS: uses `syscall.Exec` to replace the current process with docker-compose (signals go directly to docker-compose)
-6. On Windows: runs docker-compose as subprocess with signal forwarding
-
-**Critical behavior:** The binary is extracted **every time** `swe-swe up` runs, regardless of whether containers already exist.
+2. Validates Docker and docker-compose are available
+3. Runs `docker-compose up` to start/resume containers (or specific services if specified)
+4. On Unix/Linux/macOS: uses `syscall.Exec` to replace the current process with docker-compose (signals go directly to docker-compose)
+5. On Windows: runs docker-compose as subprocess with signal forwarding
 
 **Examples:**
 ```bash
@@ -185,7 +185,7 @@ swe-swe down -- --remove-orphans     # Remove orphaned containers
 **What it does:**
 1. Validates metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/`
 2. Runs `docker-compose build --no-cache` to rebuild images from scratch (or specific services if specified)
-3. Does NOT update the swe-swe-server binary (binary is volume-mounted, not baked into image)
+3. Recompiles swe-swe-server and auth service from source (they are built at docker-compose time)
 
 **When to use:**
 - When Dockerfile changes
@@ -199,28 +199,6 @@ swe-swe build                        # Rebuild all images
 swe-swe build chrome                 # Rebuild only chrome image
 swe-swe build chrome swe-swe         # Rebuild chrome and swe-swe images
 swe-swe up                           # Start with fresh images
-```
-
-### `swe-swe update [--path PATH]`
-
-**Purpose:** Update the swe-swe-server binary without starting containers.
-
-**What it does:**
-1. Validates metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/`
-2. Extracts swe-swe-server binary from the CLI's embedded assets (matches CLI architecture: linux-amd64 or linux-arm64)
-3. Compares versions using `--version` flag on both binaries
-4. If versions differ: copies new binary to metadata directory and makes it executable
-5. If already up-to-date: no action needed
-
-**When to use:**
-- Updating an existing project when the CLI binary is updated
-- Preparing for a container restart without starting it immediately
-- Checking if an update is needed
-
-**Example:**
-```bash
-swe-swe update                       # Updates binary if needed
-# Later, restart containers with 'swe-swe up' to use new binary
 ```
 
 ### `swe-swe list`
@@ -277,7 +255,8 @@ swe-swe list
 **Metadata Directory Structure (what gets pruned):**
 When a project is stale and pruned, the entire directory at `$HOME/.swe-swe/projects/{sanitized-path}/` is removed, including:
 - Docker templates (Dockerfile, docker-compose.yml, traefik-dynamic.yml)
-- Server binary (bin/swe-swe-server)
+- Server source code (swe-swe-server/)
+- Auth service source code (auth/)
 - Persistent home directory (home/)
 - Enterprise certificates (certs/)
 - Path marker file (.path)
@@ -293,111 +272,109 @@ swe-swe list
 
 ---
 
-## Binary Management Architecture
+## Build Architecture
 
-### Key Design: Volume-Mounted Binary
+### Key Design: Source-Built at Docker-Compose Time
 
-The swe-swe-server binary is **not baked into the Docker image**. Instead, it's **volume-mounted from the host**:
+The swe-swe-server is **built from source** when the Docker image is built using a multi-stage Dockerfile:
 
-**In docker-compose.yml:**
-```yaml
-volumes:
-  - ./bin/swe-swe-server:/usr/local/bin/swe-swe-server:ro
+**In Dockerfile:**
+```dockerfile
+# Stage 1: Build swe-swe-server from source
+FROM golang:1.21-alpine AS server-builder
+WORKDIR /build
+COPY swe-swe-server/go.mod swe-swe-server/go.sum ./
+RUN go mod download
+COPY swe-swe-server/*.go ./
+COPY swe-swe-server/static/ ./static/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server .
+
+# Stage 2: Main development environment
+FROM golang:1.23-bookworm
+# ... rest of Dockerfile ...
+COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
 ```
 
 This means:
-- The binary lives on the host at `$HOME/.swe-swe/projects/{sanitized-path}/bin/swe-swe-server`
-- The container sees it at `/usr/local/bin/swe-swe-server` (read-only)
-- Any update to the binary on the host is immediately available to the container on restart
+- The server source lives at `$HOME/.swe-swe/projects/{sanitized-path}/swe-swe-server/`
+- The server is compiled fresh when you run `swe-swe build` or first `docker-compose up`
+- The binary is baked into the Docker image, not volume-mounted
+- Same approach is used for the auth service
 
 ### Why This Design?
 
 **Benefits:**
-1. **Fast updates without image rebuilds** — Updating the binary doesn't require rebuilding the Docker image
-2. **Consistent binary across environments** — Uses the same binary (from the CLI) regardless of Docker image state
-3. **Minimal Docker layer complexity** — Keeps the Dockerfile simple
-4. **Quick deployments** — New `swe-swe up` just extracts binary and starts containers
+1. **Simpler CLI** — No need to embed pre-compiled binaries for multiple architectures
+2. **Smaller CLI binary** — Source code is much smaller than compiled binaries
+3. **Native Docker caching** — Docker layer caching handles rebuild optimization
+4. **Self-contained images** — Everything needed is in the Docker image
 
 **Trade-offs:**
-- Binary isn't cached inside the image (must always be present on host)
-- Requires host filesystem to persist the binary
-- Not suitable if you need the binary frozen at image-build time
+- Slightly longer initial build (Go compilation)
+- Requires Go toolchain in the build stage (handled by multi-stage build)
 
 ### Architecture Diagram
 
 ```
-swe-swe CLI (binary)
+swe-swe CLI
     │
-    ├─ Embedded assets: swe-swe-server.linux-amd64, swe-swe-server.linux-arm64
+    ├─ Embedded assets: swe-swe-server/*.go, auth/*.go (source code)
     │
-    └─ `swe-swe up` / `swe-swe init` / `swe-swe update`
+    └─ `swe-swe init`
          │
-         ├─ Extract binary from assets
-         ├─ Write to .swe-swe/bin/swe-swe-server
-         └─ Volume mount into container
-              │
-              └─ Container sees at /usr/local/bin/swe-swe-server
+         ├─ Extract source code → .swe-swe/swe-swe-server/
+         ├─ Extract source code → .swe-swe/auth/
+         └─ Extract templates (Dockerfile, docker-compose.yml)
+
+docker-compose build / up
+    │
+    └─ Multi-stage Dockerfile
+         │
+         ├─ Stage 1: Build Go binaries from source
+         └─ Stage 2: Copy binaries into final image
 ```
-
-### Host Architecture Detection
-
-The CLI detects the host's CPU architecture (arm64 or amd64) and extracts the matching Linux binary:
-
-**In main.go:**
-```go
-if runtime.GOARCH == "arm64" {
-    embeddedPath = "bin/swe-swe-server.linux-arm64"
-} else {
-    embeddedPath = "bin/swe-swe-server.linux-amd64"
-}
-```
-
-If the matching architecture binary isn't available, it falls back to amd64.
 
 ## Command Comparison: `up` vs `build`
 
 | Aspect | `swe-swe up` | `swe-swe build` |
 |--------|--------------|-----------------|
-| **Binary update** | Always updates | No binary update |
 | **Docker rebuild** | Only if image missing | Always rebuilds with `--no-cache` |
+| **Server recompile** | Only if image missing | Always recompiles |
 | **Container restart** | Starts/resumes containers | Builds only, doesn't start |
 | **Service targeting** | Supports `[services...]` | Supports `[services...]` |
-| **When to use** | Regular startup | Dockerfile changes |
-| **Speed** | Fast (reuses image layers) | Slow (rebuilds everything) |
+| **When to use** | Regular startup | Dockerfile or source changes |
+| **Speed** | Fast (reuses cached image) | Slow (rebuilds everything) |
 
-## Binary Update Behavior Timeline
+## Build Behavior Timeline
 
 ### Initial Setup: `swe-swe init`
 ```
 1. Create .swe-swe/ directories
 2. Extract templates (Dockerfile, docker-compose.yml)
-3. Extract swe-swe-server binary → .swe-swe/bin/
+3. Extract swe-swe-server source → .swe-swe/swe-swe-server/
+4. Extract auth source → .swe-swe/auth/
 ```
 
 ### First Run: `swe-swe up`
 ```
-1. Extract swe-swe-server binary → .swe-swe/bin/ (overwrites)
-2. Run docker-compose up
-3. Docker builds image if it doesn't exist
-4. Container starts, uses binary from volume mount
+1. Run docker-compose up
+2. Docker builds image (multi-stage):
+   a. Stage 1: Compile swe-swe-server from source
+   b. Stage 2: Build auth service from source
+   c. Final: Copy binaries into runtime image
+3. Container starts with compiled binaries
 ```
 
-### Containers Already Running
+### After Source Code Changes
 ```
+swe-swe build
+  └─ Run docker-compose build --no-cache
+  └─ Recompiles swe-swe-server and auth from source
+  └─ Creates new Docker image with updated binaries
+
 swe-swe up
-  └─ Extract swe-swe-server binary → .swe-swe/bin/ (overwrites)
   └─ Run docker-compose up
-  └─ Containers restart
-  └─ They see the updated binary via volume mount
-```
-
-### No Container Restart Needed
-```
-swe-swe update
-  └─ Extract swe-swe-server binary → .swe-swe/bin/ (overwrites)
-  └─ Check version
-  └─ Done (no container restart)
-  └─ Run 'swe-swe up' later to use the new binary
+  └─ Uses newly built image
 ```
 
 ## Environment Variables
@@ -428,23 +405,14 @@ If set, certificates are copied to `.swe-swe/certs/` and mounted in the containe
 
 ## Troubleshooting
 
-### Q: I updated the CLI but the container is using an old binary
-**A:** Run `swe-swe up`. This always extracts the latest binary from the CLI.
+### Q: I updated the source code but the container is using an old version
+**A:** Run `swe-swe build` to recompile, then `swe-swe up` to restart with the new image.
 
 ### Q: I modified the Dockerfile but `swe-swe up` didn't rebuild it
 **A:** Use `swe-swe build` to force a fresh rebuild, then `swe-swe up`.
 
 ### Q: I want to rebuild only the chrome container
 **A:** Use `swe-swe build chrome` then `swe-swe up chrome`.
-
-### Q: The swe-swe-server binary is not executable
-**A:** The CLI sets the binary to 0755 (executable) automatically. If this fails, manually run:
-```bash
-chmod +x $HOME/.swe-swe/projects/{sanitized-path}/bin/swe-swe-server
-```
-
-### Q: Do I need to run `swe-swe update` separately?
-**A:** No, `swe-swe up` already updates the binary. `swe-swe update` is useful if you want to update without restarting containers.
 
 ### Q: What if containers don't start?
 **A:** Check Docker logs:
@@ -456,11 +424,12 @@ docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml lo
 **A:** Run `swe-swe list` to see all projects and their metadata locations. Metadata is stored in `$HOME/.swe-swe/projects/` with a sanitized directory name based on your project path.
 
 ### Q: What if I specify an invalid service name?
-**A:** docker-compose will return an error like "no such service: foo". Service names must match those defined in docker-compose.yml (swe-swe, vscode, chrome, traefik).
+**A:** docker-compose will return an error like "no such service: foo". Service names must match those defined in docker-compose.yml (swe-swe, vscode, chrome, traefik, auth).
 
 ## Related Files
 
 - `cmd/swe-swe/main.go` — CLI command implementations
 - `cmd/swe-swe/templates/host/docker-compose.yml` — Docker Compose configuration
-- `cmd/swe-swe/templates/host/Dockerfile` — Docker image definition
-- `cmd/swe-swe/bin/` — Embedded swe-swe-server binaries (linux-amd64, linux-arm64)
+- `cmd/swe-swe/templates/host/Dockerfile` — Docker image definition (multi-stage build)
+- `cmd/swe-swe/templates/host/swe-swe-server/` — Server source code (embedded)
+- `cmd/swe-swe/templates/host/auth/` — Auth service source code (embedded)

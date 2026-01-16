@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
    - **swe-swe terminal**: http://0.0.0.0:9899
    - **VSCode**: http://0.0.0.0:9899/vscode
    - **Chrome VNC**: http://0.0.0.0:9899/chrome (browser automation viewer)
-   - **Traefik dashboard**: http://localhost:9900
+   - **Traefik dashboard**: http://0.0.0.0:9899/dashboard/
 
 5. **View all initialized projects**
    ```bash
@@ -52,7 +52,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - **Dockerfile**: Container image definition with Node.js, Go, and optional tools
 - **docker-compose.yml**: Multi-container orchestration
 - **traefik-dynamic.yml**: Routing configuration
-- **bin/swe-swe-server**: The AI terminal server (copied for Docker)
+- **swe-swe-server/**: Source code for the AI terminal server (built at docker-compose time)
 - **home/**: Persistent storage for VSCode settings and shell history
 - **certs/**: Enterprise certificates (if detected)
 - **.path**: Records original project path (used for project discovery)
@@ -63,7 +63,6 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--exclude AGENTS`: Comma-separated list of agents to exclude
 - `--apt-get-install PACKAGES`: Additional apt packages to install
 - `--list-agents`: List available agents and exit
-- `--update-binary-only`: Update only the binary, skip template files
 
 **Available Agents**:
 | Agent | Description | Dependencies |
@@ -132,9 +131,8 @@ swe-swe up --path ~/my-project
 - `ANTHROPIC_API_KEY`: Claude API key
 - `OPENAI_API_KEY`: OpenAI API key
 - `GEMINI_API_KEY`: Google Gemini API key
-- `SWE_SWE_PASSWORD`: VSCode password (defaults to `changeme`)
+- `SWE_SWE_PASSWORD`: Authentication password for all services (defaults to `changeme`)
 - `SWE_PORT`: External port (defaults to 9899, use environment variable to customize)
-- `SWE_DASHBOARD_PORT`: Traefik dashboard port (defaults to 9900)
 - `NODE_EXTRA_CA_CERTS`: Enterprise certificate path
 - `SSL_CERT_FILE`: Certificate file for HTTPS tools
 - `BROWSER_WS_ENDPOINT`: WebSocket endpoint for browser automation (auto-configured to `ws://chrome:9223`)
@@ -158,42 +156,6 @@ Rebuilds the Docker image from scratch (clears cache). Useful when:
 Example:
 ```bash
 swe-swe build --path ~/my-project
-```
-
-### `swe-swe update --path PATH`
-
-Updates the swe-swe-server binary in an existing project to the latest version. Compares the current binary version with the CLI binary and only updates if a newer version is available.
-
-Useful when:
-- A new version of swe-swe is released with bug fixes or features
-- You want to update without re-initializing the entire project
-- You want to preserve custom configuration files
-
-Example:
-```bash
-swe-swe update --path ~/my-project
-# Output: swe-swe-server is already up to date (version dev)
-# OR: Updating swe-swe-server from X.Y.Z to A.B.C
-# OR: Successfully updated swe-swe-server
-```
-
-### `swe-swe init --path PATH --update-binary-only`
-
-Re-initialize a project by updating only the binary, skipping template files. This preserves any custom modifications to:
-- `docker-compose.yml`
-- `Dockerfile`
-- `traefik-dynamic.yml`
-- `entrypoint.sh`
-
-Use this flag when you've customized the configuration and want to get the latest binary without overwriting your changes.
-
-Example:
-```bash
-# First time setup
-swe-swe init --path ~/my-project
-
-# Later: update binary while preserving custom docker-compose.yml
-swe-swe init --path ~/my-project --update-binary-only
 ```
 
 ### `swe-swe list`
@@ -236,12 +198,15 @@ Project metadata is stored in `$HOME/.swe-swe/projects/{sanitized-path}/`:
 
 ```
 $HOME/.swe-swe/projects/{sanitized-path}/
-├── Dockerfile              # Container image definition
+├── Dockerfile              # Container image definition (multi-stage build)
 ├── docker-compose.yml      # Service orchestration
 ├── traefik-dynamic.yml     # HTTP routing rules
 ├── .path                   # Original project path (for discovery)
-├── bin/
-│   └── swe-swe-server     # Linux binary for Docker
+├── swe-swe-server/         # Server source code (built at docker-compose time)
+│   ├── go.mod, go.sum
+│   ├── main.go
+│   └── static/
+├── auth/                   # ForwardAuth service source code
 ├── home/                   # Persistent VSCode/shell home (volume)
 └── certs/                  # Enterprise certificates (if detected)
 ```
@@ -284,12 +249,23 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - Terminal integration
 
 #### traefik
-- **Ports**: 7000 (web, external port 9899), 8080 (dashboard, external port 9900)
+- **Port**: 7000 (external port 9899)
 - **Purpose**: Reverse proxy and routing with path-based request matching
 - **Routing Rules**:
+  - `/swe-swe-auth/*` path: Auth service for ForwardAuth (priority 200)
   - `/vscode` path: Routes to code-server with path prefix stripped (priority 100)
   - `/chrome` path: Routes to chrome service with path prefix stripped (priority 100)
+  - `/dashboard` path: Traefik dashboard (priority 100)
   - `/` path: Routes to swe-swe-server (priority 10, catch-all)
+- **Authentication**: All routes (except auth) protected by ForwardAuth middleware
+
+#### auth
+- **Port**: 4180 (internal)
+- **Purpose**: ForwardAuth service for unified authentication
+- **Features**:
+  - Cookie-based session management
+  - Redirect to original URL after login
+  - Mobile-responsive login page
 
 ### Network
 
@@ -353,31 +329,17 @@ SWE_SWE_PASSWORD='my-secure-password' swe-swe up --path ~/my-project
 ### Building from Source
 
 ```bash
-# Build all binaries (CLI + server)
+# Build CLI binaries for all platforms
 make build
 
 # Run tests
 make test
-
-# Format code
-make fmt
-
-# Build just the CLI
-make build-cli
-
-# Build just the server
-make build-server
 ```
 
-### Cross-Platform Binaries
-
-The build system creates binaries for multiple architectures:
-- `swe-swe-server.linux-amd64`: Linux x86-64
-- `swe-swe-server.linux-arm64`: Linux ARM64 (Apple Silicon Docker)
-- `swe-swe-server.darwin-amd64`: macOS Intel
-- `swe-swe-server.darwin-arm64`: macOS Apple Silicon
-
-The `swe-swe init` command automatically selects the correct Linux binary for Docker.
+The swe-swe-server is built from source at `docker-compose build` time using a multi-stage Dockerfile. This means:
+- No pre-compiled server binaries are embedded in the CLI
+- The server is always compiled fresh when the Docker image is built
+- Changes to server source code in `cmd/swe-swe-server/` are reflected after `swe-swe build`
 
 ### Project Structure
 
@@ -482,9 +444,22 @@ Control how long idle sessions persist (default 1 hour):
 CMD ["/usr/local/bin/swe-swe-server", "-session-ttl", "30m"]
 ```
 
-### Basic Auth
+### Authentication
 
-Uncomment the auth middleware in `$HOME/.swe-swe/projects/{sanitized-path}/traefik-dynamic.yml` to enable basic authentication for both swe-swe and VSCode.
+All services are protected by ForwardAuth by default. The authentication password is set via the `SWE_SWE_PASSWORD` environment variable (defaults to `changeme`).
+
+```bash
+# Use default password
+swe-swe up --path ~/my-project
+
+# Use custom password
+SWE_SWE_PASSWORD='my-secure-password' swe-swe up --path ~/my-project
+```
+
+The auth service provides:
+- Cookie-based session management (expires when browser closes)
+- Redirect to original URL after login
+- Mobile-responsive login page
 
 ## API Reference
 
