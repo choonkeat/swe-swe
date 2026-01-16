@@ -370,6 +370,7 @@ type InitConfig struct {
 	WithDocker    bool                `json:"withDocker,omitempty"`
 	SlashCommands []SlashCommandsRepo `json:"slashCommands,omitempty"`
 	SSL           string              `json:"ssl,omitempty"`
+	CopyHomePaths []string            `json:"copyHomePaths,omitempty"`
 }
 
 // saveInitConfig writes the init configuration to init.json
@@ -822,6 +823,7 @@ func handleInit() {
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no' (default) or 'selfsign' for self-signed certificates")
+	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -843,9 +845,30 @@ func handleInit() {
 		os.Exit(1)
 	}
 
+	// Parse and validate --copy-home-paths flag
+	var copyHomePaths []string
+	if *copyHomePathsFlag != "" {
+		parts := strings.Split(*copyHomePathsFlag, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if strings.HasPrefix(p, "/") {
+				fmt.Fprintf(os.Stderr, "Error: --copy-home-paths paths must be relative to $HOME, got absolute path %q\n", p)
+				os.Exit(1)
+			}
+			if strings.Contains(p, "..") {
+				fmt.Fprintf(os.Stderr, "Error: --copy-home-paths paths cannot contain '..', got %q\n", p)
+				os.Exit(1)
+			}
+			copyHomePaths = append(copyHomePaths, p)
+		}
+	}
+
 	// Validate that --previous-init-flags=reuse is not combined with other flags
 	if *previousInitFlags == "reuse" {
-		if *agentsFlag != "" || *excludeFlag != "" || *aptPackages != "" || *npmPackages != "" || *withDocker || *slashCommands != "" || *sslFlag != "no" {
+		if *agentsFlag != "" || *excludeFlag != "" || *aptPackages != "" || *npmPackages != "" || *withDocker || *slashCommands != "" || *sslFlag != "no" || *copyHomePathsFlag != "" {
 			fmt.Fprintf(os.Stderr, "Error: --previous-init-flags=reuse cannot be combined with other flags\n\n")
 			fmt.Fprintf(os.Stderr, "  To reapply saved configuration without changes:\n")
 			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=reuse\n\n")
@@ -939,6 +962,7 @@ func handleInit() {
 		if *sslFlag == "" {
 			*sslFlag = "no" // Default for old configs without SSL field
 		}
+		copyHomePaths = savedConfig.CopyHomePaths
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
 
@@ -1164,6 +1188,7 @@ func handleInit() {
 		WithDocker:    *withDocker,
 		SlashCommands: slashCmds,
 		SSL:           *sslFlag,
+		CopyHomePaths: copyHomePaths,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)
