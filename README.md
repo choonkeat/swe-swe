@@ -339,7 +339,7 @@ make test
 The swe-swe-server is built from source at `docker-compose build` time using a multi-stage Dockerfile. This means:
 - No pre-compiled server binaries are embedded in the CLI
 - The server is always compiled fresh when the Docker image is built
-- Changes to server source code in `cmd/swe-swe-server/` are reflected after `swe-swe build`
+- Changes to server source code in `cmd/swe-swe/templates/host/swe-swe-server/` are reflected after `swe-swe build`
 
 ### Project Structure
 
@@ -490,7 +490,7 @@ make test  # Run tests
 
 ### Adding Features
 
-1. Modify the appropriate component (CLI in `cmd/swe-swe`, server in `cmd/swe-swe-server`)
+1. Modify the appropriate component (CLI in `cmd/swe-swe`, server in `cmd/swe-swe/templates/host/swe-swe-server`)
 2. Test locally: `make build && swe-swe init && swe-swe up`
 3. Commit with conventional commits: `fix:`, `feat:`, `docs:`, etc.
 

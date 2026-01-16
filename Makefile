@@ -4,7 +4,9 @@ build: build-cli
 
 RUN_ARGS ?=
 run:
-	go run cmd/swe-swe-server/* $(RUN_ARGS)
+	@cp cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt cmd/swe-swe/templates/host/swe-swe-server/go.mod
+	@cp cmd/swe-swe/templates/host/swe-swe-server/go.sum.txt cmd/swe-swe/templates/host/swe-swe-server/go.sum
+	go run cmd/swe-swe/templates/host/swe-swe-server/* $(RUN_ARGS)
 
 stop:
 	lsof -ti :9898 | xargs kill -9 2>/dev/null || true
@@ -44,6 +46,7 @@ swe-swe-clean:
 	rm -rf $(SWE_SWE_PATH)/.swe-swe
 
 build-cli:
+	@rm -f cmd/swe-swe/templates/host/swe-swe-server/go.mod cmd/swe-swe/templates/host/swe-swe-server/go.sum
 	mkdir -p ./dist
 	GOOS=linux GOARCH=amd64 go build -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe
 	GOOS=linux GOARCH=arm64 go build -o ./dist/swe-swe.linux-arm64 ./cmd/swe-swe
