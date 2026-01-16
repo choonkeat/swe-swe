@@ -1267,11 +1267,19 @@ func handlePollSend(w http.ResponseWriter, r *http.Request, sessionUUID, clientI
 
 	switch req.Type {
 	case "input":
-		// Write to PTY
-		if _, err := sess.PTY.Write([]byte(req.Data)); err != nil {
-			log.Printf("Poll send PTY write error: %v", err)
-			http.Error(w, "PTY write error", http.StatusInternalServerError)
-			return
+		// Write to PTY character-by-character with small delays
+		// This simulates typing and helps TUIs that expect gradual input
+		data := []byte(req.Data)
+		for i, b := range data {
+			if _, err := sess.PTY.Write([]byte{b}); err != nil {
+				log.Printf("Poll send PTY write error: %v", err)
+				http.Error(w, "PTY write error", http.StatusInternalServerError)
+				return
+			}
+			// Small delay between characters (skip delay after last char)
+			if i < len(data)-1 {
+				time.Sleep(5 * time.Millisecond)
+			}
 		}
 		log.Printf("Poll send input: session=%s client=%s len=%d", sessionUUID, clientID, len(req.Data))
 
