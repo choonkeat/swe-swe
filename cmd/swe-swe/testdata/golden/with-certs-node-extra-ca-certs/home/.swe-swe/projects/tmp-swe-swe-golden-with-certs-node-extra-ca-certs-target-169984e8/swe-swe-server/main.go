@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"embed"
@@ -958,6 +959,12 @@ func main() {
 			return
 		}
 
+		// Recording API endpoints
+		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
+			handleRecordingAPI(w, r)
+			return
+		}
+
 		// Session path: serve template with UUID and assistant
 		if strings.HasPrefix(r.URL.Path, "/session/") {
 			sessionUUID := strings.TrimPrefix(r.URL.Path, "/session/")
@@ -1514,4 +1521,232 @@ func handleSSLCertDownload(w http.ResponseWriter, r *http.Request) {
 
 	w.Write(certData)
 	log.Printf("SSL certificate downloaded from %s", r.RemoteAddr)
+}
+
+// RecordingListItem represents a recording in the API response
+type RecordingListItem struct {
+	UUID      string     `json:"uuid"`
+	Name      string     `json:"name,omitempty"`
+	Agent     string     `json:"agent,omitempty"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	HasTiming bool       `json:"has_timing"`
+	SizeBytes int64      `json:"size_bytes"`
+	IsActive  bool       `json:"is_active,omitempty"`
+}
+
+// handleRecordingAPI routes recording API requests
+func handleRecordingAPI(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/recording/")
+
+	// GET /api/recording/list
+	if path == "list" && r.Method == http.MethodGet {
+		handleListRecordings(w, r)
+		return
+	}
+
+	// Routes with UUID: /api/recording/{uuid} or /api/recording/{uuid}/download
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+
+	recordingUUID := parts[0]
+
+	// Validate UUID format (basic check)
+	if len(recordingUUID) < 32 {
+		http.Error(w, "Invalid UUID", http.StatusBadRequest)
+		return
+	}
+
+	// DELETE /api/recording/{uuid}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		handleDeleteRecording(w, r, recordingUUID)
+		return
+	}
+
+	// GET /api/recording/{uuid}/download
+	if len(parts) == 2 && parts[1] == "download" && r.Method == http.MethodGet {
+		handleDownloadRecording(w, r, recordingUUID)
+		return
+	}
+
+	http.Error(w, "Not Found", http.StatusNotFound)
+}
+
+// handleListRecordings returns a list of all recordings
+func handleListRecordings(w http.ResponseWriter, r *http.Request) {
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No recordings directory yet
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"recordings":[]}`))
+			return
+		}
+		log.Printf("Failed to read recordings directory: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Build map of active recording UUIDs
+	activeRecordings := make(map[string]bool)
+	sessionsMu.RLock()
+	for _, sess := range sessions {
+		if sess.RecordingUUID != "" {
+			activeRecordings[sess.RecordingUUID] = true
+		}
+	}
+	sessionsMu.RUnlock()
+
+	// Find all recordings by looking for .log files
+	recordings := make([]RecordingListItem, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+
+		// Extract UUID from filename: session-{uuid}.log
+		uuid := strings.TrimPrefix(name, "session-")
+		uuid = strings.TrimSuffix(uuid, ".log")
+
+		// Get file info
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		item := RecordingListItem{
+			UUID:      uuid,
+			SizeBytes: info.Size(),
+			IsActive:  activeRecordings[uuid],
+		}
+
+		// Check if timing file exists
+		timingPath := recordingsDir + "/session-" + uuid + ".timing"
+		if _, err := os.Stat(timingPath); err == nil {
+			item.HasTiming = true
+		}
+
+		// Load metadata if exists
+		metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+		if metaData, err := os.ReadFile(metadataPath); err == nil {
+			var meta RecordingMetadata
+			if json.Unmarshal(metaData, &meta) == nil {
+				item.Name = meta.Name
+				item.Agent = meta.Agent
+				item.StartedAt = &meta.StartedAt
+				item.EndedAt = meta.EndedAt
+			}
+		}
+
+		recordings = append(recordings, item)
+	}
+
+	// Sort by StartedAt descending (newest first)
+	sort.Slice(recordings, func(i, j int) bool {
+		if recordings[i].StartedAt == nil {
+			return false
+		}
+		if recordings[j].StartedAt == nil {
+			return true
+		}
+		return recordings[i].StartedAt.After(*recordings[j].StartedAt)
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{"recordings": recordings}
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleDeleteRecording deletes a recording and its associated files
+func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) {
+	// Check if recording is active
+	sessionsMu.RLock()
+	for _, sess := range sessions {
+		if sess.RecordingUUID == uuid {
+			sessionsMu.RUnlock()
+			http.Error(w, "Cannot delete active recording", http.StatusConflict)
+			return
+		}
+	}
+	sessionsMu.RUnlock()
+
+	// Delete all files matching session-{uuid}.*
+	patterns := []string{
+		recordingsDir + "/session-" + uuid + ".log",
+		recordingsDir + "/session-" + uuid + ".timing",
+		recordingsDir + "/session-" + uuid + ".metadata.json",
+	}
+
+	deleted := false
+	for _, path := range patterns {
+		if err := os.Remove(path); err == nil {
+			deleted = true
+			log.Printf("Deleted recording file: %s", path)
+		}
+	}
+
+	if !deleted {
+		http.Error(w, "Recording not found", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDownloadRecording creates a zip archive of the recording files
+func handleDownloadRecording(w http.ResponseWriter, r *http.Request, uuid string) {
+	logPath := recordingsDir + "/session-" + uuid + ".log"
+	timingPath := recordingsDir + "/session-" + uuid + ".timing"
+	metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+
+	// Check if log file exists
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		http.Error(w, "Recording not found", http.StatusNotFound)
+		return
+	}
+
+	// Create zip in memory
+	var buf bytes.Buffer
+	zipWriter := zip.NewWriter(&buf)
+
+	// Add files to zip
+	files := []struct {
+		path string
+		name string
+	}{
+		{logPath, "session.log"},
+		{timingPath, "session.timing"},
+		{metadataPath, "session.metadata.json"},
+	}
+
+	for _, f := range files {
+		data, err := os.ReadFile(f.path)
+		if err != nil {
+			continue // Skip missing files
+		}
+		zf, err := zipWriter.Create(f.name)
+		if err != nil {
+			continue
+		}
+		zf.Write(data)
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		http.Error(w, "Failed to create archive", http.StatusInternalServerError)
+		return
+	}
+
+	// Send response
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"recording-%s.zip\"", uuid[:8]))
+	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	w.Write(buf.Bytes())
+	log.Printf("Recording downloaded: %s", uuid)
 }
