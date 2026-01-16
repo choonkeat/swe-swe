@@ -86,6 +86,18 @@ func main() {
 	}
 }
 
+// expandTilde expands ~ to the user's home directory
+func expandTilde(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Failed to get home directory: %v", err)
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~"))
+}
+
 // extractProjectDirectory parses args for --project-directory flag
 // Returns (projectDir, remainingArgs)
 func extractProjectDirectory(args []string) (string, []string) {
@@ -114,13 +126,7 @@ func extractProjectDirectory(args []string) (string, []string) {
 	}
 
 	// Expand ~ in projectDir
-	if strings.HasPrefix(projectDir, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			log.Fatalf("Failed to get home directory: %v", err)
-		}
-		projectDir = filepath.Join(home, strings.TrimPrefix(projectDir, "~"))
-	}
+	projectDir = expandTilde(projectDir)
 
 	return projectDir, remaining
 }
@@ -748,13 +754,7 @@ func handleInit() {
 	}
 
 	// Expand ~ in path
-	if strings.HasPrefix(*path, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			log.Fatalf("Failed to get home directory: %v", err)
-		}
-		*path = filepath.Join(home, strings.TrimPrefix(*path, "~"))
-	}
+	*path = expandTilde(*path)
 
 	// Resolve agent list
 	agents, err := resolveAgents(*agentsFlag, *excludeFlag)
