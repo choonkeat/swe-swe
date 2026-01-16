@@ -19,17 +19,6 @@ import (
 //go:embed all:templates
 var assets embed.FS
 
-// splitAtDoubleDash splits args at "--" separator
-// Returns (beforeArgs, afterArgs) where afterArgs are passed through to docker compose
-func splitAtDoubleDash(args []string) ([]string, []string) {
-	for i, arg := range args {
-		if arg == "--" {
-			return args[:i], args[i+1:]
-		}
-	}
-	return args, nil
-}
-
 // dockerComposeCmd represents the detected docker compose command
 type dockerComposeCmd struct {
 	executable string   // "docker" or "docker-compose"
@@ -87,20 +76,134 @@ func main() {
 	switch command {
 	case "init":
 		handleInit()
-	case "up":
-		handleUp()
-	case "down":
-		handleDown()
-	case "build":
-		handleBuild()
 	case "list":
 		handleList()
-	case "help":
+	case "-h", "--help":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
-		printUsage()
-		os.Exit(1)
+		handlePassthrough(command, os.Args[2:])
+	}
+}
+
+// extractProjectDirectory parses args for --project-directory flag
+// Returns (projectDir, remainingArgs)
+func extractProjectDirectory(args []string) (string, []string) {
+	projectDir := "."
+	var remaining []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Handle --project-directory=value
+		if strings.HasPrefix(arg, "--project-directory=") {
+			projectDir = strings.TrimPrefix(arg, "--project-directory=")
+			continue
+		}
+
+		// Handle --project-directory value
+		if arg == "--project-directory" {
+			if i+1 < len(args) {
+				projectDir = args[i+1]
+				i++ // Skip the value
+				continue
+			}
+		}
+
+		remaining = append(remaining, arg)
+	}
+
+	return projectDir, remaining
+}
+
+// handlePassthrough passes commands through to docker compose
+func handlePassthrough(command string, args []string) {
+	projectDir, remainingArgs := extractProjectDirectory(args)
+
+	absPath, err := filepath.Abs(projectDir)
+	if err != nil {
+		log.Fatalf("Failed to resolve path: %v", err)
+	}
+
+	// Get metadata directory
+	sweDir, err := getMetadataDir(absPath)
+	if err != nil {
+		log.Fatalf("Failed to compute metadata directory: %v", err)
+	}
+
+	// Check if metadata directory exists
+	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
+		log.Fatalf("Project not initialized at %q. Run: swe-swe init --project-directory %s\nView projects: swe-swe list", absPath, absPath)
+	}
+
+	// Check if docker compose is available
+	dc, err := getDockerComposeCmd()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	composeFile := filepath.Join(sweDir, "docker-compose.yml")
+
+	// Prepare environment variables
+	// Filter out certificate-related env vars to prevent host paths leaking into containers
+	var env []string
+	for _, envVar := range os.Environ() {
+		if strings.HasPrefix(envVar, "NODE_EXTRA_CA_CERTS=") ||
+			strings.HasPrefix(envVar, "SSL_CERT_FILE=") ||
+			strings.HasPrefix(envVar, "NODE_EXTRA_CA_CERTS_BUNDLE=") {
+			continue
+		}
+		env = append(env, envVar)
+	}
+
+	// Add WORKSPACE_DIR if not already set
+	workspaceSet := false
+	for _, envVar := range env {
+		if strings.HasPrefix(envVar, "WORKSPACE_DIR=") {
+			workspaceSet = true
+			break
+		}
+	}
+	if !workspaceSet {
+		env = append(env, fmt.Sprintf("WORKSPACE_DIR=%s", absPath))
+	}
+
+	// Set default for SWE_SWE_PASSWORD if not already set
+	if os.Getenv("SWE_SWE_PASSWORD") == "" {
+		env = append(env, "SWE_SWE_PASSWORD=changeme")
+	}
+
+	// Build arguments for docker compose
+	// docker compose -f <file> --project-directory <path> <command> <args...>
+	composeArgs := []string{"-f", composeFile, "--project-directory", absPath, command}
+	composeArgs = append(composeArgs, remainingArgs...)
+
+	// Replace process with docker compose on Unix/Linux/macOS
+	if runtime.GOOS != "windows" {
+		execArgs := dc.execArgs(composeArgs...)
+		if err := syscall.Exec(dc.executable, execArgs, env); err != nil {
+			log.Fatalf("Failed to exec docker compose: %v", err)
+		}
+	} else {
+		// Windows fallback: use subprocess with signal forwarding
+		cmd := dc.command(composeArgs...)
+		cmd.Env = env
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		go func() {
+			sig := <-sigChan
+			if cmd.Process != nil {
+				cmd.Process.Signal(sig)
+			}
+		}()
+
+		if err := cmd.Run(); err != nil {
+			os.Exit(1)
+		}
 	}
 }
 
@@ -782,272 +885,6 @@ func handleInit() {
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")
 	fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
-}
-
-func handleUp() {
-	fs := flag.NewFlagSet("up", flag.ExitOnError)
-	path := fs.String("project-directory", ".", "Project directory to run from")
-	fs.Parse(os.Args[2:])
-
-	if *path == "" {
-		*path = "."
-	}
-
-	// Split at "--" for pass-through args to docker compose
-	// Service names are passed directly to docker compose (no validation needed)
-	services, passThrough := splitAtDoubleDash(fs.Args())
-
-	absPath, err := filepath.Abs(*path)
-	if err != nil {
-		log.Fatalf("Failed to resolve path: %v", err)
-	}
-
-	// Get metadata directory
-	sweDir, err := getMetadataDir(absPath)
-	if err != nil {
-		log.Fatalf("Failed to compute metadata directory: %v", err)
-	}
-
-	// Check if metadata directory exists
-	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
-		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
-	}
-
-	// Check if docker compose is available
-	dc, err := getDockerComposeCmd()
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	// Default port for Traefik service
-	port := 9899
-
-	composeFile := filepath.Join(sweDir, "docker-compose.yml")
-	if len(services) > 0 {
-		fmt.Printf("Starting services %v at %s\n", services, absPath)
-	} else {
-		fmt.Printf("Starting swe-swe environment at %s\n", absPath)
-	}
-	fmt.Printf("Access at: http://0.0.0.0:%d\n", port)
-
-	// Prepare environment variables
-	// Filter out certificate-related env vars to prevent host paths leaking into containers
-	// The .env file in .swe-swe/ will set the correct container paths
-	var env []string
-	for _, envVar := range os.Environ() {
-		// Skip certificate env vars that may have host paths
-		if strings.HasPrefix(envVar, "NODE_EXTRA_CA_CERTS=") ||
-			strings.HasPrefix(envVar, "SSL_CERT_FILE=") ||
-			strings.HasPrefix(envVar, "NODE_EXTRA_CA_CERTS_BUNDLE=") {
-			continue
-		}
-		env = append(env, envVar)
-	}
-
-	// Add WORKSPACE_DIR if not already set
-	workspaceSet := false
-	for _, envVar := range env {
-		if len(envVar) > 13 && envVar[:13] == "WORKSPACE_DIR" {
-			workspaceSet = true
-			break
-		}
-	}
-	if !workspaceSet {
-		env = append(env, fmt.Sprintf("WORKSPACE_DIR=%s", absPath))
-	}
-
-	// Set default for SWE_SWE_PASSWORD if not already set
-	if os.Getenv("SWE_SWE_PASSWORD") == "" {
-		env = append(env, "SWE_SWE_PASSWORD=changeme")
-	}
-
-	// Build arguments for docker compose
-	composeArgs := []string{"-f", composeFile, "up"}
-	composeArgs = append(composeArgs, passThrough...)
-	composeArgs = append(composeArgs, services...)
-
-	// Replace process with docker compose on Unix/Linux/macOS
-	if runtime.GOOS != "windows" {
-		// syscall.Exec replaces the current process with docker compose
-		// Signals (Ctrl+C) go directly to docker compose
-		// This process never returns
-		args := dc.execArgs(composeArgs...)
-		if err := syscall.Exec(dc.executable, args, env); err != nil {
-			log.Fatalf("Failed to exec docker compose: %v", err)
-		}
-	} else {
-		// Windows fallback: use subprocess with signal forwarding
-		// since syscall.Exec is not available on Windows
-		runDockerComposeWindows(dc, composeArgs, env)
-	}
-}
-
-// runDockerComposeWindows runs docker compose as a subprocess with signal forwarding
-// This is used on Windows where syscall.Exec is not available
-func runDockerComposeWindows(dc *dockerComposeCmd, composeArgs []string, env []string) {
-	cmd := dc.command(composeArgs...)
-	cmd.Env = env
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// Forward signals to subprocess
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigChan
-		if cmd.Process != nil {
-			cmd.Process.Signal(sig)
-		}
-	}()
-
-	if err := cmd.Run(); err != nil {
-		// Ignore interrupt errors from signal forwarding (expected on Ctrl+C)
-		log.Fatalf("Failed to run docker compose: %v", err)
-	}
-}
-
-func handleDown() {
-	fs := flag.NewFlagSet("down", flag.ExitOnError)
-	path := fs.String("project-directory", ".", "Project directory to stop from")
-	fs.Parse(os.Args[2:])
-
-	if *path == "" {
-		*path = "."
-	}
-
-	// Split at "--" for pass-through args to docker compose
-	// Service names are passed directly to docker compose (no validation needed)
-	services, passThrough := splitAtDoubleDash(fs.Args())
-
-	absPath, err := filepath.Abs(*path)
-	if err != nil {
-		log.Fatalf("Failed to resolve path: %v", err)
-	}
-
-	// Get metadata directory
-	sweDir, err := getMetadataDir(absPath)
-	if err != nil {
-		log.Fatalf("Failed to compute metadata directory: %v", err)
-	}
-
-	// Check if metadata directory exists
-	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
-		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
-	}
-
-	// Check if docker compose is available
-	dc, err := getDockerComposeCmd()
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	composeFile := filepath.Join(sweDir, "docker-compose.yml")
-
-	// Build command args
-	baseArgs := []string{"-f", composeFile}
-	if len(services) > 0 {
-		// Use "stop" + "rm" for specific services (down doesn't support service targeting)
-		fmt.Printf("Stopping services %v at %s\n", services, absPath)
-		stopArgs := append(baseArgs, "stop")
-		stopArgs = append(stopArgs, passThrough...)
-		stopArgs = append(stopArgs, services...)
-		cmd := dc.command(stopArgs...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("Failed to stop services: %v", err)
-		}
-
-		// Remove stopped containers
-		rmArgs := append(baseArgs, "rm", "-f")
-		rmArgs = append(rmArgs, services...)
-		cmd = dc.command(rmArgs...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("Failed to remove containers: %v", err)
-		}
-		fmt.Printf("Stopped services %v at %s\n", services, absPath)
-	} else {
-		fmt.Printf("Stopping swe-swe environment at %s\n", absPath)
-		downArgs := append(baseArgs, "down")
-		downArgs = append(downArgs, passThrough...)
-		cmd := dc.command(downArgs...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("Failed to stop docker compose: %v", err)
-		}
-		fmt.Printf("Stopped swe-swe environment at %s\n", absPath)
-	}
-}
-
-func handleBuild() {
-	fs := flag.NewFlagSet("build", flag.ExitOnError)
-	path := fs.String("project-directory", ".", "Project directory to build from")
-	fs.Parse(os.Args[2:])
-
-	if *path == "" {
-		*path = "."
-	}
-
-	// Split at "--" for pass-through args to docker compose
-	// Service names are passed directly to docker compose (no validation needed)
-	services, passThrough := splitAtDoubleDash(fs.Args())
-
-	absPath, err := filepath.Abs(*path)
-	if err != nil {
-		log.Fatalf("Failed to resolve path: %v", err)
-	}
-
-	// Get metadata directory
-	sweDir, err := getMetadataDir(absPath)
-	if err != nil {
-		log.Fatalf("Failed to compute metadata directory: %v", err)
-	}
-
-	// Check if metadata directory exists
-	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
-		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
-	}
-
-	// Check if docker compose is available
-	dc, err := getDockerComposeCmd()
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	composeFile := filepath.Join(sweDir, "docker-compose.yml")
-
-	// Build command args (--no-cache by default, can be overridden via passThrough)
-	buildArgs := []string{"-f", composeFile, "build", "--no-cache"}
-	buildArgs = append(buildArgs, passThrough...)
-	if len(services) > 0 {
-		fmt.Printf("Building services %v at %s (fresh build, no cache)\n", services, absPath)
-		buildArgs = append(buildArgs, services...)
-	} else {
-		fmt.Printf("Building swe-swe environment at %s (fresh build, no cache)\n", absPath)
-	}
-
-	cmd := dc.command(buildArgs...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to build: %v", err)
-	}
-
-	if len(services) > 0 {
-		fmt.Printf("Successfully built services %v at %s\n", services, absPath)
-	} else {
-		fmt.Printf("Successfully built swe-swe environment at %s\n", absPath)
-	}
 }
 
 // handleCertificates detects and copies enterprise certificates for Docker builds

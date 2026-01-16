@@ -389,44 +389,36 @@ func TestHandleUpMetadataDirLookup(t *testing.T) {
 	}
 }
 
-// TestSplitAtDoubleDash verifies argument splitting at "--"
-func TestSplitAtDoubleDash(t *testing.T) {
+// TestExtractProjectDirectory verifies --project-directory flag extraction
+func TestExtractProjectDirectory(t *testing.T) {
 	tests := []struct {
-		input       []string
-		wantBefore  []string
-		wantAfter   []string
+		input         []string
+		wantDir       string
+		wantRemaining []string
 	}{
-		{[]string{}, []string{}, nil},
-		{[]string{"chrome"}, []string{"chrome"}, nil},
-		{[]string{"--"}, []string{}, []string{}},
-		{[]string{"chrome", "--"}, []string{"chrome"}, []string{}},
-		{[]string{"--", "--remove-orphans"}, []string{}, []string{"--remove-orphans"}},
-		{[]string{"chrome", "--", "--remove-orphans"}, []string{"chrome"}, []string{"--remove-orphans"}},
-		{[]string{"chrome", "vscode", "--", "-d", "--build"}, []string{"chrome", "vscode"}, []string{"-d", "--build"}},
+		{[]string{}, ".", nil},
+		{[]string{"chrome"}, ".", []string{"chrome"}},
+		{[]string{"--project-directory", "/path/to/project"}, "/path/to/project", nil},
+		{[]string{"--project-directory=/path/to/project"}, "/path/to/project", nil},
+		{[]string{"--project-directory", "/path", "chrome"}, "/path", []string{"chrome"}},
+		{[]string{"chrome", "--project-directory", "/path"}, "/path", []string{"chrome"}},
+		{[]string{"-d", "--project-directory", "/path", "--build"}, "/path", []string{"-d", "--build"}},
 	}
 
 	for _, tt := range tests {
-		before, after := splitAtDoubleDash(tt.input)
+		dir, remaining := extractProjectDirectory(tt.input)
 
-		// Compare before
-		if len(before) != len(tt.wantBefore) {
-			t.Errorf("splitAtDoubleDash(%v) before = %v, want %v", tt.input, before, tt.wantBefore)
-			continue
-		}
-		for i := range before {
-			if before[i] != tt.wantBefore[i] {
-				t.Errorf("splitAtDoubleDash(%v) before[%d] = %q, want %q", tt.input, i, before[i], tt.wantBefore[i])
-			}
+		if dir != tt.wantDir {
+			t.Errorf("extractProjectDirectory(%v) dir = %q, want %q", tt.input, dir, tt.wantDir)
 		}
 
-		// Compare after
-		if len(after) != len(tt.wantAfter) {
-			t.Errorf("splitAtDoubleDash(%v) after = %v, want %v", tt.input, after, tt.wantAfter)
+		if len(remaining) != len(tt.wantRemaining) {
+			t.Errorf("extractProjectDirectory(%v) remaining = %v, want %v", tt.input, remaining, tt.wantRemaining)
 			continue
 		}
-		for i := range after {
-			if after[i] != tt.wantAfter[i] {
-				t.Errorf("splitAtDoubleDash(%v) after[%d] = %q, want %q", tt.input, i, after[i], tt.wantAfter[i])
+		for i := range remaining {
+			if remaining[i] != tt.wantRemaining[i] {
+				t.Errorf("extractProjectDirectory(%v) remaining[%d] = %q, want %q", tt.input, i, remaining[i], tt.wantRemaining[i])
 			}
 		}
 	}
