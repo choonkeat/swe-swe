@@ -1227,11 +1227,21 @@ class TerminalUI extends HTMLElement {
         if (transportType === 'polling') {
             // Forced polling mode - skip WebSocket entirely
             this.forcedPolling = true;
+            this.forcedWebSocket = false;
             this.connectionState = CONNECTION_STATES.FALLBACK;
             this.setPollingMode(true);
             this.transport = new PollingTransport(this);
             this.transport.connect();
             return;
+        }
+
+        if (transportType === 'websocket') {
+            // Forced WebSocket mode - no fallback to polling
+            this.forcedWebSocket = true;
+            this.forcedPolling = false;
+            console.log('Forced WebSocket mode - no polling fallback');
+        } else {
+            this.forcedWebSocket = false;
         }
 
         // Default to WebSocket transport
@@ -1269,9 +1279,23 @@ class TerminalUI extends HTMLElement {
         this.stopUptimeTimer();
         this.stopHeartbeat();
 
-        // If forced polling or already in fallback, just show error
+        // If forced polling, just show error
         if (this.forcedPolling) {
             this.updateStatus('error', 'Connection closed');
+            return;
+        }
+
+        // If forced WebSocket, don't fallback - just retry WS
+        if (this.forcedWebSocket) {
+            this.wsFailureCount++;
+            this.updateStatus('connecting', `WebSocket closed, retrying... (${this.wsFailureCount})`);
+            setTimeout(() => {
+                if (this.transport) {
+                    this.transport.disconnect();
+                }
+                this.transport = new WebSocketTransport(this);
+                this.transport.connect();
+            }, Math.min(1000 * this.wsFailureCount, 10000));
             return;
         }
 
@@ -1290,6 +1314,20 @@ class TerminalUI extends HTMLElement {
         // If forced polling, just show error
         if (this.forcedPolling) {
             this.updateStatus('error', 'Connection error');
+            return;
+        }
+
+        // If forced WebSocket, don't fallback - just retry WS
+        if (this.forcedWebSocket) {
+            this.wsFailureCount++;
+            this.updateStatus('connecting', `WebSocket failed, retrying... (${this.wsFailureCount})`);
+            setTimeout(() => {
+                if (this.transport) {
+                    this.transport.disconnect();
+                }
+                this.transport = new WebSocketTransport(this);
+                this.transport.connect();
+            }, Math.min(1000 * this.wsFailureCount, 10000));
             return;
         }
 
@@ -1400,8 +1438,24 @@ class TerminalUI extends HTMLElement {
     }
 
     // Transport callback: terminal data received
+    // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
-        this.term.write(data);
+        if (!this.pendingWrites) {
+            this.pendingWrites = [];
+            requestAnimationFrame(() => {
+                // Combine all pending writes into one
+                const total = this.pendingWrites.reduce((sum, arr) => sum + arr.length, 0);
+                const combined = new Uint8Array(total);
+                let offset = 0;
+                for (const arr of this.pendingWrites) {
+                    combined.set(arr, offset);
+                    offset += arr.length;
+                }
+                this.term.write(combined);
+                this.pendingWrites = null;
+            });
+        }
+        this.pendingWrites.push(data);
     }
 
     // Transport callback: JSON message received
