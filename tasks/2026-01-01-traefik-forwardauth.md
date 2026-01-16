@@ -35,7 +35,7 @@ A standalone Go HTTP service (`auth`) that:
 | **1.3** | ✅ Verify endpoint (TDD) — `GET /swe-swe-auth/verify` checks cookie, returns 200 or 401 |
 | **1.4** | ✅ Login form endpoint (TDD) — `GET /swe-swe-auth/login` serves HTML form |
 | **1.5** | ✅ Login POST handler (TDD) — `POST /swe-swe-auth/login` validates password, sets cookie, redirects |
-| **1.6** | Wire up main() — HTTP server with routes, read secret from env |
+| **1.6** | ✅ Wire up main() — HTTP server with routes, read secret from env |
 | **1.7** | Dockerfile — Multi-stage build, scratch base, < 20MB image |
 
 ### Verification

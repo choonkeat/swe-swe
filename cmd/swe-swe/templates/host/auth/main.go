@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -114,4 +116,14 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	secret = os.Getenv("SWE_SWE_PASSWORD")
+	if secret == "" {
+		log.Fatal("SWE_SWE_PASSWORD environment variable is required")
+	}
+
+	http.HandleFunc("/swe-swe-auth/verify", verifyHandler)
+	http.HandleFunc("/swe-swe-auth/login", loginHandler)
+
+	log.Println("auth service listening on :4180")
+	log.Fatal(http.ListenAndServe(":4180", nil))
 }
