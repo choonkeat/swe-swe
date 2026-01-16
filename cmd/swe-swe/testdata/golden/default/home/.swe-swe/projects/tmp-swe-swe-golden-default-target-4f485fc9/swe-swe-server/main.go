@@ -284,6 +284,33 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 	}
 }
 
+// BroadcastExit sends a process exit notification to all connected clients
+func (s *Session) BroadcastExit(exitCode int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	exitJSON := map[string]interface{}{
+		"type":     "exit",
+		"exitCode": exitCode,
+	}
+
+	data, err := json.Marshal(exitJSON)
+	if err != nil {
+		log.Printf("BroadcastExit marshal error: %v", err)
+		return
+	}
+
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	for conn := range s.clients {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("BroadcastExit write error: %v", err)
+		}
+	}
+	log.Printf("Session %s: broadcast exit (code=%d)", s.UUID, exitCode)
+}
+
 // Close terminates the session
 func (s *Session) Close() {
 	s.mu.Lock()
@@ -298,6 +325,8 @@ func (s *Session) Close() {
 	// Kill the process and close PTY
 	if s.Cmd != nil && s.Cmd.Process != nil {
 		s.Cmd.Process.Kill()
+		// Wait to reap the zombie process
+		s.Cmd.Wait()
 	}
 	if s.PTY != nil {
 		s.PTY.Close()
@@ -368,6 +397,11 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Wait on old process to reap zombie
+	if s.Cmd != nil && s.Cmd.Process != nil {
+		s.Cmd.Wait()
+	}
+
 	// Close old PTY
 	if s.PTY != nil {
 		s.PTY.Close()
@@ -417,15 +451,20 @@ func (s *Session) startPTYReader() {
 				clientCount := len(s.clients)
 				s.mu.RUnlock()
 
+				// Wait on the process to reap the zombie and get exit status
+				exitCode := 0
+				if cmd != nil {
+					if err := cmd.Wait(); err != nil {
+						// Wait returns error for non-zero exit
+						if exitErr, ok := err.(*exec.ExitError); ok {
+							exitCode = exitErr.ExitCode()
+						}
+					}
+				}
+
 				if clientCount == 0 {
 					log.Printf("Session %s: process died with no clients, not restarting", s.UUID)
 					return
-				}
-
-				// Check exit code - if 0 (success), don't restart
-				exitCode := 0
-				if cmd != nil && cmd.ProcessState != nil {
-					exitCode = cmd.ProcessState.ExitCode()
 				}
 
 				if exitCode == 0 {
@@ -435,6 +474,9 @@ func (s *Session) startPTYReader() {
 					s.vt.Write(exitMsg)
 					s.vtMu.Unlock()
 					s.Broadcast(exitMsg)
+
+					// Send structured exit message so browser can prompt user
+					s.BroadcastExit(0)
 					return
 				}
 
