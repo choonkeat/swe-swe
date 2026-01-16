@@ -1,7 +1,7 @@
 # Task: Add OpenCode Support to --with-slash-commands
 
 **Date**: 2026-01-07
-**Status**: Planned
+**Status**: In Progress
 
 ## Background
 
@@ -22,7 +22,7 @@ Extend the `--with-slash-commands` flag to copy cloned slash command repos to Op
 
 ---
 
-## Phase 1: Update ADR-0014 Documentation
+## Phase 1: Update ADR-0014 Documentation ✅
 
 ### What will be achieved
 ADR-0014 (`docs/adr/0014-slash-commands-cloning.md`) will be updated to include OpenCode in the compatibility table and document its directory/format.
