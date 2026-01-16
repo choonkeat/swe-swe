@@ -672,6 +672,9 @@ func handleInit() {
 			"templates/container/.mcp.json",
 			"templates/container/.swe-swe/browser-automation.md",
 		}
+		if *withDocker {
+			containerFiles = append(containerFiles, "templates/container/.swe-swe/docker.md")
+		}
 
 		// Print selected agents
 		if len(agents) > 0 {
