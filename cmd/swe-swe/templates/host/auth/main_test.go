@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -92,5 +93,57 @@ func TestVerifyHandler_ValidCookie_Returns200(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+// Login GET endpoint tests
+
+func TestLoginGetHandler_Returns200(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/swe-swe-auth/login", nil)
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+func TestLoginGetHandler_ReturnsHTML(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/swe-swe-auth/login", nil)
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %s", contentType)
+	}
+}
+
+func TestLoginGetHandler_ContainsPasswordField(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/swe-swe-auth/login", nil)
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, `type="password"`) {
+		t.Error("expected password input field in HTML")
+	}
+	if !strings.Contains(body, `name="password"`) {
+		t.Error("expected password field with name='password'")
+	}
+}
+
+func TestLoginGetHandler_ContainsSubmitButton(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/swe-swe-auth/login", nil)
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, `type="submit"`) {
+		t.Error("expected submit button in HTML")
 	}
 }

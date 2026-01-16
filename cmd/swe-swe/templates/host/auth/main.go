@@ -63,5 +63,27 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+const loginFormHTML = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - swe-swe</title>
+</head>
+<body>
+    <form method="POST" action="/swe-swe-auth/login">
+        <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+</body>
+</html>`
+
+// loginHandler handles GET requests to show the login form.
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(loginFormHTML))
+}
+
 func main() {
 }
