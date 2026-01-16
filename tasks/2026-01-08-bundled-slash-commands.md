@@ -23,10 +23,10 @@ The swe-swe binary will contain an embedded `slash-commands/swe-swe/README.adoc`
 
 ### Steps
 
-- [ ] Create directory `cmd/swe-swe/slash-commands/swe-swe/`
-- [ ] Create `README.adoc` with brief explanation of what this directory is for
-- [ ] Add `//go:embed slash-commands/*` directive in `main.go` (or separate `embed.go` file)
-- [ ] Expose embedded filesystem as a package-level variable
+- [x] Create directory `cmd/swe-swe/slash-commands/swe-swe/`
+- [x] Create `README.adoc` with brief explanation of what this directory is for
+- [x] Add `//go:embed slash-commands/*` directive in `main.go` (or separate `embed.go` file)
+- [x] Expose embedded filesystem as a package-level variable
 
 ### Verification
 
@@ -82,6 +82,6 @@ Golden tests verify bundled slash commands are correctly written during init.
 
 ## Status
 
-- [ ] Phase 1: Embed placeholder in binary
+- [x] Phase 1: Embed placeholder in binary
 - [ ] Phase 2: Write bundled commands during init
 - [ ] Phase 3: Golden tests

@@ -28,6 +28,9 @@ import (
 //go:embed all:templates
 var assets embed.FS
 
+//go:embed all:slash-commands
+var slashCommandsFS embed.FS
+
 // dockerComposeCmd represents the detected docker compose command
 type dockerComposeCmd struct {
 	executable string   // "docker" or "docker-compose"
