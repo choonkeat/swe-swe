@@ -825,6 +825,13 @@ func handleInit() {
 		log.Fatalf("Failed to create directory %q: %v", absPath, err)
 	}
 
+	// Pre-create .swe-swe/uploads directory for file uploads (best-effort).
+	// If this fails, tmpfs mount in docker-compose will handle it at runtime.
+	uploadsDir := filepath.Join(absPath, ".swe-swe", "uploads")
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create %s: %v (tmpfs will handle this at runtime)\n", uploadsDir, err)
+	}
+
 	// Get metadata directory in $HOME/.swe-swe/projects/
 	sweDir, err := getMetadataDir(absPath)
 	if err != nil {

@@ -21,7 +21,7 @@ This allows removing the problematic `chown` block from `entrypoint.sh`.
 
 ---
 
-## Phase 1: Pre-create `.swe-swe/uploads/` during `swe-swe init`
+## Phase 1: Pre-create `.swe-swe/uploads/` during `swe-swe init` ✅
 
 ### What will be achieved
 
