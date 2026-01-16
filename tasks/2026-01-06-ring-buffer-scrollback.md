@@ -1,6 +1,7 @@
 # Implement Server-Side Ring Buffer for Terminal Scrollback
 
 **Date**: 2026-01-06
+**Status**: Complete
 **Goal**: When a new client joins an existing session, give them scrollback history by storing raw PTY output in a ring buffer and replaying it to new joiners.
 
 **Context**: Currently new joiners only see the visible viewport (vt10x doesn't support scrollback). The chunking infrastructure from ADR-015 can handle transmitting large buffers, but we need to actually store the raw output.
@@ -123,7 +124,7 @@ grep -n "readRing" cmd/swe-swe/templates/host/swe-swe-server/main.go
 
 ---
 
-## Phase 4: Golden files & verification
+## Phase 4: Golden files & verification ✅
 
 ### What will be achieved
 All golden test files will be updated to reflect the ring buffer changes, and manual testing will verify scrollback works correctly for new joiners.
