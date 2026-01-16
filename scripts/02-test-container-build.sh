@@ -13,8 +13,12 @@ echo "Building from: $PROJECT_PATH"
 
 cd "$PROJECT_PATH"
 
-# Build just the swe-swe service
-docker compose build swe-swe
+# Build just the swe-swe service (use NO_CACHE=1 to force clean build)
+BUILD_ARGS=""
+if [[ "${NO_CACHE:-}" == "1" ]]; then
+    BUILD_ARGS="--no-cache"
+fi
+docker compose build $BUILD_ARGS swe-swe
 
 # Get the auto-generated image name and tag it
 COMPOSE_PROJECT=$(basename "$PROJECT_PATH")
