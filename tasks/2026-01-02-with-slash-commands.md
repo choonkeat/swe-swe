@@ -139,7 +139,7 @@ swe-swe init --with-slash-commands="ck@https://github.com/choonkeat/slash-comman
 
 ---
 
-### Phase 4: URL Parsing
+### Phase 4: URL Parsing ✅
 
 **What will be achieved**: Functions to parse the `--with-slash-commands` input string and extract structured data.
 

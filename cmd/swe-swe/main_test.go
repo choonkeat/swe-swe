@@ -7,6 +7,137 @@ import (
 	"testing"
 )
 
+// TestDeriveAliasFromURL verifies alias derivation from git URLs
+func TestDeriveAliasFromURL(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		// Standard HTTPS URLs
+		{"https://github.com/choonkeat/slash-commands.git", "choonkeat/slash-commands", false},
+		{"https://github.com/choonkeat/slash-commands", "choonkeat/slash-commands", false},
+		{"https://gitlab.com/org/repo.git", "org/repo", false},
+		{"https://bitbucket.org/team/project", "team/project", false},
+		// SSH URLs
+		{"git@github.com:choonkeat/slash-commands.git", "choonkeat/slash-commands", false},
+		{"git@gitlab.com:org/repo.git", "org/repo", false},
+		// Invalid URLs
+		{"", "", true},
+		{"not-a-url", "", true},
+		{"https://github.com", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := deriveAliasFromURL(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("deriveAliasFromURL(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("deriveAliasFromURL(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseSlashCommandsEntry verifies parsing of single slash commands entries
+func TestParseSlashCommandsEntry(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantAlias string
+		wantURL   string
+		wantErr   bool
+	}{
+		// With alias
+		{"ck@https://github.com/choonkeat/slash-commands.git", "ck", "https://github.com/choonkeat/slash-commands.git", false},
+		{"team@https://github.com/org/cmds.git", "team", "https://github.com/org/cmds.git", false},
+		// Without alias - derive from URL
+		{"https://github.com/choonkeat/slash-commands.git", "choonkeat/slash-commands", "https://github.com/choonkeat/slash-commands.git", false},
+		{"https://github.com/choonkeat/slash-commands", "choonkeat/slash-commands", "https://github.com/choonkeat/slash-commands", false},
+		{"https://gitlab.com/org/repo.git", "org/repo", "https://gitlab.com/org/repo.git", false},
+		// SSH URL without alias
+		{"git@github.com:owner/repo.git", "owner/repo", "git@github.com:owner/repo.git", false},
+		// Invalid
+		{"", "", "", true},
+		{"ck@", "", "", true},
+		{"not-a-url", "", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := parseSlashCommandsEntry(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSlashCommandsEntry(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if got.Alias != tt.wantAlias {
+					t.Errorf("parseSlashCommandsEntry(%q).Alias = %q, want %q", tt.input, got.Alias, tt.wantAlias)
+				}
+				if got.URL != tt.wantURL {
+					t.Errorf("parseSlashCommandsEntry(%q).URL = %q, want %q", tt.input, got.URL, tt.wantURL)
+				}
+			}
+		})
+	}
+}
+
+// TestParseSlashCommandsFlag verifies parsing of full slash commands flag
+func TestParseSlashCommandsFlag(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    []SlashCommandsRepo
+		wantErr bool
+	}{
+		// Empty
+		{"", nil, false},
+		{"  ", nil, false},
+		// Single entry with alias
+		{"ck@https://github.com/choonkeat/slash-commands.git", []SlashCommandsRepo{
+			{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"},
+		}, false},
+		// Single entry without alias
+		{"https://github.com/choonkeat/slash-commands.git", []SlashCommandsRepo{
+			{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"},
+		}, false},
+		// Multiple entries
+		{"ck@https://github.com/choonkeat/slash-commands.git https://github.com/org/team-cmds.git", []SlashCommandsRepo{
+			{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"},
+			{Alias: "org/team-cmds", URL: "https://github.com/org/team-cmds.git"},
+		}, false},
+		// Multiple entries with tabs/extra spaces
+		{"  ck@https://github.com/a/b.git   team@https://github.com/c/d.git  ", []SlashCommandsRepo{
+			{Alias: "ck", URL: "https://github.com/a/b.git"},
+			{Alias: "team", URL: "https://github.com/c/d.git"},
+		}, false},
+		// Invalid entry in list
+		{"ck@https://github.com/a/b.git not-a-url", nil, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := parseSlashCommandsFlag(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSlashCommandsFlag(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if len(got) != len(tt.want) {
+					t.Errorf("parseSlashCommandsFlag(%q) len = %d, want %d", tt.input, len(got), len(tt.want))
+					return
+				}
+				for i := range got {
+					if got[i].Alias != tt.want[i].Alias || got[i].URL != tt.want[i].URL {
+						t.Errorf("parseSlashCommandsFlag(%q)[%d] = %+v, want %+v", tt.input, i, got[i], tt.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestSanitizePathConsistent verifies sanitizePath returns the same hash for same path
 func TestSanitizePathConsistent(t *testing.T) {
 	path := "/Users/alice/projects/myapp"
