@@ -131,27 +131,27 @@ The status bar will display the session name after the assistant name. Format: `
 
 ---
 
-## Phase 5: Frontend Rename Flow
+## Phase 5: Frontend Rename Flow ✅
 
 ### What will be achieved
 Clicking the session name in the status bar opens a prompt to rename it. The name is validated, sent to the server, and the status bar updates.
 
 ### Steps
 
-1. **Add `validateSessionName` function** (`terminal-ui.js`, near `validateUsername`)
+1. ✅ **Add `validateSessionName` function** (`terminal-ui.js:1453-1470`)
    - Max 32 chars
    - Allow: letters, numbers, spaces, hyphens, underscores
    - Trim whitespace
    - Empty string is valid (clears the name)
 
-2. **Add `promptRenameSession` function** (`terminal-ui.js`, near `promptRenameUsername`)
+2. ✅ **Add `promptRenameSession` function** (`terminal-ui.js:1472-1495`)
    - Show prompt: `"Enter session name (max 32 chars):"` with current name as default
    - If cancelled (null), return
    - Validate input
    - If invalid, alert error and loop
    - If valid, send `{"type": "rename_session", "name": "..."}` via WebSocket
 
-3. **Add click handler for session name** (`terminal-ui.js`, in status bar click handler ~line 1829)
+3. ✅ **Add click handler for session name** (`terminal-ui.js:1910-1914`)
    - Check if click target has class `terminal-ui__status-session`
    - Call `promptRenameSession()`
 
