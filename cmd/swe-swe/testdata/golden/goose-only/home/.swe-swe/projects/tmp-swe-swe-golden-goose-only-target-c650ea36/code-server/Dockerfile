@@ -6,9 +6,9 @@ ARG GID=1000
 
 # Recreate coder group and user with captured host UID:GID
 # This ensures container coder user has same UID:GID as host user
-# Must delete user before deleting group (user has group as primary)
-# Use -f flag to force deletion even if user has processes running
-RUN userdel -f coder && groupdel coder && groupadd -g ${GID} coder && \
+# Kill any processes running as coder, then delete user before group
+RUN pkill -9 -u coder || true && userdel -r coder || true && groupdel coder || true && \
+    groupadd -g ${GID} coder && \
     useradd -m -u ${UID} -g ${GID} -s /bin/bash coder
 
 # Fix ownership of coder home directory
