@@ -83,7 +83,7 @@ Traefik configured to:
 
 | Step | Description |
 |------|-------------|
-| **2.1** | Add auth service to docker-compose.yml — build context, port 4180, `SWE_SWE_PASSWORD` env var, Traefik labels for `/swe-swe-auth` route (high priority, no auth middleware) |
+| **2.1** | ✅ Add auth service to docker-compose.yml — build context, port 4180, `SWE_SWE_PASSWORD` env var, Traefik labels for `/swe-swe-auth` route (high priority, no auth middleware) |
 | **2.2** | Add ForwardAuth middleware to traefik-dynamic.yml — points to `http://auth:4180/swe-swe-auth/verify` |
 | **2.3** | Apply middleware to protected routers — add `forwardauth@file` to swe-swe, vscode, chrome labels |
 | **2.4** | Protect Traefik dashboard — add router with ForwardAuth in dynamic config |
