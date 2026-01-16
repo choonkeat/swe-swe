@@ -1,7 +1,7 @@
 # Shared Self-Signed SSL with QR Code Mobile Installation
 
 **Date:** 2026-01-03
-**Status:** In Progress (Phase 1 Complete)
+**Status:** In Progress (Phase 2 Complete)
 
 ## Goal
 
@@ -91,16 +91,16 @@ The swe-swe-server will serve the SSL certificate at a random URL path (`/ssl/{u
 
 ### Steps
 
-1. **Add UUID generation on startup** (`swe-swe-server/main.go`)
+1. **[DONE] Add UUID generation on startup** (`swe-swe-server/main.go`)
    - Generate a random token using `crypto/rand` (16 hex chars)
    - Store in a package-level variable for the handler to access
 
-2. **Add certificate file path configuration**
+2. **[DONE] Add certificate file path configuration**
    - Add environment variable: `TLS_CERT_PATH`
    - Default to `/etc/traefik/tls/server.crt`
    - swe-swe-server container needs the tls volume mounted
 
-3. **Add HTTP handler for `/ssl/{uuid}/ca.crt`**
+3. **[DONE] Add HTTP handler for `/ssl/{uuid}/ca.crt`**
    - Route: `GET /ssl/{token}/ca.crt` where `{token}` must match generated UUID
    - Read cert file from configured path
    - Set headers:
@@ -108,10 +108,10 @@ The swe-swe-server will serve the SSL certificate at a random URL path (`/ssl/{u
      - `Content-Disposition: attachment; filename="swe-swe-ca.crt"`
    - Return 404 if token doesn't match
 
-4. **Update docker-compose.yml to mount tls into swe-swe-server**
+4. **[DONE] Update docker-compose.yml to mount tls into swe-swe-server**
    - Add volume mount to swe-swe service: `${HOME}/.swe-swe/tls:/etc/traefik/tls:ro`
 
-5. **Log the download URL on startup**
+5. **[DONE] Log the download URL on startup**
    - Print: `SSL certificate available at: https://<host>/ssl/{uuid}/ca.crt`
 
 ### Verification

@@ -78,6 +78,8 @@ services:
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+      # SSL certificate for download endpoint
+      - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
     working_dir: /workspace
     networks:
       - swe-network

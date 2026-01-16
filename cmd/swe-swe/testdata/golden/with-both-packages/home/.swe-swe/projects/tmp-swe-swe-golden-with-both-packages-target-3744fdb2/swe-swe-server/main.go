@@ -602,6 +602,10 @@ var (
 	sessionTTL          time.Duration
 	workingDir          string
 	availableAssistants []AssistantConfig // Populated at startup by detectAvailableAssistants
+
+	// SSL certificate download endpoint
+	sslToken    string // Random token for secure cert download URL
+	tlsCertPath string // Path to TLS certificate file
 )
 
 // detectAvailableAssistants checks which AI assistants are installed and populates availableAssistants.
@@ -664,6 +668,17 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("Available assistants: %d", len(availableAssistants))
+
+	// Initialize SSL certificate download endpoint
+	tlsCertPath = os.Getenv("TLS_CERT_PATH")
+	if tlsCertPath == "" {
+		tlsCertPath = "/etc/traefik/tls/server.crt"
+	}
+	// Generate random token for secure download URL (only if cert exists)
+	if _, err := os.Stat(tlsCertPath); err == nil {
+		sslToken = uuid.New().String()[:16] // Use first 16 chars for shorter URL
+		log.Printf("SSL certificate available at: /ssl/%s/ca.crt", sslToken)
+	}
 
 	// Parse templates
 	indexContent, err := staticFS.ReadFile("static/index.html")
@@ -760,6 +775,12 @@ func main() {
 		if strings.HasPrefix(r.URL.Path, "/ws/") {
 			sessionUUID := strings.TrimPrefix(r.URL.Path, "/ws/")
 			handleWebSocket(w, r, sessionUUID)
+			return
+		}
+
+		// SSL certificate download: /ssl/{token}/ca.crt
+		if strings.HasPrefix(r.URL.Path, "/ssl/") && strings.HasSuffix(r.URL.Path, "/ca.crt") {
+			handleSSLCertDownload(w, r)
 			return
 		}
 
@@ -1429,3 +1450,34 @@ func handlePollSend(w http.ResponseWriter, r *http.Request, sessionUUID, clientI
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleSSLCertDownload serves the SSL certificate for mobile installation
+// URL format: /ssl/{token}/ca.crt
+func handleSSLCertDownload(w http.ResponseWriter, r *http.Request) {
+	// Extract token from path: /ssl/{token}/ca.crt
+	path := strings.TrimPrefix(r.URL.Path, "/ssl/")
+	path = strings.TrimSuffix(path, "/ca.crt")
+	requestToken := path
+
+	// Verify token matches (prevents enumeration)
+	if sslToken == "" || requestToken != sslToken {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	// Read certificate file
+	certData, err := os.ReadFile(tlsCertPath)
+	if err != nil {
+		log.Printf("Failed to read SSL certificate: %v", err)
+		http.Error(w, "Certificate not available", http.StatusNotFound)
+		return
+	}
+
+	// Set headers for certificate download
+	// iOS Safari recognizes application/x-x509-ca-cert and prompts to install
+	w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"swe-swe-ca.crt\"")
+	w.Header().Set("Content-Length", strconv.Itoa(len(certData)))
+
+	w.Write(certData)
+	log.Printf("SSL certificate downloaded from %s", r.RemoteAddr)
+}
