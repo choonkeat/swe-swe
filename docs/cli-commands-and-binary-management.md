@@ -4,15 +4,23 @@ This document describes the swe-swe CLI commands and how the swe-swe-server is b
 
 ## Quick Summary
 
-- `swe-swe init [--agents=...] [--exclude-agents=...] [--apt-get-install=...]` — Initialize a new swe-swe project with customizable agent selection
+**Native Commands:**
+- `swe-swe init [options]` — Initialize a new swe-swe project
+- `swe-swe list` — List all initialized projects (auto-prunes stale ones)
+
+**Docker Compose Pass-through:**
+All other commands are passed directly to `docker compose` with the project's configuration:
 - `swe-swe up [services...]` — Start the environment (or specific services)
 - `swe-swe down [services...]` — Stop the environment (or specific services)
-- `swe-swe build [services...]` — Force a fresh Docker image rebuild (no cache)
-- `swe-swe list` — List all initialized projects (auto-prunes stale ones)
+- `swe-swe build [services...]` — Force a fresh Docker image rebuild
+- `swe-swe ps` — List running containers
+- `swe-swe logs [-f] [service]` — View container logs
+- `swe-swe exec <service> <cmd>` — Execute command in container
+- Any other docker compose command...
 
 ## Service Targeting
 
-Commands `up`, `down`, and `build` support targeting specific services:
+Pass-through commands `up`, `down`, and `build` support targeting specific services:
 
 ```bash
 # Target specific services
@@ -73,7 +81,9 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 
 ## Command Reference
 
-### `swe-swe init [options]`
+### Native Commands
+
+#### `swe-swe init [options]`
 
 **Purpose:** Initialize a new swe-swe project at PATH (defaults to current directory).
 
@@ -88,43 +98,52 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 **Options:**
 | Flag | Description |
 |------|-------------|
-| `--path PATH` | Project directory (defaults to current directory) |
+| `--project-directory PATH` | Project directory (defaults to current directory) |
+| `--previous-init-flags=reuse` | Reapply saved configuration from previous init (cannot be combined with other flags) |
+| `--previous-init-flags=ignore` | Ignore saved configuration, use provided flags for fresh init |
 | `--agents AGENTS` | Comma-separated list of agents to include (default: all) |
 | `--exclude-agents AGENTS` | Comma-separated list of agents to exclude |
 | `--apt-get-install PACKAGES` | Additional apt packages to install (comma or space separated) |
-| `--list-agents` | List available agents and exit |
+| `--npm-install PACKAGES` | Additional npm packages to install globally (comma or space separated) |
+| `--with-docker` | Mount Docker socket to allow container to run Docker commands on host |
+| `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
 
-**Available Agents:**
-| Agent | Description | Dependencies |
-|-------|-------------|--------------|
-| `claude` | Claude Code CLI | Node.js |
-| `gemini` | Gemini CLI | Node.js |
-| `codex` | Codex CLI | Node.js |
-| `aider` | Aider | Python |
-| `goose` | Goose | None (standalone binary) |
+**Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`
 
 **Examples:**
 ```bash
-# Initialize with all agents (default)
-swe-swe init --path ~/my-project
+# Initialize current directory with all agents (default)
+swe-swe init
 
-# Initialize with Claude only (minimal, fastest build)
+# Initialize current directory with Claude only (minimal, fastest build)
 swe-swe init --agents=claude
 
-# Initialize with Claude and Gemini
+# Initialize current directory with Claude and Gemini
 swe-swe init --agents=claude,gemini
 
-# Initialize without Python-based agents (smaller image)
+# Initialize current directory without Python-based agents (smaller image)
 swe-swe init --exclude-agents=aider
 
-# Initialize with additional system packages
+# Initialize current directory with additional system packages
 swe-swe init --apt-get-install="vim htop tmux"
 
-# Combine options
-swe-swe init --agents=claude,codex --apt-get-install="vim" --path ~/my-project
+# Initialize current directory with Docker access
+swe-swe init --with-docker
 
-# List available agents
-swe-swe init --list-agents
+# Initialize current directory with custom slash commands
+swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
+
+# Initialize a specific directory
+swe-swe init --project-directory ~/my-project
+
+# Reinitialize with same configuration (after updates)
+swe-swe init --previous-init-flags=reuse
+
+# Reinitialize with new configuration (overwrite previous)
+swe-swe init --previous-init-flags=ignore --agents=claude
+
+# Combine options
+swe-swe init --agents=claude,codex --apt-get-install="vim"
 ```
 
 **Dockerfile Optimization:**
@@ -135,7 +154,34 @@ The Dockerfile template uses conditional sections to minimize image size:
 
 This optimization can significantly reduce Docker build time and final image size when using only a subset of agents.
 
-### `swe-swe up [--path PATH] [services...] [-- docker-compose-args...]`
+#### `swe-swe list`
+
+**Purpose:** List all initialized swe-swe projects and automatically prune stale metadata.
+
+**What it does:**
+1. Scans `$HOME/.swe-swe/projects/` directory for metadata directories
+2. For each metadata directory, reads `.path` file to recover original project path
+3. Checks if original project path still exists on disk
+4. **Auto-prunes**: Removes metadata directories for missing project paths
+5. Displays remaining active projects with count
+6. Shows summary of pruned projects
+
+**Example:**
+```bash
+swe-swe list
+# Output:
+# Initialized projects (2):
+#   /Users/alice/projects/myapp
+#   /Users/alice/projects/anotherapp
+#
+# Removed 1 stale project(s)
+```
+
+### Docker Compose Pass-through Commands
+
+All commands other than `init` and `list` are passed directly to `docker compose` using the project's generated `docker-compose.yml`. The `--project-directory` flag specifies which project (defaults to current directory).
+
+#### `swe-swe up [--project-directory PATH] [services...] [-- docker-compose-args...]`
 
 **Purpose:** Start the swe-swe environment (or specific services) and ensure containers are running.
 
@@ -157,7 +203,7 @@ swe-swe up -- -d                     # Start detached (background)
 # Ctrl+C to stop (signals sent directly to docker-compose)
 ```
 
-### `swe-swe down [--path PATH] [services...] [-- docker-compose-args...]`
+#### `swe-swe down [--project-directory PATH] [services...] [-- docker-compose-args...]`
 
 **Purpose:** Stop the swe-swe environment (or specific services) without removing data.
 
@@ -178,7 +224,7 @@ swe-swe down -- --remove-orphans     # Remove orphaned containers
 # Running again later with 'swe-swe up' restarts with the same environment
 ```
 
-### `swe-swe build [--path PATH] [services...] [-- docker-compose-args...]`
+#### `swe-swe build [--project-directory PATH] [services...] [-- docker-compose-args...]`
 
 **Purpose:** Force a fresh Docker image rebuild with no cache.
 
@@ -199,75 +245,6 @@ swe-swe build                        # Rebuild all images
 swe-swe build chrome                 # Rebuild only chrome image
 swe-swe build chrome swe-swe         # Rebuild chrome and swe-swe images
 swe-swe up                           # Start with fresh images
-```
-
-### `swe-swe list`
-
-**Purpose:** List all initialized swe-swe projects and automatically prune stale metadata.
-
-**What it does:**
-1. Scans `$HOME/.swe-swe/projects/` directory for metadata directories
-2. For each metadata directory, reads `.path` file to recover original project path
-3. Checks if original project path still exists on disk
-4. **Auto-prunes**: Removes metadata directories for missing project paths
-5. Displays remaining active projects with count
-6. Shows summary of pruned projects
-
-**Auto-Prune Behavior:**
-- **Trigger**: Runs automatically every time `swe-swe list` is executed
-- **Stale Detection**: Checks if original project path (stored in `.path` file) still exists
-- **Action**: Uses `os.RemoveAll()` to delete the entire metadata directory for missing projects
-- **Safety**: Only removes metadata, not the project itself (which is already gone)
-- **Transparency**: Warns about stale directories that can't be removed and shows count of successful removals
-
-**When to use:**
-- Discover what projects you have initialized
-- Clean up metadata for deleted/moved projects
-- Verify project paths before any cleanup operations
-- Regular maintenance to keep `$HOME/.swe-swe/projects/` clean
-
-**Example:**
-```bash
-# List all projects and auto-prune stale ones
-swe-swe list
-# Output:
-# Initialized projects (2):
-#   /Users/alice/projects/myapp
-#   /Users/alice/projects/anotherapp
-#
-# Removed 1 stale project(s)
-```
-
-**What happens if project path no longer exists:**
-```bash
-# Delete a project directory
-rm -rf /Users/alice/projects/oldproject
-
-# Run list - it will detect the stale metadata
-swe-swe list
-# Output:
-# Initialized projects (1):
-#   /Users/alice/projects/myapp
-#
-# Removed 1 stale project(s)
-```
-
-**Metadata Directory Structure (what gets pruned):**
-When a project is stale and pruned, the entire directory at `$HOME/.swe-swe/projects/{sanitized-path}/` is removed, including:
-- Docker templates (Dockerfile, docker-compose.yml, traefik-dynamic.yml)
-- Server source code (swe-swe-server/)
-- Auth service source code (auth/)
-- Persistent home directory (home/)
-- Enterprise certificates (certs/)
-- Path marker file (.path)
-- Environment variables (.env, if present)
-
-**Warning**: If you have running containers from a stale project, they will continue running. Only the metadata directory is removed. Containers must be stopped first:
-```bash
-# If containers are still running from a deleted project
-docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml down
-# Then run swe-swe list to prune the metadata
-swe-swe list
 ```
 
 ---

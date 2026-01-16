@@ -14,12 +14,12 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
 
 2. **Initialize a project**
    ```bash
-   swe-swe init --path /path/to/your/project
+   swe-swe init --project-directory /path/to/your/project
    ```
 
 3. **Start the environment**
    ```bash
-   swe-swe up --path /path/to/your/project
+   swe-swe up --project-directory /path/to/your/project
    ```
 
 4. **Access the services**
@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
 
 6. **Stop the environment**
    ```bash
-   swe-swe down --path /path/to/your/project
+   swe-swe down --project-directory /path/to/your/project
    ```
 
 ### Requirements
@@ -45,7 +45,11 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
 
 ## Commands
 
-### `swe-swe init --path PATH`
+swe-swe has two native commands (`init` and `list`). All other commands are passed directly to `docker compose` with the project's configuration.
+
+### Native Commands
+
+#### `swe-swe init [options]`
 
 Initializes a new swe-swe project at the specified path. Creates metadata directory at `$HOME/.swe-swe/projects/{sanitized-path}/` with:
 
@@ -58,49 +62,49 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - **.path**: Records original project path (used for project discovery)
 
 **Options**:
-- `--path PATH`: Project directory (defaults to current directory)
+- `--project-directory PATH`: Project directory (defaults to current directory)
+- `--previous-init-flags=reuse`: Reapply saved configuration from previous init (cannot be combined with other flags)
+- `--previous-init-flags=ignore`: Ignore saved configuration, use provided flags for fresh init
 - `--agents AGENTS`: Comma-separated list of agents to include (default: all)
 - `--exclude-agents AGENTS`: Comma-separated list of agents to exclude
 - `--apt-get-install PACKAGES`: Additional apt packages to install
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`)
-- `--list-agents`: List available agents and exit
 
-**Available Agents**:
-| Agent | Description | Dependencies |
-|-------|-------------|--------------|
-| `claude` | Claude Code CLI | Node.js |
-| `gemini` | Gemini CLI | Node.js |
-| `codex` | Codex CLI | Node.js |
-| `aider` | Aider | Python |
-| `goose` | Goose | None (standalone binary) |
+**Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`
 
 **Examples**:
 ```bash
-# Initialize with all agents (default)
-swe-swe init --path ~/my-project
+# Initialize current directory with all agents (default)
+swe-swe init
 
-# Initialize with Claude only (minimal, fastest build)
-swe-swe init --path ~/my-project --agents=claude
+# Initialize current directory with Claude only (minimal, fastest build)
+swe-swe init --agents=claude
 
-# Initialize with Claude and Gemini
-swe-swe init --path ~/my-project --agents=claude,gemini
+# Initialize current directory with Claude and Gemini
+swe-swe init --agents=claude,gemini
 
-# Initialize without Python-based agents (no aider)
-swe-swe init --path ~/my-project --exclude-agents=aider
+# Initialize current directory without Python-based agents (no aider)
+swe-swe init --exclude-agents=aider
 
-# Initialize with additional system packages
-swe-swe init --path ~/my-project --apt-get-install="vim htop tmux"
+# Initialize current directory with additional system packages
+swe-swe init --apt-get-install="vim htop tmux"
 
-# Initialize with Docker access (for integration testing, building images)
-swe-swe init --path ~/my-project --with-docker
+# Initialize current directory with Docker access
+swe-swe init --with-docker
 
-# Initialize with custom slash commands for Claude/Codex
-swe-swe init --path ~/my-project --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
+# Initialize current directory with custom slash commands for Claude/Codex
+swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
 
-# List available agents
-swe-swe init --list-agents
+# Initialize a specific directory
+swe-swe init --project-directory ~/my-project
+
+# Reinitialize with same configuration (after updates)
+swe-swe init --previous-init-flags=reuse
+
+# Reinitialize with new configuration (overwrite previous)
+swe-swe init --previous-init-flags=ignore --agents=claude
 ```
 
 **Security Note on `--with-docker`**: Mounting the Docker socket grants the container effective root access to the host. The container can mount host filesystems, run privileged containers, and access other containers. Only use this flag when you trust the code running inside the container (e.g., for your own projects, not untrusted third-party code).
@@ -121,55 +125,7 @@ Services are accessible via path-based routing on `localhost` (or `0.0.0.0`) at 
 
 These are copied to `.swe-swe/certs/` and mounted into all containers.
 
-### `swe-swe up --path PATH`
-
-Starts the swe-swe environment using `docker-compose up`. The environment includes:
-
-1. **swe-swe-server**: WebSocket-based AI terminal with session management
-2. **chrome**: Headless Chromium with VNC for browser automation (used by MCP Playwright)
-3. **code-server**: VS Code running in a container
-4. **traefik**: HTTP reverse proxy with routing rules
-
-The workspace is mounted at `/workspace` inside containers, allowing bidirectional file access.
-
-Example:
-```bash
-swe-swe up --path ~/my-project
-# Press Ctrl+C to stop
-```
-
-**Environment Variables**:
-- `ANTHROPIC_API_KEY`: Claude API key
-- `OPENAI_API_KEY`: OpenAI API key
-- `GEMINI_API_KEY`: Google Gemini API key
-- `SWE_SWE_PASSWORD`: Authentication password for all services (defaults to `changeme`)
-- `SWE_PORT`: External port (defaults to 9899, use environment variable to customize)
-- `NODE_EXTRA_CA_CERTS`: Enterprise certificate path
-- `SSL_CERT_FILE`: Certificate file for HTTPS tools
-- `BROWSER_WS_ENDPOINT`: WebSocket endpoint for browser automation (auto-configured to `ws://chrome:9223`)
-
-### `swe-swe down --path PATH`
-
-Stops and removes the running Docker containers for the project.
-
-Example:
-```bash
-swe-swe down --path ~/my-project
-```
-
-### `swe-swe build --path PATH`
-
-Rebuilds the Docker image from scratch (clears cache). Useful when:
-- Updating the base image
-- Installing new dependencies in Dockerfile
-- Testing fresh builds
-
-Example:
-```bash
-swe-swe build --path ~/my-project
-```
-
-### `swe-swe list`
+#### `swe-swe list`
 
 Lists all initialized swe-swe projects and automatically prunes stale ones.
 
@@ -197,7 +153,75 @@ swe-swe list
 # Removed 1 stale project(s)
 ```
 
-### `swe-swe help`
+### Docker Compose Pass-through
+
+All commands other than `init` and `list` are passed directly to `docker compose` using the project's generated `docker-compose.yml`. This means you can use any docker compose command:
+
+```bash
+swe-swe up                    # docker compose up
+swe-swe down                  # docker compose down
+swe-swe build                 # docker compose build
+swe-swe ps                    # docker compose ps
+swe-swe logs -f swe-swe       # docker compose logs -f swe-swe
+swe-swe exec swe-swe bash     # docker compose exec swe-swe bash
+swe-swe restart chrome        # docker compose restart chrome
+```
+
+Use `--project-directory` to specify which project (defaults to current directory):
+```bash
+swe-swe --project-directory ~/my-project up
+swe-swe --project-directory ~/my-project logs -f
+```
+
+#### `swe-swe up [--project-directory PATH]`
+
+Starts the swe-swe environment using `docker-compose up`. The environment includes:
+
+1. **swe-swe-server**: WebSocket-based AI terminal with session management
+2. **chrome**: Headless Chromium with VNC for browser automation (used by MCP Playwright)
+3. **code-server**: VS Code running in a container
+4. **traefik**: HTTP reverse proxy with routing rules
+
+The workspace is mounted at `/workspace` inside containers, allowing bidirectional file access.
+
+Example:
+```bash
+swe-swe up --project-directory ~/my-project
+# Press Ctrl+C to stop
+```
+
+**Environment Variables**:
+- `ANTHROPIC_API_KEY`: Claude API key
+- `OPENAI_API_KEY`: OpenAI API key
+- `GEMINI_API_KEY`: Google Gemini API key
+- `SWE_SWE_PASSWORD`: Authentication password for all services (defaults to `changeme`)
+- `SWE_PORT`: External port (defaults to 9899, use environment variable to customize)
+- `NODE_EXTRA_CA_CERTS`: Enterprise CA certificate path (auto-copied during init)
+- `SSL_CERT_FILE`: SSL certificate file path (auto-copied during init)
+- `BROWSER_WS_ENDPOINT`: WebSocket endpoint for browser automation (auto-configured to `ws://chrome:9223`)
+
+#### `swe-swe down [--project-directory PATH]`
+
+Stops and removes the running Docker containers for the project.
+
+Example:
+```bash
+swe-swe down --project-directory ~/my-project
+```
+
+#### `swe-swe build [--project-directory PATH]`
+
+Rebuilds the Docker image from scratch (clears cache). Useful when:
+- Updating the base image
+- Installing new dependencies in Dockerfile
+- Testing fresh builds
+
+Example:
+```bash
+swe-swe build --project-directory ~/my-project
+```
+
+#### `swe-swe help`
 
 Displays the help message with all available commands.
 
@@ -301,7 +325,7 @@ Set API keys as environment variables before running:
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
-swe-swe up --path ~/my-project
+swe-swe up --project-directory ~/my-project
 ```
 
 Or create a `.env` file in `$HOME/.swe-swe/projects/{sanitized-path}/`:
@@ -329,10 +353,10 @@ The default VSCode password is `changeme`. To use a custom password, set the `SW
 
 ```bash
 # Default password (changeme)
-swe-swe up --path ~/my-project
+swe-swe up --project-directory ~/my-project
 
 # Custom password
-SWE_SWE_PASSWORD='my-secure-password' swe-swe up --path ~/my-project
+SWE_SWE_PASSWORD='my-secure-password' swe-swe up --project-directory ~/my-project
 ```
 
 ## Development
@@ -391,7 +415,7 @@ The swe-swe-server is built from source at `docker-compose build` time using a m
 **Solution**: Stop other projects or use a custom port via environment variable:
 ```bash
 # Use a different port
-SWE_PORT=9900 swe-swe up --path ~/my-project
+SWE_PORT=9900 swe-swe up --project-directory ~/my-project
 ```
 
 Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml` to change the port mapping.
@@ -419,7 +443,7 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 If VSCode settings/extensions don't persist:
 1. Verify `$HOME/.swe-swe/projects/{sanitized-path}/home/` exists and has correct permissions
 2. Check that the metadata directory wasn't accidentally deleted
-3. Reinitialize the project: `swe-swe init --path /path/to/project`
+3. Reinitialize the project: `swe-swe init --project-directory /path/to/project`
 
 ## Advanced Usage
 
@@ -429,12 +453,12 @@ Each project gets its own isolated environment. No conflicts:
 
 ```bash
 # Terminal 1
-swe-swe init --path ~/project1
-swe-swe up --path ~/project1
+swe-swe init --project-directory ~/project1
+swe-swe up --project-directory ~/project1
 
 # Terminal 2
-swe-swe init --path ~/project2
-swe-swe up --path ~/project2
+swe-swe init --project-directory ~/project2
+swe-swe up --project-directory ~/project2
 # Use different ports if accessing locally
 ```
 
@@ -461,10 +485,10 @@ All services are protected by ForwardAuth by default. The authentication passwor
 
 ```bash
 # Use default password
-swe-swe up --path ~/my-project
+swe-swe up --project-directory ~/my-project
 
 # Use custom password
-SWE_SWE_PASSWORD='my-secure-password' swe-swe up --path ~/my-project
+SWE_SWE_PASSWORD='my-secure-password' swe-swe up --project-directory ~/my-project
 ```
 
 The auth service provides:
