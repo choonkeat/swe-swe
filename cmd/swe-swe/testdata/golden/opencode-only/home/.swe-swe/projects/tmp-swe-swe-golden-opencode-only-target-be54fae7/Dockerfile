@@ -24,17 +24,27 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 
+# Install Node.js 24 LTS from NodeSource (Debian repos only have EOL Node.js 18)
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Ensure npm global packages are in PATH
+ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
 
 
 
 
 
 
+# Install MCP Playwright for browser automation
+# This enables the system to control browsers via Playwright CDP connections
+RUN npm install -g @playwright/mcp
 
 
 
 # Install OpenCode CLI (https://github.com/anomalyco/opencode)
-RUN curl -fsSL https://opencode.ai/install | bash
+RUN npm install -g opencode-ai
 
 
 

@@ -92,7 +92,7 @@ RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_
 
 # {{IF OPENCODE}}
 # Install OpenCode CLI (https://github.com/anomalyco/opencode)
-RUN curl -fsSL https://opencode.ai/install | bash
+RUN npm install -g opencode-ai
 # {{ENDIF}}
 
 # {{IF NPM_PACKAGES}}
