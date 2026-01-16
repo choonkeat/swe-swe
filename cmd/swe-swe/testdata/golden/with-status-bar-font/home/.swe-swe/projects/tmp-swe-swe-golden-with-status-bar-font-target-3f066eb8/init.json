@@ -12,5 +12,7 @@
   "terminalFontSize": 14,
   "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
   "statusBarFontSize": 14,
-  "statusBarFontFamily": "monospace"
+  "statusBarFontFamily": "monospace",
+  "hostUID": 501,
+  "hostGID": 20
 }
