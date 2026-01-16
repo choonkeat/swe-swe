@@ -1408,7 +1408,8 @@ func handleCertificates(sweDir, certsDir string) bool {
 	return false
 }
 
-// copyFile copies a single file, preserving permissions
+// copyFile copies a single file, preserving permissions.
+// Removes existing destination file first to handle read-only files (e.g., .git/objects).
 func copyFile(src, dst string) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
@@ -1417,6 +1418,12 @@ func copyFile(src, dst string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
+	}
+	// Remove existing file first to handle read-only files
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Remove(dst); err != nil {
+			return err
+		}
 	}
 	return os.WriteFile(dst, data, srcInfo.Mode())
 }
