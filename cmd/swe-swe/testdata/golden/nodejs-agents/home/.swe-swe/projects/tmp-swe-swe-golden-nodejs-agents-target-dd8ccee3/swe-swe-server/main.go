@@ -165,6 +165,8 @@ type Session struct {
 	ringBuf  []byte // circular buffer storage
 	ringHead int    // write position (where next byte goes)
 	ringLen  int    // current bytes stored (0 to RingBufferSize)
+	// Recording
+	RecordingUUID string // UUID for recording files (separate from session UUID for restarts)
 }
 
 // AddClient adds a WebSocket client to the session
@@ -603,6 +605,10 @@ func (s *Session) RestartProcess(cmdStr string) error {
 
 	// Create new command and PTY
 	cmdName, cmdArgs := parseCommand(cmdStr)
+
+	// Wrap with script for recording (reuse existing recording UUID)
+	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
+
 	cmd := exec.Command(cmdName, cmdArgs...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
@@ -618,7 +624,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	s.PTY = ptmx
 	s.lastActive = time.Now()
 
-	log.Printf("Restarted process for session %s (pid=%d)", s.UUID, cmd.Process.Pid)
+	log.Printf("Restarted process for session %s (pid=%d, recording=%s)", s.UUID, cmd.Process.Pid, s.RecordingUUID)
 	return nil
 }
 
@@ -1043,8 +1049,21 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		return nil, false, fmt.Errorf("unknown assistant: %s", assistant)
 	}
 
+	// Ensure recordings directory exists
+	if err := ensureRecordingsDir(); err != nil {
+		log.Printf("Warning: failed to create recordings directory: %v", err)
+	}
+
+	// Generate recording UUID
+	recordingUUID := uuid.New().String()
+
 	// Create new session with PTY using assistant's shell command
 	cmdName, cmdArgs := parseCommand(cfg.ShellCmd)
+
+	// Wrap with script for recording
+	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recordingUUID)
+	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
+
 	cmd := exec.Command(cmdName, cmdArgs...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
@@ -1081,10 +1100,11 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		lastActive:      time.Now(),
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 		ringBuf:         make([]byte, RingBufferSize),
+		RecordingUUID:   recordingUUID,
 	}
 	sessions[sessionUUID] = sess
 
-	log.Printf("Created new session: %s (assistant=%s, pid=%d)", sessionUUID, cfg.Name, cmd.Process.Pid)
+	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sessionUUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
 }
 
@@ -1317,6 +1337,35 @@ func parseCommand(cmdStr string) (string, []string) {
 		return cmdStr, nil
 	}
 	return parts[0], parts[1:]
+}
+
+// recordingsDir is the directory where terminal recordings are stored
+const recordingsDir = "/workspace/.swe-swe/recordings"
+
+// ensureRecordingsDir creates the recordings directory if it doesn't exist
+func ensureRecordingsDir() error {
+	return os.MkdirAll(recordingsDir, 0755)
+}
+
+// wrapWithScript wraps a command with the Linux script command for recording
+// Returns the new command name and arguments to record terminal output and timing
+func wrapWithScript(cmdName string, cmdArgs []string, recordingUUID string) (string, []string) {
+	// Build the full command string for script -c
+	fullCmd := cmdName
+	if len(cmdArgs) > 0 {
+		fullCmd += " " + strings.Join(cmdArgs, " ")
+	}
+
+	logPath := fmt.Sprintf("%s/session-%s.log", recordingsDir, recordingUUID)
+	timingPath := fmt.Sprintf("%s/session-%s.timing", recordingsDir, recordingUUID)
+
+	// script -q (quiet) -f (flush) --log-timing=file -c "command" logfile
+	return "script", []string{
+		"-q", "-f",
+		"--log-timing=" + timingPath,
+		"-c", fullCmd,
+		logPath,
+	}
 }
 
 // sanitizeFilename removes path components and validates the filename
