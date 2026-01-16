@@ -43,6 +43,11 @@ if [ -S /var/run/docker.sock ]; then
 fi
 # {{ENDIF}}
 
+# {{IF SLASH_COMMANDS}}
+# Copy slash commands to agent directories
+{{SLASH_COMMANDS_COPY}}
+# {{ENDIF}}
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"
