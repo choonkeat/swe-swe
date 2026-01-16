@@ -604,7 +604,6 @@ var (
 	availableAssistants []AssistantConfig // Populated at startup by detectAvailableAssistants
 
 	// SSL certificate download endpoint
-	sslToken    string // Random token for secure cert download URL
 	tlsCertPath string // Path to TLS certificate file
 )
 
@@ -674,10 +673,8 @@ func main() {
 	if tlsCertPath == "" {
 		tlsCertPath = "/etc/traefik/tls/server.crt"
 	}
-	// Generate random token for secure download URL (only if cert exists)
 	if _, err := os.Stat(tlsCertPath); err == nil {
-		sslToken = uuid.New().String()[:16] // Use first 16 chars for shorter URL
-		log.Printf("SSL certificate available at: /ssl/%s/ca.crt", sslToken)
+		log.Printf("SSL certificate available at: /ssl/ca.crt")
 	}
 
 	// Parse templates
@@ -757,12 +754,16 @@ func main() {
 				})
 			}
 
+			// Check if SSL certificate is available
+			_, hasSSLCert := os.Stat(tlsCertPath)
 			data := struct {
-				Agents  []AgentWithSessions
-				NewUUID string
+				Agents     []AgentWithSessions
+				NewUUID    string
+				HasSSLCert bool
 			}{
-				Agents:  agents,
-				NewUUID: uuid.New().String(),
+				Agents:     agents,
+				NewUUID:    uuid.New().String(),
+				HasSSLCert: hasSSLCert == nil,
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
@@ -778,8 +779,8 @@ func main() {
 			return
 		}
 
-		// SSL certificate download: /ssl/{token}/ca.crt
-		if strings.HasPrefix(r.URL.Path, "/ssl/") && strings.HasSuffix(r.URL.Path, "/ca.crt") {
+		// SSL certificate download: /ssl/ca.crt
+		if r.URL.Path == "/ssl/ca.crt" {
 			handleSSLCertDownload(w, r)
 			return
 		}
@@ -1451,19 +1452,8 @@ func handlePollSend(w http.ResponseWriter, r *http.Request, sessionUUID, clientI
 }
 
 // handleSSLCertDownload serves the SSL certificate for mobile installation
-// URL format: /ssl/{token}/ca.crt
+// URL: /ssl/ca.crt (protected by forwardauth middleware)
 func handleSSLCertDownload(w http.ResponseWriter, r *http.Request) {
-	// Extract token from path: /ssl/{token}/ca.crt
-	path := strings.TrimPrefix(r.URL.Path, "/ssl/")
-	path = strings.TrimSuffix(path, "/ca.crt")
-	requestToken := path
-
-	// Verify token matches (prevents enumeration)
-	if sslToken == "" || requestToken != sslToken {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
 	// Read certificate file
 	certData, err := os.ReadFile(tlsCertPath)
 	if err != nil {

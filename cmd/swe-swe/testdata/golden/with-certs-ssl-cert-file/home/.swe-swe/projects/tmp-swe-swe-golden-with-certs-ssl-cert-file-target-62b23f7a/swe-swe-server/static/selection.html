@@ -148,6 +148,28 @@
         .agent-group[data-assistant="custom"] .new-session:hover {
             border-color: #a855f7;
         }
+        .selection-page__footer {
+            margin-top: auto;
+            padding-top: 32px;
+            text-align: center;
+        }
+        .ssl-cert-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #888;
+            text-decoration: none;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+        .ssl-cert-link:hover {
+            color: #fff;
+            border-color: #007acc;
+            background: #2d2d2d;
+        }
     </style>
 </head>
 <body>
@@ -180,6 +202,14 @@
             </div>
             {{end}}
         </div>
+        {{if .HasSSLCert}}
+        <div class="selection-page__footer">
+            <a href="/ssl/ca.crt" class="ssl-cert-link">
+                <span>📱</span>
+                <span>Install SSL Certificate</span>
+            </a>
+        </div>
+        {{end}}
     </div>
 </body>
 </html>
