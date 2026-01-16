@@ -355,6 +355,7 @@ func handleInit() {
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
+	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	listAgents := fs.Bool("list-agents", false, "List available agents and exit")
 	fs.Parse(os.Args[2:])
 
@@ -482,6 +483,9 @@ func handleInit() {
 		}
 		if *withDocker {
 			fmt.Println("Docker access: enabled (container can run Docker commands on host)")
+		}
+		if *slashCommands != "" {
+			fmt.Printf("Slash commands: %s\n", *slashCommands)
 		}
 
 		for _, hostFile := range hostFiles {
