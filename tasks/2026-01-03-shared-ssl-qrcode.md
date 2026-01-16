@@ -1,7 +1,7 @@
 # Shared Self-Signed SSL with QR Code Mobile Installation
 
 **Date:** 2026-01-03
-**Status:** Planned
+**Status:** In Progress (Phase 1 Complete)
 
 ## Goal
 
@@ -35,16 +35,16 @@ Self-signed certificates will be generated once at `~/.swe-swe/tls/` and reused 
 
 ### Steps
 
-1. **Modify `generateSelfSignedCert` call location in `handleInit()`** (`main.go:903-912`)
+1. **[DONE] Modify `generateSelfSignedCert` call location in `handleInit()`** (`main.go:903-912`)
    - Change `tlsDir` from `filepath.Join(sweDir, "tls")` to `filepath.Join(homeDir, ".swe-swe", "tls")`
    - Add existence check: only generate if `server.crt` doesn't exist
    - Keep the "Generated self-signed SSL certificate" message, but add "Reusing existing SSL certificate" for reuse case
 
-2. **Update `docker-compose.yml` template** (`templates/host/docker-compose.yml`)
+2. **[DONE] Update `docker-compose.yml` template** (`templates/host/docker-compose.yml`)
    - Find the tls volume mount (currently `./tls:/etc/traefik/tls:ro`)
    - Change to mount from `~/.swe-swe/tls` using `${HOME}/.swe-swe/tls`
 
-3. **Update golden tests**
+3. **[DONE] Update golden tests**
    - The `with-ssl-selfsign` golden test will need updating to reflect new mount path
 
 ### Verification
