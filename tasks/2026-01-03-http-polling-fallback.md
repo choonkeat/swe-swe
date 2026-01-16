@@ -59,7 +59,7 @@ Add HTTP polling fallback for xterm.js terminal to handle flaky mobile WebSocket
 
 ---
 
-### Phase 2: Server - Viewer Count Integration
+### Phase 2: Server - Viewer Count Integration ✅
 
 **What will be achieved**: Polling clients are properly counted in `ClientCount()` and included in `BroadcastStatus()`.
 

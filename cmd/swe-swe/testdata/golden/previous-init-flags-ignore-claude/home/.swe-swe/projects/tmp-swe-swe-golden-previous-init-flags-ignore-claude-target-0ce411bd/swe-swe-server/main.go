@@ -137,9 +137,9 @@ type Session struct {
 	AssistantConfig AssistantConfig
 	Cmd             *exec.Cmd
 	PTY             *os.File
-	clients         map[*websocket.Conn]bool
-	clientSizes     map[*websocket.Conn]TermSize
-	pollClients     map[string]*PollingClient // HTTP polling clients by clientId
+	wsClients       map[*websocket.Conn]bool      // WebSocket clients
+	wsClientSizes   map[*websocket.Conn]TermSize  // WebSocket client terminal sizes
+	pollClients     map[string]*PollingClient     // HTTP polling clients by clientId
 	mu              sync.RWMutex
 	writeMu         sync.Mutex     // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
 	CreatedAt       time.Time      // when the session was created
@@ -152,9 +152,9 @@ type Session struct {
 func (s *Session) AddClient(conn *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.clients[conn] = true
+	s.wsClients[conn] = true
 	s.lastActive = time.Now()
-	log.Printf("Client added to session %s (total: %d)", s.UUID, len(s.clients))
+	log.Printf("Client added to session %s (total: %d)", s.UUID, len(s.wsClients))
 
 	// Broadcast status after lock is released
 	go s.BroadcastStatus()
@@ -164,16 +164,16 @@ func (s *Session) AddClient(conn *websocket.Conn) {
 func (s *Session) RemoveClient(conn *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.clients, conn)
-	delete(s.clientSizes, conn)
+	delete(s.wsClients, conn)
+	delete(s.wsClientSizes, conn)
 	s.lastActive = time.Now()
-	log.Printf("Client removed from session %s (total: %d)", s.UUID, len(s.clients))
+	log.Printf("Client removed from session %s (total: %d)", s.UUID, len(s.wsClients))
 
 	// Recalculate PTY size based on remaining clients
-	if len(s.clientSizes) > 0 && s.PTY != nil {
+	if len(s.wsClientSizes) > 0 && s.PTY != nil {
 		minRows, minCols := s.calculateMinSize()
 		pty.Setsize(s.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
-		log.Printf("Session %s: resized PTY to %dx%d (from %d clients)", s.UUID, minCols, minRows, len(s.clientSizes))
+		log.Printf("Session %s: resized PTY to %dx%d (from %d clients)", s.UUID, minCols, minRows, len(s.wsClientSizes))
 
 		// Also resize the virtual terminal for accurate snapshots
 		s.vtMu.Lock()
@@ -190,7 +190,7 @@ func (s *Session) UpdateClientSize(conn *websocket.Conn, rows, cols uint16) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.clientSizes[conn] = TermSize{Rows: rows, Cols: cols}
+	s.wsClientSizes[conn] = TermSize{Rows: rows, Cols: cols}
 	s.lastActive = time.Now()
 
 	// Calculate minimum size across all clients
@@ -199,7 +199,7 @@ func (s *Session) UpdateClientSize(conn *websocket.Conn, rows, cols uint16) {
 	// Apply to PTY
 	if s.PTY != nil {
 		pty.Setsize(s.PTY, &pty.Winsize{Rows: minRows, Cols: minCols})
-		log.Printf("Session %s: resized PTY to %dx%d (from %d clients)", s.UUID, minCols, minRows, len(s.clientSizes))
+		log.Printf("Session %s: resized PTY to %dx%d (from %d clients)", s.UUID, minCols, minRows, len(s.wsClientSizes))
 	}
 
 	// Also resize the virtual terminal for accurate snapshots
@@ -214,17 +214,26 @@ func (s *Session) UpdateClientSize(conn *websocket.Conn, rows, cols uint16) {
 // calculateMinSize returns the minimum rows and cols across all clients
 // Must be called with lock held
 func (s *Session) calculateMinSize() (uint16, uint16) {
-	if len(s.clientSizes) == 0 {
+	if len(s.wsClientSizes) == 0 {
 		return 24, 80 // default size
 	}
 
 	var minRows, minCols uint16 = 0xFFFF, 0xFFFF
-	for _, size := range s.clientSizes {
+	for _, size := range s.wsClientSizes {
 		if size.Rows < minRows {
 			minRows = size.Rows
 		}
 		if size.Cols < minCols {
 			minCols = size.Cols
+		}
+	}
+	// Include polling client sizes
+	for _, pc := range s.pollClients {
+		if pc.Size.Rows < minRows {
+			minRows = pc.Size.Rows
+		}
+		if pc.Size.Cols < minCols {
+			minCols = pc.Size.Cols
 		}
 	}
 
@@ -239,11 +248,11 @@ func (s *Session) calculateMinSize() (uint16, uint16) {
 	return minRows, minCols
 }
 
-// ClientCount returns the number of connected clients
+// ClientCount returns the number of connected clients (WebSocket + polling)
 func (s *Session) ClientCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.clients)
+	return len(s.wsClients) + len(s.pollClients)
 }
 
 // LastActive returns the last activity time
@@ -261,7 +270,7 @@ func (s *Session) Broadcast(data []byte) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	for conn := range s.clients {
+	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
 			log.Printf("Broadcast write error: %v", err)
 		}
@@ -276,7 +285,7 @@ func (s *Session) BroadcastStatus() {
 	rows, cols := s.calculateMinSize()
 	status := map[string]interface{}{
 		"type":      "status",
-		"viewers":   len(s.clients),
+		"viewers":   len(s.wsClients) + len(s.pollClients),
 		"cols":      cols,
 		"rows":      rows,
 		"assistant": s.AssistantConfig.Name,
@@ -291,12 +300,12 @@ func (s *Session) BroadcastStatus() {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	for conn := range s.clients {
+	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("BroadcastStatus write error: %v", err)
 		}
 	}
-	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.clients), cols, rows)
+	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.wsClients)+len(s.pollClients), cols, rows)
 }
 
 // BroadcastChatMessage broadcasts a chat message to all connected clients
@@ -321,7 +330,7 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	for conn := range s.clients {
+	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("BroadcastChatMessage write error: %v", err)
 		}
@@ -347,7 +356,7 @@ func (s *Session) BroadcastExit(exitCode int) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	for conn := range s.clients {
+	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("BroadcastExit write error: %v", err)
 		}
@@ -360,11 +369,12 @@ func (s *Session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Close all client connections
-	for conn := range s.clients {
+	// Close all WebSocket client connections
+	for conn := range s.wsClients {
 		conn.Close()
 	}
-	s.clients = make(map[*websocket.Conn]bool)
+	s.wsClients = make(map[*websocket.Conn]bool)
+	s.pollClients = make(map[string]*PollingClient)
 
 	// Kill the process and close PTY
 	if s.Cmd != nil && s.Cmd.Process != nil {
@@ -492,7 +502,7 @@ func (s *Session) startPTYReader() {
 				// Process has died - check if we should restart
 				s.mu.RLock()
 				cmd := s.Cmd
-				clientCount := len(s.clients)
+				clientCount := len(s.wsClients)
 				s.mu.RUnlock()
 
 				// Wait on the process to reap the zombie and get exit status
@@ -842,13 +852,20 @@ func sessionReaper() {
 		for uuid, sess := range sessions {
 			// Clean up stale polling clients (no poll in 60 seconds)
 			sess.mu.Lock()
+			expiredCount := 0
 			for clientID, pc := range sess.pollClients {
 				if time.Since(pc.LastPoll) > 60*time.Second {
 					delete(sess.pollClients, clientID)
+					expiredCount++
 					log.Printf("Polling client expired: session=%s client=%s", uuid, clientID)
 				}
 			}
 			sess.mu.Unlock()
+
+			// Broadcast status if any polling clients were removed
+			if expiredCount > 0 {
+				go sess.BroadcastStatus()
+			}
 
 			// Only expire sessions with no clients that have been idle for TTL
 			if sess.ClientCount() == 0 && time.Since(sess.LastActive()) > sessionTTL {
@@ -916,8 +933,8 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		AssistantConfig: cfg,
 		Cmd:             cmd,
 		PTY:             ptmx,
-		clients:         make(map[*websocket.Conn]bool),
-		clientSizes:     make(map[*websocket.Conn]TermSize),
+		wsClients:       make(map[*websocket.Conn]bool),
+		wsClientSizes:   make(map[*websocket.Conn]TermSize),
 		pollClients:     make(map[string]*PollingClient),
 		CreatedAt:       time.Now(),
 		lastActive:      time.Now(),
@@ -1165,7 +1182,8 @@ func handlePollRecv(w http.ResponseWriter, r *http.Request, sessionUUID, clientI
 
 	// Register/update polling client
 	sess.mu.Lock()
-	if sess.pollClients[clientID] == nil {
+	isNewClient := sess.pollClients[clientID] == nil
+	if isNewClient {
 		sess.pollClients[clientID] = &PollingClient{
 			ID:       clientID,
 			Size:     TermSize{Rows: 24, Cols: 80}, // default size
@@ -1178,13 +1196,18 @@ func handlePollRecv(w http.ResponseWriter, r *http.Request, sessionUUID, clientI
 	sess.lastActive = time.Now()
 	sess.mu.Unlock()
 
+	// Broadcast status to WS clients when a new polling client joins
+	if isNewClient {
+		go sess.BroadcastStatus()
+	}
+
 	// Generate terminal snapshot
 	snapshot := sess.GenerateSnapshot()
 
 	// Get current terminal size
 	sess.mu.RLock()
 	rows, cols := sess.calculateMinSize()
-	viewerCount := len(sess.clients) + len(sess.pollClients)
+	viewerCount := len(sess.wsClients) + len(sess.pollClients)
 	sess.mu.RUnlock()
 
 	// Return JSON response
