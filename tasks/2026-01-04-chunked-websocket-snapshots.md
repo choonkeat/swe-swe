@@ -46,19 +46,19 @@ go test -run TestCompressSnapshot
 
 ---
 
-## Phase 2: Server - Chunked snapshot delivery
+## Phase 2: Server - Chunked snapshot delivery ✅ DONE
 
 ### What will be achieved
 Compressed snapshots will be split into 8KB chunks and sent as multiple WebSocket binary messages with a chunk header protocol.
 
 ### Steps
 
-1. **Define chunk protocol constants** - `ChunkMarker = 0x02`, `DefaultChunkSize = 8192`, `MinChunkSize = 512`
-2. **Create `sendChunked()` function** - Takes connection, compressed data, chunk size; sends `[0x02, index, total, ...data]` per chunk
-3. **Replace direct snapshot send** - In `handleWebSocket()` where snapshot is sent to new clients, call `sendChunked()` instead of `WriteMessage()`
-4. **Replace broadcast snapshot send** - If snapshots are broadcast elsewhere, update those calls too
-5. **Handle edge case** - If compressed data fits in one chunk, still use chunk protocol for consistency
-6. **Add chunk logging** - Log "Sent chunk X/Y (Z bytes)" for debugging
+1. ✅ **Define chunk protocol constants** - `ChunkMarker = 0x02`, `DefaultChunkSize = 8192`, `MinChunkSize = 512` (done in Phase 1)
+2. ✅ **Create `sendChunked()` function** - Takes connection, writeMu, compressed data, chunk size; sends `[0x02, index, total, ...data]` per chunk
+3. ✅ **Replace direct snapshot send** - In `handleWebSocket()` where snapshot is sent to new clients, now calls `sendChunked()`
+4. N/A **Replace broadcast snapshot send** - Snapshots are only sent to joining clients, not broadcast
+5. ✅ **Handle edge case** - Even single-chunk data uses chunk protocol (totalChunks=1)
+6. ✅ **Add chunk logging** - Logs "Sent chunk X/Y (Z bytes)" for each chunk
 
 ### Verification (TDD style)
 
