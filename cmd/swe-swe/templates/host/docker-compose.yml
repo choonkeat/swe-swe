@@ -116,6 +116,11 @@ services:
       # Mount Docker socket for container to run Docker commands on host
       - /var/run/docker.sock:/var/run/docker.sock
       # {{ENDIF}}
+      # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          mode: 0755
     working_dir: /workspace
     networks:
       - swe-network

@@ -82,6 +82,11 @@ services:
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+      # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          mode: 0755
     working_dir: /workspace
     networks:
       - swe-network
