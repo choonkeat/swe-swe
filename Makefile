@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update
+.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update
 
 build: build-cli
 
@@ -11,8 +11,10 @@ run:
 stop:
 	lsof -ti :9898 | xargs kill -9 2>/dev/null || true
 
-test:
-	go test -v ./...
+test: test-cli test-server
+
+test-cli:
+	go test -v ./cmd/swe-swe
 
 # Test the swe-swe-server template code
 # Copies template to temp dir, sets up go.mod, runs tests, cleans up
@@ -61,14 +63,19 @@ swe-swe-stop: $(SWE_SWE_CLI)
 swe-swe-clean:
 	rm -rf $(SWE_SWE_PATH)/.swe-swe
 
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+VERSION := dev
+LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
+
 build-cli:
 	@rm -f cmd/swe-swe/templates/host/swe-swe-server/go.mod cmd/swe-swe/templates/host/swe-swe-server/go.sum
 	mkdir -p ./dist
-	GOOS=linux GOARCH=amd64 go build -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe
-	GOOS=linux GOARCH=arm64 go build -o ./dist/swe-swe.linux-arm64 ./cmd/swe-swe
-	GOOS=darwin GOARCH=amd64 go build -o ./dist/swe-swe.darwin-amd64 ./cmd/swe-swe
-	GOOS=darwin GOARCH=arm64 go build -o ./dist/swe-swe.darwin-arm64 ./cmd/swe-swe
-	GOOS=windows GOARCH=amd64 go build -o ./dist/swe-swe.windows-amd64.exe ./cmd/swe-swe
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe
+	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.linux-arm64 ./cmd/swe-swe
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.darwin-amd64 ./cmd/swe-swe
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.darwin-arm64 ./cmd/swe-swe
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.windows-amd64.exe ./cmd/swe-swe
 
 # Golden file generation for testing
 GOLDEN_TESTDATA := ./cmd/swe-swe/testdata/golden

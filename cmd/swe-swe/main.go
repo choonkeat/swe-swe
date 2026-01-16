@@ -26,6 +26,13 @@ import (
 	"time"
 )
 
+// Version information set at build time via ldflags
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildTime = "unknown"
+)
+
 //go:embed all:templates
 var assets embed.FS
 
@@ -280,6 +287,7 @@ func handlePassthrough(command string, args []string) {
 }
 
 func printUsage() {
+	fmt.Fprintf(os.Stderr, "swe-swe %s (%s)\n\n", Version, GitCommit)
 	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options]
 
 Native Commands:
@@ -1088,6 +1096,14 @@ func handleInit() {
 			// Process entrypoint.sh template with conditional sections
 			if hostFile == "templates/host/entrypoint.sh" {
 				content = []byte(processEntrypointTemplate(string(content), agents, *withDocker, slashCmds))
+			}
+
+			// Inject version info into swe-swe-server main.go
+			if hostFile == "templates/host/swe-swe-server/main.go" {
+				contentStr := string(content)
+				contentStr = strings.Replace(contentStr, `Version   = "dev"`, fmt.Sprintf(`Version   = "%s"`, Version), 1)
+				contentStr = strings.Replace(contentStr, `GitCommit = "unknown"`, fmt.Sprintf(`GitCommit = "%s"`, GitCommit), 1)
+				content = []byte(contentStr)
 			}
 
 			// Calculate destination path, preserving subdirectories
