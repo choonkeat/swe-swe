@@ -128,13 +128,13 @@ services:
       - "--bind-addr=0.0.0.0:8080"
       - "--auth=none"
     volumes:
-      # Mount project directory
-      - ${WORKSPACE_DIR:-.}:/home/coder/project
+      # Mount project directory (same path as swe-swe container for git worktree compatibility)
+      - ${WORKSPACE_DIR:-.}:/workspace
       # Mount persistent home for VSCode settings/extensions
       - ./home:/home/coder
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
-    working_dir: /home/coder/project
+    working_dir: /workspace
     networks:
       - swe-network
     environment:

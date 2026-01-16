@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/choonkeat/swe-swe/cmd/swe-swe-server/playback"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -101,8 +102,9 @@ func formatDuration(d time.Duration) string {
 
 // AgentWithSessions groups an assistant with its active sessions
 type AgentWithSessions struct {
-	Assistant AssistantConfig
-	Sessions  []SessionInfo // sorted by CreatedAt desc (most recent first)
+	Assistant  AssistantConfig
+	Sessions   []SessionInfo   // sorted by CreatedAt desc (most recent first)
+	Recordings []RecordingInfo // ended recordings for this agent
 }
 
 // RecordingMetadata stores information about a terminal recording session
@@ -917,12 +919,16 @@ func main() {
 				})
 			}
 
+			// Load recordings grouped by agent
+			recordingsByAgent := loadEndedRecordingsByAgent()
+
 			// Build AgentWithSessions for all available assistants
 			agents := make([]AgentWithSessions, 0, len(availableAssistants))
 			for _, assistant := range availableAssistants {
 				agents = append(agents, AgentWithSessions{
-					Assistant: assistant,
-					Sessions:  sessionsByAssistant[assistant.Binary], // nil if no sessions
+					Assistant:  assistant,
+					Sessions:   sessionsByAssistant[assistant.Binary], // nil if no sessions
+					Recordings: recordingsByAgent[assistant.Binary],   // nil if no recordings
 				})
 			}
 
@@ -962,6 +968,17 @@ func main() {
 		// Recording API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 			handleRecordingAPI(w, r)
+			return
+		}
+
+		// Recording playback page
+		if strings.HasPrefix(r.URL.Path, "/recording/") {
+			recordingUUID := strings.TrimPrefix(r.URL.Path, "/recording/")
+			if recordingUUID == "" {
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+			handleRecordingPage(w, r, recordingUUID)
 			return
 		}
 
@@ -1533,6 +1550,200 @@ type RecordingListItem struct {
 	HasTiming bool       `json:"has_timing"`
 	SizeBytes int64      `json:"size_bytes"`
 	IsActive  bool       `json:"is_active,omitempty"`
+}
+
+// RecordingInfo holds recording data for template rendering
+type RecordingInfo struct {
+	UUID      string
+	UUIDShort string
+	Name      string
+	Agent     string
+	EndedAgo  string // "15m ago", "2h ago", "yesterday"
+}
+
+// formatTimeAgo returns a human-readable relative time string
+func formatTimeAgo(t time.Time) string {
+	d := time.Since(t)
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		mins := int(d.Minutes())
+		if mins == 1 {
+			return "1m ago"
+		}
+		return fmt.Sprintf("%dm ago", mins)
+	}
+	if d < 24*time.Hour {
+		hours := int(d.Hours())
+		if hours == 1 {
+			return "1h ago"
+		}
+		return fmt.Sprintf("%dh ago", hours)
+	}
+	if d < 48*time.Hour {
+		return "yesterday"
+	}
+	days := int(d.Hours() / 24)
+	return fmt.Sprintf("%d days ago", days)
+}
+
+// loadEndedRecordings returns a list of ended recordings for the homepage
+func loadEndedRecordings() []RecordingInfo {
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		return nil
+	}
+
+	// Build map of active recording UUIDs
+	activeRecordings := make(map[string]bool)
+	sessionsMu.RLock()
+	for _, sess := range sessions {
+		if sess.RecordingUUID != "" {
+			activeRecordings[sess.RecordingUUID] = true
+		}
+	}
+	sessionsMu.RUnlock()
+
+	// Find ended recordings (those with metadata and ended_at set, or inactive without ended_at)
+	var recordings []RecordingInfo
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+
+		// Extract UUID
+		uuid := strings.TrimPrefix(name, "session-")
+		uuid = strings.TrimSuffix(uuid, ".log")
+
+		// Skip active recordings
+		if activeRecordings[uuid] {
+			continue
+		}
+
+		uuidShort := uuid
+		if len(uuid) >= 8 {
+			uuidShort = uuid[:8]
+		}
+
+		info := RecordingInfo{
+			UUID:      uuid,
+			UUIDShort: uuidShort,
+		}
+
+		// Load metadata if exists
+		metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+		if metaData, err := os.ReadFile(metadataPath); err == nil {
+			var meta RecordingMetadata
+			if json.Unmarshal(metaData, &meta) == nil {
+				info.Name = meta.Name
+				info.Agent = meta.Agent
+				if meta.EndedAt != nil {
+					info.EndedAgo = formatTimeAgo(*meta.EndedAt)
+				} else {
+					info.EndedAgo = formatTimeAgo(meta.StartedAt)
+				}
+			}
+		} else {
+			// No metadata, use file modification time
+			if fileInfo, err := entry.Info(); err == nil {
+				info.EndedAgo = formatTimeAgo(fileInfo.ModTime())
+			}
+		}
+
+		recordings = append(recordings, info)
+	}
+
+	// Sort by most recent first (would need EndedAt stored to sort properly)
+	// For now, reverse the slice since ReadDir returns alphabetical order
+	for i, j := 0, len(recordings)-1; i < j; i, j = i+1, j-1 {
+		recordings[i], recordings[j] = recordings[j], recordings[i]
+	}
+
+	return recordings
+}
+
+// loadEndedRecordingsByAgent returns ended recordings grouped by agent name
+func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
+	recordings := loadEndedRecordings()
+	result := make(map[string][]RecordingInfo)
+	for _, rec := range recordings {
+		agent := rec.Agent
+		if agent == "" {
+			agent = "unknown"
+		}
+		result[agent] = append(result[agent], rec)
+	}
+	return result
+}
+
+// handleRecordingPage serves the recording playback page
+func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID string) {
+	// Validate UUID format
+	if len(recordingUUID) < 32 {
+		http.Error(w, "Invalid UUID", http.StatusBadRequest)
+		return
+	}
+
+	// Check if recording exists
+	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
+	logContent, err := os.ReadFile(logPath)
+	if err != nil {
+		http.Error(w, "Recording not found", http.StatusNotFound)
+		return
+	}
+
+	// Load metadata if exists
+	var metadata *RecordingMetadata
+	metadataPath := recordingsDir + "/session-" + recordingUUID + ".metadata.json"
+	if metaData, err := os.ReadFile(metadataPath); err == nil {
+		var meta RecordingMetadata
+		if json.Unmarshal(metaData, &meta) == nil {
+			metadata = &meta
+		}
+	}
+
+	// Determine name for display
+	uuidShort := recordingUUID
+	if len(recordingUUID) >= 8 {
+		uuidShort = recordingUUID[:8]
+	}
+	name := "session-" + uuidShort
+	if metadata != nil && metadata.Name != "" {
+		name = metadata.Name
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	// Try to load timing file for animated playback
+	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
+	timingContent, timingErr := os.ReadFile(timingPath)
+
+	if timingErr == nil && len(timingContent) > 0 {
+		// Parse timing file and render animated playback
+		frames, err := playback.ParseTimingFile(logContent, timingContent)
+		if err != nil || len(frames) == 0 {
+			// Fallback to static if parsing fails
+			html := playback.RenderStaticHTML(logContent, name, "/")
+			w.Write([]byte(html))
+			return
+		}
+
+		html, err := playback.RenderPlaybackHTML(frames, name, "/")
+		if err != nil {
+			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(html))
+	} else {
+		// No timing file - show static content
+		html := playback.RenderStaticHTML(logContent, name, "/")
+		w.Write([]byte(html))
+	}
 }
 
 // handleRecordingAPI routes recording API requests
