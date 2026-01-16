@@ -121,6 +121,9 @@ Init Options:
   --exclude AGENTS                       Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
+  --with-docker                          Mount Docker socket to allow container to run Docker commands
+  --with-slash-commands REPOS            Git repos to clone as slash commands (space-separated)
+                                         Format: [alias@]<git-url>
   --list-agents                          List available agents and exit
 
 Available Agents:
@@ -140,6 +143,9 @@ Examples:
   swe-swe init --exclude=aider,goose             Initialize without Aider and Goose
   swe-swe init --apt-get-install="vim htop"      Add custom apt packages
   swe-swe init --npm-install="typescript tsx"    Add custom npm packages
+  swe-swe init --with-docker                     Enable Docker-in-Docker access
+  swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
+                                                 Clone slash commands for Claude/Codex
   swe-swe init --list-agents                     Show available agents
   swe-swe up                                     Start all services
   swe-swe up chrome                              Start only chrome (and dependencies)

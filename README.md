@@ -64,6 +64,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--apt-get-install PACKAGES`: Additional apt packages to install
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
+- `--with-slash-commands REPOS`: Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`)
 - `--list-agents`: List available agents and exit
 
 **Available Agents**:
@@ -94,6 +95,9 @@ swe-swe init --path ~/my-project --apt-get-install="vim htop tmux"
 
 # Initialize with Docker access (for integration testing, building images)
 swe-swe init --path ~/my-project --with-docker
+
+# Initialize with custom slash commands for Claude/Codex
+swe-swe init --path ~/my-project --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
 
 # List available agents
 swe-swe init --list-agents
