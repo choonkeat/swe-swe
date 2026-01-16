@@ -70,7 +70,7 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--apt-get-install PACKAGES`: Additional apt packages to install
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
-- `--with-slash-commands REPOS`: Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`)
+- `--with-slash-commands REPOS`: Git repos to clone as slash commands for Claude, Codex, and OpenCode (space-separated, format: `[alias@]<git-url>`)
 - `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP) or `selfsign` (HTTPS with auto-generated self-signed certificate)
 
 **Available Agents**: `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
@@ -95,7 +95,7 @@ swe-swe init --apt-get-install="vim htop tmux"
 # Initialize current directory with Docker access
 swe-swe init --with-docker
 
-# Initialize current directory with custom slash commands for Claude/Codex
+# Initialize current directory with custom slash commands for Claude/Codex/OpenCode
 swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
 
 # Initialize with HTTPS (self-signed certificate)

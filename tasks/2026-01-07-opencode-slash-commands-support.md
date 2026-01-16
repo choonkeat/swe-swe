@@ -1,7 +1,7 @@
 # Task: Add OpenCode Support to --with-slash-commands
 
 **Date**: 2026-01-07
-**Status**: In Progress
+**Status**: Complete
 
 ## Background
 
@@ -113,7 +113,7 @@ All golden test files will be regenerated to reflect the OpenCode slash command 
 
 ---
 
-## Phase 5: Update README and Help Text
+## Phase 5: Update README and Help Text ✅
 
 ### What will be achieved
 User-facing documentation will be updated to reflect that `--with-slash-commands` now supports OpenCode in addition to Claude and Codex.
