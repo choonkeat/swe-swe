@@ -1,0 +1,24 @@
+=== Phase 1: Capture Host UID:GID ===
+
+[SETUP] Test Infrastructure Fixes
+- Fixed integration test binary lookup to use dynamic GOOS/GOARCH
+- Skipped integration tests on non-Linux (Linux-specific features)
+- Fixed signal-trapping test to skip on non-Linux (bash behavior differs on macOS)
+- Result: All tests PASS
+
+[IMPLEMENTATION] Phase 1 - Capture UID:GID
+Location: cmd/swe-swe/main.go lines 1098-1101
+
+Changes:
+  hostUID := os.Getuid()
+  hostGID := os.Getgid()
+  fmt.Printf("Detected host user: UID=%d GID=%d\n", hostUID, hostGID)
+
+Tests:
+  ✓ TestInitConfigRoundTrip PASS
+  ✓ TestInitConfigBackwardsCompatibility PASS
+  ✓ make test (full suite) PASS
+  ✓ Golden files unchanged (values not used in templates yet)
+
+CONCLUSION:
+Phase 1 SUCCESSFUL - UID:GID capture working, ready for Phase 2
