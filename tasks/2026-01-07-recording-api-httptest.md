@@ -1,7 +1,7 @@
 # Recording API HTTP Test Suite
 
 **Created:** 2026-01-07
-**Status:** Planning
+**Status:** In Progress
 **Goal:** Create comprehensive httptest coverage for recording API endpoints to prevent regression bugs
 
 ## Background
@@ -23,21 +23,22 @@ To prevent future whack-a-mole bugs, we need thorough test coverage for all reco
 
 ---
 
-## Phase 1: Test Infrastructure Setup
+## Phase 1: Test Infrastructure Setup [COMPLETED]
 
 ### Goal
 Create test file with helpers to mock sessions, recording files, and exercise handlers without PTY/process dependencies.
 
 ### Steps
-1. Create `cmd/swe-swe/templates/host/swe-swe-server/recording_test.go`
-2. Add helper to create temp recordings directory with mock `.log`, `.timing`, `.metadata.json` files
-3. Add helper to create mock Session objects with controllable `ProcessState` (nil = running, non-nil = exited)
-4. Add helper to register mock sessions in the global `sessions` map
-5. Add test cleanup function to reset global state between tests
-6. Create httptest server using the existing handlers
+1. [x] Create `cmd/swe-swe/templates/host/swe-swe-server/recording_test.go`
+2. [x] Add helper to create temp recordings directory with mock `.log`, `.timing`, `.metadata.json` files
+3. [x] Add helper to create mock Session objects with controllable `ProcessState` (nil = running, non-nil = exited)
+4. [x] Add helper to register mock sessions in the global `sessions` map
+5. [x] Add test cleanup function to reset global state between tests
+6. [x] Create httptest server using the existing handlers
+7. [x] Change `recordingsDir` from const to var to allow test override
 
 ### Verification
-- Smoke test: create mock recording, call `GET /api/recording/list`, verify 200 and recording in response
+- [x] Smoke test: create mock recording, call `GET /api/recording/list`, verify 200 and recording in response
 
 ---
 

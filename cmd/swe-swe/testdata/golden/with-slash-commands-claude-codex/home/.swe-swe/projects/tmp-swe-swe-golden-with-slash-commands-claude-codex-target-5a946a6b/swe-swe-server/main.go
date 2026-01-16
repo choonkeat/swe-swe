@@ -1463,7 +1463,8 @@ func parseCommand(cmdStr string) (string, []string) {
 }
 
 // recordingsDir is the directory where terminal recordings are stored
-const recordingsDir = "/workspace/.swe-swe/recordings"
+// This is a variable (not const) to allow override in tests
+var recordingsDir = "/workspace/.swe-swe/recordings"
 
 // ensureRecordingsDir creates the recordings directory if it doesn't exist
 func ensureRecordingsDir() error {
