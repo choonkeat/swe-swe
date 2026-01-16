@@ -336,13 +336,45 @@ func RenderPlaybackHTML(frames []PlaybackFrame, name, backURL string, cols, rows
       }
     });
 
-    // Initial state
+    // Trim empty rows at the bottom of the terminal
+    // TUI apps often leave blank lines that don't represent actual content
+    function trimEmptyRows() {
+      const buffer = xterm.buffer.active;
+      if (!buffer) return;
+
+      // Find the last row that has any non-whitespace content
+      let lastContentRow = 0;
+      const bufferLength = buffer.length;
+      for (let i = bufferLength - 1; i >= 0; i--) {
+        const line = buffer.getLine(i);
+        if (line) {
+          const lineStr = line.translateToString(true).trim();
+          if (lineStr.length > 0) {
+            lastContentRow = i + 1;
+            break;
+          }
+        }
+      }
+
+      // Account for cursor position too
+      const cursorRow = buffer.cursorY + 1;
+      const actualHeight = Math.max(lastContentRow, cursorRow, 1);
+
+      // Only resize if we have fewer content rows than current terminal rows
+      const currentRows = xterm.rows;
+      if (actualHeight < currentRows) {
+        xterm.resize(xterm.cols, actualHeight);
+      }
+    }
+
+    // Initial state - seek to end so user sees final result
+    if (frames.length > 0) {
+      seekTo(totalDuration);
+    }
     updateProgress();
 
-    // Render first frame immediately
-    if (frames.length > 0) {
-      renderFramesUpTo(0.001);
-    }
+    // Trim blank rows after initial render
+    setTimeout(trimEmptyRows, 0);
   </script>
 </body>
 </html>`, name, backURL, name, framesBase64, totalDuration, cols, rows)

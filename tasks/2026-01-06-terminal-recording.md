@@ -407,3 +407,30 @@ func RenderPlaybackHTML(frames []PlaybackFrame, metadata *RecordingMetadata) (st
 
 ### Runtime Directories
 - `/workspace/.swe-swe/recordings/` - Created at runtime for recording files
+
+---
+
+## Phase 7: Playback UX Polish ✅
+
+### What Will Be Achieved
+Fix playback usability issues discovered during testing.
+
+### Fixes Applied
+
+**Fix 7.1: Seek to end on page load**
+- Problem: Playback page showed initial frame (Claude startup screen) instead of final state
+- Solution: Call `seekTo(totalDuration)` on initial load so user sees the result
+
+**Fix 7.2: Trim empty rows at bottom**
+- Problem: TUI apps leave blank lines that don't represent actual content, causing excessive whitespace
+- Solution: After rendering, scan xterm buffer backwards to find last row with content, resize terminal to trim blank rows
+- Reference: Adapted from `record-tui` project's height trimming logic
+
+**Fix 7.3: Sort recordings by most recent**
+- Problem: Recordings listed in arbitrary order (reversed alphabetical)
+- Solution: Store `EndedAt` timestamp in `RecordingInfo`, sort by timestamp descending (newest first)
+
+### Verification
+1. **Final state visible**: Opening playback shows end result, not start
+2. **No blank rows**: Terminal height matches actual content
+3. **Most recent first**: Homepage lists recordings in chronological order

@@ -1590,7 +1590,8 @@ type RecordingInfo struct {
 	UUIDShort string
 	Name      string
 	Agent     string
-	EndedAgo  string // "15m ago", "2h ago", "yesterday"
+	EndedAgo  string    // "15m ago", "2h ago", "yesterday"
+	EndedAt   time.Time // actual timestamp for sorting
 }
 
 // formatTimeAgo returns a human-readable relative time string
@@ -1676,14 +1677,17 @@ func loadEndedRecordings() []RecordingInfo {
 				info.Name = meta.Name
 				info.Agent = meta.Agent
 				if meta.EndedAt != nil {
+					info.EndedAt = *meta.EndedAt
 					info.EndedAgo = formatTimeAgo(*meta.EndedAt)
 				} else {
+					info.EndedAt = meta.StartedAt
 					info.EndedAgo = formatTimeAgo(meta.StartedAt)
 				}
 			}
 		} else {
 			// No metadata, use file modification time
 			if fileInfo, err := entry.Info(); err == nil {
+				info.EndedAt = fileInfo.ModTime()
 				info.EndedAgo = formatTimeAgo(fileInfo.ModTime())
 			}
 		}
@@ -1691,11 +1695,10 @@ func loadEndedRecordings() []RecordingInfo {
 		recordings = append(recordings, info)
 	}
 
-	// Sort by most recent first (would need EndedAt stored to sort properly)
-	// For now, reverse the slice since ReadDir returns alphabetical order
-	for i, j := 0, len(recordings)-1; i < j; i, j = i+1, j-1 {
-		recordings[i], recordings[j] = recordings[j], recordings[i]
-	}
+	// Sort by most recent first (newest EndedAt timestamp first)
+	sort.Slice(recordings, func(i, j int) bool {
+		return recordings[i].EndedAt.After(recordings[j].EndedAt)
+	})
 
 	return recordings
 }
