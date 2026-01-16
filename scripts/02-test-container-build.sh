@@ -6,9 +6,10 @@ set -euox pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 TMP_DIR="$WORKSPACE_DIR/tmp"
+EFFECTIVE_HOME="${EFFECTIVE_HOME:-$WORKSPACE_DIR/.home}"
 
 # Find the generated project directory
-PROJECT_PATH=$(ls -d "$TMP_DIR/home/.swe-swe/projects/"*/)
+PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*/)
 echo "Building from: $PROJECT_PATH"
 
 cd "$PROJECT_PATH"

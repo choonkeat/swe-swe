@@ -8,18 +8,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 TMP_DIR="$WORKSPACE_DIR/tmp"
 
-# Clean up any previous artifacts
-rm -rf "$TMP_DIR"
+# EFFECTIVE_HOME: where swe-swe stores config and container mounts /home/app
+# - Default: persistent at $WORKSPACE_DIR/.home (survives clean)
+# - Set to $TMP_DIR/home for ephemeral (cleaned by script 05)
+EFFECTIVE_HOME="${EFFECTIVE_HOME:-$WORKSPACE_DIR/.home}"
+
+# Clean up previous project artifacts
+rm -rf "$TMP_DIR/project-directory"
+rm -rf "$EFFECTIVE_HOME/.swe-swe/projects"
 
 # Create fresh directories
-mkdir -p "$TMP_DIR/home" "$TMP_DIR/project-directory"
+mkdir -p "$EFFECTIVE_HOME" "$TMP_DIR/project-directory"
 
-# Run swe-swe init with isolated HOME
-env HOME="$TMP_DIR/home" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init \
+# Run swe-swe init with EFFECTIVE_HOME
+env HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init \
     --project-directory="$TMP_DIR/project-directory"
 
 # Find and print the generated project path
-PROJECT_PATH=$(ls -d "$TMP_DIR/home/.swe-swe/projects/"*/)
+PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*/)
 echo "Generated project at: $PROJECT_PATH"
 
 # Verify expected files exist
