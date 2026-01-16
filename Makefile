@@ -79,10 +79,12 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-slash-commands-codex-only FLAGS="--agents codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-no-alias FLAGS="--agents all --with-slash-commands https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-codex FLAGS="--agents claude,codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
-	@$(MAKE) _golden-variant NAME=previous-init-flags-reuse FLAGS="--previous-init-flags=reuse"
-	@$(MAKE) _golden-variant NAME=previous-init-flags-ignore FLAGS="--previous-init-flags=ignore"
+	@$(MAKE) _golden-previous-init-flags-reuse
+	@$(MAKE) _golden-variant NAME=previous-init-flags-reuse-no-config FLAGS="--previous-init-flags=reuse"
+	@$(MAKE) _golden-previous-init-flags-ignore
 	@$(MAKE) _golden-variant NAME=previous-init-flags-ignore-claude FLAGS="--previous-init-flags=ignore --agents=claude"
 	@$(MAKE) _golden-variant NAME=previous-init-flags-invalid FLAGS="--previous-init-flags=invalid"
+	@$(MAKE) _golden-variant NAME=previous-init-flags-reuse-with-other-flags FLAGS="--previous-init-flags=reuse --agents=claude"
 	@$(MAKE) _golden-already-initialized
 	@rm -f /tmp/swe-swe-golden
 	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
@@ -92,6 +94,24 @@ _golden-variant:
 	@mkdir -p $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
 	@HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --project-directory /tmp/swe-swe-golden/$(NAME)/target \
 		2> $(GOLDEN_TESTDATA)/$(NAME)/stderr.txt || true
+
+# Multi-step golden test: init with flags, then reuse to verify config is restored
+_golden-previous-init-flags-reuse:
+	@rm -rf $(GOLDEN_TESTDATA)/previous-init-flags-reuse/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse/target
+	@mkdir -p $(GOLDEN_TESTDATA)/previous-init-flags-reuse/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse/target
+	@HOME=/tmp/swe-swe-golden/previous-init-flags-reuse/home $(SWE_SWE_CLI) init --agents=claude --with-docker --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse/target \
+		2> /dev/null || true
+	@HOME=/tmp/swe-swe-golden/previous-init-flags-reuse/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse/target \
+		2> $(GOLDEN_TESTDATA)/previous-init-flags-reuse/stderr.txt || true
+
+# Multi-step golden test: init with flags, then ignore to verify config is overwritten
+_golden-previous-init-flags-ignore:
+	@rm -rf $(GOLDEN_TESTDATA)/previous-init-flags-ignore/home $(GOLDEN_TESTDATA)/previous-init-flags-ignore/target
+	@mkdir -p $(GOLDEN_TESTDATA)/previous-init-flags-ignore/home $(GOLDEN_TESTDATA)/previous-init-flags-ignore/target
+	@HOME=/tmp/swe-swe-golden/previous-init-flags-ignore/home $(SWE_SWE_CLI) init --agents=claude --project-directory /tmp/swe-swe-golden/previous-init-flags-ignore/target \
+		2> /dev/null || true
+	@HOME=/tmp/swe-swe-golden/previous-init-flags-ignore/home $(SWE_SWE_CLI) init --previous-init-flags=ignore --agents=aider --project-directory /tmp/swe-swe-golden/previous-init-flags-ignore/target \
+		2> $(GOLDEN_TESTDATA)/previous-init-flags-ignore/stderr.txt || true
 
 # Multi-step golden test: init twice to test "already initialized" error
 _golden-already-initialized:
