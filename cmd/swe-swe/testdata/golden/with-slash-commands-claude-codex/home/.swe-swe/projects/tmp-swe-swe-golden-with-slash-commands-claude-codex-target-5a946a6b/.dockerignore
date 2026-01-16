@@ -4,9 +4,6 @@
 # VSCode/code-server home directory (extensions, settings, history)
 home/
 
-# Enterprise certificates (mounted at runtime)
-certs/
-
 # Pre-built binaries (if any)
 bin/
 
@@ -18,3 +15,6 @@ bin/
 
 # Unix sockets (can't be added to tar anyway)
 *.sock
+
+# Note: certs/ is NOT excluded - it's needed for COPY during Docker build
+# when enterprise certificates are present
