@@ -59,7 +59,7 @@ Unit tests with temp git repos:
 
 ---
 
-## Phase 2: Integrate into `createWorktree`
+## Phase 2: Integrate into `createWorktree` ✅
 
 ### What will be achieved
 The `createWorktree` function calls `copyUntrackedFiles` after successfully creating the worktree.
