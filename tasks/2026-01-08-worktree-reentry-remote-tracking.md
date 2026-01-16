@@ -39,9 +39,9 @@ New API endpoint `GET /api/worktrees` that returns a list of existing worktree d
 
 ### Small steps
 
-- [ ] 1a. Add `listWorktrees()` function — reads directories under `worktreeDir` constant, returns `[]WorktreeInfo`
-- [ ] 1b. Add `handleWorktreesAPI()` handler — calls `listWorktrees()`, returns JSON response
-- [ ] 1c. Wire up route — add `if r.URL.Path == "/api/worktrees"` in main HTTP handler
+- [x] 1a. Add `listWorktrees()` function — reads directories under `worktreeDir` constant, returns `[]WorktreeInfo`
+- [x] 1b. Add `handleWorktreesAPI()` handler — calls `listWorktrees()`, returns JSON response
+- [x] 1c. Wire up route — add `if r.URL.Path == "/api/worktrees"` in main HTTP handler
 
 ### Verification (TDD style)
 
@@ -297,7 +297,7 @@ HOST_PORT=9899 HOST_IP=host.docker.internal ./scripts/03-test-container-run.sh
 
 ## Status
 
-- [ ] Phase 1: Backend - List existing worktrees API
+- [x] Phase 1: Backend - List existing worktrees API
 - [ ] Phase 2: Frontend - Display worktree quick-start links
 - [ ] Phase 3: Backend - Smart worktree creation
 - [ ] Phase 4: Frontend - Conflict warning dialog

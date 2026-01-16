@@ -997,6 +997,12 @@ func main() {
 			return
 		}
 
+		// Worktrees API endpoint
+		if r.URL.Path == "/api/worktrees" {
+			handleWorktreesAPI(w, r)
+			return
+		}
+
 		// Recording API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 			handleRecordingAPI(w, r)
@@ -1137,7 +1143,7 @@ func deriveBranchName(sessionName string) string {
 }
 
 // worktreeDir is the base directory for git worktrees
-const worktreeDir = "/workspace/.swe-swe/worktrees"
+var worktreeDir = "/workspace/.swe-swe/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
 var excludeFromCopy = []string{".git", ".swe-swe"}
@@ -1324,6 +1330,62 @@ func createWorktree(branchName string) (string, error) {
 	}
 
 	return worktreePath, nil
+}
+
+// WorktreeInfo contains information about an existing worktree
+type WorktreeInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// listWorktrees returns a list of existing worktree directories
+func listWorktrees() ([]WorktreeInfo, error) {
+	// Check if worktree directory exists
+	if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
+		return []WorktreeInfo{}, nil // No worktrees yet
+	}
+
+	entries, err := os.ReadDir(worktreeDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read worktree directory: %w", err)
+	}
+
+	var worktrees []WorktreeInfo
+	for _, entry := range entries {
+		if entry.IsDir() {
+			worktrees = append(worktrees, WorktreeInfo{
+				Name: entry.Name(),
+				Path: worktreeDir + "/" + entry.Name(),
+			})
+		}
+	}
+
+	// Return empty slice instead of nil for consistent JSON encoding
+	if worktrees == nil {
+		worktrees = []WorktreeInfo{}
+	}
+
+	return worktrees, nil
+}
+
+// handleWorktreesAPI handles GET /api/worktrees
+func handleWorktreesAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	worktrees, err := listWorktrees()
+	if err != nil {
+		log.Printf("Error listing worktrees: %v", err)
+		http.Error(w, "Failed to list worktrees", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"worktrees": worktrees,
+	})
 }
 
 // sessionReaper periodically cleans up sessions where the process has exited
