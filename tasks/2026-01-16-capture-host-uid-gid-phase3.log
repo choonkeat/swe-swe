@@ -1,0 +1,16 @@
+=== Phase 3: Add Template Placeholders ===
+
+[IMPLEMENTATION]
+Location: cmd/swe-swe/templates/host/Dockerfile line 146
+
+Change:
+  OLD: RUN useradd -m -s /bin/bash app
+  NEW: RUN useradd -m -u {{UID}} -g {{GID}} -s /bin/bash app
+
+Tests:
+  ✓ TestInitConfigRoundTrip PASS
+  ✓ TestInitConfigBackwardsCompatibility PASS
+  ✓ Template syntax valid (placeholders not yet processed)
+
+CONCLUSION:
+Phase 3 SUCCESSFUL - Placeholders added, ready for Phase 4 (template processing)
