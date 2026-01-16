@@ -84,10 +84,10 @@ Claude
 
 ### Small steps
 
-- [ ] 2a. Fetch `/api/worktrees` on page load — add `fetch()` call in `selection.html` JS
-- [ ] 2b. Render worktree links — for each worktree, add a link under each assistant's "Start new session"
-- [ ] 2c. Direct navigation — clicking worktree link navigates to `/session/{uuid}?assistant={assistant}&name={worktree-name}` (no prompt)
-- [ ] 2d. Style — indent worktree links or use lighter color to differentiate from generic link
+- [x] 2a. Fetch `/api/worktrees` on page load — add `fetch()` call in `selection.html` JS
+- [x] 2b. Render worktree links — for each worktree, add a link under each assistant's "Start new session"
+- [x] 2c. Direct navigation — clicking worktree link navigates to `/session/{uuid}?assistant={assistant}&name={worktree-name}` (no prompt)
+- [x] 2d. Style — indent worktree links or use lighter color to differentiate from generic link
 
 ### Verification (test container + MCP browser)
 
@@ -298,7 +298,7 @@ HOST_PORT=9899 HOST_IP=host.docker.internal ./scripts/03-test-container-run.sh
 ## Status
 
 - [x] Phase 1: Backend - List existing worktrees API
-- [ ] Phase 2: Frontend - Display worktree quick-start links
+- [x] Phase 2: Frontend - Display worktree quick-start links
 - [ ] Phase 3: Backend - Smart worktree creation
 - [ ] Phase 4: Frontend - Conflict warning dialog
 - [ ] Phase 5: Integration testing

@@ -123,29 +123,60 @@
         .new-session__text {
             font-size: 14px;
         }
+        .worktree-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            margin: 2px 0 2px 24px;
+            background: transparent;
+            border: 1px dashed #333;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #666;
+            font-size: 13px;
+            transition: all 0.15s ease;
+        }
+        .worktree-link:hover {
+            border-color: #007acc;
+            color: #9cdcfe;
+            background: #2d2d2d;
+        }
+        .worktree-link__icon {
+            font-size: 12px;
+        }
+        .worktree-link__text {
+            font-size: 13px;
+        }
         /* Assistant-specific hover colors */
         .agent-group[data-assistant="claude"] .session-item:hover,
-        .agent-group[data-assistant="claude"] .new-session:hover {
+        .agent-group[data-assistant="claude"] .new-session:hover,
+        .agent-group[data-assistant="claude"] .worktree-link:hover {
             border-color: #d97706;
         }
         .agent-group[data-assistant="gemini"] .session-item:hover,
-        .agent-group[data-assistant="gemini"] .new-session:hover {
+        .agent-group[data-assistant="gemini"] .new-session:hover,
+        .agent-group[data-assistant="gemini"] .worktree-link:hover {
             border-color: #4285f4;
         }
         .agent-group[data-assistant="codex"] .session-item:hover,
-        .agent-group[data-assistant="codex"] .new-session:hover {
+        .agent-group[data-assistant="codex"] .new-session:hover,
+        .agent-group[data-assistant="codex"] .worktree-link:hover {
             border-color: #10a37f;
         }
         .agent-group[data-assistant="goose"] .session-item:hover,
-        .agent-group[data-assistant="goose"] .new-session:hover {
+        .agent-group[data-assistant="goose"] .new-session:hover,
+        .agent-group[data-assistant="goose"] .worktree-link:hover {
             border-color: #f472b6;
         }
         .agent-group[data-assistant="aider"] .session-item:hover,
-        .agent-group[data-assistant="aider"] .new-session:hover {
+        .agent-group[data-assistant="aider"] .new-session:hover,
+        .agent-group[data-assistant="aider"] .worktree-link:hover {
             border-color: #22c55e;
         }
         .agent-group[data-assistant="custom"] .session-item:hover,
-        .agent-group[data-assistant="custom"] .new-session:hover {
+        .agent-group[data-assistant="custom"] .new-session:hover,
+        .agent-group[data-assistant="custom"] .worktree-link:hover {
             border-color: #a855f7;
         }
         .selection-page__footer {
@@ -390,9 +421,9 @@
             // Add name if provided (trimmed)
             name = name.trim();
             if (name.length > 0) {
-                // Client-side validation: max 32 chars
-                if (name.length > 32) {
-                    name = name.substring(0, 32);
+                // Client-side validation: max 128 chars
+                if (name.length > 128) {
+                    name = name.substring(0, 128);
                 }
                 url += '&name=' + encodeURIComponent(name);
             }
@@ -439,6 +470,66 @@
                 alert('Error: ' + err.message);
             });
         }
+
+        // Fetch and display existing worktrees as quick-start links
+        (function() {
+            fetch('/api/worktrees')
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    var worktrees = data.worktrees || [];
+                    if (worktrees.length === 0) {
+                        return;
+                    }
+
+                    // For each agent group, add worktree links after the new-session link
+                    var agentGroups = document.querySelectorAll('.agent-group');
+                    agentGroups.forEach(function(group) {
+                        var assistant = group.getAttribute('data-assistant');
+                        var newSessionLink = group.querySelector('.new-session');
+                        if (!newSessionLink) {
+                            return;
+                        }
+
+                        // Check if debug mode is enabled (from existing link)
+                        var existingSessionLink = group.querySelector('.session-item');
+                        var debug = existingSessionLink && existingSessionLink.href.indexOf('debug=1') !== -1;
+
+                        // Create worktree links
+                        worktrees.forEach(function(wt) {
+                            var link = document.createElement('a');
+                            link.className = 'worktree-link';
+                            link.href = '#';
+
+                            // Generate a new UUID for this session
+                            var uuid = crypto.randomUUID ? crypto.randomUUID() :
+                                'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                                    return v.toString(16);
+                                });
+
+                            link.onclick = function(e) {
+                                e.preventDefault();
+                                var url = '/session/' + uuid + '?assistant=' + encodeURIComponent(assistant) + '&name=' + encodeURIComponent(wt.name);
+                                if (debug) {
+                                    url += '&debug=1';
+                                }
+                                window.location.href = url;
+                            };
+
+                            link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
+                                '<span class="worktree-link__text">Start new session in ' + wt.name + '</span>';
+
+                            // Insert after new-session link
+                            newSessionLink.parentNode.insertBefore(link, newSessionLink.nextSibling);
+                        });
+                    });
+                })
+                .catch(function(err) {
+                    console.error('Failed to fetch worktrees:', err);
+                });
+        })();
     </script>
 </body>
 </html>
