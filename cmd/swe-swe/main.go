@@ -636,7 +636,7 @@ func agentInList(agent string, list []string) bool {
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
 // based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, and slash commands
-func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo) string {
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo, hostUID int, hostGID int) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -727,6 +727,14 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 			if slashCommandsClone != "" {
 				line = strings.ReplaceAll(line, "{{SLASH_COMMANDS_CLONE}}", slashCommandsClone)
 			}
+		}
+
+		// Handle UID and GID placeholders
+		if strings.Contains(line, "{{UID}}") {
+			line = strings.ReplaceAll(line, "{{UID}}", fmt.Sprintf("%d", hostUID))
+		}
+		if strings.Contains(line, "{{GID}}") {
+			line = strings.ReplaceAll(line, "{{GID}}", fmt.Sprintf("%d", hostGID))
 		}
 
 		if !skip {
@@ -1306,7 +1314,7 @@ func handleInit() {
 
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, hasCerts, slashCmds))
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, hasCerts, slashCmds, hostUID, hostGID))
 			}
 
 			// Process docker-compose.yml template with conditional sections
