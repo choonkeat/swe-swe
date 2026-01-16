@@ -291,4 +291,4 @@ Final verification that changes integrate cleanly with the codebase after prereq
 - [x] Phase 2: Backend - Add worktree cleanup API endpoints
 - [x] Phase 3: Frontend - Worktree-aware exit prompt
 - [x] Phase 4: Integration testing (API verified, browser UI pending infra fix)
-- [ ] Phase 5: Rebase & golden update
+- [x] Phase 5: Rebase & golden update
