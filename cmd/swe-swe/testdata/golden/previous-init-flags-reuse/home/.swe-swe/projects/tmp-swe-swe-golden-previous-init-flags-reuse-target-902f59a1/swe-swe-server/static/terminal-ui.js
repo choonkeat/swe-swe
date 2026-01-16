@@ -160,6 +160,7 @@ class TerminalUI extends HTMLElement {
                 }
                 /* Mobile Keyboard */
                 .mobile-keyboard {
+                    flex-shrink: 0;
                     display: flex;
                     flex-direction: column;
                     background: #2d2d2d;
@@ -1567,6 +1568,11 @@ class TerminalUI extends HTMLElement {
         const row = this.querySelector('.mobile-keyboard__ctrl');
         btn.classList.toggle('active', this.ctrlActive);
         row.classList.toggle('visible', this.ctrlActive);
+        // Re-fit terminal after keyboard row changes
+        requestAnimationFrame(() => {
+            this.fitAddon.fit();
+            this.sendResize();
+        });
     }
 
     toggleNav() {
@@ -1575,6 +1581,11 @@ class TerminalUI extends HTMLElement {
         const row = this.querySelector('.mobile-keyboard__nav');
         btn.classList.toggle('active', this.navActive);
         row.classList.toggle('visible', this.navActive);
+        // Re-fit terminal after keyboard row changes
+        requestAnimationFrame(() => {
+            this.fitAddon.fit();
+            this.sendResize();
+        });
     }
 
     setupMobileKeyboard() {
@@ -1649,16 +1660,19 @@ class TerminalUI extends HTMLElement {
             e.preventDefault();
             const text = textInput.value;
             if (text) {
-                // Send text, then Enter separately
+                // Send text, then Enter with delay to ensure text is processed first
                 this.sendKey(text);
-                this.sendKey('\r');
                 textInput.value = '';
                 sendBtn.textContent = 'Enter';
+                setTimeout(() => {
+                    this.sendKey('\r');
+                    this.term.focus();
+                }, 300);
             } else {
                 // Send just Enter
                 this.sendKey('\r');
+                this.term.focus();
             }
-            this.term.focus();
         });
 
         // Enter key allows newlines in textarea (no auto-submit)

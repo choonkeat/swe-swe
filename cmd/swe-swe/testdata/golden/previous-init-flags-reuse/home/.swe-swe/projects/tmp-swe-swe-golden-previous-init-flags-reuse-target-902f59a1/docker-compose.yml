@@ -43,6 +43,8 @@ services:
     build:
       context: .
       dockerfile: chrome/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
@@ -63,6 +65,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.swe-swe.rule=PathPrefix(`/`)"
