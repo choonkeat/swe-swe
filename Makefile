@@ -80,6 +80,8 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-slash-commands-codex-only FLAGS="--agents codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-no-alias FLAGS="--agents all --with-slash-commands https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-codex FLAGS="--agents claude,codex --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-slash-commands-opencode-only FLAGS="--agents opencode --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-opencode FLAGS="--agents claude,opencode --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-ssl-selfsign FLAGS="--ssl=selfsign"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs

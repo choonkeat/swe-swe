@@ -622,6 +622,8 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-slash-commands-codex-only", []string{"--agents", "codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-no-alias", []string{"--agents", "all", "--with-slash-commands", "https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-claude-codex", []string{"--agents", "claude,codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-opencode-only", []string{"--agents", "opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-claude-opencode", []string{"--agents", "claude,opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-ssl-selfsign", []string{"--ssl", "selfsign"}},
 		{"with-certs-no-certs", []string{}},
 		{"with-certs-node-extra-ca-certs", []string{}},
@@ -745,6 +747,8 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		{"with-slash-commands-codex-only", []string{"codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-no-alias", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-claude-codex", []string{"claude", "codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-opencode-only", []string{"opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-claude-opencode", []string{"claude", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-ssl-selfsign", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
 	}
 

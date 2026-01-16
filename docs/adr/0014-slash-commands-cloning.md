@@ -13,6 +13,7 @@ Users want to equip swe-swe containers with reusable slash commands (custom prom
 |-------|-------------------|--------|-----------------|
 | Claude Code | `~/.claude/commands/<namespace>/` | `.md` with YAML frontmatter | Yes |
 | OpenAI Codex | `~/.codex/prompts/<namespace>/` | `.md` with YAML frontmatter | Yes |
+| OpenCode | `~/.config/opencode/command/<namespace>/` | `.md` with YAML frontmatter | Yes |
 | Gemini CLI | `~/.gemini/commands/` | `.toml` | Yes |
 | Goose | n/a (uses `.goosehints`) | n/a | No |
 | Aider | n/a | n/a | No |
@@ -40,7 +41,7 @@ argument-hint: FILE=<path> SEVERITY=<level>
 Analyze $FILE for security vulnerabilities with severity $SEVERITY.
 ```
 
-**Key finding**: Claude and Codex both use `.md` files with YAML frontmatter (`---` delimiters). They share common fields (`description`, `argument-hint`) and both ignore unknown fields. A single `.md` file can work for both agents.
+**Key finding**: Claude, Codex, and OpenCode all use `.md` files with YAML frontmatter (`---` delimiters). They share common fields (`description`, `argument-hint`) and all ignore unknown fields. A single `.md` file can work for all three agents.
 
 **Gemini `.toml` format**:
 ```toml
@@ -63,7 +64,7 @@ Gemini requires a completely different format (`.toml` vs `.md`), making cross-c
 
 Add `--with-slash-commands` flag to `swe-swe init` that:
 
-1. **Supports Claude and Codex only** - Both use compatible `.md` format
+1. **Supports Claude, Codex, and OpenCode** - All use compatible `.md` format
 2. **Accepts space-separated git URLs** with optional alias prefix
 3. **Clones at build time** to `/tmp/slash-commands/<alias>/`
 4. **Copies at runtime** to agent home directories with correct permissions
@@ -80,11 +81,13 @@ Add `--with-slash-commands` flag to `swe-swe init` that:
 --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
 # → ~/.claude/commands/ck/
 # → ~/.codex/prompts/ck/
+# → ~/.config/opencode/command/ck/
 
 # Without alias - derives owner/repo from URL
 --with-slash-commands=https://github.com/choonkeat/slash-commands.git
 # → ~/.claude/commands/choonkeat/slash-commands/
 # → ~/.codex/prompts/choonkeat/slash-commands/
+# → ~/.config/opencode/command/choonkeat/slash-commands/
 
 # Multiple repos
 --with-slash-commands="ck@https://github.com/choonkeat/slash-commands.git https://github.com/org/team.git"
@@ -142,7 +145,7 @@ Trade-off: May fail if upstream force-pushes (rare for command repos). Users can
 
 **Good**:
 - Users get reusable slash commands across projects
-- Single repo can serve both Claude and Codex
+- Single repo can serve Claude, Codex, and OpenCode
 - Commands persist in volume, survive container rebuilds
 - Users can `git pull` inside container to update
 - Alias support for shorter command prefixes (e.g., `/ck:draft-pr` vs `/choonkeat/slash-commands:draft-pr`)
