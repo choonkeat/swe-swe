@@ -6,6 +6,8 @@ http:
     forwardauth:
       forwardAuth:
         address: "http://auth:4180/swe-swe-auth/verify"
+        # Trust X-Forwarded-* headers for proper URL handling
+        trustForwardHeader: true
 
   routers:
     # Traefik dashboard protected by ForwardAuth
