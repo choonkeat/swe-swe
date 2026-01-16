@@ -1,16 +1,8 @@
 # Traefik dynamic configuration for swe-swe
 
-# Optional: Basic auth middleware
-# To enable:
-# 1. Generate credentials: echo $(htpasswd -nB user password) | sed -e s/\\$/\\$\\$/g
-# 2. Update the 'users' list below with the generated string
-# 3. Uncomment the middleware reference in docker-compose.yml labels
 http:
   middlewares:
-    auth:
-      basicAuth:
-        users: []
-          # - "user:$$2y$$05$$YOUR_BCRYPT_HASH_HERE"
-          # Example: username 'admin', password 'admin'
-          # Generate with: docker run --rm httpd htpasswd -nB admin admin
-          # Then paste the output below as: "admin:$2y$05$..."
+    # ForwardAuth middleware for session-based authentication
+    forwardauth:
+      forwardAuth:
+        address: "http://auth:4180/swe-swe-auth/verify"
