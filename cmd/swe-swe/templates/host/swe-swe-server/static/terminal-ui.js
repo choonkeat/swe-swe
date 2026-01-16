@@ -155,17 +155,32 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__terminal.disconnected {
                     opacity: 0.5;
                 }
-                .terminal-ui__extra-keys {
+                /* Mobile Keyboard */
+                .mobile-keyboard {
                     display: flex;
-                    flex-wrap: wrap;
-                    gap: 4px;
-                    padding: 8px;
+                    flex-direction: column;
                     background: #2d2d2d;
                     border-top: 1px solid #404040;
                 }
-                .terminal-ui__extra-keys button {
+                .mobile-keyboard__main,
+                .mobile-keyboard__ctrl,
+                .mobile-keyboard__nav {
+                    display: flex;
+                    gap: 4px;
+                    padding: 8px;
+                }
+                .mobile-keyboard__ctrl,
+                .mobile-keyboard__nav {
+                    display: none;
+                    padding-top: 0;
+                }
+                .mobile-keyboard__ctrl.visible,
+                .mobile-keyboard__nav.visible {
+                    display: flex;
+                }
+                .mobile-keyboard button {
                     flex: 1;
-                    min-width: 40px;
+                    min-width: 44px;
                     padding: 12px 8px;
                     font-size: 14px;
                     font-family: monospace;
@@ -177,20 +192,60 @@ class TerminalUI extends HTMLElement {
                     touch-action: manipulation;
                     -webkit-tap-highlight-color: transparent;
                 }
-                .terminal-ui__extra-keys button:active {
+                .mobile-keyboard button:active {
                     background: #505050;
                 }
-                .terminal-ui__extra-keys button.modifier {
-                    /* No special background when inactive - matches other buttons */
+                /* Toggle button states */
+                .mobile-keyboard__toggle::after {
+                    content: '...';
                 }
-                .terminal-ui__extra-keys button.modifier.active {
+                .mobile-keyboard__toggle.active {
                     background: #007acc;
                     border-color: #007acc;
                 }
-                @media (min-width: 768px) {
-                    .terminal-ui__extra-keys {
-                        display: none;
-                    }
+                .mobile-keyboard__toggle.active::before {
+                    content: '■ ';
+                }
+                .mobile-keyboard__toggle.active::after {
+                    content: '';
+                }
+                /* Input bar */
+                .mobile-keyboard__input {
+                    display: flex;
+                    gap: 8px;
+                    padding: 8px;
+                    padding-top: 0;
+                }
+                .mobile-keyboard__text {
+                    flex: 1;
+                    padding: 10px 12px;
+                    font-size: 14px;
+                    font-family: monospace;
+                    background: #1e1e1e;
+                    color: #d4d4d4;
+                    border: 1px solid #505050;
+                    border-radius: 4px;
+                    outline: none;
+                }
+                .mobile-keyboard__text:focus {
+                    border-color: #007acc;
+                }
+                .mobile-keyboard__send {
+                    padding: 10px 16px;
+                    font-size: 14px;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: #007acc;
+                    color: #fff;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    min-width: 60px;
+                }
+                .mobile-keyboard__send:hover {
+                    background: #005a9e;
+                }
+                .mobile-keyboard__send:active {
+                    background: #004578;
                 }
                 .terminal-ui__status-bar {
                     display: flex;
