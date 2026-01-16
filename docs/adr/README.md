@@ -40,3 +40,4 @@ Bad: ...
 | [012](0012-enterprise-ssl-cert-handling.md) | Enterprise SSL certificate handling | Accepted |
 | [013](0013-docker-socket-mounting.md) | Docker socket mounting | Accepted |
 | [014](0014-slash-commands-cloning.md) | Slash commands cloning | Accepted |
+| [015](0015-chunked-websocket-snapshots.md) | Chunked WebSocket snapshots | Accepted |
