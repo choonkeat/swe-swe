@@ -37,7 +37,7 @@ var assistantConfigs = []AssistantConfig{
 	{Name: "Claude", ShellCmd: "claude", ShellRestartCmd: "claude --continue", Binary: "claude"},
 	{Name: "Gemini", ShellCmd: "gemini", ShellRestartCmd: "gemini --resume", Binary: "gemini"},
 	{Name: "Codex", ShellCmd: "codex", ShellRestartCmd: "codex resume --last", Binary: "codex"},
-	{Name: "Goose", ShellCmd: "goose run --interactive --text ready", ShellRestartCmd: "goose run --resume", Binary: "goose"},
+	{Name: "Goose", ShellCmd: "goose session", ShellRestartCmd: "goose session -r", Binary: "goose"},
 	{Name: "Aider", ShellCmd: "aider", ShellRestartCmd: "aider --restore-chat-history", Binary: "aider"},
 }
 ```

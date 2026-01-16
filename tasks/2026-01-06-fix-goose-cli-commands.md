@@ -38,7 +38,7 @@ The Goose assistant configuration in `cmd/swe-swe/templates/host/swe-swe-server/
 
 ---
 
-## Phase 2: Update the research documentation
+## Phase 2: Update the research documentation ✅
 
 ### What will be achieved
 The research document will have its example code snippet corrected to match the actual implementation.
