@@ -81,13 +81,13 @@ Implement auto-cleanup for recordings with a "Recent vs Kept" model:
 
 ## Phase 4: UI updates - Update homepage to show Recent vs Kept sections
 
-- [ ] Step 4.1: Update `RecordingInfo` struct to include `IsKept bool`
-- [ ] Step 4.2: Update `loadEndedRecordings()` to set `IsKept` based on `KeptAt != nil`
-- [ ] Step 4.3: Update `AgentWithSessions` to have `RecentRecordings` and `KeptRecordings` fields
-- [ ] Step 4.4: Update homepage handler to populate both recording lists
-- [ ] Step 4.5: Update `selection.html` template with Recent and Kept sections
-- [ ] Step 4.6: Add JavaScript `keepRecording(uuid, button)` function
-- [ ] Step 4.7: Update CSS for any new elements
+- [x] Step 4.1: Update `RecordingInfo` struct to include `IsKept bool`
+- [x] Step 4.2: Update `loadEndedRecordings()` to set `IsKept` based on `KeptAt != nil`
+- [x] Step 4.3: Update `AgentWithSessions` to have `RecentRecordings` and `KeptRecordings` fields
+- [x] Step 4.4: Update homepage handler to populate both recording lists
+- [x] Step 4.5: Update `selection.html` template with Recent and Kept sections
+- [x] Step 4.6: Add JavaScript `keepRecording(uuid, button)` function
+- [x] Step 4.7: Update CSS for any new elements
 
 ### Verification
 - Manual testing via browser

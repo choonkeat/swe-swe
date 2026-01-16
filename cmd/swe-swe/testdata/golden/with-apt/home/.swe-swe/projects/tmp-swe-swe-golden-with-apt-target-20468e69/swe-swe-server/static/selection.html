@@ -315,7 +315,7 @@
             border-color: #ef4444;
             background: rgba(239, 68, 68, 0.1);
         }
-        /* Conflict warning dialog */
+/* Conflict warning dialog */
         .conflict-dialog-overlay {
             display: none;
             position: fixed;
@@ -387,6 +387,41 @@
             background: #b45309;
             border-color: #b45309;
         }
+        .recording-item__keep {
+            padding: 4px 8px;
+            font-size: 12px;
+            color: #888;
+            background: none;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .recording-item__keep:hover {
+            color: #22c55e;
+            border-color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+        .recordings-section {
+            margin-top: 8px;
+            padding-left: 8px;
+            border-left: 2px solid #404040;
+            margin-left: 8px;
+        }
+        .recordings-section__label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            padding: 4px 0;
+        }
+        .recordings-section--recent .recordings-section__label {
+            color: #888;
+        }
+        .recordings-section--kept .recordings-section__label {
+            color: #22c55e;
+        }
     </style>
 </head>
 <body>
@@ -430,20 +465,40 @@
                         <span class="session-item__duration">{{.DurationStr}}</span>
                     </a>
                     {{end}}
-                    {{range .Recordings}}
-                    <div class="recording-item" data-uuid="{{.UUID}}">
-                        <span class="recording-item__name">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
-                        <span class="recording-item__time">{{.EndedAgo}}</span>
-                        <div class="recording-item__actions">
-                            <a href="/recording/{{.UUID}}" class="recording-item__play">View</a>
-                            <button class="recording-item__delete" onclick="deleteRecording('{{.UUID}}', this)">Delete</button>
-                        </div>
-                    </div>
-                    {{end}}
                     <a href="#" onclick="startNewSession('{{.Assistant.Binary}}', '{{$.NewUUID}}', {{$.Debug}}); return false;" class="new-session">
                         <span class="new-session__icon">+</span>
                         <span class="new-session__text">Start new session</span>
                     </a>
+                    {{if .RecentRecordings}}
+                    <div class="recordings-section recordings-section--recent">
+                        <div class="recordings-section__label">Recent (auto-deletes after 1h)</div>
+                        {{range .RecentRecordings}}
+                        <div class="recording-item" data-uuid="{{.UUID}}">
+                            <span class="recording-item__name">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
+                            <span class="recording-item__time">{{.EndedAgo}}</span>
+                            <div class="recording-item__actions">
+                                <a href="/recording/{{.UUID}}" class="recording-item__play">View</a>
+                                <button class="recording-item__keep" onclick="keepRecording('{{.UUID}}', this)">Keep</button>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                    {{end}}
+                    {{if .KeptRecordings}}
+                    <div class="recordings-section recordings-section--kept">
+                        <div class="recordings-section__label">Kept</div>
+                        {{range .KeptRecordings}}
+                        <div class="recording-item recording-item--kept" data-uuid="{{.UUID}}">
+                            <span class="recording-item__name">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
+                            <span class="recording-item__time">{{.EndedAgo}}</span>
+                            <div class="recording-item__actions">
+                                <a href="/recording/{{.UUID}}" class="recording-item__play">View</a>
+                                <button class="recording-item__delete" onclick="deleteRecording('{{.UUID}}', this)">Delete</button>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                    {{end}}
                 </div>
             </div>
             {{end}}
@@ -614,6 +669,57 @@
                     }
                 } else {
                     alert('Failed to delete recording');
+                }
+            }).catch(function(err) {
+                alert('Error: ' + err.message);
+            });
+        }
+
+        function keepRecording(uuid, button) {
+            fetch('/api/recording/' + uuid + '/keep', {
+                method: 'POST'
+            }).then(function(response) {
+                if (response.ok) {
+                    // Move the recording item from Recent to Kept section
+                    var item = button.closest('.recording-item');
+                    var agentGroup = button.closest('.agent-group');
+                    var recentSection = button.closest('.recordings-section--recent');
+
+                    if (item && agentGroup) {
+                        // Find or create the Kept section
+                        var keptSection = agentGroup.querySelector('.recordings-section--kept');
+                        if (!keptSection) {
+                            keptSection = document.createElement('div');
+                            keptSection.className = 'recordings-section recordings-section--kept';
+                            keptSection.innerHTML = '<div class="recordings-section__label">Kept</div>';
+                            // Insert after Recent section or at the end of agent-group__sessions
+                            var sessionsDiv = agentGroup.querySelector('.agent-group__sessions');
+                            if (sessionsDiv) {
+                                sessionsDiv.appendChild(keptSection);
+                            }
+                        }
+
+                        // Transform the item: change Keep button to Delete button
+                        var keepBtn = item.querySelector('.recording-item__keep');
+                        if (keepBtn) {
+                            var deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'recording-item__delete';
+                            deleteBtn.textContent = 'Delete';
+                            deleteBtn.onclick = function() { deleteRecording(uuid, deleteBtn); };
+                            keepBtn.replaceWith(deleteBtn);
+                        }
+                        item.classList.add('recording-item--kept');
+
+                        // Move to Kept section
+                        keptSection.appendChild(item);
+
+                        // Remove Recent section if empty
+                        if (recentSection && recentSection.querySelectorAll('.recording-item').length === 0) {
+                            recentSection.remove();
+                        }
+                    }
+                } else {
+                    alert('Failed to keep recording');
                 }
             }).catch(function(err) {
                 alert('Error: ' + err.message);
