@@ -72,6 +72,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-apt FLAGS="--apt-get-install vim,curl"
 	@$(MAKE) _golden-variant NAME=with-npm FLAGS="--npm-install typescript"
 	@$(MAKE) _golden-variant NAME=with-both-packages FLAGS="--apt-get-install vim --npm-install typescript"
+	@$(MAKE) _golden-variant NAME=with-docker FLAGS="--with-docker"
 	@rm -f /tmp/swe-swe-golden
 	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
 
