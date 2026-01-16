@@ -95,16 +95,19 @@ golden-update: build-cli
 _golden-variant:
 	@rm -rf $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
 	@mkdir -p $(GOLDEN_TESTDATA)/$(NAME)/home $(GOLDEN_TESTDATA)/$(NAME)/target
-	@HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --project-directory /tmp/swe-swe-golden/$(NAME)/target \
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/$(NAME)/home $(SWE_SWE_CLI) init $(FLAGS) --project-directory /tmp/swe-swe-golden/$(NAME)/target \
 		2> $(GOLDEN_TESTDATA)/$(NAME)/stderr.txt || true
 
 # Multi-step golden test: init with flags, then reuse to verify config is restored
 _golden-previous-init-flags-reuse:
 	@rm -rf $(GOLDEN_TESTDATA)/previous-init-flags-reuse/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse/target
 	@mkdir -p $(GOLDEN_TESTDATA)/previous-init-flags-reuse/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse/target
-	@HOME=/tmp/swe-swe-golden/previous-init-flags-reuse/home $(SWE_SWE_CLI) init --agents=claude --with-docker --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse/target \
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse/home $(SWE_SWE_CLI) init --agents=claude --with-docker --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse/target \
 		2> /dev/null || true
-	@HOME=/tmp/swe-swe-golden/previous-init-flags-reuse/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse/target \
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse/target \
 		2> $(GOLDEN_TESTDATA)/previous-init-flags-reuse/stderr.txt || true
 
 # Multi-step golden test: init with flags, then ignore to verify config is overwritten
