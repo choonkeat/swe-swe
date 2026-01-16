@@ -77,6 +77,7 @@ Init Options:
   --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose (default: all)
   --exclude AGENTS                       Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
+  --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
   --list-agents                          List available agents and exit
   --update-binary-only                   Update only the binary, skip templates
 
@@ -95,7 +96,8 @@ Examples:
   swe-swe init --agents=claude                   Initialize with Claude only (minimal)
   swe-swe init --agents=claude,gemini            Initialize with Claude and Gemini
   swe-swe init --exclude=aider,goose             Initialize without Aider and Goose
-  swe-swe init --apt-get-install="vim htop"      Add custom packages
+  swe-swe init --apt-get-install="vim htop"      Add custom apt packages
+  swe-swe init --npm-install="typescript tsx"    Add custom npm packages
   swe-swe init --list-agents                     Show available agents
   swe-swe up                                     Start all services
   swe-swe up chrome                              Start only chrome (and dependencies)
@@ -196,8 +198,8 @@ func agentInList(agent string, list []string) bool {
 }
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
-// based on selected agents and custom apt packages
-func processDockerfileTemplate(content string, agents []string, aptPackages string) string {
+// based on selected agents, custom apt packages, and custom npm packages
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -237,6 +239,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages stri
 				skip = !hasAgent("goose")
 			case "APT_PACKAGES":
 				skip = aptPackages == ""
+			case "NPM_PACKAGES":
+				skip = npmPackages == ""
 			}
 			continue
 		}
@@ -250,6 +254,13 @@ func processDockerfileTemplate(content string, agents []string, aptPackages stri
 		if strings.Contains(line, "{{APT_PACKAGES}}") {
 			if aptPackages != "" {
 				line = strings.ReplaceAll(line, "{{APT_PACKAGES}}", aptPackages)
+			}
+		}
+
+		// Handle NPM_PACKAGES placeholder
+		if strings.Contains(line, "{{NPM_PACKAGES}}") {
+			if npmPackages != "" {
+				line = strings.ReplaceAll(line, "{{NPM_PACKAGES}}", npmPackages)
 			}
 		}
 
@@ -268,6 +279,7 @@ func handleInit() {
 	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose) or 'all'")
 	excludeFlag := fs.String("exclude", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
+	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	listAgents := fs.Bool("list-agents", false, "List available agents and exit")
 	fs.Parse(os.Args[2:])
 
@@ -295,6 +307,10 @@ func handleInit() {
 	// Normalize apt packages (replace commas with spaces for apt-get)
 	aptPkgs := strings.ReplaceAll(*aptPackages, ",", " ")
 	aptPkgs = strings.TrimSpace(aptPkgs)
+
+	// Normalize npm packages (replace commas with spaces for npm install)
+	npmPkgs := strings.ReplaceAll(*npmPackages, ",", " ")
+	npmPkgs = strings.TrimSpace(npmPkgs)
 
 	// Create directory if it doesn't exist
 	absPath, err := filepath.Abs(*path)
@@ -365,6 +381,9 @@ func handleInit() {
 		if aptPkgs != "" {
 			fmt.Printf("Additional apt packages: %s\n", aptPkgs)
 		}
+		if npmPkgs != "" {
+			fmt.Printf("Additional npm packages: %s\n", npmPkgs)
+		}
 
 		for _, hostFile := range hostFiles {
 			content, err := assets.ReadFile(hostFile)
@@ -374,7 +393,7 @@ func handleInit() {
 
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs))
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs))
 			}
 
 			// Calculate destination path, preserving subdirectories
