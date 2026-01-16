@@ -242,8 +242,8 @@ func agentInList(agent string, list []string) bool {
 }
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
-// based on selected agents, custom apt packages, and custom npm packages
-func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string) string {
+// based on selected agents, custom apt packages, custom npm packages, and Docker access
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -285,6 +285,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = aptPackages == ""
 			case "NPM_PACKAGES":
 				skip = npmPackages == ""
+			case "DOCKER":
+				skip = !withDocker
 			}
 			continue
 		}
@@ -323,6 +325,7 @@ func handleInit() {
 	excludeFlag := fs.String("exclude", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
+	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	listAgents := fs.Bool("list-agents", false, "List available agents and exit")
 	fs.Parse(os.Args[2:])
 
@@ -448,6 +451,9 @@ func handleInit() {
 		if npmPkgs != "" {
 			fmt.Printf("Additional npm packages: %s\n", npmPkgs)
 		}
+		if *withDocker {
+			fmt.Println("Docker access: enabled (container can run Docker commands on host)")
+		}
 
 		for _, hostFile := range hostFiles {
 			content, err := assets.ReadFile(hostFile)
@@ -457,7 +463,7 @@ func handleInit() {
 
 			// Process Dockerfile template with conditional sections
 			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs))
+				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker))
 			}
 
 			// Calculate destination path, preserving subdirectories
