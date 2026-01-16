@@ -208,15 +208,15 @@ func handlePassthrough(command string, args []string) {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options] [services...] [-- docker-args...]
+	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options]
 
 Commands:
-  init [options]                               Initialize a new swe-swe project
-  up [--project-directory PATH] [services...]  Start the swe-swe environment (or specific services)
-  down [--project-directory PATH] [services...] Stop the swe-swe environment (or specific services)
-  build [--project-directory PATH] [services...] Rebuild Docker images (fresh build, no cache)
-  list                                         List all initialized swe-swe projects (auto-prunes missing paths)
-  help                                         Show this help message
+  init [options]                         Initialize a new swe-swe project
+  list                                   List all initialized swe-swe projects (auto-prunes missing paths)
+  <docker-compose-command>               Any docker compose command (up, down, build, ps, logs, exec, etc.)
+
+Global Option:
+  --project-directory PATH               Project directory (defaults to current directory)
 
 Init Options:
   --project-directory PATH               Project directory (defaults to current directory)
@@ -251,10 +251,14 @@ Examples:
                                                  Clone slash commands for Claude/Codex
   swe-swe init --list-agents                     Show available agents
   swe-swe up                                     Start all services
-  swe-swe up chrome                              Start only chrome (and dependencies)
-  swe-swe down chrome                            Stop only chrome
-  swe-swe build chrome                           Rebuild only chrome image
-  swe-swe down -- --remove-orphans               Pass extra args to docker compose
+  swe-swe up -d                                  Start all services in background
+  swe-swe down                                   Stop all services
+  swe-swe down --remove-orphans                  Stop and remove orphan containers
+  swe-swe ps                                     List running containers
+  swe-swe logs -f swe-swe                        Follow logs for swe-swe service
+  swe-swe exec swe-swe bash                      Open shell in swe-swe container
+  swe-swe build --no-cache                       Rebuild all images without cache
+  swe-swe --project-directory /path up           Run command for project at /path
 
 Environment Variables:
   SWE_SWE_PASSWORD                       VSCode password (defaults to changeme)
