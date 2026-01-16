@@ -1,0 +1,128 @@
+# Homepage Active Sessions Feature
+
+## Goal
+
+Enhance the homepage (`selection.html`) to display a unified list of agents with their active sessions, replacing the current agent-only grid.
+
+**Display for each agent:**
+- Active sessions (UUID, connected users, duration)
+- "Start new session" action
+
+**Example layout:**
+```
+🧠 Claude (2 sessions)
+   abc12 │ 2 viewers │ 5m ago    [Join]
+   def34 │ 1 viewer  │ 1h ago    [Join]
+   + Start new session
+
+✨ Gemini
+   + Start new session
+
+🛠 Aider (1 session)
+   ghi56 │ 0 viewers │ 30m ago   [Join]
+   + Start new session
+```
+
+---
+
+## Phase 1: Backend Data Model ✅
+
+### What will be achieved
+Add a `CreatedAt` field to the Session struct so we can display how long each session has been running.
+
+### Steps
+- [x] Add `CreatedAt time.Time` field to the `Session` struct (line 92-105 in main.go)
+- [x] Set `CreatedAt: time.Now()` when creating the session in `getOrCreateSession()` (around line 795)
+
+### Verification
+- [x] **Build check**: Run `go build` to ensure no compile errors
+- [x] **Existing tests**: Run `go test ./...` to verify no regressions
+- [x] **Manual check**: The field is only used for display - existing functionality unchanged
+
+---
+
+## Phase 2: Template Data
+
+### What will be achieved
+The `/` handler will pass active session information to the template, **filtering out sessions where the process has exited**.
+
+### Steps
+1. Create structs for template data:
+   ```go
+   type SessionInfo struct {
+       UUID          string
+       UUIDShort     string
+       Assistant     string        // binary name for URL
+       AssistantName string
+       ClientCount   int
+       CreatedAt     time.Time
+   }
+
+   type AgentWithSessions struct {
+       Assistant AssistantConfig
+       Sessions  []SessionInfo  // sorted by CreatedAt desc
+   }
+   ```
+
+2. In the `/` handler:
+   - Lock `sessionsMu.RLock()`
+   - Iterate over `sessions` map
+   - **Skip sessions where `sess.Cmd.ProcessState != nil`** (process exited)
+   - Group sessions by assistant
+   - Sort sessions within each group by `CreatedAt` desc (most recent first)
+   - Unlock
+
+3. Build `[]AgentWithSessions` for all available assistants (including those with no sessions)
+
+4. Update template data struct:
+   ```go
+   data := struct {
+       Agents  []AgentWithSessions
+       NewUUID string
+   }{...}
+   ```
+
+### Verification
+1. **Build check**: `go build`
+2. **Existing tests**: `go test ./...`
+3. **Manual check**:
+   - Start a session, refresh homepage → session appears under agent
+   - Exit the process cleanly → refresh homepage → session gone
+
+---
+
+## Phase 3: Frontend Template - Unified Layout
+
+### What will be achieved
+Replace the current agent grid with a unified list grouped by agent, showing active sessions and a "Start new session" action for each agent.
+
+### Steps
+1. Replace the grid layout in `selection.html` with grouped list:
+   - For each agent: show icon + name + session count (only if > 0)
+   - For each session under agent: UUID short, viewer count, duration, join link
+   - Always show "+ Start new session" link at bottom of each agent group
+
+2. Update CSS:
+   - Remove grid styles (or repurpose)
+   - Add styles for grouped list layout (indented sessions, hover states)
+   - Keep dark theme consistency
+
+3. Duration formatting in template (e.g., "5m ago", "1h 23m ago")
+
+### Verification
+1. **No sessions anywhere**: Each agent shows just "+ Start new session"
+2. **Sessions exist**: Agent groups show session count, sessions listed with details
+3. **Join existing**: Clicking session joins it (viewer count increases)
+4. **Start new**: Clicking "Start new session" creates new UUID
+5. **Order**: Sessions within agent sorted by most recent first
+6. **Visual**: Clean, readable, consistent with dark theme
+
+---
+
+## Design Decisions
+
+1. **No API endpoint**: Data rendered server-side directly in template
+2. **No JavaScript polling**: Users refresh page manually for updates
+3. **Filter dead sessions**: Sessions with exited processes (`Cmd.ProcessState != nil`) are not shown
+4. **Unified layout**: Single list grouped by agent instead of separate "agents" and "sessions" sections
+5. **Always expanded**: No collapse/expand functionality (no JS required)

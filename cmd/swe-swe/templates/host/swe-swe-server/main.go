@@ -99,6 +99,7 @@ type Session struct {
 	clientSizes     map[*websocket.Conn]TermSize
 	mu              sync.RWMutex
 	writeMu         sync.Mutex     // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
+	CreatedAt       time.Time      // when the session was created
 	lastActive      time.Time
 	vt              vt10x.Terminal // virtual terminal for screen state tracking
 	vtMu            sync.Mutex     // separate mutex for VT operations
@@ -800,6 +801,7 @@ func getOrCreateSession(sessionUUID string, assistant string) (*Session, bool, e
 		PTY:             ptmx,
 		clients:         make(map[*websocket.Conn]bool),
 		clientSizes:     make(map[*websocket.Conn]TermSize),
+		CreatedAt:       time.Now(),
 		lastActive:      time.Now(),
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 	}
