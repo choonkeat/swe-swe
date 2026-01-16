@@ -1,13 +1,6 @@
 .PHONY: build run stop test clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean
 
-build: build-server build-cli
-
-build-server:
-	mkdir -p ./cmd/swe-swe/bin
-	GOOS=linux GOARCH=amd64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.linux-amd64 ./cmd/swe-swe-server
-	GOOS=linux GOARCH=arm64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.linux-arm64 ./cmd/swe-swe-server
-	GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.darwin-amd64 ./cmd/swe-swe-server
-	GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.Version=$$(git rev-parse --short HEAD)" -o ./cmd/swe-swe/bin/swe-swe-server.darwin-arm64 ./cmd/swe-swe-server
+build: build-cli
 
 RUN_ARGS ?=
 run:
@@ -28,7 +21,7 @@ SWE_SWE_CLI := ./dist/swe-swe
 
 $(SWE_SWE_CLI): build-cli
 
-swe-swe-init: build-server $(SWE_SWE_CLI)
+swe-swe-init: $(SWE_SWE_CLI)
 	$(SWE_SWE_CLI) init --path $(SWE_SWE_PATH)
 
 swe-swe-test: swe-swe-init
@@ -36,10 +29,10 @@ swe-swe-test: swe-swe-init
 	@echo "✓ docker-compose.yml is valid"
 	@test -f $(SWE_SWE_PATH)/.swe-swe/Dockerfile && echo "✓ Dockerfile exists"
 	@test -f $(SWE_SWE_PATH)/.swe-swe/traefik-dynamic.yml && echo "✓ traefik-dynamic.yml exists"
-	@test -f $(SWE_SWE_PATH)/.swe-swe/bin/swe-swe-server && echo "✓ swe-swe-server binary exists"
+	@test -d $(SWE_SWE_PATH)/.swe-swe/swe-swe-server && echo "✓ swe-swe-server source exists"
 	@test -d $(SWE_SWE_PATH)/.swe-swe/home && echo "✓ home directory exists"
 	cd $(SWE_SWE_PATH) && docker-compose -f .swe-swe/docker-compose.yml build --no-cache
-	@echo "✓ docker-compose build successful (swe-swe-server image built)"
+	@echo "✓ docker-compose build successful"
 
 swe-swe-run: swe-swe-init
 	$(SWE_SWE_CLI) run --path $(SWE_SWE_PATH)

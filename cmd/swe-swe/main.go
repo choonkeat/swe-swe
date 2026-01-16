@@ -16,7 +16,7 @@ import (
 	"syscall"
 )
 
-//go:embed all:templates bin/*
+//go:embed all:templates
 var assets embed.FS
 
 // splitAtDoubleDash splits args at "--" separator
@@ -93,8 +93,6 @@ func main() {
 		handleDown()
 	case "build":
 		handleBuild()
-	case "update":
-		handleUpdate()
 	case "list":
 		handleList()
 	case "help":
@@ -114,7 +112,6 @@ Commands:
   up [--path PATH] [services...]         Start the swe-swe environment (or specific services)
   down [--path PATH] [services...]       Stop the swe-swe environment (or specific services)
   build [--path PATH] [services...]      Rebuild Docker images (fresh build, no cache)
-  update [--path PATH]                   Update swe-swe-server binary in existing project
   list                                   List all initialized swe-swe projects (auto-prunes missing paths)
   help                                   Show this help message
 
@@ -125,7 +122,6 @@ Init Options:
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
   --list-agents                          List available agents and exit
-  --update-binary-only                   Update only the binary, skip templates
 
 Available Agents:
   claude   - Claude Code (requires Node.js)
@@ -323,7 +319,6 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("path", ".", "Path to initialize")
-	updateBinaryOnly := fs.Bool("update-binary-only", false, "Update only the binary, skip templates (for existing projects)")
 	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose) or 'all'")
 	excludeFlag := fs.String("exclude", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
@@ -407,11 +402,9 @@ func handleInit() {
 		log.Fatalf("Failed to write path file: %v", err)
 	}
 
-	// Skip template extraction if --update-binary-only flag is set
-	if !*updateBinaryOnly {
-		// Extract embedded files
-		// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
-		hostFiles := []string{
+	// Extract embedded files
+	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
+	hostFiles := []string{
 			"templates/host/Dockerfile",
 			"templates/host/docker-compose.yml",
 			"templates/host/traefik-dynamic.yml",
@@ -425,6 +418,15 @@ func handleInit() {
 			"templates/host/auth/Dockerfile",
 			"templates/host/auth/go.mod.txt",
 			"templates/host/auth/main.go",
+			"templates/host/swe-swe-server/go.mod.txt",
+			"templates/host/swe-swe-server/go.sum.txt",
+			"templates/host/swe-swe-server/main.go",
+			"templates/host/swe-swe-server/static/index.html",
+			"templates/host/swe-swe-server/static/selection.html",
+			"templates/host/swe-swe-server/static/terminal-ui.js",
+			"templates/host/swe-swe-server/static/xterm-addon-fit.js",
+			"templates/host/swe-swe-server/static/xterm.css",
+			"templates/host/swe-swe-server/static/xterm.js",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)
@@ -460,8 +462,9 @@ func handleInit() {
 
 			// Calculate destination path, preserving subdirectories
 			relPath := strings.TrimPrefix(hostFile, "templates/host/")
-			// Rename go.mod.txt back to go.mod (workaround for go:embed excluding go.mod files)
-			if strings.HasSuffix(relPath, "go.mod.txt") {
+			// Rename go.mod.txt and go.sum.txt back to go.mod/go.sum
+			// (workaround for go:embed excluding go.mod files)
+			if strings.HasSuffix(relPath, "go.mod.txt") || strings.HasSuffix(relPath, "go.sum.txt") {
 				relPath = strings.TrimSuffix(relPath, ".txt")
 			}
 			destPath := filepath.Join(sweDir, relPath)
@@ -507,43 +510,8 @@ func handleInit() {
 			fmt.Printf("Created %s\n", destPath)
 		}
 
-		// Handle enterprise certificates
-		handleCertificates(sweDir, certsDir)
-	} else {
-		fmt.Printf("Skipping templates (--update-binary-only mode)\n")
-	}
-
-	// Extract swe-swe-server binary from embedded assets
-	// For Docker container (always Linux)
-	arch := runtime.GOARCH
-	if arch == "amd64" {
-		arch = "amd64"
-	} else if arch == "arm64" {
-		arch = "arm64"
-	} else {
-		arch = "amd64" // fallback to amd64
-	}
-
-	// Try to extract the binary for this architecture, fallback to amd64
-	embeddedBinaryPath := fmt.Sprintf("bin/swe-swe-server.linux-%s", arch)
-	binaryData, err := assets.ReadFile(embeddedBinaryPath)
-	if err != nil {
-		if arch != "amd64" {
-			// Try amd64 fallback
-			embeddedBinaryPath = "bin/swe-swe-server.linux-amd64"
-			binaryData, err = assets.ReadFile(embeddedBinaryPath)
-		}
-		if err != nil {
-			log.Fatalf("Failed to find swe-swe-server binary in embedded assets: %v", err)
-		}
-	}
-
-	// Write binary to metadata/bin/swe-swe-server
-	serverPath := filepath.Join(binDir, "swe-swe-server")
-	if err := os.WriteFile(serverPath, binaryData, 0755); err != nil {
-		log.Fatalf("Failed to extract swe-swe-server binary: %v", err)
-	}
-	fmt.Printf("Extracted %s\n", serverPath)
+	// Handle enterprise certificates
+	handleCertificates(sweDir, certsDir)
 
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")
@@ -587,32 +555,6 @@ func handleUp() {
 
 	// Default port for Traefik service
 	port := 9899
-
-	// Extract swe-swe-server binary from embedded assets to .swe-swe/bin/
-	binDir := filepath.Join(sweDir, "bin")
-	if err := os.MkdirAll(binDir, 0755); err != nil {
-		log.Fatalf("Failed to create bin directory: %v", err)
-	}
-
-	// Always use Linux binary for Docker container
-	// Match architecture of the host machine (for cross-compile compatibility)
-	var embeddedPath string
-	if runtime.GOARCH == "arm64" {
-		embeddedPath = "bin/swe-swe-server.linux-arm64"
-	} else {
-		embeddedPath = "bin/swe-swe-server.linux-amd64"
-	}
-
-	// Extract binary from embedded assets
-	binaryData, err := assets.ReadFile(embeddedPath)
-	if err != nil {
-		log.Fatalf("Failed to extract swe-swe-server binary from assets: %v", err)
-	}
-
-	serverDest := filepath.Join(binDir, "swe-swe-server")
-	if err := os.WriteFile(serverDest, binaryData, 0755); err != nil {
-		log.Fatalf("Failed to write swe-swe-server binary: %v", err)
-	}
 
 	composeFile := filepath.Join(sweDir, "docker-compose.yml")
 	if len(services) > 0 {
@@ -907,124 +849,6 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, data, 0644)
-}
-
-func handleUpdate() {
-	fs := flag.NewFlagSet("update", flag.ExitOnError)
-	path := fs.String("path", ".", "Path to update")
-	fs.Parse(os.Args[2:])
-
-	if *path == "" {
-		*path = "."
-	}
-
-	absPath, err := filepath.Abs(*path)
-	if err != nil {
-		log.Fatalf("Failed to resolve path: %v", err)
-	}
-
-	// Get metadata directory
-	sweDir, err := getMetadataDir(absPath)
-	if err != nil {
-		log.Fatalf("Failed to compute metadata directory: %v", err)
-	}
-
-	// Check if metadata directory exists
-	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
-		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
-	}
-
-	binDir := filepath.Join(sweDir, "bin")
-	projectBinaryPath := filepath.Join(binDir, "swe-swe-server")
-
-	// Get CLI binary path
-	cliExePath, err := os.Executable()
-	if err != nil {
-		log.Fatalf("Failed to get CLI executable path: %v", err)
-	}
-
-	// Determine which architecture to use (same logic as init)
-	arch := runtime.GOARCH
-	if arch == "amd64" {
-		arch = "amd64"
-	} else if arch == "arm64" {
-		arch = "arm64"
-	} else {
-		arch = "amd64" // fallback to amd64
-	}
-
-	cliDir := filepath.Dir(cliExePath)
-	cliBinaryPath := filepath.Join(cliDir, fmt.Sprintf("swe-swe-server.linux-%s", arch))
-
-	// Check if the binary exists, fallback to amd64 if arm64 not found
-	if _, err := os.Stat(cliBinaryPath); os.IsNotExist(err) {
-		if arch != "amd64" {
-			cliBinaryPath = filepath.Join(cliDir, "swe-swe-server.linux-amd64")
-		}
-		if _, err := os.Stat(cliBinaryPath); os.IsNotExist(err) {
-			log.Fatalf("Failed to find swe-swe-server binary in %s", cliDir)
-		}
-	}
-
-	// Compare versions
-	needsUpdate, oldVersion, newVersion, err := compareBinaryVersions(cliBinaryPath, projectBinaryPath)
-	if err != nil {
-		log.Fatalf("Failed to compare versions: %v", err)
-	}
-
-	if !needsUpdate {
-		fmt.Printf("swe-swe-server is already up to date (%s)\n", oldVersion)
-		return
-	}
-
-	fmt.Printf("Updating swe-swe-server from %s to %s\n", oldVersion, newVersion)
-
-	// Copy new binary to project
-	if err := copyFile(cliBinaryPath, projectBinaryPath); err != nil {
-		log.Fatalf("Failed to copy swe-swe-server binary: %v", err)
-	}
-
-	// Make it executable
-	if err := os.Chmod(projectBinaryPath, 0755); err != nil {
-		log.Fatalf("Failed to make binary executable: %v", err)
-	}
-
-	fmt.Printf("Successfully updated swe-swe-server\n")
-	fmt.Printf("Run: swe-swe up --path %s\n", absPath)
-}
-
-// getBinaryVersion executes a binary with --version flag and returns the version string
-// Returns "unknown" if version cannot be determined
-func getBinaryVersion(binaryPath string) string {
-	cmd := exec.Command(binaryPath, "--version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "unknown"
-	}
-	version := strings.TrimSpace(string(output))
-	if version == "" {
-		return "unknown"
-	}
-	return version
-}
-
-// compareBinaryVersions compares versions of CLI binary and project binary
-// Returns (needsUpdate, oldVersion, newVersion, error)
-func compareBinaryVersions(cliBinaryPath, projectBinaryPath string) (bool, string, string, error) {
-	// Get new version from CLI binary
-	newVersion := getBinaryVersion(cliBinaryPath)
-
-	// Get old version from project binary (only if it exists)
-	oldVersion := "unknown"
-	if _, err := os.Stat(projectBinaryPath); err == nil {
-		oldVersion = getBinaryVersion(projectBinaryPath)
-	}
-
-	// For now, simple string comparison
-	// If versions differ, we need an update
-	needsUpdate := newVersion != oldVersion && newVersion != "unknown"
-
-	return needsUpdate, oldVersion, newVersion, nil
 }
 
 // sanitizePath converts an absolute path into a sanitized directory name suitable
