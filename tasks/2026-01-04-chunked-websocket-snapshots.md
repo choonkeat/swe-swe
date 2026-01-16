@@ -8,18 +8,19 @@
 
 ---
 
-## Phase 1: Server - Increase VT buffer & add compression
+## Phase 1: Server - Increase VT buffer & add compression ✅ DONE
 
 ### What will be achieved
 The vt10x terminal emulator will maintain 500KB of scrollback buffer (up from current size), and snapshot generation will include gzip compression.
 
 ### Steps
 
-1. **Locate vt10x initialization** in `main.go` - find where `vt10x.New()` is called and current buffer size
-2. **Increase scrollback buffer** - Configure vt10x for 500KB (~5000+ lines depending on terminal width)
-3. **Add gzip compression helper** - Create `compressSnapshot(data []byte) ([]byte, error)` function using `compress/gzip`
-4. **Modify `GenerateSnapshot()`** - Return compressed data, update callers to handle compressed format
-5. **Add compression stats logging** - Log original size, compressed size, ratio for debugging
+1. ✅ **Locate vt10x initialization** in `main.go` - find where `vt10x.New()` is called and current buffer size
+2. ⚠️ **Increase scrollback buffer** - Note: vt10x doesn't support true scrollback buffer; it maintains the current screen state only. The chunking protocol (Phase 2) enables reliable transmission of whatever size the screen buffer is.
+3. ✅ **Add gzip compression helper** - Created `compressSnapshot(data []byte) ([]byte, error)` function using `compress/gzip`
+4. ✅ **Modify `GenerateSnapshot()`** - Returns compressed data, added compression stats logging
+5. ✅ **Add compression stats logging** - Logs "Snapshot compressed: X -> Y bytes (Z%)"
+6. ✅ **Add chunk protocol constants** - ChunkMarker (0x02), DefaultChunkSize (8192), MinChunkSize (512)
 
 ### Verification (TDD style)
 

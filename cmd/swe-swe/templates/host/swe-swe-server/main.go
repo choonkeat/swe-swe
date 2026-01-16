@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -41,6 +42,17 @@ var upgrader = websocket.Upgrader{
 		return true // Allow all origins for development
 	},
 }
+
+// Chunked WebSocket constants for iOS Safari compatibility
+// See: research/2026-01-04-ios-safari-websocket-chunking.md
+const (
+	// ChunkMarker identifies a chunked binary message (0x02)
+	ChunkMarker = 0x02
+	// DefaultChunkSize is 8KB - safe for iOS Safari WebSocket
+	DefaultChunkSize = 8192
+	// MinChunkSize prevents excessively small chunks
+	MinChunkSize = 512
+)
 
 // TermSize represents terminal dimensions
 type TermSize struct {
@@ -393,7 +405,21 @@ func (s *Session) Close() {
 	}
 }
 
+// compressSnapshot compresses data using gzip for efficient WebSocket transmission
+func compressSnapshot(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	if _, err := w.Write(data); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // GenerateSnapshot creates ANSI escape sequences to recreate the current screen state
+// Returns gzip-compressed data for efficient transmission
 func (s *Session) GenerateSnapshot() []byte {
 	s.vtMu.Lock()
 	defer s.vtMu.Unlock()
@@ -449,7 +475,19 @@ func (s *Session) GenerateSnapshot() []byte {
 	cursor := s.vt.Cursor()
 	fmt.Fprintf(&buf, "\x1b[%d;%dH", cursor.Y+1, cursor.X+1)
 
-	return buf.Bytes()
+	rawData := buf.Bytes()
+
+	// Compress the snapshot
+	compressed, err := compressSnapshot(rawData)
+	if err != nil {
+		log.Printf("Failed to compress snapshot, sending uncompressed: %v", err)
+		return rawData
+	}
+
+	ratio := float64(len(compressed)) * 100 / float64(len(rawData))
+	log.Printf("Snapshot compressed: %d -> %d bytes (%.1f%%)", len(rawData), len(compressed), ratio)
+
+	return compressed
 }
 
 // RestartProcess restarts the shell process for this session
