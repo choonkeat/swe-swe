@@ -74,14 +74,14 @@ The server will accept `rename_session` WebSocket messages and update the sessio
 
 ---
 
-## Phase 3: Homepage Display
+## Phase 3: Homepage Display ✅
 
 ### What will be achieved
 The homepage will display session names alongside UUID short. Format: `my-feature (a3c12)` if named, just `a3c12` if unnamed.
 
 ### Steps
 
-1. **Update session item template** (`selection.html:223`)
+1. ✅ **Update session item template** (`selection.html:223`)
    - Change from: `<span class="session-item__uuid">{{.UUIDShort}}</span>`
    - Change to: Display `{{.Name}} ({{.UUIDShort}})` if Name exists, else just `{{.UUIDShort}}`
 
