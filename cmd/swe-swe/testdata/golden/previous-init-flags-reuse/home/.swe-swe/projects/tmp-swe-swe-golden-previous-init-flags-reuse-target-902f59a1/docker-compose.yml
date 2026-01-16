@@ -71,6 +71,8 @@ services:
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+      # Mount Docker socket for container to run Docker commands on host
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /workspace
     networks:
       - swe-network
@@ -78,8 +80,8 @@ services:
       # Pass through API keys (edit or set as environment variables)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       # Enterprise certificates (if configured during swe-swe init)
-      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS}
-      - SSL_CERT_FILE=${SSL_CERT_FILE}
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-}
       # Browser automation via MCP Playwright connected to chrome service
       - BROWSER_WS_ENDPOINT=ws://chrome:9223
       # Add other credentials as needed:
@@ -121,8 +123,8 @@ services:
     environment:
       - TZ=${TZ:-UTC}
       # Enterprise certificates (if configured during swe-swe init)
-      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS}
-      - SSL_CERT_FILE=${SSL_CERT_FILE}
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-}
     restart: unless-stopped
 networks:
   swe-network:

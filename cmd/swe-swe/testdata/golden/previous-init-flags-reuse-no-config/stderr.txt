@@ -1,0 +1,3 @@
+Error: No saved configuration to reuse at /tmp/swe-swe-golden/previous-init-flags-reuse-no-config/target
+
+  Run init without --previous-init-flags first to create a configuration.

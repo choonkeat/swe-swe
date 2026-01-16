@@ -1,9 +1,6 @@
 {
   "agents": [
-    "claude",
-    "gemini",
-    "codex",
-    "aider",
-    "goose"
-  ]
+    "claude"
+  ],
+  "withDocker": true
 }

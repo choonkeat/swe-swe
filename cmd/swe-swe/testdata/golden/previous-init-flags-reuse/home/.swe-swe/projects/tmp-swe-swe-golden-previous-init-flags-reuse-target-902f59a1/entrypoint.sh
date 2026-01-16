@@ -30,6 +30,16 @@ if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/de
     fi
 fi
 
+# Add app user to docker socket's group for permission to use Docker CLI
+if [ -S /var/run/docker.sock ]; then
+    DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+    if ! getent group $DOCKER_GID > /dev/null 2>&1; then
+        groupadd -g $DOCKER_GID docker-host
+        echo -e "${GREEN}✓ Created docker-host group with GID $DOCKER_GID${NC}"
+    fi
+    usermod -aG $DOCKER_GID app
+    echo -e "${GREEN}✓ Added app user to docker group (GID $DOCKER_GID)${NC}"
+fi
 
 
 # Ensure .swe-swe/uploads directory exists and is writable by app user
