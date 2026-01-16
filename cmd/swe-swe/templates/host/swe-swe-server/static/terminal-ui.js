@@ -31,8 +31,9 @@ class TerminalUI extends HTMLElement {
         // Chunked snapshot reassembly
         this.chunks = [];
         this.expectedChunks = 0;
-        // Debug mode from query string
-        this.debugMode = new URLSearchParams(location.search).get('debug') === 'true';
+        // Debug mode from query string (accepts debug=true, debug=1, etc.)
+        const debugParam = new URLSearchParams(location.search).get('debug');
+        this.debugMode = debugParam === 'true' || debugParam === '1';
         // PTY output instrumentation for idle detection
         this.lastOutputTime = null;
         this.outputIdleTimer = null;
@@ -980,9 +981,14 @@ class TerminalUI extends HTMLElement {
         return Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
     }
 
+    getDebugQueryString() {
+        return this.debugMode ? '?debug=1' : '';
+    }
+
     getAssistantLink() {
         const name = this.assistantName || this.assistant;
-        return `<a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
+        const debugQS = this.getDebugQueryString();
+        return `<a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
     }
 
     scheduleReconnect() {
@@ -1316,7 +1322,7 @@ class TerminalUI extends HTMLElement {
             : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
 
         if (confirm(message)) {
-            window.location.href = '/';
+            window.location.href = '/' + this.getDebugQueryString();
         }
     }
 
@@ -1333,9 +1339,10 @@ class TerminalUI extends HTMLElement {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             // Build "Connected as {name} with {agent}" message with separate clickable parts
             const userName = this.currentUserName;
+            const debugQS = this.getDebugQueryString();
             let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
             if (this.assistantName) {
-                html += ` with <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
+                html += ` with <a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
 
             // Add viewer suffix if more than 1 viewer
