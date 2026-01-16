@@ -90,49 +90,42 @@ Tests: All tests pass ✓
 Status: ✓ STEP 4 COMPLETE
 143012
 
-=== Bug Fix 1: User/Group Deletion Order ===
+=== Docker Build Issues & Solutions ===
 
-Issue: Initial Docker build failed with:
-  Error: groupdel: cannot remove the primary group of user 'coder'
-  Reason: Tried to delete group before deleting the user with that group as primary
+Multiple approaches were tested to modify the coder user/group UID:GID:
 
-Fix: Reversed deletion order in code-server/Dockerfile (line 10)
-  Changed FROM: groupdel coder && groupadd ... && userdel coder ...
-  Changed TO:   userdel coder && groupdel coder && groupadd ... && useradd ...
+Attempt 1: Delete & Recreate (groupdel + userdel + groupadd + useradd)
+  Issue: "groupdel: cannot remove the primary group of user 'coder'"
+  Status: ✗ Failed
 
-Logic: User must be deleted first (has group as primary), then group can be deleted
+Attempt 2: Delete & Recreate with order fix (userdel first, then groupdel)
+  Issue: "userdel: user coder is currently used by process 1"
+  Status: ✗ Failed
 
-Status: ✓ Fixed, golden files regenerated
+Attempt 3: Force delete with pkill (-f flag + pkill + || true)
+  Issue: Still "user in use" and "cannot lock /etc/passwd"
+  Status: ✗ Failed
 
-=== Bug Fix 2: User In Use During Build (Attempt 1) ===
+Attempt 4: SUCCESSFUL - Use USER root + groupmod/usermod
+  Solution: Switch to USER root, modify IDs, switch back to USER coder
+  Implementation in code-server/Dockerfile:
+    - USER root
+    - RUN groupmod -g ${GID} coder && usermod -u ${UID} -g ${GID} coder
+    - RUN chown -R ${UID}:${GID} /home/coder
+    - USER coder
 
-Issue: Second Docker build failed with:
-  Error: userdel: user coder is currently used by process 1
-  Reason: The coder user has running processes during the build
+  Result: Docker build succeeded ✓
+    [code-server 2/3] RUN groupmod -g 1001 coder && usermod -u 1001 -g 1001 coder - 0.5s SUCCESS
+    [code-server 3/3] RUN chown -R 1001:1001 /home/coder - 0.6s SUCCESS
 
-Attempt 1: Added -f (force) flag to userdel
-  Status: ✗ Still failed with "Permission denied" and "cannot lock /etc/passwd"
-  Reason: The -f flag alone doesn't kill running processes or fix lock contention
-
-=== Bug Fix 3: Kill Coder Processes Before Deletion ===
-
-Issue: Third Docker build failed with:
-  Error: Permission denied, cannot lock /etc/passwd
-  Reason: Running processes and lock contention prevent user/group changes
-
-Fix: Kill all coder processes before deletion in code-server/Dockerfile (line 10)
-  Changed FROM: userdel -f coder && groupdel coder && ...
-  Changed TO:   pkill -9 -u coder || true && userdel -r coder || true && groupdel coder || true && ...
-
-Components:
-  - pkill -9 -u coder: Kill all processes running as coder user (SIGKILL)
-  - userdel -r coder: Delete user AND remove home directory/mail spool
-  - || true: Suppress errors (safe for idempotent execution)
-  - groupdel coder || true: Delete group after user is gone
-
-Logic: Kill processes first, then safely delete user/group, then create new ones
-       with the -r flag ensuring complete cleanup
-
-Status: ✓ Fixed, golden files regenerated, all tests pass
+  Image built and named successfully: docker.io/library/data-workspaces-ck-a390607d-code-server
+  Status: ✓ VERIFIED WORKING
 
 === Code-Server UID:GID Fix COMPLETE ===
+
+Summary:
+- Main UID:GID fix: 4 implementation steps completed (Phases 1-6 from swe-swe app)
+- Code-server extension: 4 steps completed (code-server wrapper + docker-compose + template processor + golden updates)
+- Docker build verified working with final approach
+- All tests pass
+- Golden files regenerated with correct UID:GID values
