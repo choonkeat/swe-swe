@@ -33,6 +33,10 @@ class TerminalUI extends HTMLElement {
         this.expectedChunks = 0;
         // Debug mode from query string
         this.debugMode = new URLSearchParams(location.search).get('debug') === 'true';
+        // PTY output instrumentation for idle detection
+        this.lastOutputTime = null;
+        this.outputIdleTimer = null;
+        this.outputIdleThreshold = 2000; // ms
     }
 
     static get observedAttributes() {
@@ -1109,6 +1113,24 @@ class TerminalUI extends HTMLElement {
     // Terminal data received
     // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
+        // Track output timing for idle detection
+        const now = Date.now();
+        const timeSinceLastOutput = this.lastOutputTime ? now - this.lastOutputTime : 0;
+        this.lastOutputTime = now;
+
+        // Log output stats in debug mode
+        if (this.debugMode && timeSinceLastOutput > 100) {
+            this.debugLog(`Output: ${data.length}B after ${timeSinceLastOutput}ms idle`, 2000);
+        }
+
+        // Reset idle timer
+        if (this.outputIdleTimer) {
+            clearTimeout(this.outputIdleTimer);
+        }
+        this.outputIdleTimer = setTimeout(() => {
+            this.onOutputIdle();
+        }, this.outputIdleThreshold);
+
         if (!this.pendingWrites) {
             this.pendingWrites = [];
             requestAnimationFrame(() => {
@@ -1125,6 +1147,12 @@ class TerminalUI extends HTMLElement {
             });
         }
         this.pendingWrites.push(data);
+    }
+
+    // Called when no output received for outputIdleThreshold ms
+    onOutputIdle() {
+        const idleMs = Date.now() - this.lastOutputTime;
+        this.debugLog(`Output idle for ${idleMs}ms - user input needed?`, 5000);
     }
 
     // Handle chunked snapshot message
