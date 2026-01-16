@@ -10,7 +10,9 @@ class TerminalUI extends HTMLElement {
         this.countdownInterval = null;
         this.uptimeInterval = null;
         this.heartbeatInterval = null;
-        this.ctrlPressed = false;
+        // Mobile keyboard state
+        this.ctrlActive = false;
+        this.navActive = false;
         // Session status from server
         this.viewers = 0;
         this.ptyRows = 0;
@@ -1531,23 +1533,124 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    // Mobile keyboard methods
+    sendKey(code) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            const encoder = new TextEncoder();
+            this.ws.send(encoder.encode(code));
+        }
+    }
+
+    toggleCtrl() {
+        this.ctrlActive = !this.ctrlActive;
+        const btn = this.querySelector('[data-toggle="ctrl"]');
+        const row = this.querySelector('.mobile-keyboard__ctrl');
+        btn.classList.toggle('active', this.ctrlActive);
+        row.classList.toggle('visible', this.ctrlActive);
+    }
+
+    toggleNav() {
+        this.navActive = !this.navActive;
+        const btn = this.querySelector('[data-toggle="nav"]');
+        const row = this.querySelector('.mobile-keyboard__nav');
+        btn.classList.toggle('active', this.navActive);
+        row.classList.toggle('visible', this.navActive);
+    }
+
+    setupMobileKeyboard() {
+        const KEY_CODES = {
+            'Escape': '\x1b',
+            'Tab': '\t',
+            'ShiftTab': '\x1b[Z',
+            'ArrowLeft': '\x1b[D',
+            'ArrowRight': '\x1b[C',
+            'ArrowUp': '\x1b[A',
+            'ArrowDown': '\x1b[B'
+        };
+
+        const CTRL_CODES = {
+            'a': '\x01',
+            'c': '\x03',
+            'd': '\x04',
+            'e': '\x05',
+            'k': '\x0B',
+            'w': '\x17'
+        };
+
+        // Main row key buttons (Esc, Tab, ⇧Tab)
+        this.querySelectorAll('.mobile-keyboard [data-key]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const key = btn.dataset.key;
+                if (KEY_CODES[key]) {
+                    this.sendKey(KEY_CODES[key]);
+                }
+                this.term.focus();
+            });
+        });
+
+        // Toggle buttons (Ctrl, Nav)
+        this.querySelectorAll('.mobile-keyboard [data-toggle]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (btn.dataset.toggle === 'ctrl') {
+                    this.toggleCtrl();
+                } else if (btn.dataset.toggle === 'nav') {
+                    this.toggleNav();
+                }
+            });
+        });
+
+        // Ctrl row buttons (A, C, D, E, K, W)
+        this.querySelectorAll('.mobile-keyboard [data-ctrl]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const key = btn.dataset.ctrl.toLowerCase();
+                if (CTRL_CODES[key]) {
+                    this.sendKey(CTRL_CODES[key]);
+                }
+                this.term.focus();
+            });
+        });
+
+        // Input bar
+        const textInput = this.querySelector('.mobile-keyboard__text');
+        const sendBtn = this.querySelector('.mobile-keyboard__send');
+
+        // Update button text based on input value
+        textInput.addEventListener('input', () => {
+            sendBtn.textContent = textInput.value ? 'Send' : 'Enter';
+        });
+
+        // Send button click
+        sendBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const text = textInput.value;
+            if (text) {
+                // Send text + Enter
+                this.sendKey(text + '\r');
+                textInput.value = '';
+                sendBtn.textContent = 'Enter';
+            } else {
+                // Send just Enter
+                this.sendKey('\r');
+            }
+            this.term.focus();
+        });
+
+        // Enter key in input sends the command
+        textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendBtn.click();
+            }
+        });
+    }
+
     setupEventListeners() {
         // Terminal data handler - send as binary to distinguish from JSON control messages
         this.term.onData(data => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                // Apply Ctrl modifier if active (for mobile keyboard input)
-                if (this.ctrlPressed && data.length === 1) {
-                    const char = data.toUpperCase();
-                    if (char >= 'A' && char <= 'Z') {
-                        // Convert to Ctrl sequence (Ctrl+A = 1, Ctrl+C = 3, etc.)
-                        data = String.fromCharCode(char.charCodeAt(0) - 64);
-                        // Reset Ctrl state after use
-                        this.ctrlPressed = false;
-                        this.querySelector('[data-modifier="ctrl"]').classList.remove('active');
-                    }
-                }
-
-                // Send as binary
                 const encoder = new TextEncoder();
                 this.ws.send(encoder.encode(data));
             }
@@ -1560,68 +1663,8 @@ class TerminalUI extends HTMLElement {
         };
         window.addEventListener('resize', this._resizeHandler);
 
-        // Extra keys
-        const keyMap = {
-            'Escape': '\x1b',
-            'Tab': '\t',
-            'ArrowUp': '\x1b[A',
-            'ArrowDown': '\x1b[B',
-            'ArrowRight': '\x1b[C',
-            'ArrowLeft': '\x1b[D'
-        };
-
-        this.querySelectorAll('.terminal-ui__extra-keys button').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-
-                if (btn.dataset.modifier === 'ctrl') {
-                    this.ctrlPressed = !this.ctrlPressed;
-                    btn.classList.toggle('active', this.ctrlPressed);
-                    return;
-                }
-
-                if (btn.dataset.action === 'paste') {
-                    if (navigator.clipboard && navigator.clipboard.readText) {
-                        navigator.clipboard.readText().then(text => {
-                            if (text && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                                const encoder = new TextEncoder();
-                                this.ws.send(encoder.encode(text));
-                            }
-                            this.term.focus();
-                        }).catch(err => {
-                            console.error('Failed to read clipboard:', err);
-                            // Fallback to paste overlay on error
-                            this.showPasteOverlay();
-                        });
-                    } else {
-                        // Clipboard API not available, show paste overlay
-                        this.showPasteOverlay();
-                    }
-                    return;
-                }
-
-                const key = btn.dataset.key;
-                if (key && keyMap[key]) {
-                    let data = keyMap[key];
-
-                    if (this.ctrlPressed && key.length === 1) {
-                        data = String.fromCharCode(key.charCodeAt(0) - 64);
-                    }
-
-                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        const encoder = new TextEncoder();
-                        this.ws.send(encoder.encode(data));
-                    }
-
-                    if (this.ctrlPressed) {
-                        this.ctrlPressed = false;
-                        this.querySelector('[data-modifier="ctrl"]').classList.remove('active');
-                    }
-                }
-
-                this.term.focus();
-            });
-        });
+        // Mobile keyboard setup
+        this.setupMobileKeyboard();
 
         // Terminal click to focus
         this.querySelector('.terminal-ui__terminal').addEventListener('click', () => {
