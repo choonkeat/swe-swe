@@ -21,3 +21,20 @@ Content: Inherits from codercom/code-server:latest
 
 Status: ✓ STEP 1 COMPLETE
 135034
+
+[STEP 2] Update docker-compose.yml to build code-server with UID:GID args
+Time: $(date +%H%M%S)
+Expected: Replace code-server image with build section containing UID:GID placeholders
+
+[OBSERVED] $(date +%H%M%S)
+Changed code-server service from:
+  image: codercom/code-server:latest
+To:
+  build:
+    context: code-server
+    args:
+      UID: {{UID}}
+      GID: {{GID}}
+
+Status: ✓ STEP 2 COMPLETE
+135213
