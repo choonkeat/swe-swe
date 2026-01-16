@@ -1572,6 +1572,7 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
+            this.term.scrollToBottom();
         });
     }
 
@@ -1585,6 +1586,7 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
+            this.term.scrollToBottom();
         });
     }
 
