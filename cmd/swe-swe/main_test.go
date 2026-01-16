@@ -65,6 +65,8 @@ func TestParseSlashCommandsEntry(t *testing.T) {
 		{"", "", "", true},
 		{"ck@", "", "", true},
 		{"not-a-url", "", "", true},
+		// Reserved alias
+		{"swe-swe@https://github.com/example/repo.git", "", "", true},
 	}
 
 	for _, tt := range tests {
@@ -137,6 +139,34 @@ func TestParseSlashCommandsFlag(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestWriteBundledSlashCommands verifies bundled slash commands are extracted correctly
+func TestWriteBundledSlashCommands(t *testing.T) {
+	tempDir := t.TempDir()
+
+	err := writeBundledSlashCommands(tempDir)
+	if err != nil {
+		t.Fatalf("writeBundledSlashCommands() error = %v", err)
+	}
+
+	// Check that swe-swe/README.adoc exists
+	readmePath := filepath.Join(tempDir, "swe-swe", "README.adoc")
+	if _, err := os.Stat(readmePath); os.IsNotExist(err) {
+		t.Errorf("expected %s to exist", readmePath)
+	}
+
+	// Verify content is not empty
+	content, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", readmePath, err)
+	}
+	if len(content) == 0 {
+		t.Errorf("expected %s to have content", readmePath)
+	}
+	if !strings.Contains(string(content), "swe-swe") {
+		t.Errorf("expected %s to contain 'swe-swe'", readmePath)
 	}
 }
 
