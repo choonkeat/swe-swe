@@ -207,10 +207,10 @@ if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 
 ---
 
-## Phase 4: Homepage Integration
+## Phase 4: Homepage Integration ✅
 
 ### What Will Be Achieved
-Display ended recordings on homepage with playback and delete links.
+Display ended recordings on homepage alongside sessions within each agent group (not as a separate section).
 
 ### Steps
 
@@ -231,48 +231,55 @@ type RecordingInfo struct {
 - Filter out active sessions
 - Sort by EndedAt descending
 
-**Step 4.3: Add recordings to template data**
+**Step 4.3: Add Recordings field to AgentWithSessions**
 ```go
-data := struct {
-    Agents     []AgentWithSessions
-    Recordings []RecordingInfo
-    // ...
+type AgentWithSessions struct {
+    Assistant  AssistantConfig
+    Sessions   []SessionInfo
+    Recordings []RecordingInfo  // ended recordings for this agent
 }
 ```
 
-**Step 4.4: Update selection template HTML**
+**Step 4.4: Group recordings by agent**
+```go
+func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
+    recordings := loadEndedRecordings()
+    result := make(map[string][]RecordingInfo)
+    for _, rec := range recordings {
+        result[rec.Agent] = append(result[rec.Agent], rec)
+    }
+    return result
+}
+```
+
+**Step 4.5: Update selection template HTML**
+Show recordings within each agent group, after sessions:
 ```html
-{{if .Recordings}}
-<div class="recordings-section">
-    <h2>Recordings</h2>
-    {{range .Recordings}}
-    <div class="recording-item">
-        <span>{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
-        <span>{{.Agent}}</span>
-        <span>ended {{.EndedAgo}}</span>
-        <a href="/recording/{{.UUID}}">Play</a>
-        <button onclick="deleteRecording('{{.UUID}}')">Delete</button>
-    </div>
-    {{end}}
+{{range .Recordings}}
+<div class="recording-item" data-uuid="{{.UUID}}">
+    <span>{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
+    <span>{{.EndedAgo}}</span>
+    <a href="/recording/{{.UUID}}">View</a>
+    <button onclick="deleteRecording('{{.UUID}}', this)">Delete</button>
 </div>
 {{end}}
 ```
 
-**Step 4.5: Add JavaScript for delete**
+**Step 4.6: Add JavaScript for delete (updates count in agent group header)**
 
-**Step 4.6: Add CSS styling**
+**Step 4.7: Add CSS styling for recording items**
 
 ### Verification
 
-1. **Recordings appear**: Run session, exit, verify listing on homepage
-2. **Unnamed shows UUID**: Session without name shows truncated UUID
-3. **Delete works**: Button removes recording
-4. **Play link navigates**: Goes to `/recording/{uuid}`
-5. **Active sessions separate**: Not shown in recordings section
+1. **Recordings appear within agent group**: Run session, exit, verify recording appears under same agent
+2. **Count shows sessions and recordings**: Header shows "N sessions, M recordings"
+3. **Unnamed shows UUID**: Recording without name shows truncated UUID
+4. **Delete works**: Button removes recording, updates count
+5. **Play link navigates**: Goes to `/recording/{uuid}`
 
 ---
 
-## Phase 5: Playback Page (Placeholder)
+## Phase 5: Playback Page (Placeholder) ✅
 
 ### What Will Be Achieved
 `/recording/{uuid}` serves placeholder page with download link.
@@ -315,7 +322,7 @@ if strings.HasPrefix(r.URL.Path, "/recording/") {
 
 ---
 
-## Phase 6: Playback Page (Full)
+## Phase 6: Playback Page (Full) ✅
 
 ### What Will Be Achieved
 Replace placeholder with full HTML playback using vendored record-tui code.
@@ -388,13 +395,15 @@ func RenderPlaybackHTML(frames []PlaybackFrame, metadata *RecordingMetadata) (st
 ## File Changes Summary
 
 ### Modified Files
+- `cmd/swe-swe/main.go` - Added playback package files to template list
+- `cmd/swe-swe/templates/host/Dockerfile` - Added playback directory copy
 - `cmd/swe-swe/templates/host/swe-swe-server/main.go` - Session struct, recording logic, API endpoints, routes
+- `cmd/swe-swe/templates/host/swe-swe-server/static/selection.html` - Recordings section on homepage
 
 ### New Files
-- `cmd/swe-swe/templates/host/swe-swe-server/playback/types.go`
-- `cmd/swe-swe/templates/host/swe-swe-server/playback/timing.go`
-- `cmd/swe-swe/templates/host/swe-swe-server/playback/cleaner.go`
-- `cmd/swe-swe/templates/host/swe-swe-server/playback/render.go`
+- `cmd/swe-swe/templates/host/swe-swe-server/playback/types.go` - PlaybackFrame struct
+- `cmd/swe-swe/templates/host/swe-swe-server/playback/timing.go` - Linux script timing parser
+- `cmd/swe-swe/templates/host/swe-swe-server/playback/render.go` - HTML/xterm.js renderer with playback controls
 
 ### Runtime Directories
 - `/workspace/.swe-swe/recordings/` - Created at runtime for recording files
