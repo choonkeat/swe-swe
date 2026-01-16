@@ -1,4 +1,4 @@
-.PHONY: build run stop test clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update
+.PHONY: build run stop test test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update
 
 build: build-cli
 
@@ -13,6 +13,19 @@ stop:
 
 test:
 	go test -v ./...
+
+# Test the swe-swe-server template code
+# Copies template to temp dir, sets up go.mod, runs tests, cleans up
+SERVER_TEMPLATE := cmd/swe-swe/templates/host/swe-swe-server
+TEST_SERVER_ARGS ?=
+test-server:
+	@rm -rf /tmp/swe-swe-server-test
+	@mkdir -p /tmp/swe-swe-server-test
+	@cp -r $(SERVER_TEMPLATE)/* /tmp/swe-swe-server-test/
+	@mv /tmp/swe-swe-server-test/go.mod.txt /tmp/swe-swe-server-test/go.mod
+	@mv /tmp/swe-swe-server-test/go.sum.txt /tmp/swe-swe-server-test/go.sum
+	cd /tmp/swe-swe-server-test && go test -v $(TEST_SERVER_ARGS) ./...
+	@rm -rf /tmp/swe-swe-server-test
 
 clean:
 	rm -rf ./dist
