@@ -49,6 +49,7 @@ RUN npm install -g @playwright/mcp
 
 
 
+
 # Clone slash commands repositories to temp location
 # (will be copied to home directory by entrypoint.sh)
 RUN git clone --depth 1 https://github.com/choonkeat/slash-commands.git /tmp/slash-commands/ck

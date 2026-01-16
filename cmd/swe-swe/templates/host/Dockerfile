@@ -90,6 +90,11 @@ RUN pip3 install --break-system-packages aider-chat
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 # {{ENDIF}}
 
+# {{IF OPENCODE}}
+# Install OpenCode CLI (https://github.com/anomalyco/opencode)
+RUN curl -fsSL https://opencode.ai/install | bash
+# {{ENDIF}}
+
 # {{IF NPM_PACKAGES}}
 # Install user-specified npm packages
 RUN npm install -g {{NPM_PACKAGES}}

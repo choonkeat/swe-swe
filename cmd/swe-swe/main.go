@@ -569,6 +569,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = !hasAgent("aider")
 			case "GOOSE":
 				skip = !hasAgent("goose")
+			case "OPENCODE":
+				skip = !hasAgent("opencode")
 			case "APT_PACKAGES":
 				skip = aptPackages == ""
 			case "NPM_PACKAGES":

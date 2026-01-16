@@ -62,6 +62,9 @@ RUN pip3 install --break-system-packages aider-chat
 # Install Goose (AI pair programmer from Block)
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
+# Install OpenCode CLI (https://github.com/anomalyco/opencode)
+RUN curl -fsSL https://opencode.ai/install | bash
+
 # Install user-specified npm packages
 RUN npm install -g typescript
 

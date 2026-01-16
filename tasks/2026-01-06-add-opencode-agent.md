@@ -62,7 +62,7 @@ feat(agents): add opencode to agent list (baseline)
 
 ---
 
-## Phase 2: Dockerfile (Conditional Installation)
+## Phase 2: Dockerfile (Conditional Installation) ✅
 
 ### What Will Be Achieved
 
@@ -102,7 +102,7 @@ When `opencode` is in the selected agents list, the Dockerfile will include the 
 
 ---
 
-## Phase 3: Server Config (AssistantConfig)
+## Phase 3: Server Config (AssistantConfig) ✅
 
 ### What Will Be Achieved
 
@@ -129,7 +129,7 @@ The swe-swe-server will recognize OpenCode as an available assistant, enabling u
 
 ---
 
-## Phase 4: Documentation (Help Text)
+## Phase 4: Documentation (Help Text) ✅
 
 ### What Will Be Achieved
 
