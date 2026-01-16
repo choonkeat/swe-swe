@@ -107,6 +107,7 @@ When clicking "New Session" on the homepage, a prompt appears asking for an opti
 **Step 2e: Server receives and stores name**
 - In WebSocket handler or session creation endpoint, read `name` param
 - Store in `Session.Name` field (already exists)
+- Store in `Session.Metadata.Name` field for recording persistence
 - For now, `WorkDir` remains empty (Phase 3 will use the name)
 
 ### Verification
@@ -125,6 +126,7 @@ When clicking "New Session" on the homepage, a prompt appears asking for an opti
 4. MCP browser: navigate to homepage → session shows timestamp name (e.g., `20260107-143052 (a3f2)`)
 5. Repeat: type "Fix Login Bug" → homepage shows `Fix Login Bug (b7c1)`
 6. Repeat: clear input, click OK → homepage shows UUID only (backward compatible)
+7. Verify recording metadata: `cat /workspace/.swe-swe/recordings/session-*.metadata.json` → should contain `"name": "Fix Login Bug"` for named sessions
 
 **Teardown:**
 ```bash
