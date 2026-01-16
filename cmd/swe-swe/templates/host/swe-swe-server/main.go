@@ -123,6 +123,7 @@ type RecordingMetadata struct {
 	Agent     string     `json:"agent"`
 	StartedAt time.Time  `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	KeptAt    *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
 	Command   []string   `json:"command"`
 	Visitors  []Visitor  `json:"visitors,omitempty"`
 	MaxCols   uint16     `json:"max_cols,omitempty"` // Max terminal columns during recording
@@ -2231,6 +2232,7 @@ type RecordingListItem struct {
 	Agent     string     `json:"agent,omitempty"`
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	KeptAt    *time.Time `json:"kept_at,omitempty"`
 	HasTiming bool       `json:"has_timing"`
 	SizeBytes int64      `json:"size_bytes"`
 	IsActive  bool       `json:"is_active,omitempty"`
@@ -2242,8 +2244,9 @@ type RecordingInfo struct {
 	UUIDShort string
 	Name      string
 	Agent     string
-	EndedAgo  string    // "15m ago", "2h ago", "yesterday"
-	EndedAt   time.Time // actual timestamp for sorting
+	EndedAgo  string     // "15m ago", "2h ago", "yesterday"
+	EndedAt   time.Time  // actual timestamp for sorting
+	KeptAt    *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
 }
 
 // formatTimeAgo returns a human-readable relative time string
@@ -2328,6 +2331,7 @@ func loadEndedRecordings() []RecordingInfo {
 			if json.Unmarshal(metaData, &meta) == nil {
 				info.Name = meta.Name
 				info.Agent = meta.Agent
+				info.KeptAt = meta.KeptAt
 				if meta.EndedAt != nil {
 					info.EndedAt = *meta.EndedAt
 					info.EndedAgo = formatTimeAgo(*meta.EndedAt)
@@ -2567,6 +2571,7 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 				item.Agent = meta.Agent
 				item.StartedAt = &meta.StartedAt
 				item.EndedAt = meta.EndedAt
+				item.KeptAt = meta.KeptAt
 			}
 		}
 
