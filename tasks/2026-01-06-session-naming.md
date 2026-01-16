@@ -97,24 +97,27 @@ The homepage will display session names alongside UUID short. Format: `my-featur
 
 ---
 
-## Phase 4: Frontend Status Bar
+## Phase 4: Frontend Status Bar ✅
 
 ### What will be achieved
 The status bar will display the session name after the assistant name. Format: `Connected as Alice with Claude on my-feature` (if named) or `Connected as Alice with Claude on Unnamed session a3c12` (if unnamed).
 
 ### Steps
 
-1. **Store sessionName and uuidShort from status messages** (`terminal-ui.js:1273`)
+1. ✅ **Add sessionName and uuidShort properties** (`terminal-ui.js:21-22`)
+   - Add `this.sessionName = ''` and `this.uuidShort = ''` to class properties
+
+2. ✅ **Store sessionName and uuidShort from status messages** (`terminal-ui.js:1283-1284`)
    - Add `this.sessionName = msg.sessionName || ''`
    - Add `this.uuidShort = msg.uuidShort || ''`
 
-2. **Update status bar HTML generation** (`terminal-ui.js:1338`)
+3. ✅ **Update status bar HTML generation** (`terminal-ui.js:1352-1354`)
    - After the assistant link, append session name element
    - Format: ` on <span class="terminal-ui__status-link terminal-ui__status-session">{display}</span>`
    - Display logic: if `sessionName` exists use it, else `Unnamed session {uuidShort}`
 
-3. **Add CSS for session name link** (if needed)
-   - Style `terminal-ui__status-session` similar to other status links
+4. ✅ **CSS for session name link** (not needed)
+   - Styled by existing `.terminal-ui__status-link` class
 
 ### Verification
 
