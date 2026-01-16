@@ -585,3 +585,249 @@ func TestListRecordings_MultipleRecordingsSortedByDate(t *testing.T) {
 		t.Errorf("expected second recording to be 'Old Recording', got %s", result.Recordings[1].Name)
 	}
 }
+
+// ============================================================================
+// Phase 3: Recording Delete API Tests (DELETE /api/recording/{uuid})
+// ============================================================================
+
+func TestDeleteRecording_NotFound(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Use valid UUID format that doesn't exist
+	nonExistentUUID := "00000000-0000-0000-0000-000000000000"
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+nonExistentUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeleteRecording_InvalidUUID(t *testing.T) {
+	h := newTestHelper(t)
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Invalid UUID format should return 400
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/not-a-valid-uuid", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400 for invalid UUID, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeleteRecording_NoSession(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+		metadata: &RecordingMetadata{
+			UUID: testUUID,
+			Name: "Test",
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Verify files exist before delete
+	if !h.recordingFileExists(testUUID, ".log") {
+		t.Fatal("log file should exist before delete")
+	}
+	if !h.recordingFileExists(testUUID, ".timing") {
+		t.Fatal("timing file should exist before delete")
+	}
+	if !h.recordingFileExists(testUUID, ".metadata.json") {
+		t.Fatal("metadata file should exist before delete")
+	}
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+testUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("expected status 204, got %d", resp.StatusCode)
+	}
+
+	// Verify files deleted
+	if h.recordingFileExists(testUUID, ".log") {
+		t.Error("log file should be deleted")
+	}
+	if h.recordingFileExists(testUUID, ".timing") {
+		t.Error("timing file should be deleted")
+	}
+	if h.recordingFileExists(testUUID, ".metadata.json") {
+		t.Error("metadata file should be deleted")
+	}
+}
+
+func TestDeleteRecording_ActiveSession_ProcessRunning(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	sessionUUID := "session-1234"
+
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	// Create session with RUNNING process (ProcessState = nil)
+	h.createMockSession(sessionUUID, recordingUUID, false) // processExited=false
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+recordingUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("expected status 409 Conflict, got %d", resp.StatusCode)
+	}
+
+	// Verify files NOT deleted
+	if !h.recordingFileExists(recordingUUID, ".log") {
+		t.Error("log file should NOT be deleted for active session")
+	}
+}
+
+func TestDeleteRecording_EndedSession_ProcessExited(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	sessionUUID := "session-1234"
+
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	// Create session with EXITED process (ProcessState != nil)
+	// This is the exact bug scenario we fixed
+	h.createMockSession(sessionUUID, recordingUUID, true) // processExited=true
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+recordingUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("expected status 204 for exited process, got %d", resp.StatusCode)
+	}
+
+	// Verify files deleted
+	if h.recordingFileExists(recordingUUID, ".log") {
+		t.Error("log file should be deleted for exited process")
+	}
+}
+
+func TestDeleteRecording_RemovesAllFiles(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: true,
+		metadata: &RecordingMetadata{
+			UUID: testUUID,
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+testUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("expected status 204, got %d", resp.StatusCode)
+	}
+
+	// Verify ALL files deleted
+	if h.recordingFileExists(testUUID, ".log") {
+		t.Error(".log file should be deleted")
+	}
+	if h.recordingFileExists(testUUID, ".timing") {
+		t.Error(".timing file should be deleted")
+	}
+	if h.recordingFileExists(testUUID, ".metadata.json") {
+		t.Error(".metadata.json file should be deleted")
+	}
+}
+
+func TestDeleteRecording_OnlyLogFile(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		withTiming: false,
+		// No metadata
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+testUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Should succeed even with only .log file
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("expected status 204, got %d", resp.StatusCode)
+	}
+
+	if h.recordingFileExists(testUUID, ".log") {
+		t.Error(".log file should be deleted")
+	}
+}
+
+func TestDeleteRecording_WrongMethod_GET(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	// GET should not delete
+	resp, err := http.Get(server.URL + "/api/recording/" + testUUID)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Should be 404 or 405 (method not allowed)
+	if resp.StatusCode == http.StatusNoContent {
+		t.Error("GET should not delete recording")
+	}
+
+	// Verify file still exists
+	if !h.recordingFileExists(testUUID, ".log") {
+		t.Error("log file should NOT be deleted by GET request")
+	}
+}
