@@ -109,6 +109,7 @@ services:
     image: codercom/code-server:latest
     command:
       - "--bind-addr=0.0.0.0:8080"
+      - "--auth=none"
     volumes:
       # Mount project directory
       - ${WORKSPACE_DIR:-.}:/home/coder/project
@@ -120,8 +121,6 @@ services:
     networks:
       - swe-network
     environment:
-      # VSCode password (set via SWE_SWE_PASSWORD env var)
-      - PASSWORD=${SWE_SWE_PASSWORD:-changeme}
       - TZ=${TZ:-UTC}
       # Enterprise certificates (if configured during swe-swe init)
       - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS}
