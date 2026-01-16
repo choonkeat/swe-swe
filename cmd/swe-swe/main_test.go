@@ -490,6 +490,12 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-apt", []string{"--apt-get-install", "vim,curl"}},
 		{"with-npm", []string{"--npm-install", "typescript"}},
 		{"with-both-packages", []string{"--apt-get-install", "vim", "--npm-install", "typescript"}},
+		{"with-slash-commands", []string{"--agents", "all", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-multi", []string{"--agents", "all", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git https://github.com/org/team-cmds.git"}},
+		{"with-slash-commands-claude-only", []string{"--agents", "claude", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-codex-only", []string{"--agents", "codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-no-alias", []string{"--agents", "all", "--with-slash-commands", "https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-claude-codex", []string{"--agents", "claude,codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 	}
 
 	for _, v := range variants {
@@ -601,6 +607,8 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "typescript", false},
 		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim", "typescript", false},
 		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "", true},
+		// Note: with-slash-commands variants are not included here because they don't affect
+		// Dockerfile template processing yet (slash commands functionality not implemented)
 	}
 
 	// Read the template

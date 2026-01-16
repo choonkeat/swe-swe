@@ -110,7 +110,7 @@ swe-swe init --with-slash-commands="ck@https://github.com/choonkeat/slash-comman
 
 ---
 
-### Phase 3: Golden Test Variants
+### Phase 3: Golden Test Variants ✅
 
 **What will be achieved**: Add new golden test cases that exercise `--with-slash-commands` with various agent and input combinations.
 
