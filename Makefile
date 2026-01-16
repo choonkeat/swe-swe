@@ -67,6 +67,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=claude-only FLAGS="--agents claude"
 	@$(MAKE) _golden-variant NAME=aider-only FLAGS="--agents aider"
 	@$(MAKE) _golden-variant NAME=goose-only FLAGS="--agents goose"
+	@$(MAKE) _golden-variant NAME=opencode-only FLAGS="--agents opencode"
 	@$(MAKE) _golden-variant NAME=nodejs-agents FLAGS="--agents claude,gemini,codex"
 	@$(MAKE) _golden-variant NAME=exclude-aider FLAGS="--exclude-agents aider"
 	@$(MAKE) _golden-variant NAME=with-apt FLAGS="--apt-get-install vim,curl"

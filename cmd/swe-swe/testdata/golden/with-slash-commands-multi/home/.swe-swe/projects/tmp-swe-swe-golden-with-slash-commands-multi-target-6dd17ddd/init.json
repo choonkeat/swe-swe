@@ -4,7 +4,8 @@
     "gemini",
     "codex",
     "aider",
-    "goose"
+    "goose",
+    "opencode"
   ],
   "slashCommands": [
     {

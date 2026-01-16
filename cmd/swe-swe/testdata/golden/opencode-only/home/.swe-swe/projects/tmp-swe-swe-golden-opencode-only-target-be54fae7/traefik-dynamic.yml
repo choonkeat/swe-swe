@@ -1,0 +1,20 @@
+# Traefik dynamic configuration for swe-swe
+
+http:
+  middlewares:
+    # ForwardAuth middleware for session-based authentication
+    forwardauth:
+      forwardAuth:
+        address: "http://auth:4180/swe-swe-auth/verify"
+        # Trust X-Forwarded-* headers for proper URL handling
+        trustForwardHeader: true
+
+  routers:
+    # Traefik dashboard protected by ForwardAuth
+    dashboard:
+      rule: "PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
+      service: "api@internal"
+      middlewares:
+        - "forwardauth"
+      priority: 150
+

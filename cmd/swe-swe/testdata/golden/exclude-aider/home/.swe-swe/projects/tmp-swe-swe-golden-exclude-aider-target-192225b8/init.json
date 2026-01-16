@@ -3,7 +3,8 @@
     "claude",
     "gemini",
     "codex",
-    "goose"
+    "goose",
+    "opencode"
   ],
   "ssl": "no"
 }
