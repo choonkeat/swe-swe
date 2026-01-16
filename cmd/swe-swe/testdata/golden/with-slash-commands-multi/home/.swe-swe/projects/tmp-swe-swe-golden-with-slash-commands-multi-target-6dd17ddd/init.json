@@ -15,5 +15,6 @@
       "alias": "org/team-cmds",
       "url": "https://github.com/org/team-cmds.git"
     }
-  ]
+  ],
+  "ssl": "no"
 }

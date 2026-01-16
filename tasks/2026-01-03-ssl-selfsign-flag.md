@@ -19,18 +19,18 @@ Following the CLAUDE.md two-commit TDD approach.
 - No functional effect yet
 
 ### Steps
-1. Add `SSL string` field to `InitConfig` struct
-2. Add `--ssl` flag parsing in `handleInit()` (validate: `no` or `selfsign`, default `no`)
-3. Wire it up: save to config, restore on `--previous-init-flags=reuse`, show in `swe-swe list`
-4. Update `printUsage()` docs
-5. Add golden variant `with-ssl-selfsign` in `Makefile` and `main_test.go`
+1. [x] Add `SSL string` field to `InitConfig` struct
+2. [x] Add `--ssl` flag parsing in `handleInit()` (validate: `no` or `selfsign`, default `no`)
+3. [x] Wire it up: save to config, restore on `--previous-init-flags=reuse`, show in `swe-swe list`
+4. [x] Update `printUsage()` docs
+5. [x] Add golden variant `with-ssl-selfsign` in `Makefile` and `main_test.go`
 
 ### Verification
-1. `make build golden-update`
-2. `git add -A cmd/swe-swe/testdata/golden && git diff --cached -- cmd/swe-swe/testdata/golden`
-3. **Expect**: Only `"ssl": "selfsign"` in `init.json` for new variant; docker-compose.yml, traefik-dynamic.yml etc. unchanged from default
-4. `go test ./cmd/swe-swe/...` passes
-5. **Commit**
+1. [x] `make build golden-update`
+2. [x] `git add -A cmd/swe-swe/testdata/golden && git diff --cached -- cmd/swe-swe/testdata/golden`
+3. [x] **Expect**: Only `"ssl": "selfsign"` in `init.json` for new variant; docker-compose.yml, traefik-dynamic.yml etc. unchanged from default
+4. [x] `go test ./cmd/swe-swe/...` passes
+5. [x] **Commit**
 
 ---
 

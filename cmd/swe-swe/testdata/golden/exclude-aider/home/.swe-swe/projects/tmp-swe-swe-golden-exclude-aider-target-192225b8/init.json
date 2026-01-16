@@ -4,5 +4,6 @@
     "gemini",
     "codex",
     "goose"
-  ]
+  ],
+  "ssl": "no"
 }

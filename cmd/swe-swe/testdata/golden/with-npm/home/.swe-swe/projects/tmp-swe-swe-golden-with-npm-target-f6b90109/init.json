@@ -6,5 +6,6 @@
     "aider",
     "goose"
   ],
-  "npmPackages": "typescript"
+  "npmPackages": "typescript",
+  "ssl": "no"
 }

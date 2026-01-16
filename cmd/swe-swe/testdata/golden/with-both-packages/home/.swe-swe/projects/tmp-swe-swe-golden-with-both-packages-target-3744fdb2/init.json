@@ -7,5 +7,6 @@
     "goose"
   ],
   "aptPackages": "vim",
-  "npmPackages": "typescript"
+  "npmPackages": "typescript",
+  "ssl": "no"
 }
