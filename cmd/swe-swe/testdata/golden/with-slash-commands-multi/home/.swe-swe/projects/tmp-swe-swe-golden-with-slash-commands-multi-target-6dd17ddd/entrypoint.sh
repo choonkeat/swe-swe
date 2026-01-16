@@ -56,6 +56,18 @@ elif [ -d "/tmp/slash-commands/ck" ]; then
     chown -R app:app /home/app/.codex/prompts/ck
     echo -e "${GREEN}✓ Installed slash commands: ck (codex)${NC}"
 fi
+if [ -d "/home/app/.config/opencode/command/ck/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.config/opencode/command/ck 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.config/opencode/command/ck && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: ck (opencode)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: ck (opencode)${NC}"
+elif [ -d "/tmp/slash-commands/ck" ]; then
+    mkdir -p /home/app/.config/opencode/command
+    cp -r /tmp/slash-commands/ck /home/app/.config/opencode/command/ck
+    chown -R app:app /home/app/.config/opencode/command/ck
+    echo -e "${GREEN}✓ Installed slash commands: ck (opencode)${NC}"
+fi
 if [ -d "/home/app/.claude/commands/org/team-cmds/.git" ]; then
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.claude/commands/org/team-cmds 2>/dev/null || true
@@ -79,6 +91,18 @@ elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
     cp -r /tmp/slash-commands/org/team-cmds /home/app/.codex/prompts/org/team-cmds
     chown -R app:app /home/app/.codex/prompts/org/team-cmds
     echo -e "${GREEN}✓ Installed slash commands: org/team-cmds (codex)${NC}"
+fi
+if [ -d "/home/app/.config/opencode/command/org/team-cmds/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.config/opencode/command/org/team-cmds 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.config/opencode/command/org/team-cmds && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: org/team-cmds (opencode)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: org/team-cmds (opencode)${NC}"
+elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
+    mkdir -p /home/app/.config/opencode/command
+    cp -r /tmp/slash-commands/org/team-cmds /home/app/.config/opencode/command/org/team-cmds
+    chown -R app:app /home/app/.config/opencode/command/org/team-cmds
+    echo -e "${GREEN}✓ Installed slash commands: org/team-cmds (opencode)${NC}"
 fi
 
 # Switch to app user and execute the original command

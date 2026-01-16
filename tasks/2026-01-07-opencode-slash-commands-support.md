@@ -61,7 +61,7 @@ New golden test cases that exercise `--with-slash-commands` with OpenCode enable
 
 ---
 
-## Phase 3: Update Entrypoint Template to Copy to OpenCode Directory
+## Phase 3: Update Entrypoint Template to Copy to OpenCode Directory ✅
 
 ### What will be achieved
 The entrypoint.sh template will be updated to copy cloned slash command repos to OpenCode's directory (`~/.config/opencode/command/`) when OpenCode is an enabled agent.
@@ -89,7 +89,7 @@ The entrypoint.sh template will be updated to copy cloned slash command repos to
 
 ---
 
-## Phase 4: Run `make build golden-update` and Verify Diffs
+## Phase 4: Run `make build golden-update` and Verify Diffs ✅
 
 ### What will be achieved
 All golden test files will be regenerated to reflect the OpenCode slash command copy logic, and we verify the changes are correct and limited to expected files.

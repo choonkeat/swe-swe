@@ -530,8 +530,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 	// Check if we need Node.js (claude, gemini, codex, opencode, or playwright)
 	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex") || hasAgent("opencode")
 
-	// Check if we have slash commands for supported agents (claude or codex)
-	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex"))
+	// Check if we have slash commands for supported agents (claude, codex, or opencode)
+	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode"))
 
 	// Generate slash commands clone lines
 	var slashCommandsClone string
@@ -665,8 +665,8 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
 		return agentInList(agent, agents)
 	}
 
-	// Check if we have slash commands for supported agents (claude or codex)
-	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex"))
+	// Check if we have slash commands for supported agents (claude, codex, or opencode)
+	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode"))
 
 	// Generate slash commands copy lines
 	var slashCommandsCopy string
@@ -701,6 +701,21 @@ elif [ -d "/tmp/slash-commands/%s" ]; then
     cp -r /tmp/slash-commands/%s /home/app/.codex/prompts/%s
     chown -R app:app /home/app/.codex/prompts/%s
     echo -e "${GREEN}✓ Installed slash commands: %s (codex)${NC}"
+fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+			}
+			// OpenCode
+			if hasAgent("opencode") {
+				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/home/app/.config/opencode/command/%s/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.config/opencode/command/%s 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.config/opencode/command/%s && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: %s (opencode)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: %s (opencode)${NC}"
+elif [ -d "/tmp/slash-commands/%s" ]; then
+    mkdir -p /home/app/.config/opencode/command
+    cp -r /tmp/slash-commands/%s /home/app/.config/opencode/command/%s
+    chown -R app:app /home/app/.config/opencode/command/%s
+    echo -e "${GREEN}✓ Installed slash commands: %s (opencode)${NC}"
 fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
 			}
 		}

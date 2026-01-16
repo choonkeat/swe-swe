@@ -49,6 +49,9 @@ RUN npm install -g opencode-ai
 
 
 
+# Clone slash commands repositories to temp location
+# (will be copied to home directory by entrypoint.sh)
+RUN git clone --depth 1 https://github.com/choonkeat/slash-commands.git /tmp/slash-commands/ck
 
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
