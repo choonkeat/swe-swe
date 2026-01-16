@@ -151,6 +151,7 @@ func renderLoginForm(redirectURL, errorMsg string) string {
             margin-bottom: 16px;
             text-align: center;
         }
+        input[type="text"],
         input[type="password"] {
             width: 100%%;
             padding: 16px;
@@ -159,10 +160,16 @@ func renderLoginForm(redirectURL, errorMsg string) string {
             border-radius: 4px;
             margin-bottom: 16px;
         }
+        input[type="text"]:focus,
         input[type="password"]:focus {
             outline: none;
             border-color: #007bff;
             box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+        input[readonly] {
+            background: #f5f5f5;
+            color: #666;
+            cursor: not-allowed;
         }
         button {
             width: 100%%;

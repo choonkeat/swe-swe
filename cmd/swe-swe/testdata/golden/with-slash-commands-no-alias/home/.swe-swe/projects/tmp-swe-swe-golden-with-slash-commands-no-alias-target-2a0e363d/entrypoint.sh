@@ -32,15 +32,29 @@ fi
 
 
 # Copy slash commands to agent directories
-if [ -d "/tmp/slash-commands/choonkeat/slash-commands" ] && [ ! -d "/home/app/.claude/commands/choonkeat/slash-commands" ]; then
+if [ -d "/home/app/.claude/commands/choonkeat/slash-commands/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.claude/commands/choonkeat/slash-commands 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.claude/commands/choonkeat/slash-commands && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: choonkeat/slash-commands (claude)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (claude)${NC}"
+elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
     mkdir -p /home/app/.claude/commands
     cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.claude/commands/choonkeat/slash-commands
     chown -R app:app /home/app/.claude/commands/choonkeat/slash-commands
+    echo -e "${GREEN}✓ Installed slash commands: choonkeat/slash-commands (claude)${NC}"
 fi
-if [ -d "/tmp/slash-commands/choonkeat/slash-commands" ] && [ ! -d "/home/app/.codex/prompts/choonkeat/slash-commands" ]; then
+if [ -d "/home/app/.codex/prompts/choonkeat/slash-commands/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.codex/prompts/choonkeat/slash-commands 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.codex/prompts/choonkeat/slash-commands && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: choonkeat/slash-commands (codex)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (codex)${NC}"
+elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
     mkdir -p /home/app/.codex/prompts
     cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.codex/prompts/choonkeat/slash-commands
     chown -R app:app /home/app/.codex/prompts/choonkeat/slash-commands
+    echo -e "${GREEN}✓ Installed slash commands: choonkeat/slash-commands (codex)${NC}"
 fi
 
 # Switch to app user and execute the original command

@@ -32,10 +32,17 @@ fi
 
 
 # Copy slash commands to agent directories
-if [ -d "/tmp/slash-commands/ck" ] && [ ! -d "/home/app/.claude/commands/ck" ]; then
+if [ -d "/home/app/.claude/commands/ck/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.claude/commands/ck 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.claude/commands/ck && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: ck (claude)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: ck (claude)${NC}"
+elif [ -d "/tmp/slash-commands/ck" ]; then
     mkdir -p /home/app/.claude/commands
     cp -r /tmp/slash-commands/ck /home/app/.claude/commands/ck
     chown -R app:app /home/app/.claude/commands/ck
+    echo -e "${GREEN}✓ Installed slash commands: ck (claude)${NC}"
 fi
 
 # Switch to app user and execute the original command

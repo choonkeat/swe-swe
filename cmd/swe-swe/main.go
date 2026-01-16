@@ -482,19 +482,33 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
 		for _, repo := range slashCommands {
 			// Claude
 			if hasAgent("claude") {
-				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/tmp/slash-commands/%s" ] && [ ! -d "/home/app/.claude/commands/%s" ]; then
+				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/home/app/.claude/commands/%s/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.claude/commands/%s 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.claude/commands/%s && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: %s (claude)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: %s (claude)${NC}"
+elif [ -d "/tmp/slash-commands/%s" ]; then
     mkdir -p /home/app/.claude/commands
     cp -r /tmp/slash-commands/%s /home/app/.claude/commands/%s
     chown -R app:app /home/app/.claude/commands/%s
-fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+    echo -e "${GREEN}✓ Installed slash commands: %s (claude)${NC}"
+fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
 			}
 			// Codex
 			if hasAgent("codex") {
-				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/tmp/slash-commands/%s" ] && [ ! -d "/home/app/.codex/prompts/%s" ]; then
+				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/home/app/.codex/prompts/%s/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.codex/prompts/%s 2>/dev/null || true
+    su -s /bin/bash app -c "cd /home/app/.codex/prompts/%s && git pull" 2>/dev/null && \
+        echo -e "${GREEN}✓ Updated slash commands: %s (codex)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: %s (codex)${NC}"
+elif [ -d "/tmp/slash-commands/%s" ]; then
     mkdir -p /home/app/.codex/prompts
     cp -r /tmp/slash-commands/%s /home/app/.codex/prompts/%s
     chown -R app:app /home/app/.codex/prompts/%s
-fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+    echo -e "${GREEN}✓ Installed slash commands: %s (codex)${NC}"
+fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
 			}
 		}
 		slashCommandsCopy = strings.Join(copyLines, "\n")
