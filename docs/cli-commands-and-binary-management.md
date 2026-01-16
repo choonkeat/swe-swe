@@ -114,7 +114,7 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 | `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
 | `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), or `selfsign@<host>` (for remote access) |
 
-**Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`
+**Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 
 **Examples:**
 ```bash
@@ -161,7 +161,7 @@ swe-swe init --agents=claude,codex --apt-get-install="vim"
 **Dockerfile Optimization:**
 The Dockerfile template uses conditional sections to minimize image size:
 - Python/pip is only installed when `aider` is selected
-- Node.js/npm is only installed when `claude`, `gemini`, or `codex` is selected
+- Node.js/npm is only installed when `claude`, `gemini`, `codex`, or `opencode` is selected
 - Custom apt packages are only added when `--apt-get-install` is specified
 
 This optimization can significantly reduce Docker build time and final image size when using only a subset of agents.

@@ -15,7 +15,7 @@ WebSocket endpoint: `/ws/{session-uuid}?assistant={assistant}`
 
 Example: `ws://localhost:1977/ws/abc123-def456?assistant=claude`
 
-The `assistant` query parameter specifies which AI assistant to use (e.g., `claude`, `gemini`, `codex`, `aider`, `goose`).
+The `assistant` query parameter specifies which AI assistant to use (e.g., `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`).
 
 ## Message Types
 

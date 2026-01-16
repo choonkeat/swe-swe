@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.5.0 - OpenCode Agent Support
+
+- **OpenCode agent**: Add support for OpenCode (https://github.com/anomalyco/opencode) as the 6th AI assistant
+- **npm-based installation**: OpenCode installed via `npm install -g opencode-ai` for reliable Docker builds
+- **Session resume**: Support `opencode --continue` for session recovery after crashes
+
 ## v2.4.1 - Documentation Fix
 
 - **Fix `--project-directory` documentation**: Correct argument order in help text and README—subcommand must come before the flag (e.g., `swe-swe up --project-directory /path`)
@@ -43,4 +49,4 @@
 - **WebSocket multiplexing**: Multi-viewer session support with reconnection
 - **Docker Compose orchestration**: Traefik reverse proxy, code-server integration
 - **`swe-swe` CLI**: New CLI for `init`, `up`, `down`, `build` commands
-- **Agent support**: Claude Code, Aider, Goose, Gemini CLI, Codex CLI
+- **Agent support**: Claude Code, Aider, Goose, Gemini CLI, Codex CLI, OpenCode
