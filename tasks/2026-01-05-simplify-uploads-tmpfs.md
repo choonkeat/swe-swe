@@ -68,19 +68,19 @@ Add clear user feedback in the web UI that uploaded files are temporary (stored 
 
 ### Steps
 
-1. [ ] Identify where to add UX feedback
+1. [x] Identify where to add UX feedback
    - Find file upload UI components in `cmd/swe-swe/templates/host/swe-swe-server/static/terminal-ui.js`
    - Locate the upload button area and success message handling
 
-2. [ ] Add tooltip/hint near the attachment button
+2. [x] Add tooltip/hint near the attachment button
    - Add info text indicating uploads are temporary
    - Text: "Uploads are temporary (in-memory). Move to /workspace to keep."
 
-3. [ ] Enhance upload success message
+3. [x] Enhance upload success message
    - When file upload succeeds, include persistence guidance
    - E.g., append "(temporary)" to the upload confirmation
 
-4. [ ] Update golden test files
+4. [x] Update golden test files
    - Run `make build golden-update`
    - Commit changes to testdata/golden
 
