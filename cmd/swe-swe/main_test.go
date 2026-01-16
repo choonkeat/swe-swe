@@ -410,7 +410,7 @@ CMD done`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processDockerfileTemplate(template, tt.agents, tt.apt)
+			result := processDockerfileTemplate(template, tt.agents, tt.apt, "")
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("result should contain %q, got:\n%s", s, result)

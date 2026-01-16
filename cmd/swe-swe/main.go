@@ -20,7 +20,7 @@ import (
 var assets embed.FS
 
 // splitAtDoubleDash splits args at "--" separator
-// Returns (beforeArgs, afterArgs) where afterArgs are passed through to docker-compose
+// Returns (beforeArgs, afterArgs) where afterArgs are passed through to docker compose
 func splitAtDoubleDash(args []string) ([]string, []string) {
 	for i, arg := range args {
 		if arg == "--" {
@@ -28,6 +28,52 @@ func splitAtDoubleDash(args []string) ([]string, []string) {
 		}
 	}
 	return args, nil
+}
+
+// dockerComposeCmd represents the detected docker compose command
+type dockerComposeCmd struct {
+	executable string   // "docker" or "docker-compose"
+	args       []string // ["compose"] for v2, [] for v1
+}
+
+// getDockerComposeCmd detects available docker compose command
+// Prefers "docker compose" (v2 plugin) over "docker-compose" (v1 standalone)
+func getDockerComposeCmd() (*dockerComposeCmd, error) {
+	// Try "docker compose" first (v2 plugin)
+	if dockerPath, err := exec.LookPath("docker"); err == nil {
+		cmd := exec.Command(dockerPath, "compose", "version")
+		if err := cmd.Run(); err == nil {
+			return &dockerComposeCmd{executable: dockerPath, args: []string{"compose"}}, nil
+		}
+	}
+
+	// Fall back to "docker-compose" (v1 standalone or v2 compatibility wrapper)
+	if composePath, err := exec.LookPath("docker-compose"); err == nil {
+		return &dockerComposeCmd{executable: composePath, args: []string{}}, nil
+	}
+
+	return nil, fmt.Errorf("docker compose not found. Please install Docker Compose")
+}
+
+// buildArgs builds the full argument list for docker compose command
+func (dc *dockerComposeCmd) buildArgs(composeArgs ...string) []string {
+	args := make([]string, 0, len(dc.args)+len(composeArgs))
+	args = append(args, dc.args...)
+	args = append(args, composeArgs...)
+	return args
+}
+
+// command creates an exec.Cmd for docker compose
+func (dc *dockerComposeCmd) command(composeArgs ...string) *exec.Cmd {
+	return exec.Command(dc.executable, dc.buildArgs(composeArgs...)...)
+}
+
+// execArgs returns arguments suitable for syscall.Exec (includes executable name as first arg)
+func (dc *dockerComposeCmd) execArgs(composeArgs ...string) []string {
+	args := []string{filepath.Base(dc.executable)}
+	args = append(args, dc.args...)
+	args = append(args, composeArgs...)
+	return args
 }
 
 func main() {
@@ -61,7 +107,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options] [services...] [-- docker-compose-args...]
+	fmt.Fprintf(os.Stderr, `Usage: swe-swe <command> [options] [services...] [-- docker-args...]
 
 Commands:
   init [options]                         Initialize a new swe-swe project
@@ -103,10 +149,12 @@ Examples:
   swe-swe up chrome                              Start only chrome (and dependencies)
   swe-swe down chrome                            Stop only chrome
   swe-swe build chrome                           Rebuild only chrome image
-  swe-swe down -- --remove-orphans               Pass args to docker-compose
+  swe-swe down -- --remove-orphans               Pass extra args to docker compose
 
 Environment Variables:
   SWE_SWE_PASSWORD                       VSCode password (defaults to changeme)
+
+Requires: Docker with Compose plugin (docker compose) or standalone docker-compose
 `)
 }
 
@@ -511,8 +559,8 @@ func handleUp() {
 		*path = "."
 	}
 
-	// Split at "--" for pass-through args to docker-compose
-	// Service names are passed directly to docker-compose (no validation needed)
+	// Split at "--" for pass-through args to docker compose
+	// Service names are passed directly to docker compose (no validation needed)
 	services, passThrough := splitAtDoubleDash(fs.Args())
 
 	absPath, err := filepath.Abs(*path)
@@ -531,12 +579,10 @@ func handleUp() {
 		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
 	}
 
-	// Check if docker-compose is available
-	if _, err := exec.LookPath("docker-compose"); err != nil {
-		if _, err := exec.LookPath("docker"); err != nil {
-			log.Fatalf("Docker not found. Please install Docker and Docker Compose.")
-		}
-		log.Fatalf("docker-compose not found. Please install Docker Compose.")
+	// Check if docker compose is available
+	dc, err := getDockerComposeCmd()
+	if err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Default port for Traefik service
@@ -607,36 +653,31 @@ func handleUp() {
 		env = append(env, "SWE_SWE_PASSWORD=changeme")
 	}
 
-	// Locate docker-compose executable
-	executable, err := exec.LookPath("docker-compose")
-	if err != nil {
-		log.Fatalf("docker-compose not found: %v", err)
-	}
+	// Build arguments for docker compose
+	composeArgs := []string{"-f", composeFile, "up"}
+	composeArgs = append(composeArgs, passThrough...)
+	composeArgs = append(composeArgs, services...)
 
-	// Build arguments for docker-compose
-	args := []string{"docker-compose", "-f", composeFile, "up"}
-	args = append(args, passThrough...)
-	args = append(args, services...)
-
-	// Replace process with docker-compose on Unix/Linux/macOS
+	// Replace process with docker compose on Unix/Linux/macOS
 	if runtime.GOOS != "windows" {
-		// syscall.Exec replaces the current process with docker-compose
-		// Signals (Ctrl+C) go directly to docker-compose
+		// syscall.Exec replaces the current process with docker compose
+		// Signals (Ctrl+C) go directly to docker compose
 		// This process never returns
-		if err := syscall.Exec(executable, args, env); err != nil {
-			log.Fatalf("Failed to exec docker-compose: %v", err)
+		args := dc.execArgs(composeArgs...)
+		if err := syscall.Exec(dc.executable, args, env); err != nil {
+			log.Fatalf("Failed to exec docker compose: %v", err)
 		}
 	} else {
 		// Windows fallback: use subprocess with signal forwarding
 		// since syscall.Exec is not available on Windows
-		runDockerComposeWindows(executable, args, env)
+		runDockerComposeWindows(dc, composeArgs, env)
 	}
 }
 
-// runDockerComposeWindows runs docker-compose as a subprocess with signal forwarding
+// runDockerComposeWindows runs docker compose as a subprocess with signal forwarding
 // This is used on Windows where syscall.Exec is not available
-func runDockerComposeWindows(executable string, args []string, env []string) {
-	cmd := exec.Command(executable, args[1:]...)
+func runDockerComposeWindows(dc *dockerComposeCmd, composeArgs []string, env []string) {
+	cmd := dc.command(composeArgs...)
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -655,7 +696,7 @@ func runDockerComposeWindows(executable string, args []string, env []string) {
 
 	if err := cmd.Run(); err != nil {
 		// Ignore interrupt errors from signal forwarding (expected on Ctrl+C)
-		log.Fatalf("Failed to run docker-compose: %v", err)
+		log.Fatalf("Failed to run docker compose: %v", err)
 	}
 }
 
@@ -668,8 +709,8 @@ func handleDown() {
 		*path = "."
 	}
 
-	// Split at "--" for pass-through args to docker-compose
-	// Service names are passed directly to docker-compose (no validation needed)
+	// Split at "--" for pass-through args to docker compose
+	// Service names are passed directly to docker compose (no validation needed)
 	services, passThrough := splitAtDoubleDash(fs.Args())
 
 	absPath, err := filepath.Abs(*path)
@@ -688,25 +729,23 @@ func handleDown() {
 		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
 	}
 
-	// Check if docker-compose is available
-	if _, err := exec.LookPath("docker-compose"); err != nil {
-		if _, err := exec.LookPath("docker"); err != nil {
-			log.Fatalf("Docker not found. Please install Docker and Docker Compose.")
-		}
-		log.Fatalf("docker-compose not found. Please install Docker Compose.")
+	// Check if docker compose is available
+	dc, err := getDockerComposeCmd()
+	if err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	composeFile := filepath.Join(sweDir, "docker-compose.yml")
 
 	// Build command args
-	args := []string{"-f", composeFile}
+	baseArgs := []string{"-f", composeFile}
 	if len(services) > 0 {
 		// Use "stop" + "rm" for specific services (down doesn't support service targeting)
 		fmt.Printf("Stopping services %v at %s\n", services, absPath)
-		stopArgs := append(args, "stop")
+		stopArgs := append(baseArgs, "stop")
 		stopArgs = append(stopArgs, passThrough...)
 		stopArgs = append(stopArgs, services...)
-		cmd := exec.Command("docker-compose", stopArgs...)
+		cmd := dc.command(stopArgs...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -715,9 +754,9 @@ func handleDown() {
 		}
 
 		// Remove stopped containers
-		rmArgs := append(args, "rm", "-f")
+		rmArgs := append(baseArgs, "rm", "-f")
 		rmArgs = append(rmArgs, services...)
-		cmd = exec.Command("docker-compose", rmArgs...)
+		cmd = dc.command(rmArgs...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -727,14 +766,14 @@ func handleDown() {
 		fmt.Printf("Stopped services %v at %s\n", services, absPath)
 	} else {
 		fmt.Printf("Stopping swe-swe environment at %s\n", absPath)
-		args = append(args, "down")
-		args = append(args, passThrough...)
-		cmd := exec.Command("docker-compose", args...)
+		downArgs := append(baseArgs, "down")
+		downArgs = append(downArgs, passThrough...)
+		cmd := dc.command(downArgs...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			log.Fatalf("Failed to stop docker-compose: %v", err)
+			log.Fatalf("Failed to stop docker compose: %v", err)
 		}
 		fmt.Printf("Stopped swe-swe environment at %s\n", absPath)
 	}
@@ -749,8 +788,8 @@ func handleBuild() {
 		*path = "."
 	}
 
-	// Split at "--" for pass-through args to docker-compose
-	// Service names are passed directly to docker-compose (no validation needed)
+	// Split at "--" for pass-through args to docker compose
+	// Service names are passed directly to docker compose (no validation needed)
 	services, passThrough := splitAtDoubleDash(fs.Args())
 
 	absPath, err := filepath.Abs(*path)
@@ -769,33 +808,31 @@ func handleBuild() {
 		log.Fatalf("Project not initialized at %q. Run: swe-swe init --path %s\nView projects: swe-swe list", absPath, absPath)
 	}
 
-	// Check if docker-compose is available
-	if _, err := exec.LookPath("docker-compose"); err != nil {
-		if _, err := exec.LookPath("docker"); err != nil {
-			log.Fatalf("Docker not found. Please install Docker and Docker Compose.")
-		}
-		log.Fatalf("docker-compose not found. Please install Docker Compose.")
+	// Check if docker compose is available
+	dc, err := getDockerComposeCmd()
+	if err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	composeFile := filepath.Join(sweDir, "docker-compose.yml")
 
 	// Build command args (--no-cache by default, can be overridden via passThrough)
-	args := []string{"-f", composeFile, "build", "--no-cache"}
-	args = append(args, passThrough...)
+	buildArgs := []string{"-f", composeFile, "build", "--no-cache"}
+	buildArgs = append(buildArgs, passThrough...)
 	if len(services) > 0 {
 		fmt.Printf("Building services %v at %s (fresh build, no cache)\n", services, absPath)
-		args = append(args, services...)
+		buildArgs = append(buildArgs, services...)
 	} else {
 		fmt.Printf("Building swe-swe environment at %s (fresh build, no cache)\n", absPath)
 	}
 
-	cmd := exec.Command("docker-compose", args...)
+	cmd := dc.command(buildArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to build docker-compose: %v", err)
+		log.Fatalf("Failed to build: %v", err)
 	}
 
 	if len(services) > 0 {
