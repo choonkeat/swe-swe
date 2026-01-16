@@ -62,6 +62,24 @@ type SessionInfo struct {
 	Assistant   string // binary name for URL
 	ClientCount int
 	CreatedAt   time.Time
+	DurationStr string // human-readable duration (e.g., "5m", "1h 23m")
+}
+
+// formatDuration returns a human-readable duration string
+func formatDuration(d time.Duration) string {
+	d = d.Truncate(time.Minute)
+	if d < time.Minute {
+		return "<1m"
+	}
+	h := d / time.Hour
+	m := (d % time.Hour) / time.Minute
+	if h > 0 {
+		if m > 0 {
+			return fmt.Sprintf("%dh %dm", h, m)
+		}
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
 }
 
 // AgentWithSessions groups an assistant with its active sessions
@@ -657,6 +675,7 @@ func main() {
 					Assistant:   sess.Assistant,
 					ClientCount: sess.ClientCount(),
 					CreatedAt:   sess.CreatedAt,
+					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
 				}
 				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
 			}
