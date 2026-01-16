@@ -125,7 +125,10 @@ class PollingTransport {
     }
 
     async initialPoll() {
-        const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}`;
+        // Include terminal size in initial poll so server creates session with correct size
+        const rows = this.ui.term ? this.ui.term.rows : 24;
+        const cols = this.ui.term ? this.ui.term.cols : 80;
+        const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}&rows=${rows}&cols=${cols}`;
         const resp = await fetch(url);
 
         if (!resp.ok) {
@@ -170,7 +173,10 @@ class PollingTransport {
         if (!this.active) return;
 
         try {
-            const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}`;
+            // Always include terminal size in poll URL
+            const rows = this.ui.term ? this.ui.term.rows : 24;
+            const cols = this.ui.term ? this.ui.term.cols : 80;
+            const url = `/session/${this.ui.uuid}/client/${this.clientId}/poll?assistant=${encodeURIComponent(this.ui.assistant)}&rows=${rows}&cols=${cols}`;
             const resp = await fetch(url);
 
             if (!resp.ok) {
