@@ -268,6 +268,28 @@ class TerminalUI extends HTMLElement {
                 .mobile-keyboard .mobile-keyboard__send:active {
                     background: #004578;
                 }
+                .mobile-keyboard .mobile-keyboard__attach {
+                    flex: none;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 44px;
+                    height: 44px;
+                    padding: 0;
+                    background: transparent;
+                    color: #888;
+                    border: 1px solid #505050;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                .mobile-keyboard .mobile-keyboard__attach:hover {
+                    background: #333;
+                    color: #d4d4d4;
+                }
+                .mobile-keyboard .mobile-keyboard__attach:active {
+                    background: #444;
+                    color: #fff;
+                }
                 .terminal-ui__status-bar {
                     display: flex;
                     align-items: center;
@@ -738,6 +760,12 @@ class TerminalUI extends HTMLElement {
                         <button data-key="ArrowDown">↓</button>
                     </div>
                     <div class="mobile-keyboard__input">
+                        <button class="mobile-keyboard__attach" aria-label="Attach file">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                            </svg>
+                        </button>
+                        <input type="file" class="mobile-keyboard__file-input" multiple hidden>
                         <textarea rows="1" placeholder="Type command..." class="mobile-keyboard__text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
                         <button class="mobile-keyboard__send">Enter</button>
                     </div>
@@ -1572,6 +1600,7 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
+            this.term.scrollToBottom();
         });
     }
 
@@ -1585,6 +1614,7 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
+            this.term.scrollToBottom();
         });
     }
 
@@ -1673,6 +1703,26 @@ class TerminalUI extends HTMLElement {
                 this.sendKey('\r');
                 this.term.focus();
             }
+        });
+
+        // File attachment button
+        const attachBtn = this.querySelector('.mobile-keyboard__attach');
+        const fileInput = this.querySelector('.mobile-keyboard__file-input');
+
+        attachBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', () => {
+            const wasEmpty = this.uploadQueue.length === 0;
+            for (const file of fileInput.files) {
+                this.addFileToQueue(file);
+            }
+            if (wasEmpty && this.uploadQueue.length > 0) {
+                this.processUploadQueue();
+            }
+            fileInput.value = '';
         });
 
         // Enter key allows newlines in textarea (no auto-submit)
