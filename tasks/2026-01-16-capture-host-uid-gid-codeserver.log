@@ -38,3 +38,56 @@ To:
 
 Status: ✓ STEP 2 COMPLETE
 135213
+
+[STEP 3] Update template processor for docker-compose placeholders
+Time: $(date +%H%M%S)
+Expected: Extend processSimpleTemplate() to accept and process UID:GID values
+
+[OBSERVED] $(date +%H%M%S)
+Changed: processSimpleTemplate() function signature (line 750)
+  From: func processSimpleTemplate(content string, withDocker bool, ssl string) string
+  To:   func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int) string
+
+Added: Placeholder processing (lines 781-786):
+  if strings.Contains(line, "{{UID}}") {
+    line = strings.ReplaceAll(line, "{{UID}}", fmt.Sprintf("%d", hostUID))
+  }
+  if strings.Contains(line, "{{GID}}") {
+    line = strings.ReplaceAll(line, "{{GID}}", fmt.Sprintf("%d", hostGID))
+  }
+
+Updated: All call sites to pass hostUID and hostGID:
+  - line 1330: processSimpleTemplate for docker-compose.yml
+  - line 1335: processSimpleTemplate for traefik-dynamic.yml
+  - line 961 in main_test.go: test call
+
+Status: ✓ STEP 3 COMPLETE
+142856
+
+[STEP 4] Add code-server/Dockerfile to file list and regenerate golden
+Time: $(date +%H%M%S)
+Expected: Ensure code-server/Dockerfile is included in init output and golden files
+
+[OBSERVED] $(date +%H%M%S)
+Added: "templates/host/code-server/Dockerfile" to hostFiles list (line 1261 in main.go)
+
+Regenerated: All golden test files with:
+  - code-server/Dockerfile files created in all test variants
+  - docker-compose.yml updated with UID:GID values replaced (501:20 for this system)
+  - Example from golden/default/docker-compose.yml:
+    code-server:
+      build:
+        context: code-server
+        args:
+          UID: 501
+          GID: 20
+
+Tests: All tests pass ✓
+  - cmd/swe-swe tests: PASS
+  - cmd/swe-swe-server tests: PASS
+  - Golden files: All regenerated correctly
+
+Status: ✓ STEP 4 COMPLETE
+143012
+
+=== Code-Server UID:GID Fix COMPLETE ===
