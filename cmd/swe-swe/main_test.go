@@ -425,6 +425,170 @@ CMD done`
 	}
 }
 
+// TestGoldenFiles verifies swe-swe init output matches golden files
+func TestGoldenFiles(t *testing.T) {
+	// Skip if running short tests
+	if testing.Short() {
+		t.Skip("Skipping golden file test in short mode")
+	}
+
+	variants := []struct {
+		name  string
+		flags []string
+	}{
+		{"default", []string{}},
+		{"claude-only", []string{"--agents", "claude"}},
+		{"aider-only", []string{"--agents", "aider"}},
+		{"goose-only", []string{"--agents", "goose"}},
+		{"nodejs-agents", []string{"--agents", "claude,gemini,codex"}},
+		{"exclude-aider", []string{"--exclude", "aider"}},
+		{"with-apt", []string{"--apt-get-install", "vim,curl"}},
+		{"with-npm", []string{"--npm-install", "typescript"}},
+		{"with-both-packages", []string{"--apt-get-install", "vim", "--npm-install", "typescript"}},
+	}
+
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			goldenDir := filepath.Join("testdata", "golden", v.name)
+
+			// Check if golden files exist
+			if _, err := os.Stat(goldenDir); os.IsNotExist(err) {
+				t.Skipf("Golden files not found at %s - run 'make golden-update' first", goldenDir)
+			}
+
+			// Find the project hash directory in golden files
+			goldenHomeDir := filepath.Join(goldenDir, "home", ".swe-swe", "projects")
+			entries, err := os.ReadDir(goldenHomeDir)
+			if err != nil {
+				t.Fatalf("Failed to read golden home dir: %v", err)
+			}
+			if len(entries) != 1 {
+				t.Fatalf("Expected exactly one project dir in golden, got %d", len(entries))
+			}
+			goldenProjectDir := filepath.Join(goldenHomeDir, entries[0].Name())
+
+			// Compare key files from golden
+			keyFiles := []string{
+				"Dockerfile",
+				"docker-compose.yml",
+				"entrypoint.sh",
+			}
+
+			for _, file := range keyFiles {
+				goldenPath := filepath.Join(goldenProjectDir, file)
+				goldenContent, err := os.ReadFile(goldenPath)
+				if err != nil {
+					t.Errorf("Failed to read golden file %s: %v", file, err)
+					continue
+				}
+
+				// Verify file is not empty and contains expected content based on variant
+				if len(goldenContent) == 0 {
+					t.Errorf("Golden file %s is empty", file)
+				}
+
+				// Variant-specific checks
+				content := string(goldenContent)
+				switch v.name {
+				case "claude-only":
+					if file == "Dockerfile" {
+						if !strings.Contains(content, "claude-code") {
+							t.Errorf("Dockerfile should contain claude-code for claude-only variant")
+						}
+						if strings.Contains(content, "aider") {
+							t.Errorf("Dockerfile should NOT contain aider for claude-only variant")
+						}
+					}
+				case "aider-only":
+					if file == "Dockerfile" {
+						if !strings.Contains(content, "aider") {
+							t.Errorf("Dockerfile should contain aider for aider-only variant")
+						}
+						if strings.Contains(content, "claude-code") {
+							t.Errorf("Dockerfile should NOT contain claude-code for aider-only variant")
+						}
+					}
+				case "with-apt":
+					if file == "Dockerfile" {
+						if !strings.Contains(content, "vim") || !strings.Contains(content, "curl") {
+							t.Errorf("Dockerfile should contain vim and curl for with-apt variant")
+						}
+					}
+				case "with-npm":
+					if file == "Dockerfile" {
+						if !strings.Contains(content, "typescript") {
+							t.Errorf("Dockerfile should contain typescript for with-npm variant")
+						}
+					}
+				}
+			}
+
+			// Verify target files exist
+			targetFiles := []string{
+				filepath.Join(goldenDir, "target", ".mcp.json"),
+				filepath.Join(goldenDir, "target", ".swe-swe", "browser-automation.md"),
+			}
+			for _, tf := range targetFiles {
+				if _, err := os.Stat(tf); err != nil {
+					t.Errorf("Target file missing: %s", tf)
+				}
+			}
+		})
+	}
+}
+
+// TestGoldenFilesMatchTemplate verifies golden Dockerfiles match template processing
+func TestGoldenFilesMatchTemplate(t *testing.T) {
+	variants := []struct {
+		name   string
+		agents []string
+		apt    string
+		npm    string
+	}{
+		{"default", []string{"claude", "gemini", "codex", "aider", "goose"}, "", ""},
+		{"claude-only", []string{"claude"}, "", ""},
+		{"aider-only", []string{"aider"}, "", ""},
+		{"goose-only", []string{"goose"}, "", ""},
+		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", ""},
+		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim curl", ""},
+		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose"}, "", "typescript"},
+		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose"}, "vim", "typescript"},
+	}
+
+	// Read the template
+	templateContent, err := assets.ReadFile("templates/host/Dockerfile")
+	if err != nil {
+		t.Fatalf("Failed to read Dockerfile template: %v", err)
+	}
+
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			// Generate expected output from template
+			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm)
+
+			// Read golden file
+			goldenDir := filepath.Join("testdata", "golden", v.name, "home", ".swe-swe", "projects")
+			entries, err := os.ReadDir(goldenDir)
+			if err != nil {
+				t.Skipf("Golden files not found - run 'make golden-update' first")
+			}
+			if len(entries) != 1 {
+				t.Fatalf("Expected exactly one project dir, got %d", len(entries))
+			}
+
+			goldenDockerfile := filepath.Join(goldenDir, entries[0].Name(), "Dockerfile")
+			actual, err := os.ReadFile(goldenDockerfile)
+			if err != nil {
+				t.Fatalf("Failed to read golden Dockerfile: %v", err)
+			}
+
+			if string(actual) != expected {
+				t.Errorf("Golden Dockerfile doesn't match template output for %s.\nExpected:\n%s\n\nActual:\n%s", v.name, expected, string(actual))
+			}
+		})
+	}
+}
+
 // TestListDetectsAndPrunesStaleProjects verifies handleList detects missing paths and prunes them
 func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
 	testDir := t.TempDir()

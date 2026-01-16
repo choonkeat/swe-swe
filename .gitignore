@@ -3,6 +3,7 @@ cmd/swe-swe/bin
 tmp/
 .swe-swe/
 !cmd/swe-swe/templates/container/.swe-swe/
+!cmd/swe-swe/testdata/golden/**/.swe-swe/
 
 # Generated from .txt files for local dev (make run)
 cmd/swe-swe/templates/host/swe-swe-server/go.mod
