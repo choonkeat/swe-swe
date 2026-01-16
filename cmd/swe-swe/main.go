@@ -375,7 +375,7 @@ func handleInit() {
 			"templates/host/chrome/nginx-cdp.conf",
 			"templates/host/chrome/novnc-wrapper.html",
 			"templates/host/auth/Dockerfile",
-			"templates/host/auth/go.mod",
+			"templates/host/auth/go.mod.txt",
 			"templates/host/auth/main.go",
 		}
 
@@ -412,6 +412,10 @@ func handleInit() {
 
 			// Calculate destination path, preserving subdirectories
 			relPath := strings.TrimPrefix(hostFile, "templates/host/")
+			// Rename go.mod.txt back to go.mod (workaround for go:embed excluding go.mod files)
+			if strings.HasSuffix(relPath, "go.mod.txt") {
+				relPath = strings.TrimSuffix(relPath, ".txt")
+			}
 			destPath := filepath.Join(sweDir, relPath)
 
 			// Create parent directories if needed

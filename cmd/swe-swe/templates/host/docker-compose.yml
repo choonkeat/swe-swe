@@ -19,8 +19,7 @@ services:
 
   auth:
     build:
-      context: .
-      dockerfile: auth/Dockerfile
+      context: ./auth
     environment:
       - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
     labels:
