@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -12,8 +14,18 @@ import (
 	"time"
 )
 
+// skipIfNotLinux skips the test if not running on Linux
+// Integration tests require Linux-specific features like /proc/sys/kernel/random/uuid
+func skipIfNotLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("Integration tests only run on Linux, skipping on %s", runtime.GOOS)
+	}
+}
+
 // TestIntegration_BasicFlow tests the complete request/response cycle.
 func TestIntegration_BasicFlow(t *testing.T) {
+	skipIfNotLinux(t)
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "echo")
 	defer helper.cleanup()
 
@@ -35,6 +47,7 @@ func TestIntegration_BasicFlow(t *testing.T) {
 
 // TestIntegration_ExitCodePropagation tests that non-zero exit codes are passed through.
 func TestIntegration_ExitCodePropagation(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
 
@@ -50,6 +63,7 @@ func TestIntegration_ExitCodePropagation(t *testing.T) {
 
 // TestIntegration_StdoutStderrSeparation tests that stdout and stderr are captured separately.
 func TestIntegration_StdoutStderrSeparation(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
 
@@ -71,6 +85,7 @@ func TestIntegration_StdoutStderrSeparation(t *testing.T) {
 
 // TestIntegration_ConcurrentRequests tests handling multiple simultaneous requests.
 func TestIntegration_ConcurrentRequests(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
 
@@ -114,6 +129,7 @@ func TestIntegration_ConcurrentRequests(t *testing.T) {
 
 // TestIntegration_SpecialCharacters tests arguments with special characters.
 func TestIntegration_SpecialCharacters(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "echo")
 	defer helper.cleanup()
 
@@ -166,6 +182,7 @@ func TestIntegration_SpecialCharacters(t *testing.T) {
 
 // TestIntegration_NoArguments tests running command with no arguments.
 func TestIntegration_NoArguments(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "echo")
 	defer helper.cleanup()
 
@@ -185,6 +202,7 @@ func TestIntegration_NoArguments(t *testing.T) {
 
 // TestIntegration_CommandNotFound tests handling of non-existent commands.
 func TestIntegration_CommandNotFound(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "nonexistent-command-12345")
 	defer helper.cleanup()
 
@@ -202,6 +220,7 @@ func TestIntegration_CommandNotFound(t *testing.T) {
 
 // TestIntegration_GracefulShutdown tests that in-flight requests complete on shutdown.
 func TestIntegration_GracefulShutdown(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
 
@@ -282,12 +301,21 @@ func (h *proxyTestHelper) cleanup() {
 func (h *proxyTestHelper) startProxy() {
 	h.t.Helper()
 
+	// Build binary name based on current OS and architecture
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+	ext := ""
+	if goos == "windows" {
+		ext = ".exe"
+	}
+	binaryName := fmt.Sprintf("swe-swe.%s-%s%s", goos, goarch, ext)
+
 	// Find swe-swe binary - check multiple possible locations
 	// Tests run from the package directory, so we need to go up to repo root
 	possiblePaths := []string{
-		"../../dist/swe-swe.linux-amd64",
-		"./dist/swe-swe.linux-amd64",
-		"../../../dist/swe-swe.linux-amd64",
+		fmt.Sprintf("../../dist/%s", binaryName),
+		fmt.Sprintf("./dist/%s", binaryName),
+		fmt.Sprintf("../../../dist/%s", binaryName),
 	}
 
 	var binaryPath string
@@ -371,6 +399,7 @@ func setupFastTimeouts(t *testing.T) {
 
 // TestIntegration_HeartbeatUpdated verifies that the heartbeat file is touched during execution.
 func TestIntegration_HeartbeatUpdated(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
 
@@ -418,6 +447,7 @@ func TestIntegration_HeartbeatUpdated(t *testing.T) {
 
 // TestIntegration_HeartbeatStaleKillsProcess verifies that stale heartbeat triggers process kill.
 func TestIntegration_HeartbeatStaleKillsProcess(t *testing.T) {
+	skipIfNotLinux(t)
 	setupFastTimeouts(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
@@ -462,6 +492,7 @@ func TestIntegration_HeartbeatStaleKillsProcess(t *testing.T) {
 
 // TestIntegration_ShutdownKillsHangingProcess tests that shutdown kills processes after grace period.
 func TestIntegration_ShutdownKillsHangingProcess(t *testing.T) {
+	skipIfNotLinux(t)
 	setupFastTimeouts(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
@@ -501,6 +532,7 @@ func TestIntegration_ShutdownKillsHangingProcess(t *testing.T) {
 
 // TestIntegration_GrandchildKilledViaProcessGroup tests that grandchild processes are killed.
 func TestIntegration_GrandchildKilledViaProcessGroup(t *testing.T) {
+	skipIfNotLinux(t)
 	setupFastTimeouts(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
@@ -540,6 +572,7 @@ func TestIntegration_GrandchildKilledViaProcessGroup(t *testing.T) {
 
 // TestIntegration_ExitCodeWithSignal tests that exit code includes signal info.
 func TestIntegration_ExitCodeWithSignal(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "sh")
 	defer helper.cleanup()
 
@@ -557,6 +590,7 @@ func TestIntegration_ExitCodeWithSignal(t *testing.T) {
 
 // TestIntegration_NormalOperationNoRegression tests that normal operations work with heartbeat.
 func TestIntegration_NormalOperationNoRegression(t *testing.T) {
+	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "echo")
 	defer helper.cleanup()
 
