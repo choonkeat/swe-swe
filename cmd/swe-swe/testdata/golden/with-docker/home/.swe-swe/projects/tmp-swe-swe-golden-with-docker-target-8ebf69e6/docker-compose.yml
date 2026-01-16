@@ -8,6 +8,7 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
       - "--entrypoints.web.address=:7000"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=60s"
     ports:
       - "${SWE_PORT:-9899}:7000"
     volumes:
