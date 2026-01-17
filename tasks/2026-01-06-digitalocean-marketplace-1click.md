@@ -186,7 +186,7 @@ WantedBy=multi-user.target
 
 ---
 
-### Phase 4: Add Validation and Cleanup Scripts
+### Phase 4: Add Validation and Cleanup Scripts [DONE]
 
 **What Will Be Achieved**
 Scripts that prepare the image for marketplace submission by removing sensitive data and validating requirements.
