@@ -45,6 +45,10 @@ elif [ -d "/tmp/slash-commands/ck" ]; then
     echo -e "${GREEN}✓ Installed slash commands: ck (claude)${NC}"
 fi
 
+
+
+
+
 # Ensure /worktrees directory exists and is owned by app user
 # (bind mount from host may create it with root ownership)
 if [ -d /worktrees ]; then
