@@ -98,7 +98,7 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create non-root user for running swe-swe-server
-RUN useradd -m -u 501 -g 20 -s /bin/bash app
+RUN groupadd -g 20 app && useradd -m -u 501 -g 20 -s /bin/bash app
 
 # Create worktrees directory with app ownership (used for git worktrees)
 RUN mkdir -p /worktrees && chown app:app /worktrees
