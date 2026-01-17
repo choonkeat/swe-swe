@@ -1222,24 +1222,29 @@ class TerminalUI extends HTMLElement {
             terminalEl.classList.add('blurred');
         }
 
+        // Common hint callback for all link providers
+        const onHint = (msg) => this.showStatusNotification(msg);
+
         // Register file path link provider for clickable paths
         if (typeof registerFileLinkProvider === 'function') {
             registerFileLinkProvider(this.term, {
                 getVSCodeUrl: () => this.getVSCodeUrl(),
-                onCopy: (path) => this.showStatusNotification('Copied: ' + path)
+                onCopy: (path) => this.showStatusNotification('Copied: ' + path),
+                onHint
             });
         }
 
         // Register color link provider for clickable CSS colors
         if (typeof registerColorLinkProvider === 'function') {
             registerColorLinkProvider(this.term, {
-                onColorClick: (color) => this.setStatusBarColor(color)
+                onColorClick: (color) => this.setStatusBarColor(color),
+                onHint
             });
         }
 
         // Register URL link provider for clickable http/https URLs
         if (typeof registerUrlLinkProvider === 'function') {
-            registerUrlLinkProvider(this.term);
+            registerUrlLinkProvider(this.term, { onHint });
         }
 
         this.term.write('Session: ' + this.uuid + '\r\n');

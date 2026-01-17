@@ -35,6 +35,7 @@ function getLinkModifierHint() {
  * @param {Terminal} terminal - xterm.js Terminal instance
  * @param {Object} options - Configuration options
  * @param {Function} options.onColorClick - Callback when a color is clicked (receives color string)
+ * @param {Function} [options.onHint] - Optional callback to show hint when clicked without modifier
  */
 function registerColorLinkProvider(terminal, options) {
     // Match CSS colors:
@@ -92,14 +93,18 @@ function registerColorLinkProvider(terminal, options) {
                 },
                 activate: (event, text) => {
                     if (!hasLinkModifier(event)) {
-                        return; // Require modifier key to activate
+                        if (options.onHint) {
+                            options.onHint(getLinkModifierHint() + ' to set status bar color');
+                        }
+                        return;
                     }
                     if (options.onColorClick) {
                         options.onColorClick(text);
                     }
                 },
                 decorations: {
-                    pointerCursor: true
+                    pointerCursor: true,
+                    underline: true
                 }
             }));
 
@@ -115,6 +120,7 @@ function registerColorLinkProvider(terminal, options) {
  * @param {Function} options.getVSCodeUrl - Function returning the VS Code URL
  * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
  * @param {Function} [options.onCopy] - Optional callback when path is copied (receives path string)
+ * @param {Function} [options.onHint] - Optional callback to show hint when clicked without modifier
  */
 function registerFileLinkProvider(terminal, options) {
     // Match file paths with optional line:col suffixes
@@ -203,7 +209,10 @@ function registerFileLinkProvider(terminal, options) {
                     },
                     activate: (event, text) => {
                         if (!hasLinkModifier(event)) {
-                            return; // Require modifier key to activate
+                            if (options.onHint) {
+                                options.onHint(getLinkModifierHint() + ' to open file');
+                            }
+                            return;
                         }
 
                         // Copy path to clipboard (requires secure context)
@@ -226,6 +235,10 @@ function registerFileLinkProvider(terminal, options) {
                         if (options.onLinkClick) {
                             options.onLinkClick(text);
                         }
+                    },
+                    decorations: {
+                        pointerCursor: true,
+                        underline: true
                     }
                 });
             }
@@ -241,6 +254,7 @@ function registerFileLinkProvider(terminal, options) {
  * @param {Terminal} terminal - xterm.js Terminal instance
  * @param {Object} [options] - Configuration options
  * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
+ * @param {Function} [options.onHint] - Optional callback to show hint when clicked without modifier
  */
 function registerUrlLinkProvider(terminal, options = {}) {
     // Match http/https URLs
@@ -297,7 +311,10 @@ function registerUrlLinkProvider(terminal, options = {}) {
                     },
                     activate: (event, text) => {
                         if (!hasLinkModifier(event)) {
-                            return; // Require modifier key to activate
+                            if (options.onHint) {
+                                options.onHint(getLinkModifierHint() + ' to open link');
+                            }
+                            return;
                         }
 
                         // Open URL in new tab
