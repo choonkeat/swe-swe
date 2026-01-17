@@ -1225,7 +1225,8 @@ class TerminalUI extends HTMLElement {
         // Register file path link provider for clickable paths
         if (typeof registerFileLinkProvider === 'function') {
             registerFileLinkProvider(this.term, {
-                getVSCodeUrl: () => this.getVSCodeUrl()
+                getVSCodeUrl: () => this.getVSCodeUrl(),
+                onCopy: (path) => this.showStatusNotification('Copied: ' + path)
             });
         }
 

@@ -114,6 +114,7 @@ function registerColorLinkProvider(terminal, options) {
  * @param {Object} options - Configuration options
  * @param {Function} options.getVSCodeUrl - Function returning the VS Code URL
  * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
+ * @param {Function} [options.onCopy] - Optional callback when path is copied (receives path string)
  */
 function registerFileLinkProvider(terminal, options) {
     // Match file paths with optional line:col suffixes
@@ -207,7 +208,11 @@ function registerFileLinkProvider(terminal, options) {
 
                         // Copy path to clipboard (requires secure context)
                         if (navigator.clipboard) {
-                            navigator.clipboard.writeText(text).catch(err => {
+                            navigator.clipboard.writeText(text).then(() => {
+                                if (options.onCopy) {
+                                    options.onCopy(text);
+                                }
+                            }).catch(err => {
                                 console.warn('Failed to copy to clipboard:', err);
                             });
                         }
@@ -304,7 +309,8 @@ function registerUrlLinkProvider(terminal, options = {}) {
                         }
                     },
                     decorations: {
-                        pointerCursor: true
+                        pointerCursor: true,
+                        underline: true
                     }
                 });
             }
@@ -313,3 +319,4 @@ function registerUrlLinkProvider(terminal, options = {}) {
         }
     });
 }
+
