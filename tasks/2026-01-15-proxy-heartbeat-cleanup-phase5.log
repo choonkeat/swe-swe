@@ -1,0 +1,14 @@
+074600 Starting Phase 5: Container Script
+074600 Step 5.1: Add heartbeat file path and touch before request submission
+074600 Expected: Container touches .heartbeat before submitting request, preventing race conditions
+074830 Observed: All tests pass (TestGenerateContainerScript_Content with new heartbeat checks)
+074830 Got: PASS - Modified containerScriptTemplate with:
+074830   - heartbeat_file="$PROXY_DIR/.heartbeat" variable
+074830   - heartbeat_pid="" for tracking background process
+074830   - touch "$heartbeat_file" BEFORE mv "$tmp_file" "$req_file"
+074830   - Background heartbeat loop: while [[ ! -f "$exit_file" ]]; do touch; sleep 1; done
+074830   - Cleanup function stops heartbeat: kill/wait "$heartbeat_pid"
+074830 Note: Tests verify all heartbeat-related snippets present in generated script
+
+074830 Phase 5 COMPLETE
+

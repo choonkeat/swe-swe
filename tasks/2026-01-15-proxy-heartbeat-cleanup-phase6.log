@@ -1,0 +1,14 @@
+074900 Starting Phase 6: Exit Code Convention
+074900 Step 6.1: Add writeExitFile() helper function
+074900 Expected: Exit file contains {code} for normal exits, {code}:{signal} when killed
+075700 Observed: All tests pass (TestWriteExitFile_*, TestContainerParsesExitCode)
+075700 Got: PASS - Implemented exit code convention with:
+075700   - writeExitFile() helper writes "{code}" or "{code}:{signal}"
+075700   - processRequest() detects signal death via syscall.WaitStatus
+075700   - Host-killed processes get 124:timeout
+075700   - Shutdown rejects get 125:shutdown
+075700   - Container script parses with ${exit_content%%:*}
+075700 Note: Tests verify normal/nonzero/signal/timeout/shutdown exit codes
+
+075700 Phase 6 COMPLETE
+
