@@ -8,3 +8,10 @@ Got: As expected - proxy subcommand skeleton working.
 105444 - Phase 1 Step 2: Implement PID file management
 Action: Add PID file check/creation in proxy.go. Check if existing PID is alive (signal 0), fail fast if running, clean stale.
 Expected: Running proxy twice fails with "already running" error. Stale PID file gets cleaned up.
+105654 - Phase 1 Step 2: Result
+Observed:
+- Initial build had bug: strconv.Atoi fails on "1\n" (newline in file). Fixed by adding strings.TrimSpace.
+- Duplicate detection: Created PID file with running background process PID -> "proxy for 'echo' already running (PID xxx)" error, exits 1.
+- Stale cleanup: Created PID file with 999999 -> "Removing stale PID file" message, continues normally.
+- PID file cleanup on exit: After proxy exits, PID file is removed (defer os.Remove works).
+Got: As expected after fixing TrimSpace bug. PID file management working correctly.
