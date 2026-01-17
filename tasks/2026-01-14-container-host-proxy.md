@@ -75,23 +75,23 @@ A working `swe-swe proxy <command>` subcommand that watches for requests and exe
    - Handle SIGINT/SIGTERM
    - Clean up PID file on exit
 
-### Tests
+### Tests ✅
 
-1. **Test PID file creation**
+1. **Test PID file creation** ✅
    - Start proxy, verify PID file exists with correct content
 
-2. **Test duplicate proxy detection**
+2. **Test duplicate proxy detection** ✅
    - Start proxy, attempt second instance, verify error
 
-3. **Test stale PID cleanup**
+3. **Test stale PID cleanup** ✅
    - Create PID file with dead PID, start proxy, verify it starts
 
-4. **Test request processing**
+4. **Test request processing** ✅
    - Create mock `.req` file with NUL-delimited args
    - Verify command executed with correct args
    - Verify `.stdout`, `.stderr`, `.exit` files created
 
-5. **Test exit code propagation**
+5. **Test exit code propagation** ✅
    - Request command that exits non-zero
    - Verify `.exit` contains correct code
 
