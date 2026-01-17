@@ -26,7 +26,7 @@ PUBLIC_IP=$(curl -fsSL http://169.254.169.254/metadata/v1/interfaces/public/0/ip
 # Initialize swe-swe workspace
 echo "==> Initializing swe-swe workspace..."
 cd "$WORKSPACE_DIR"
-/usr/local/bin/swe-swe init --project-directory "$WORKSPACE_DIR" --agents=claude
+/usr/local/bin/swe-swe init --project-directory "$WORKSPACE_DIR" ${SWE_SWE_INIT_FLAGS}
 
 # Start swe-swe service
 echo "==> Starting swe-swe service..."

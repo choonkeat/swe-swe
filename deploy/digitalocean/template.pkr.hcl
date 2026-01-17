@@ -36,6 +36,12 @@ variable "region" {
   description = "DigitalOcean region (required; see https://docs.digitalocean.com/reference/api/list-regions/)"
 }
 
+variable "init_flags" {
+  type        = string
+  description = "Additional swe-swe init flags (beyond --project-directory=/workspace)"
+  default     = ""
+}
+
 locals {
   timestamp    = formatdate("YYYYMMDD-hhmmss", timestamp())
   snapshot_name = "${var.image_name}-${var.image_version}-${local.timestamp}"
@@ -91,7 +97,8 @@ build {
       "scripts/900-cleanup.sh"
     ]
     environment_vars = [
-      "DEBIAN_FRONTEND=noninteractive"
+      "DEBIAN_FRONTEND=noninteractive",
+      "SWE_SWE_INIT_FLAGS=${var.init_flags}"
     ]
   }
 
