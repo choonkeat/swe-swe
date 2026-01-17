@@ -389,6 +389,13 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-bar.multiuser {
                     border-color: var(--status-bar-text-color);
                 }
+                .terminal-ui__status-bar.yolo {
+                    border-color: {{STATUS_BAR_TEXT_COLOR}};
+                }
+                .terminal-ui__status-yolo-toggle {
+                    text-decoration: underline;
+                    cursor: pointer;
+                }
                 .terminal-ui__status-bar.connecting,
                 .terminal-ui__status-bar.error,
                 .terminal-ui__status-bar.reconnecting {
@@ -1674,6 +1681,9 @@ class TerminalUI extends HTMLElement {
                 if (this.workDir !== prevWorkDir) {
                     this.renderServiceLinks();
                 }
+                // YOLO mode state
+                this.yoloMode = msg.yoloMode || false;
+                this.yoloSupported = msg.yoloSupported || false;
                 this.updateStatusInfo();
                 break;
             case 'chat':
@@ -1729,12 +1739,22 @@ class TerminalUI extends HTMLElement {
 
         // Toggle multiuser class based on viewer count
         statusBar.classList.toggle('multiuser', this.viewers > 1);
+        // Toggle yolo class based on YOLO mode
+        statusBar.classList.toggle('yolo', this.yoloMode);
 
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            // Build "Connected as {name} with {agent}" message with separate clickable parts
+            // Build "Connected/YOLO as {name} with {agent}" message with separate clickable parts
             const userName = this.currentUserName;
             const debugQS = this.getDebugQueryString();
-            let html = `Connected as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+
+            // Show "YOLO" or "Connected" based on mode, make clickable if YOLO is supported
+            const statusWord = this.yoloMode ? 'YOLO' : 'Connected';
+            let html;
+            if (this.yoloSupported) {
+                html = `<span class="terminal-ui__status-link terminal-ui__status-yolo-toggle">${statusWord}</span> as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+            } else {
+                html = `${statusWord} as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
+            }
             if (this.assistantName) {
                 html += ` with <a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
             }
@@ -1881,6 +1901,19 @@ class TerminalUI extends HTMLElement {
                 return;
             } else {
                 alert('Invalid name: ' + validation.error + '\nPlease try again.');
+            }
+        }
+    }
+
+    toggleYoloMode() {
+        if (!this.yoloSupported) {
+            return;
+        }
+
+        const action = this.yoloMode ? 'Disable' : 'Enable';
+        if (confirm(`${action} YOLO mode? The agent will restart.`)) {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'toggle_yolo' }));
             }
         }
     }
@@ -2729,6 +2762,11 @@ class TerminalUI extends HTMLElement {
             else if (e.target.classList.contains('terminal-ui__status-session')) {
                 e.stopPropagation();
                 this.promptRenameSession();
+            }
+            // Check if clicked on YOLO toggle
+            else if (e.target.classList.contains('terminal-ui__status-yolo-toggle')) {
+                e.stopPropagation();
+                this.toggleYoloMode();
             }
             // Otherwise let click bubble to status bar handler to open settings panel
         });
