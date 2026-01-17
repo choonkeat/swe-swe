@@ -747,7 +747,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml which only needs the DOCKER condition
-func processSimpleTemplate(content string, withDocker bool, ssl string) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -777,6 +777,13 @@ func processSimpleTemplate(content string, withDocker bool, ssl string) string {
 		}
 
 		if !skip {
+			// Handle UID and GID placeholders
+			if strings.Contains(line, "{{UID}}") {
+				line = strings.ReplaceAll(line, "{{UID}}", fmt.Sprintf("%d", hostUID))
+			}
+			if strings.Contains(line, "{{GID}}") {
+				line = strings.ReplaceAll(line, "{{GID}}", fmt.Sprintf("%d", hostGID))
+			}
 			result = append(result, line)
 		}
 	}
@@ -1251,6 +1258,7 @@ func handleInit() {
 			"templates/host/chrome/entrypoint.sh",
 			"templates/host/chrome/nginx-cdp.conf",
 			"templates/host/chrome/novnc-wrapper.html",
+			"templates/host/code-server/Dockerfile",
 			"templates/host/auth/Dockerfile",
 			"templates/host/auth/go.mod.txt",
 			"templates/host/auth/main.go",
@@ -1319,12 +1327,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
 			}
 
 			// Process entrypoint.sh template with conditional sections
