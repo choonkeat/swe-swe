@@ -4,12 +4,15 @@ FROM codercom/code-server:latest
 ARG UID=1000
 ARG GID=1000
 
-# Recreate coder group and user with captured host UID:GID
+# Run as root to modify system files
+USER root
+
+# Modify existing coder group and user with captured host UID:GID
 # This ensures container coder user has same UID:GID as host user
-# Kill any processes running as coder, then delete user before group
-RUN pkill -9 -u coder || true && userdel -r coder || true && groupdel coder || true && \
-    groupadd -g ${GID} coder && \
-    useradd -m -u ${UID} -g ${GID} -s /bin/bash coder
+RUN groupmod -g ${GID} coder && usermod -u ${UID} -g ${GID} coder
 
 # Fix ownership of coder home directory
 RUN chown -R ${UID}:${GID} /home/coder
+
+# Switch back to coder user (code-server runs as coder by default)
+USER coder

@@ -104,18 +104,34 @@ Logic: User must be deleted first (has group as primary), then group can be dele
 
 Status: ✓ Fixed, golden files regenerated
 
-=== Bug Fix 2: User In Use During Build ===
+=== Bug Fix 2: User In Use During Build (Attempt 1) ===
 
 Issue: Second Docker build failed with:
   Error: userdel: user coder is currently used by process 1
   Reason: The coder user has running processes during the build
 
-Fix: Added -f (force) flag to userdel in code-server/Dockerfile (line 11)
-  Changed FROM: userdel coder && groupdel ...
-  Changed TO:   userdel -f coder && groupdel ...
+Attempt 1: Added -f (force) flag to userdel
+  Status: ✗ Still failed with "Permission denied" and "cannot lock /etc/passwd"
+  Reason: The -f flag alone doesn't kill running processes or fix lock contention
 
-Logic: The -f flag allows deletion even when user has processes running,
-       which is safe in the ephemeral Docker build context
+=== Bug Fix 3: Kill Coder Processes Before Deletion ===
+
+Issue: Third Docker build failed with:
+  Error: Permission denied, cannot lock /etc/passwd
+  Reason: Running processes and lock contention prevent user/group changes
+
+Fix: Kill all coder processes before deletion in code-server/Dockerfile (line 10)
+  Changed FROM: userdel -f coder && groupdel coder && ...
+  Changed TO:   pkill -9 -u coder || true && userdel -r coder || true && groupdel coder || true && ...
+
+Components:
+  - pkill -9 -u coder: Kill all processes running as coder user (SIGKILL)
+  - userdel -r coder: Delete user AND remove home directory/mail spool
+  - || true: Suppress errors (safe for idempotent execution)
+  - groupdel coder || true: Delete group after user is gone
+
+Logic: Kill processes first, then safely delete user/group, then create new ones
+       with the -r flag ensuring complete cleanup
 
 Status: ✓ Fixed, golden files regenerated, all tests pass
 
