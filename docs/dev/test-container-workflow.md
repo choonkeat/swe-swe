@@ -11,15 +11,15 @@ This workflow enables testing swe-swe container builds without affecting the dev
 
 ```bash
 # Run all phases
-./scripts/01-test-container-init.sh   # Acquire slot, generate project files
-./scripts/02-test-container-build.sh  # Build container images
-./scripts/03-test-container-run.sh    # Start containers
+./scripts/test-container/01-init.sh   # Acquire slot, generate project files
+./scripts/test-container/02-build.sh  # Build container images
+./scripts/test-container/03-run.sh    # Start containers
 
 # MCP browser test at the assigned port (shown in output)
 # Default: http://host.docker.internal:19770/
 
 # Teardown
-./scripts/04-test-container-down.sh   # Stop containers and release slot
+./scripts/test-container/04-down.sh   # Stop containers and release slot
 ```
 
 ## Slot Assignment
@@ -68,3 +68,5 @@ rm -rf /tmp/swe-swe-test-slot-*.lock
 ```bash
 docker compose -f /workspace/.test-home-0/.swe-swe/projects/*/docker-compose.yml down
 ```
+
+**Claude auth blocked**: If Claude sessions fail due to authentication issues, use OpenCode instead. OpenCode uses `ANTHROPIC_API_KEY` from the environment and doesn't require interactive login. When testing via MCP browser, create sessions under the OpenCode agent dropdown.

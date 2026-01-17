@@ -560,14 +560,12 @@ func TestCopySweSweMarkdownFiles(t *testing.T) {
 		{
 			name: "copies markdown files from .swe-swe",
 			files: map[string]string{
-				".swe-swe/browser-automation.md":   "# Browser Automation",
-				".swe-swe/how-to-restart.md":       "# How to Restart",
-				".swe-swe/test-container-workflow.md": "# Test Container",
+				".swe-swe/browser-automation.md": "# Browser Automation",
+				".swe-swe/docker.md":             "# Docker",
 			},
 			expectedCopied: []string{
 				".swe-swe/browser-automation.md",
-				".swe-swe/how-to-restart.md",
-				".swe-swe/test-container-workflow.md",
+				".swe-swe/docker.md",
 			},
 		},
 		{
