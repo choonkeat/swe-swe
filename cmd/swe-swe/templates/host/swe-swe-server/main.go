@@ -1353,6 +1353,43 @@ func generateWorktreeCommands(worktreePath, branchName string) error {
 	return nil
 }
 
+// generateMOTD creates the terminal MOTD displaying available swe-swe commands
+func generateMOTD(workDir, branchName string) string {
+	// Determine the swe-swe directory path
+	sweSweDir := "/workspace/swe-swe"
+	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
+		sweSweDir = workDir + "/swe-swe"
+	}
+
+	// Check if swe-swe directory exists
+	entries, err := os.ReadDir(sweSweDir)
+	if err != nil {
+		return "" // No swe-swe directory, no MOTD
+	}
+
+	// Collect command names
+	var commands []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		commands = append(commands, "@swe-swe/"+entry.Name())
+	}
+
+	if len(commands) == 0 {
+		return ""
+	}
+
+	// Format the MOTD line
+	// Cyan color: \033[0;36m, Reset: \033[0m
+	prefix := "swe-swe"
+	if branchName != "" {
+		prefix = fmt.Sprintf("swe-swe [%s]", branchName)
+	}
+
+	return fmt.Sprintf("\033[0;36m%s: %s\033[0m\n", prefix, strings.Join(commands, ", "))
+}
+
 // isTrackedInGit checks if a file is tracked in git
 // Returns true if the file is tracked, false otherwise
 func isTrackedInGit(repoDir, relativePath string) bool {
@@ -2010,17 +2047,11 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
-	// NOTE: Commented out - injecting text via PTY doesn't actually reach Claude's
-	// conversation context; it only displays in the terminal. Browser automation
-	// instructions should be in CLAUDE.md or system prompt instead.
-	// if browserEndpoint := os.Getenv("BROWSER_WS_ENDPOINT"); browserEndpoint != "" {
-	// 	browserPrompt := `You have browser automation capabilities via MCP Playwright tools (mcp__playwright__*).
-	// If browser tools are unavailable or not working, read .swe-swe/browser-automation.md for troubleshooting.
-	// User can watch the browser via VNC at http://chrome.lvh.me:1977/vnc_auto.html
-	//
-	// ` + "\n"
-	// 	ptmx.Write([]byte(browserPrompt))
-	// }
+	// Display MOTD with available swe-swe commands (for human user discoverability)
+	motd := generateMOTD(workDir, branchName)
+	if motd != "" {
+		ptmx.Write([]byte(motd))
+	}
 
 	now := time.Now()
 	sess := &Session{
