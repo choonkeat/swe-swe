@@ -284,32 +284,32 @@ BroadcastExit(exitCode), session ends
 
 ---
 
-### Phase 5.3: Clean up YOLO toggle flow
+### Phase 5.3: Clean up YOLO toggle flow [DONE]
 
 #### Goal
 Ensure YOLO toggle provides good UX. Add YOLO toggle to settings panel.
 
 #### Steps
 
-| Step | Description | File |
-|------|-------------|------|
-| 5.3.1 | Verify `toggle_yolo` sets `pendingReplacement` before killing process | main.go |
-| 5.3.2 | Verify `BroadcastStatus()` called before killing (immediate status bar update) | main.go |
-| 5.3.3 | Remove redundant messages for replacement path (YOLO message already shown) | main.go |
-| 5.3.4 | Skip 500ms sleep for replacement path (feedback already shown) | main.go |
-| 5.3.5 | Add YOLO toggle to settings panel (only if `yoloSupported`) | terminal-ui.js |
-| 5.3.6 | Settings toggle calls same `toggleYoloMode()` function | terminal-ui.js |
-| 5.3.7 | Update settings panel state when `yoloMode` changes | terminal-ui.js |
+| Step | Description | File | Status |
+|------|-------------|------|--------|
+| 5.3.1 | Verify `toggle_yolo` sets `pendingReplacement` before killing process | main.go | Done (in 5.2) |
+| 5.3.2 | Verify `BroadcastStatus()` called before killing (immediate status bar update) | main.go | Done (already correct) |
+| 5.3.3 | Remove redundant messages for replacement path (YOLO message already shown) | main.go | Done (no redundant messages) |
+| 5.3.4 | Skip 500ms sleep for replacement path (feedback already shown) | main.go | Done (no sleep in replacement) |
+| 5.3.5 | Add YOLO toggle to settings panel (only if `yoloSupported`) | terminal-ui.js | Done |
+| 5.3.6 | Settings toggle calls same `toggleYoloMode()` function | terminal-ui.js | Done |
+| 5.3.7 | Update settings panel state when `yoloMode` changes | terminal-ui.js | Done |
 
 #### Verification (Browser test in test container)
-1. Start Claude session → open settings panel
-2. Verify YOLO toggle visible in settings
-3. Toggle YOLO via settings
-4. Verify: Terminal shows "[Switching YOLO mode ON, restarting agent...]"
-5. Verify: Status bar changes to "YOLO"
-6. Verify: Settings panel reflects new state
-7. Verify: NO "session ended" dialog
-8. Test via status bar click (existing flow still works)
+1. [ ] Start Claude session → open settings panel
+2. [ ] Verify YOLO toggle visible in settings
+3. [ ] Toggle YOLO via settings
+4. [ ] Verify: Terminal shows "[Switching YOLO mode ON, restarting agent...]"
+5. [ ] Verify: Status bar changes to "YOLO"
+6. [ ] Verify: Settings panel reflects new state
+7. [ ] Verify: NO "session ended" dialog
+8. [ ] Test via status bar click (existing flow still works)
 
 ---
 

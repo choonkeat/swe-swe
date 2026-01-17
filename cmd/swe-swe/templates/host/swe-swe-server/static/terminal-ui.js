@@ -942,6 +942,43 @@ class TerminalUI extends HTMLElement {
                 .settings-panel__swatch.active {
                     border-color: #fff;
                 }
+                .settings-panel__toggle-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+                .settings-panel__toggle {
+                    position: relative;
+                    width: 44px;
+                    height: 24px;
+                    background: #505050;
+                    border-radius: 12px;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                }
+                .settings-panel__toggle.active {
+                    background: #f97316;
+                }
+                .settings-panel__toggle::after {
+                    content: '';
+                    position: absolute;
+                    top: 2px;
+                    left: 2px;
+                    width: 20px;
+                    height: 20px;
+                    background: #fff;
+                    border-radius: 50%;
+                    transition: transform 0.2s;
+                }
+                .settings-panel__toggle.active::after {
+                    transform: translateX(20px);
+                }
+                .settings-panel__field--yolo {
+                    display: none;
+                }
+                .settings-panel__field--yolo.supported {
+                    display: block;
+                }
                 .settings-panel__nav {
                     display: flex;
                     gap: 8px;
@@ -1030,6 +1067,12 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__swatch" style="background: #64748b" data-color="#64748b" title="Gray"></button>
                                         <button class="settings-panel__swatch" style="background: #eab308" data-color="#eab308" title="Yellow"></button>
                                         <button class="settings-panel__swatch" style="background: #ec4899" data-color="#ec4899" title="Pink"></button>
+                                    </div>
+                                </div>
+                                <div class="settings-panel__field settings-panel__field--yolo">
+                                    <div class="settings-panel__toggle-row">
+                                        <label class="settings-panel__label">YOLO Mode</label>
+                                        <div class="settings-panel__toggle" id="settings-yolo-toggle" role="switch" aria-checked="false" tabindex="0"></div>
                                     </div>
                                 </div>
                             </section>
@@ -1685,6 +1728,8 @@ class TerminalUI extends HTMLElement {
                 this.yoloMode = msg.yoloMode || false;
                 this.yoloSupported = msg.yoloSupported || false;
                 this.updateStatusInfo();
+                // Update settings panel toggle if open
+                this.updateSettingsYoloToggle();
                 break;
             case 'chat':
                 // Incoming chat message
@@ -2075,6 +2120,21 @@ class TerminalUI extends HTMLElement {
             });
         });
 
+        // YOLO toggle
+        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
+        if (yoloToggle) {
+            const handleYoloToggle = () => {
+                this.toggleYoloMode();
+            };
+            yoloToggle.addEventListener('click', handleYoloToggle);
+            yoloToggle.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleYoloToggle();
+                }
+            });
+        }
+
         // Restore saved color from localStorage
         this.restoreStatusBarColor();
     }
@@ -2148,6 +2208,17 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    // Update YOLO toggle in settings panel (called on status update)
+    updateSettingsYoloToggle() {
+        const yoloField = this.querySelector('.settings-panel__field--yolo');
+        const yoloToggle = this.querySelector('#settings-yolo-toggle');
+        if (yoloField && yoloToggle) {
+            yoloField.classList.toggle('supported', this.yoloSupported);
+            yoloToggle.classList.toggle('active', this.yoloMode);
+            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
+        }
+    }
+
     // Populate settings inputs when panel opens
     populateSettingsPanel() {
         const panel = this.querySelector('.settings-panel');
@@ -2186,6 +2257,17 @@ class TerminalUI extends HTMLElement {
         const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
         if (vscodeLink) {
             vscodeLink.href = this.getVSCodeUrl();
+        }
+
+        // YOLO toggle
+        const yoloField = panel.querySelector('.settings-panel__field--yolo');
+        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
+        if (yoloField && yoloToggle) {
+            // Show/hide based on agent support
+            yoloField.classList.toggle('supported', this.yoloSupported);
+            // Set toggle state
+            yoloToggle.classList.toggle('active', this.yoloMode);
+            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
         }
     }
 
