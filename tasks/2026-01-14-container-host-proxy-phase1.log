@@ -51,3 +51,7 @@ Observed:
 - Test: send SIGTERM -> "[proxy] Received signal terminated, shutting down..." -> "[proxy] Cleaned up PID file"
 - PID file verified removed after shutdown.
 Got: As expected. Graceful shutdown working correctly.
+
+110337 - Phase 1 Tests: Running unit tests
+Action: Create proxy_test.go with tests for PID management, request processing, NUL parsing.
+Expected: All tests pass via `make test`.
