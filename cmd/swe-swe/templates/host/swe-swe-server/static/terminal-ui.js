@@ -379,11 +379,12 @@ class TerminalUI extends HTMLElement {
                     background: {{STATUS_BAR_COLOR}};
                 }
                 .terminal-ui__status-bar.multiuser {
-                    border-color: #4fc3f7;
+                    border-color: {{STATUS_BAR_TEXT_COLOR}};
                 }
                 .terminal-ui__status-bar.connecting,
                 .terminal-ui__status-bar.error,
                 .terminal-ui__status-bar.reconnecting {
+                    color: #fff;
                     cursor: pointer;
                     animation: terminal-ui-bar-pulse 1.5s ease-in-out infinite;
                 }
