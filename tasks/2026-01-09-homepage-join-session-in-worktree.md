@@ -72,7 +72,7 @@ Run `make test-server` - test should fail (no `activeSession` field yet).
 
 ---
 
-## Phase 2: Frontend - Update worktree link rendering
+## Phase 2: Frontend - Update worktree link rendering [DONE]
 
 ### What will be achieved
 

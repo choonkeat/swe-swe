@@ -754,24 +754,43 @@
                         // Create worktree links
                         worktrees.forEach(function(wt) {
                             var link = document.createElement('a');
-                            link.className = 'worktree-link';
 
-                            // Generate a new UUID for this session
-                            var uuid = crypto.randomUUID ? crypto.randomUUID() :
-                                'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                                    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                                    return v.toString(16);
-                                });
+                            // Check if worktree has an active session for this assistant
+                            if (wt.activeSession && wt.activeSession.assistant === assistant) {
+                                // Join existing session - use session-item styling to match existing sessions
+                                link.className = 'session-item';
+                                var url = '/session/' + wt.activeSession.uuid + '?assistant=' + encodeURIComponent(assistant);
+                                if (debug) {
+                                    url += '&debug=1';
+                                }
+                                link.href = url;
 
-                            // Build URL and set href directly so cmd-click/middle-click work
-                            var url = '/session/' + uuid + '?assistant=' + encodeURIComponent(assistant) + '&name=' + encodeURIComponent(wt.name);
-                            if (debug) {
-                                url += '&debug=1';
+                                // Build HTML matching session-item structure
+                                var displayName = 'Join session in ' + wt.name;
+                                link.innerHTML = '<span class="session-item__uuid">' + displayName + '</span>' +
+                                    '<span class="session-item__viewers">' + wt.activeSession.clientCount + ' viewer' + (wt.activeSession.clientCount !== 1 ? 's' : '') + '</span>' +
+                                    '<span class="session-item__duration">' + wt.activeSession.durationStr + '</span>';
+                            } else {
+                                // Start new session in worktree
+                                link.className = 'worktree-link';
+
+                                // Generate a new UUID for this session
+                                var uuid = crypto.randomUUID ? crypto.randomUUID() :
+                                    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                                        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                                        return v.toString(16);
+                                    });
+
+                                // Build URL and set href directly so cmd-click/middle-click work
+                                var url = '/session/' + uuid + '?assistant=' + encodeURIComponent(assistant) + '&name=' + encodeURIComponent(wt.name);
+                                if (debug) {
+                                    url += '&debug=1';
+                                }
+                                link.href = url;
+
+                                link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
+                                    '<span class="worktree-link__text">Start new session in ' + wt.name + '</span>';
                             }
-                            link.href = url;
-
-                            link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
-                                '<span class="worktree-link__text">Start new session in ' + wt.name + '</span>';
 
                             // Insert after new-session link
                             newSessionLink.parentNode.insertBefore(link, newSessionLink.nextSibling);
