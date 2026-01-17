@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v2.6.1 - Simplified Worktree Exit
+
+- **Simplified exit flow**: Remove worktree merge/discard modal - exits now behave like regular sessions (see ADR-0022)
+
 ## v2.6.0 - Terminal Recording & Git Worktrees
 
 - **Terminal recording**: Record sessions with playback UI, speed controls, and auto-cleanup (Recent vs Kept model with max 5 per agent, 1h expiry)
