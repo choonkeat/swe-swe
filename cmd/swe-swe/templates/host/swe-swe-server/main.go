@@ -125,6 +125,7 @@ type AssistantConfig struct {
 	Name            string // Display name
 	ShellCmd        string // Command to start the assistant
 	ShellRestartCmd string // Command to restart (resume) the assistant
+	YoloRestartCmd  string // Command to restart in YOLO mode (empty = not supported)
 	Binary          string // Binary name to check with exec.LookPath
 }
 
@@ -192,36 +193,42 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Claude",
 		ShellCmd:        "claude",
 		ShellRestartCmd: "claude --continue",
+		YoloRestartCmd:  "claude --dangerously-skip-permissions --continue",
 		Binary:          "claude",
 	},
 	{
 		Name:            "Gemini",
 		ShellCmd:        "gemini",
 		ShellRestartCmd: "gemini --resume",
+		YoloRestartCmd:  "gemini --resume --approval-mode=yolo",
 		Binary:          "gemini",
 	},
 	{
 		Name:            "Codex",
 		ShellCmd:        "codex",
 		ShellRestartCmd: "codex resume --last",
+		YoloRestartCmd:  "codex --yolo resume --last",
 		Binary:          "codex",
 	},
 	{
 		Name:            "Goose",
 		ShellCmd:        "goose session",
 		ShellRestartCmd: "goose session -r",
+		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 	},
 	{
 		Name:            "Aider",
 		ShellCmd:        "aider",
 		ShellRestartCmd: "aider --restore-chat-history",
+		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 	},
 	{
 		Name:            "OpenCode",
 		ShellCmd:        "opencode",
 		ShellRestartCmd: "opencode --continue",
+		YoloRestartCmd:  "", // YOLO mode not supported
 		Binary:          "opencode",
 	},
 }
@@ -255,6 +262,19 @@ type Session struct {
 	inputBuffer   [][]byte  // buffered input during grace period
 	inputBufferMu sync.Mutex
 	graceUntil    time.Time // buffer input until this time
+	// YOLO mode state
+	yoloMode          bool   // Whether YOLO mode is active
+	pendingRestartCmd string // If set, use this command on next restart instead of ShellRestartCmd
+}
+
+// computeRestartCommand returns the appropriate restart command based on YOLO mode.
+// If yoloMode is true and the agent supports YOLO, returns YoloRestartCmd.
+// Otherwise returns ShellRestartCmd.
+func (s *Session) computeRestartCommand(yoloMode bool) string {
+	if yoloMode && s.AssistantConfig.YoloRestartCmd != "" {
+		return s.AssistantConfig.YoloRestartCmd
+	}
+	return s.AssistantConfig.ShellRestartCmd
 }
 
 // AddClient adds a WebSocket client to the session
