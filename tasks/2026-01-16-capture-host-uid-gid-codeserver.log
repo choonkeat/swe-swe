@@ -90,4 +90,18 @@ Tests: All tests pass ✓
 Status: ✓ STEP 4 COMPLETE
 143012
 
+=== Bug Fix: User/Group Deletion Order ===
+
+Issue: Initial Docker build failed with:
+  Error: groupdel: cannot remove the primary group of user 'coder'
+  Reason: Tried to delete group before deleting the user with that group as primary
+
+Fix: Reversed deletion order in code-server/Dockerfile (line 10)
+  Changed FROM: groupdel coder && groupadd ... && userdel coder ...
+  Changed TO:   userdel coder && groupdel coder && groupadd ... && useradd ...
+
+Logic: User must be deleted first (has group as primary), then group can be deleted
+
+Result: Docker build now succeeds, all golden files regenerated with correct order
+
 === Code-Server UID:GID Fix COMPLETE ===
