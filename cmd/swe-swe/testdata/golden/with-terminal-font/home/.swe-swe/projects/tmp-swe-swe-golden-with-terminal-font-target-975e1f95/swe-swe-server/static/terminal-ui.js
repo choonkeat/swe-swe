@@ -413,10 +413,6 @@ class TerminalUI extends HTMLElement {
                     0%, 100% { filter: brightness(1); }
                     50% { filter: brightness(0.7); }
                 }
-                .terminal-ui__status-bar.blurred {
-                    opacity: 0.4;
-                    filter: grayscale(0.5);
-                }
                 .terminal-ui__status-icon {
                     width: 8px;
                     height: 8px;
@@ -1206,18 +1202,15 @@ class TerminalUI extends HTMLElement {
         this.term.open(terminalEl);
         this.fitAddon.fit();
 
-        // Track focus state to dim status bar (and terminal on desktop) when blurred
+        // Track focus state to dim terminal on desktop when blurred
         // Use textarea focus/blur since xterm.js onFocus/onBlur may not be publicly exposed
-        const statusBar = this.querySelector('.terminal-ui__status-bar');
         const mobileKeyboard = this.querySelector('.mobile-keyboard');
         const textarea = terminalEl.querySelector('textarea');
         if (textarea) {
             textarea.addEventListener('focus', () => {
-                statusBar.classList.remove('blurred');
                 terminalEl.classList.remove('blurred');
             });
             textarea.addEventListener('blur', () => {
-                statusBar.classList.add('blurred');
                 // Only dim terminal on desktop (when mobile keyboard not visible)
                 if (!mobileKeyboard || !mobileKeyboard.classList.contains('visible')) {
                     terminalEl.classList.add('blurred');
@@ -1225,7 +1218,6 @@ class TerminalUI extends HTMLElement {
             });
         }
         // Start blurred since terminal doesn't have focus initially
-        statusBar.classList.add('blurred');
         if (!mobileKeyboard || !mobileKeyboard.classList.contains('visible')) {
             terminalEl.classList.add('blurred');
         }
