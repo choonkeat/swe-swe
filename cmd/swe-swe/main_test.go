@@ -659,7 +659,6 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-certs-node-extra-ca-certs", []string{}},
 		{"with-certs-ssl-cert-file", []string{}},
 		{"with-copy-home-paths", []string{"--copy-home-paths", ".gitconfig,.ssh"}},
-		{"with-merge-strategy-squash", []string{"--merge-strategy", "squash"}},
 	}
 
 	for _, v := range variants {

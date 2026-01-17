@@ -8,6 +8,5 @@
     "opencode"
   ],
   "aptPackages": "vim curl",
-  "ssl": "no",
-  "mergeStrategy": "merge-commit"
+  "ssl": "no"
 }

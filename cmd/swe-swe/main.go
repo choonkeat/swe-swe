@@ -375,7 +375,6 @@ type InitConfig struct {
 	SlashCommands []SlashCommandsRepo `json:"slashCommands,omitempty"`
 	SSL           string              `json:"ssl,omitempty"`
 	CopyHomePaths []string            `json:"copyHomePaths,omitempty"`
-	MergeStrategy string              `json:"mergeStrategy,omitempty"`
 }
 
 // saveInitConfig writes the init configuration to init.json
@@ -829,7 +828,6 @@ func handleInit() {
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no' (default) or 'selfsign' for self-signed certificates")
 	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
-	mergeStrategyFlag := fs.String("merge-strategy", "merge-commit", "Worktree merge strategy: 'merge-commit' (rebase then merge with commit), 'merge-ff' (fast-forward when possible), 'squash' (squash all commits into one)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -870,13 +868,6 @@ func handleInit() {
 			}
 			copyHomePaths = append(copyHomePaths, p)
 		}
-	}
-
-	// Validate --merge-strategy flag
-	mergeStrategy := *mergeStrategyFlag
-	if mergeStrategy != "merge-commit" && mergeStrategy != "merge-ff" && mergeStrategy != "squash" {
-		fmt.Fprintf(os.Stderr, "Error: --merge-strategy must be 'merge-commit', 'merge-ff', or 'squash', got %q\n", mergeStrategy)
-		os.Exit(1)
 	}
 
 	// Validate that --previous-init-flags=reuse is not combined with other flags
@@ -985,10 +976,6 @@ func handleInit() {
 			*sslFlag = "no" // Default for old configs without SSL field
 		}
 		copyHomePaths = savedConfig.CopyHomePaths
-		mergeStrategy = savedConfig.MergeStrategy
-		if mergeStrategy == "" {
-			mergeStrategy = "merge-commit" // Default for old configs without MergeStrategy field
-		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
 
@@ -1268,7 +1255,6 @@ func handleInit() {
 		SlashCommands: slashCmds,
 		SSL:           *sslFlag,
 		CopyHomePaths: copyHomePaths,
-		MergeStrategy: mergeStrategy,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)

@@ -13,6 +13,5 @@
       "url": "https://github.com/choonkeat/slash-commands.git"
     }
   ],
-  "ssl": "no",
-  "mergeStrategy": "merge-commit"
+  "ssl": "no"
 }
