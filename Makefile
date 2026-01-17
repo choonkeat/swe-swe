@@ -72,7 +72,10 @@ deploy/digitalocean: build
 	@test -f deploy/digitalocean/template.pkr.hcl || { echo "ERROR: Packer template not found"; exit 1; }
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See deploy/digitalocean/DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
-	@read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
+	@echo ""
+	SWE_SWE_PASSWORD=$$(scripts/prompt-password.sh); \
+	echo ""; \
+	read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
 	if [ -z "$$REGION" ]; then \
 		echo ""; \
 		echo "ERROR: region is required"; \
@@ -113,6 +116,7 @@ deploy/digitalocean: build
 		-var "init_flags=$$INIT_FLAGS" \
 		-var "image_name=$$IMAGE_NAME" \
 		-var "image_version=$$IMAGE_VERSION" \
+		-var "swe_swe_password=$$SWE_SWE_PASSWORD" \
 		template.pkr.hcl
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")

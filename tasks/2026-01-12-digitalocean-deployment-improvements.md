@@ -172,11 +172,35 @@ sysctl kernel.dmesg_restrict
 
 ---
 
+## Implementation Progress
+
+### Phase 1: ✅ COMPLETED
+- [x] Read existing Makefile to understand deploy/digitalocean target
+- [x] Created scripts/prompt-password.sh with non-echoing password prompts
+- [x] Modified Makefile deploy/digitalocean target to call password prompt
+- [x] Password variable passed to Packer as `-var swe_swe_password=<password>`
+
+### Phase 2: 🚧 IN PROGRESS
+- [ ] Read current 001_onboot provisioning script
+- [ ] Create Phase 1 MOTD template (initialization in progress)
+- [ ] Create Phase 2 MOTD template (ready with credentials)
+- [ ] Modify 001_onboot to write initial MOTD
+- [ ] Add background health check loop with timeout
+- [ ] Update MOTD when service is healthy
+
+### Phase 3: ⏳ PENDING
+- [ ] Read Packer configuration for script selection
+- [ ] Create 011-hardening-moderate.sh script
+- [ ] Create 012-hardening-comprehensive.sh script
+- [ ] Extend password prompt to include hardening level prompt
+- [ ] Modify Makefile to capture hardening choice
+- [ ] Update Packer to conditionally include hardening scripts
+
 ## Implementation Order
 
-1. **Phase 1**: Password management (self-contained, foundation for other phases)
-2. **Phase 2**: MOTD health check (works independently, improves UX)
-3. **Phase 3**: Hardening options (integrates with Phases 1 & 2)
+1. **Phase 1**: Password management (self-contained, foundation for other phases) ✅
+2. **Phase 2**: MOTD health check (works independently, improves UX) 🚧
+3. **Phase 3**: Hardening options (integrates with Phases 1 & 2) ⏳
 
 ---
 
