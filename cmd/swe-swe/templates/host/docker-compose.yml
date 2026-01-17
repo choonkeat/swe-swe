@@ -170,7 +170,11 @@ services:
     restart: unless-stopped
 
   code-server:
-    image: codercom/code-server:latest
+    build:
+      context: code-server
+      args:
+        UID: {{UID}}
+        GID: {{GID}}
     command:
       - "--bind-addr=0.0.0.0:8080"
       - "--auth=none"
