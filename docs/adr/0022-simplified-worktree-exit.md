@@ -1,7 +1,8 @@
 # ADR-022: Simplified worktree exit and agent-based commands
 
-**Status**: Accepted
+**Status**: Superseded (worktree commands removed)
 **Date**: 2026-01-09
+**Updated**: 2026-01-14
 
 ## Context
 
@@ -9,7 +10,7 @@ The original worktree exit flow showed a modal with "Merge", "Discard", and "Not
 
 Additionally, merge operations can be complex (conflicts, dirty working directory, merge strategy choices) and benefit from conversational handling rather than a rigid modal.
 
-## Decision
+## Decision (Original)
 
 ### Simplified exit flow
 
@@ -22,76 +23,47 @@ Additionally, merge operations can be complex (conflicts, dirty working director
    - Re-enter from homepage anytime
    - Explicit action required for merge/discard
 
-### Agent-based worktree management
+### Agent-based worktree management (REMOVED)
 
-Move merge/discard operations to agent commands via `@` file mentions.
+The `merge-this-worktree` and `discard-this-worktree` commands were originally generated in the worktree's `swe-swe/` directory. These have been removed as of 2026-01-14.
 
-#### Two-directory convention
+Users can now manage worktree merging and discarding using standard git commands conversationally with their agent:
+- `git checkout main && git merge <branch>`
+- `git worktree remove /worktrees/<branch>`
+- `git branch -d <branch>`
+
+### Current directory convention
 
 ```
-swe-swe/                   # Commands ONLY (all @-mentionable, clean autocomplete)
-  setup                    # Command - configure credentials, testing
-  merge-this-worktree      # Command (worktree only, generated with context)
-  discard-this-worktree    # Command (worktree only, generated with context)
-
 .swe-swe/                  # Internal (only subdirectories, no loose files)
   docs/                    # Documentation for agents
     AGENTS.md              # Index - explains swe-swe, lists commands, current setup
     browser-automation.md
     docker.md
+
+swe-swe/                   # Commands for file-mention agents (Goose, Aider only)
+  setup                    # Configure credentials, testing
 ```
 
-Key design choices:
-- `swe-swe/` = commands only, `@swe-swe/` autocomplete stays clean
-- `.swe-swe/` = internal data, only subdirectories (no loose files at root)
-- `AGENTS.md` lives in `.swe-swe/docs/` to avoid autocomplete pollution
-- `setup` command injects pointer into user's `CLAUDE.md`/`AGENTS.md` pointing to `.swe-swe/docs/AGENTS.md`
-- No extension for commands (cleaner, command-like)
-- Worktree commands generated at creation with branch/target context baked in
-- Agent handles complexity conversationally (conflicts, dirty state, confirmations)
-
-#### What exists where
-
-**Main workspace (`/workspace/`):**
-```
-swe-swe/
-  setup                    # Only command available in main workspace
-
-.swe-swe/
-  docs/
-    AGENTS.md
-    browser-automation.md
-    docker.md
-```
-
-**Worktree (`/worktrees/<branch>/`):**
-```
-swe-swe/
-  setup                    # Copied from main workspace
-  merge-this-worktree      # Generated with branch/target context baked in
-  discard-this-worktree    # Generated with branch context baked in
-
-.swe-swe/
-  docs/                    # Copied from main workspace
-    AGENTS.md
-    browser-automation.md
-    docker.md
-```
+Note: For agents with slash command support (Claude, Codex, OpenCode, Gemini), the `swe-swe/` directory is not created. These agents use `/swe-swe:setup` instead.
 
 ### Removed features
 
 - Worktree exit modal (frontend)
 - `/api/worktree/merge` and `/api/worktree/discard` endpoints (backend)
 - `--merge-strategy` flag (was only used by removed modal)
+- `merge-this-worktree` command (agents can guide merge conversationally)
+- `discard-this-worktree` command (agents can guide discard conversationally)
+- Worktree-specific `swe-swe/` directory generation
 
 ## Consequences
 
 Good:
 - Exit flow is stress-free and consistent
 - Complex operations get conversational handling
-- Agent commands work across Claude Code, Cursor, and other `@`-supporting tools
-- Users control timing of merge/discard decisions
+- Slash-command agents get cleaner invocation syntax
+- Less cluttered workspace for slash-command agents
 
 Bad:
 - Merge/discard requires agent interaction (not one-click)
-- Breaking change for users expecting exit modal
+- Breaking change for users expecting exit modal or worktree commands
