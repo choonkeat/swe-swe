@@ -262,7 +262,7 @@
 
 ---
 
-## Phase 5: Navigation Links
+## Phase 5: Navigation Links [DONE]
 
 ### What will be achieved
 - Navigation buttons in settings panel: Homepage, VSCode, Browser
