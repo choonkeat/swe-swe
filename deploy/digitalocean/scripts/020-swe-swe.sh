@@ -14,10 +14,10 @@ fi
 
 chmod +x /usr/local/bin/swe-swe
 
-# Verify installation
-swe-swe --version
-
 # Create workspace directory
 mkdir -p /workspace
+
+# Change to workspace directory to avoid project lookup errors
+cd /workspace
 
 echo "==> swe-swe installation complete"
