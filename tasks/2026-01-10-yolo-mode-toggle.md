@@ -203,7 +203,7 @@ func TestDetectYoloMode_NoMatch(t *testing.T)       // "opencode --continue" →
 ## Phase 5: Fix Process Exit Handling for YOLO Toggle
 
 **Date:** 2026-01-11
-**Status:** Planned
+**Status:** Complete
 
 ### Problem
 
@@ -313,23 +313,23 @@ Ensure YOLO toggle provides good UX. Add YOLO toggle to settings panel.
 
 ---
 
-### Phase 5.4: Update golden files and documentation
+### Phase 5.4: Update golden files and documentation [DONE]
 
 #### Steps
 
-| Step | Description |
-|------|-------------|
-| 5.4.1 | Run `make build golden-update` |
-| 5.4.2 | Review golden diff - should show main.go and terminal-ui.js changes |
-| 5.4.3 | Run `make test` - all tests pass |
-| 5.4.4 | Update task file status to Complete |
+| Step | Description | Status |
+|------|-------------|--------|
+| 5.4.1 | Run `make build golden-update` | Done |
+| 5.4.2 | Review golden diff - should show main.go and terminal-ui.js changes | Done |
+| 5.4.3 | Run `make test` - all tests pass | Done |
+| 5.4.4 | Update task file status to Complete | Done |
 
 #### Verification
-- `make build` succeeds
-- `make golden-update` completes
-- `git diff --cached -- cmd/swe-swe/testdata/golden` shows expected changes
-- `make test` passes
-- Final browser test by user: full YOLO toggle flow works end-to-end
+- [x] `make build` succeeds
+- [x] `make golden-update` completes
+- [x] `git diff --cached -- cmd/swe-swe/testdata/golden` shows expected changes
+- [x] `make test` passes
+- [ ] Final browser test by user: full YOLO toggle flow works end-to-end
 
 ---
 
