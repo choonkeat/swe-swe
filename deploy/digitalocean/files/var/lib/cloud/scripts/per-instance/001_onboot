@@ -20,6 +20,12 @@ SWE_SWE_PASSWORD=$SWE_SWE_PASSWORD
 EOF
 chmod 600 "$CONFIG_DIR/env"
 
+# Load init flags that were saved during image build
+SWE_SWE_INIT_FLAGS=""
+if [ -f "$CONFIG_DIR/init-flags" ]; then
+    source "$CONFIG_DIR/init-flags"
+fi
+
 # Get public IP from DigitalOcean metadata API
 PUBLIC_IP=$(curl -fsSL http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2>/dev/null || hostname -I | awk '{print $1}')
 
