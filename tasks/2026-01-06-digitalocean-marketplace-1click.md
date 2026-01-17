@@ -277,9 +277,11 @@ packer --version
 5. Set expiration (e.g., 90 days)
 6. **Scopes**: Select **Custom Scopes** (recommended for security)
    - Search for and select the following permissions:
-     - `droplet:create` — Create temporary build Droplet (includes snapshot:read as required scope)
+     - `droplet:create` — Create temporary build Droplet
      - `droplet:read` — Monitor Droplet status during build
-     - `droplet:delete` — Destroy temporary Droplet and create snapshot
+     - `droplet:update` — Update Droplet state (graceful shutdown)
+     - `droplet:delete` — Destroy temporary Droplet after build
+     - `image:create` — Create snapshot from Droplet
      - `ssh_key:create` — Create temporary SSH key for Packer
      - `ssh_key:delete` — Remove temporary SSH key after build
 7. Click **Generate Token**

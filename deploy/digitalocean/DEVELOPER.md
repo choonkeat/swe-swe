@@ -16,7 +16,9 @@ Build a DigitalOcean Marketplace image for swe-swe using Packer.
 4. Select **Custom Scopes** and grant minimum permissions:
    - `droplet:create` — Create temporary build Droplet
    - `droplet:read` — Monitor Droplet status
-   - `droplet:delete` — Destroy Droplet and create snapshot
+   - `droplet:update` — Update Droplet state (graceful shutdown)
+   - `droplet:delete` — Destroy Droplet after build
+   - `image:create` — Create snapshot from Droplet
    - `ssh_key:create` — Create temporary SSH key
    - `ssh_key:delete` — Remove temporary SSH key
 
@@ -215,7 +217,7 @@ Ensure your API token has the required Custom Scopes and is correctly exported:
 echo $DIGITALOCEAN_API_TOKEN
 ```
 
-Verify the token has: `droplet:create`, `droplet:read`, `droplet:delete`, `ssh_key:create`, `ssh_key:delete`
+Verify the token has all required scopes: `droplet:create`, `droplet:read`, `droplet:update`, `droplet:delete`, `image:create`, `ssh_key:create`, `ssh_key:delete`
 
 ### Build fails with "image not found"
 
