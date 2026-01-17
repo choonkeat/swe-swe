@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "7bee9e2"
+	GitCommit = "33c5ac0"
 )
 
 var indexTemplate *template.Template
@@ -1237,7 +1237,7 @@ func branchNameFromDir(dirName string) string {
 }
 
 // worktreeDir is the base directory for git worktrees
-var worktreeDir = "/workspace/.swe-swe/worktrees"
+var worktreeDir = "/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
 var excludeFromCopy = []string{".git", ".swe-swe"}
@@ -1469,10 +1469,20 @@ func createWorktree(branchName string) (string, error) {
 	return worktreePath, nil
 }
 
+// WorktreeSessionInfo contains information about an active session running in a worktree
+type WorktreeSessionInfo struct {
+	UUID        string `json:"uuid"`
+	Name        string `json:"name"`
+	Assistant   string `json:"assistant"`
+	ClientCount int    `json:"clientCount"`
+	DurationStr string `json:"durationStr"`
+}
+
 // WorktreeInfo contains information about an existing worktree
 type WorktreeInfo struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name          string               `json:"name"`
+	Path          string               `json:"path"`
+	ActiveSession *WorktreeSessionInfo `json:"activeSession,omitempty"`
 }
 
 // listWorktrees returns a list of existing worktree directories
@@ -1518,6 +1528,31 @@ func handleWorktreesAPI(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error listing worktrees: %v", err)
 		http.Error(w, "Failed to list worktrees", http.StatusInternalServerError)
 		return
+	}
+
+	// Build a map of branchName -> *Session for active sessions
+	sessionsMu.RLock()
+	branchToSession := make(map[string]*Session)
+	for _, sess := range sessions {
+		if sess.BranchName != "" {
+			branchToSession[sess.BranchName] = sess
+		}
+	}
+	sessionsMu.RUnlock()
+
+	// Populate ActiveSession for worktrees with matching sessions
+	for i := range worktrees {
+		if sess, ok := branchToSession[worktrees[i].Name]; ok {
+			sess.mu.RLock()
+			worktrees[i].ActiveSession = &WorktreeSessionInfo{
+				UUID:        sess.UUID,
+				Name:        sess.Name,
+				Assistant:   sess.Assistant,
+				ClientCount: len(sess.wsClients),
+				DurationStr: formatDuration(time.Since(sess.CreatedAt)),
+			}
+			sess.mu.RUnlock()
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
