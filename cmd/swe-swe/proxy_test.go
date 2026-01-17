@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -437,4 +439,147 @@ func TestCleanupOrphanFiles_EmptyDirectory(t *testing.T) {
 func TestCleanupOrphanFiles_NonExistentDirectory(t *testing.T) {
 	// Run cleanup on non-existent directory - should not panic
 	cleanupOrphanFiles("/non/existent/directory")
+}
+
+// Phase 1 Tests: Host Infrastructure
+
+func TestActiveRequestCounter(t *testing.T) {
+	// Reset counter to known state
+	for activeRequests.Load() > 0 {
+		activeRequests.Add(-1)
+	}
+
+	// Verify starts at 0
+	if got := activeRequests.Load(); got != 0 {
+		t.Errorf("expected counter to start at 0, got %d", got)
+	}
+
+	// Increment
+	activeRequests.Add(1)
+	if got := activeRequests.Load(); got != 1 {
+		t.Errorf("expected counter to be 1 after increment, got %d", got)
+	}
+
+	// Increment again
+	activeRequests.Add(1)
+	if got := activeRequests.Load(); got != 2 {
+		t.Errorf("expected counter to be 2 after second increment, got %d", got)
+	}
+
+	// Decrement
+	activeRequests.Add(-1)
+	if got := activeRequests.Load(); got != 1 {
+		t.Errorf("expected counter to be 1 after decrement, got %d", got)
+	}
+
+	// Decrement to 0
+	activeRequests.Add(-1)
+	if got := activeRequests.Load(); got != 0 {
+		t.Errorf("expected counter to be 0 after final decrement, got %d", got)
+	}
+}
+
+func TestActiveRequestCounter_Concurrent(t *testing.T) {
+	// Reset counter
+	for activeRequests.Load() != 0 {
+		if activeRequests.Load() > 0 {
+			activeRequests.Add(-1)
+		} else {
+			activeRequests.Add(1)
+		}
+	}
+
+	// Run concurrent increments and decrements
+	var wg sync.WaitGroup
+	n := 100
+
+	// Increment n times concurrently
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			activeRequests.Add(1)
+		}()
+	}
+	wg.Wait()
+
+	if got := activeRequests.Load(); got != int32(n) {
+		t.Errorf("expected counter to be %d after concurrent increments, got %d", n, got)
+	}
+
+	// Decrement n times concurrently
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			activeRequests.Add(-1)
+		}()
+	}
+	wg.Wait()
+
+	if got := activeRequests.Load(); got != 0 {
+		t.Errorf("expected counter to be 0 after concurrent decrements, got %d", got)
+	}
+}
+
+func TestProcessRegistry(t *testing.T) {
+	// Clear registry
+	inFlightProcesses.Range(func(key, value any) bool {
+		inFlightProcesses.Delete(key)
+		return true
+	})
+
+	uuid := "test-uuid-123"
+	entry := &processEntry{
+		cmd:  nil,
+		pgid: 12345,
+	}
+
+	// Store entry
+	inFlightProcesses.Store(uuid, entry)
+
+	// Verify entry exists
+	loaded, ok := inFlightProcesses.Load(uuid)
+	if !ok {
+		t.Fatal("expected entry to exist in registry")
+	}
+
+	loadedEntry := loaded.(*processEntry)
+	if loadedEntry.pgid != 12345 {
+		t.Errorf("expected pgid 12345, got %d", loadedEntry.pgid)
+	}
+
+	// Delete entry
+	inFlightProcesses.Delete(uuid)
+
+	// Verify entry is gone
+	_, ok = inFlightProcesses.Load(uuid)
+	if ok {
+		t.Error("expected entry to be deleted from registry")
+	}
+}
+
+func TestProcessGroupSetup(t *testing.T) {
+	// Create a simple command
+	cmd := exec.Command("echo", "test")
+
+	// Apply platform-specific setup
+	setSysProcAttr(cmd)
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start command: %v", err)
+	}
+
+	// Get PGID
+	pgid := getProcessGroupID(cmd)
+
+	// PGID should equal PID when Setpgid is true (on Unix)
+	// On Windows, this will just be the PID
+	if pgid != cmd.Process.Pid {
+		t.Errorf("expected pgid %d to equal pid %d", pgid, cmd.Process.Pid)
+	}
+
+	// Wait for command to complete
+	cmd.Wait()
 }
