@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -85,9 +87,7 @@ func handleProxy() {
 				if strings.HasSuffix(event.Name, ".req") {
 					uuid := strings.TrimSuffix(filepath.Base(event.Name), ".req")
 					fmt.Printf("[proxy] Received request: %s\n", uuid)
-
-					// TODO: Phase 1 Step 4 will implement request processing
-					fmt.Printf("[proxy] TODO: Process request %s\n", uuid)
+					processRequest(command, uuid)
 				}
 			}
 
@@ -98,6 +98,92 @@ func handleProxy() {
 			fmt.Fprintf(os.Stderr, "[proxy] Watcher error: %v\n", err)
 		}
 	}
+}
+
+// processRequest handles a single proxy request:
+// 1. Read NUL-delimited args from <uuid>.req
+// 2. Delete .req file (claim it)
+// 3. Execute command with args
+// 4. Write stdout, stderr, and exit code to response files
+func processRequest(command, uuid string) {
+	reqFile := filepath.Join(proxyDir, uuid+".req")
+	stdoutFile := filepath.Join(proxyDir, uuid+".stdout")
+	stderrFile := filepath.Join(proxyDir, uuid+".stderr")
+	exitFile := filepath.Join(proxyDir, uuid+".exit")
+
+	// Read the request file
+	data, err := os.ReadFile(reqFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[proxy] Failed to read request %s: %v\n", uuid, err)
+		// Write error to response files
+		os.WriteFile(stderrFile, []byte(fmt.Sprintf("Failed to read request: %v\n", err)), 0644)
+		os.WriteFile(stdoutFile, []byte{}, 0644)
+		os.WriteFile(exitFile, []byte("1"), 0644)
+		return
+	}
+
+	// Delete request file (claim it)
+	os.Remove(reqFile)
+
+	// Parse NUL-delimited arguments
+	args := parseNulDelimitedArgs(data)
+	fmt.Printf("[proxy] Executing: %s %v\n", command, args)
+
+	// Execute the command
+	cmd := exec.Command(command, args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+
+	// Determine exit code
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			// Command failed to start (e.g., not found)
+			exitCode = 127
+			stderr.WriteString(fmt.Sprintf("Failed to execute command: %v\n", err))
+		}
+	}
+
+	fmt.Printf("[proxy] Command exited with code: %d\n", exitCode)
+
+	// Write response files (exit file last to signal completion)
+	if err := os.WriteFile(stdoutFile, stdout.Bytes(), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "[proxy] Failed to write stdout: %v\n", err)
+	}
+	if err := os.WriteFile(stderrFile, stderr.Bytes(), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "[proxy] Failed to write stderr: %v\n", err)
+	}
+	if err := os.WriteFile(exitFile, []byte(strconv.Itoa(exitCode)), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "[proxy] Failed to write exit code: %v\n", err)
+	}
+}
+
+// parseNulDelimitedArgs splits a NUL-delimited byte slice into arguments.
+// Empty input returns nil (no arguments).
+// Trailing NUL bytes are handled gracefully.
+func parseNulDelimitedArgs(data []byte) []string {
+	if len(data) == 0 {
+		return nil
+	}
+
+	// Split on NUL bytes
+	parts := bytes.Split(data, []byte{0})
+
+	// Filter out empty strings (handles trailing NUL)
+	var args []string
+	for _, part := range parts {
+		if len(part) > 0 {
+			args = append(args, string(part))
+		}
+	}
+
+	return args
 }
 
 // checkAndClaimPIDFile checks if a proxy is already running for this command.
