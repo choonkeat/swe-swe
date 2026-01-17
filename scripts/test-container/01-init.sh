@@ -5,7 +5,7 @@ set -euox pipefail
 # Uses slot-based semaphore to support multiple concurrent test stacks
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+WORKSPACE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # --- Slot-based Semaphore: supports multiple concurrent test stacks ---
 # Each slot gets a unique port assignment:
@@ -124,17 +124,9 @@ git config user.email "test@example.com"
 git config user.name "Test User"
 git commit --allow-empty -m "initial commit"
 
-# Copy .claude config from real home to test home for Claude auth (if exists)
-REAL_HOME="${REAL_HOME:-/home/app}"
-if [ -d "$REAL_HOME/.claude" ]; then
-    echo "Copying Claude config from $REAL_HOME/.claude to $EFFECTIVE_HOME/.claude"
-    cp -r "$REAL_HOME/.claude" "$EFFECTIVE_HOME/.claude"
-fi
-
 # Run swe-swe init with EFFECTIVE_HOME so project files are in host-visible path
-# Include --copy-home-paths=.claude to copy Claude auth config into the container
-# Exclude aider to speed up container build (we primarily test with Claude)
-HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR" --copy-home-paths=.claude --exclude-agents=aider
+# Use only opencode agent for faster builds and simpler auth (uses ANTHROPIC_API_KEY)
+HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR" --agents=opencode
 
 # Find the generated metadata directory (match by test stack name)
 PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*swe-swe-test-${SWE_TEST_SLOT}*/ 2>/dev/null | head -1)
