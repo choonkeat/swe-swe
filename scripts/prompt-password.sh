@@ -36,32 +36,24 @@ while true; do
     break
 done
 
-# Phase 2: Hardening level prompt
-echo "Choose OS hardening level:" >&2
-echo "  (1) None" >&2
-echo "  (2) Moderate (default) - UFW, Fail2ban, auto-updates, SSH hardening" >&2
-echo "  (3) Comprehensive - All moderate + auditd, AIDE, rkhunter, kernel hardening" >&2
-echo "" >&2
+# Phase 2: OS hardening prompt
+echo "Enable OS hardening? (UFW firewall, Fail2ban, SSH hardening, auto-updates)" >&2
 
 while true; do
-    read -p "Hardening level (1-3, default 2): " HARDENING_CHOICE
-    HARDENING_CHOICE=${HARDENING_CHOICE:-2}
+    read -p "Enable hardening? (y/n, default y): " HARDENING_CHOICE
+    HARDENING_CHOICE=${HARDENING_CHOICE:-y}
 
     case "$HARDENING_CHOICE" in
-        1)
-            HARDENING_LEVEL="none"
+        y|Y|yes|Yes|YES)
+            HARDENING_LEVEL="yes"
             break
             ;;
-        2)
-            HARDENING_LEVEL="moderate"
-            break
-            ;;
-        3)
-            HARDENING_LEVEL="comprehensive"
+        n|N|no|No|NO)
+            HARDENING_LEVEL="no"
             break
             ;;
         *)
-            echo "ERROR: Invalid choice. Please enter 1, 2, or 3."
+            echo "ERROR: Please enter 'y' or 'n'." >&2
             echo ""
             continue
             ;;
