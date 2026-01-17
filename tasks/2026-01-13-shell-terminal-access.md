@@ -16,7 +16,7 @@ Add shell terminal access to swe-swe sessions, allowing users to open a dedicate
 
 ---
 
-## Phase 1: Backend - Add shell assistant type
+## Phase 1: Backend - Add shell assistant type ✅ COMPLETE
 
 ### What will be achieved
 The backend will recognize `shell` as a valid assistant type, filter it from the homepage, and support the `parent` query parameter to inherit the working directory from a parent session.
@@ -57,6 +57,7 @@ The backend will recognize `shell` as a valid assistant type, filter it from the
 5. MCP browser: Create AI session with named worktree
 6. MCP browser: Navigate to `/session/{new-uuid}?assistant=shell&parent={ai-uuid}`
 7. MCP browser: Verify shell starts, run `pwd`, confirm correct worktree directory
+   - **Critical**: Worktree sessions have unique pwd (e.g., `/workspace/.worktrees/session-name`), not `/workspace` - this is the key case to verify
 8. MCP browser: Test `/session/{uuid}?assistant=shell` (no parent) starts in `/workspace`
 9. Shutdown test container
 
@@ -135,7 +136,7 @@ End-to-end verification that all pieces work together, edge cases are handled gr
 3. Boot test container
 4. MCP browser: Create named AI session (triggers worktree creation)
 5. MCP browser: Open shell from status bar
-6. MCP browser: Verify shell is in worktree directory
+6. MCP browser: Verify shell is in worktree directory (e.g., `/workspace/.worktrees/session-name`, not `/workspace`)
 7. MCP browser: Run some commands in shell
 8. MCP browser: Close shell tab, reopen from AI session - verify same session (scrollback preserved)
 9. MCP browser: End AI session, verify shell session still works independently
@@ -156,7 +157,7 @@ End-to-end verification that all pieces work together, edge cases are handled gr
 
 1. **Shell as 2nd class citizen** - Not shown on homepage, only accessible via status bar link from AI sessions
 2. **Deterministic UUID** - Clicking Shell multiple times reopens same session (like page reload)
-3. **Parent inheritance** - Shell inherits `WorkDir` from parent session (worktree aware)
+3. **Parent inheritance** - Shell inherits `WorkDir` from parent session (worktree aware). This is especially important for worktree sessions which have unique pwd like `/workspace/.worktrees/session-name`
 4. **`$SHELL` respect** - Uses user's preferred shell, not hardcoded bash
 5. **Debug propagation** - `?debug` flag passed through to shell sessions
 6. **No Shell link in shell** - Avoid confusion, shell status bar only shows VSCode/Browser

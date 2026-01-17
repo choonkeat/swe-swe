@@ -41,7 +41,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "ef825728"
+	GitCommit = "154fa555"
 )
 
 var indexTemplate *template.Template
@@ -127,6 +127,7 @@ type AssistantConfig struct {
 	ShellRestartCmd string // Command to restart (resume) the assistant
 	YoloRestartCmd  string // Command to restart in YOLO mode (empty = not supported)
 	Binary          string // Binary name to check with exec.LookPath
+	Homepage        bool   // Whether to show on homepage (false = hidden, e.g., shell)
 }
 
 // SessionInfo holds session data for template rendering
@@ -195,6 +196,7 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "claude --continue",
 		YoloRestartCmd:  "claude --dangerously-skip-permissions --continue",
 		Binary:          "claude",
+		Homepage:        true,
 	},
 	{
 		Name:            "Gemini",
@@ -202,6 +204,7 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "gemini --resume",
 		YoloRestartCmd:  "gemini --resume --approval-mode=yolo",
 		Binary:          "gemini",
+		Homepage:        true,
 	},
 	{
 		Name:            "Codex",
@@ -209,6 +212,7 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "codex resume --last",
 		YoloRestartCmd:  "codex --yolo resume --last",
 		Binary:          "codex",
+		Homepage:        true,
 	},
 	{
 		Name:            "Goose",
@@ -216,6 +220,7 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "goose session -r",
 		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
+		Homepage:        true,
 	},
 	{
 		Name:            "Aider",
@@ -223,6 +228,7 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "aider --restore-chat-history",
 		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
+		Homepage:        true,
 	},
 	{
 		Name:            "OpenCode",
@@ -230,6 +236,12 @@ var assistantConfigs = []AssistantConfig{
 		ShellRestartCmd: "opencode --continue",
 		YoloRestartCmd:  "", // YOLO mode not supported
 		Binary:          "opencode",
+		Homepage:        true,
+	},
+	{
+		Name:     "Shell",
+		Binary:   "shell",
+		Homepage: false, // Hidden from homepage, accessed via status bar link
 	},
 }
 
@@ -962,6 +974,12 @@ func detectAvailableAssistants() error {
 
 	// Check each predefined assistant
 	for _, cfg := range assistantConfigs {
+		// Non-homepage assistants (like shell) are always available
+		if !cfg.Homepage {
+			availableAssistants = append(availableAssistants, cfg)
+			continue
+		}
+		// Homepage assistants need their binary to be installed
 		if _, err := exec.LookPath(cfg.Binary); err == nil {
 			log.Printf("Detected assistant: %s (%s)", cfg.Name, cfg.Binary)
 			availableAssistants = append(availableAssistants, cfg)
@@ -1104,9 +1122,13 @@ func main() {
 			// Load recordings grouped by agent
 			recordingsByAgent := loadEndedRecordingsByAgent()
 
-			// Build AgentWithSessions for all available assistants
+			// Build AgentWithSessions for all available assistants (homepage only)
 			agents := make([]AgentWithSessions, 0, len(availableAssistants))
 			for _, assistant := range availableAssistants {
+				// Skip non-homepage assistants (like shell)
+				if !assistant.Homepage {
+					continue
+				}
 				recordings := recordingsByAgent[assistant.Binary]
 				// Split recordings into recent and kept
 				var recentRecordings, keptRecordings []RecordingInfo
@@ -2178,8 +2200,19 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	// Generate recording UUID
 	recordingUUID := uuid.New().String()
 
+	// For shell assistant, resolve $SHELL at runtime
+	shellCmdToUse := cfg.ShellCmd
+	if assistant == "shell" {
+		userShell := os.Getenv("SHELL")
+		if userShell == "" {
+			userShell = "bash"
+		}
+		shellCmdToUse = userShell + " -l"
+		log.Printf("Shell session: using %s", shellCmdToUse)
+	}
+
 	// Create new session with PTY using assistant's shell command
-	cmdName, cmdArgs := parseCommand(cfg.ShellCmd)
+	cmdName, cmdArgs := parseCommand(shellCmdToUse)
 
 	// Wrap with script for recording
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recordingUUID)
@@ -2267,7 +2300,19 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Get optional session name from query param
 	sessionName := r.URL.Query().Get("name")
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, "")
+	// Get optional parent session UUID to inherit workDir (for shell sessions)
+	parentUUID := r.URL.Query().Get("parent")
+	var workDir string
+	if parentUUID != "" {
+		sessionsMu.RLock()
+		if parentSess, ok := sessions[parentUUID]; ok {
+			workDir = parentSess.WorkDir
+			log.Printf("Shell session inheriting workDir from parent %s: %s", parentUUID, workDir)
+		}
+		sessionsMu.RUnlock()
+	}
+
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, workDir)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))

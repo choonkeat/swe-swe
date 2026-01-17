@@ -1468,6 +1468,11 @@ class TerminalUI extends HTMLElement {
         if (nameParam) {
             url += '&name=' + encodeURIComponent(nameParam);
         }
+        // Forward parent param from page URL to WebSocket URL (for shell session workDir inheritance)
+        const parentParam = new URLSearchParams(location.search).get('parent');
+        if (parentParam) {
+            url += '&parent=' + encodeURIComponent(parentParam);
+        }
 
         this.debugLog('Creating WebSocket to: ' + url);
         console.log('[WS] Connecting to', url);
