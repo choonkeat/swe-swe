@@ -41,6 +41,8 @@ class TerminalUI extends HTMLElement {
         this.lastOutputTime = null;
         this.outputIdleTimer = null;
         this.outputIdleThreshold = 2000; // ms
+        // Process exit state - prevents reconnection after session ends
+        this.processExited = false;
     }
 
     static get observedAttributes() {
@@ -561,122 +563,6 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__chat-message-username {
                     font-weight: 600;
                     margin-right: 4px;
-                }
-                /* Worktree Exit Modal Styles */
-                .terminal-ui__worktree-modal {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: rgba(0, 0, 0, 0.8);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    z-index: 200;
-                    animation: terminal-ui-fadeIn 0.2s ease-out;
-                }
-                @keyframes terminal-ui-fadeIn {
-                    from { opacity: 0; }
-                    to { opacity: 1; }
-                }
-                .terminal-ui__worktree-modal-content {
-                    background: #2d2d2d;
-                    border: 1px solid #444;
-                    border-radius: 8px;
-                    padding: 24px 32px;
-                    max-width: 500px;
-                    width: 90%;
-                    color: #e0e0e0;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                }
-                .terminal-ui__worktree-modal-content h3 {
-                    margin: 0 0 16px 0;
-                    font-size: 18px;
-                    font-weight: 600;
-                }
-                .terminal-ui__worktree-modal-content--error h3 {
-                    color: #ff8080;
-                }
-                .terminal-ui__worktree-branch {
-                    margin: 0 0 20px 0;
-                    font-size: 14px;
-                    color: #aaa;
-                }
-                .terminal-ui__worktree-branch strong {
-                    color: #6cb6ff;
-                    font-family: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
-                }
-                .terminal-ui__worktree-error {
-                    background: #3d2020;
-                    border: 1px solid #5a3030;
-                    border-radius: 4px;
-                    padding: 12px;
-                    margin-bottom: 16px;
-                    font-size: 13px;
-                    color: #ffb0b0;
-                    font-family: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                }
-                .terminal-ui__worktree-instructions {
-                    background: #1a1a1a;
-                    border: 1px solid #333;
-                    border-radius: 4px;
-                    padding: 12px;
-                    margin: 0 0 20px 0;
-                    font-size: 12px;
-                    color: #b0b0b0;
-                    font-family: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
-                    overflow-x: auto;
-                    white-space: pre;
-                }
-                .terminal-ui__worktree-strategy-hint {
-                    margin: 16px 0 0 0;
-                    font-size: 12px;
-                    color: #888;
-                    text-align: center;
-                }
-                .terminal-ui__worktree-buttons {
-                    display: flex;
-                    gap: 12px;
-                    justify-content: flex-end;
-                    flex-wrap: wrap;
-                }
-                .terminal-ui__worktree-btn {
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    cursor: pointer;
-                    transition: all 0.15s ease;
-                    border: none;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                }
-                .terminal-ui__worktree-btn:disabled {
-                    opacity: 0.6;
-                    cursor: not-allowed;
-                }
-                .terminal-ui__worktree-btn--primary {
-                    background: #238636;
-                    color: white;
-                }
-                .terminal-ui__worktree-btn--primary:hover:not(:disabled) {
-                    background: #2ea043;
-                }
-                .terminal-ui__worktree-btn--secondary {
-                    background: #444;
-                    color: #e0e0e0;
-                }
-                .terminal-ui__worktree-btn--secondary:hover:not(:disabled) {
-                    background: #555;
-                }
-                .terminal-ui__worktree-btn--danger {
-                    background: #b33;
-                    color: white;
-                }
-                .terminal-ui__worktree-btn--danger:hover:not(:disabled) {
-                    background: #c44;
                 }
                 /* Chat Input Overlay */
                 .terminal-ui__chat-input-overlay {
@@ -1242,10 +1128,17 @@ class TerminalUI extends HTMLElement {
             clearTimeout(connectTimeout);
             const reason = event.reason || `code ${event.code}`;
             console.log('[WS] Closed:', event.code, reason, 'wasClean:', event.wasClean);
-            // Show close reason in status bar for debugging
-            this.updateStatus('error', `Disconnected: ${reason}`);
             this.stopUptimeTimer();
             this.stopHeartbeat();
+
+            // Don't reconnect if process has exited - let user review terminal output
+            if (this.processExited) {
+                console.log('[WS] Process exited, not reconnecting');
+                return;
+            }
+
+            // Show close reason in status bar for debugging
+            this.updateStatus('error', `Disconnected: ${reason}`);
             // Brief delay to show the error before scheduling reconnect
             setTimeout(() => this.scheduleReconnect(), 1000);
         };
@@ -1456,19 +1349,16 @@ class TerminalUI extends HTMLElement {
     }
 
     handleProcessExit(exitCode, worktree) {
+        // Mark process as exited to prevent WebSocket reconnection
+        this.processExited = true;
+
         // Update status bar to show exited state
         this.updateStatus('', 'Session ended');
 
         // Stop uptime timer
         this.stopUptimeTimer();
 
-        // If this is a worktree session, show worktree-specific options
-        if (worktree && worktree.branch) {
-            this.showWorktreeExitPrompt(worktree);
-            return;
-        }
-
-        // Non-worktree session: show standard confirmation dialog
+        // Show standard confirmation dialog (same for worktree and non-worktree sessions)
         const message = exitCode === 0
             ? 'The session has ended successfully.\n\nReturn to the home page to start a new session?'
             : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
@@ -1476,98 +1366,6 @@ class TerminalUI extends HTMLElement {
         if (confirm(message)) {
             window.location.href = '/' + this.getDebugQueryString();
         }
-    }
-
-    showWorktreeExitPrompt(worktree) {
-        // Create modal overlay
-        const modal = document.createElement('div');
-        modal.className = 'terminal-ui__worktree-modal';
-        const strategyDescription = worktree.mergeStrategyDescription || 'Rebase then merge with commit';
-        modal.innerHTML = `
-            <div class="terminal-ui__worktree-modal-content">
-                <h3>Done with this worktree?</h3>
-                <p class="terminal-ui__worktree-branch">Branch: <strong>${this.escapeHtml(worktree.branch)}</strong></p>
-                <div class="terminal-ui__worktree-buttons">
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--danger" data-action="discard">Discard</button>
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--primary" data-action="merge">Merge to ${this.escapeHtml(worktree.targetBranch || 'main')}</button>
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--secondary" data-action="not-yet">Not yet</button>
-                </div>
-                <p class="terminal-ui__worktree-strategy-hint">Merge strategy: ${this.escapeHtml(strategyDescription)}</p>
-            </div>
-        `;
-
-        // Add event listeners
-        modal.querySelectorAll('.terminal-ui__worktree-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const action = e.target.dataset.action;
-                if (action === 'not-yet') {
-                    // Redirect to homepage - worktree is preserved for later
-                    window.location.href = '/' + this.getDebugQueryString();
-                    return;
-                }
-
-                // Disable buttons during API call
-                modal.querySelectorAll('.terminal-ui__worktree-btn').forEach(b => b.disabled = true);
-                e.target.textContent = action === 'merge' ? 'Merging...' : 'Discarding...';
-
-                try {
-                    const response = await fetch(`/api/worktree/${action}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ branch: worktree.branch, path: worktree.path, targetBranch: worktree.targetBranch })
-                    });
-
-                    const result = await response.json();
-
-                    if (result.success) {
-                        window.location.href = '/' + this.getDebugQueryString();
-                    } else {
-                        this.showWorktreeError(result.error, result.instructions, worktree);
-                        modal.remove();
-                    }
-                } catch (err) {
-                    this.showWorktreeError('Network error: ' + err.message, '', worktree);
-                    modal.remove();
-                }
-            });
-        });
-
-        this.appendChild(modal);
-    }
-
-    showWorktreeError(error, instructions, worktree) {
-        const modal = document.createElement('div');
-        modal.className = 'terminal-ui__worktree-modal';
-        modal.innerHTML = `
-            <div class="terminal-ui__worktree-modal-content terminal-ui__worktree-modal-content--error">
-                <h3>⚠ Operation failed</h3>
-                <div class="terminal-ui__worktree-error">${this.escapeHtml(error)}</div>
-                ${instructions ? `<pre class="terminal-ui__worktree-instructions">${this.escapeHtml(instructions)}</pre>` : ''}
-                <div class="terminal-ui__worktree-buttons">
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--secondary" data-action="copy">Copy instructions</button>
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--primary" data-action="new-session">Start a new session in /workspace</button>
-                </div>
-            </div>
-        `;
-
-        modal.querySelectorAll('.terminal-ui__worktree-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const action = e.target.dataset.action;
-                if (action === 'copy') {
-                    navigator.clipboard.writeText(instructions).then(() => {
-                        e.target.textContent = 'Copied!';
-                        setTimeout(() => e.target.textContent = 'Copy instructions', 2000);
-                    });
-                } else if (action === 'new-session') {
-                    // Generate new UUID and redirect to new session without name (no worktree)
-                    const newUUID = crypto.randomUUID();
-                    const assistant = new URLSearchParams(window.location.search).get('assistant') || 'claude';
-                    window.location.href = `/session/${newUUID}?assistant=${assistant}` + this.getDebugQueryString().replace('?', '&');
-                }
-            });
-        });
-
-        this.appendChild(modal);
     }
 
     updateStatusInfo() {
