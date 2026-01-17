@@ -550,6 +550,75 @@ func TestCopyUntrackedFiles(t *testing.T) {
 	}
 }
 
+func TestCopyUntrackedFiles_SymlinkDirectoriesCopyFiles(t *testing.T) {
+	// Test that directories are symlinked (for shared agent configs)
+	// and files are copied (for potential per-worktree isolation)
+	files := map[string]struct {
+		content string
+		tracked bool
+		mode    os.FileMode
+		symlink string
+	}{
+		".claude/settings.json": {content: `{"theme":"dark"}`, tracked: false},
+		".claude/mcp/config.json": {content: `{}`, tracked: false},
+		".env": {content: "SECRET=123", tracked: false},
+		"README.md": {content: "readme", tracked: true}, // tracked file, should not be copied
+	}
+
+	srcDir := setupTestGitRepo(t, files)
+	destDir := t.TempDir()
+
+	err := copyUntrackedFiles(srcDir, destDir)
+	if err != nil {
+		t.Fatalf("copyUntrackedFiles failed: %v", err)
+	}
+
+	// .claude should be a symlink pointing to absolute path in srcDir
+	claudePath := filepath.Join(destDir, ".claude")
+	info, err := os.Lstat(claudePath)
+	if err != nil {
+		t.Fatalf("failed to lstat .claude: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected .claude to be a symlink, got mode %v", info.Mode())
+	}
+	target, err := os.Readlink(claudePath)
+	if err != nil {
+		t.Fatalf("failed to readlink .claude: %v", err)
+	}
+	expectedTarget := filepath.Join(srcDir, ".claude")
+	if target != expectedTarget {
+		t.Errorf("expected .claude symlink target %q, got %q", expectedTarget, target)
+	}
+
+	// .env should be a regular file (copied, not symlinked)
+	envPath := filepath.Join(destDir, ".env")
+	envInfo, err := os.Lstat(envPath)
+	if err != nil {
+		t.Fatalf("failed to lstat .env: %v", err)
+	}
+	if envInfo.Mode()&os.ModeSymlink != 0 {
+		t.Errorf("expected .env to be a regular file, but it's a symlink")
+	}
+	if !envInfo.Mode().IsRegular() {
+		t.Errorf("expected .env to be a regular file, got mode %v", envInfo.Mode())
+	}
+	// Verify content was copied
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("failed to read .env: %v", err)
+	}
+	if string(content) != "SECRET=123" {
+		t.Errorf("expected .env content 'SECRET=123', got %q", content)
+	}
+
+	// README.md should not exist (tracked file)
+	readmePath := filepath.Join(destDir, "README.md")
+	if _, err := os.Stat(readmePath); !os.IsNotExist(err) {
+		t.Errorf("expected README.md to NOT be copied, but it exists")
+	}
+}
+
 func TestCopySweSweDocsDir(t *testing.T) {
 	tests := []struct {
 		name            string

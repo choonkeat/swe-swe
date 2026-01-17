@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "79102eb3"
+	GitCommit = "932af0d2"
 )
 
 var indexTemplate *template.Template
@@ -1556,27 +1556,29 @@ func copySweSweDocsDir(srcDir, destDir string) error {
 	return nil
 }
 
-// copyUntrackedFiles copies untracked dotfiles, CLAUDE.md, and AGENTS.md from srcDir to destDir
-// Files in excludeFromCopy and files tracked in git are skipped
+// copyUntrackedFiles symlinks directories and copies files for untracked dotfiles, CLAUDE.md, and AGENTS.md
+// Directories are symlinked (absolute path) so agent configs stay in sync across worktrees
+// Files are copied for potential per-worktree isolation (e.g., .env)
+// Items in excludeFromCopy and files tracked in git are skipped
 func copyUntrackedFiles(srcDir, destDir string) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return fmt.Errorf("failed to read source directory: %w", err)
 	}
 
-	var copied []string
+	var symlinked, copied []string
 	for _, entry := range entries {
 		name := entry.Name()
 
 		// Check if this file matches our patterns: dotfiles, CLAUDE.md, AGENTS.md
-		shouldCopy := false
+		shouldProcess := false
 		if strings.HasPrefix(name, ".") {
-			shouldCopy = true
+			shouldProcess = true
 		} else if name == "CLAUDE.md" || name == "AGENTS.md" {
-			shouldCopy = true
+			shouldProcess = true
 		}
 
-		if !shouldCopy {
+		if !shouldProcess {
 			continue
 		}
 
@@ -1597,18 +1599,31 @@ func copyUntrackedFiles(srcDir, destDir string) error {
 			continue
 		}
 
-		// Copy the file/directory
 		srcPath := srcDir + "/" + name
 		dstPath := destDir + "/" + name
-		if err := copyFileOrDir(srcPath, dstPath); err != nil {
-			log.Printf("Warning: failed to copy %s to worktree: %v", name, err)
-			continue
+
+		if entry.IsDir() {
+			// Symlink directories using absolute path
+			if err := os.Symlink(srcPath, dstPath); err != nil {
+				log.Printf("Warning: failed to symlink %s to worktree: %v", name, err)
+				continue
+			}
+			symlinked = append(symlinked, name)
+		} else {
+			// Copy files
+			if err := copyFileOrDir(srcPath, dstPath); err != nil {
+				log.Printf("Warning: failed to copy %s to worktree: %v", name, err)
+				continue
+			}
+			copied = append(copied, name)
 		}
-		copied = append(copied, name)
 	}
 
+	if len(symlinked) > 0 {
+		log.Printf("Symlinked directories to worktree: %v", symlinked)
+	}
 	if len(copied) > 0 {
-		log.Printf("Copied untracked files to worktree: %v", copied)
+		log.Printf("Copied files to worktree: %v", copied)
 	}
 	return nil
 }
