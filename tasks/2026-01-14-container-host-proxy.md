@@ -58,7 +58,7 @@ A working `swe-swe proxy <command>` subcommand that watches for requests and exe
    - If exists but process dead → remove stale file
    - Write own PID to `<command>.pid`
 
-3. **Set up fsnotify watcher**
+3. **Set up fsnotify watcher** ✅
    - Create `.swe-swe/proxy/` directory if needed
    - Initialize fsnotify watcher on the directory
    - Filter for `*.req` file creation events

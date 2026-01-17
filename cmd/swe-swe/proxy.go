@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 const proxyDir = ".swe-swe/proxy"
@@ -52,12 +54,50 @@ func handleProxy() {
 
 	fmt.Printf("[proxy] Starting proxy for command: %s\n", command)
 	fmt.Printf("[proxy] PID file: %s\n", pidFile)
-	fmt.Printf("[proxy] TODO: Implement file watching and command execution\n")
+	fmt.Printf("[proxy] Watching for requests in: %s\n", proxyDir)
 
-	// TODO: Phase 1 Steps 3-5 will implement:
-	// - fsnotify watcher setup
-	// - Request processing
-	// - Graceful shutdown
+	// Set up file watcher
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to create file watcher: %v\n", err)
+		os.Exit(1)
+	}
+	defer watcher.Close()
+
+	// Watch the proxy directory
+	if err := watcher.Add(proxyDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to watch directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[proxy] Listening for '%s' commands...\n", command)
+
+	// Main event loop
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+
+			// We're interested in Create and Rename (moved_to) events for .req files
+			if event.Op&(fsnotify.Create|fsnotify.Rename) != 0 {
+				if strings.HasSuffix(event.Name, ".req") {
+					uuid := strings.TrimSuffix(filepath.Base(event.Name), ".req")
+					fmt.Printf("[proxy] Received request: %s\n", uuid)
+
+					// TODO: Phase 1 Step 4 will implement request processing
+					fmt.Printf("[proxy] TODO: Process request %s\n", uuid)
+				}
+			}
+
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "[proxy] Watcher error: %v\n", err)
+		}
+	}
 }
 
 // checkAndClaimPIDFile checks if a proxy is already running for this command.
