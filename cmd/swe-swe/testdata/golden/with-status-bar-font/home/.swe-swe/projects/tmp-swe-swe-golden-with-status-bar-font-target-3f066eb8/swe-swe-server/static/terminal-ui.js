@@ -788,8 +788,261 @@ class TerminalUI extends HTMLElement {
                     text-align: center;
                     font-weight: bold;
                 }
+                /* Settings Panel */
+                .settings-panel {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 1000;
+                    display: flex;
+                    align-items: flex-end;
+                    justify-content: center;
+                }
+                .settings-panel[hidden] {
+                    display: none;
+                }
+                .settings-panel__backdrop {
+                    position: absolute;
+                    inset: 0;
+                    background: rgba(0, 0, 0, 0.5);
+                    backdrop-filter: blur(2px);
+                    -webkit-backdrop-filter: blur(2px);
+                }
+                .settings-panel__content {
+                    position: relative;
+                    width: 100%;
+                    max-height: 90vh;
+                    background: #2d2d2d;
+                    border-top-left-radius: 12px;
+                    border-top-right-radius: 12px;
+                    overflow: hidden;
+                    display: flex;
+                    flex-direction: column;
+                    animation: settings-panel-slide-up 0.2s ease-out;
+                }
+                @keyframes settings-panel-slide-up {
+                    from {
+                        transform: translateY(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateY(0);
+                        opacity: 1;
+                    }
+                }
+                .settings-panel__header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 12px 16px;
+                    background: var(--status-bar-color);
+                    color: var(--status-bar-text-color);
+                    font-family: monospace;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+                .settings-panel__close {
+                    background: none;
+                    border: none;
+                    color: inherit;
+                    font-size: 24px;
+                    line-height: 1;
+                    cursor: pointer;
+                    padding: 4px 8px;
+                    opacity: 0.8;
+                    transition: opacity 0.2s;
+                }
+                .settings-panel__close:hover {
+                    opacity: 1;
+                }
+                .settings-panel__body {
+                    padding: 16px;
+                    overflow-y: auto;
+                    flex: 1;
+                }
+                .settings-panel__fields {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 16px;
+                    margin-bottom: 24px;
+                }
+                .settings-panel__field {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+                .settings-panel__label {
+                    font-size: 12px;
+                    color: #999;
+                    font-family: monospace;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                .settings-panel__input {
+                    padding: 10px 12px;
+                    font-size: 14px;
+                    font-family: monospace;
+                    background: #1e1e1e;
+                    color: #d4d4d4;
+                    border: 1px solid #404040;
+                    border-radius: 6px;
+                    outline: none;
+                    transition: border-color 0.2s;
+                }
+                .settings-panel__input:focus {
+                    border-color: var(--status-bar-color);
+                }
+                .settings-panel__color-row {
+                    display: flex;
+                    gap: 8px;
+                    align-items: center;
+                }
+                .settings-panel__color-picker {
+                    width: 44px;
+                    height: 44px;
+                    padding: 0;
+                    border: 2px solid #404040;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    background: none;
+                }
+                .settings-panel__color-picker::-webkit-color-swatch-wrapper {
+                    padding: 2px;
+                }
+                .settings-panel__color-picker::-webkit-color-swatch {
+                    border: none;
+                    border-radius: 3px;
+                }
+                .settings-panel__color-input {
+                    flex: 1;
+                }
+                .settings-panel__swatches {
+                    display: flex;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                    margin-top: 8px;
+                }
+                .settings-panel__swatch {
+                    width: 32px;
+                    height: 32px;
+                    border: 2px solid transparent;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: transform 0.1s, border-color 0.2s;
+                }
+                .settings-panel__swatch:hover {
+                    transform: scale(1.1);
+                }
+                .settings-panel__swatch.active {
+                    border-color: #fff;
+                }
+                .settings-panel__nav {
+                    display: flex;
+                    gap: 8px;
+                    padding-top: 16px;
+                    border-top: 1px solid #404040;
+                }
+                .settings-panel__nav-btn {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 12px 8px;
+                    background: #3c3c3c;
+                    border: 1px solid #505050;
+                    border-radius: 8px;
+                    color: #d4d4d4;
+                    font-size: 12px;
+                    font-family: monospace;
+                    cursor: pointer;
+                    text-decoration: none;
+                    min-height: 44px;
+                    transition: background 0.2s;
+                }
+                .settings-panel__nav-btn:hover {
+                    background: #4a4a4a;
+                }
+                .settings-panel__nav-btn:active {
+                    background: #555;
+                }
+                .settings-panel__nav-icon {
+                    font-size: 20px;
+                }
+                /* Desktop: centered modal */
+                @media (min-width: 640px) {
+                    .settings-panel {
+                        align-items: center;
+                    }
+                    .settings-panel__content {
+                        max-width: 400px;
+                        border-radius: 12px;
+                        animation: settings-panel-fade-in 0.2s ease-out;
+                    }
+                    @keyframes settings-panel-fade-in {
+                        from {
+                            transform: scale(0.95);
+                            opacity: 0;
+                        }
+                        to {
+                            transform: scale(1);
+                            opacity: 1;
+                        }
+                    }
+                }
             </style>
             <div class="terminal-ui">
+                <div class="settings-panel" hidden aria-modal="true" role="dialog" aria-labelledby="settings-panel-title">
+                    <div class="settings-panel__backdrop"></div>
+                    <div class="settings-panel__content">
+                        <header class="settings-panel__header">
+                            <span id="settings-panel-title">Session Settings</span>
+                            <button class="settings-panel__close" aria-label="Close settings">&times;</button>
+                        </header>
+                        <div class="settings-panel__body">
+                            <section class="settings-panel__fields">
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-username">Username</label>
+                                    <input type="text" id="settings-username" class="settings-panel__input" placeholder="Enter your name" maxlength="16">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-session">Session Name</label>
+                                    <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="32">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label">Status Bar Color</label>
+                                    <div class="settings-panel__color-row">
+                                        <input type="color" class="settings-panel__color-picker" value="#007acc">
+                                        <input type="text" class="settings-panel__input settings-panel__color-input" placeholder="#007acc or color name">
+                                    </div>
+                                    <div class="settings-panel__swatches">
+                                        <button class="settings-panel__swatch" style="background: #007acc" data-color="#007acc" title="Blue"></button>
+                                        <button class="settings-panel__swatch" style="background: #dc2626" data-color="#dc2626" title="Red"></button>
+                                        <button class="settings-panel__swatch" style="background: #16a34a" data-color="#16a34a" title="Green"></button>
+                                        <button class="settings-panel__swatch" style="background: #f97316" data-color="#f97316" title="Orange"></button>
+                                        <button class="settings-panel__swatch" style="background: #8b5cf6" data-color="#8b5cf6" title="Purple"></button>
+                                        <button class="settings-panel__swatch" style="background: #64748b" data-color="#64748b" title="Gray"></button>
+                                        <button class="settings-panel__swatch" style="background: #eab308" data-color="#eab308" title="Yellow"></button>
+                                        <button class="settings-panel__swatch" style="background: #ec4899" data-color="#ec4899" title="Pink"></button>
+                                    </div>
+                                </div>
+                            </section>
+                            <nav class="settings-panel__nav">
+                                <a href="/" target="swe-swe-home" class="settings-panel__nav-btn">
+                                    <span class="settings-panel__nav-icon">🏠</span>
+                                    <span>Home</span>
+                                </a>
+                                <a href="/vscode/" target="swe-swe-vscode" class="settings-panel__nav-btn settings-panel__nav-vscode">
+                                    <span class="settings-panel__nav-icon">📝</span>
+                                    <span>VSCode</span>
+                                </a>
+                                <a href="/chrome/" target="swe-swe-browser" class="settings-panel__nav-btn">
+                                    <span class="settings-panel__nav-icon">🌐</span>
+                                    <span>Browser</span>
+                                </a>
+                            </nav>
+                        </div>
+                    </div>
+                </div>
                 <div class="terminal-ui__drop-overlay">
                     <div class="terminal-ui__drop-icon">+</div>
                     <div>Drop file to paste contents</div>
