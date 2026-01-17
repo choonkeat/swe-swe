@@ -151,24 +151,24 @@ The droplet includes:
 If swe-swe isn't working, run these commands to gather diagnostic information. Copy and paste the entire block:
 
 ```bash
-echo "=== SYSTEMD SERVICE STATUS ===" && \
-systemctl status swe-swe && \
-echo "" && \
-echo "=== DOCKER CONTAINERS ===" && \
-docker ps -a && \
-echo "" && \
-echo "=== FIRST BOOT SCRIPT OUTPUT ===" && \
-tail -100 /var/log/cloud-init-output.log && \
-echo "" && \
-echo "=== CLOUD-INIT STATUS ===" && \
-cloud-init status && \
-echo "" && \
-echo "=== SWEBSWE SERVICE LOGS ===" && \
-journalctl -u swe-swe -n 100 && \
-echo "" && \
-echo "=== CONFIG FILES ===" && \
-ls -la /etc/swe-swe/ && \
-echo "" && \
+echo "=== SYSTEMD SERVICE STATUS ===" ; \
+systemctl status swe-swe ; \
+echo "" ; \
+echo "=== DOCKER CONTAINERS ===" ; \
+docker ps -a ; \
+echo "" ; \
+echo "=== FIRST BOOT SCRIPT OUTPUT ===" ; \
+tail -100 /var/log/cloud-init-output.log ; \
+echo "" ; \
+echo "=== CLOUD-INIT STATUS ===" ; \
+cloud-init status ; \
+echo "" ; \
+echo "=== SWEBSWE SERVICE LOGS ===" ; \
+journalctl -u swe-swe -n 100 ; \
+echo "" ; \
+echo "=== CONFIG FILES ===" ; \
+ls -la /etc/swe-swe/ ; \
+echo "" ; \
 echo "==> Copy everything above and share for debugging"
 ```
 
