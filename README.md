@@ -47,7 +47,7 @@ https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
 
 ## Commands
 
-swe-swe has two native commands (`init` and `list`). All other commands are passed directly to `docker compose` with the project's configuration.
+swe-swe has three native commands (`init`, `list`, and `proxy`). All other commands are passed directly to `docker compose` with the project's configuration.
 
 ### Native Commands
 
@@ -168,9 +168,43 @@ swe-swe list
 # Removed 1 stale project(s)
 ```
 
+#### `swe-swe proxy <command>`
+
+Creates a file-based proxy that allows containers to execute a host command and receive stdout/stderr/exit code in real-time. This is useful for commands that must run on the host (e.g., `make`, `docker`, `npm` with host-specific configurations).
+
+**How it works:**
+1. Host runs `swe-swe proxy <command>` which watches `.swe-swe/proxy/` for requests
+2. A container script is generated at `.swe-swe/proxy/<command>`
+3. Container runs `.swe-swe/proxy/<command> [args...]` to submit a request
+4. Host executes the command and streams stdout/stderr back to container in real-time
+5. Container exits with the command's exit code
+
+**Examples:**
+```bash
+# Terminal 1: Start proxy for 'make' command
+swe-swe proxy make
+# [proxy] Listening for 'make' commands... (Ctrl+C to stop)
+
+# Terminal 2 (inside container): Run make with arguments
+.swe-swe/proxy/make build TARGET=hello
+# Output streams in real-time, exits with make's exit code
+
+# Multiple proxies (run each in separate terminals)
+swe-swe proxy make
+swe-swe proxy docker
+swe-swe proxy npm
+```
+
+**Environment Variables:**
+- `PROXY_TIMEOUT`: Timeout in seconds for container script (default: 300)
+- `PROXY_DIR`: Override proxy directory (default: `.swe-swe/proxy`)
+
+**Requirements:**
+- Container needs `inotify-tools` package for efficient file watching (falls back to polling if not available)
+
 ### Docker Compose Pass-through
 
-All commands other than `init` and `list` are passed directly to `docker compose` using the project's generated `docker-compose.yml`. This means you can use any docker compose command:
+All commands other than `init`, `list`, and `proxy` are passed directly to `docker compose` using the project's generated `docker-compose.yml`. This means you can use any docker compose command:
 
 ```bash
 swe-swe up                    # docker compose up

@@ -1,0 +1,67 @@
+105320 - Phase 1 Step 1: Add proxy subcommand skeleton
+Action: Create cmd/swe-swe/proxy.go with basic subcommand, add "proxy" case to main.go switch statement
+Expected: `swe-swe proxy` without args shows usage error, `swe-swe proxy echo` is recognized (will error on missing implementation)
+105408 - Phase 1 Step 1: Result
+Observed: Build succeeded. `swe-swe proxy` (no args) shows usage and exits 1. `swe-swe proxy echo` is recognized, prints TODO message, exits 0.
+Got: As expected - proxy subcommand skeleton working.
+
+105444 - Phase 1 Step 2: Implement PID file management
+Action: Add PID file check/creation in proxy.go. Check if existing PID is alive (signal 0), fail fast if running, clean stale.
+Expected: Running proxy twice fails with "already running" error. Stale PID file gets cleaned up.
+105654 - Phase 1 Step 2: Result
+Observed:
+- Initial build had bug: strconv.Atoi fails on "1\n" (newline in file). Fixed by adding strings.TrimSpace.
+- Duplicate detection: Created PID file with running background process PID -> "proxy for 'echo' already running (PID xxx)" error, exits 1.
+- Stale cleanup: Created PID file with 999999 -> "Removing stale PID file" message, continues normally.
+- PID file cleanup on exit: After proxy exits, PID file is removed (defer os.Remove works).
+Got: As expected after fixing TrimSpace bug. PID file management working correctly.
+
+105731 - Phase 1 Step 3: Set up fsnotify watcher
+Action: Add github.com/fsnotify/fsnotify dependency, implement file watcher for *.req files in proxy directory.
+Expected: Proxy starts and waits, detects when .req files are created/moved into directory.
+105851 - Phase 1 Step 3: Result
+Observed:
+- Added github.com/fsnotify/fsnotify v1.9.0 dependency (also pulled golang.org/x/sys).
+- Proxy now starts, creates watcher, and waits in event loop.
+- Direct file creation (echo > .req) detected: "[proxy] Received request: test-uuid-123"
+- Atomic rename (mv .tmp .req) detected: "[proxy] Received request: uuid-456"
+- Both fsnotify.Create and fsnotify.Rename events handled correctly.
+Got: As expected. File watcher working for both direct create and atomic rename patterns.
+
+105926 - Phase 1 Step 4: Implement request processing
+Action: Read NUL-delimited args from .req file, delete it (claim), execute command, write .stdout/.stderr/.exit
+Expected: Creating .req file with NUL-delimited args causes command execution, response files appear with correct content.
+110103 - Phase 1 Step 4: Result
+Observed:
+- processRequest() reads NUL-delimited args, deletes .req, executes command, writes response files.
+- Test with "echo hello\0world\0" -> stdout="hello world\n", stderr="", exit="0"
+- Test with "sh -c exit 42" -> stdout="", stderr="error", exit="42"
+- Test with nonexistent command -> stderr="Failed to execute...", exit="127"
+- Exit file written last to signal completion.
+Got: As expected. Request processing works correctly with stdout/stderr separation and exit code propagation.
+
+110145 - Phase 1 Step 5: Add graceful shutdown
+Action: Handle SIGINT/SIGTERM signals, clean up PID file on exit. Use context for cancellation.
+Expected: Ctrl+C or kill -TERM causes clean exit with PID file removed.
+110259 - Phase 1 Step 5: Result
+Observed:
+- Added signal handling for SIGINT/SIGTERM using os/signal package.
+- Context with cancel used to exit main event loop cleanly.
+- Deferred cleanup removes PID file on exit.
+- Test: send SIGTERM -> "[proxy] Received signal terminated, shutting down..." -> "[proxy] Cleaned up PID file"
+- PID file verified removed after shutdown.
+Got: As expected. Graceful shutdown working correctly.
+
+110337 - Phase 1 Tests: Running unit tests
+Action: Create proxy_test.go with tests for PID management, request processing, NUL parsing.
+Expected: All tests pass via `make test`.
+110445 - Phase 1 Tests: Result
+Observed:
+- Created proxy_test.go with tests for:
+  - TestParseNulDelimitedArgs (8 subtests): empty, single arg, trailing NUL, multiple args, spaces, equals
+  - TestCheckAndClaimPIDFile_NewFile: creates PID file with current PID
+  - TestCheckAndClaimPIDFile_StaleFile: replaces stale PID (999999)
+  - TestCheckAndClaimPIDFile_InvalidFile: replaces invalid PID content
+  - TestCheckAndClaimPIDFile_RunningProcess: fails for running process
+- All tests pass: `make test` shows PASS for all proxy tests.
+Got: As expected. Phase 1 complete - all functionality implemented and tested.
