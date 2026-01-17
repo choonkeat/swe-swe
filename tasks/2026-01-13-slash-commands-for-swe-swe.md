@@ -71,7 +71,7 @@ The swe-swe-server will know which slash command format each agent supports, and
 
 ---
 
-## Phase 2: Create bundled slash command files
+## Phase 2: Create bundled slash command files ✅
 
 ### What will be achieved
 Bundled `swe-swe` slash commands will be installed to agent-specific directories during container startup, enabling `/swe-swe:setup` for agents that support slash commands.

@@ -6,3 +6,17 @@
 - Will update entrypoint.sh template to install files to agent directories
 - Will verify embed directive includes both .md and .toml files
 - Expected: Golden tests show new files in home/.claude/commands/swe-swe/, etc.
+
+012301: Phase 2 implementation complete
+- Created cmd/swe-swe/slash-commands/swe-swe/setup.md
+- Created cmd/swe-swe/slash-commands/swe-swe/setup.toml
+- Modified writeBundledSlashCommands to accept extension filter parameter
+- Updated call site in main.go to install to 4 agent directories:
+  - ~/.claude/commands/ (.md)
+  - ~/.codex/prompts/ (.md)
+  - ~/.config/opencode/command/ (.md)
+  - ~/.gemini/commands/ (.toml)
+- Updated test to verify both .md and .toml file handling
+- make build: SUCCESS
+- make test: ALL TESTS PASS
+- Note: Embed directive already uses "all:slash-commands" which includes all files
