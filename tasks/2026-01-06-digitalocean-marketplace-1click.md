@@ -258,7 +258,7 @@ A fully tested DigitalOcean snapshot that can be deployed as a Droplet with swe-
 
 ---
 
-### Phase 6: Documentation and Deploy Button
+### Phase 6: Documentation and Deploy Button [DONE]
 
 **What Will Be Achieved**
 Complete documentation and a deploy button badge for the README.
