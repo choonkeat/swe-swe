@@ -2,5 +2,6 @@
   "agents": [
     "opencode"
   ],
-  "ssl": "no"
+  "ssl": "no",
+  "mergeStrategy": "merge-commit"
 }

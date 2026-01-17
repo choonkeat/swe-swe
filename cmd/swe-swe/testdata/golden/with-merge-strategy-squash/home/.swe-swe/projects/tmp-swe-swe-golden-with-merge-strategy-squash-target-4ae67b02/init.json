@@ -1,0 +1,12 @@
+{
+  "agents": [
+    "claude",
+    "gemini",
+    "codex",
+    "aider",
+    "goose",
+    "opencode"
+  ],
+  "ssl": "no",
+  "mergeStrategy": "squash"
+}

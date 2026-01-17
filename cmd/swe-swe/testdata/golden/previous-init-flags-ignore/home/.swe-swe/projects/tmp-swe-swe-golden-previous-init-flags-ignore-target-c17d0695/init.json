@@ -2,5 +2,6 @@
   "agents": [
     "aider"
   ],
-  "ssl": "no"
+  "ssl": "no",
+  "mergeStrategy": "merge-commit"
 }
