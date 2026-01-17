@@ -41,7 +41,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "c4900ea0"
+	GitCommit = "ef825728"
 )
 
 var indexTemplate *template.Template
@@ -2863,7 +2863,13 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	// Strip script metadata and render HTML using record-tui
 	cleaned := recordtui.StripMetadata(string(logContent))
 	frames := []recordtui.Frame{{Timestamp: 0, Content: cleaned}}
-	html, err := recordtui.RenderHTML(frames, recordtui.Options{Title: name})
+	html, err := recordtui.RenderHTML(frames, recordtui.Options{
+		Title: name,
+		FooterLink: recordtui.FooterLink{
+			Text: "swe-swe",
+			URL:  "https://github.com/choonkeat/swe-swe",
+		},
+	})
 	if err != nil {
 		http.Error(w, "Failed to render playback", http.StatusInternalServerError)
 		return
