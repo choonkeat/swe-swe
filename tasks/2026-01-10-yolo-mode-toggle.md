@@ -200,6 +200,139 @@ func TestDetectYoloMode_NoMatch(t *testing.T)       // "opencode --continue" →
 
 ---
 
+## Phase 5: Fix Process Exit Handling for YOLO Toggle
+
+**Date:** 2026-01-11
+**Status:** Planned
+
+### Problem
+
+When YOLO mode is toggled, the agent receives SIGTERM and may exit with code 0 (clean shutdown). The current logic treats `exitCode == 0` as "session ended" and shows a "session ended" dialog to viewers, even though we intended to restart with a new command.
+
+**Root cause:** The `pendingRestartCmd` check happens AFTER the `exitCode == 0` check, so it's never reached when the agent exits cleanly.
+
+**Deeper issue:** The code conflates two concepts:
+1. "Restart on crash" (automatic recovery)
+2. "Process replacement" (explicit user action like YOLO toggle)
+
+### Solution
+
+Simplify the mental model:
+- **Process exit = session ends** (always, regardless of exit code)
+- **Process replacement** = explicit user action that kills old process and starts new one
+
+Remove crash-restart behavior entirely. Check for pending replacement BEFORE ending session.
+
+---
+
+### Phase 5.1: Remove crash-restart behavior
+
+#### Goal
+All process exits end the session, regardless of exit code. Simplifies mental model.
+
+#### Steps
+
+| Step | Description | File |
+|------|-------------|------|
+| 5.1.1 | Remove the `exitCode != 0` restart branch (lines 912-943) | main.go |
+| 5.1.2 | Unify exit handling: all exits go through same path (save metadata, broadcast exit) | main.go |
+| 5.1.3 | Change exit message to include exit code for all exits | main.go |
+| 5.1.4 | Call `BroadcastExit(exitCode)` for all exits (not just code 0) | main.go |
+
+#### Verification
+- `make test` passes
+- Browser test (test container): Start session → exit agent → "session ended" dialog → OK → redirects to homepage
+- Manual: Kill agent with `kill -9` → should show "session ended" dialog (not restart)
+
+---
+
+### Phase 5.2: Add pending replacement check
+
+#### Goal
+Before ending session, check for pending replacement. If set, start replacement process instead.
+
+#### Steps
+
+| Step | Description | File |
+|------|-------------|------|
+| 5.2.1 | Rename `pendingRestartCmd` to `pendingReplacement` for clarity | main.go |
+| 5.2.2 | Add replacement check as FIRST decision point after getting exit code | main.go |
+| 5.2.3 | If `pendingReplacement` set: start new process, clear flag, continue loop (no BroadcastExit) | main.go |
+| 5.2.4 | If `pendingReplacement` NOT set: proceed to session end | main.go |
+| 5.2.5 | Update `toggle_yolo` handler to use `pendingReplacement` | main.go |
+
+#### New Exit Flow
+
+```
+PTY read error → get exit code
+    ↓
+pendingReplacement set? ─── YES ──→ Start replacement, clear flag, continue
+    │
+    NO
+    ↓
+clientCount == 0? ─── YES ──→ End silently (no viewers)
+    │
+    NO
+    ↓
+BroadcastExit(exitCode), session ends
+```
+
+#### Verification
+- `make test` passes
+- Manual: Toggle YOLO → agent restarts, NO "session ended" dialog
+- Manual: Agent exits normally → session ends, dialog shown
+
+---
+
+### Phase 5.3: Clean up YOLO toggle flow
+
+#### Goal
+Ensure YOLO toggle provides good UX. Add YOLO toggle to settings panel.
+
+#### Steps
+
+| Step | Description | File |
+|------|-------------|------|
+| 5.3.1 | Verify `toggle_yolo` sets `pendingReplacement` before killing process | main.go |
+| 5.3.2 | Verify `BroadcastStatus()` called before killing (immediate status bar update) | main.go |
+| 5.3.3 | Remove redundant messages for replacement path (YOLO message already shown) | main.go |
+| 5.3.4 | Skip 500ms sleep for replacement path (feedback already shown) | main.go |
+| 5.3.5 | Add YOLO toggle to settings panel (only if `yoloSupported`) | terminal-ui.js |
+| 5.3.6 | Settings toggle calls same `toggleYoloMode()` function | terminal-ui.js |
+| 5.3.7 | Update settings panel state when `yoloMode` changes | terminal-ui.js |
+
+#### Verification (Browser test in test container)
+1. Start Claude session → open settings panel
+2. Verify YOLO toggle visible in settings
+3. Toggle YOLO via settings
+4. Verify: Terminal shows "[Switching YOLO mode ON, restarting agent...]"
+5. Verify: Status bar changes to "YOLO"
+6. Verify: Settings panel reflects new state
+7. Verify: NO "session ended" dialog
+8. Test via status bar click (existing flow still works)
+
+---
+
+### Phase 5.4: Update golden files and documentation
+
+#### Steps
+
+| Step | Description |
+|------|-------------|
+| 5.4.1 | Run `make build golden-update` |
+| 5.4.2 | Review golden diff - should show main.go and terminal-ui.js changes |
+| 5.4.3 | Run `make test` - all tests pass |
+| 5.4.4 | Update task file status to Complete |
+
+#### Verification
+- `make build` succeeds
+- `make golden-update` completes
+- `git diff --cached -- cmd/swe-swe/testdata/golden` shows expected changes
+- `make test` passes
+- Final browser test by user: full YOLO toggle flow works end-to-end
+
+---
+
 ## Future Enhancements (Out of Scope)
 
 - Keyboard shortcut (Ctrl+Shift+Y)
