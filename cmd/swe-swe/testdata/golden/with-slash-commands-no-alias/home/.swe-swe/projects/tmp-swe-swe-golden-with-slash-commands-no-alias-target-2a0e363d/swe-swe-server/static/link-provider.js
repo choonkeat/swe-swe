@@ -1,7 +1,33 @@
 /**
  * Link providers for xterm.js
- * Makes file paths and CSS colors clickable.
+ * Makes file paths, URLs, and CSS colors clickable.
+ * Links require modifier keys (Cmd/Ctrl or Shift) to activate.
  */
+
+/**
+ * Check if a link-activating modifier key is pressed.
+ * Returns true if Cmd (macOS), Ctrl (other platforms), or Shift is pressed.
+ * @param {MouseEvent} event - The mouse event
+ * @returns {boolean} - Whether a valid modifier key is pressed
+ */
+function hasLinkModifier(event) {
+    // Shift works on all platforms
+    if (event.shiftKey) {
+        return true;
+    }
+    // On macOS, use Cmd (metaKey); on other platforms, use Ctrl
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    return isMac ? event.metaKey : event.ctrlKey;
+}
+
+/**
+ * Get hint text for the modifier key needed to activate links.
+ * @returns {string} - Hint text like "Cmd+Click" or "Ctrl+Click"
+ */
+function getLinkModifierHint() {
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    return isMac ? 'Cmd+Click or Shift+Click' : 'Ctrl+Click or Shift+Click';
+}
 
 /**
  * Register a CSS color link provider with the terminal.
@@ -65,11 +91,13 @@ function registerColorLinkProvider(terminal, options) {
                     end: { x: color.startIndex + color.text.length + 1, y: bufferLineNumber }
                 },
                 activate: (event, text) => {
+                    if (!hasLinkModifier(event)) {
+                        return; // Require modifier key to activate
+                    }
                     if (options.onColorClick) {
                         options.onColorClick(text);
                     }
                 },
-                // Tooltip on hover
                 decorations: {
                     pointerCursor: true
                 }
@@ -173,6 +201,10 @@ function registerFileLinkProvider(terminal, options) {
                         end: { x: startIndex + filePath.length + 1, y: bufferLineNumber }
                     },
                     activate: (event, text) => {
+                        if (!hasLinkModifier(event)) {
+                            return; // Require modifier key to activate
+                        }
+
                         // Copy path to clipboard (requires secure context)
                         if (navigator.clipboard) {
                             navigator.clipboard.writeText(text).catch(err => {
@@ -189,6 +221,90 @@ function registerFileLinkProvider(terminal, options) {
                         if (options.onLinkClick) {
                             options.onLinkClick(text);
                         }
+                    }
+                });
+            }
+
+            callback(links.length > 0 ? links : undefined);
+        }
+    });
+}
+
+/**
+ * Register a URL link provider with the terminal.
+ * Makes http/https URLs clickable.
+ * @param {Terminal} terminal - xterm.js Terminal instance
+ * @param {Object} [options] - Configuration options
+ * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
+ */
+function registerUrlLinkProvider(terminal, options = {}) {
+    // Match http/https URLs
+    // Based on a simplified but practical URL regex
+    // Allows parentheses for Wikipedia-style links; cleanUrl() handles trailing punctuation
+    const urlRegex = /https?:\/\/[^\s<>\[\]"'`]+/gi;
+
+    function cleanUrl(url) {
+        // Remove trailing punctuation that's likely not part of the URL
+        // But preserve if it looks like part of the path (e.g., URLs ending in parentheses for wiki links)
+        let cleaned = url;
+
+        // Balance parentheses - if there are more closing than opening, trim trailing )
+        const openParens = (cleaned.match(/\(/g) || []).length;
+        const closeParens = (cleaned.match(/\)/g) || []).length;
+        if (closeParens > openParens) {
+            const excess = closeParens - openParens;
+            for (let i = 0; i < excess; i++) {
+                if (cleaned.endsWith(')')) {
+                    cleaned = cleaned.slice(0, -1);
+                }
+            }
+        }
+
+        // Remove common trailing punctuation
+        cleaned = cleaned.replace(/[.,;:!?]+$/, '');
+
+        return cleaned;
+    }
+
+    terminal.registerLinkProvider({
+        provideLinks: (bufferLineNumber, callback) => {
+            const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
+            if (!line) {
+                callback(undefined);
+                return;
+            }
+
+            const lineText = line.translateToString(true);
+            const links = [];
+
+            let match;
+            urlRegex.lastIndex = 0;
+            while ((match = urlRegex.exec(lineText)) !== null) {
+                const rawUrl = match[0];
+                const url = cleanUrl(rawUrl);
+                const startIndex = match.index;
+
+                links.push({
+                    text: url,
+                    range: {
+                        start: { x: startIndex + 1, y: bufferLineNumber },
+                        end: { x: startIndex + url.length + 1, y: bufferLineNumber }
+                    },
+                    activate: (event, text) => {
+                        if (!hasLinkModifier(event)) {
+                            return; // Require modifier key to activate
+                        }
+
+                        // Open URL in new tab
+                        window.open(text, '_blank', 'noopener,noreferrer');
+
+                        // Call optional callback
+                        if (options.onLinkClick) {
+                            options.onLinkClick(text);
+                        }
+                    },
+                    decorations: {
+                        pointerCursor: true
                     }
                 });
             }

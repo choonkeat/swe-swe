@@ -1236,6 +1236,11 @@ class TerminalUI extends HTMLElement {
             });
         }
 
+        // Register URL link provider for clickable http/https URLs
+        if (typeof registerUrlLinkProvider === 'function') {
+            registerUrlLinkProvider(this.term);
+        }
+
         this.term.write('Session: ' + this.uuid + '\r\n');
     }
 
