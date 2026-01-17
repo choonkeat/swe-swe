@@ -20,6 +20,7 @@ class TerminalUI extends HTMLElement {
         this.assistantName = '';
         this.sessionName = '';
         this.uuidShort = '';
+        this.workDir = '';
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1404,6 +1405,7 @@ class TerminalUI extends HTMLElement {
                 }
                 this.sessionName = msg.sessionName || '';
                 this.uuidShort = msg.uuidShort || '';
+                this.workDir = msg.workDir || '';
                 this.updateStatusInfo();
                 break;
             case 'chat':

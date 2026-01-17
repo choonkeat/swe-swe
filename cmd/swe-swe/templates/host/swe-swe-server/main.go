@@ -369,6 +369,10 @@ func (s *Session) BroadcastStatus() {
 	if len(s.UUID) >= 5 {
 		uuidShort = s.UUID[:5]
 	}
+	workDir := s.WorkDir
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
 	status := map[string]interface{}{
 		"type":        "status",
 		"viewers":     len(s.wsClients),
@@ -377,6 +381,7 @@ func (s *Session) BroadcastStatus() {
 		"assistant":   s.AssistantConfig.Name,
 		"sessionName": s.Name,
 		"uuidShort":   uuidShort,
+		"workDir":     workDir,
 	}
 
 	data, err := json.Marshal(status)

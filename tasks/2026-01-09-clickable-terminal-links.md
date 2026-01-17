@@ -8,35 +8,21 @@ Implement clickable file path hyperlinks in swe-swe's xterm UI, shared between b
 
 ---
 
-## Phase 1: Server passes workspace path to frontend
+## Phase 1: Server passes workspace path to frontend ✅
 
 ### What will be achieved
 Add `workDir` to the existing `status` WebSocket message. Frontend stores it for VS Code URL construction.
 
 ### Steps
 
-1. **Add `workDir` to `BroadcastStatus`** in `main.go` line ~372:
-   ```go
-   status := map[string]interface{}{
-       "type":        "status",
-       // ... existing fields
-       "workDir":     s.WorkDir,  // ADD THIS
-   }
-   ```
-
-2. **Frontend receives and stores `workDir`** in `terminal-ui.js` line ~1399:
-   ```javascript
-   case 'status':
-       // ... existing
-       this.workDir = msg.workDir || '';  // ADD THIS
-   ```
-
-3. **If `workDir` is empty, default to server cwd** - The server can pass its cwd when `s.WorkDir` is empty
+1. ✅ **Add `workDir` to `BroadcastStatus`** in `main.go` line ~372
+2. ✅ **Frontend receives and stores `workDir`** in `terminal-ui.js`
+3. ✅ **If `workDir` is empty, default to server cwd** - Server uses os.Getwd() fallback
 
 ### Verification
 
-1. `make test` - ensure existing tests pass
-2. Manual: Console.log `this.workDir` in frontend, verify correct value for regular and worktree sessions
+1. ✅ `make test` - tests pass
+2. Manual verification deferred to Phase 5
 
 ---
 
