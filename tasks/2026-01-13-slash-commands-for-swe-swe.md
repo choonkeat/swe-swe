@@ -20,7 +20,7 @@ Replace the universal `@swe-swe/` file-mention approach with agent-native slash 
 
 ---
 
-## Phase 1: Add SlashCommandFormat to AssistantConfig
+## Phase 1: Add SlashCommandFormat to AssistantConfig ✅
 
 ### What will be achieved
 The swe-swe-server will know which slash command format each agent supports, and the MOTD will show agent-appropriate invocation syntax.
