@@ -17,11 +17,99 @@ Deploy swe-swe with one click on DigitalOcean.
 
 ## After Deployment
 
-When you SSH into your droplet, you'll see a welcome message (MOTD) with:
-- **URL**: `http://{IP}:1977`
-- **Password**: Randomly generated (shown in MOTD)
+### Finding Your Droplet IP
 
-Save these credentials!
+1. Go to https://cloud.digitalocean.com/droplets
+2. Find your newly created droplet in the list
+3. The IP address is shown in the droplet details
+
+### Password & Credentials Workflow
+
+The first time you access your droplet, follow this workflow:
+
+**Step 1: SSH into the droplet**
+
+```bash
+ssh root@{Droplet-IP}
+```
+
+You'll see a welcome message (MOTD) that displays:
+- **URL**: `http://{Droplet-IP}:1977`
+- **Password**: A randomly generated password
+
+**Step 2: Save the password**
+
+The password is shown only once in the MOTD. Take note of it before closing the SSH connection.
+
+**Step 3: Access swe-swe in your browser**
+
+Open `http://{Droplet-IP}:1977` in your web browser and enter the password.
+
+**Step 4: Subsequent logins**
+
+To retrieve the password later:
+
+```bash
+ssh root@{Droplet-IP}
+# MOTD displays again with password
+```
+
+Or directly from the command line:
+
+```bash
+ssh root@{Droplet-IP} cat /etc/swe-swe/credentials
+```
+
+### Managing the MOTD
+
+The MOTD is stored in `/etc/update-motd.d/99-swe-swe` on the droplet.
+
+**View the current MOTD**:
+
+```bash
+ssh root@{Droplet-IP} cat /etc/update-motd.d/99-swe-swe
+```
+
+**Edit the MOTD** (if you want to customize it):
+
+```bash
+ssh root@{Droplet-IP}
+sudo nano /etc/update-motd.d/99-swe-swe
+```
+
+**Disable the MOTD** (if you prefer not to see it on login):
+
+```bash
+ssh root@{Droplet-IP}
+sudo chmod -x /etc/update-motd.d/99-swe-swe
+```
+
+**Re-enable the MOTD** later:
+
+```bash
+ssh root@{Droplet-IP}
+sudo chmod +x /etc/update-motd.d/99-swe-swe
+```
+
+### Changing the Password
+
+To generate a new password:
+
+```bash
+ssh root@{Droplet-IP}
+# Stop swe-swe service
+sudo systemctl stop swe-swe
+
+# Generate new password (update both env file and credentials file)
+sudo bash -c 'cat /etc/swe-swe/env | grep -v SWEBSESSION_PASSWORD > /tmp/env && echo "SWEBSESSION_PASSWORD=$(openssl rand -base64 16)" >> /tmp/env && mv /tmp/env /etc/swe-swe/env'
+sudo bash -c 'echo "URL: http://$(hostname -I | awk "{print $1}"):1977" > /etc/swe-swe/credentials && echo "Password: $(grep SWEBSESSION_PASSWORD /etc/swe-swe/env | cut -d= -f2)" >> /etc/swe-swe/credentials'
+
+# Restart service
+sudo systemctl start swe-swe
+
+# View new credentials
+cat /etc/swe-swe/credentials
+```
 
 ### Access swe-swe
 
@@ -30,12 +118,12 @@ Save these credentials!
 http://{Droplet-IP}:1977
 ```
 
-Enter the password from the MOTD.
+Enter the password from the MOTD or credentials file.
 
 **Available interfaces**:
 - **Dashboard**: Main swe-swe interface
-- **VS Code**: `http://{IP}:1977/vscode` — Browser-based code editor
-- **Chrome VNC**: `http://{IP}:1977/chrome` — Graphical browser environment
+- **VS Code**: `http://{Droplet-IP}:1977/vscode` — Browser-based code editor
+- **Chrome VNC**: `http://{Droplet-IP}:1977/chrome` — Graphical browser environment
 
 ### SSH Access
 
