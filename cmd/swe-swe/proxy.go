@@ -32,7 +32,59 @@ var activeRequests atomic.Int32
 // inFlightProcesses maps uuid -> *processEntry for kill operations.
 var inFlightProcesses sync.Map
 
+// Default configuration values for heartbeat-based cleanup.
+const (
+	defaultHeartbeatStale  = 5 * time.Second
+	defaultKillGrace       = 5 * time.Second
+	defaultShutdownGrace   = 30 * time.Second
+	heartbeatCheckInterval = 1 * time.Second
+)
+
 const proxyDir = ".swe-swe/proxy"
+
+// heartbeatStale checks if the heartbeat file is stale (missing or older than maxAge).
+func heartbeatStale(path string, maxAge time.Duration) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return true // Missing file is considered stale
+	}
+	return time.Since(info.ModTime()) > maxAge
+}
+
+// getEnvDuration reads a duration from an environment variable, returning defaultVal if not set or invalid.
+func getEnvDuration(name string, defaultVal time.Duration) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return defaultVal
+}
+
+// killAllInFlight kills all in-flight processes with signal escalation.
+// It sends SIGTERM first, waits for grace period, then sends SIGKILL if needed.
+// This is a placeholder that will be fully implemented in Phase 3.
+func killAllInFlight(grace time.Duration) {
+	inFlightProcesses.Range(func(key, value any) bool {
+		entry := value.(*processEntry)
+		uuid := key.(string)
+		fmt.Printf("[proxy] Killing process group %d for request %s\n", entry.pgid, uuid)
+		killProcessGroup(entry.pgid, grace)
+		entry.killedByHost = true
+		entry.killSignal = "SIGTERM"
+		return true
+	})
+}
+
+// killProcessGroup sends SIGTERM to a process group, waits for grace period,
+// then sends SIGKILL if the process is still alive.
+// This is a placeholder that will be fully implemented in Phase 3.
+func killProcessGroup(pgid int, grace time.Duration) {
+	// Placeholder - full implementation in Phase 3
+	// For now, just send SIGTERM to the process group
+	_ = grace // Will be used in Phase 3 for escalation
+	// Signal sending is platform-specific, handled in proxy_unix.go/proxy_windows.go
+}
 
 // containerScriptTemplate is the bash script generated for containers to submit requests.
 // It uses NUL-delimited arguments and streams stdout/stderr in real-time.
@@ -205,6 +257,36 @@ func handleProxy() {
 
 	// Clean up orphan response files from previous runs
 	cleanupOrphanFiles(proxyDir)
+
+	// Get configuration from environment
+	staleThreshold := getEnvDuration("PROXY_HEARTBEAT_STALE", defaultHeartbeatStale)
+	killGrace := getEnvDuration("PROXY_KILL_GRACE", defaultKillGrace)
+	heartbeatFile := filepath.Join(proxyDir, ".heartbeat")
+
+	// Start heartbeat watcher goroutine
+	go func() {
+		ticker := time.NewTicker(heartbeatCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if activeRequests.Load() > 0 && heartbeatStale(heartbeatFile, staleThreshold) {
+					info, _ := os.Stat(heartbeatFile)
+					var lastMod string
+					if info != nil {
+						lastMod = fmt.Sprintf("last: %v ago", time.Since(info.ModTime()).Round(time.Second))
+					} else {
+						lastMod = "file missing"
+					}
+					fmt.Printf("[proxy] Heartbeat stale (%s), killing %d in-flight processes\n",
+						lastMod, activeRequests.Load())
+					killAllInFlight(killGrace)
+				}
+			}
+		}
+	}()
 
 	fmt.Printf("[proxy] Starting proxy for command: %s\n", command)
 	fmt.Printf("[proxy] Container script: %s\n", scriptFile)

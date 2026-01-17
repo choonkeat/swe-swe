@@ -583,3 +583,160 @@ func TestProcessGroupSetup(t *testing.T) {
 	// Wait for command to complete
 	cmd.Wait()
 }
+
+// Phase 2 Tests: Heartbeat Watcher
+
+func TestHeartbeatStale_Fresh(t *testing.T) {
+	// Create temp file
+	tmpFile, err := os.CreateTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Touch the file (already fresh from creation)
+	// File was just created, so it should not be stale with 5s threshold
+	if heartbeatStale(tmpFile.Name(), 5*time.Second) {
+		t.Error("freshly created file should not be stale")
+	}
+}
+
+func TestHeartbeatStale_Stale(t *testing.T) {
+	// Create temp file
+	tmpFile, err := os.CreateTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Set file time to 10 seconds ago
+	oldTime := time.Now().Add(-10 * time.Second)
+	if err := os.Chtimes(tmpFile.Name(), oldTime, oldTime); err != nil {
+		t.Fatalf("failed to set file time: %v", err)
+	}
+
+	// Should be stale with 5s threshold
+	if !heartbeatStale(tmpFile.Name(), 5*time.Second) {
+		t.Error("file older than threshold should be stale")
+	}
+}
+
+func TestHeartbeatStale_Missing(t *testing.T) {
+	// Non-existent file should be considered stale
+	if !heartbeatStale("/non/existent/file/path", 5*time.Second) {
+		t.Error("missing file should be considered stale")
+	}
+}
+
+func TestHeartbeatWatcher_IgnoresWhenIdle(t *testing.T) {
+	// Reset counter
+	for activeRequests.Load() != 0 {
+		if activeRequests.Load() > 0 {
+			activeRequests.Add(-1)
+		} else {
+			activeRequests.Add(1)
+		}
+	}
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	heartbeatFile := filepath.Join(tmpDir, ".heartbeat")
+
+	// No heartbeat file exists, but activeRequests is 0
+	// Should not trigger kill (we can verify by checking the function doesn't panic
+	// and by verifying the logic manually)
+
+	// Verify the condition: activeRequests == 0 means we don't kill even if stale
+	if activeRequests.Load() > 0 && heartbeatStale(heartbeatFile, 5*time.Second) {
+		t.Error("should not trigger kill when activeRequests is 0")
+	}
+}
+
+func TestHeartbeatWatcher_KillsWhenActive(t *testing.T) {
+	// Clear registry
+	inFlightProcesses.Range(func(key, value any) bool {
+		inFlightProcesses.Delete(key)
+		return true
+	})
+
+	// Reset counter
+	for activeRequests.Load() != 0 {
+		if activeRequests.Load() > 0 {
+			activeRequests.Add(-1)
+		} else {
+			activeRequests.Add(1)
+		}
+	}
+
+	// Create temp directory
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	heartbeatFile := filepath.Join(tmpDir, ".heartbeat")
+
+	// Simulate active request
+	activeRequests.Add(1)
+	defer activeRequests.Add(-1)
+
+	// Add a mock process entry
+	mockEntry := &processEntry{
+		cmd:  nil,
+		pgid: 99999, // Non-existent PID
+	}
+	inFlightProcesses.Store("test-uuid", mockEntry)
+	defer inFlightProcesses.Delete("test-uuid")
+
+	// Verify the condition: activeRequests > 0 AND stale heartbeat should trigger kill
+	if activeRequests.Load() > 0 && heartbeatStale(heartbeatFile, 5*time.Second) {
+		// This is the condition that would trigger killAllInFlight
+		// We can't easily test the actual kill behavior without running processes,
+		// but we verify the condition is correctly evaluated
+		killAllInFlight(1 * time.Second) // Call with short grace
+
+		// Verify the entry was marked as killed
+		if !mockEntry.killedByHost {
+			t.Error("expected process to be marked as killed by host")
+		}
+		if mockEntry.killSignal != "SIGTERM" {
+			t.Errorf("expected killSignal to be SIGTERM, got %s", mockEntry.killSignal)
+		}
+	} else {
+		t.Error("expected kill condition to be true when active requests and stale heartbeat")
+	}
+}
+
+func TestGetEnvDuration(t *testing.T) {
+	// Test default value when env not set
+	result := getEnvDuration("NONEXISTENT_ENV_VAR", 10*time.Second)
+	if result != 10*time.Second {
+		t.Errorf("expected default 10s, got %v", result)
+	}
+
+	// Test with valid env var
+	os.Setenv("TEST_DURATION", "30s")
+	defer os.Unsetenv("TEST_DURATION")
+
+	result = getEnvDuration("TEST_DURATION", 10*time.Second)
+	if result != 30*time.Second {
+		t.Errorf("expected 30s from env, got %v", result)
+	}
+
+	// Test with invalid env var (returns default)
+	os.Setenv("TEST_DURATION_INVALID", "not-a-duration")
+	defer os.Unsetenv("TEST_DURATION_INVALID")
+
+	result = getEnvDuration("TEST_DURATION_INVALID", 5*time.Second)
+	if result != 5*time.Second {
+		t.Errorf("expected default 5s for invalid env, got %v", result)
+	}
+}

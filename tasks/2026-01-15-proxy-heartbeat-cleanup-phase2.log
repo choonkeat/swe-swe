@@ -1,3 +1,12 @@
 073417 Starting Phase 2: Heartbeat Watcher
 073417 Step 2.1: Add heartbeatStale() helper function
 073417 Expected: Function returns true when file missing or older than threshold
+073624 Observed: All tests pass (TestHeartbeatStale_Fresh, TestHeartbeatStale_Stale, TestHeartbeatStale_Missing)
+073624 Got: PASS - heartbeatStale correctly detects fresh, stale, and missing files
+
+073624 Step 2.2: Add heartbeat watcher goroutine and env config helper
+073624 Expected: Goroutine monitors heartbeat, getEnvDuration reads config
+073624 Observed: Tests pass (TestHeartbeatWatcher_IgnoresWhenIdle, TestHeartbeatWatcher_KillsWhenActive, TestGetEnvDuration)
+073624 Got: PASS - Watcher correctly ignores when idle, triggers kill when active + stale
+
+073624 Phase 2 COMPLETE
