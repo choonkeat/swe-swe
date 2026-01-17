@@ -1,6 +1,6 @@
 /**
- * File path link provider for xterm.js
- * Makes file paths clickable - copies to clipboard and opens VS Code on click.
+ * Link providers for xterm.js
+ * Makes file paths and URLs clickable.
  */
 
 /**
@@ -112,6 +112,49 @@ function registerFileLinkProvider(terminal, options) {
                         if (options.onLinkClick) {
                             options.onLinkClick(text);
                         }
+                    }
+                });
+            }
+
+            callback(links.length > 0 ? links : undefined);
+        }
+    });
+}
+
+/**
+ * Register a URL link provider with the terminal.
+ * Makes http/https URLs clickable - opens in new browser tab.
+ * @param {Terminal} terminal - xterm.js Terminal instance
+ */
+function registerUrlLinkProvider(terminal) {
+    // Match http/https URLs
+    const urlRegex = /https?:\/\/[^\s<>"'`)\]}>]+/gi;
+
+    terminal.registerLinkProvider({
+        provideLinks: (bufferLineNumber, callback) => {
+            const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
+            if (!line) {
+                callback(undefined);
+                return;
+            }
+
+            const lineText = line.translateToString(true);
+            const links = [];
+
+            let match;
+            urlRegex.lastIndex = 0;
+            while ((match = urlRegex.exec(lineText)) !== null) {
+                const url = match[0];
+                const startIndex = match.index;
+
+                links.push({
+                    text: url,
+                    range: {
+                        start: { x: startIndex + 1, y: bufferLineNumber },
+                        end: { x: startIndex + url.length + 1, y: bufferLineNumber }
+                    },
+                    activate: (event, text) => {
+                        window.open(text, '_blank');
                     }
                 });
             }
