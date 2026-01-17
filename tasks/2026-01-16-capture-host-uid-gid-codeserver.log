@@ -1,0 +1,23 @@
+=== Code-Server UID:GID Fix ===
+
+[STEP 1] Create custom code-server Dockerfile wrapper
+Time: $(date +%H%M%S)
+Expected: Create /cmd/swe-swe/templates/host/code-server/Dockerfile that:
+  - Inherits from codercom/code-server:latest
+  - Accepts UID and GID build arguments
+  - Recreates coder user/group with those UID:GID values
+  - Fixes ownership of /home/coder directory
+
+Status: STARTING
+135002
+
+[OBSERVED] $(date +%H%M%S)
+Created: /cmd/swe-swe/templates/host/code-server/Dockerfile
+Content: Inherits from codercom/code-server:latest
+         - ARG UID=1000, ARG GID=1000
+         - groupdel coder && groupadd -g ${GID} coder
+         - userdel coder && useradd -m -u ${UID} -g ${GID} -s /bin/bash coder
+         - chown -R ${UID}:${GID} /home/coder
+
+Status: ✓ STEP 1 COMPLETE
+135034
