@@ -402,6 +402,8 @@ type InitConfig struct {
 	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
 	StatusBarFontSize   int                 `json:"statusBarFontSize,omitempty"`
 	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
+	HostUID             int                 `json:"hostUID,omitempty"`
+	HostGID             int                 `json:"hostGID,omitempty"`
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -1095,6 +1097,11 @@ func handleInit() {
 		log.Fatalf("Failed to create metadata directory: %v", err)
 	}
 
+	// Capture host user's UID and GID for container app user creation
+	hostUID := os.Getuid()
+	hostGID := os.Getgid()
+	fmt.Printf("Detected host user: UID=%d GID=%d\n", hostUID, hostGID)
+
 	// Create bin, home, and certs subdirectories
 	binDir := filepath.Join(sweDir, "bin")
 	homeDir := filepath.Join(sweDir, "home")
@@ -1394,6 +1401,8 @@ func handleInit() {
 		TerminalFontFamily:  *terminalFontFamily,
 		StatusBarFontSize:   *statusBarFontSize,
 		StatusBarFontFamily: *statusBarFontFamily,
+		HostUID:             hostUID,
+		HostGID:             hostGID,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)

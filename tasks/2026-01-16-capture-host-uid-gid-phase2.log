@@ -1,0 +1,20 @@
+=== Phase 2: Store UID:GID in init.json ===
+
+[IMPLEMENTATION]
+Location: cmd/swe-swe/main.go
+
+Changes:
+1. Added HostUID and HostGID fields to InitConfig struct (lines 405-406)
+   - HostUID int `json:"hostUID,omitempty"`
+   - HostGID int `json:"hostGID,omitempty"`
+
+2. Populated fields when creating InitConfig (lines 1404-1405)
+   - HostUID: hostUID,
+   - HostGID: hostGID,
+
+Tests:
+  ✓ TestInitConfigRoundTrip PASS
+  ✓ TestInitConfigBackwardsCompatibility PASS
+
+CONCLUSION:
+Phase 2 SUCCESSFUL - UID:GID now stored in init.json, ready for Phase 3 (template placeholders)
