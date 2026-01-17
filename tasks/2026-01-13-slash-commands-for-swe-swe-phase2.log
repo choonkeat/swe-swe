@@ -1,0 +1,8 @@
+# Phase 2 Execution Log: Create bundled slash command files
+
+012004: Starting Phase 2 execution
+- Will create cmd/swe-swe/slash-commands/swe-swe/setup.md for Claude/Codex/OpenCode
+- Will create cmd/swe-swe/slash-commands/swe-swe/setup.toml for Gemini
+- Will update entrypoint.sh template to install files to agent directories
+- Will verify embed directive includes both .md and .toml files
+- Expected: Golden tests show new files in home/.claude/commands/swe-swe/, etc.
