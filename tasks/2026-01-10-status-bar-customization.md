@@ -28,7 +28,7 @@ Allow users to customize the terminal UI via `swe-swe init` flags:
 
 ---
 
-## Phase 1: Flag Parsing Infrastructure
+## Phase 1: Flag Parsing Infrastructure ✅ COMPLETED
 
 ### What Will Be Achieved
 Add five new flags to `swe-swe init` with full persistence support via `--previous-init-flags=reuse`. No visual changes yet — pure plumbing.

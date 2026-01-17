@@ -317,6 +317,11 @@ Init Options:
                                          Use selfsign@<ip-or-hostname> for remote access
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
+  --status-bar-color COLOR               Status bar background color (CSS color name or hex, default: #007acc)
+  --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
+  --terminal-font-family FONT            Terminal font family (default: Menlo, Monaco, "Courier New", monospace)
+  --status-bar-font-size SIZE            Status bar font size in pixels (default: 12)
+  --status-bar-font-family FONT          Status bar font family (default: system sans-serif)
 
 Available Agents:
   claude, gemini, codex, aider, goose, opencode
@@ -368,13 +373,18 @@ type SlashCommandsRepo struct {
 // InitConfig stores the configuration used to initialize a project.
 // This is saved to init.json and used by --previous-init-flags=reuse.
 type InitConfig struct {
-	Agents        []string            `json:"agents"`
-	AptPackages   string              `json:"aptPackages,omitempty"`
-	NpmPackages   string              `json:"npmPackages,omitempty"`
-	WithDocker    bool                `json:"withDocker,omitempty"`
-	SlashCommands []SlashCommandsRepo `json:"slashCommands,omitempty"`
-	SSL           string              `json:"ssl,omitempty"`
-	CopyHomePaths []string            `json:"copyHomePaths,omitempty"`
+	Agents              []string            `json:"agents"`
+	AptPackages         string              `json:"aptPackages,omitempty"`
+	NpmPackages         string              `json:"npmPackages,omitempty"`
+	WithDocker          bool                `json:"withDocker,omitempty"`
+	SlashCommands       []SlashCommandsRepo `json:"slashCommands,omitempty"`
+	SSL                 string              `json:"ssl,omitempty"`
+	CopyHomePaths       []string            `json:"copyHomePaths,omitempty"`
+	StatusBarColor      string              `json:"statusBarColor,omitempty"`
+	TerminalFontSize    int                 `json:"terminalFontSize,omitempty"`
+	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
+	StatusBarFontSize   int                 `json:"statusBarFontSize,omitempty"`
+	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
 }
 
 // saveInitConfig writes the init configuration to init.json
@@ -828,6 +838,11 @@ func handleInit() {
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no' (default) or 'selfsign' for self-signed certificates")
 	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
+	statusBarColor := fs.String("status-bar-color", "#007acc", "Status bar background color (CSS color name or hex)")
+	terminalFontSize := fs.Int("terminal-font-size", 14, "Terminal font size in pixels")
+	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
+	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
+	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -976,6 +991,22 @@ func handleInit() {
 			*sslFlag = "no" // Default for old configs without SSL field
 		}
 		copyHomePaths = savedConfig.CopyHomePaths
+		// UI customization flags
+		if savedConfig.StatusBarColor != "" {
+			*statusBarColor = savedConfig.StatusBarColor
+		}
+		if savedConfig.TerminalFontSize != 0 {
+			*terminalFontSize = savedConfig.TerminalFontSize
+		}
+		if savedConfig.TerminalFontFamily != "" {
+			*terminalFontFamily = savedConfig.TerminalFontFamily
+		}
+		if savedConfig.StatusBarFontSize != 0 {
+			*statusBarFontSize = savedConfig.StatusBarFontSize
+		}
+		if savedConfig.StatusBarFontFamily != "" {
+			*statusBarFontFamily = savedConfig.StatusBarFontFamily
+		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
 
@@ -1250,13 +1281,18 @@ func handleInit() {
 
 	// Save init configuration for --previous-init-flags=reuse
 	initConfig := InitConfig{
-		Agents:        agents,
-		AptPackages:   aptPkgs,
-		NpmPackages:   npmPkgs,
-		WithDocker:    *withDocker,
-		SlashCommands: slashCmds,
-		SSL:           *sslFlag,
-		CopyHomePaths: copyHomePaths,
+		Agents:              agents,
+		AptPackages:         aptPkgs,
+		NpmPackages:         npmPkgs,
+		WithDocker:          *withDocker,
+		SlashCommands:       slashCmds,
+		SSL:                 *sslFlag,
+		CopyHomePaths:       copyHomePaths,
+		StatusBarColor:      *statusBarColor,
+		TerminalFontSize:    *terminalFontSize,
+		TerminalFontFamily:  *terminalFontFamily,
+		StatusBarFontSize:   *statusBarFontSize,
+		StatusBarFontFamily: *statusBarFontFamily,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)

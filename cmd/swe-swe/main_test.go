@@ -659,6 +659,10 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-certs-node-extra-ca-certs", []string{}},
 		{"with-certs-ssl-cert-file", []string{}},
 		{"with-copy-home-paths", []string{"--copy-home-paths", ".gitconfig,.ssh"}},
+		{"with-status-bar-color", []string{"--status-bar-color", "#dc2626"}},
+		{"with-terminal-font", []string{"--terminal-font-size", "16", "--terminal-font-family", "JetBrains Mono"}},
+		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
+		{"with-all-ui-options", []string{"--status-bar-color", "red", "--terminal-font-size", "18", "--status-bar-font-size", "14"}},
 	}
 
 	for _, v := range variants {
