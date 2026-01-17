@@ -29,7 +29,7 @@ Move merge/discard operations to agent commands via `@` file mentions.
 #### Two-directory convention
 
 ```
-agent/                     # Commands ONLY (all @-mentionable, clean autocomplete)
+computer/                  # Commands ONLY (all @-mentionable, clean autocomplete)
   setup                    # Command - configure credentials, testing
   merge-this-worktree      # Command (worktree only, generated with context)
   discard-this-worktree    # Command (worktree only, generated with context)
@@ -42,7 +42,7 @@ agent/                     # Commands ONLY (all @-mentionable, clean autocomplet
 ```
 
 Key design choices:
-- `agent/` = commands only, `@agent/` autocomplete stays clean
+- `computer/` = commands only, `@computer/` autocomplete stays clean
 - `.swe-swe/` = internal data, only subdirectories (no loose files at root)
 - `AGENTS.md` lives in `.swe-swe/docs/` to avoid autocomplete pollution
 - `setup` command injects pointer into user's `CLAUDE.md`/`AGENTS.md` pointing to `.swe-swe/docs/AGENTS.md`
@@ -54,7 +54,7 @@ Key design choices:
 
 **Main workspace (`/workspace/`):**
 ```
-agent/
+computer/
   setup                    # Only command available in main workspace
 
 .swe-swe/
@@ -66,7 +66,7 @@ agent/
 
 **Worktree (`/worktrees/<branch>/`):**
 ```
-agent/
+computer/
   setup                    # Copied from main workspace
   merge-this-worktree      # Generated with branch/target context baked in
   discard-this-worktree    # Generated with branch context baked in

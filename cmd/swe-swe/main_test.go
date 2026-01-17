@@ -742,7 +742,7 @@ func TestGoldenFiles(t *testing.T) {
 				filepath.Join(goldenDir, "target", ".mcp.json"),
 				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "AGENTS.md"),
 				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "browser-automation.md"),
-				filepath.Join(goldenDir, "target", "agent", "setup"),
+				filepath.Join(goldenDir, "target", "computer", "setup"),
 			}
 			for _, tf := range targetFiles {
 				if _, err := os.Stat(tf); err != nil {

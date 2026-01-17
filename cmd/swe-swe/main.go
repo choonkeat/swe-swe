@@ -1137,7 +1137,7 @@ func handleInit() {
 			"templates/container/.mcp.json",
 			"templates/container/.swe-swe/docs/AGENTS.md",
 			"templates/container/.swe-swe/docs/browser-automation.md",
-			"templates/container/agent/setup",
+			"templates/container/computer/setup",
 		}
 		if *withDocker {
 			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
