@@ -40,7 +40,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "e3eb23a"
+	GitCommit = "f141dbb"
 )
 
 var indexTemplate *template.Template
@@ -1360,18 +1360,18 @@ type worktreeCommandData struct {
 	WorktreePath string
 }
 
-// generateWorktreeCommands creates the computer/ directory with commands in the worktree
+// generateWorktreeCommands creates the agent/ directory with commands in the worktree
 func generateWorktreeCommands(worktreePath, branchName string) error {
-	computerDir := worktreePath + "/computer"
-	if err := os.MkdirAll(computerDir, 0755); err != nil {
-		return fmt.Errorf("failed to create computer directory: %w", err)
+	agentDir := worktreePath + "/agent"
+	if err := os.MkdirAll(agentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create agent directory: %w", err)
 	}
 
 	// Copy setup from main workspace
-	srcSetup := "/workspace/computer/setup"
-	dstSetup := computerDir + "/setup"
+	srcSetup := "/workspace/agent/setup"
+	dstSetup := agentDir + "/setup"
 	if err := copyFileOrDir(srcSetup, dstSetup); err != nil {
-		log.Printf("Warning: failed to copy computer/setup to worktree: %v", err)
+		log.Printf("Warning: failed to copy agent/setup to worktree: %v", err)
 	}
 
 	// Prepare template data
@@ -1393,7 +1393,7 @@ func generateWorktreeCommands(worktreePath, branchName string) error {
 			return fmt.Errorf("failed to execute template %s: %w", name, err)
 		}
 
-		cmdPath := computerDir + "/" + name
+		cmdPath := agentDir + "/" + name
 		if err := os.WriteFile(cmdPath, buf.Bytes(), 0644); err != nil {
 			return fmt.Errorf("failed to write %s: %w", name, err)
 		}
@@ -1403,19 +1403,19 @@ func generateWorktreeCommands(worktreePath, branchName string) error {
 	return nil
 }
 
-// generateMOTD creates the terminal MOTD displaying available computer commands
+// generateMOTD creates the terminal MOTD displaying available agent commands
 func generateMOTD(workDir, branchName string) string {
 	// Determine the workspace directory
 	wsDir := "/workspace"
 	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
 		wsDir = workDir
 	}
-	computerDir := wsDir + "/computer"
+	agentDir := wsDir + "/agent"
 
-	// Check if computer directory exists
-	entries, err := os.ReadDir(computerDir)
+	// Check if agent directory exists
+	entries, err := os.ReadDir(agentDir)
 	if err != nil {
-		return "" // No computer directory, no MOTD
+		return "" // No agent directory, no MOTD
 	}
 
 	// Check if any command files exist
@@ -1448,11 +1448,11 @@ func generateMOTD(workDir, branchName string) string {
 	// Format the MOTD (use \r\n for proper terminal line endings)
 	var sb strings.Builder
 	sb.WriteString("\r\n")
-	sb.WriteString(ansiDim("Tip: @computer to see available commands") + "\r\n")
+	sb.WriteString(ansiDim("Tip: @agent to see available commands") + "\r\n")
 
 	// Show "Try this" only if setup exists and hasn't been done
 	if hasSetup && !setupDone {
-		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@computer/setup") + "\r\n")
+		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@agent/setup") + "\r\n")
 	}
 
 	sb.WriteString("\r\n")
