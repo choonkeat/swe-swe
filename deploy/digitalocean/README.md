@@ -1,206 +1,96 @@
-# DigitalOcean Marketplace 1-Click App for swe-swe
+# swe-swe on DigitalOcean
 
-Build a DigitalOcean Marketplace image for swe-swe using Packer.
+Deploy swe-swe with one click on DigitalOcean.
 
-## Prerequisites
+## Quick Start
 
-- [Packer](https://developer.hashicorp.com/packer/install) (v1.14.0+)
-- DigitalOcean account with API token
+1. Go to the [DigitalOcean Marketplace](https://marketplace.digitalocean.com/apps/swe-swe) (once published)
+2. Click **"Deploy to DigitalOcean"**
+3. Sign in to your DigitalOcean account
+4. Select:
+   - **Droplet size**: $12/month or higher (2GB RAM minimum)
+   - **Region**: Any available region
+   - **Authentication**: SSH key (recommended) or password
+   - **Hostname**: Choose a name (e.g., `swe-swe-dev`)
+5. Click **"Create Droplet"**
+6. Wait ~60 seconds for first-boot scripts to complete
 
-## Getting a DigitalOcean API Token
+## After Deployment
 
-1. Go to https://cloud.digitalocean.com/account/api/tokens
-2. Click **Generate New Token**
-3. Name it (e.g., "packer-swe-swe")
-4. Select **Custom Scopes** and grant minimum permissions:
-   - `droplet:create` — Create temporary build Droplet
-   - `droplet:read` — Monitor Droplet status
-   - `droplet:delete` — Destroy Droplet and create snapshot
-   - `ssh_key:create` — Create temporary SSH key
-   - `ssh_key:delete` — Remove temporary SSH key
-5. Copy the token (shown only once)
-6. Export it:
+When you SSH into your droplet, you'll see a welcome message (MOTD) with:
+- **URL**: `http://{IP}:1977`
+- **Password**: Randomly generated (shown in MOTD)
 
-```bash
-export DIGITALOCEAN_API_TOKEN=dop_v1_xxxxx
+Save these credentials!
+
+### Access swe-swe
+
+**In your browser**:
+```
+http://{Droplet-IP}:1977
 ```
 
-> **Security Note**: The API token is used only by Packer on your local machine. It is never copied to or stored in the Droplet image.
+Enter the password from the MOTD.
 
-## Building the Image
+**Available interfaces**:
+- **Dashboard**: Main swe-swe interface
+- **VS Code**: `http://{IP}:1977/vscode` — Browser-based code editor
+- **Chrome VNC**: `http://{IP}:1977/chrome` — Graphical browser environment
 
-First, initialize Packer and validate the configuration:
+### SSH Access
 
 ```bash
-cd deploy/digitalocean
-
-# Initialize Packer plugins
-packer init template.pkr.hcl
-
-# Validate the template
-packer validate template.pkr.hcl
+ssh root@{Droplet-IP}
 ```
 
-### Build Configuration
+The MOTD will display again with all credentials.
 
-**Required variables**:
-- `region` — DigitalOcean region (e.g., `nyc3`, `sfo3`, `lon1`)
-- `image_version` — Version tag for the snapshot
+## System Details
 
-Generate a dynamic image version using git:
+The droplet includes:
+- **OS**: Ubuntu 24.04 LTS
+- **Runtime**: Docker + Docker Compose
+- **Services**:
+  - swe-swe AI development environment
+  - VS Code server
+  - Chrome VNC server
+  - Systemd service for auto-start
 
-```bash
-# Use git tag (if available) + short SHA, or fall back to YYYYMMDD + short SHA
-IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
-echo "Building version: $IMAGE_VERSION"
-```
+## Troubleshooting
 
-**Example build command**:
+### Can't connect to swe-swe (port 1977)
 
-```bash
-IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
-
-packer build \
-  -var "region=nyc3" \
-  -var "image_version=$IMAGE_VERSION" \
-  template.pkr.hcl
-```
-
-To customize the build droplet size (default: `s-2vcpu-4gb`):
+Check if the service is running:
 
 ```bash
-packer build \
-  -var "region=sfo3" \
-  -var "droplet_size=s-4vcpu-8gb" \
-  -var "image_version=$IMAGE_VERSION" \
-  template.pkr.hcl
-```
-
-**Available regions**: Visit the [DigitalOcean API docs](https://docs.digitalocean.com/reference/api/list-regions/) to see all available regions (e.g., `nyc1`, `nyc3`, `sfo3`, `lon1`, `sgp1`, `tor1`, etc.).
-
-**Available droplet sizes** (for building): Common sizes:
-- `s-1vcpu-1gb` — 1 vCPU, 1GB RAM ($6/month) — minimum
-- `s-1vcpu-2gb` — 1 vCPU, 2GB RAM ($12/month)
-- `s-2vcpu-2gb` — 2 vCPU, 2GB RAM ($18/month)
-- `s-2vcpu-4gb` — 2 vCPU, 4GB RAM ($24/month) — **default (recommended)**
-- `s-4vcpu-8gb` — 4 vCPU, 8GB RAM ($48/month)
-
-See the [DigitalOcean API docs](https://docs.digitalocean.com/reference/api/list-sizes/) for the complete list.
-
-**Optional variables**:
-- `image_name` (default: `swe-swe`) — Base name for the snapshot
-- `droplet_size` (default: `s-2vcpu-4gb`) — Build Droplet size
-- `do_token` (from `$DIGITALOCEAN_API_TOKEN`) — DigitalOcean API token
-
-## Testing the Image
-
-After the build completes, test the snapshot:
-
-1. Create a Droplet from the snapshot in DigitalOcean console
-2. SSH into the Droplet - the MOTD will display credentials
-3. Visit `http://<IP>:1977` to access swe-swe
-4. Verify all services are running:
-
-```bash
-# On the Droplet
 systemctl status swe-swe
 docker ps
 ```
 
-### Test Checklist
-
-- [ ] MOTD displays URL and password on SSH login
-- [ ] `http://<IP>:1977` shows login page
-- [ ] Password authentication works
-- [ ] `http://<IP>:1977/vscode` loads VS Code
-- [ ] `http://<IP>:1977/chrome` loads Chrome VNC
-- [ ] `systemctl status swe-swe` shows active
-- [ ] `docker ps` shows 5+ containers
-
-## Image Validation
-
-Run the DigitalOcean image validation tool before submission:
+View recent logs:
 
 ```bash
-# On the Droplet (as root)
-sudo /root/99-img-check.sh
+journalctl -u swe-swe -n 50
+cat /var/log/cloud-init-output.log
 ```
 
-This checks for marketplace compliance:
-- No SSH keys or passwords
-- Cloud-init installed
-- Firewall configured
-- No sensitive data in logs
+### Forgot the password
 
-## Marketplace Submission
-
-1. Go to https://marketplace.digitalocean.com/vendors
-2. Create a vendor account if needed
-3. Submit your image with:
-   - Snapshot ID (from `manifest.json`)
-   - Application description
-   - Support documentation
-   - Pricing (free)
-
-## Directory Structure
-
-```
-deploy/digitalocean/
-├── template.pkr.hcl              # Packer configuration
-├── README.md                     # This file
-├── scripts/
-│   ├── 010-docker.sh             # Install Docker + Docker Compose
-│   ├── 020-swe-swe.sh            # Download swe-swe binary
-│   ├── 030-systemd.sh            # Enable systemd service
-│   ├── 090-ufw.sh                # Configure firewall
-│   ├── 99-img-check.sh           # DO validation tool
-│   └── 900-cleanup.sh            # Security cleanup
-└── files/
-    ├── etc/
-    │   ├── update-motd.d/
-    │   │   └── 99-swe-swe        # Login message
-    │   └── systemd/system/
-    │       └── swe-swe.service   # Systemd unit file
-    └── var/
-        └── lib/cloud/scripts/per-instance/
-            └── 001_onboot        # First-boot initialization
-```
-
-## Troubleshooting
-
-### Build fails with authentication error
-
-Ensure your API token has the required Custom Scopes and is correctly exported:
+SSH into the droplet and check:
 
 ```bash
-echo $DIGITALOCEAN_API_TOKEN
+cat /etc/swe-swe/credentials
 ```
 
-Verify the token has: `droplet:create`, `droplet:read`, `droplet:delete`, `ssh_key:create`, `ssh_key:delete`
+### Services not starting
 
-### Build fails with "image not found"
-
-The base image `ubuntu-24-04-x64` must be available in the selected region. Try a different region:
-
-```bash
-IMAGE_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || date +%Y%m%d)-$(git rev-parse --short HEAD)
-packer build \
-  -var "region=sfo3" \
-  -var "image_version=$IMAGE_VERSION" \
-  template.pkr.hcl
-```
-
-Available regions: `nyc1`, `nyc3`, `sfo2`, `sfo3`, `lon1`, `sgp1`, `blr1`, `tor1`, `ams3`, `fra1`, `jpt1`, `mad1`
-
-### swe-swe doesn't start on first boot
-
-Check cloud-init logs:
+Check cloud-init initialization:
 
 ```bash
 cat /var/log/cloud-init-output.log
 ```
 
-Check the first-boot script directly:
+Check the first-boot script:
 
 ```bash
 cat /var/lib/cloud/scripts/per-instance/001_onboot
@@ -208,15 +98,40 @@ cat /var/lib/cloud/scripts/per-instance/001_onboot
 
 ### Firewall blocking connections
 
-Verify UFW rules:
+Verify ports 22 (SSH) and 1977 (swe-swe) are allowed:
 
 ```bash
 ufw status
-# Should show ports 22 and 1977 allowed
 ```
 
-## Estimated Costs
+Should show:
+```
+22/tcp  ALLOW  Anywhere
+1977/tcp  ALLOW  Anywhere
+```
 
-- Packer build (~10 min): ~$0.02
-- Test Droplet (~30 min): ~$0.01
-- Snapshot storage: ~$0.05/GB/month
+## Costs
+
+- **Droplet**: Varies by size
+  - $12/month for 2GB RAM
+  - $24/month for 4GB RAM
+  - Higher tiers available
+- **Storage**: Snapshot storage ~$0.05/GB/month (after deletion)
+
+Stop the droplet anytime to halt charges. Snapshots persist.
+
+## Building Your Own Image
+
+Are you a developer who wants to customize the image or build from source?
+
+See [**DEVELOPER.md**](./DEVELOPER.md) for instructions on:
+- Building images with Packer
+- Customizing installation scripts
+- Submitting to the marketplace
+- Testing before deployment
+
+## Support
+
+For issues with swe-swe, see the [main repository](https://github.com/anthropics/swe-swe).
+
+For DigitalOcean-specific issues, consult [DigitalOcean documentation](https://docs.digitalocean.com/).
