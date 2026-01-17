@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -785,6 +786,16 @@ func (s *Session) startPTYReader() {
 				cmd := s.Cmd
 				clientCount := len(s.wsClients)
 				s.mu.RUnlock()
+
+				// PTY can be broken while process is still alive (e.g., I/O error).
+				// Kill the process if it's still running, otherwise cmd.Wait() blocks forever.
+				if cmd != nil && cmd.Process != nil {
+					if err := cmd.Process.Signal(syscall.Signal(0)); err == nil {
+						log.Printf("Session %s: PTY broken but process (pid %d) still alive, killing it",
+							s.UUID, cmd.Process.Pid)
+						cmd.Process.Kill()
+					}
+				}
 
 				// Wait on the process to reap the zombie and get exit status
 				exitCode := 0
