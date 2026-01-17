@@ -1064,9 +1064,12 @@ func handleInit() {
 		log.Fatalf("Failed to write path file: %v", err)
 	}
 
-	// Handle enterprise certificates early (before Dockerfile processing)
+	// Generate project name from directory name for multi-project isolation
+	projectName := sanitizeProjectName(filepath.Base(absPath))
+
+	// Handle enterprise certificates and write .env file (always includes PROJECT_NAME)
 	// This allows the certificate detection to inform the Dockerfile template
-	hasCerts := handleCertificates(sweDir, certsDir)
+	hasCerts := handleCertificatesAndEnv(sweDir, certsDir, projectName)
 
 	// Generate self-signed certificate if SSL mode is selfsign
 	// Certs are stored in shared location ~/.swe-swe/tls/ so users only need to trust once
@@ -1347,11 +1350,12 @@ func generateSelfSignedCert(certsDir string, extraHost string) error {
 	return nil
 }
 
-// handleCertificates detects and copies enterprise certificates for Docker builds
+// handleCertificatesAndEnv detects and copies enterprise certificates for Docker builds,
+// and writes the .env file with PROJECT_NAME and certificate configuration.
 // Supports NODE_EXTRA_CA_CERTS, SSL_CERT_FILE, and NODE_EXTRA_CA_CERTS_BUNDLE environment variables
 // for users behind corporate firewalls or VPNs (Cloudflare Warp, etc)
 // Returns true if any certificates were found and copied, false otherwise
-func handleCertificates(sweDir, certsDir string) bool {
+func handleCertificatesAndEnv(sweDir, certsDir, projectName string) bool {
 	// Check for certificate environment variables
 	certEnvVars := []string{
 		"NODE_EXTRA_CA_CERTS",
@@ -1360,7 +1364,8 @@ func handleCertificates(sweDir, certsDir string) bool {
 	}
 
 	var certPaths []string
-	envFileContent := ""
+	// Always start with PROJECT_NAME
+	envFileContent := fmt.Sprintf("PROJECT_NAME=%s\n", projectName)
 
 	for _, envVar := range certEnvVars {
 		certPath := os.Getenv(envVar)
@@ -1395,17 +1400,17 @@ func handleCertificates(sweDir, certsDir string) bool {
 		envFileContent += fmt.Sprintf("%s=/swe-swe/certs/%s\n", envVar, certFilename)
 	}
 
-	// Create .env file if certificates were found
-	if len(certPaths) > 0 {
-		envFilePath := filepath.Join(sweDir, ".env")
-		if err := os.WriteFile(envFilePath, []byte(envFileContent), 0644); err != nil {
-			fmt.Printf("Warning: Failed to create .env file: %v\n", err)
-			return false
-		}
-		fmt.Printf("Created %s with certificate configuration\n", envFilePath)
-		return true
+	// Always create .env file (at minimum contains PROJECT_NAME)
+	envFilePath := filepath.Join(sweDir, ".env")
+	if err := os.WriteFile(envFilePath, []byte(envFileContent), 0644); err != nil {
+		fmt.Printf("Warning: Failed to create .env file: %v\n", err)
+		return false
 	}
-	return false
+	if len(certPaths) > 0 {
+		fmt.Printf("Created %s with PROJECT_NAME and certificate configuration\n", envFilePath)
+	}
+
+	return len(certPaths) > 0
 }
 
 // copyFile copies a single file, preserving permissions.
@@ -1461,6 +1466,36 @@ func copyDir(src, dst string) error {
 	}
 
 	return nil
+}
+
+// sanitizeProjectName converts a directory name into a sanitized project name
+// suitable for use as Docker label values and Traefik router names.
+// It lowercases, replaces non-alphanumeric chars with hyphens, and truncates to 32 chars.
+// Example: "My Project.Name" -> "my-project-name"
+func sanitizeProjectName(dirName string) string {
+	// Lowercase the name
+	name := strings.ToLower(dirName)
+
+	// Replace non-alphanumeric chars with hyphens
+	re := regexp.MustCompile(`[^a-z0-9]+`)
+	name = re.ReplaceAllString(name, "-")
+
+	// Remove leading/trailing hyphens
+	name = strings.Trim(name, "-")
+
+	// Truncate to 32 characters
+	if len(name) > 32 {
+		name = name[:32]
+		// Remove trailing hyphen if truncation created one
+		name = strings.TrimRight(name, "-")
+	}
+
+	// Default to "swe-swe" if empty
+	if name == "" {
+		name = "swe-swe"
+	}
+
+	return name
 }
 
 // sanitizePath converts an absolute path into a sanitized directory name suitable
