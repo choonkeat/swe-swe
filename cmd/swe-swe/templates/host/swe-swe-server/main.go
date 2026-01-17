@@ -1613,6 +1613,119 @@ func buildDiscardInstructions(branch, path string) string {
   git branch -D %s`, path, branch)
 }
 
+// InitConfig represents the structure of init.json for reading merge strategy
+type InitConfig struct {
+	MergeStrategy string `json:"mergeStrategy"`
+}
+
+// readMergeStrategy reads the merge strategy from /workspace/.swe-swe/init.json
+// Returns "merge-commit" as default if not found or on error
+func readMergeStrategy() string {
+	data, err := os.ReadFile("/workspace/.swe-swe/init.json")
+	if err != nil {
+		return "merge-commit"
+	}
+	var config InitConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "merge-commit"
+	}
+	if config.MergeStrategy == "" {
+		return "merge-commit"
+	}
+	return config.MergeStrategy
+}
+
+// getMergeStrategyDescription returns a human-readable description of the merge strategy
+func getMergeStrategyDescription(strategy string) string {
+	switch strategy {
+	case "merge-commit":
+		return "Rebase then merge with commit"
+	case "merge-ff":
+		return "Fast-forward when possible"
+	case "squash":
+		return "Squash all commits into one"
+	default:
+		return "Rebase then merge with commit"
+	}
+}
+
+// executeMergeFFStrategy performs a standard git merge (fast-forward when possible)
+func executeMergeFFStrategy(branch string) (bool, string) {
+	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", branch, "--no-edit")
+	mergeOutput, err := mergeCmd.CombinedOutput()
+	if err != nil {
+		// Abort the failed merge
+		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
+		abortCmd.Run()
+		return false, string(mergeOutput)
+	}
+	return true, ""
+}
+
+// executeMergeCommitStrategy performs rebase then merge --no-ff
+// Falls back to regular merge --no-ff if rebase fails
+func executeMergeCommitStrategy(branch string) (bool, string) {
+	// Get current branch (target)
+	currentBranchCmd := exec.Command("git", "-C", "/workspace", "branch", "--show-current")
+	currentBranchOutput, err := currentBranchCmd.Output()
+	if err != nil {
+		return false, "failed to get current branch"
+	}
+	targetBranch := strings.TrimSpace(string(currentBranchOutput))
+
+	// Try to rebase the feature branch onto target
+	rebaseCmd := exec.Command("git", "-C", "/workspace", "rebase", targetBranch, branch)
+	rebaseOutput, rebaseErr := rebaseCmd.CombinedOutput()
+
+	if rebaseErr != nil {
+		// Rebase failed, abort it
+		abortCmd := exec.Command("git", "-C", "/workspace", "rebase", "--abort")
+		abortCmd.Run()
+		log.Printf("Rebase failed, falling back to merge --no-ff: %s", string(rebaseOutput))
+	}
+
+	// Ensure we're on the target branch
+	checkoutCmd := exec.Command("git", "-C", "/workspace", "checkout", targetBranch)
+	if checkoutOutput, err := checkoutCmd.CombinedOutput(); err != nil {
+		return false, "failed to checkout target branch: " + string(checkoutOutput)
+	}
+
+	// Merge with --no-ff (always create merge commit)
+	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", "--no-ff", branch, "--no-edit")
+	mergeOutput, mergeErr := mergeCmd.CombinedOutput()
+	if mergeErr != nil {
+		// Abort the failed merge
+		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
+		abortCmd.Run()
+		return false, string(mergeOutput)
+	}
+	return true, ""
+}
+
+// executeSquashStrategy performs git merge --squash then commits
+func executeSquashStrategy(branch string) (bool, string) {
+	// Squash merge
+	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", "--squash", branch)
+	mergeOutput, err := mergeCmd.CombinedOutput()
+	if err != nil {
+		// Reset any partial squash state
+		resetCmd := exec.Command("git", "-C", "/workspace", "reset", "--hard", "HEAD")
+		resetCmd.Run()
+		return false, string(mergeOutput)
+	}
+
+	// Commit the squashed changes
+	commitCmd := exec.Command("git", "-C", "/workspace", "commit", "-m", fmt.Sprintf("Merge branch '%s' (squashed)", branch))
+	commitOutput, err := commitCmd.CombinedOutput()
+	if err != nil {
+		// Reset on commit failure
+		resetCmd := exec.Command("git", "-C", "/workspace", "reset", "--hard", "HEAD")
+		resetCmd.Run()
+		return false, string(commitOutput)
+	}
+	return true, ""
+}
+
 // WorktreeRequest represents the JSON body for worktree API requests
 type WorktreeRequest struct {
 	Branch string `json:"branch"`
@@ -1658,16 +1771,24 @@ func handleWorktreeMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Attempt merge
-	mergeCmd := exec.Command("git", "-C", "/workspace", "merge", req.Branch, "--no-edit")
-	mergeOutput, mergeErr := mergeCmd.CombinedOutput()
+	// Read merge strategy from init.json
+	strategy := readMergeStrategy()
+	log.Printf("Using merge strategy: %s", strategy)
 
-	if mergeErr != nil {
-		// Abort the failed merge
-		abortCmd := exec.Command("git", "-C", "/workspace", "merge", "--abort")
-		abortCmd.Run() // Ignore error, merge might not be in progress
+	// Execute the appropriate merge strategy
+	var success bool
+	var errOutput string
+	switch strategy {
+	case "merge-ff":
+		success, errOutput = executeMergeFFStrategy(req.Branch)
+	case "squash":
+		success, errOutput = executeSquashStrategy(req.Branch)
+	default: // "merge-commit"
+		success, errOutput = executeMergeCommitStrategy(req.Branch)
+	}
 
-		sendWorktreeError(w, "git merge failed: "+string(mergeOutput), buildMergeInstructions(req.Branch, req.Path))
+	if !success {
+		sendWorktreeError(w, "git merge failed: "+errOutput, buildMergeInstructions(req.Branch, req.Path))
 		return
 	}
 
@@ -1686,7 +1807,7 @@ func handleWorktreeMerge(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Warning: branch deletion failed: %s", string(branchOutput))
 	}
 
-	log.Printf("Worktree merged and cleaned up: branch=%s, path=%s", req.Branch, req.Path)
+	log.Printf("Worktree merged and cleaned up: branch=%s, path=%s, strategy=%s", req.Branch, req.Path, strategy)
 	sendWorktreeSuccess(w)
 }
 
