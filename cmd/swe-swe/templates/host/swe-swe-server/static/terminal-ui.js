@@ -370,6 +370,7 @@ class TerminalUI extends HTMLElement {
                     font-size: {{STATUS_BAR_FONT_SIZE}}px;
                     transition: background-color 0.3s ease, border-color 0.3s ease;
                     border-top: 3px solid transparent;
+                    border-bottom: 3px solid transparent;
                 }
                 .terminal-ui__status-bar.connected {
                     background: {{STATUS_BAR_COLOR}};
@@ -378,7 +379,7 @@ class TerminalUI extends HTMLElement {
                     background: #c62828;
                 }
                 .terminal-ui__status-bar.multiuser {
-                    border-top-color: #4fc3f7;
+                    border-color: #4fc3f7;
                 }
                 .terminal-ui__status-bar.connecting,
                 .terminal-ui__status-bar.error,
