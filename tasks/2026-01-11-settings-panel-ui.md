@@ -110,7 +110,7 @@
 
 ---
 
-## Phase 3: Panel Toggle & Interaction
+## Phase 3: Panel Toggle & Interaction [DONE]
 
 ### What will be achieved
 - Clicking status bar opens the settings panel
