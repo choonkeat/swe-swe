@@ -13,17 +13,12 @@ Build a DigitalOcean Marketplace image for swe-swe using Packer.
 1. Go to https://cloud.digitalocean.com/account/api/tokens
 2. Click **Generate New Token**
 3. Name it (e.g., "packer-swe-swe")
-4. Select **Custom Scopes** and grant permissions:
-
-   **Required**:
+4. Select **Custom Scopes** and grant minimum permissions:
    - `droplet:create` — Create temporary build Droplet
    - `droplet:read` — Monitor Droplet status
    - `droplet:delete` — Destroy Droplet and create snapshot
    - `ssh_key:create` — Create temporary SSH key
    - `ssh_key:delete` — Remove temporary SSH key
-
-   **Recommended** (for graceful shutdown):
-   - `droplet:power` — Gracefully shut down Droplet after build (optional but recommended)
 
 5. Copy the token (shown only once)
 6. Export it:
@@ -221,11 +216,6 @@ echo $DIGITALOCEAN_API_TOKEN
 ```
 
 Verify the token has: `droplet:create`, `droplet:read`, `droplet:delete`, `ssh_key:create`, `ssh_key:delete`
-
-If you see `403 You are not authorized to perform this operation` during shutdown:
-- Your token is missing the optional `droplet:power` scope
-- Add this scope to your API token in DigitalOcean console
-- The build will still complete and create the snapshot, but Packer will force-destroy instead of gracefully shutdown
 
 ### Build fails with "image not found"
 

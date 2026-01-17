@@ -276,14 +276,12 @@ packer --version
 4. Enter a name: `packer-swe-swe`
 5. Set expiration (e.g., 90 days)
 6. **Scopes**: Select **Custom Scopes** (recommended for security)
-   - Search for and select the following **required** permissions:
+   - Search for and select the following permissions:
      - `droplet:create` — Create temporary build Droplet (includes snapshot:read as required scope)
      - `droplet:read` — Monitor Droplet status during build
      - `droplet:delete` — Destroy temporary Droplet and create snapshot
      - `ssh_key:create` — Create temporary SSH key for Packer
      - `ssh_key:delete` — Remove temporary SSH key after build
-   - **Recommended** (optional):
-     - `droplet:power` — Gracefully shut down Droplet after build (prevents 403 errors)
 7. Click **Generate Token**
 8. **IMPORTANT**: Copy the token immediately - it's shown only once!
 
