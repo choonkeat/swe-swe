@@ -231,3 +231,22 @@ All 6 phases successfully implemented:
 
 **Implementation Date**: 2026-01-16
 **Status**: ✅ Complete and Ready for Deployment
+
+---
+
+## Follow-up: Code-Server UID:GID Fix
+
+After discovering code-server container had same permission issue with `/home/coder`, implementing same fix:
+
+### Steps:
+1. Create custom code-server Dockerfile wrapper
+2. Update docker-compose.yml to build from custom image with UID:GID build args
+3. Update template processor to handle docker-compose placeholders
+4. Regenerate golden files with code-server build args
+
+### Implementation:
+- Location: `cmd/swe-swe/templates/host/code-server/Dockerfile`
+- Remove hardcoded `codercom/code-server:latest` image
+- Build custom wrapper that recreates `coder` user with host UID:GID
+- Update docker-compose.yml to use: `build: context: code-server` with `args: UID: {{UID}}, GID: {{GID}}`
+- Reuse existing template processing for {{UID}} and {{GID}} placeholders
