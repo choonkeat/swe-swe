@@ -630,6 +630,12 @@ class TerminalUI extends HTMLElement {
                     overflow-x: auto;
                     white-space: pre;
                 }
+                .terminal-ui__worktree-strategy-hint {
+                    margin: 16px 0 0 0;
+                    font-size: 12px;
+                    color: #888;
+                    text-align: center;
+                }
                 .terminal-ui__worktree-buttons {
                     display: flex;
                     gap: 12px;
@@ -1451,15 +1457,17 @@ class TerminalUI extends HTMLElement {
         // Create modal overlay
         const modal = document.createElement('div');
         modal.className = 'terminal-ui__worktree-modal';
+        const strategyDescription = worktree.mergeStrategyDescription || 'Rebase then merge with commit';
         modal.innerHTML = `
             <div class="terminal-ui__worktree-modal-content">
                 <h3>Done with this worktree?</h3>
                 <p class="terminal-ui__worktree-branch">Branch: <strong>${this.escapeHtml(worktree.branch)}</strong></p>
                 <div class="terminal-ui__worktree-buttons">
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--secondary" data-action="not-yet">Not yet</button>
-                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--primary" data-action="merge">Merge to ${this.escapeHtml(worktree.targetBranch || 'main')}</button>
                     <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--danger" data-action="discard">Discard</button>
+                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--primary" data-action="merge">Merge to ${this.escapeHtml(worktree.targetBranch || 'main')}</button>
+                    <button class="terminal-ui__worktree-btn terminal-ui__worktree-btn--secondary" data-action="not-yet">Not yet</button>
                 </div>
+                <p class="terminal-ui__worktree-strategy-hint">Merge strategy: ${this.escapeHtml(strategyDescription)}</p>
             </div>
         `;
 
@@ -1468,7 +1476,8 @@ class TerminalUI extends HTMLElement {
             btn.addEventListener('click', async (e) => {
                 const action = e.target.dataset.action;
                 if (action === 'not-yet') {
-                    modal.remove();
+                    // Redirect to homepage - worktree is preserved for later
+                    window.location.href = '/' + this.getDebugQueryString();
                     return;
                 }
 
