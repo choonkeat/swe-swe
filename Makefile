@@ -92,7 +92,7 @@ deploy/digitalocean: build
 	echo ""; \
 	echo "==> Available swe-swe init flags:"; \
 	echo ""; \
-	./dist/swe-swe.linux-amd64 init -h 2>&1; \
+	$(SWE_SWE_CLI) init -h 2>&1; \
 	echo ""; \
 	read -p "swe-swe init flags (default: --agents=claude): " INIT_FLAGS; \
 	INIT_FLAGS=$${INIT_FLAGS:---agents=claude}; \
