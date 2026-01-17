@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## v2.8.0 - Shell Terminal, Heartbeat Cleanup & Deployment Automation
+
+### Major Features
+
+- **Shell assistant**: Direct terminal access without an AI agent. Launch with `--with-agents=shell` to access a dedicated terminal session with parent workDir inheritance for seamless file navigation
+- **Heartbeat-based container cleanup**: Automated detection and graceful shutdown of stale containers via host-side heartbeat watcher with configurable timeout and signal escalation (SIGTERM→SIGKILL)
+- **Container-host proxy**: New lightweight proxy bridging container and host communication for lifecycle management and health monitoring
+- **DigitalOcean 1-click deployment**: Automated Packer-based image building with optional git repository cloning, hardening, MOTD health checks, and interactive init flags support
+- **Bundled slash commands**: Ship swe-swe slash commands in binary, auto-installed to `~/.claude/commands/swe-swe/` with conditional `/workspace/swe-swe/` directory creation
+- **Record-tui integration**: Replace custom playback with `record-tui` library for improved terminal recording and playback with speed controls
+
+### Terminal Improvements
+
+- **Link activation hints**: Visual hints for clickable terminal links with required modifier keys (Ctrl/Cmd) to prevent accidental activation
+- **URL underline and copy**: Terminal URLs display with underlines; clicking shows copy notification for easy sharing
+- **File copy notifications**: Visual feedback when file paths are copied from terminal output
+
+### MCP & Agent Enhancements
+
+- **MCP server rename**: Renamed `playwright` MCP server to `swe-swe-playwright` to avoid config conflicts
+- **Generated MCP configs**: Auto-generate MCP configuration for OpenCode, Codex, Gemini, and Goose agents
+- **OpenCode support**: Extend `--with-slash-commands` to support OpenCode (`~/.config/opencode/command/`)
+
+### Behavior Changes
+
+- **MOTD suppression**: Suppress MOTD for shell sessions to reduce noise
+- **Streaming proxy output**: Real-time stdout/stderr streaming from container-host proxy
+
+### Bug Fixes
+
+- **Go module imports**: Fix missing golang.org/x/text imports for unicode normalization
+- **Worktree permissions**: Ensure `/worktrees` directory has proper permissions in container
+- **Traefik compatibility**: Downgrade to v2.11 for Docker API compatibility
+- **Cloud-init race conditions**: Wait for cloud-final.target instead of cloud-init.target
+- **systemd service startup**: Fix dependency issues causing startup race conditions
+
 ## v2.7.0 - YOLO Mode, Settings Panel & UI Customization
 
 ### Major Features
