@@ -39,6 +39,8 @@ if [ -z "${SWE_SWE_PASSWORD:-}" ]; then
     done
 else
     PASSWORD="$SWE_SWE_PASSWORD"
+    echo "Set new swe-swe password: [from SWE_SWE_PASSWORD]" >&2
+    echo "" >&2
 fi
 
 # Phase 2: OS hardening prompt (skip if ENABLE_HARDENING is set)
@@ -67,6 +69,9 @@ if [ -z "${ENABLE_HARDENING:-}" ]; then
     done
 else
     HARDENING_LEVEL="$ENABLE_HARDENING"
+    echo "Enable OS hardening? (UFW firewall, Fail2ban, SSH hardening, auto-updates)" >&2
+    echo "Enable hardening? (y/n, default y): $HARDENING_LEVEL [from ENABLE_HARDENING]" >&2
+    echo "" >&2
 fi
 
 # Phase 3: Git clone URL (skip if GIT_CLONE_URL is set, even if empty)
@@ -76,6 +81,12 @@ if [ -z "${GIT_CLONE_URL+set}" ]; then
     GIT_URL=${GIT_URL:-}
 else
     GIT_URL="$GIT_CLONE_URL"
+    echo "Optionally clone a git repository to /workspace" >&2
+    if [ -n "$GIT_URL" ]; then
+        echo "Git repository URL (optional, leave empty to skip): $GIT_URL [from GIT_CLONE_URL]" >&2
+    else
+        echo "Git repository URL (optional, leave empty to skip): [skip, from GIT_CLONE_URL]" >&2
+    fi
 fi
 
 # Output password, hardening level, and git URL (one per line)
