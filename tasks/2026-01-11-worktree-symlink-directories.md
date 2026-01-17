@@ -1,7 +1,7 @@
 # Worktree: Symlink Directories, Copy Files
 
 **Date**: 2026-01-11
-**Status**: Phase 1 Complete
+**Status**: Complete
 
 ## Goal
 
@@ -41,17 +41,17 @@ When setting up git worktrees, symlink directories (using absolute paths to `/wo
 
 ---
 
-### Phase 2: Update documentation
+### Phase 2: Update documentation ✅
 
 **What will be achieved**: ADR-0020 will accurately reflect the new symlink-for-directories behavior.
 
 **Steps**:
 
-1. Read `docs/adr/0020-git-worktree-integration.md`
-2. Update section "2. Untracked file copying" to clarify:
+1. ✅ Read `docs/adr/0020-git-worktree-integration.md`
+2. ✅ Update section "2. Untracked file copying" to clarify:
    - Directories (`.claude/`, `.codex/`, etc.) are **symlinked** to `/workspace`
    - Files (`.env`, etc.) are **copied**
-3. Add rationale: shared permissions/settings for agent configs, isolation option for env files
+3. ✅ Add rationale: shared permissions/settings for agent configs, isolation option for env files
 
 **Verification**:
 - Read the updated ADR and confirm it matches implemented behavior
