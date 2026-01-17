@@ -1,0 +1,7 @@
+# Phase 4 Execution Log: Simplify .swe-swe/docs/AGENTS.md
+
+012557: Starting Phase 4 execution
+- Will update cmd/swe-swe/templates/container/.swe-swe/docs/AGENTS.md
+- Will remove "For Agents" section with @swe-swe/<command> syntax
+- Will simplify to just list available commands without invocation syntax
+- Expected: MOTD teaches syntax, AGENTS.md just lists what's available
