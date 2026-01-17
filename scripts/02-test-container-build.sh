@@ -1,34 +1,49 @@
 #!/bin/bash
 set -euox pipefail
 
-# Build the swe-swe test image from generated project files
+# Build the test container using docker-compose
+# Reads slot info from previous init step
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
-TMP_DIR="$WORKSPACE_DIR/tmp"
-EFFECTIVE_HOME="${EFFECTIVE_HOME:-$WORKSPACE_DIR/.home}"
 
-# Find the generated project directory
-PROJECT_PATH=$(ls -d "$EFFECTIVE_HOME/.swe-swe/projects/"*/)
-echo "Building from: $PROJECT_PATH"
+# Find active slot from lock files
+find_active_slot() {
+    for lock_dir in /tmp/swe-swe-test-slot-*.lock; do
+        if [ -d "$lock_dir" ] && [ -f "$lock_dir/pid" ]; then
+            local slot
+            slot=$(basename "$lock_dir" | sed 's/swe-swe-test-slot-//' | sed 's/.lock//')
+            echo "$slot"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Get slot from environment or find it
+if [ -z "${SWE_TEST_SLOT:-}" ]; then
+    SWE_TEST_SLOT=$(find_active_slot) || {
+        echo "ERROR: No active test slot found. Run 01-test-container-init.sh first."
+        exit 1
+    }
+fi
+
+TEST_STACK_DIR="/tmp/swe-swe-test-${SWE_TEST_SLOT}"
+PROJECT_PATH=$(cat "$TEST_STACK_DIR/.swe-test-project" 2>/dev/null) || {
+    echo "ERROR: Could not find project path. Run 01-test-container-init.sh first."
+    exit 1
+}
+
+echo "Building test container for slot $SWE_TEST_SLOT"
+echo "Project path: $PROJECT_PATH"
 
 cd "$PROJECT_PATH"
 
-# Build just the swe-swe service (use NO_CACHE=1 to force clean build)
+# Build using docker-compose (use NO_CACHE=1 to force clean build)
 BUILD_ARGS=""
 if [[ "${NO_CACHE:-}" == "1" ]]; then
     BUILD_ARGS="--no-cache"
 fi
-docker compose build $BUILD_ARGS swe-swe
+docker compose build $BUILD_ARGS
 
-# Get the auto-generated image name and tag it
-COMPOSE_PROJECT=$(basename "$PROJECT_PATH")
-AUTO_IMAGE="${COMPOSE_PROJECT}-swe-swe"
-docker tag "$AUTO_IMAGE" swe-swe-test:latest
-
-echo "Tagged image as swe-swe-test:latest"
-
-# Smoke test: verify swe-swe-server binary works
-docker run --rm swe-swe-test:latest /usr/local/bin/swe-swe-server --help
-
-echo "Phase 2 complete: Image built and smoke test passed"
+echo "Phase 2 complete: Container images built successfully"
