@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -827,6 +828,20 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 	return strings.Join(result, "\n")
 }
 
+// processTerminalUITemplate processes the terminal-ui.js template with UI customization values
+func processTerminalUITemplate(content string, statusBarColor string, statusBarFontSize int, statusBarFontFamily string, terminalFontSize int, terminalFontFamily string) string {
+	textColor := ContrastingTextColor(statusBarColor)
+
+	content = strings.ReplaceAll(content, "{{STATUS_BAR_COLOR}}", statusBarColor)
+	content = strings.ReplaceAll(content, "{{STATUS_BAR_TEXT_COLOR}}", textColor)
+	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_SIZE}}", strconv.Itoa(statusBarFontSize))
+	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_FAMILY}}", statusBarFontFamily)
+	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_SIZE}}", strconv.Itoa(terminalFontSize))
+	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_FAMILY}}", terminalFontFamily)
+
+	return content
+}
+
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("project-directory", ".", "Project directory to initialize")
@@ -1227,6 +1242,11 @@ func handleInit() {
 				contentStr = strings.Replace(contentStr, `Version   = "dev"`, fmt.Sprintf(`Version   = "%s"`, Version), 1)
 				contentStr = strings.Replace(contentStr, `GitCommit = "unknown"`, fmt.Sprintf(`GitCommit = "%s"`, GitCommit), 1)
 				content = []byte(contentStr)
+			}
+
+			// Process terminal-ui.js template with UI customization values
+			if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
+				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
 			}
 
 			// Calculate destination path, preserving subdirectories

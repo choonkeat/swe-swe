@@ -362,14 +362,14 @@ class TerminalUI extends HTMLElement {
                     justify-content: space-between;
                     padding: 6px 12px;
                     background: #f57c00;
-                    color: #fff;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    font-size: 12px;
+                    color: {{STATUS_BAR_TEXT_COLOR}};
+                    font-family: {{STATUS_BAR_FONT_FAMILY}};
+                    font-size: {{STATUS_BAR_FONT_SIZE}}px;
                     transition: background-color 0.3s ease, border-color 0.3s ease;
                     border-top: 3px solid transparent;
                 }
                 .terminal-ui__status-bar.connected {
-                    background: #007acc;
+                    background: {{STATUS_BAR_COLOR}};
                 }
                 .terminal-ui__status-bar.error {
                     background: #c62828;
@@ -864,8 +864,8 @@ class TerminalUI extends HTMLElement {
 
         this.term = new Terminal({
             cursorBlink: true,
-            fontSize: 14,
-            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            fontSize: {{TERMINAL_FONT_SIZE}},
+            fontFamily: '{{TERMINAL_FONT_FAMILY}}',
             scrollback: 5000,
             theme: {
                 background: '#1e1e1e',

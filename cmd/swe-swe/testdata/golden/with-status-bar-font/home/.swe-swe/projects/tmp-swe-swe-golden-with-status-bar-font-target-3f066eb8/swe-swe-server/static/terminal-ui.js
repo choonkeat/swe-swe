@@ -363,8 +363,8 @@ class TerminalUI extends HTMLElement {
                     padding: 6px 12px;
                     background: #f57c00;
                     color: #fff;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    font-size: 12px;
+                    font-family: monospace;
+                    font-size: 14px;
                     transition: background-color 0.3s ease, border-color 0.3s ease;
                     border-top: 3px solid transparent;
                 }

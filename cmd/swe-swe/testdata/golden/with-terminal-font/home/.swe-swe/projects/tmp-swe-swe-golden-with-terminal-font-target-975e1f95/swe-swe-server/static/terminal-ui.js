@@ -864,8 +864,8 @@ class TerminalUI extends HTMLElement {
 
         this.term = new Terminal({
             cursorBlink: true,
-            fontSize: 14,
-            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            fontSize: 16,
+            fontFamily: 'JetBrains Mono',
             scrollback: 5000,
             theme: {
                 background: '#1e1e1e',
