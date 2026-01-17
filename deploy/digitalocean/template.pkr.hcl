@@ -42,6 +42,23 @@ variable "init_flags" {
   default     = ""
 }
 
+variable "swe_swe_password" {
+  type        = string
+  description = "Password for swe-swe user (empty for random)"
+  default     = ""
+  sensitive   = true
+}
+
+variable "hardening_level" {
+  type        = string
+  description = "OS hardening level: none, moderate (default), or comprehensive"
+  default     = "moderate"
+  validation {
+    condition     = contains(["none", "moderate", "comprehensive"], var.hardening_level)
+    error_message = "hardening_level must be 'none', 'moderate', or 'comprehensive'"
+  }
+}
+
 locals {
   timestamp    = formatdate("YYYYMMDD-hhmmss", timestamp())
   snapshot_name = "${var.image_name}-${var.image_version}-${local.timestamp}"
@@ -89,16 +106,23 @@ build {
 
   # Run installation scripts in order
   provisioner "shell" {
-    scripts = [
-      "scripts/010-docker.sh",
-      "scripts/020-swe-swe.sh",
-      "scripts/030-systemd.sh",
-      "scripts/090-ufw.sh",
-      "scripts/900-cleanup.sh"
-    ]
+    scripts = concat(
+      [
+        "scripts/010-docker.sh",
+        "scripts/020-swe-swe.sh",
+        "scripts/030-systemd.sh",
+        "scripts/090-ufw.sh"
+      ],
+      var.hardening_level == "none" ? [] : ["scripts/011-hardening-moderate.sh"],
+      var.hardening_level == "comprehensive" ? ["scripts/012-hardening-comprehensive.sh"] : [],
+      [
+        "scripts/900-cleanup.sh"
+      ]
+    )
     environment_vars = [
       "DEBIAN_FRONTEND=noninteractive",
-      "SWE_SWE_INIT_FLAGS=${var.init_flags}"
+      "SWE_SWE_INIT_FLAGS=${var.init_flags}",
+      "SWE_SWE_PASSWORD=${var.swe_swe_password}"
     ]
   }
 
