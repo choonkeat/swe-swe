@@ -83,6 +83,43 @@ type TermSize struct {
 	Cols uint16
 }
 
+// SafeConn wraps a websocket.Conn with a mutex for thread-safe writes.
+// gorilla/websocket doesn't support concurrent writes, so all writes
+// must be serialized. This wrapper makes it impossible to forget the lock.
+type SafeConn struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+// NewSafeConn wraps a websocket connection for thread-safe writes
+func NewSafeConn(conn *websocket.Conn) *SafeConn {
+	return &SafeConn{conn: conn}
+}
+
+// WriteMessage sends a message with the given type and payload (thread-safe)
+func (sc *SafeConn) WriteMessage(messageType int, data []byte) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.conn.WriteMessage(messageType, data)
+}
+
+// WriteJSON sends a JSON-encoded message (thread-safe)
+func (sc *SafeConn) WriteJSON(v interface{}) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.conn.WriteJSON(v)
+}
+
+// ReadMessage reads the next message (no lock needed - reads are already safe)
+func (sc *SafeConn) ReadMessage() (messageType int, p []byte, err error) {
+	return sc.conn.ReadMessage()
+}
+
+// Close closes the underlying connection
+func (sc *SafeConn) Close() error {
+	return sc.conn.Close()
+}
+
 // AssistantConfig holds the configuration for an AI coding assistant
 type AssistantConfig struct {
 	Name            string // Display name
@@ -199,12 +236,11 @@ type Session struct {
 	AssistantConfig AssistantConfig
 	Cmd             *exec.Cmd
 	PTY             *os.File
-	wsClients       map[*websocket.Conn]bool     // WebSocket clients
-	wsClientSizes   map[*websocket.Conn]TermSize // WebSocket client terminal sizes
-	ptySize         TermSize                     // Current PTY dimensions (for dedup)
+	wsClients       map[*SafeConn]bool     // WebSocket clients (SafeConn for thread-safe writes)
+	wsClientSizes   map[*SafeConn]TermSize // WebSocket client terminal sizes
+	ptySize         TermSize               // Current PTY dimensions (for dedup)
 	mu              sync.RWMutex
-	writeMu         sync.Mutex // mutex for websocket writes (gorilla/websocket isn't concurrent-write safe)
-	CreatedAt       time.Time  // when the session was created
+	CreatedAt       time.Time // when the session was created
 	lastActive      time.Time
 	vt              vt10x.Terminal // virtual terminal for screen state tracking
 	vtMu            sync.Mutex     // separate mutex for VT operations
@@ -222,7 +258,7 @@ type Session struct {
 }
 
 // AddClient adds a WebSocket client to the session
-func (s *Session) AddClient(conn *websocket.Conn) {
+func (s *Session) AddClient(conn *SafeConn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.wsClients[conn] = true
@@ -234,7 +270,7 @@ func (s *Session) AddClient(conn *websocket.Conn) {
 }
 
 // RemoveClient removes a WebSocket client from the session
-func (s *Session) RemoveClient(conn *websocket.Conn) {
+func (s *Session) RemoveClient(conn *SafeConn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.wsClients, conn)
@@ -301,7 +337,7 @@ func (s *Session) SetGracePeriod(d time.Duration) {
 }
 
 // UpdateClientSize updates a client's terminal size and recalculates the PTY size
-func (s *Session) UpdateClientSize(conn *websocket.Conn, rows, cols uint16) {
+func (s *Session) UpdateClientSize(conn *SafeConn, rows, cols uint16) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -401,9 +437,6 @@ func (s *Session) Broadcast(data []byte) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-
 	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
 			log.Printf("Broadcast write error: %v", err)
@@ -442,9 +475,6 @@ func (s *Session) BroadcastStatus() {
 		return
 	}
 
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-
 	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("BroadcastStatus write error: %v", err)
@@ -471,9 +501,6 @@ func (s *Session) BroadcastChatMessage(userName, text string) {
 		log.Printf("BroadcastChatMessage marshal error: %v", err)
 		return
 	}
-
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 
 	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -514,9 +541,6 @@ func (s *Session) BroadcastExit(exitCode int) {
 		log.Printf("BroadcastExit marshal error: %v", err)
 		return
 	}
-
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
 
 	for conn := range s.wsClients {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -579,7 +603,7 @@ func (s *Session) Close() {
 	for conn := range s.wsClients {
 		conn.Close()
 	}
-	s.wsClients = make(map[*websocket.Conn]bool)
+	s.wsClients = make(map[*SafeConn]bool)
 
 	// Kill the process and close PTY
 	if s.Cmd != nil && s.Cmd.Process != nil {
@@ -608,7 +632,7 @@ func compressSnapshot(data []byte) ([]byte, error) {
 // sendChunked sends compressed data as multiple chunks for iOS Safari compatibility.
 // Each chunk: [0x02, chunkIndex, totalChunks, ...data]
 // Returns the number of chunks sent, or error.
-func sendChunked(conn *websocket.Conn, writeMu *sync.Mutex, data []byte, chunkSize int) (int, error) {
+func sendChunked(conn *SafeConn, data []byte, chunkSize int) (int, error) {
 	if chunkSize < MinChunkSize {
 		chunkSize = MinChunkSize
 	}
@@ -622,9 +646,6 @@ func sendChunked(conn *websocket.Conn, writeMu *sync.Mutex, data []byte, chunkSi
 	if totalChunks == 0 {
 		totalChunks = 1 // At least one chunk even for empty data
 	}
-
-	writeMu.Lock()
-	defer writeMu.Unlock()
 
 	for i := 0; i < totalChunks; i++ {
 		start := i * chunkSize
@@ -2152,8 +2173,8 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		AssistantConfig: cfg,
 		Cmd:             cmd,
 		PTY:             ptmx,
-		wsClients:       make(map[*websocket.Conn]bool),
-		wsClientSizes:   make(map[*websocket.Conn]TermSize),
+		wsClients:       make(map[*SafeConn]bool),
+		wsClientSizes:   make(map[*SafeConn]TermSize),
 		ptySize:         TermSize{Rows: 24, Cols: 80},
 		CreatedAt:       now,
 		lastActive:      now,
@@ -2188,12 +2209,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	remoteAddr := r.RemoteAddr
 	log.Printf("WebSocket upgrade request: session=%s remote=%s UA=%s", sessionUUID, remoteAddr, userAgent)
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	rawConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v (remote=%s)", err, remoteAddr)
 		return
 	}
-	defer conn.Close()
+	defer rawConn.Close()
+
+	// Wrap in SafeConn for thread-safe writes
+	conn := NewSafeConn(rawConn)
 
 	// Get assistant from query param
 	assistant := r.URL.Query().Get("assistant")
@@ -2268,7 +2292,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				log.Printf("Failed to compress scrollback: %v (remote=%s)", err, remoteAddr)
 			} else {
 				log.Printf("Sending %d bytes of scrollback history (compressed: %d bytes, remote=%s)", len(ringData), len(compressed), remoteAddr)
-				numChunks, err := sendChunked(conn, &sess.writeMu, compressed, DefaultChunkSize)
+				numChunks, err := sendChunked(conn, compressed, DefaultChunkSize)
 				if err != nil {
 					log.Printf("Failed to send scrollback chunks: %v (remote=%s, sent %d chunks before error)", err, remoteAddr, numChunks)
 				} else {
@@ -2280,7 +2304,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		// Send VT snapshot (positions cursor correctly on current screen)
 		snapshot := sess.GenerateSnapshot()
 		log.Printf("Sending %d byte snapshot to client (remote=%s)", len(snapshot), remoteAddr)
-		numChunks, err := sendChunked(conn, &sess.writeMu, snapshot, DefaultChunkSize)
+		numChunks, err := sendChunked(conn, snapshot, DefaultChunkSize)
 		if err != nil {
 			log.Printf("Failed to send snapshot chunks: %v (remote=%s, sent %d chunks before error)", err, remoteAddr, numChunks)
 		} else {
@@ -2326,10 +2350,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if msg.Data != nil {
 					response["data"] = msg.Data
 				}
-				sess.writeMu.Lock()
-				err := conn.WriteJSON(response)
-				sess.writeMu.Unlock()
-				if err != nil {
+				if err := conn.WriteJSON(response); err != nil {
 					log.Printf("Failed to send pong: %v", err)
 				}
 			case "chat":
@@ -2390,7 +2411,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			nameLen := int(data[1])<<8 | int(data[2])
 			if len(data) < 3+nameLen {
 				log.Printf("Invalid file upload: data too short for filename")
-				sendFileUploadResponse(sess, conn, false, "", "Invalid upload format")
+				sendFileUploadResponse(conn, false, "", "Invalid upload format")
 				continue
 			}
 			filename := string(data[3 : 3+nameLen])
@@ -2399,7 +2420,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			// Sanitize filename: only keep the base name, no path traversal
 			filename = sanitizeFilename(filename)
 			if filename == "" {
-				sendFileUploadResponse(sess, conn, false, "", "Invalid filename")
+				sendFileUploadResponse(conn, false, "", "Invalid filename")
 				continue
 			}
 
@@ -2407,7 +2428,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			uploadsDir := ".swe-swe/uploads"
 			if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 				log.Printf("Failed to create uploads directory: %v", err)
-				sendFileUploadResponse(sess, conn, false, filename, "Failed to create uploads directory")
+				sendFileUploadResponse(conn, false, filename, "Failed to create uploads directory")
 				continue
 			}
 
@@ -2415,12 +2436,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			filePath := uploadsDir + "/" + filename
 			if err := os.WriteFile(filePath, fileData, 0644); err != nil {
 				log.Printf("File upload error: %v", err)
-				sendFileUploadResponse(sess, conn, false, filename, err.Error())
+				sendFileUploadResponse(conn, false, filename, err.Error())
 				continue
 			}
 
 			log.Printf("File uploaded: %s (%d bytes)", filePath, len(fileData))
-			sendFileUploadResponse(sess, conn, true, filename, "")
+			sendFileUploadResponse(conn, true, filename, "")
 
 			// Send the file path to PTY - Claude Code will detect it and read from disk
 			absPath, err := os.Getwd()
@@ -2523,7 +2544,7 @@ func sanitizeFilename(name string) string {
 }
 
 // sendFileUploadResponse sends a JSON response for file upload
-func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, filename, errMsg string) {
+func sendFileUploadResponse(conn *SafeConn, success bool, filename, errMsg string) {
 	response := map[string]interface{}{
 		"type":    "file_upload",
 		"success": success,
@@ -2534,10 +2555,7 @@ func sendFileUploadResponse(sess *Session, conn *websocket.Conn, success bool, f
 	if errMsg != "" {
 		response["error"] = errMsg
 	}
-	sess.writeMu.Lock()
-	err := conn.WriteJSON(response)
-	sess.writeMu.Unlock()
-	if err != nil {
+	if err := conn.WriteJSON(response); err != nil {
 		log.Printf("Failed to send file upload response: %v", err)
 	}
 }
