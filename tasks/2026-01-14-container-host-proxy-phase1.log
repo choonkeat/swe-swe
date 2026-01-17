@@ -43,3 +43,11 @@ Got: As expected. Request processing works correctly with stdout/stderr separati
 110145 - Phase 1 Step 5: Add graceful shutdown
 Action: Handle SIGINT/SIGTERM signals, clean up PID file on exit. Use context for cancellation.
 Expected: Ctrl+C or kill -TERM causes clean exit with PID file removed.
+110259 - Phase 1 Step 5: Result
+Observed:
+- Added signal handling for SIGINT/SIGTERM using os/signal package.
+- Context with cancel used to exit main event loop cleanly.
+- Deferred cleanup removes PID file on exit.
+- Test: send SIGTERM -> "[proxy] Received signal terminated, shutting down..." -> "[proxy] Cleaned up PID file"
+- PID file verified removed after shutdown.
+Got: As expected. Graceful shutdown working correctly.
