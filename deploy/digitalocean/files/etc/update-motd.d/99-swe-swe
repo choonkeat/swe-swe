@@ -1,0 +1,13 @@
+#!/bin/bash
+# Display swe-swe credentials on SSH login
+
+CREDENTIALS_FILE="/etc/swe-swe/credentials"
+
+if [ -f "$CREDENTIALS_FILE" ]; then
+    cat "$CREDENTIALS_FILE"
+else
+    echo ""
+    echo "swe-swe is initializing..."
+    echo "Please wait a moment and reconnect, or check: systemctl status swe-swe"
+    echo ""
+fi

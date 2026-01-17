@@ -2,6 +2,7 @@ dist/
 cmd/swe-swe/bin
 tmp/
 .swe-swe/
+swe-swe/
 .claude/
 .playwright-mcp/
 !cmd/swe-swe/templates/container/.swe-swe/
@@ -12,3 +13,6 @@ tmp/
 cmd/swe-swe/templates/host/swe-swe-server/go.mod
 cmd/swe-swe/templates/host/swe-swe-server/go.sum
 .test-repos/
+
+# Packer build artifacts
+deploy/digitalocean/manifest.json

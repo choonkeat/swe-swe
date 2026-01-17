@@ -1,0 +1,85 @@
+#!/bin/bash
+# First-boot initialization script for swe-swe
+# Runs once per Droplet instance via cloud-init
+set -euo pipefail
+
+CONFIG_DIR="/etc/swe-swe"
+WORKSPACE_DIR="/workspace"
+
+echo "==> Starting swe-swe first-boot initialization..."
+
+# Create config directory if it doesn't exist
+mkdir -p "$CONFIG_DIR"
+
+# Generate random password (16 alphanumeric characters)
+# Use openssl to avoid SIGPIPE issues with piped commands
+SWE_SWE_PASSWORD=$(openssl rand -base64 12 | tr -d '=/+')
+
+# Save environment file for systemd
+cat > "$CONFIG_DIR/env" <<EOF
+SWE_SWE_PASSWORD=$SWE_SWE_PASSWORD
+EOF
+chmod 600 "$CONFIG_DIR/env"
+
+# Load init flags that were saved during image build
+SWE_SWE_INIT_FLAGS=""
+if [ -f "$CONFIG_DIR/init-flags" ]; then
+    source "$CONFIG_DIR/init-flags"
+fi
+
+# Get public IP from DigitalOcean metadata API
+PUBLIC_IP=$(curl -fsSL http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2>/dev/null || hostname -I | awk '{print $1}')
+
+# Initialize swe-swe workspace with correct HOME so config is in /home/swe-swe/.swe-swe
+echo "==> Initializing swe-swe workspace..."
+mkdir -p /home/swe-swe
+cd "$WORKSPACE_DIR"
+HOME=/home/swe-swe /usr/local/bin/swe-swe init --project-directory "$WORKSPACE_DIR" ${SWE_SWE_INIT_FLAGS}
+
+# Fix permissions so swe-swe user can access the workspace
+chown -R swe-swe:swe-swe "$WORKSPACE_DIR"
+chmod -R 755 "$WORKSPACE_DIR"
+
+# Also ensure swe-swe owns the config directory and home directory
+chown swe-swe:swe-swe /home/swe-swe
+chmod 755 /home/swe-swe
+chown -R swe-swe:swe-swe /home/swe-swe/.swe-swe
+
+# Ensure systemd sees the updated service file
+systemctl daemon-reload
+
+# Start swe-swe service
+echo "==> Starting swe-swe service..."
+systemctl start swe-swe.service
+
+# Enable service to auto-start on future boots (now that workspace is initialized)
+systemctl enable swe-swe.service || true
+
+# Wait for service to be ready
+sleep 5
+
+# Determine protocol based on SSL flags
+PROTOCOL="http"
+if [[ "$SWE_SWE_INIT_FLAGS" == *"ssl"* ]]; then
+    PROTOCOL="https"
+fi
+
+# Write credentials file for MOTD display
+cat > "$CONFIG_DIR/credentials" <<EOF
+================================================================================
+                         swe-swe is ready!
+================================================================================
+
+  URL:      ${PROTOCOL}://${PUBLIC_IP}:1977
+  Password: ${SWE_SWE_PASSWORD}
+
+  Services:
+    - Main UI:    ${PROTOCOL}://${PUBLIC_IP}:1977
+    - VS Code:    ${PROTOCOL}://${PUBLIC_IP}:1977/vscode
+    - Chrome VNC: ${PROTOCOL}://${PUBLIC_IP}:1977/chrome
+
+================================================================================
+EOF
+chmod 644 "$CONFIG_DIR/credentials"
+
+echo "==> First-boot initialization complete!"
