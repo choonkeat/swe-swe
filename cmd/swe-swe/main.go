@@ -308,6 +308,7 @@ func printUsage() {
 Native Commands:
   init [options]                         Initialize a new swe-swe project
   list                                   List all initialized swe-swe projects (auto-prunes stale ones)
+  proxy <command>                        Proxy host commands to containers with real-time streaming
 
 Docker Compose Pass-through:
   All other commands (up, down, build, ps, logs, exec, etc.) are passed directly
