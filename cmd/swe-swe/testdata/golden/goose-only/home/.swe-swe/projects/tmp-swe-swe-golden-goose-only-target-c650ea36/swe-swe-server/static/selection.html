@@ -469,6 +469,10 @@
                         <span class="new-session__icon">+</span>
                         <span class="new-session__text">Start new session</span>
                     </a>
+                    <a href="#" onclick="startWorktreeSession('{{.Assistant.Binary}}', '{{$.NewUUID}}', {{$.Debug}}); return false;" class="worktree-link worktree-link--new">
+                        <span class="worktree-link__icon">↳</span>
+                        <span class="worktree-link__text">Start new worktree session...</span>
+                    </a>
                     {{if .RecentRecordings}}
                     <div class="recordings-section recordings-section--recent">
                         <div class="recordings-section__label">Recent (auto-deletes after 1h)</div>
@@ -535,27 +539,27 @@
         })();
 
         function startNewSession(assistant, sessionUUID, debug) {
-            promptForName(assistant, sessionUUID, debug);
+            // Start immediately without prompting (non-worktree session)
+            navigateToSession(assistant, sessionUUID, debug, '');
         }
 
-        function promptForName(assistant, sessionUUID, debug) {
-            var name = prompt('Session name (optional, leave empty for no worktree):');
+        function startWorktreeSession(assistant, sessionUUID, debug) {
+            var name = prompt('Worktree name:');
 
             // User clicked Cancel
             if (name === null) {
                 return;
             }
 
-            // Trim and validate
+            // Trim and validate - must be non-empty
             name = name.trim();
-            if (name.length > 128) {
-                name = name.substring(0, 128);
+            if (name.length === 0) {
+                alert('Worktree name cannot be empty');
+                return;
             }
 
-            // If no name provided, proceed directly
-            if (name.length === 0) {
-                navigateToSession(assistant, sessionUUID, debug, '');
-                return;
+            if (name.length > 128) {
+                name = name.substring(0, 128);
             }
 
             // Check for conflicts
@@ -738,12 +742,12 @@
                         return;
                     }
 
-                    // For each agent group, add worktree links after the new-session link
+                    // For each agent group, add worktree links after the "Start new worktree session..." link
                     var agentGroups = document.querySelectorAll('.agent-group');
                     agentGroups.forEach(function(group) {
                         var assistant = group.getAttribute('data-assistant');
-                        var newSessionLink = group.querySelector('.new-session');
-                        if (!newSessionLink) {
+                        var newWorktreeLink = group.querySelector('.worktree-link--new');
+                        if (!newWorktreeLink) {
                             return;
                         }
 
@@ -790,8 +794,8 @@
                                     '<span class="worktree-link__text">Start new session in ' + wt.name + '</span>';
                             }
 
-                            // Insert after new-session link
-                            newSessionLink.parentNode.insertBefore(link, newSessionLink.nextSibling);
+                            // Insert after "Start new worktree session..." link
+                            newWorktreeLink.parentNode.insertBefore(link, newWorktreeLink.nextSibling);
                         });
                     });
                 })
