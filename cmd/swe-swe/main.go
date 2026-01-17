@@ -318,7 +318,8 @@ Init Options:
                                          Use selfsign@<ip-or-hostname> for remote access
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
-  --status-bar-color COLOR               Status bar background color (CSS color name or hex, default: #007acc)
+  --status-bar-color COLOR               Status bar background color (default: #007acc)
+                                         Use 'list' to see color swatches: --status-bar-color=list
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
   --terminal-font-family FONT            Terminal font family (default: Menlo, Monaco, "Courier New", monospace)
   --status-bar-font-size SIZE            Status bar font size in pixels (default: 12)
@@ -860,6 +861,12 @@ func handleInit() {
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
+
+	// Handle --status-bar-color=list: print color swatches and exit
+	if *statusBarColor == "list" {
+		PrintColorSwatches()
+		os.Exit(0)
+	}
 
 	// Validate --previous-init-flags
 	if *previousInitFlags != "" && *previousInitFlags != "reuse" && *previousInitFlags != "ignore" {
