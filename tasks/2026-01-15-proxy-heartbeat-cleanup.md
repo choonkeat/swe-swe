@@ -129,7 +129,7 @@ When the underlying program hangs and the container stops responding (dies, time
 
 ---
 
-## Phase 3: Signal Escalation
+## Phase 3: Signal Escalation ✅ COMPLETE
 
 ### What will be achieved
 - `killAllInFlight()` kills all registered process groups

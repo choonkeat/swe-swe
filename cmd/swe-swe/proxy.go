@@ -63,27 +63,25 @@ func getEnvDuration(name string, defaultVal time.Duration) time.Duration {
 
 // killAllInFlight kills all in-flight processes with signal escalation.
 // It sends SIGTERM first, waits for grace period, then sends SIGKILL if needed.
-// This is a placeholder that will be fully implemented in Phase 3.
 func killAllInFlight(grace time.Duration) {
 	inFlightProcesses.Range(func(key, value any) bool {
 		entry := value.(*processEntry)
 		uuid := key.(string)
 		fmt.Printf("[proxy] Killing process group %d for request %s\n", entry.pgid, uuid)
-		killProcessGroup(entry.pgid, grace)
-		entry.killedByHost = true
-		entry.killSignal = "SIGTERM"
+		signal := killProcessGroup(entry.pgid, grace)
+		if signal != "" {
+			entry.killedByHost = true
+			entry.killSignal = signal
+		}
 		return true
 	})
 }
 
 // killProcessGroup sends SIGTERM to a process group, waits for grace period,
 // then sends SIGKILL if the process is still alive.
-// This is a placeholder that will be fully implemented in Phase 3.
-func killProcessGroup(pgid int, grace time.Duration) {
-	// Placeholder - full implementation in Phase 3
-	// For now, just send SIGTERM to the process group
-	_ = grace // Will be used in Phase 3 for escalation
-	// Signal sending is platform-specific, handled in proxy_unix.go/proxy_windows.go
+// Returns the signal that finally killed the process (or "" if already dead).
+func killProcessGroup(pgid int, grace time.Duration) string {
+	return killProcessGroupPlatform(pgid, grace)
 }
 
 // containerScriptTemplate is the bash script generated for containers to submit requests.
