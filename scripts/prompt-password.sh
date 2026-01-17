@@ -7,9 +7,9 @@ set -e
 
 # Phase 1: Password prompt
 while true; do
-    read -sp "Enter swe-swe password: " PASSWORD
-    echo ""
-    echo ""
+    printf "\n"
+    read -sp "Set new swe-swe password: " PASSWORD
+    printf "\n"
 
     if [ -z "$PASSWORD" ]; then
         echo "ERROR: Password cannot be empty" >&2
@@ -17,9 +17,9 @@ while true; do
         continue
     fi
 
-    read -sp "Confirm password: " PASSWORD_CONFIRM
-    echo ""
-    echo ""
+    printf "\n"
+    read -sp "Confirm new password: " PASSWORD_CONFIRM
+    printf "\n"
 
     if [ -z "$PASSWORD_CONFIRM" ]; then
         echo "ERROR: Confirmation password cannot be empty" >&2
