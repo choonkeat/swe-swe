@@ -39,13 +39,27 @@
 - PASSED: Parent parameter is correctly passed and processed
 - NOTE: WorkDir is empty (defaults to /workspace) because parent session has no worktree
 
-### Worktree issue (pre-existing, not related to this feature)
-- The worktreeDir is configured as `/worktrees` (outside /workspace)
-- Test container lacks permissions to create /worktrees directory
-- This is a pre-existing configuration issue, not introduced by shell feature
-- The shell feature correctly inherits workDir from parent - it just needs a parent with a valid worktree
+### Worktree issue RESOLVED
+- Fixed Dockerfile to create `/worktrees` with app user ownership
+- Fixed entrypoint.sh to chown bind-mounted /worktrees directory
+- Worktrees now work correctly in test container
 
-### Step 8: Shell session without parent parameter  
+### Step 5b: Created worktree session for final verification
+- Session: "verify-shell-pwd"
+- Session UUID: 69ddcddd-5aba-4384-b341-aa2c5af368b1
+- WorkDir: /worktrees/verify-shell-pwd
+- Server log: "Generated worktree command: /worktrees/verify-shell-pwd/swe-swe/merge-this-worktree"
+- PASSED: Worktree created successfully at /worktrees/verify-shell-pwd
+
+### Step 6b-7b: CRITICAL - Shell session inherits worktree pwd
+- Navigated to: /session/shell-verify-test?assistant=shell&parent=69ddcddd-5aba-4384-b341-aa2c5af368b1
+- Console log shows: `[WS] Connecting to ws://.../ws/shell-verify-test?assistant=shell&parent=69ddcddd...`
+- Server log shows: `Shell session inheriting workDir from parent 69ddcddd-5aba-4384-b341-aa2c5af368b1: /worktrees/verify-shell-pwd`
+- Server log shows: `Shell session: using /bin/bash -l`
+- **Shell prompt shows: `app@9641eb5c4080:/worktrees/verify-shell-pwd$`**
+- **PASSED: Shell correctly inherits worktree working directory!**
+
+### Step 8: Shell session without parent parameter
 - Navigated to: /session/shell-test-no-parent?assistant=shell
 - Shell prompt shows: `app@f84849bf8264:/workspace$`
 - PASSED: Shell without parent starts in /workspace (default)
@@ -55,11 +69,13 @@
 
 | Step | Expected | Result |
 |------|----------|--------|
-| Step 4: Homepage check | No Shell visible | PASSED |
-| Step 5: Create AI session | Session created | PASSED |
-| Step 6: Navigate to shell with parent | Shell connects with parent param | PASSED |
-| Step 7: Verify pwd inheritance | Shell inherits parent workDir | PASSED (empty workDir -> /workspace) |
-| Step 8: Shell without parent | Starts in /workspace | PASSED |
+| Step 4: Homepage check | No Shell visible | ✓ PASSED |
+| Step 5: Create AI session | Session created | ✓ PASSED |
+| Step 5b: Create worktree session | Worktree at /worktrees/verify-shell-pwd | ✓ PASSED |
+| Step 6: Navigate to shell with parent | Shell connects with parent param | ✓ PASSED |
+| Step 7: Verify pwd inheritance (non-worktree) | Shell inherits parent workDir | ✓ PASSED |
+| **Step 7b: Verify pwd inheritance (WORKTREE)** | **Shell pwd = /worktrees/verify-shell-pwd** | **✓ PASSED** |
+| Step 8: Shell without parent | Starts in /workspace | ✓ PASSED |
 
-**Note**: The critical worktree pwd inheritance test (step 7 detail) requires a parent session WITH a worktree. The test container has a pre-existing issue where worktrees are created at `/worktrees` (outside /workspace) causing permission failures. The shell feature itself correctly handles workDir inheritance - demonstrated by the "Shell session inheriting workDir from parent" log message.
+**CRITICAL TEST PASSED**: The shell session with parent=worktree-session-uuid correctly inherits the worktree working directory. Shell prompt shows `/worktrees/verify-shell-pwd` proving the pwd inheritance works exactly as required.
 
