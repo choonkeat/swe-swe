@@ -39,7 +39,7 @@ The Packer image bundles a pre-built swe-swe binary. Build it first:
 make build
 
 # Verify the binary was created
-ls -lh ./dist/swe-swe-linux-amd64
+ls -lh ./dist/swe-swe.linux-amd64
 ```
 
 If the binary doesn't exist, Packer will fail with a file not found error.
@@ -220,6 +220,20 @@ packer build \
 ```
 
 Available regions: `nyc1`, `nyc3`, `sfo2`, `sfo3`, `lon1`, `sgp1`, `blr1`, `tor1`, `ams3`, `fra1`, `jpt1`, `mad1`
+
+## Finding Your Snapshots on DigitalOcean
+
+After a successful build, find your snapshot:
+
+1. Log in to https://cloud.digitalocean.com/
+2. Left sidebar → **Backups & Snapshots** (under MANAGE section)
+3. Click the **Snapshots** tab
+4. Your snapshot will be named like: `swe-swe-2.6.0-a2d88bf4-20260111-102030`
+
+From there you can:
+- Create a Droplet from the snapshot
+- Copy to other regions
+- Delete when no longer needed
 
 ### swe-swe doesn't start on first boot
 
