@@ -1009,6 +1009,20 @@ class TerminalUI extends HTMLElement {
         statusRight.insertBefore(container, statusRight.firstChild);
     }
 
+    getBaseUrl() {
+        const protocol = window.location.protocol;
+        const port = window.location.port;
+        return port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
+    }
+
+    getVSCodeUrl() {
+        const baseUrl = this.getBaseUrl();
+        if (this.workDir) {
+            return `${baseUrl}/vscode/?folder=${encodeURIComponent(this.workDir)}`;
+        }
+        return `${baseUrl}/vscode/`;
+    }
+
     renderServiceLinks() {
         const statusRight = this.querySelector('.terminal-ui__status-right');
         if (!statusRight) return;
@@ -1020,11 +1034,9 @@ class TerminalUI extends HTMLElement {
         }
 
         // All services use path-based routing
-        const protocol = window.location.protocol;
-        const port = window.location.port;
-        const baseUrl = port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
+        const baseUrl = this.getBaseUrl();
         const services = [
-            { name: 'vscode', url: `${baseUrl}/vscode/` },
+            { name: 'vscode', url: this.getVSCodeUrl() },
             { name: 'browser', url: `${baseUrl}/chrome/` }
         ];
 
@@ -1405,7 +1417,11 @@ class TerminalUI extends HTMLElement {
                 }
                 this.sessionName = msg.sessionName || '';
                 this.uuidShort = msg.uuidShort || '';
+                const prevWorkDir = this.workDir;
                 this.workDir = msg.workDir || '';
+                if (this.workDir !== prevWorkDir) {
+                    this.renderServiceLinks();
+                }
                 this.updateStatusInfo();
                 break;
             case 'chat':
