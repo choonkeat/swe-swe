@@ -1,9 +1,9 @@
 dist/
 cmd/swe-swe/bin
 tmp/
-.swe-swe/
-swe-swe/
-.claude/
+/.swe-swe/
+/swe-swe/
+/.claude/
 .playwright-mcp/
 !cmd/swe-swe/templates/container/.swe-swe/
 !cmd/swe-swe/testdata/golden/**/.swe-swe/
