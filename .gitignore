@@ -1,7 +1,6 @@
 dist/
 cmd/swe-swe/bin
 tmp/
-.home/
 .swe-swe/
 .claude/
 .playwright-mcp/
