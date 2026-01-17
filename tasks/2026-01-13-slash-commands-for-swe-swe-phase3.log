@@ -1,0 +1,7 @@
+# Phase 3 Execution Log: Conditional /workspace/swe-swe/ directory
+
+012345: Starting Phase 3 execution
+- Will add helper functions HasNonSlashAgents() and HasSlashAgents() to InitConfig
+- Will make /workspace/swe-swe/ directory conditional in container templates
+- Expected: claude-only variant should NOT have /workspace/swe-swe/ directory
+- Expected: aider-only variant SHOULD have /workspace/swe-swe/setup
