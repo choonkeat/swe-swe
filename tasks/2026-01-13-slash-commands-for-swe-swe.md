@@ -1,7 +1,7 @@
 # Task: Slash commands for swe-swe bundled commands
 
 **Date**: 2026-01-13
-**Status**: In Progress
+**Status**: Complete
 
 ## Goal
 
@@ -247,7 +247,7 @@ The `merge-this-worktree` and `discard-this-worktree` commands will be removed, 
 
 ---
 
-## Phase 6: Golden tests and verification
+## Phase 6: Golden tests and verification ✅
 
 ### What will be achieved
 All changes will be validated through golden tests, ensuring no unintended regressions and confirming the expected diffs.
