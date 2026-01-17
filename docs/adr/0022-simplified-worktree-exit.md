@@ -24,21 +24,59 @@ Additionally, merge operations can be complex (conflicts, dirty working director
 
 ### Agent-based worktree management
 
-Move merge/discard operations to agent commands via `@` file mentions:
+Move merge/discard operations to agent commands via `@` file mentions.
+
+#### Two-directory convention
 
 ```
-swe-swe/
-  AGENTS.md              # Help, available commands, current setup
-  setup                  # Conversational environment setup
-  merge-this-worktree    # Generated in worktrees with context baked in
-  discard-this-worktree  # Generated in worktrees with context baked in
+swe-swe/                   # Commands ONLY (all @-mentionable, clean autocomplete)
+  setup                    # Command - configure credentials, testing
+  merge-this-worktree      # Command (worktree only, generated with context)
+  discard-this-worktree    # Command (worktree only, generated with context)
+
+.swe-swe/                  # Internal (only subdirectories, no loose files)
+  docs/                    # Documentation for agents
+    AGENTS.md              # Index - explains swe-swe, lists commands, current setup
+    browser-automation.md
+    docker.md
 ```
 
 Key design choices:
-- `swe-swe/` directory (visible, not `.swe-swe/`) for `@swe` autocomplete
+- `swe-swe/` = commands only, `@swe-swe/` autocomplete stays clean
+- `.swe-swe/` = internal data, only subdirectories (no loose files at root)
+- `AGENTS.md` lives in `.swe-swe/docs/` to avoid autocomplete pollution
+- `setup` command injects pointer into user's `CLAUDE.md`/`AGENTS.md` pointing to `.swe-swe/docs/AGENTS.md`
 - No extension for commands (cleaner, command-like)
-- Worktree commands generated at creation with branch/target/strategy context
+- Worktree commands generated at creation with branch/target context baked in
 - Agent handles complexity conversationally (conflicts, dirty state, confirmations)
+
+#### What exists where
+
+**Main workspace (`/workspace/`):**
+```
+swe-swe/
+  setup                    # Only command available in main workspace
+
+.swe-swe/
+  docs/
+    AGENTS.md
+    browser-automation.md
+    docker.md
+```
+
+**Worktree (`/worktrees/<branch>/`):**
+```
+swe-swe/
+  setup                    # Copied from main workspace
+  merge-this-worktree      # Generated with branch/target context baked in
+  discard-this-worktree    # Generated with branch context baked in
+
+.swe-swe/
+  docs/                    # Copied from main workspace
+    AGENTS.md
+    browser-automation.md
+    docker.md
+```
 
 ### Removed features
 
