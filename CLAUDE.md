@@ -1,5 +1,9 @@
 # Claude Code Instructions
 
+## Testing
+
+Always use `make test` (not `go test` directly) to run tests. The Makefile ensures consistent test execution.
+
 ## `swe-swe init` Changes
 
 Always run `make build golden-update` after modifying templates or generated files, then verify:
