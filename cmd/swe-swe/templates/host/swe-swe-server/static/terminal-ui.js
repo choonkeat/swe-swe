@@ -376,6 +376,8 @@ class TerminalUI extends HTMLElement {
                     justify-content: space-between;
                     padding: 6px 12px;
                     background: #f57c00;
+                    position: relative;
+                    z-index: 15;
                     color: var(--status-bar-text-color);
                     font-family: {{STATUS_BAR_FONT_FAMILY}};
                     font-size: {{STATUS_BAR_FONT_SIZE}}px;

@@ -376,6 +376,8 @@ class TerminalUI extends HTMLElement {
                     justify-content: space-between;
                     padding: 6px 12px;
                     background: #f57c00;
+                    position: relative;
+                    z-index: 15;
                     color: var(--status-bar-text-color);
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                     font-size: 12px;
