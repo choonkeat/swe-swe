@@ -1,0 +1,8 @@
+# Phase 1 Execution Log: Add SlashCommandFormat to AssistantConfig
+
+011705: Starting Phase 1 execution
+- Will add SlashCommandFormat enum to swe-swe-server/main.go template
+- Will add SlashCmdFormat field to AssistantConfig struct
+- Will set format for each agent (Claude=md, Codex=md, OpenCode=md, Gemini=toml, Goose=none, Aider=none)
+- Will update generateMOTD to show agent-appropriate invocation syntax
+- Expected: MOTD shows "/swe-swe" for slash-command agents, "@swe-swe" for file-mention agents
