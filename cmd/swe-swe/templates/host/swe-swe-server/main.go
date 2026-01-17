@@ -1702,14 +1702,10 @@ func executeMergeFFStrategy(branch string) (bool, string) {
 
 // executeMergeCommitStrategy performs rebase then merge --no-ff
 // Falls back to regular merge --no-ff if rebase fails
-func executeMergeCommitStrategy(branch string) (bool, string) {
-	// Get current branch (target)
-	currentBranchCmd := exec.Command("git", "-C", "/workspace", "branch", "--show-current")
-	currentBranchOutput, err := currentBranchCmd.Output()
-	if err != nil {
-		return false, "failed to get current branch"
+func executeMergeCommitStrategy(branch, targetBranch string) (bool, string) {
+	if targetBranch == "" {
+		return false, "target branch not specified"
 	}
-	targetBranch := strings.TrimSpace(string(currentBranchOutput))
 
 	// Try to rebase the feature branch onto target
 	rebaseCmd := exec.Command("git", "-C", "/workspace", "rebase", targetBranch, branch)
@@ -1766,8 +1762,9 @@ func executeSquashStrategy(branch string) (bool, string) {
 
 // WorktreeRequest represents the JSON body for worktree API requests
 type WorktreeRequest struct {
-	Branch string `json:"branch"`
-	Path   string `json:"path"`
+	Branch       string `json:"branch"`
+	Path         string `json:"path"`
+	TargetBranch string `json:"targetBranch,omitempty"`
 }
 
 // WorktreeResponse represents the JSON response for worktree API requests
@@ -1822,7 +1819,7 @@ func handleWorktreeMerge(w http.ResponseWriter, r *http.Request) {
 	case "squash":
 		success, errOutput = executeSquashStrategy(req.Branch)
 	default: // "merge-commit"
-		success, errOutput = executeMergeCommitStrategy(req.Branch)
+		success, errOutput = executeMergeCommitStrategy(req.Branch, req.TargetBranch)
 	}
 
 	if !success {
