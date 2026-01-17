@@ -1,0 +1,28 @@
+=== Phase 5: Regenerate Golden Test Files ===
+
+[IMPLEMENTATION]
+1. Updated TestGoldenFilesMatchTemplate to use actual test user's UID:GID (lines 866-868)
+   - testUID := os.Getuid()
+   - testGID := os.Getgid()
+   - This ensures golden files match test expectations
+
+2. Regenerated all golden files with make golden-update
+   - All 30+ golden file variants updated
+   - Each now contains actual host UID:GID values
+   - Dockerfiles now have: RUN useradd -m -u 501 -g 20 -s /bin/bash app
+   - init.json files now have: "hostUID": 501, "hostGID": 20
+
+Tests:
+  ✓ make test (full suite) PASS
+  ✓ TestGoldenFilesMatchTemplate (all variants) PASS
+  ✓ cmd/swe-swe tests PASS
+  ✓ cmd/swe-swe-server tests PASS
+
+Verification:
+  git diff shows only expected changes:
+  - useradd lines with -u 501 -g 20
+  - init.json with "hostUID": 501 and "hostGID": 20
+  - No unexpected changes
+
+CONCLUSION:
+Phase 5 SUCCESSFUL - Golden files regenerated and all tests pass, ready for Phase 6

@@ -863,10 +863,14 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		t.Fatalf("Failed to read Dockerfile template: %v", err)
 	}
 
+	// Use actual test user's UID:GID for reproducible golden file comparisons
+	testUID := os.Getuid()
+	testGID := os.Getgid()
+
 	for _, v := range variants {
 		t.Run(v.name, func(t *testing.T) {
 			// Generate expected output from template
-			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, false, v.slashCommands, 0, 0)
+			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, false, v.slashCommands, testUID, testGID)
 
 			// Read golden file
 			goldenDir := filepath.Join("testdata", "golden", v.name, "home", ".swe-swe", "projects")
