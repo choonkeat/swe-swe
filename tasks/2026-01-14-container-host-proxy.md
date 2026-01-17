@@ -71,7 +71,7 @@ A working `swe-swe proxy <command>` subcommand that watches for requests and exe
    - Write `<uuid>.stdout`, `<uuid>.stderr`
    - Write `<uuid>.exit` last (signals completion)
 
-5. **Add graceful shutdown**
+5. **Add graceful shutdown** ✅
    - Handle SIGINT/SIGTERM
    - Clean up PID file on exit
 
