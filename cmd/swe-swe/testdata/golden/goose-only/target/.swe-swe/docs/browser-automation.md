@@ -1,7 +1,7 @@
 # Browser Automation in swe-swe
 
 ## Overview
-Browser automation uses MCP Playwright connected to a Chrome sidecar container. When the user asks to "use browser tool" or similar, use the `mcp__playwright__*` tools.
+Browser automation uses MCP Playwright connected to a Chrome sidecar container. When the user asks to "use browser tool" or similar, use the `mcp__swe-swe-playwright__*` tools.
 
 ## Architecture
 ```
@@ -17,14 +17,14 @@ claude-code container  -->  chrome container
 - CDP (Chrome DevTools Protocol) is exposed on port 9223 via nginx reverse proxy
 
 ## Available Tools
-- `mcp__playwright__browser_navigate` - Navigate to URL
-- `mcp__playwright__browser_snapshot` - Get page accessibility snapshot
-- `mcp__playwright__browser_click` - Click element
-- `mcp__playwright__browser_type` - Type text
-- `mcp__playwright__browser_take_screenshot` - Capture screenshot
-- `mcp__playwright__browser_console_messages` - Get console logs
-- `mcp__playwright__browser_network_requests` - Get network activity
-- `mcp__playwright__browser_close` - Close browser
+- `mcp__swe-swe-playwright__browser_navigate` - Navigate to URL
+- `mcp__swe-swe-playwright__browser_snapshot` - Get page accessibility snapshot
+- `mcp__swe-swe-playwright__browser_click` - Click element
+- `mcp__swe-swe-playwright__browser_type` - Type text
+- `mcp__swe-swe-playwright__browser_take_screenshot` - Capture screenshot
+- `mcp__swe-swe-playwright__browser_console_messages` - Get console logs
+- `mcp__swe-swe-playwright__browser_network_requests` - Get network activity
+- `mcp__swe-swe-playwright__browser_close` - Close browser
 - And more: `browser_press_key`, `browser_hover`, `browser_wait_for`, `browser_tabs`, `browser_resize`, `browser_evaluate`, `browser_run_code`, `browser_handle_dialog`
 
 ## Troubleshooting
