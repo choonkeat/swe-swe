@@ -550,7 +550,7 @@ func TestCopyUntrackedFiles(t *testing.T) {
 	}
 }
 
-func TestCopySweSweMarkdownFiles(t *testing.T) {
+func TestCopySweSweDocsDir(t *testing.T) {
 	tests := []struct {
 		name            string
 		files           map[string]string // path relative to srcDir -> content
@@ -558,41 +558,54 @@ func TestCopySweSweMarkdownFiles(t *testing.T) {
 		expectedMissing []string          // paths relative to destDir that should NOT exist
 	}{
 		{
-			name: "copies markdown files from .swe-swe",
+			name: "copies all files from .swe-swe/docs",
 			files: map[string]string{
-				".swe-swe/browser-automation.md": "# Browser Automation",
-				".swe-swe/docker.md":             "# Docker",
+				".swe-swe/docs/AGENTS.md":             "# AGENTS",
+				".swe-swe/docs/browser-automation.md": "# Browser Automation",
+				".swe-swe/docs/docker.md":             "# Docker",
 			},
 			expectedCopied: []string{
-				".swe-swe/browser-automation.md",
-				".swe-swe/docker.md",
+				".swe-swe/docs/AGENTS.md",
+				".swe-swe/docs/browser-automation.md",
+				".swe-swe/docs/docker.md",
 			},
 		},
 		{
-			name: "ignores non-markdown files",
+			name: "copies all file types from docs directory",
 			files: map[string]string{
-				".swe-swe/browser-automation.md": "# Browser Automation",
-				".swe-swe/error.log":             "error log content",
-				".swe-swe/restart-loop.sh":       "#!/bin/bash",
+				".swe-swe/docs/AGENTS.md":    "# AGENTS",
+				".swe-swe/docs/notes.txt":    "some notes",
+				".swe-swe/docs/config.json":  "{}",
 			},
-			expectedCopied:  []string{".swe-swe/browser-automation.md"},
+			expectedCopied: []string{
+				".swe-swe/docs/AGENTS.md",
+				".swe-swe/docs/notes.txt",
+				".swe-swe/docs/config.json",
+			},
+		},
+		{
+			name: "ignores files at .swe-swe root level",
+			files: map[string]string{
+				".swe-swe/docs/AGENTS.md":    "# AGENTS",
+				".swe-swe/error.log":         "error log content",
+				".swe-swe/restart-loop.sh":   "#!/bin/bash",
+			},
+			expectedCopied:  []string{".swe-swe/docs/AGENTS.md"},
 			expectedMissing: []string{".swe-swe/error.log", ".swe-swe/restart-loop.sh"},
 		},
 		{
-			name: "ignores subdirectories",
-			files: map[string]string{
-				".swe-swe/browser-automation.md":       "# Browser Automation",
-				".swe-swe/recordings/session.log":      "recording data",
-				".swe-swe/worktrees/test/README.md":    "nested md",
-			},
-			expectedCopied:  []string{".swe-swe/browser-automation.md"},
-			expectedMissing: []string{".swe-swe/recordings", ".swe-swe/worktrees"},
-		},
-		{
-			name:            "handles missing .swe-swe directory gracefully",
+			name:            "handles missing .swe-swe/docs directory gracefully",
 			files:           map[string]string{},
 			expectedCopied:  []string{},
-			expectedMissing: []string{".swe-swe"},
+			expectedMissing: []string{".swe-swe/docs"},
+		},
+		{
+			name: "handles .swe-swe without docs subdirectory",
+			files: map[string]string{
+				".swe-swe/uploads/file.txt": "uploaded file",
+			},
+			expectedCopied:  []string{},
+			expectedMissing: []string{".swe-swe/docs", ".swe-swe/uploads"},
 		},
 	}
 
@@ -612,9 +625,9 @@ func TestCopySweSweMarkdownFiles(t *testing.T) {
 				}
 			}
 
-			err := copySweSweMarkdownFiles(srcDir, destDir)
+			err := copySweSweDocsDir(srcDir, destDir)
 			if err != nil {
-				t.Fatalf("copySweSweMarkdownFiles failed: %v", err)
+				t.Fatalf("copySweSweDocsDir failed: %v", err)
 			}
 
 			// Check expected copied files exist

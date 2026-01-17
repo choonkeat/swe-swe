@@ -1135,10 +1135,11 @@ func handleInit() {
 		// Note: .mcp.json must be at project root, not .claude/mcp.json
 		containerFiles := []string{
 			"templates/container/.mcp.json",
-			"templates/container/.swe-swe/browser-automation.md",
+			"templates/container/.swe-swe/docs/AGENTS.md",
+			"templates/container/.swe-swe/docs/browser-automation.md",
 		}
 		if *withDocker {
-			containerFiles = append(containerFiles, "templates/container/.swe-swe/docker.md")
+			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
 		}
 
 		// Print selected agents
