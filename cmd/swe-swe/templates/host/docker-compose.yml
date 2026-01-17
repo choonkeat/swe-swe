@@ -112,6 +112,8 @@ services:
     volumes:
       # Mount project directory to /workspace
       - ${WORKSPACE_DIR:-.}:/workspace
+      # Mount worktrees to /worktrees for cleaner agent path separation
+      - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
       # Mount persistent home for auth/config storage
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
@@ -177,6 +179,8 @@ services:
     volumes:
       # Mount project directory (same path as swe-swe container for git worktree compatibility)
       - ${WORKSPACE_DIR:-.}:/workspace
+      # Mount worktrees to /worktrees for cleaner agent path separation
+      - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
       # Mount persistent home for VSCode settings/extensions
       - ./home:/home/coder
       # Enterprise certificates (if certs/ directory exists with certificates)

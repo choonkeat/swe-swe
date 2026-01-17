@@ -667,7 +667,7 @@ func TestBuildExitMessage(t *testing.T) {
 	}{
 		{
 			name:           "worktree session includes worktree info",
-			workDir:        "/workspace/.swe-swe/worktrees/fix-bug",
+			workDir:        "/worktrees/fix-bug",
 			branchName:     "fix-bug",
 			exitCode:       0,
 			expectWorktree: true,
@@ -695,7 +695,7 @@ func TestBuildExitMessage(t *testing.T) {
 		},
 		{
 			name:           "worktree session with non-zero exit code",
-			workDir:        "/workspace/.swe-swe/worktrees/test-branch",
+			workDir:        "/worktrees/test-branch",
 			branchName:     "test-branch",
 			exitCode:       1,
 			expectWorktree: true,
@@ -1279,7 +1279,7 @@ func TestWorktreeMerge_InvalidPath(t *testing.T) {
 		name string
 		path string
 	}{
-		{"path traversal", "/workspace/.swe-swe/worktrees/../../../etc/passwd"},
+		{"path traversal", "/worktrees/../../../etc/passwd"},
 		{"absolute path outside", "/tmp/malicious"},
 		{"relative path", "worktrees/test"},
 		{"empty path", ""},
@@ -1301,8 +1301,8 @@ func TestWorktreeMerge_ValidPath(t *testing.T) {
 		name string
 		path string
 	}{
-		{"valid worktree path", "/workspace/.swe-swe/worktrees/fix-bug"},
-		{"valid worktree path with uuid", "/workspace/.swe-swe/worktrees/fix-bug-abc12345"},
+		{"valid worktree path", "/worktrees/fix-bug"},
+		{"valid worktree path with uuid", "/worktrees/fix-bug-abc12345"},
 	}
 
 	for _, tt := range tests {
@@ -1318,7 +1318,7 @@ func TestWorktreeMerge_ValidPath(t *testing.T) {
 // TestBuildMergeInstructions tests that merge instructions are correctly generated
 func TestBuildMergeInstructions(t *testing.T) {
 	branch := "fix-bug"
-	path := "/workspace/.swe-swe/worktrees/fix-bug"
+	path := "/worktrees/fix-bug"
 
 	instructions := buildMergeInstructions(branch, path)
 
@@ -1340,7 +1340,7 @@ func TestBuildMergeInstructions(t *testing.T) {
 // TestBuildDiscardInstructions tests that discard instructions are correctly generated
 func TestBuildDiscardInstructions(t *testing.T) {
 	branch := "test-feature"
-	path := "/workspace/.swe-swe/worktrees/test-feature"
+	path := "/worktrees/test-feature"
 
 	instructions := buildDiscardInstructions(branch, path)
 
