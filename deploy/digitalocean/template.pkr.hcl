@@ -42,6 +42,29 @@ variable "init_flags" {
   default     = ""
 }
 
+variable "swe_swe_password" {
+  type        = string
+  description = "Password for swe-swe user (empty for random)"
+  default     = ""
+  sensitive   = true
+}
+
+variable "enable_hardening" {
+  type        = string
+  description = "Enable OS hardening (UFW, Fail2ban, SSH hardening, auto-updates)"
+  default     = "yes"
+  validation {
+    condition     = contains(["yes", "no"], var.enable_hardening)
+    error_message = "The enable_hardening must be 'yes' or 'no'."
+  }
+}
+
+variable "git_clone_url" {
+  type        = string
+  description = "Git repository URL to clone to /workspace (optional, empty to skip)"
+  default     = ""
+}
+
 locals {
   timestamp    = formatdate("YYYYMMDD-hhmmss", timestamp())
   snapshot_name = "${var.image_name}-${var.image_version}-${local.timestamp}"
@@ -89,16 +112,23 @@ build {
 
   # Run installation scripts in order
   provisioner "shell" {
-    scripts = [
-      "scripts/010-docker.sh",
-      "scripts/020-swe-swe.sh",
-      "scripts/030-systemd.sh",
-      "scripts/090-ufw.sh",
-      "scripts/900-cleanup.sh"
-    ]
+    scripts = concat(
+      [
+        "scripts/010-docker.sh",
+        "scripts/020-swe-swe.sh",
+        "scripts/030-systemd.sh",
+        "scripts/090-ufw.sh"
+      ],
+      var.enable_hardening == "yes" ? ["scripts/011-hardening-moderate.sh"] : [],
+      [
+        "scripts/900-cleanup.sh"
+      ]
+    )
     environment_vars = [
       "DEBIAN_FRONTEND=noninteractive",
-      "SWE_SWE_INIT_FLAGS=${var.init_flags}"
+      "SWE_SWE_INIT_FLAGS=${var.init_flags}",
+      "SWE_SWE_PASSWORD=${var.swe_swe_password}",
+      "GIT_CLONE_URL=${var.git_clone_url}"
     ]
   }
 

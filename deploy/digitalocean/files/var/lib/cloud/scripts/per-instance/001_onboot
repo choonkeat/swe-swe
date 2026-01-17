@@ -11,9 +11,34 @@ echo "==> Starting swe-swe first-boot initialization..."
 # Create config directory if it doesn't exist
 mkdir -p "$CONFIG_DIR"
 
-# Generate random password (16 alphanumeric characters)
-# Use openssl to avoid SIGPIPE issues with piped commands
-SWE_SWE_PASSWORD=$(openssl rand -base64 12 | tr -d '=/+')
+# Write Phase 1 MOTD (initialization in progress)
+cat > "$CONFIG_DIR/credentials" <<'EOF'
+================================================================================
+                    swe-swe Initialization in Progress
+================================================================================
+
+Estimated time remaining: ~8 minutes
+
+Monitor progress:
+  ssh root@<ip> "tail -f /var/log/cloud-init-output.log"
+
+Initialization complete when you see:
+  "==> First-boot initialization complete!"
+
+Then refresh your SSH connection to see final credentials.
+================================================================================
+EOF
+chmod 644 "$CONFIG_DIR/credentials"
+
+# Get password from Packer variable or generate random
+# Packer passes swe_swe_password as environment variable if provided
+if [ -n "${swe_swe_password:-}" ]; then
+    SWE_SWE_PASSWORD="$swe_swe_password"
+else
+    # Generate random password (16 alphanumeric characters)
+    # Use openssl to avoid SIGPIPE issues with piped commands
+    SWE_SWE_PASSWORD=$(openssl rand -base64 12 | tr -d '=/+')
+fi
 
 # Save environment file for systemd
 cat > "$CONFIG_DIR/env" <<EOF
@@ -64,7 +89,26 @@ if [[ "$SWE_SWE_INIT_FLAGS" == *"ssl"* ]]; then
     PROTOCOL="https"
 fi
 
-# Write credentials file for MOTD display
+# Health check loop: verify service is responding with correct content
+# Timeout after 20 minutes (120 attempts × 10 second sleep)
+echo "==> Performing health check on swe-swe service..."
+HEALTH_CHECK_ATTEMPTS=0
+HEALTH_CHECK_MAX=120
+
+while [ $HEALTH_CHECK_ATTEMPTS -lt $HEALTH_CHECK_MAX ]; do
+    if curl -k -L "${PROTOCOL}://localhost:1977" 2>/dev/null | grep -q "swe-swe"; then
+        echo "==> Service health check passed!"
+        break
+    fi
+
+    HEALTH_CHECK_ATTEMPTS=$((HEALTH_CHECK_ATTEMPTS + 1))
+    if [ $((HEALTH_CHECK_ATTEMPTS % 6)) -eq 0 ]; then
+        echo "==> Still waiting for service to be ready... (attempt $HEALTH_CHECK_ATTEMPTS/$HEALTH_CHECK_MAX)"
+    fi
+    sleep 10
+done
+
+# Write Phase 2 MOTD: credentials file for MOTD display
 cat > "$CONFIG_DIR/credentials" <<EOF
 ================================================================================
                          swe-swe is ready!

@@ -14,8 +14,14 @@ fi
 
 chmod +x /usr/local/bin/swe-swe
 
-# Create workspace directory
-mkdir -p /workspace
+# Clone git repository if URL provided
+if [ -n "${GIT_CLONE_URL:-}" ]; then
+    echo "==> Cloning git repository to /workspace..."
+    git clone "$GIT_CLONE_URL" /workspace
+else
+    # Create workspace directory
+    mkdir -p /workspace
+fi
 
 # Change to workspace directory to avoid project lookup errors
 cd /workspace
