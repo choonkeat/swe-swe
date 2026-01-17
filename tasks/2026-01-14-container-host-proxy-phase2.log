@@ -1,0 +1,3 @@
+110541 - Phase 2 Step 1: Define script template
+Action: Create bash script template that uses printf for NUL-delimited args, inotifywait for waiting, and handles cleanup.
+Expected: Template embedded in Go code, generates working container script.
