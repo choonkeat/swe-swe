@@ -1462,13 +1462,7 @@ class TerminalUI extends HTMLElement {
         // Stop uptime timer
         this.stopUptimeTimer();
 
-        // If this is a worktree session, show worktree-specific options
-        if (worktree && worktree.branch) {
-            this.showWorktreeExitPrompt(worktree);
-            return;
-        }
-
-        // Non-worktree session: show standard confirmation dialog
+        // Show standard confirmation dialog (same for worktree and non-worktree sessions)
         const message = exitCode === 0
             ? 'The session has ended successfully.\n\nReturn to the home page to start a new session?'
             : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
