@@ -1,6 +1,6 @@
 # swe-swe
 
-Your agent: containerized with its own browser for manual testing. Your terminal: pair live or share recordings with teammates. Your sessions: run multiple in parallel, each on its own git branch.
+Your agent: containerized with its own browser for manual testing. Your terminal: pair live or share recordings with teammates. Your sessions: run multiple in parallel, each on its own git worktree.
 
 Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us know](https://github.com/choonkeat/swe-swe/issues)!
 
