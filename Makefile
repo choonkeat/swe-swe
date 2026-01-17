@@ -17,7 +17,7 @@ test-cli:
 	go test -v ./cmd/swe-swe
 
 # Test the swe-swe-server template code
-# Copies template to temp dir, sets up go.mod, runs tests, cleans up
+# Copies template to temp dir, sets up go.mod, runs tests, syncs go.sum back
 SERVER_TEMPLATE := cmd/swe-swe/templates/host/swe-swe-server
 TEST_SERVER_ARGS ?=
 test-server:
@@ -26,7 +26,8 @@ test-server:
 	@cp -r $(SERVER_TEMPLATE)/* /tmp/swe-swe-server-test/
 	@mv /tmp/swe-swe-server-test/go.mod.txt /tmp/swe-swe-server-test/go.mod
 	@mv /tmp/swe-swe-server-test/go.sum.txt /tmp/swe-swe-server-test/go.sum
-	cd /tmp/swe-swe-server-test && go test -v $(TEST_SERVER_ARGS) ./...
+	cd /tmp/swe-swe-server-test && go mod tidy && go test -v $(TEST_SERVER_ARGS) ./...
+	@cp /tmp/swe-swe-server-test/go.sum $(SERVER_TEMPLATE)/go.sum.txt
 	@rm -rf /tmp/swe-swe-server-test
 
 clean:
