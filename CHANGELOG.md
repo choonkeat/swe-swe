@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## v2.7.0 - YOLO Mode, Settings Panel & UI Customization
+
+### Major Features
+
+- **YOLO mode toggle**: Click "Connected" in status bar or use settings panel to toggle agents between normal and auto-approve mode. Supports Claude (`--dangerously-skip-permissions`), Gemini (`--approval-mode=yolo`), Codex (`--yolo`), Goose (`GOOSE_MODE=auto`), Aider (`--yes-always`)
+- **Settings panel**: New mobile-responsive settings panel (status bar → click) with runtime customization of username, session name, and status bar color. Includes navigation links to homepage, VSCode, and browser
+- **Clickable terminal colors**: CSS colors in terminal output (e.g., `#ff5500`) become clickable links to set status bar color
+- **UI customization flags**: New `swe-swe init` flags for theming:
+  - `--status-bar-color COLOR` with auto-contrast text and ANSI color swatches (`--status-bar-color=list`)
+  - `--terminal-font-size`, `--terminal-font-family`
+  - `--status-bar-font-size`, `--status-bar-font-family`
+
+### Mobile Improvements
+
+- **Touch scroll proxy**: Native iOS momentum scrolling with rubber band effect
+- **Virtual keyboard handling**: Terminal resizes when keyboard appears, mobile keyboard bar stays visible
+- **Touch event fixes**: Fixed z-index for status bar touch interactions
+
+### Behavior Changes
+
+- **Process exit handling**: All process exits now end the session (removed automatic crash-restart). Process replacement only occurs via explicit user action (YOLO toggle)
+
+### Bug Fixes
+
+- **WebSocket panic fix**: Prevent concurrent write panic with SafeConn wrapper
+- **PTY cleanup**: Kill process when PTY broken but process still alive
+- **Status bar legibility**: Improved text contrast across connection states
+- **Worktree symlinks**: Symlink directories instead of copying for faster worktree creation
+
 ## v2.6.1 - Simplified Worktree Exit
 
 - **Simplified exit flow**: Remove worktree merge/discard modal - exits now behave like regular sessions (see ADR-0022)

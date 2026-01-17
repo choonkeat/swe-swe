@@ -1,5 +1,7 @@
 # CLI Commands and Build Architecture
 
+> **Note**: This document provides detailed technical information about the CLI and build system. For a quick overview of commands and options, see the [README](../README.md). This document expands on those basics with architecture details and troubleshooting guidance.
+
 This document describes the swe-swe CLI commands and how the swe-swe-server is built and deployed.
 
 ## Quick Summary
@@ -116,6 +118,11 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 | `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
 | `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), or `selfsign@<host>` (for remote access) |
 | `--copy-home-paths PATHS` | Comma-separated paths relative to `$HOME` to copy into container home (e.g., `.gitconfig,.ssh/config`) |
+| `--status-bar-color COLOR` | Status bar background color (default: `#007acc`). Use `list` to see preset colors. |
+| `--terminal-font-size SIZE` | Terminal font size in pixels (default: `14`) |
+| `--terminal-font-family FONT` | Terminal font family (default: `Menlo, Monaco, "Courier New", monospace`) |
+| `--status-bar-font-size SIZE` | Status bar font size in pixels (default: `12`) |
+| `--status-bar-font-family FONT` | Status bar font family (default: system sans-serif) |
 
 **Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 
