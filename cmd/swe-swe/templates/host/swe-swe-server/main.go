@@ -67,6 +67,15 @@ const (
 	RingBufferSize = 512 * 1024
 )
 
+// ANSI escape sequence helpers for terminal formatting
+func ansiCyan(s string) string    { return "\033[0;36m" + s + "\033[0m" }
+func ansiDim(s string) string     { return "\033[2m" + s + "\033[0m" }
+func ansiYellow(s string) string  { return "\033[0;33m" + s + "\033[0m" }
+
+// MOTDGracePeriod is how long to buffer input after displaying MOTD
+// This gives users time to read the MOTD before the shell starts receiving input
+const MOTDGracePeriod = 3 * time.Second
+
 // TermSize represents terminal dimensions
 type TermSize struct {
 	Rows uint16
@@ -205,6 +214,10 @@ type Session struct {
 	// Recording
 	RecordingUUID string             // UUID for recording files (separate from session UUID for restarts)
 	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
+	// Input buffering during MOTD grace period
+	inputBuffer   [][]byte  // buffered input during grace period
+	inputBufferMu sync.Mutex
+	graceUntil    time.Time // buffer input until this time
 }
 
 // AddClient adds a WebSocket client to the session
@@ -247,6 +260,43 @@ func (s *Session) RemoveClient(conn *websocket.Conn) {
 
 	// Broadcast status after lock is released
 	go s.BroadcastStatus()
+}
+
+// WriteInputOrBuffer writes data to PTY immediately, or buffers it during grace period
+// Returns true if data was written/buffered successfully
+func (s *Session) WriteInputOrBuffer(data []byte) error {
+	s.inputBufferMu.Lock()
+	defer s.inputBufferMu.Unlock()
+
+	// During grace period, buffer the input
+	if time.Now().Before(s.graceUntil) {
+		// Make a copy since data slice may be reused
+		dataCopy := make([]byte, len(data))
+		copy(dataCopy, data)
+		s.inputBuffer = append(s.inputBuffer, dataCopy)
+		return nil
+	}
+
+	// Grace period over - flush any buffered input first
+	if len(s.inputBuffer) > 0 {
+		for _, buffered := range s.inputBuffer {
+			if _, err := s.PTY.Write(buffered); err != nil {
+				return err
+			}
+		}
+		s.inputBuffer = nil
+	}
+
+	// Write current input
+	_, err := s.PTY.Write(data)
+	return err
+}
+
+// SetGracePeriod sets the input buffering grace period
+func (s *Session) SetGracePeriod(d time.Duration) {
+	s.inputBufferMu.Lock()
+	defer s.inputBufferMu.Unlock()
+	s.graceUntil = time.Now().Add(d)
 }
 
 // UpdateClientSize updates a client's terminal size and recalculates the PTY size
@@ -1355,11 +1405,12 @@ func generateWorktreeCommands(worktreePath, branchName string) error {
 
 // generateMOTD creates the terminal MOTD displaying available swe-swe commands
 func generateMOTD(workDir, branchName string) string {
-	// Determine the swe-swe directory path
-	sweSweDir := "/workspace/swe-swe"
+	// Determine the workspace directory
+	wsDir := "/workspace"
 	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
-		sweSweDir = workDir + "/swe-swe"
+		wsDir = workDir
 	}
+	sweSweDir := wsDir + "/swe-swe"
 
 	// Check if swe-swe directory exists
 	entries, err := os.ReadDir(sweSweDir)
@@ -1367,27 +1418,45 @@ func generateMOTD(workDir, branchName string) string {
 		return "" // No swe-swe directory, no MOTD
 	}
 
-	// Collect command names
-	var commands []string
+	// Check if any command files exist
+	hasCommands := false
+	hasSetup := false
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		commands = append(commands, "@swe-swe/"+entry.Name())
+		hasCommands = true
+		if entry.Name() == "setup" {
+			hasSetup = true
+		}
 	}
 
-	if len(commands) == 0 {
+	if !hasCommands {
 		return ""
 	}
 
-	// Format the MOTD line
-	// Cyan color: \033[0;36m, Reset: \033[0m
-	prefix := "swe-swe"
-	if branchName != "" {
-		prefix = fmt.Sprintf("swe-swe [%s]", branchName)
+	// Check if setup has been completed (swe-swe snippet in CLAUDE.md or AGENTS.md)
+	setupDone := false
+	for _, filename := range []string{"CLAUDE.md", "AGENTS.md"} {
+		content, err := os.ReadFile(wsDir + "/" + filename)
+		if err == nil && strings.Contains(string(content), ".swe-swe/docs/AGENTS.md") {
+			setupDone = true
+			break
+		}
 	}
 
-	return fmt.Sprintf("\033[0;36m%s: %s\033[0m\n", prefix, strings.Join(commands, ", "))
+	// Format the MOTD
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(ansiDim("Tip: @swe-swe to see available commands") + "\n")
+
+	// Show "Try this" only if setup exists and hasn't been done
+	if hasSetup && !setupDone {
+		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan("@swe-swe/setup") + "\n")
+	}
+
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 // isTrackedInGit checks if a file is tracked in git
@@ -2153,6 +2222,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			sess.vtMu.Unlock()
 			// Send to first client
 			conn.WriteMessage(websocket.BinaryMessage, motdBytes)
+			// Buffer input during grace period so MOTD stays visible
+			sess.SetGracePeriod(MOTDGracePeriod)
 		}
 		sess.startPTYReader()
 	} else {
@@ -2331,14 +2402,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				absPath = "."
 			}
 			absFilePath := absPath + "/" + filePath
-			if _, err := sess.PTY.Write([]byte(absFilePath)); err != nil {
+			if err := sess.WriteInputOrBuffer([]byte(absFilePath)); err != nil {
 				log.Printf("PTY write error for uploaded file path: %v", err)
 			}
 			continue
 		}
 
-		// Regular terminal input
-		if _, err := sess.PTY.Write(data); err != nil {
+		// Regular terminal input (buffered during MOTD grace period)
+		if err := sess.WriteInputOrBuffer(data); err != nil {
 			log.Printf("PTY write error: %v", err)
 			break
 		}
