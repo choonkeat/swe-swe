@@ -944,6 +944,13 @@ class TerminalUI extends HTMLElement {
         // Start blurred since terminal doesn't have focus initially
         statusBar.classList.add('blurred');
 
+        // Register file path link provider for clickable paths
+        if (typeof registerFileLinkProvider === 'function') {
+            registerFileLinkProvider(this.term, {
+                getVSCodeUrl: () => this.getVSCodeUrl()
+            });
+        }
+
         this.term.write('Session: ' + this.uuid + '\r\n');
     }
 

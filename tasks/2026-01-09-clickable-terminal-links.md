@@ -44,47 +44,23 @@ Create a `getVSCodeUrl()` helper function that uses `this.workDir` to construct 
 
 ---
 
-## Phase 3: Create link provider using shared helper
+## Phase 3: Create link provider using shared helper ✅
 
 ### What will be achieved
 Create `link-provider.js` with `registerFileLinkProvider(terminal, options)` that detects file paths in terminal output, makes them clickable, and on click: copies path to clipboard + opens VS Code.
 
 ### Steps
 
-1. **Create `static/link-provider.js`** with:
-   ```javascript
-   function registerFileLinkProvider(terminal, options) {
-       terminal.registerLinkProvider({
-           provideLinks: (bufferLineNumber, callback) => {
-               // Get line text, detect file paths, return links
-           }
-       });
-   }
-   ```
-
-2. **Implement path detection regex** matching:
-   - Absolute: `/workspace/...`, `/home/...`
-   - Relative: `./src/...`, `src/foo.go`
-   - With line:col: `file.go:123`, `file.go:123:45`
-   - Avoid false positives (URLs, common words)
-
-3. **Implement click handler**:
-   ```javascript
-   activate: (event, text) => {
-       navigator.clipboard.writeText(text);
-       window.open(options.getVSCodeUrl(), 'swe-swe-vscode');
-   }
-   ```
-
-4. **Add `<script src="/static/link-provider.js">` to `index.html`**
-
-5. **Call `registerFileLinkProvider()` in `terminal-ui.js`** after terminal init
+1. ✅ **Create `static/link-provider.js`** with regex-based path detection and xterm.js link provider
+2. ✅ **Implement path detection** matching absolute/relative paths with optional line:col suffixes
+3. ✅ **Implement click handler** - copies path to clipboard and opens VS Code
+4. ✅ **Add script to `index.html`**
+5. ✅ **Call `registerFileLinkProvider()` in `terminal-ui.js`** after terminal init
 
 ### Verification
 
-1. `make test` - ensure existing tests pass
-2. Manual: `echo "/workspace/src/main.go:42"` - verify clickable, click copies + opens VS Code
-3. Edge cases: URLs should NOT link, paths with spaces, deep nesting
+1. ✅ `make test` - tests pass
+2. Manual verification deferred to Phase 5
 
 ---
 
