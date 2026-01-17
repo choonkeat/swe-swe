@@ -20,7 +20,7 @@ import (
 const proxyDir = ".swe-swe/proxy"
 
 // containerScriptTemplate is the bash script generated for containers to submit requests.
-// It uses NUL-delimited arguments and inotifywait for efficient waiting.
+// It uses NUL-delimited arguments and streams stdout/stderr in real-time.
 const containerScriptTemplate = `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -38,6 +38,45 @@ exit_file="$PROXY_DIR/$uuid.exit"
 stdout_file="$PROXY_DIR/$uuid.stdout"
 stderr_file="$PROXY_DIR/$uuid.stderr"
 
+# Cleanup function to remove response files
+cleanup() {
+    rm -f "$stdout_file" "$stderr_file" "$exit_file"
+}
+trap cleanup EXIT
+
+# Stream file contents as they're written
+# Usage: stream_file <file> <output_fd> <stop_flag_file>
+stream_file() {
+    local file="$1"
+    local fd="$2"
+    local stop_flag="$3"
+    local pos=0
+    local size
+
+    while true; do
+        if [[ -f "$file" ]]; then
+            size=$(stat -c%%s "$file" 2>/dev/null || echo 0)
+            if ((size > pos)); then
+                # Note: 1>&"$fd" must come before 2>/dev/null due to shell redirection order
+                dd if="$file" bs=1 skip="$pos" count=$((size - pos)) 1>&"$fd" 2>/dev/null
+                pos=$size
+            fi
+        fi
+        # Check if we should stop
+        if [[ -f "$stop_flag" ]]; then
+            # One final read to catch any remaining content
+            if [[ -f "$file" ]]; then
+                size=$(stat -c%%s "$file" 2>/dev/null || echo 0)
+                if ((size > pos)); then
+                    dd if="$file" bs=1 skip="$pos" count=$((size - pos)) 1>&"$fd" 2>/dev/null
+                fi
+            fi
+            break
+        fi
+        sleep 0.05
+    done
+}
+
 # Write request atomically (NUL-delimited arguments)
 if [[ $# -gt 0 ]]; then
     printf '%%s\0' "$@" > "$tmp_file"
@@ -47,16 +86,14 @@ else
 fi
 mv "$tmp_file" "$req_file"
 
-# Wait for response using inotifywait
-# The exit file appears last, signaling completion
+# Wait for stdout/stderr files to be created by host
 deadline=$((SECONDS + TIMEOUT))
-while [[ ! -f "$exit_file" ]]; do
+while [[ ! -f "$stdout_file" ]] || [[ ! -f "$stderr_file" ]]; do
     if ((SECONDS >= deadline)); then
-        echo "ERROR: Timeout waiting for host to execute command" >&2
+        echo "ERROR: Timeout waiting for host to start command" >&2
         rm -f "$req_file" 2>/dev/null || true
         exit 124
     fi
-    # Use inotifywait if available, otherwise fall back to polling
     if command -v inotifywait &>/dev/null; then
         inotifywait -qq -t 1 -e create -e moved_to "$PROXY_DIR" 2>/dev/null || true
     else
@@ -64,14 +101,28 @@ while [[ ! -f "$exit_file" ]]; do
     fi
 done
 
-# Output results
-[[ -f "$stdout_file" ]] && cat "$stdout_file"
-[[ -f "$stderr_file" ]] && cat "$stderr_file" >&2
+# Start streaming stdout and stderr in background
+stream_file "$stdout_file" 1 "$exit_file" &
+stdout_pid=$!
+stream_file "$stderr_file" 2 "$exit_file" &
+stderr_pid=$!
+
+# Wait for exit file (signals command completion)
+while [[ ! -f "$exit_file" ]]; do
+    if ((SECONDS >= deadline)); then
+        echo "ERROR: Timeout waiting for host to complete command" >&2
+        kill "$stdout_pid" "$stderr_pid" 2>/dev/null || true
+        exit 124
+    fi
+    sleep 0.05
+done
+
+# Wait for streaming to complete
+wait "$stdout_pid" 2>/dev/null || true
+wait "$stderr_pid" 2>/dev/null || true
+
+# Read exit code (cleanup trap will handle file removal)
 exit_code=$(cat "$exit_file")
-
-# Cleanup response files
-rm -f "$stdout_file" "$stderr_file" "$exit_file"
-
 exit "$exit_code"
 `
 
@@ -214,8 +265,8 @@ func generateContainerScript(path, command string) error {
 // processRequest handles a single proxy request:
 // 1. Read NUL-delimited args from <uuid>.req
 // 2. Delete .req file (claim it)
-// 3. Execute command with args
-// 4. Write stdout, stderr, and exit code to response files
+// 3. Execute command with args, streaming stdout/stderr to files
+// 4. Write exit code to signal completion
 func processRequest(command, uuid string) {
 	reqFile := filepath.Join(proxyDir, uuid+".req")
 	stdoutFile := filepath.Join(proxyDir, uuid+".stdout")
@@ -240,12 +291,27 @@ func processRequest(command, uuid string) {
 	args := parseNulDelimitedArgs(data)
 	fmt.Printf("[proxy] Executing: %s %v\n", command, args)
 
-	// Execute the command
-	cmd := exec.Command(command, args...)
+	// Create output files for streaming
+	stdoutF, err := os.Create(stdoutFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[proxy] Failed to create stdout file: %v\n", err)
+		os.WriteFile(exitFile, []byte("1"), 0644)
+		return
+	}
+	defer stdoutF.Close()
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stderrF, err := os.Create(stderrFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[proxy] Failed to create stderr file: %v\n", err)
+		os.WriteFile(exitFile, []byte("1"), 0644)
+		return
+	}
+	defer stderrF.Close()
+
+	// Execute the command with output streaming directly to files
+	cmd := exec.Command(command, args...)
+	cmd.Stdout = stdoutF
+	cmd.Stderr = stderrF
 
 	err = cmd.Run()
 
@@ -257,19 +323,13 @@ func processRequest(command, uuid string) {
 		} else {
 			// Command failed to start (e.g., not found)
 			exitCode = 127
-			stderr.WriteString(fmt.Sprintf("Failed to execute command: %v\n", err))
+			stderrF.WriteString(fmt.Sprintf("Failed to execute command: %v\n", err))
 		}
 	}
 
 	fmt.Printf("[proxy] Command exited with code: %d\n", exitCode)
 
-	// Write response files (exit file last to signal completion)
-	if err := os.WriteFile(stdoutFile, stdout.Bytes(), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "[proxy] Failed to write stdout: %v\n", err)
-	}
-	if err := os.WriteFile(stderrFile, stderr.Bytes(), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "[proxy] Failed to write stderr: %v\n", err)
-	}
+	// Write exit file last to signal completion
 	if err := os.WriteFile(exitFile, []byte(strconv.Itoa(exitCode)), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "[proxy] Failed to write exit code: %v\n", err)
 	}
