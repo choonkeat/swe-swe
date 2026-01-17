@@ -1,3 +1,17 @@
 110541 - Phase 2 Step 1: Define script template
 Action: Create bash script template that uses printf for NUL-delimited args, inotifywait for waiting, and handles cleanup.
 Expected: Template embedded in Go code, generates working container script.
+110739 - Phase 2 Steps 1-4: Result (combined as implementation is integrated)
+Observed:
+- containerScriptTemplate embedded in Go code with bash script that:
+  - Generates UUID via /proc/sys/kernel/random/uuid
+  - Writes NUL-delimited args atomically (tmp file + rename)
+  - Uses inotifywait with fallback to polling
+  - Handles timeout with PROXY_TIMEOUT env var (default 300s)
+  - Outputs stdout/stderr, cleans up response files, exits with correct code
+- Script generated on startup, removed on shutdown
+- End-to-end test: .swe-swe/proxy/echo hello world "with spaces" FOO=bar -> works
+- No args test: .swe-swe/proxy/echo -> works (empty request file)
+- Exit code test: sh -c "exit 42" -> exits with 42
+- Stderr test: stdout and stderr correctly separated
+Got: As expected. Container script generation working with all edge cases handled.
