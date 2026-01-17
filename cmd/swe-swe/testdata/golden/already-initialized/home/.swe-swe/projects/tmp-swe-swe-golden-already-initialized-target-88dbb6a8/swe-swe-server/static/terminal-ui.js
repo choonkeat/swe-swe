@@ -1489,7 +1489,7 @@ class TerminalUI extends HTMLElement {
                     const response = await fetch(`/api/worktree/${action}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ branch: worktree.branch, path: worktree.path })
+                        body: JSON.stringify({ branch: worktree.branch, path: worktree.path, targetBranch: worktree.targetBranch })
                     });
 
                     const result = await response.json();
