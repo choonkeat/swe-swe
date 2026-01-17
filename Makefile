@@ -77,7 +77,7 @@ deploy/digitalocean: build
 
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-VERSION := dev
+VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo "dev")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
 build-cli:
