@@ -457,7 +457,7 @@ Verify the entire system works end-to-end.
 
 - [x] Phase 1: Update ADR with finalized design
 - [x] Phase 2: Restructure `.swe-swe/` to use subdirectories
-- [ ] Phase 3: Create `swe-swe/` directory with `setup` command
+- [x] Phase 3: Create `swe-swe/` directory with `setup` command
 - [ ] Phase 4: Create worktree-specific commands (generated)
 - [ ] Phase 5: Terminal MOTD for discoverability
 - [ ] Phase 6: Browser verification with test container
