@@ -122,7 +122,7 @@ Bundled `swe-swe` slash commands will be installed to agent-specific directories
 
 ---
 
-## Phase 3: Conditional `/workspace/swe-swe/` directory
+## Phase 3: Conditional `/workspace/swe-swe/` directory ✅
 
 ### What will be achieved
 The `/workspace/swe-swe/` directory (with file-based commands) will only be created when non-slash-command agents (Goose, Aider) are enabled. Slash-command agents won't see this directory cluttering their workspace.
