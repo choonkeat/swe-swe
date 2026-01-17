@@ -1,8 +1,8 @@
 [Unit]
 Description=swe-swe AI Development Environment
-After=cloud-init.target docker.service network-online.target
+After=cloud-final.target docker.service network-online.target
 Requires=docker.service
-Wants=cloud-init.target network-online.target
+Wants=cloud-final.target network-online.target
 
 [Service]
 Type=simple
