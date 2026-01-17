@@ -19,16 +19,16 @@ Add a new volume mount in docker-compose.yml that maps the host's `.swe-swe/work
 
 ### Steps
 
-- [ ] Edit `cmd/swe-swe/templates/host/docker-compose.yml`:
-  - [ ] Add mount `${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees` to `swe-swe` service volumes
-  - [ ] Add same mount to `code-server` service volumes
+- [x] Edit `cmd/swe-swe/templates/host/docker-compose.yml`:
+  - [x] Add mount `${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees` to `swe-swe` service volumes
+  - [x] Add same mount to `code-server` service volumes
 
 ### Verification
 
-- [ ] `make build` succeeds
-- [ ] Spin up test container
-- [ ] `docker inspect <container>` - verify `/worktrees` mount exists in Mounts
-- [ ] Shut down test container
+- [x] `make build` succeeds
+- [x] Spin up test container
+- [x] `docker inspect <container>` - verify `/worktrees` mount exists in Mounts
+- [x] Shut down test container
 - [ ] Full E2E verification (MCP browser + pwd) deferred to Phase 3
 
 ---
