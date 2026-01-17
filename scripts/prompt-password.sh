@@ -60,6 +60,12 @@ while true; do
     esac
 done
 
-# Output password and hardening level (one per line)
+# Phase 3: Git clone URL (optional)
+echo "Optionally clone a git repository to /workspace" >&2
+read -p "Git repository URL (optional, leave empty to skip): " GIT_URL
+GIT_URL=${GIT_URL:-}
+
+# Output password, hardening level, and git URL (one per line)
 echo "$PASSWORD"
 echo "$HARDENING_LEVEL"
+echo "$GIT_URL"

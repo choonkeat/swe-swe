@@ -59,6 +59,12 @@ variable "enable_hardening" {
   }
 }
 
+variable "git_clone_url" {
+  type        = string
+  description = "Git repository URL to clone to /workspace (optional, empty to skip)"
+  default     = ""
+}
+
 locals {
   timestamp    = formatdate("YYYYMMDD-hhmmss", timestamp())
   snapshot_name = "${var.image_name}-${var.image_version}-${local.timestamp}"
@@ -121,7 +127,8 @@ build {
     environment_vars = [
       "DEBIAN_FRONTEND=noninteractive",
       "SWE_SWE_INIT_FLAGS=${var.init_flags}",
-      "SWE_SWE_PASSWORD=${var.swe_swe_password}"
+      "SWE_SWE_PASSWORD=${var.swe_swe_password}",
+      "GIT_CLONE_URL=${var.git_clone_url}"
     ]
   }
 
