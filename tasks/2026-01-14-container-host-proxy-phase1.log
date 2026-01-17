@@ -1,0 +1,3 @@
+105320 - Phase 1 Step 1: Add proxy subcommand skeleton
+Action: Create cmd/swe-swe/proxy.go with basic subcommand, add "proxy" case to main.go switch statement
+Expected: `swe-swe proxy` without args shows usage error, `swe-swe proxy echo` is recognized (will error on missing implementation)
