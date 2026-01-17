@@ -263,8 +263,8 @@ type Session struct {
 	inputBufferMu sync.Mutex
 	graceUntil    time.Time // buffer input until this time
 	// YOLO mode state
-	yoloMode          bool   // Whether YOLO mode is active
-	pendingRestartCmd string // If set, use this command on next restart instead of ShellRestartCmd
+	yoloMode           bool   // Whether YOLO mode is active
+	pendingReplacement string // If set, replace process with this command instead of ending session
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -866,6 +866,28 @@ func (s *Session) startPTYReader() {
 						if exitErr, ok := err.(*exec.ExitError); ok {
 							exitCode = exitErr.ExitCode()
 						}
+					}
+				}
+
+				// Check for pending replacement (e.g., from YOLO toggle)
+				s.mu.Lock()
+				replacementCmd := s.pendingReplacement
+				s.pendingReplacement = "" // Clear after reading
+				s.mu.Unlock()
+
+				if replacementCmd != "" {
+					log.Printf("Session %s: replacing process with command: %s", s.UUID, replacementCmd)
+					if err := s.RestartProcess(replacementCmd); err != nil {
+						log.Printf("Session %s: failed to replace process: %v", s.UUID, err)
+						errMsg := []byte("\r\n[Failed to replace process: " + err.Error() + "]\r\n")
+						s.vtMu.Lock()
+						s.vt.Write(errMsg)
+						s.writeToRing(errMsg)
+						s.vtMu.Unlock()
+						s.Broadcast(errMsg)
+						// Fall through to end session
+					} else {
+						continue // Process replaced successfully, continue reading
 					}
 				}
 
@@ -2416,7 +2438,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				sess.mu.Lock()
 				newYoloMode := !sess.yoloMode
 				sess.yoloMode = newYoloMode
-				sess.pendingRestartCmd = sess.computeRestartCommand(newYoloMode)
+				sess.pendingReplacement = sess.computeRestartCommand(newYoloMode)
 				cmd := sess.Cmd
 				sess.mu.Unlock()
 
@@ -2437,7 +2459,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				sess.vtMu.Unlock()
 				sess.Broadcast(feedbackMsg)
 
-				// Kill process - will exit non-zero, triggering restart with pendingRestartCmd
+				// Kill process - pendingReplacement will cause process to be replaced
 				if cmd != nil && cmd.Process != nil {
 					cmd.Process.Signal(syscall.SIGTERM)
 				}

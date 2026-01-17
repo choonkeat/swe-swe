@@ -246,20 +246,20 @@ All process exits end the session, regardless of exit code. Simplifies mental mo
 
 ---
 
-### Phase 5.2: Add pending replacement check
+### Phase 5.2: Add pending replacement check [DONE]
 
 #### Goal
 Before ending session, check for pending replacement. If set, start replacement process instead.
 
 #### Steps
 
-| Step | Description | File |
-|------|-------------|------|
-| 5.2.1 | Rename `pendingRestartCmd` to `pendingReplacement` for clarity | main.go |
-| 5.2.2 | Add replacement check as FIRST decision point after getting exit code | main.go |
-| 5.2.3 | If `pendingReplacement` set: start new process, clear flag, continue loop (no BroadcastExit) | main.go |
-| 5.2.4 | If `pendingReplacement` NOT set: proceed to session end | main.go |
-| 5.2.5 | Update `toggle_yolo` handler to use `pendingReplacement` | main.go |
+| Step | Description | File | Status |
+|------|-------------|------|--------|
+| 5.2.1 | Rename `pendingRestartCmd` to `pendingReplacement` for clarity | main.go | Done |
+| 5.2.2 | Add replacement check as FIRST decision point after getting exit code | main.go | Done |
+| 5.2.3 | If `pendingReplacement` set: start new process, clear flag, continue loop (no BroadcastExit) | main.go | Done |
+| 5.2.4 | If `pendingReplacement` NOT set: proceed to session end | main.go | Done |
+| 5.2.5 | Update `toggle_yolo` handler to use `pendingReplacement` | main.go | Done |
 
 #### New Exit Flow
 
@@ -278,9 +278,9 @@ BroadcastExit(exitCode), session ends
 ```
 
 #### Verification
-- `make test` passes
-- Manual: Toggle YOLO → agent restarts, NO "session ended" dialog
-- Manual: Agent exits normally → session ends, dialog shown
+- [x] `make test` passes
+- [ ] Manual: Toggle YOLO → agent restarts, NO "session ended" dialog
+- [ ] Manual: Agent exits normally → session ends, dialog shown
 
 ---
 
