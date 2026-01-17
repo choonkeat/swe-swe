@@ -1,0 +1,26 @@
+=== Phase 4: Process Placeholders in Template Function ===
+
+[IMPLEMENTATION]
+Location: cmd/swe-swe/main.go
+
+Changes:
+1. Updated processDockerfileTemplate function signature (line 639)
+   - Added parameters: hostUID int, hostGID int
+
+2. Added placeholder processing logic (lines 732-738)
+   - Check for {{UID}} placeholder and replace with actual UID
+   - Check for {{GID}} placeholder and replace with actual GID
+   - Uses fmt.Sprintf("%d", value) for integer formatting
+
+3. Updated function call site (line 1317)
+   - Pass hostUID and hostGID to processDockerfileTemplate
+
+4. Updated all test calls (lines 603, 648, 869 in main_test.go)
+   - Pass 0, 0 for test purposes (golden files will use actual values later)
+
+Tests:
+  ✓ TestInitConfigRoundTrip PASS
+  ✓ TestInitConfigBackwardsCompatibility PASS
+
+CONCLUSION:
+Phase 4 SUCCESSFUL - Placeholder processing implemented, ready for Phase 5 (golden test update)
