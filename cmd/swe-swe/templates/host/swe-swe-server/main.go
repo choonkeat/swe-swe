@@ -1237,7 +1237,7 @@ func branchNameFromDir(dirName string) string {
 }
 
 // worktreeDir is the base directory for git worktrees
-var worktreeDir = "/workspace/.swe-swe/worktrees"
+var worktreeDir = "/worktrees"
 
 // excludeFromCopy lists directories that should never be copied to worktrees
 var excludeFromCopy = []string{".git", ".swe-swe"}
