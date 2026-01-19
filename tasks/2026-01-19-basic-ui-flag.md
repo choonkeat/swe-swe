@@ -37,7 +37,7 @@ Add a `--basic-ui` flag that creates a split-pane UI with xterm on the left and 
 ## Phases
 
 - [x] [Phase 1](#phase-1-baseline-commit-1): Add flag parsing + golden tests (no functional UI change)
-- [ ] [Phase 2](#phase-2-implementation-commit-2): Implement the split-pane UI with all features
+- [x] [Phase 2](#phase-2-implementation-commit-2): Implement the split-pane UI with all features
 
 ---
 
@@ -76,61 +76,61 @@ Implement the full split-pane UI.
 ### Steps
 
 #### CSS Layout
-- [ ] 2.1. Add CSS variables for basic-ui mode
-- [ ] 2.2. Add split-pane container CSS (`.terminal-ui__split-pane`, etc.)
-- [ ] 2.3. Add location bar CSS
-- [ ] 2.4. Add iframe and placeholder CSS
-- [ ] 2.5. Add responsive CSS for mobile (<768px)
-- [ ] 2.6. Add CSS to hide service links when in basic-ui mode
+- [x] 2.1. Add CSS variables for basic-ui mode
+- [x] 2.2. Add split-pane container CSS (`.terminal-ui__split-pane`, etc.)
+- [x] 2.3. Add location bar CSS
+- [x] 2.4. Add iframe and placeholder CSS
+- [x] 2.5. Add responsive CSS for mobile (<768px)
+- [x] 2.6. Add CSS to hide service links when in basic-ui mode
 
 #### HTML Structure
-- [ ] 2.7. Add split-pane HTML structure (conditional on basicUiUrl)
-- [ ] 2.8. Add `basic-ui` class to root element when enabled
+- [x] 2.7. Add split-pane HTML structure (conditional on basicUiUrl)
+- [x] 2.8. Add `basic-ui` class to root element when enabled
 
 #### JavaScript: Resizer
-- [ ] 2.9. Add instance variables (`basicUiUrl`, `iframePaneWidth`)
-- [ ] 2.10. Add `setupResizer()` method with drag logic
-- [ ] 2.11. Add localStorage persistence for pane width
-- [ ] 2.12. Add double-click to reset to 50/50
+- [x] 2.9. Add instance variables (`basicUiUrl`, `iframePaneWidth`)
+- [x] 2.10. Add `setupResizer()` method with drag logic
+- [x] 2.11. Add localStorage persistence for pane width
+- [x] 2.12. Add double-click to reset to 50/50
 
 #### JavaScript: iframe Management
-- [ ] 2.13. Add `initBasicUi()` method
-- [ ] 2.14. Add `setIframeUrl(url)` method
-- [ ] 2.15. Add `refreshIframe()` method
-- [ ] 2.16. Add iframe load/error event handlers
+- [x] 2.13. Add `initBasicUi()` method
+- [x] 2.14. Add `setIframeUrl(url)` method
+- [x] 2.15. Add `refreshIframe()` method
+- [x] 2.16. Add iframe load/error event handlers
 
 #### JavaScript: OSC Handler
-- [ ] 2.17. Add OSC 7337 parser for `BasicUiUrl=<url>`
-- [ ] 2.18. Validate URL with `new URL()` before accepting
+- [x] 2.17. Add OSC 7337 parser for `BasicUiUrl=<url>`
+- [x] 2.18. Validate URL with `new URL()` before accepting
 
 #### JavaScript: Hide Navigation
-- [ ] 2.19. Modify `renderServiceLinks()` to skip when basicUiUrl set
+- [x] 2.19. Modify `renderServiceLinks()` to skip when basicUiUrl set
 
 #### Agent Documentation
-- [ ] 2.20. Create template `templates/container/.swe-swe/docs/app-preview.md`
-- [ ] 2.21. Conditionally copy file in `handleInit()` when basicUiUrl set
+- [x] 2.20. Create template `templates/container/.swe-swe/docs/app-preview.md`
+- [x] 2.21. Conditionally copy file in `handleInit()` when basicUiUrl set
 
 #### Golden Tests & Verification
-- [ ] 2.22. Run `make build golden-update` and verify diff
-- [ ] 2.23. Run `make test`
+- [x] 2.22. Run `make build golden-update` and verify diff
+- [x] 2.23. Run `make test`
 
 ### Browser Testing Checklist
 
 Using test container with `SWE_SWE_INIT_FLAGS="--basic-ui"`:
 
-- [ ] Split pane layout visible (terminal left, iframe right)
-- [ ] elm-lang.org loads in iframe by default
-- [ ] Resizer drag works (respects 150px minimum)
-- [ ] Double-click resizer resets to 50/50
-- [ ] Pane width persists after page reload
-- [ ] Location bar shows current URL
-- [ ] Refresh button reloads iframe
-- [ ] Mobile simulation hides iframe (<768px)
-- [ ] Status bar has NO shell|vscode|browser links
-- [ ] Settings panel has NO navigation buttons
-- [ ] OSC sequence changes iframe URL: `printf '\e]7337;BasicUiUrl=https://example.com\a'`
-- [ ] Invalid URL in OSC is rejected (check console)
-- [ ] `.swe-swe/docs/app-preview.md` exists in container
+- [x] Split pane layout visible (terminal left, iframe right)
+- [x] elm-lang.org loads in iframe by default
+- [ ] Resizer drag works (respects 150px minimum) - (not tested via MCP)
+- [ ] Double-click resizer resets to 50/50 - (not tested via MCP)
+- [ ] Pane width persists after page reload - (not tested via MCP)
+- [x] Location bar shows current URL
+- [x] Refresh button reloads iframe
+- [ ] Mobile simulation hides iframe (<768px) - (not tested via MCP)
+- [x] Status bar has NO shell|vscode|browser links
+- [x] Settings panel has NO navigation buttons (verified via JS: display=none)
+- [x] OSC sequence changes iframe URL: `printf '\e]7337;BasicUiUrl=https://example.com\a'` (tested via setIframeUrl)
+- [ ] Invalid URL in OSC is rejected (check console) - (not tested)
+- [x] `.swe-swe/docs/app-preview.md` exists in container
 
 ### Regression Testing
 

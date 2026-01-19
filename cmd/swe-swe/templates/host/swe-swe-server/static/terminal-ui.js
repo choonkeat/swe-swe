@@ -46,6 +46,9 @@ class TerminalUI extends HTMLElement {
         this.outputIdleThreshold = 2000; // ms
         // Process exit state - prevents reconnection after session ends
         this.processExited = false;
+        // Basic UI mode - split pane with iframe
+        this.basicUiUrl = '{{BASIC_UI_URL}}';
+        this.iframePaneWidth = 50; // percentage
     }
 
     static get observedAttributes() {
@@ -108,6 +111,7 @@ class TerminalUI extends HTMLElement {
             this.setupEventListeners();
             this.renderLinks();
             this.renderServiceLinks();
+            this.initBasicUi();
 
             // Expose for console testing
             window.terminalUI = this;
@@ -1038,6 +1042,146 @@ class TerminalUI extends HTMLElement {
                         }
                     }
                 }
+                /* === Basic UI Split-Pane Layout === */
+                .terminal-ui__split-pane {
+                    display: flex;
+                    flex: 1;
+                    min-height: 0;
+                }
+                .terminal-ui.basic-ui .terminal-ui__split-pane {
+                    flex-direction: row;
+                }
+                .terminal-ui.basic-ui .terminal-ui__terminal {
+                    /* Terminal takes left side, width controlled by JS */
+                    flex: none;
+                    width: 50%;
+                }
+                .terminal-ui__resizer {
+                    display: none;
+                    width: 6px;
+                    background: #333;
+                    cursor: col-resize;
+                    flex-shrink: 0;
+                    position: relative;
+                    transition: background 0.2s;
+                }
+                .terminal-ui__resizer:hover,
+                .terminal-ui__resizer.dragging {
+                    background: #555;
+                }
+                .terminal-ui__resizer::after {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 2px;
+                    height: 30px;
+                    background: #666;
+                    border-radius: 1px;
+                }
+                .terminal-ui.basic-ui .terminal-ui__resizer {
+                    display: block;
+                }
+                .terminal-ui__iframe-pane {
+                    display: none;
+                    flex: 1;
+                    min-width: 150px;
+                    flex-direction: column;
+                    background: #1e1e1e;
+                }
+                .terminal-ui.basic-ui .terminal-ui__iframe-pane {
+                    display: flex;
+                }
+                .terminal-ui__iframe-location {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 6px 10px;
+                    background: #2d2d2d;
+                    border-bottom: 1px solid #404040;
+                    font-family: {{STATUS_BAR_FONT_FAMILY}};
+                    font-size: {{STATUS_BAR_FONT_SIZE}}px;
+                }
+                .terminal-ui__iframe-url {
+                    flex: 1;
+                    color: #888;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    font-size: 11px;
+                }
+                .terminal-ui__iframe-refresh {
+                    background: none;
+                    border: none;
+                    color: #888;
+                    cursor: pointer;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    transition: background 0.2s, color 0.2s;
+                }
+                .terminal-ui__iframe-refresh:hover {
+                    background: #404040;
+                    color: #ccc;
+                }
+                .terminal-ui__iframe-container {
+                    flex: 1;
+                    position: relative;
+                    min-height: 0;
+                }
+                .terminal-ui__iframe {
+                    width: 100%;
+                    height: 100%;
+                    border: none;
+                    background: #fff;
+                }
+                .terminal-ui__iframe-placeholder {
+                    position: absolute;
+                    inset: 0;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    background: #1e1e1e;
+                    color: #888;
+                    font-family: {{STATUS_BAR_FONT_FAMILY}};
+                    font-size: 14px;
+                    text-align: center;
+                    padding: 20px;
+                }
+                .terminal-ui__iframe-placeholder.hidden {
+                    display: none;
+                }
+                .terminal-ui__iframe-placeholder-hint {
+                    margin-top: 12px;
+                    font-size: 12px;
+                    color: #666;
+                    max-width: 300px;
+                }
+                /* Hide service links and nav in basic-ui mode */
+                .terminal-ui.basic-ui .terminal-ui__status-service-links {
+                    display: none;
+                }
+                .terminal-ui.basic-ui .settings-panel__nav {
+                    display: none;
+                }
+                /* Responsive: hide iframe pane on narrow screens */
+                @media (max-width: 768px) {
+                    .terminal-ui.basic-ui .terminal-ui__split-pane {
+                        flex-direction: column;
+                    }
+                    .terminal-ui.basic-ui .terminal-ui__terminal {
+                        width: 100% !important;
+                        flex: 1;
+                    }
+                    .terminal-ui.basic-ui .terminal-ui__resizer {
+                        display: none;
+                    }
+                    .terminal-ui.basic-ui .terminal-ui__iframe-pane {
+                        display: none;
+                    }
+                }
             </style>
             <div class="terminal-ui">
                 <div class="settings-panel" hidden aria-modal="true" role="dialog" aria-labelledby="settings-panel-title">
@@ -1131,7 +1275,25 @@ class TerminalUI extends HTMLElement {
                         <button class="terminal-ui__paste-cancel-btn">Cancel</button>
                     </div>
                 </div>
-                <div class="terminal-ui__terminal"></div>
+                <div class="terminal-ui__split-pane">
+                    <div class="terminal-ui__terminal"></div>
+                    <div class="terminal-ui__resizer"></div>
+                    <div class="terminal-ui__iframe-pane">
+                        <div class="terminal-ui__iframe-location">
+                            <span class="terminal-ui__iframe-url"></span>
+                            <button class="terminal-ui__iframe-refresh" title="Refresh">↻</button>
+                        </div>
+                        <div class="terminal-ui__iframe-container">
+                            <div class="terminal-ui__iframe-placeholder">
+                                Loading...
+                                <div class="terminal-ui__iframe-placeholder-hint">
+                                    If you have issues, check the URL or try refreshing.
+                                </div>
+                            </div>
+                            <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+                        </div>
+                    </div>
+                </div>
                 <div class="touch-scroll-proxy">
                     <div class="scroll-spacer"></div>
                 </div>
@@ -1363,6 +1525,11 @@ class TerminalUI extends HTMLElement {
         const existingContainer = statusRight.querySelector('.terminal-ui__status-service-links');
         if (existingContainer) {
             existingContainer.remove();
+        }
+
+        // Hide service links in basic-ui mode
+        if (this.basicUiUrl) {
+            return;
         }
 
         // All services use path-based routing
@@ -1608,6 +1775,20 @@ class TerminalUI extends HTMLElement {
     // Terminal data received
     // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
+        // Parse and handle OSC 7337 sequences (BasicUiUrl) when in basic-ui mode
+        if (this.basicUiUrl) {
+            const { cleaned, payloads } = this.parseOsc7337(data);
+            for (const payload of payloads) {
+                this.handleOsc7337(payload);
+            }
+            data = cleaned;
+
+            // If all data was OSC sequences, nothing to write
+            if (data.length === 0) {
+                return;
+            }
+        }
+
         // Track output timing for idle detection
         const now = Date.now();
         const timeSinceLastOutput = this.lastOutputTime ? now - this.lastOutputTime : 0;
@@ -3252,6 +3433,271 @@ class TerminalUI extends HTMLElement {
         // Only hide if overlay was actually shown
         if (this.querySelector('.terminal-ui__upload-overlay').classList.contains('visible')) {
             this.hideUploadOverlay();
+        }
+    }
+
+    // === Basic UI Methods ===
+
+    initBasicUi() {
+        if (!this.basicUiUrl) {
+            return; // Basic UI not enabled
+        }
+
+        // Add basic-ui class to enable split-pane layout
+        const terminalUi = this.querySelector('.terminal-ui');
+        if (terminalUi) {
+            terminalUi.classList.add('basic-ui');
+        }
+
+        // Load saved pane width
+        this.loadSavedPaneWidth();
+        this.applyPaneWidth();
+
+        // Setup resizer drag functionality
+        this.setupResizer();
+
+        // Setup iframe refresh button
+        const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.refreshIframe());
+        }
+
+        // Load initial URL
+        this.setIframeUrl(this.basicUiUrl);
+    }
+
+    setupResizer() {
+        const resizer = this.querySelector('.terminal-ui__resizer');
+        const terminal = this.querySelector('.terminal-ui__terminal');
+        const splitPane = this.querySelector('.terminal-ui__split-pane');
+        if (!resizer || !terminal || !splitPane) return;
+
+        let isDragging = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        const onMouseDown = (e) => {
+            isDragging = true;
+            startX = e.clientX || e.touches?.[0]?.clientX || 0;
+            startWidth = terminal.offsetWidth;
+            resizer.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        };
+
+        const onMouseMove = (e) => {
+            if (!isDragging) return;
+            const clientX = e.clientX || e.touches?.[0]?.clientX || 0;
+            const delta = clientX - startX;
+            const containerWidth = splitPane.offsetWidth;
+            const resizerWidth = resizer.offsetWidth;
+            const minWidth = 150;
+
+            let newWidth = startWidth + delta;
+            // Enforce minimum widths
+            newWidth = Math.max(minWidth, newWidth);
+            newWidth = Math.min(containerWidth - resizerWidth - minWidth, newWidth);
+
+            // Convert to percentage
+            this.iframePaneWidth = 100 - (newWidth / containerWidth * 100);
+            this.applyPaneWidth();
+        };
+
+        const onMouseUp = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            this.savePaneWidth();
+            // Trigger terminal resize
+            if (this.fitAddon) {
+                setTimeout(() => this.fitAddon.fit(), 50);
+            }
+        };
+
+        // Double-click to reset to 50/50
+        resizer.addEventListener('dblclick', () => {
+            this.iframePaneWidth = 50;
+            this.applyPaneWidth();
+            this.savePaneWidth();
+            if (this.fitAddon) {
+                setTimeout(() => this.fitAddon.fit(), 50);
+            }
+        });
+
+        resizer.addEventListener('mousedown', onMouseDown);
+        resizer.addEventListener('touchstart', onMouseDown, { passive: false });
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('touchmove', onMouseMove, { passive: false });
+        document.addEventListener('mouseup', onMouseUp);
+        document.addEventListener('touchend', onMouseUp);
+    }
+
+    applyPaneWidth() {
+        const terminal = this.querySelector('.terminal-ui__terminal');
+        if (terminal) {
+            terminal.style.width = (100 - this.iframePaneWidth) + '%';
+        }
+    }
+
+    loadSavedPaneWidth() {
+        try {
+            const saved = localStorage.getItem('swe-swe-basic-ui-width');
+            if (saved) {
+                const width = parseFloat(saved);
+                if (!isNaN(width) && width >= 10 && width <= 90) {
+                    this.iframePaneWidth = width;
+                }
+            }
+        } catch (e) {
+            console.warn('[TerminalUI] Could not load pane width:', e);
+        }
+    }
+
+    savePaneWidth() {
+        try {
+            localStorage.setItem('swe-swe-basic-ui-width', this.iframePaneWidth.toString());
+        } catch (e) {
+            console.warn('[TerminalUI] Could not save pane width:', e);
+        }
+    }
+
+    setIframeUrl(url) {
+        // Validate URL
+        try {
+            new URL(url);
+        } catch (e) {
+            console.warn('[TerminalUI] Invalid iframe URL:', url);
+            return;
+        }
+
+        this.basicUiUrl = url;
+
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        const urlDisplay = this.querySelector('.terminal-ui__iframe-url');
+        const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+
+        if (urlDisplay) {
+            urlDisplay.textContent = url;
+            urlDisplay.title = url;
+        }
+
+        if (iframe) {
+            // Show placeholder while loading
+            if (placeholder) {
+                placeholder.classList.remove('hidden');
+            }
+
+            iframe.onload = () => {
+                if (placeholder) {
+                    placeholder.classList.add('hidden');
+                }
+            };
+
+            iframe.onerror = () => {
+                if (placeholder) {
+                    placeholder.textContent = 'Failed to load: ' + url;
+                    placeholder.classList.remove('hidden');
+                }
+            };
+
+            iframe.src = url;
+        }
+    }
+
+    refreshIframe() {
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        if (iframe && iframe.src) {
+            const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+            if (placeholder) {
+                placeholder.textContent = 'Loading...';
+                placeholder.classList.remove('hidden');
+            }
+            // Force reload by setting src again
+            iframe.src = iframe.src;
+        }
+    }
+
+    // Parse and extract OSC 7337 sequences from terminal data
+    // Returns { cleaned: Uint8Array, payloads: string[] }
+    parseOsc7337(data) {
+        // OSC format: ESC ] 7337 ; <payload> BEL (or ESC \)
+        // ESC = 0x1b, ] = 0x5d, BEL = 0x07, \ = 0x5c
+        const ESC = 0x1b;
+        const RBRACKET = 0x5d; // ]
+        const BEL = 0x07;
+        const BACKSLASH = 0x5c; // \
+
+        const payloads = [];
+        const cleaned = [];
+        let i = 0;
+
+        while (i < data.length) {
+            // Look for ESC ]
+            if (data[i] === ESC && i + 1 < data.length && data[i + 1] === RBRACKET) {
+                // Check if it's OSC 7337;
+                const oscStart = i + 2;
+                const prefix = '7337;';
+                let match = true;
+                for (let j = 0; j < prefix.length && oscStart + j < data.length; j++) {
+                    if (data[oscStart + j] !== prefix.charCodeAt(j)) {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match && oscStart + prefix.length <= data.length) {
+                    // Found OSC 7337; - now find the terminator
+                    const payloadStart = oscStart + prefix.length;
+                    let payloadEnd = payloadStart;
+                    let terminatorLen = 0;
+
+                    while (payloadEnd < data.length) {
+                        if (data[payloadEnd] === BEL) {
+                            terminatorLen = 1;
+                            break;
+                        }
+                        if (data[payloadEnd] === ESC && payloadEnd + 1 < data.length && data[payloadEnd + 1] === BACKSLASH) {
+                            terminatorLen = 2;
+                            break;
+                        }
+                        payloadEnd++;
+                    }
+
+                    if (terminatorLen > 0) {
+                        // Extract payload as string
+                        const payloadBytes = data.slice(payloadStart, payloadEnd);
+                        const payload = new TextDecoder().decode(payloadBytes);
+                        payloads.push(payload);
+
+                        // Skip past the entire sequence
+                        i = payloadEnd + terminatorLen;
+                        continue;
+                    }
+                }
+            }
+
+            // Not an OSC 7337 sequence - copy the byte
+            cleaned.push(data[i]);
+            i++;
+        }
+
+        return {
+            cleaned: new Uint8Array(cleaned),
+            payloads: payloads
+        };
+    }
+
+    // Handle OSC 7337 escape sequence for BasicUiUrl
+    handleOsc7337(data) {
+        // Expected format: BasicUiUrl=<url>
+        if (data.startsWith('BasicUiUrl=')) {
+            const url = data.substring('BasicUiUrl='.length);
+            if (url) {
+                this.setIframeUrl(url);
+            }
         }
     }
 }

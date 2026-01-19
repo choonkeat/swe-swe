@@ -1,3 +1,39 @@
 014709 Starting Phase 2: Implementation (split-pane UI)
 014709 Step 2.1-2.6: Add CSS for split-pane layout
 014709 Expected: CSS variables, split-pane container, location bar, iframe, responsive, hide service links
+015600 Observed: All CSS added including split-pane, resizer, iframe-pane, location bar, placeholder, responsive media query
+015600 Result: SUCCESS - CSS layout complete
+015601 Step 2.7-2.8: Add HTML structure
+015601 Expected: Split-pane container, resizer, iframe-pane with location bar
+015602 Observed: HTML structure added with terminal-ui__split-pane wrapping terminal, resizer, and iframe-pane
+015602 Result: SUCCESS - HTML structure complete
+015603 Step 2.9-2.12: Add resizer JavaScript
+015603 Expected: setupResizer() with drag logic, localStorage persistence, double-click reset
+015604 Observed: setupResizer() added with mousedown/touchstart handling, localStorage save/load, dblclick reset
+015604 Result: SUCCESS - resizer functionality complete
+015605 Step 2.13-2.16: Add iframe management JavaScript
+015605 Expected: initBasicUi(), setIframeUrl(), refreshIframe(), load/error handlers
+015606 Observed: All methods added, iframe load/error handlers show/hide placeholder
+015606 Result: SUCCESS - iframe management complete
+015607 Step 2.17-2.18: Add OSC 7337 parser
+015607 Expected: parseOsc7337() to extract sequences, handleOsc7337() to update URL
+015610 Observed: parseOsc7337() parses ESC]7337;..BEL sequences, integrated into onTerminalData()
+015610 Result: SUCCESS - OSC handling complete
+015611 Step 2.19: Hide service links in basic-ui mode
+015611 Expected: renderServiceLinks() returns early when basicUiUrl set
+015612 Observed: Added early return in renderServiceLinks(), CSS also hides service links and settings nav
+015612 Result: SUCCESS - service links hidden
+015613 Step 2.20-2.21: Add agent documentation
+015613 Expected: .swe-swe/docs/app-preview.md template, conditionally copied
+015615 Observed: Template created, conditional copy added to main.go, verified in golden output
+015615 Result: SUCCESS - agent documentation added
+015616 Step 2.22: Run make build golden-update
+015616 Expected: Golden files updated with all Phase 2 changes
+015655 Observed: Golden files updated, diff shows CSS, HTML, JS additions, app-preview.md
+015655 Result: SUCCESS - golden files updated
+015656 Step 2.23: Run make test
+015656 Expected: All tests pass
+015657 Observed: All tests pass including TestGoldenFiles variants
+015657 Result: SUCCESS - all tests pass
+015658 Phase 2 complete: All implementation steps successful
+015658 Ready for browser testing with test container

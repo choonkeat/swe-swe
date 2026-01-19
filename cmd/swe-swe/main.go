@@ -1306,6 +1306,10 @@ func handleInit() {
 			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
 		}
 
+		if basicUi != "" {
+			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/app-preview.md")
+		}
+
 		// Print selected agents
 		if len(agents) > 0 {
 			fmt.Printf("Selected agents: %s\n", strings.Join(agents, ", "))
