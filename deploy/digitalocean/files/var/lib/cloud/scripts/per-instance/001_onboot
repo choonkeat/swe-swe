@@ -22,6 +22,9 @@ Estimated time remaining: ~8 minutes
 Monitor progress:
   ssh root@<ip> "tail -f /var/log/cloud-init-output.log"
 
+Debug service issues:
+  ssh root@<ip> "journalctl -u swe-swe.service -f"
+
 Initialization complete when you see:
   "==> First-boot initialization complete!"
 
