@@ -23,14 +23,6 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install enterprise certificates early (before curl commands that need SSL verification)
-COPY certs/ /tmp/enterprise-certs/
-RUN mkdir -p /usr/local/share/ca-certificates && \
-    for cert in /tmp/enterprise-certs/*; do \
-      cp "$cert" "/usr/local/share/ca-certificates/$(basename "$cert").crt"; \
-    done && \
-    update-ca-certificates && \
-    rm -rf /tmp/enterprise-certs
 
 # Install Node.js 24 LTS from NodeSource (Debian repos only have EOL Node.js 18)
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
@@ -69,7 +61,7 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create non-root user for running swe-swe-server
-RUN groupadd -g 20 app && useradd -m -u 501 -g 20 -s /bin/bash app
+RUN groupadd -g 1000 app && useradd -m -u 1000 -g 1000 -s /bin/bash app
 
 # Create worktrees directory with app ownership (used for git worktrees)
 RUN mkdir -p /worktrees && chown app:app /worktrees

@@ -146,8 +146,8 @@ services:
     build:
       context: code-server
       args:
-        UID: 501
-        GID: 20
+        UID: 1000
+        GID: 1000
     command:
       - "--bind-addr=0.0.0.0:8080"
       - "--auth=none"
