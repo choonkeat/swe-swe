@@ -1,3 +1,40 @@
 010100 Starting Phase 1: Baseline (flag parsing + golden tests)
 010100 Step 1.1: Add BasicUiUrl field to InitConfig struct
 010100 Expected: Field added to InitConfig with json tag "basicUiUrl,omitempty"
+010105 Observed: BasicUiUrl field added to InitConfig at line 405
+010105 Result: SUCCESS - field added with correct json tag
+010106 Step 1.2: Add --basic-ui flag to handleInit()
+010106 Expected: Flag added with empty default, logic to set default URL if flag present but empty
+010112 Observed: --basic-ui flag added at line 939, default URL logic at lines 949-958
+010112 Result: SUCCESS - flag parses and sets default URL when flag present but empty
+010113 Step 1.3: Add {{BASIC_UI_URL}} template variable processing
+010113 Expected: processTerminalUITemplate() extended to replace {{BASIC_UI_URL}}
+010118 Observed: processTerminalUITemplate() now accepts basicUiUrl param, call site updated at line 1367
+010118 Result: SUCCESS - template variable processing added
+010119 Step 1.4: Add template placeholder comment in terminal-ui.js
+010119 Expected: Comment like '// BASIC_UI_URL: {{BASIC_UI_URL}}' added near top of file
+010122 Observed: Template comment added at lines 1-2 of terminal-ui.js
+010122 Result: SUCCESS - placeholder comment added
+010123 Step 1.5: Wire BasicUiUrl into InitConfig saving/loading
+010123 Expected: BasicUiUrl populated when creating config, loaded on --previous-init-flags=reuse
+010130 Observed: BasicUiUrl added to InitConfig save (line 1434) and reuse load (lines 1122-1124)
+010130 Result: SUCCESS - config persistence wired
+010131 Step 1.6: Add golden test variants in main_test.go
+010131 Expected: Two new test variants: with-basic-ui, with-basic-ui-custom-url
+010138 Observed: Two golden test variants added at lines 701-702, skip list updated at lines 812-813
+010138 Result: SUCCESS - golden test variants added
+010139 Step 1.7: Make test container scripts flexible with SWE_SWE_INIT_FLAGS env var
+010139 Expected: 01-init.sh accepts SWE_SWE_INIT_FLAGS to pass additional init flags
+010143 Observed: 01-init.sh updated at lines 129-130 to accept SWE_SWE_INIT_FLAGS
+010143 Result: SUCCESS - test container now flexible
+010144 Step 1.8: Run make build golden-update and verify golden diff
+010144 Expected: New golden dirs with-basic-ui and with-basic-ui-custom-url created, init.json has basicUiUrl field
+010210 Observed: Fixed flag parsing (changed to --basic-ui bool + --basic-ui-url string)
+010210 Golden files created: with-basic-ui has basicUiUrl='https://elm-lang.org', with-basic-ui-custom-url has 'http://localhost:3000'
+010210 terminal-ui.js shows correct URL in comment header
+010210 Result: SUCCESS - golden diff verified
+010211 Step 1.9: Run make test to verify all tests pass
+010211 Expected: All tests pass including new with-basic-ui variants
+010215 Observed: make test passes, including TestGoldenFiles/with-basic-ui and TestGoldenFiles/with-basic-ui-custom-url
+010215 Result: SUCCESS - all tests pass
+010216 Phase 1 complete: All steps successful
