@@ -5,6 +5,80 @@
  */
 
 /**
+ * Get the full logical line by concatenating wrapped lines.
+ * xterm.js marks continuation lines with isWrapped=true.
+ * @param {Terminal} terminal - xterm.js Terminal instance
+ * @param {number} bufferLineNumber - 1-indexed line number
+ * @returns {Object} - { fullText, segments, firstLineNumber, isFirstLine }
+ *   segments: Array of { start, length, lineNumber } for mapping positions back to buffer lines
+ */
+function getLogicalLine(terminal, bufferLineNumber) {
+    const currentLine = terminal.buffer.active.getLine(bufferLineNumber - 1);
+    if (!currentLine) {
+        return { fullText: '', segments: [], firstLineNumber: bufferLineNumber, isFirstLine: true };
+    }
+
+    // Check if this line is a wrapped continuation
+    const isFirstLine = !currentLine.isWrapped;
+
+    // Go backwards to find the start of this logical line
+    let lineIndex = bufferLineNumber - 1;
+    while (lineIndex > 0) {
+        const line = terminal.buffer.active.getLine(lineIndex);
+        if (!line?.isWrapped) break;
+        lineIndex--;
+    }
+
+    const firstLineNumber = lineIndex + 1;
+
+    // Build full text with segment tracking
+    let fullText = '';
+    const segments = [];
+
+    while (lineIndex < terminal.buffer.active.length) {
+        const line = terminal.buffer.active.getLine(lineIndex);
+        if (!line) break;
+
+        const text = line.translateToString(true);
+        segments.push({
+            start: fullText.length,
+            length: text.length,
+            lineNumber: lineIndex + 1  // 1-indexed
+        });
+        fullText += text;
+
+        lineIndex++;
+        const nextLine = terminal.buffer.active.getLine(lineIndex);
+        if (!nextLine?.isWrapped) break;
+    }
+
+    return { fullText, segments, firstLineNumber, isFirstLine };
+}
+
+/**
+ * Convert a character position in the full logical line to buffer coordinates.
+ * @param {Array} segments - Array of { start, length, lineNumber }
+ * @param {number} charIndex - Character index in the full text
+ * @returns {Object} - { x, y } where x is 1-indexed column, y is 1-indexed line
+ */
+function charIndexToBufferPos(segments, charIndex) {
+    for (const seg of segments) {
+        if (charIndex < seg.start + seg.length) {
+            return {
+                x: charIndex - seg.start + 1,  // 1-indexed
+                y: seg.lineNumber
+            };
+        }
+    }
+    // Past end - return end of last segment
+    const lastSeg = segments[segments.length - 1];
+    return {
+        x: lastSeg.length + 1,
+        y: lastSeg.lineNumber
+    };
+}
+
+/**
  * Check if a link-activating modifier key is pressed.
  * Returns true if Cmd (macOS), Ctrl (other platforms), or Shift is pressed.
  * @param {MouseEvent} event - The mouse event
@@ -250,7 +324,7 @@ function registerFileLinkProvider(terminal, options) {
 
 /**
  * Register a URL link provider with the terminal.
- * Makes http/https URLs clickable.
+ * Makes http/https URLs clickable, including URLs that wrap across multiple lines.
  * @param {Terminal} terminal - xterm.js Terminal instance
  * @param {Object} [options] - Configuration options
  * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
@@ -287,27 +361,39 @@ function registerUrlLinkProvider(terminal, options = {}) {
 
     terminal.registerLinkProvider({
         provideLinks: (bufferLineNumber, callback) => {
-            const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
-            if (!line) {
+            // Get full logical line (handles wrapped lines)
+            const { fullText, segments, isFirstLine } = getLogicalLine(terminal, bufferLineNumber);
+
+            if (!fullText) {
                 callback(undefined);
                 return;
             }
 
-            const lineText = line.translateToString(true);
+            // Skip wrapped continuation lines - URLs will be registered from the first line
+            if (!isFirstLine) {
+                callback(undefined);
+                return;
+            }
+
             const links = [];
 
             let match;
             urlRegex.lastIndex = 0;
-            while ((match = urlRegex.exec(lineText)) !== null) {
+            while ((match = urlRegex.exec(fullText)) !== null) {
                 const rawUrl = match[0];
                 const url = cleanUrl(rawUrl);
                 const startIndex = match.index;
+                const endIndex = startIndex + url.length;
+
+                // Map character positions to buffer coordinates (handles multi-line)
+                const startPos = charIndexToBufferPos(segments, startIndex);
+                const endPos = charIndexToBufferPos(segments, endIndex);
 
                 links.push({
                     text: url,
                     range: {
-                        start: { x: startIndex + 1, y: bufferLineNumber },
-                        end: { x: startIndex + url.length + 1, y: bufferLineNumber }
+                        start: startPos,
+                        end: endPos
                     },
                     activate: (event, text) => {
                         if (!hasLinkModifier(event)) {
