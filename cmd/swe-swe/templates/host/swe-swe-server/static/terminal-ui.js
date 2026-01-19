@@ -3464,17 +3464,36 @@ class TerminalUI extends HTMLElement {
 
         // Load initial URL
         this.setIframeUrl(this.basicUiUrl);
+
+        // Re-fit terminal after layout change
+        if (this.fitAddon) {
+            // Use setTimeout to ensure layout is applied before fitting
+            setTimeout(() => this.fitAddon.fit(), 50);
+        }
     }
 
     setupResizer() {
         const resizer = this.querySelector('.terminal-ui__resizer');
         const terminal = this.querySelector('.terminal-ui__terminal');
         const splitPane = this.querySelector('.terminal-ui__split-pane');
+        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
         if (!resizer || !terminal || !splitPane) return;
 
         let isDragging = false;
         let startX = 0;
         let startWidth = 0;
+        let fitPending = false;
+
+        // Throttled fit to avoid excessive reflows during drag
+        const throttledFit = () => {
+            if (fitPending || !this.fitAddon) return;
+            fitPending = true;
+            requestAnimationFrame(() => {
+                this.fitAddon.fit();
+                this.sendResize(); // Notify backend of new size
+                fitPending = false;
+            });
+        };
 
         const onMouseDown = (e) => {
             isDragging = true;
@@ -3483,6 +3502,8 @@ class TerminalUI extends HTMLElement {
             resizer.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
+            // Disable iframe pointer events during drag to prevent mouse capture
+            if (iframePane) iframePane.style.pointerEvents = 'none';
             e.preventDefault();
         };
 
@@ -3502,6 +3523,8 @@ class TerminalUI extends HTMLElement {
             // Convert to percentage
             this.iframePaneWidth = 100 - (newWidth / containerWidth * 100);
             this.applyPaneWidth();
+            // Live-fit terminal during drag
+            throttledFit();
         };
 
         const onMouseUp = () => {
@@ -3510,10 +3533,15 @@ class TerminalUI extends HTMLElement {
             resizer.classList.remove('dragging');
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
+            // Re-enable iframe pointer events
+            if (iframePane) iframePane.style.pointerEvents = '';
             this.savePaneWidth();
-            // Trigger terminal resize
+            // Trigger terminal resize and notify backend
             if (this.fitAddon) {
-                setTimeout(() => this.fitAddon.fit(), 50);
+                setTimeout(() => {
+                    this.fitAddon.fit();
+                    this.sendResize();
+                }, 50);
             }
         };
 
@@ -3523,7 +3551,10 @@ class TerminalUI extends HTMLElement {
             this.applyPaneWidth();
             this.savePaneWidth();
             if (this.fitAddon) {
-                setTimeout(() => this.fitAddon.fit(), 50);
+                setTimeout(() => {
+                    this.fitAddon.fit();
+                    this.sendResize();
+                }, 50);
             }
         });
 
