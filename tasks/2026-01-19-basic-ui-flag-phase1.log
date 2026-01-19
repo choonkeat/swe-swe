@@ -1,0 +1,3 @@
+010100 Starting Phase 1: Baseline (flag parsing + golden tests)
+010100 Step 1.1: Add BasicUiUrl field to InitConfig struct
+010100 Expected: Field added to InitConfig with json tag "basicUiUrl,omitempty"
