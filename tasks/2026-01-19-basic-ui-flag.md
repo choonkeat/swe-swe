@@ -20,7 +20,7 @@ Add a `--basic-ui` flag that creates a split-pane UI with xterm on the left and 
 
 ### Flag Syntax
 - `swe-swe init --basic-ui` → uses default URL (https://elm-lang.org)
-- `swe-swe init --basic-ui http://localhost:3000` → uses specified URL
+- `swe-swe init --basic-ui --basic-ui-url http://localhost:3000` → uses specified URL
 
 ### Hidden Elements (when basic-ui enabled)
 - Status bar: hide "shell | vscode | browser" links
@@ -36,7 +36,7 @@ Add a `--basic-ui` flag that creates a split-pane UI with xterm on the left and 
 
 ## Phases
 
-- [ ] [Phase 1](#phase-1-baseline-commit-1): Add flag parsing + golden tests (no functional UI change)
+- [x] [Phase 1](#phase-1-baseline-commit-1): Add flag parsing + golden tests (no functional UI change)
 - [ ] [Phase 2](#phase-2-implementation-commit-2): Implement the split-pane UI with all features
 
 ---
@@ -47,15 +47,15 @@ Add the `--basic-ui` flag infrastructure without functional UI changes.
 
 ### Steps
 
-- [ ] 1.1. Add `BasicUiUrl` field to `InitConfig` struct (`cmd/swe-swe/main.go`)
-- [ ] 1.2. Add `--basic-ui` flag to `handleInit()` with default URL logic
-- [ ] 1.3. Add `{{BASIC_UI_URL}}` template variable processing in `processTerminalUITemplate()`
-- [ ] 1.4. Add template placeholder comment in `terminal-ui.js`
-- [ ] 1.5. Wire `BasicUiUrl` into `InitConfig` saving/loading
-- [ ] 1.6. Add golden test variants in `main_test.go`
-- [ ] 1.7. Make test container scripts flexible with `SWE_SWE_INIT_FLAGS` env var
-- [ ] 1.8. Run `make build golden-update` and verify golden diff
-- [ ] 1.9. Run `make test` to verify all tests pass
+- [x] 1.1. Add `BasicUiUrl` field to `InitConfig` struct (`cmd/swe-swe/main.go`)
+- [x] 1.2. Add `--basic-ui` and `--basic-ui-url` flags to `handleInit()`
+- [x] 1.3. Add `{{BASIC_UI_URL}}` template variable processing in `processTerminalUITemplate()`
+- [x] 1.4. Add template placeholder comment in `terminal-ui.js`
+- [x] 1.5. Wire `BasicUiUrl` into `InitConfig` saving/loading
+- [x] 1.6. Add golden test variants in `main_test.go` and `Makefile`
+- [x] 1.7. Make test container scripts flexible with `SWE_SWE_INIT_FLAGS` env var
+- [x] 1.8. Run `make build golden-update` and verify golden diff
+- [x] 1.9. Run `make test` to verify all tests pass
 
 ### Verification
 

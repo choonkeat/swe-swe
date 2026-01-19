@@ -1,3 +1,6 @@
+// Template variables (processed by swe-swe init):
+// BASIC_UI_URL: 
+
 class TerminalUI extends HTMLElement {
     constructor() {
         super();

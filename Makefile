@@ -120,6 +120,8 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-terminal-font FLAGS="--terminal-font-size 16 --terminal-font-family 'JetBrains Mono'"
 	@$(MAKE) _golden-variant NAME=with-status-bar-font FLAGS="--status-bar-font-size 14 --status-bar-font-family monospace"
 	@$(MAKE) _golden-variant NAME=with-all-ui-options FLAGS="--status-bar-color red --terminal-font-size 18 --status-bar-font-size 14"
+	@$(MAKE) _golden-variant NAME=with-basic-ui FLAGS="--basic-ui"
+	@$(MAKE) _golden-variant NAME=with-basic-ui-custom-url FLAGS="--basic-ui --basic-ui-url http://localhost:3000"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs
 	@$(MAKE) _golden-certs-ssl-cert-file

@@ -402,6 +402,7 @@ type InitConfig struct {
 	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
 	StatusBarFontSize   int                 `json:"statusBarFontSize,omitempty"`
 	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
+	BasicUiUrl          string              `json:"basicUiUrl,omitempty"`
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
 }
@@ -908,13 +909,14 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 }
 
 // processTerminalUITemplate processes the terminal-ui.js template with UI customization values
-func processTerminalUITemplate(content string, statusBarColor string, statusBarFontSize int, statusBarFontFamily string, terminalFontSize int, terminalFontFamily string) string {
+func processTerminalUITemplate(content string, statusBarColor string, statusBarFontSize int, statusBarFontFamily string, terminalFontSize int, terminalFontFamily string, basicUiUrl string) string {
 	// Note: STATUS_BAR_TEXT_COLOR is now computed via CSS oklch() auto-contrast
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_COLOR}}", statusBarColor)
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_SIZE}}", strconv.Itoa(statusBarFontSize))
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_FAMILY}}", statusBarFontFamily)
 	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_SIZE}}", strconv.Itoa(terminalFontSize))
 	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_FAMILY}}", terminalFontFamily)
+	content = strings.ReplaceAll(content, "{{BASIC_UI_URL}}", basicUiUrl)
 
 	return content
 }
@@ -935,6 +937,8 @@ func handleInit() {
 	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
+	basicUiEnabled := fs.Bool("basic-ui", false, "Enable split-pane UI with iframe for app preview")
+	basicUiUrl := fs.String("basic-ui-url", "https://elm-lang.org", "URL to load in basic-ui iframe (requires --basic-ui)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -942,6 +946,12 @@ func handleInit() {
 	if *statusBarColor == "list" {
 		PrintColorSwatches()
 		os.Exit(0)
+	}
+
+	// Handle --basic-ui: set URL only if enabled
+	basicUi := ""
+	if *basicUiEnabled {
+		basicUi = *basicUiUrl
 	}
 
 	// Validate --previous-init-flags
@@ -1104,6 +1114,9 @@ func handleInit() {
 		}
 		if savedConfig.StatusBarFontFamily != "" {
 			*statusBarFontFamily = savedConfig.StatusBarFontFamily
+		}
+		if savedConfig.BasicUiUrl != "" {
+			basicUi = savedConfig.BasicUiUrl
 		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
@@ -1350,7 +1363,7 @@ func handleInit() {
 
 			// Process terminal-ui.js template with UI customization values
 			if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
-				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
+				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily, basicUi))
 			}
 
 			// Calculate destination path, preserving subdirectories
@@ -1417,6 +1430,7 @@ func handleInit() {
 		TerminalFontFamily:  *terminalFontFamily,
 		StatusBarFontSize:   *statusBarFontSize,
 		StatusBarFontFamily: *statusBarFontFamily,
+		BasicUiUrl:          basicUi,
 		HostUID:             hostUID,
 		HostGID:             hostGID,
 	}
