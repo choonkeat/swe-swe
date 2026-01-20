@@ -10,13 +10,11 @@ build:
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
 	@echo ""
-	@export SWE_SWE_PASSWORD="$(SWE_SWE_PASSWORD)"; \
-	export ENABLE_HARDENING="$(ENABLE_HARDENING)"; \
+	@export ENABLE_HARDENING="$(ENABLE_HARDENING)"; \
 	[ -n "$(GIT_CLONE_URL)" ] && export GIT_CLONE_URL="$(GIT_CLONE_URL)" || :; \
-	PROMPTS=$$(../../scripts/prompt-password.sh); \
-	SWE_SWE_PASSWORD=$$(echo "$$PROMPTS" | sed -n '1p'); \
-	ENABLE_HARDENING=$$(echo "$$PROMPTS" | sed -n '2p'); \
-	GIT_CLONE_URL=$$(echo "$$PROMPTS" | sed -n '3p'); \
+	PROMPTS=$$(../../scripts/prompt-config.sh); \
+	ENABLE_HARDENING=$$(echo "$$PROMPTS" | sed -n '1p'); \
+	GIT_CLONE_URL=$$(echo "$$PROMPTS" | sed -n '2p'); \
 	echo ""; \
 	if [ -z "$(REGION)" ]; then \
 		read -p "region (no default; nyc1, nyc3, sfo3, lon1, sgp1, tor1, blr1, ams3, fra1): " REGION; \
@@ -83,7 +81,6 @@ build:
 		-var "init_flags=$$INIT_FLAGS" \
 		-var "image_name=$$IMAGE_NAME" \
 		-var "image_version=$$IMAGE_VERSION" \
-		-var "swe_swe_password=$$SWE_SWE_PASSWORD" \
 		-var "enable_hardening=$$ENABLE_HARDENING" \
 		-var "git_clone_url=$$GIT_CLONE_URL" \
 		template.pkr.hcl
