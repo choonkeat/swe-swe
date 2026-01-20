@@ -13,7 +13,7 @@
   "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
   "statusBarFontSize": 12,
   "statusBarFontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  "basicUiUrl": "https://elm-lang.org",
+  "basicUi": true,
   "hostUID": 1000,
   "hostGID": 1000
 }

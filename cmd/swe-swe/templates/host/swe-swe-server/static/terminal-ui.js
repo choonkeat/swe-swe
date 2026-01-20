@@ -1,6 +1,3 @@
-// Template variables (processed by swe-swe init):
-// BASIC_UI_URL: {{BASIC_UI_URL}}
-
 class TerminalUI extends HTMLElement {
     constructor() {
         super();
@@ -46,8 +43,8 @@ class TerminalUI extends HTMLElement {
         this.outputIdleThreshold = 2000; // ms
         // Process exit state - prevents reconnection after session ends
         this.processExited = false;
-        // Basic UI mode - split pane with iframe
-        this.basicUiUrl = '{{BASIC_UI_URL}}';
+        // Basic UI mode - split pane with iframe (set in connectedCallback based on HTML structure)
+        this.basicUiEnabled = false;
         this.iframePaneWidth = 50; // percentage
     }
 
@@ -1537,7 +1534,7 @@ class TerminalUI extends HTMLElement {
         }
 
         // Hide service links in basic-ui mode
-        if (this.basicUiUrl) {
+        if (this.basicUiEnabled) {
             return;
         }
 
@@ -1784,23 +1781,6 @@ class TerminalUI extends HTMLElement {
     // Terminal data received
     // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
-        // Parse and handle OSC 7337 sequences (BasicUiUrl) when in basic-ui mode
-        // Note: Currently OSC 7337 from agents is consumed by terminal emulators (OpenCode, etc.)
-        // before reaching the browser, so this code path is rarely triggered. The preview port
-        // approach (1${SWE_PORT}) is the primary mechanism for app preview.
-        if (this.basicUiUrl) {
-            const { cleaned, payloads } = this.parseOsc7337(data);
-            for (const payload of payloads) {
-                this.handleOsc7337(payload);
-            }
-            data = cleaned;
-
-            // If all data was OSC sequences, nothing to write
-            if (data.length === 0) {
-                return;
-            }
-        }
-
         // Track output timing for idle detection
         const now = Date.now();
         const timeSinceLastOutput = this.lastOutputTime ? now - this.lastOutputTime : 0;
@@ -3451,9 +3431,12 @@ class TerminalUI extends HTMLElement {
     // === Basic UI Methods ===
 
     initBasicUi() {
-        if (!this.basicUiUrl) {
+        // Check if basic-ui HTML structure is present
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        if (!iframe) {
             return; // Basic UI not enabled
         }
+        this.basicUiEnabled = true;
 
         // Add basic-ui class to enable split-pane layout
         const terminalUi = this.querySelector('.terminal-ui');
@@ -3636,8 +3619,6 @@ class TerminalUI extends HTMLElement {
             return;
         }
 
-        this.basicUiUrl = url;
-
         const iframe = this.querySelector('.terminal-ui__iframe');
         const urlDisplay = this.querySelector('.terminal-ui__iframe-url');
         const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
@@ -3709,87 +3690,6 @@ class TerminalUI extends HTMLElement {
             if (this.previewBaseUrl) {
                 urlDisplay.textContent = this.previewBaseUrl;
                 urlDisplay.title = this.previewBaseUrl;
-            }
-        }
-    }
-
-    // Parse and extract OSC 7337 sequences from terminal data
-    // Returns { cleaned: Uint8Array, payloads: string[] }
-    parseOsc7337(data) {
-        // OSC format: ESC ] 7337 ; <payload> BEL (or ESC \)
-        // ESC = 0x1b, ] = 0x5d, BEL = 0x07, \ = 0x5c
-        const ESC = 0x1b;
-        const RBRACKET = 0x5d; // ]
-        const BEL = 0x07;
-        const BACKSLASH = 0x5c; // \
-
-        const payloads = [];
-        const cleaned = [];
-        let i = 0;
-
-        while (i < data.length) {
-            // Look for ESC ]
-            if (data[i] === ESC && i + 1 < data.length && data[i + 1] === RBRACKET) {
-                // Check if it's OSC 7337;
-                const oscStart = i + 2;
-                const prefix = '7337;';
-                let match = true;
-                for (let j = 0; j < prefix.length && oscStart + j < data.length; j++) {
-                    if (data[oscStart + j] !== prefix.charCodeAt(j)) {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match && oscStart + prefix.length <= data.length) {
-                    // Found OSC 7337; - now find the terminator
-                    const payloadStart = oscStart + prefix.length;
-                    let payloadEnd = payloadStart;
-                    let terminatorLen = 0;
-
-                    while (payloadEnd < data.length) {
-                        if (data[payloadEnd] === BEL) {
-                            terminatorLen = 1;
-                            break;
-                        }
-                        if (data[payloadEnd] === ESC && payloadEnd + 1 < data.length && data[payloadEnd + 1] === BACKSLASH) {
-                            terminatorLen = 2;
-                            break;
-                        }
-                        payloadEnd++;
-                    }
-
-                    if (terminatorLen > 0) {
-                        // Extract payload as string
-                        const payloadBytes = data.slice(payloadStart, payloadEnd);
-                        const payload = new TextDecoder().decode(payloadBytes);
-                        payloads.push(payload);
-
-                        // Skip past the entire sequence
-                        i = payloadEnd + terminatorLen;
-                        continue;
-                    }
-                }
-            }
-
-            // Not an OSC 7337 sequence - copy the byte
-            cleaned.push(data[i]);
-            i++;
-        }
-
-        return {
-            cleaned: new Uint8Array(cleaned),
-            payloads: payloads
-        };
-    }
-
-    // Handle OSC 7337 escape sequence for BasicUiUrl
-    handleOsc7337(data) {
-        // Expected format: BasicUiUrl=<url>
-        if (data.startsWith('BasicUiUrl=')) {
-            const url = data.substring('BasicUiUrl='.length);
-            if (url) {
-                this.setIframeUrl(url);
             }
         }
     }

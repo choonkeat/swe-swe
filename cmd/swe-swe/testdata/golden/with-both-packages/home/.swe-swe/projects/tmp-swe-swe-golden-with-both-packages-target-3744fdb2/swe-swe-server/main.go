@@ -43,7 +43,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "6febb116"
+	GitCommit = "5961bc95"
 )
 
 var indexTemplate *template.Template

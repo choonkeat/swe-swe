@@ -699,7 +699,6 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
 		{"with-all-ui-options", []string{"--status-bar-color", "red", "--terminal-font-size", "18", "--status-bar-font-size", "14"}},
 		{"with-basic-ui", []string{"--basic-ui"}},
-		{"with-basic-ui-custom-url", []string{"--basic-ui", "--basic-ui-url", "http://localhost:3000"}},
 	}
 
 	for _, v := range variants {
