@@ -127,7 +127,7 @@ git commit --allow-empty -m "initial commit"
 
 # Run swe-swe init with EFFECTIVE_HOME so project files are in host-visible path
 # Use only opencode agent for faster builds and simpler auth (uses ANTHROPIC_API_KEY)
-# Additional flags can be passed via SWE_SWE_INIT_FLAGS env var (e.g., "--basic-ui")
+# Additional flags can be passed via SWE_SWE_INIT_FLAGS env var (e.g., "--status-bar-color=red")
 HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init --project-directory="$TEST_STACK_DIR" --agents=opencode ${SWE_SWE_INIT_FLAGS:-}
 
 # Find the generated metadata directory (match by test stack name)

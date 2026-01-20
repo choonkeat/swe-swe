@@ -43,7 +43,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "7aba7837"
+	GitCommit = "0459b5ff"
 )
 
 var indexTemplate *template.Template
@@ -1181,7 +1181,7 @@ func main() {
 	// Start session reaper
 	go sessionReaper()
 
-	// Start preview proxy if SWE_PREVIEW_TARGET_PORT is set (for basic-ui mode)
+	// Start preview proxy if SWE_PREVIEW_TARGET_PORT is set (for split-pane preview)
 	if previewTargetPort := os.Getenv("SWE_PREVIEW_TARGET_PORT"); previewTargetPort != "" {
 		go startPreviewProxy(previewTargetPort)
 	}
