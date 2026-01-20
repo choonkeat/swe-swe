@@ -1,0 +1,9 @@
+073606 Starting Phase 3: Click Hijacking for Desktop
+       Steps:
+       1. Define minimum panel width constant (MIN_PANEL_WIDTH = 360, RESIZER_WIDTH = 8)
+       2. Create canShowSplitPane() helper
+       3. Create isRegularClick(event) helper
+       4. Update click handler for desktop/mobile distinction
+       5. Ensure links have proper href and target="_blank"
+       6. Handle window resize edge case
+       Expected: Desktop regular clicks toggle iframe; modifier clicks and mobile open new tabs
