@@ -402,7 +402,6 @@ type InitConfig struct {
 	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
 	StatusBarFontSize   int                 `json:"statusBarFontSize,omitempty"`
 	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
-	BasicUi             bool                `json:"basicUi,omitempty"`
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
 }
@@ -748,7 +747,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml which only needs the DOCKER condition
-func processSimpleTemplate(content string, withDocker bool, ssl string, basicUI bool, hostUID int, hostGID int) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -769,11 +768,6 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, basicUI 
 
 		if strings.Contains(trimmed, "{{IF NO_SSL}}") {
 			skip = strings.HasPrefix(ssl, "selfsign")
-			continue
-		}
-
-		if strings.Contains(trimmed, "{{IF BASIC_UI}}") {
-			skip = !basicUI
 			continue
 		}
 
@@ -941,7 +935,6 @@ func handleInit() {
 	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
-	basicUiEnabled := fs.Bool("basic-ui", false, "Enable split-pane UI with iframe for app preview")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -949,12 +942,6 @@ func handleInit() {
 	if *statusBarColor == "list" {
 		PrintColorSwatches()
 		os.Exit(0)
-	}
-
-	// Handle --basic-ui flag
-	basicUi := ""
-	if *basicUiEnabled {
-		basicUi = "true"
 	}
 
 	// Validate --previous-init-flags
@@ -1117,9 +1104,6 @@ func handleInit() {
 		}
 		if savedConfig.StatusBarFontFamily != "" {
 			*statusBarFontFamily = savedConfig.StatusBarFontFamily
-		}
-		if savedConfig.BasicUi {
-			basicUi = "true"
 		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
@@ -1309,9 +1293,8 @@ func handleInit() {
 			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
 		}
 
-		if basicUi != "" {
-			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/app-preview.md")
-		}
+		// Always include app-preview.md since split-pane UI is always available
+		containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/app-preview.md")
 
 		// Print selected agents
 		if len(agents) > 0 {
@@ -1347,12 +1330,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, basicUi != "", hostUID, hostGID))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, basicUi != "", hostUID, hostGID))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
 			}
 
 			// Process entrypoint.sh template with conditional sections
@@ -1437,7 +1420,6 @@ func handleInit() {
 		TerminalFontFamily:  *terminalFontFamily,
 		StatusBarFontSize:   *statusBarFontSize,
 		StatusBarFontFamily: *statusBarFontFamily,
-		BasicUi:             basicUi != "",
 		HostUID:             hostUID,
 		HostGID:             hostGID,
 	}

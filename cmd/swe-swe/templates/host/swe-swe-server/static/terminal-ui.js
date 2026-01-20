@@ -43,9 +43,9 @@ class TerminalUI extends HTMLElement {
         this.outputIdleThreshold = 2000; // ms
         // Process exit state - prevents reconnection after session ends
         this.processExited = false;
-        // Basic UI mode - split pane with iframe (set in connectedCallback based on HTML structure)
-        this.basicUiEnabled = false;
+        // Split-pane UI state
         this.iframePaneWidth = 50; // percentage
+        this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser' (Phase 2)
     }
 
     static get observedAttributes() {
@@ -108,7 +108,7 @@ class TerminalUI extends HTMLElement {
             this.setupEventListeners();
             this.renderLinks();
             this.renderServiceLinks();
-            this.initBasicUi();
+            this.initSplitPaneUi();
 
             // Expose for console testing
             window.terminalUI = this;
@@ -1045,10 +1045,10 @@ class TerminalUI extends HTMLElement {
                     flex: 1;
                     min-height: 0;
                 }
-                .terminal-ui.basic-ui .terminal-ui__split-pane {
+                .terminal-ui.iframe-visible .terminal-ui__split-pane {
                     flex-direction: row;
                 }
-                .terminal-ui.basic-ui .terminal-ui__terminal {
+                .terminal-ui.iframe-visible .terminal-ui__terminal {
                     /* Terminal takes left side, width controlled by JS */
                     flex: none;
                     width: 50%;
@@ -1077,7 +1077,7 @@ class TerminalUI extends HTMLElement {
                     background: #666;
                     border-radius: 1px;
                 }
-                .terminal-ui.basic-ui .terminal-ui__resizer {
+                .terminal-ui.iframe-visible .terminal-ui__resizer {
                     display: block;
                 }
                 .terminal-ui__iframe-pane {
@@ -1087,7 +1087,7 @@ class TerminalUI extends HTMLElement {
                     flex-direction: column;
                     background: #1e1e1e;
                 }
-                .terminal-ui.basic-ui .terminal-ui__iframe-pane {
+                .terminal-ui.iframe-visible .terminal-ui__iframe-pane {
                     display: flex;
                 }
                 .terminal-ui__iframe-location {
@@ -1164,26 +1164,19 @@ class TerminalUI extends HTMLElement {
                     color: #666;
                     max-width: 300px;
                 }
-                /* Hide service links and nav in basic-ui mode */
-                .terminal-ui.basic-ui .terminal-ui__status-service-links {
-                    display: none;
-                }
-                .terminal-ui.basic-ui .settings-panel__nav {
-                    display: none;
-                }
-                /* Responsive: hide iframe pane on narrow screens */
+                /* Responsive: on narrow screens, hide iframe pane when it's open */
                 @media (max-width: 768px) {
-                    .terminal-ui.basic-ui .terminal-ui__split-pane {
+                    .terminal-ui.iframe-visible .terminal-ui__split-pane {
                         flex-direction: column;
                     }
-                    .terminal-ui.basic-ui .terminal-ui__terminal {
+                    .terminal-ui.iframe-visible .terminal-ui__terminal {
                         width: 100% !important;
                         flex: 1;
                     }
-                    .terminal-ui.basic-ui .terminal-ui__resizer {
+                    .terminal-ui.iframe-visible .terminal-ui__resizer {
                         display: none;
                     }
-                    .terminal-ui.basic-ui .terminal-ui__iframe-pane {
+                    .terminal-ui.iframe-visible .terminal-ui__iframe-pane {
                         display: none;
                     }
                 }
@@ -1531,11 +1524,6 @@ class TerminalUI extends HTMLElement {
         const existingContainer = statusRight.querySelector('.terminal-ui__status-service-links');
         if (existingContainer) {
             existingContainer.remove();
-        }
-
-        // Hide service links in basic-ui mode
-        if (this.basicUiEnabled) {
-            return;
         }
 
         // All services use path-based routing
@@ -3428,25 +3416,20 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // === Basic UI Methods ===
+    // === Split-Pane UI Methods ===
 
-    initBasicUi() {
-        // Check if basic-ui HTML structure is present
+    initSplitPaneUi() {
+        // Initialize split-pane UI infrastructure
+        // The iframe pane starts hidden (terminal at 100% width)
+        // Phase 2 will add toggle behavior via service link clicks
+
         const iframe = this.querySelector('.terminal-ui__iframe');
         if (!iframe) {
-            return; // Basic UI not enabled
-        }
-        this.basicUiEnabled = true;
-
-        // Add basic-ui class to enable split-pane layout
-        const terminalUi = this.querySelector('.terminal-ui');
-        if (terminalUi) {
-            terminalUi.classList.add('basic-ui');
+            return; // Split-pane structure not present
         }
 
-        // Load saved pane width
+        // Load saved pane width (will be applied when iframe is shown)
         this.loadSavedPaneWidth();
-        this.applyPaneWidth();
 
         // Setup resizer drag functionality
         this.setupResizer();
@@ -3476,14 +3459,7 @@ class TerminalUI extends HTMLElement {
             iframe.addEventListener('load', () => this.updateIframeUrlDisplay());
         }
 
-        // Load initial URL
-        this.setIframeUrl(this.previewBaseUrl);
-
-        // Re-fit terminal after layout change
-        if (this.fitAddon) {
-            // Use setTimeout to ensure layout is applied before fitting
-            setTimeout(() => this.fitAddon.fit(), 50);
-        }
+        // Note: Don't load iframe URL yet - it will be loaded when user opens the pane (Phase 2)
     }
 
     setupResizer() {
@@ -3589,7 +3565,7 @@ class TerminalUI extends HTMLElement {
 
     loadSavedPaneWidth() {
         try {
-            const saved = localStorage.getItem('swe-swe-basic-ui-width');
+            const saved = localStorage.getItem('swe-swe-iframe-width');
             if (saved) {
                 const width = parseFloat(saved);
                 if (!isNaN(width) && width >= 10 && width <= 90) {
@@ -3603,7 +3579,7 @@ class TerminalUI extends HTMLElement {
 
     savePaneWidth() {
         try {
-            localStorage.setItem('swe-swe-basic-ui-width', this.iframePaneWidth.toString());
+            localStorage.setItem('swe-swe-iframe-width', this.iframePaneWidth.toString());
         } catch (e) {
             console.warn('[TerminalUI] Could not save pane width:', e);
         }

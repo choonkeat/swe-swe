@@ -40,7 +40,7 @@ Remove the `--basic-ui` flag and make the split-pane UI with iframe always avail
 
 ---
 
-# Phase 1: Refactor UI to Always-Available Split-Pane
+# Phase 1: Refactor UI to Always-Available Split-Pane ✅ COMPLETE
 
 ## What Will Be Achieved
 

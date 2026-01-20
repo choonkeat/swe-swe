@@ -698,7 +698,6 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-terminal-font", []string{"--terminal-font-size", "16", "--terminal-font-family", "JetBrains Mono"}},
 		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
 		{"with-all-ui-options", []string{"--status-bar-color", "red", "--terminal-font-size", "18", "--status-bar-font-size", "14"}},
-		{"with-basic-ui", []string{"--basic-ui"}},
 	}
 
 	for _, v := range variants {
@@ -808,8 +807,6 @@ func TestGoldenFiles(t *testing.T) {
 				v.name == "with-terminal-font" ||
 				v.name == "with-status-bar-font" ||
 				v.name == "with-all-ui-options" ||
-				v.name == "with-basic-ui" ||
-				v.name == "with-basic-ui-custom-url" ||
 				v.name == "with-slash-commands" ||
 				v.name == "with-slash-commands-multi" ||
 				v.name == "with-slash-commands-no-alias" ||
@@ -961,7 +958,7 @@ func TestProcessSimpleTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processSimpleTemplate(tt.input, tt.withDocker, "no", false, 1000, 1000)
+			result := processSimpleTemplate(tt.input, tt.withDocker, "no", 1000, 1000)
 			if result != tt.expected {
 				t.Errorf("processSimpleTemplate mismatch.\nExpected:\n%s\n\nGot:\n%s", tt.expected, result)
 			}
