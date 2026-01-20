@@ -15,8 +15,13 @@ services:
       - "--accesslog.format=json"
       - "--entrypoints.websecure.address=:7443"
       - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
+      # Preview proxy entrypoint (separate port for app preview iframe)
+      - "--entrypoints.previewsecure.address=:17443"
+      - "--entrypoints.previewsecure.transport.respondingTimeouts.readTimeout=60s"
     ports:
       - "${SWE_PORT:-1977}:7443"
+      # Preview proxy port (prepend "1" to SWE_PORT, e.g., 1977 -> 11977)
+      - "1${SWE_PORT:-1977}:17443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -77,9 +82,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      # App preview port for split-pane iframe (prepend "1" to SWE_PORT)
-      - "1${SWE_PORT:-1977}:9899"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -91,6 +93,12 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.tls=true"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
+      # Preview proxy routing through traefik for TLS termination
+      - "traefik.http.routers.${PROJECT_NAME}-preview.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.entrypoints=previewsecure"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.middlewares=forwardauth@file"
+      - "traefik.http.services.${PROJECT_NAME}-preview.loadbalancer.server.port=9899"
     depends_on:
       - chrome
     volumes:

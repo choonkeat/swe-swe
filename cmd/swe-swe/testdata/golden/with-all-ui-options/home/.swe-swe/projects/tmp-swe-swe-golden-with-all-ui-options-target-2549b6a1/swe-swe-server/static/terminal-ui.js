@@ -98,6 +98,10 @@ class TerminalUI extends HTMLElement {
                 }
             }
             this.render();
+            // Detect if running inside an iframe (panel view) and hide status bar
+            if (window.self !== window.top) {
+                this.classList.add('embedded-in-iframe');
+            }
             this.initTerminal();
             this.debugLog('initTerminal done');
             // iOS Safari needs a brief delay before WebSocket connection
@@ -395,6 +399,10 @@ class TerminalUI extends HTMLElement {
                     transition: background-color 0.3s ease, border-color 0.3s ease;
                     border-top: 3px solid var(--status-bar-border-light);
                     border-bottom: 3px solid var(--status-bar-border-dark);
+                }
+                /* Hide status bar when embedded inside an iframe (panel view) */
+                .terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
+                    display: none;
                 }
                 .terminal-ui__status-bar.connected {
                     background: var(--status-bar-color);

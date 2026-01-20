@@ -74,6 +74,7 @@ services:
       dockerfile: Dockerfile
     ports:
       # App preview port for split-pane iframe (prepend "1" to SWE_PORT)
+      # Direct mapping when no SSL (traefik handles this port when SSL is enabled)
       - "1${SWE_PORT:-1977}:9899"
     extra_hosts:
       - "host.docker.internal:host-gateway"
