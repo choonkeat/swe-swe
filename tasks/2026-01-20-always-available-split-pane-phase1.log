@@ -2,3 +2,20 @@
        Step 1: Remove --basic-ui flag from CLI parsing (main.go)
        Expected: Remove basicUiEnabled flag definition, basicUi variable, BasicUi field from InitConfig struct
        Will verify by: make test passes after changes
+
+071858 Completed Phase 1 code changes:
+       - Removed --basic-ui flag from CLI parsing in main.go
+       - Removed BasicUi field from InitConfig struct
+       - Removed {{IF BASIC_UI}} conditionals from docker-compose.yml (content now unconditional)
+       - Removed basicUI parameter from processSimpleTemplate function
+       - Updated terminal-ui.js: renamed .basic-ui to .iframe-visible, renamed initBasicUi to initSplitPaneUi
+       - Split-pane HTML structure always present but iframe-pane starts hidden (display: none)
+       - Service links always visible (removed code that hid them when basicUiEnabled)
+       - Renamed localStorage key from swe-swe-basic-ui-width to swe-swe-iframe-width
+       - app-preview.md now generated for all init variants (not just --basic-ui)
+       - Removed with-basic-ui and with-basic-ui-custom-url test variants and golden files
+       Running make test to verify...
+
+072026 make test passed. All tests pass.
+       Proceeding to manual browser verification.
+       Expected: Terminal displays at 100% width, service links visible, no iframe pane shown

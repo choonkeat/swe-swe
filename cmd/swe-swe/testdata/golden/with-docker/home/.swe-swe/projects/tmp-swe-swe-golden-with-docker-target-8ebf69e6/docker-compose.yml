@@ -72,6 +72,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    ports:
+      # App preview port for split-pane iframe (prepend "1" to SWE_PORT)
+      - "1${SWE_PORT:-1977}:9899"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -111,6 +114,8 @@ services:
       - SSL_CERT_FILE=${SSL_CERT_FILE:-}
       # Browser automation via MCP Playwright connected to chrome service
       - BROWSER_WS_ENDPOINT=ws://chrome:9223
+      # App preview proxy target port (for split-pane iframe)
+      - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
       # Add other credentials as needed:
       # - GEMINI_API_KEY=${GEMINI_API_KEY}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
