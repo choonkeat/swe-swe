@@ -19,3 +19,19 @@
 072026 make test passed. All tests pass.
        Proceeding to manual browser verification.
        Expected: Terminal displays at 100% width, service links visible, no iframe pane shown
+
+072243 Manual browser verification PASSED.
+       Observed:
+       - Terminal displays at 100% viewport width (no split-pane visible)
+       - Service links visible in status bar: "shell | vscode | browser"
+       - No iframe pane or resizer visible
+       - Terminal dimensions: 120×35
+       - Status bar shows connection status, username, session info
+       Screenshot saved: .playwright-mcp/phase1-terminal-verification.png
+
+       Phase 1 complete. All acceptance criteria met:
+       ✓ make test passes
+       ✓ golden-update completed
+       ✓ Terminal at 100% width by default
+       ✓ Service links always visible
+       ✓ No iframe pane visible initially
