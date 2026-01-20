@@ -55,7 +55,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   }
 }
 EOF
-chown -R app:app /home/app/.config/opencode
+chown -R app: /home/app/.config/opencode
 echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
 
 # Create Codex MCP configuration (TOML format)
@@ -64,7 +64,7 @@ cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-playwright]
 command = ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 EOF
-chown -R app:app /home/app/.codex
+chown -R app: /home/app/.codex
 echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
 
 # Create Gemini MCP configuration
@@ -79,7 +79,7 @@ cat > /home/app/.gemini/settings.json << 'EOF'
   }
 }
 EOF
-chown -R app:app /home/app/.gemini
+chown -R app: /home/app/.gemini
 echo -e "${GREEN}✓ Created Gemini MCP configuration${NC}"
 
 # Create Goose MCP configuration (YAML format)
@@ -95,13 +95,13 @@ extensions:
       - "--cdp-endpoint"
       - "http://chrome:9223"
 EOF
-chown -R app:app /home/app/.config/goose
+chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"
 
 # Ensure /worktrees directory exists and is owned by app user
 # (bind mount from host may create it with root ownership)
 if [ -d /worktrees ]; then
-    chown app:app /worktrees
+    chown app: /worktrees
 fi
 
 # Switch to app user and execute the original command

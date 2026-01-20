@@ -143,10 +143,12 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create non-root user for running swe-swe-server
-RUN groupadd -g {{GID}} app && useradd -m -u {{UID}} -g {{GID}} -s /bin/bash app
+# If target GID already exists (e.g., dialout=20), use that group; otherwise create app group
+RUN if ! getent group {{GID}} > /dev/null; then groupadd -g {{GID}} app; fi && \
+    useradd -m -u {{UID}} -g {{GID}} -s /bin/bash app
 
 # Create worktrees directory with app ownership (used for git worktrees)
-RUN mkdir -p /worktrees && chown app:app /worktrees
+RUN mkdir -p /worktrees && chown {{UID}}:{{GID}} /worktrees
 
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server

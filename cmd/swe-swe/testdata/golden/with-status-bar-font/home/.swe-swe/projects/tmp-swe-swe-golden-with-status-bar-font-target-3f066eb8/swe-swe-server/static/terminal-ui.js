@@ -3461,7 +3461,6 @@ class TerminalUI extends HTMLElement {
         // Setup iframe navigation buttons
         const homeBtn = this.querySelector('.terminal-ui__iframe-home');
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
-        const iframe = this.querySelector('.terminal-ui__iframe');
 
         if (homeBtn) {
             homeBtn.addEventListener('click', () => {

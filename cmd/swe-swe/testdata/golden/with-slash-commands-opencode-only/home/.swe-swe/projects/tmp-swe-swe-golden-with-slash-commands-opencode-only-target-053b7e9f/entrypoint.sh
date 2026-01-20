@@ -58,7 +58,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   }
 }
 EOF
-chown -R app:app /home/app/.config/opencode
+chown -R app: /home/app/.config/opencode
 echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
 
 
@@ -67,7 +67,7 @@ echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
 # Ensure /worktrees directory exists and is owned by app user
 # (bind mount from host may create it with root ownership)
 if [ -d /worktrees ]; then
-    chown app:app /worktrees
+    chown app: /worktrees
 fi
 
 # Switch to app user and execute the original command

@@ -7,9 +7,13 @@ ARG GID=1000
 # Run as root to modify system files
 USER root
 
-# Modify existing coder group and user with captured host UID:GID
-# This ensures container coder user has same UID:GID as host user
-RUN groupmod -g ${GID} coder && usermod -u ${UID} -g ${GID} coder
+# Modify coder user to match host UID:GID for correct file ownership
+# If target GID already exists (e.g., dialout=20, staff=20), use that group
+# If not, create a group with that GID first
+RUN if ! getent group ${GID} > /dev/null; then \
+        groupmod -g ${GID} coder; \
+    fi && \
+    usermod -u ${UID} -g ${GID} coder
 
 # Fix ownership of coder home directory
 RUN chown -R ${UID}:${GID} /home/coder
