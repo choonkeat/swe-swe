@@ -1,0 +1,9 @@
+072753 Starting Phase 2: Implement Tab Toggle Behavior
+       Steps:
+       1. Add state tracking for active tab
+       2. Create openIframePane(tab, url) method
+       3. Create closeIframePane() method
+       4. Update service link click handler
+       5. Add active tab visual indicator CSS
+       6. Update savePaneWidth() and loadSavedPaneWidth()
+       Expected: Clicking service tabs toggles iframe pane open/closed
