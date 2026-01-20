@@ -1193,6 +1193,9 @@ func main() {
 			// No-cache for homepage to ensure latest version
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Pragma", "no-cache")
+			// Prevent homepage from being embedded in iframes to avoid nested UI
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 
 			// Check for debug query param
 			debugParam := r.URL.Query().Get("debug")
