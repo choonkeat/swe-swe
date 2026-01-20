@@ -1,0 +1,4 @@
+071156 Starting Phase 1: Refactor UI to Always-Available Split-Pane
+       Step 1: Remove --basic-ui flag from CLI parsing (main.go)
+       Expected: Remove basicUiEnabled flag definition, basicUi variable, BasicUi field from InitConfig struct
+       Will verify by: make test passes after changes
