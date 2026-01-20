@@ -48,7 +48,7 @@ services:
   chrome:
     build:
       context: .
-      dockerfile: chrome/Dockerfile
+      dockerfile: chrome-screencast/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -84,6 +84,7 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.rule=PathPrefix(`/`)"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.priority=10"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
     depends_on:
       - chrome
@@ -170,4 +171,5 @@ services:
     restart: unless-stopped
 networks:
   swe-network:
+    name: swe-network
     driver: bridge

@@ -2016,6 +2016,12 @@ class TerminalUI extends HTMLElement {
         // Stop uptime timer
         this.stopUptimeTimer();
 
+        // If embedded in iframe (panel view), notify parent to close the pane
+        if (window.self !== window.top) {
+            window.parent.postMessage({ type: 'swe-swe-session-ended', exitCode }, '*');
+            return;
+        }
+
         // Show standard confirmation dialog (same for worktree and non-worktree sessions)
         const message = exitCode === 0
             ? 'The session has ended successfully.\n\nReturn to the home page to start a new session?'
@@ -3073,6 +3079,13 @@ class TerminalUI extends HTMLElement {
 
         // Settings panel setup
         this.setupSettingsPanel();
+
+        // Listen for session-ended messages from iframe to auto-close pane
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'swe-swe-session-ended') {
+                this.closeIframePane();
+            }
+        });
 
         // Status bar click: reconnect when disconnected, open settings when connected
         const statusBar = this.querySelector('.terminal-ui__status-bar');

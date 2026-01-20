@@ -1,0 +1,13 @@
+{
+  "name": "chrome-screencast",
+  "version": "1.0.0",
+  "description": "Chrome screencast streaming server using Playwright CDP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.48.0",
+    "ws": "^8.18.0"
+  }
+}

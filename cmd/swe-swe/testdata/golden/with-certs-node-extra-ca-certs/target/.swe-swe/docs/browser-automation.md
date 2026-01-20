@@ -6,15 +6,16 @@ Browser automation uses MCP Playwright connected to a Chrome sidecar container. 
 ## Architecture
 ```
 claude-code container  -->  chrome container
-   (MCP Playwright)         (Chromium + nginx)
+   (MCP Playwright)         (Chromium headless + nginx + screencast)
         |                        |
         +--- http://chrome:9223 -+
                   (CDP)
 ```
 
-- Chrome runs in a separate container with Xvfb (virtual display)
-- User can watch via VNC at http://localhost:1977/chrome/
+- Chrome runs in headless mode in a separate container
+- User can watch via screencast at http://localhost:1977/chrome/ (read-only)
 - CDP (Chrome DevTools Protocol) is exposed on port 9223 via nginx reverse proxy
+- Screencast uses CDP Page.startScreencast for efficient frame streaming
 
 ## Available Tools
 - `mcp__swe-swe-playwright__browser_navigate` - Navigate to URL
@@ -38,7 +39,7 @@ cat .mcp.json
 Should show playwright config with `--cdp-endpoint http://chrome:9223` in args
 
 ### 2. Is Chrome container running?
-From host: VNC should work at http://localhost:1977/chrome/
+From host: Screencast should work at http://localhost:1977/chrome/
 
 ### 3. Is CDP port accessible?
 From inside claude-code container:
@@ -60,8 +61,9 @@ Should show `0.0.0.0:9223` (not 127.0.0.1).
 
 ## Configuration Files
 - `.mcp.json` - MCP Playwright config (in project root)
-- `cmd/swe-swe/templates/host/chrome/Dockerfile` - Chrome container image
-- `cmd/swe-swe/templates/host/chrome/supervisord.conf` - Process manager (xvfb, chromium, vnc, nginx)
-- `cmd/swe-swe/templates/host/chrome/nginx-cdp.conf` - CDP reverse proxy config
-- `cmd/swe-swe/templates/host/chrome/entrypoint.sh` - Enterprise certificate installation
+- `cmd/swe-swe/templates/host/chrome-screencast/Dockerfile` - Chrome container image
+- `cmd/swe-swe/templates/host/chrome-screencast/supervisord.conf` - Process manager (chromium, nginx, screencast)
+- `cmd/swe-swe/templates/host/chrome-screencast/nginx-cdp.conf` - CDP reverse proxy config
+- `cmd/swe-swe/templates/host/chrome-screencast/server.js` - Screencast WebSocket server
+- `cmd/swe-swe/templates/host/chrome-screencast/entrypoint.sh` - Enterprise certificate installation
 - `cmd/swe-swe/templates/host/docker-compose.yml` - Container orchestration

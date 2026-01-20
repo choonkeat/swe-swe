@@ -71,7 +71,7 @@ services:
   chrome:
     build:
       context: .
-      dockerfile: chrome/Dockerfile
+      dockerfile: chrome-screencast/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:

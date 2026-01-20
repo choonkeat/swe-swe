@@ -56,7 +56,7 @@ services:
   chrome:
     build:
       context: .
-      dockerfile: chrome/Dockerfile
+      dockerfile: chrome-screencast/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -92,12 +92,14 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.entrypoints=websecure"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.tls=true"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
       # Preview proxy routing through traefik for TLS termination
       - "traefik.http.routers.${PROJECT_NAME}-preview.rule=PathPrefix(`/`)"
       - "traefik.http.routers.${PROJECT_NAME}-preview.entrypoints=previewsecure"
       - "traefik.http.routers.${PROJECT_NAME}-preview.tls=true"
       - "traefik.http.routers.${PROJECT_NAME}-preview.middlewares=forwardauth@file"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.service=${PROJECT_NAME}-preview"
       - "traefik.http.services.${PROJECT_NAME}-preview.loadbalancer.server.port=9899"
     depends_on:
       - chrome
@@ -186,4 +188,5 @@ services:
     restart: unless-stopped
 networks:
   swe-network:
+    name: swe-network
     driver: bridge
