@@ -1,0 +1,34 @@
+080000 Starting Phase 4: Preview Toolbar and Helpful Loading Screen
+       Steps:
+       1. Add toolbar HTML structure to iframe pane (already exists)
+       2. Update openIframePane() to show/hide toolbar based on tab
+       3. Create preview loading/error page (placeholder exists)
+       4. Design copy-paste friendly prompt examples
+       5. Add clipboard copy functionality
+       6. Implement preview connection logic
+       7. Add port configuration
+       8. Style toolbar to match existing UI
+       Expected: Only preview tab shows toolbar; helpful loading screen
+
+080500 Fixed toolbar visibility issue:
+       Bug: Toolbar (home/refresh buttons + URL) was showing for ALL tabs
+       Fix: Toolbar should only show for "preview" tab
+
+       Changes made:
+       - CSS: .terminal-ui__iframe-location now has display: none by default
+       - CSS: Added .terminal-ui__iframe-pane.show-toolbar selector to show toolbar
+       - JS: openIframePane() now toggles .show-toolbar class:
+         - If tab === 'preview' → add .show-toolbar class
+         - Else → remove .show-toolbar class
+
+       Manual browser verification PASSED:
+       - VS Code tab → no toolbar (only Loading... and iframe)
+       - Preview tab → toolbar visible (home, refresh, URL: http://host.docker.internal:19770)
+       - Browser tab → no toolbar (only iframe with VNC)
+       - Shell tab → no toolbar (would only show iframe)
+
+       Phase 4 partial: Toolbar visibility fix complete
+       ✓ make test passes
+       ✓ make build golden-update completed
+       ✓ Toolbar shows only for preview tab
+       ✓ Other tabs (vscode, browser, shell) hide toolbar

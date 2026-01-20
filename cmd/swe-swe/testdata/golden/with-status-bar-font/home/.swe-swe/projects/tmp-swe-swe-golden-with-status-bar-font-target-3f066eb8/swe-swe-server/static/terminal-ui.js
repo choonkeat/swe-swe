@@ -1100,7 +1100,7 @@ class TerminalUI extends HTMLElement {
                     display: flex;
                 }
                 .terminal-ui__iframe-location {
-                    display: flex;
+                    display: none; /* Hidden by default, shown only for preview tab */
                     align-items: center;
                     gap: 8px;
                     padding: 6px 10px;
@@ -1108,6 +1108,9 @@ class TerminalUI extends HTMLElement {
                     border-bottom: 1px solid #404040;
                     font-family: monospace;
                     font-size: 14px;
+                }
+                .terminal-ui__iframe-pane.show-toolbar .terminal-ui__iframe-location {
+                    display: flex; /* Show toolbar only for preview tab */
                 }
                 .terminal-ui__iframe-url {
                     flex: 1;
@@ -3514,10 +3517,20 @@ class TerminalUI extends HTMLElement {
     openIframePane(tab, url) {
         const terminalUi = this.querySelector('.terminal-ui');
         const iframe = this.querySelector('.terminal-ui__iframe');
+        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
         if (!terminalUi || !iframe) return;
 
         // Add class to show iframe pane
         terminalUi.classList.add('iframe-visible');
+
+        // Show/hide toolbar based on tab (only preview gets toolbar)
+        if (iframePane) {
+            if (tab === 'preview') {
+                iframePane.classList.add('show-toolbar');
+            } else {
+                iframePane.classList.remove('show-toolbar');
+            }
+        }
 
         // Apply saved pane width
         this.applyPaneWidth();
