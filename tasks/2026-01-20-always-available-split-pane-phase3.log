@@ -7,3 +7,27 @@
        5. Ensure links have proper href and target="_blank"
        6. Handle window resize edge case
        Expected: Desktop regular clicks toggle iframe; modifier clicks and mobile open new tabs
+
+074500 Phase 3 implementation complete. Changes made:
+       - Added MIN_PANEL_WIDTH = 360 and RESIZER_WIDTH = 8 constants to constructor
+       - Added canShowSplitPane() helper: returns true if viewport >= 728px (2*360+8)
+       - Added isRegularClick(e) helper: returns true if no modifier keys and left-click
+       - Updated handleTabClick() to check canShowSplitPane() and isRegularClick()
+       - Regular click on desktop → e.preventDefault() + toggle iframe
+       - Modifier click or mobile → browser default behavior (open in new tab)
+       - Links maintain proper href and target="_blank" attributes
+
+       Manual browser verification PASSED:
+       - Desktop + regular click on "vscode" → iframe opens (terminal 120×35 → 59×35)
+       - Click active "vscode" tab again → iframe closes (terminal → 119×35)
+       - Click "browser" → iframe opens with Chrome VNC
+       - Click "browser" again → iframe closes
+       - Ctrl+click on "vscode" → opens new browser tab (Tab 1), iframe NOT opened
+       - Tab switching works (vscode → browser updates active indicator)
+
+       Phase 3 complete. All acceptance criteria met:
+       ✓ make test passes
+       ✓ make build golden-update completed
+       ✓ Desktop + regular click → opens in iframe (or toggles if active)
+       ✓ Desktop + Ctrl+click → opens new browser tab
+       ✓ Links have proper href and target="_blank" attributes

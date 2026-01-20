@@ -45,7 +45,10 @@ class TerminalUI extends HTMLElement {
         this.processExited = false;
         // Split-pane UI state
         this.iframePaneWidth = 50; // percentage
-        this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser' (Phase 2)
+        this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
+        // Split-pane constants for desktop detection
+        this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
+        this.RESIZER_WIDTH = 8;     // width of the resizer handle
     }
 
     static get observedAttributes() {
@@ -3474,18 +3477,37 @@ class TerminalUI extends HTMLElement {
         // Note: Don't load iframe URL yet - it will be loaded when user opens the pane
     }
 
+    // Check if viewport is wide enough for split-pane layout
+    canShowSplitPane() {
+        // Need room for two panels plus resizer
+        const minWidth = (this.MIN_PANEL_WIDTH * 2) + this.RESIZER_WIDTH;
+        return window.innerWidth >= minWidth;
+    }
+
+    // Check if this is a regular left-click without modifier keys
+    isRegularClick(e) {
+        return !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0;
+    }
+
     // Handle tab click - toggle iframe pane or open in new tab
     handleTabClick(e, tab, url) {
-        // For now, always intercept clicks and toggle iframe (Phase 3 will add desktop/mobile distinction)
-        e.preventDefault();
+        const canSplit = this.canShowSplitPane();
+        const isRegular = this.isRegularClick(e);
 
-        if (tab === this.activeTab) {
-            // Clicking active tab closes the pane
-            this.closeIframePane();
-        } else {
-            // Clicking different tab opens/switches pane
-            this.openIframePane(tab, url);
+        // On desktop with regular click: toggle iframe pane
+        // Otherwise: let default link behavior open new tab
+        if (canSplit && isRegular) {
+            e.preventDefault();
+
+            if (tab === this.activeTab) {
+                // Clicking active tab closes the pane
+                this.closeIframePane();
+            } else {
+                // Clicking different tab opens/switches pane
+                this.openIframePane(tab, url);
+            }
         }
+        // else: don't preventDefault, let browser open in new tab
     }
 
     // Open iframe pane with specified tab content
