@@ -1024,6 +1024,10 @@ class TerminalUI extends HTMLElement {
                 .settings-panel__nav-btn:active {
                     background: #555;
                 }
+                .settings-panel__nav-btn.active {
+                    background: #555;
+                    border-bottom: 2px solid var(--status-bar-bg-color, #007acc);
+                }
                 .settings-panel__nav-icon {
                     font-size: 20px;
                 }
@@ -1240,11 +1244,19 @@ class TerminalUI extends HTMLElement {
                                     <span class="settings-panel__nav-icon">🏠</span>
                                     <span>Home</span>
                                 </a>
-                                <a href="/vscode/" target="swe-swe-vscode" class="settings-panel__nav-btn settings-panel__nav-vscode">
+                                <a href="" target="_blank" class="settings-panel__nav-btn settings-panel__nav-shell settings-panel__nav-tab" data-tab="shell">
+                                    <span class="settings-panel__nav-icon">💻</span>
+                                    <span>Shell</span>
+                                </a>
+                                <a href="/vscode/" target="swe-swe-vscode" class="settings-panel__nav-btn settings-panel__nav-vscode settings-panel__nav-tab" data-tab="vscode">
                                     <span class="settings-panel__nav-icon">📝</span>
                                     <span>VSCode</span>
                                 </a>
-                                <a href="/chrome/" target="swe-swe-browser" class="settings-panel__nav-btn">
+                                <a href="" target="_blank" class="settings-panel__nav-btn settings-panel__nav-tab" data-tab="preview">
+                                    <span class="settings-panel__nav-icon">📡</span>
+                                    <span>Preview</span>
+                                </a>
+                                <a href="/chrome/" target="swe-swe-browser" class="settings-panel__nav-btn settings-panel__nav-tab" data-tab="browser">
                                     <span class="settings-panel__nav-icon">🌐</span>
                                     <span>Browser</span>
                                 </a>
@@ -2490,12 +2502,41 @@ class TerminalUI extends HTMLElement {
         }
         this.updateActiveSwatches(currentColor);
 
-        // Update navigation links with dynamic URLs
+        // Update navigation links with dynamic URLs and add click handlers
         const baseUrl = this.getBaseUrl();
         const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
         if (vscodeLink) {
             vscodeLink.href = this.getVSCodeUrl();
         }
+
+        // Update nav tab links with dynamic URLs and add click handlers for iframe toggle
+        const navTabs = panel.querySelectorAll('.settings-panel__nav-tab');
+        navTabs.forEach(link => {
+            const tab = link.dataset.tab;
+            // Set dynamic hrefs
+            if (tab === 'shell') {
+                // Hide shell link if already in a shell session
+                if (this.assistant === 'shell') {
+                    link.style.display = 'none';
+                    return;
+                }
+                const shellUUID = this.deriveShellUUID(this.uuid);
+                const debugQS = this.debugMode ? '&debug=1' : '';
+                link.href = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
+            } else if (tab === 'preview') {
+                link.href = this.previewBaseUrl || `${window.location.protocol}//${window.location.hostname}:1${window.location.port || '80'}`;
+            } else if (tab === 'browser') {
+                link.href = `${baseUrl}/chrome/`;
+            }
+            // Add click handler for iframe toggle behavior
+            link.addEventListener('click', (e) => {
+                this.handleTabClick(e, tab, link.href);
+                // Close settings panel after clicking a tab
+                if (this.canShowSplitPane() && this.isRegularClick(e)) {
+                    this.closeSettingsPanel();
+                }
+            });
+        });
 
         // YOLO toggle
         const yoloField = panel.querySelector('.settings-panel__field--yolo');
@@ -3578,10 +3619,21 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Update visual indicator for active tab
+    // Update visual indicator for active tab (status bar and settings panel)
     updateActiveTabIndicator() {
-        const tabs = this.querySelectorAll('.terminal-ui__status-tab');
-        tabs.forEach(tab => {
+        // Update status bar tabs
+        const statusTabs = this.querySelectorAll('.terminal-ui__status-tab');
+        statusTabs.forEach(tab => {
+            if (tab.dataset.tab === this.activeTab) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+
+        // Update settings panel nav tabs
+        const settingsTabs = this.querySelectorAll('.settings-panel__nav-tab');
+        settingsTabs.forEach(tab => {
             if (tab.dataset.tab === this.activeTab) {
                 tab.classList.add('active');
             } else {

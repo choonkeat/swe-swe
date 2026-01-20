@@ -1,0 +1,41 @@
+090000 Starting Phase 5: Sync Settings Panel with Status Bar
+       Steps:
+       1. Audit current settings panel structure
+       2. Remove basic-ui specific elements from settings panel
+       3. Update settings panel navigation
+       4. Apply same click behavior to settings panel links
+       5. Add preview settings section (if appropriate)
+       6. Visual consistency (active indicator sync)
+       7. Test settings panel <-> status bar sync
+       Expected: Settings panel navigation matches status bar exactly
+
+091500 Phase 5 implementation complete. Changes made:
+       - Added Shell tab to settings panel navigation HTML (💻 Shell)
+       - Added data-tab attributes to all service tabs (shell, vscode, preview, browser)
+       - Added settings-panel__nav-shell class for shell link
+       - Updated populateSettingsPanel() to:
+         - Set dynamic URL for shell tab (derived UUID with parent param)
+         - Hide shell tab when already in a shell session (this.assistant === 'shell')
+         - Set dynamic URLs for preview and browser tabs
+       - Added click handlers for all nav tabs that call handleTabClick()
+       - Settings panel closes after clicking a tab (calls closeSettingsPanel())
+       - Fixed typo: hideSettings() -> closeSettingsPanel()
+       - Updated updateActiveTabIndicator() to sync both status bar AND settings panel
+       - Added CSS for .settings-panel__nav-btn.active (background highlight + border)
+
+       Manual browser verification PASSED:
+       - Settings panel shows all 5 tabs: Home, Shell, VSCode, Preview, Browser
+       - Click Shell in settings panel -> iframe opens with shell session
+       - Settings panel closes automatically after clicking tab
+       - Terminal resizes from 120×35 to 59×35 (split pane active)
+       - Active indicator shows on both status bar "shell" link AND settings panel "Shell" tab
+       - Click active "shell" in status bar -> iframe closes, terminal full width (119×35)
+       - Active indicator cleared from both locations
+
+       Phase 5 complete. All acceptance criteria met:
+       ✓ make test passes
+       ✓ make build golden-update completed
+       ✓ Settings panel navigation matches status bar (shell, vscode, preview, browser)
+       ✓ Clicking link in settings panel -> same behavior as status bar
+       ✓ Active tab indicator synced between both locations
+       ✓ Settings panel closes after clicking a tab

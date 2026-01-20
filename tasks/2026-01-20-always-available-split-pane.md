@@ -233,7 +233,7 @@ On desktop viewports, regular left-clicks on service tabs open content in the if
 
 ---
 
-# Phase 4: Preview Toolbar and Helpful Loading Screen
+# Phase 4: Preview Toolbar and Helpful Loading Screen ✅ COMPLETE (core)
 
 ## What Will Be Achieved
 
@@ -325,7 +325,7 @@ Only the "preview" tab shows a toolbar in the iframe pane (home/refresh buttons)
 
 ---
 
-# Phase 5: Sync Settings Panel with Status Bar
+# Phase 5: Sync Settings Panel with Status Bar ✅ COMPLETE
 
 ## What Will Be Achieved
 
