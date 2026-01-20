@@ -7,3 +7,28 @@
        5. Add active tab visual indicator CSS
        6. Update savePaneWidth() and loadSavedPaneWidth()
        Expected: Clicking service tabs toggles iframe pane open/closed
+
+073438 Phase 2 implementation complete. Changes made:
+       - Added "preview" service to renderServiceLinks()
+       - Added handleTabClick(e, tab, url) method for click handling
+       - Added openIframePane(tab, url) method to show iframe with content
+       - Added closeIframePane() method to hide iframe and restore terminal
+       - Added updateActiveTabIndicator() method for visual feedback
+       - Added CSS for .terminal-ui__status-tab.active (underline + bold)
+       - Click handlers attached to all service tabs
+
+       Manual browser verification PASSED:
+       - Click "vscode" → iframe opens with VS Code, terminal shrinks (120×35 → 59×35)
+       - Click "vscode" again → iframe closes, terminal full width (59×35 → 119×35)
+       - Click "preview" → iframe shows "Waiting for App - Connecting to localhost:3000"
+       - Click "browser" → iframe switches to Chrome VNC
+       - Click "browser" again → iframe closes, terminal full width (120×35)
+       - Active tab indicator (underline) updates correctly on each click
+       - Tab switching preserves pane widths
+
+       Phase 2 complete. All acceptance criteria met:
+       ✓ make test passes
+       ✓ Clicking inactive tab opens iframe pane
+       ✓ Clicking active tab closes iframe pane
+       ✓ Tab switching updates iframe content without closing
+       ✓ Active tab visual indicator works

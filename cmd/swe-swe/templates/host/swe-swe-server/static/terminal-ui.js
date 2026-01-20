@@ -468,6 +468,12 @@ class TerminalUI extends HTMLElement {
                 .terminal-ui__status-link-sep {
                     opacity: 0.5;
                 }
+                /* Active tab indicator */
+                .terminal-ui__status-tab.active {
+                    text-decoration: solid underline var(--status-bar-text-color);
+                    text-underline-offset: 3px;
+                    font-weight: 600;
+                }
                 .terminal-ui__status-bar.connecting:hover,
                 .terminal-ui__status-bar.error:hover,
                 .terminal-ui__status-bar.reconnecting:hover {
@@ -1530,6 +1536,7 @@ class TerminalUI extends HTMLElement {
         const baseUrl = this.getBaseUrl();
         const services = [
             { name: 'vscode', url: this.getVSCodeUrl() },
+            { name: 'preview', url: this.previewBaseUrl || `${window.location.protocol}//${window.location.hostname}:1${window.location.port || '80'}` },
             { name: 'browser', url: `${baseUrl}/chrome/` }
         ];
 
@@ -1548,8 +1555,13 @@ class TerminalUI extends HTMLElement {
             const a = document.createElement('a');
             a.href = service.url;
             a.target = `swe-swe-${service.name}`;
-            a.className = 'terminal-ui__status-link';
+            a.className = 'terminal-ui__status-link terminal-ui__status-tab';
+            a.dataset.tab = service.name;
             a.textContent = service.name;
+
+            // Add click handler for tab toggle behavior
+            a.addEventListener('click', (e) => this.handleTabClick(e, service.name, service.url));
+
             container.appendChild(a);
 
             // Add separator between links
@@ -3459,7 +3471,88 @@ class TerminalUI extends HTMLElement {
             iframe.addEventListener('load', () => this.updateIframeUrlDisplay());
         }
 
-        // Note: Don't load iframe URL yet - it will be loaded when user opens the pane (Phase 2)
+        // Note: Don't load iframe URL yet - it will be loaded when user opens the pane
+    }
+
+    // Handle tab click - toggle iframe pane or open in new tab
+    handleTabClick(e, tab, url) {
+        // For now, always intercept clicks and toggle iframe (Phase 3 will add desktop/mobile distinction)
+        e.preventDefault();
+
+        if (tab === this.activeTab) {
+            // Clicking active tab closes the pane
+            this.closeIframePane();
+        } else {
+            // Clicking different tab opens/switches pane
+            this.openIframePane(tab, url);
+        }
+    }
+
+    // Open iframe pane with specified tab content
+    openIframePane(tab, url) {
+        const terminalUi = this.querySelector('.terminal-ui');
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        if (!terminalUi || !iframe) return;
+
+        // Add class to show iframe pane
+        terminalUi.classList.add('iframe-visible');
+
+        // Apply saved pane width
+        this.applyPaneWidth();
+
+        // Update iframe src
+        this.setIframeUrl(url);
+
+        // Update active tab state
+        this.activeTab = tab;
+        this.updateActiveTabIndicator();
+
+        // Re-fit terminal after layout change
+        if (this.fitAddon) {
+            setTimeout(() => {
+                this.fitAddon.fit();
+                this.sendResize();
+            }, 50);
+        }
+    }
+
+    // Close iframe pane and return to 100% terminal
+    closeIframePane() {
+        const terminalUi = this.querySelector('.terminal-ui');
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        if (!terminalUi) return;
+
+        // Stop iframe content to save memory
+        if (iframe) {
+            iframe.src = 'about:blank';
+        }
+
+        // Remove class to hide iframe pane
+        terminalUi.classList.remove('iframe-visible');
+
+        // Clear active tab state
+        this.activeTab = null;
+        this.updateActiveTabIndicator();
+
+        // Re-fit terminal to full width
+        if (this.fitAddon) {
+            setTimeout(() => {
+                this.fitAddon.fit();
+                this.sendResize();
+            }, 50);
+        }
+    }
+
+    // Update visual indicator for active tab
+    updateActiveTabIndicator() {
+        const tabs = this.querySelectorAll('.terminal-ui__status-tab');
+        tabs.forEach(tab => {
+            if (tab.dataset.tab === this.activeTab) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
     }
 
     setupResizer() {
