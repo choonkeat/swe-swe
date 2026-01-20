@@ -94,6 +94,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+# {{IF BASIC_UI}}
+    ports:
+      # App preview port for basic-ui iframe (prepend "1" to SWE_PORT)
+      - "1${SWE_PORT:-1977}:9899"
+# {{ENDIF}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -143,6 +148,10 @@ services:
       - SSL_CERT_FILE=${SSL_CERT_FILE:-}
       # Browser automation via MCP Playwright connected to chrome service
       - BROWSER_WS_ENDPOINT=ws://chrome:9223
+# {{IF BASIC_UI}}
+      # App preview proxy target port (for basic-ui iframe)
+      - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
+# {{ENDIF}}
       # Add other credentials as needed:
       # - GEMINI_API_KEY=${GEMINI_API_KEY}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}

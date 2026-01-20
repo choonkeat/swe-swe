@@ -20,3 +20,8 @@ deploy/digitalocean/manifest.json
 # Local dev artifacts
 .aider.*
 .test-home*
+
+# Worktree symlinks
+.claude
+.playwright-mcp
+.test-repos

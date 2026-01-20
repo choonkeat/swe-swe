@@ -1111,19 +1111,27 @@ class TerminalUI extends HTMLElement {
                     white-space: nowrap;
                     font-size: 11px;
                 }
-                .terminal-ui__iframe-refresh {
+                .terminal-ui__iframe-nav-btn {
                     background: none;
                     border: none;
                     color: #888;
                     cursor: pointer;
-                    padding: 4px 8px;
+                    padding: 4px 6px;
                     border-radius: 4px;
                     font-size: 14px;
                     transition: background 0.2s, color 0.2s;
                 }
-                .terminal-ui__iframe-refresh:hover {
+                .terminal-ui__iframe-nav-btn:hover {
                     background: #404040;
                     color: #ccc;
+                }
+                .terminal-ui__iframe-nav-btn:disabled {
+                    color: #555;
+                    cursor: default;
+                }
+                .terminal-ui__iframe-nav-btn:disabled:hover {
+                    background: none;
+                    color: #555;
                 }
                 .terminal-ui__iframe-container {
                     flex: 1;
@@ -1280,8 +1288,9 @@ class TerminalUI extends HTMLElement {
                     <div class="terminal-ui__resizer"></div>
                     <div class="terminal-ui__iframe-pane">
                         <div class="terminal-ui__iframe-location">
+                            <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
+                            <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
                             <span class="terminal-ui__iframe-url"></span>
-                            <button class="terminal-ui__iframe-refresh" title="Refresh">↻</button>
                         </div>
                         <div class="terminal-ui__iframe-container">
                             <div class="terminal-ui__iframe-placeholder">
@@ -1776,6 +1785,9 @@ class TerminalUI extends HTMLElement {
     // Batches writes within a single animation frame to reduce flicker
     onTerminalData(data) {
         // Parse and handle OSC 7337 sequences (BasicUiUrl) when in basic-ui mode
+        // Note: Currently OSC 7337 from agents is consumed by terminal emulators (OpenCode, etc.)
+        // before reaching the browser, so this code path is rarely triggered. The preview port
+        // approach (1${SWE_PORT}) is the primary mechanism for app preview.
         if (this.basicUiUrl) {
             const { cleaned, payloads } = this.parseOsc7337(data);
             for (const payload of payloads) {
@@ -3456,14 +3468,34 @@ class TerminalUI extends HTMLElement {
         // Setup resizer drag functionality
         this.setupResizer();
 
-        // Setup iframe refresh button
+        // Compute preview URL: prepend "1" to port (e.g., 1977 -> 11977, 8080 -> 18080)
+        // This matches docker-compose: "1${SWE_PORT:-1977}:9899"
+        // Note: SWE_PORT must be ≤ 9999 for valid preview port (max 19999 < 65535)
+        const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
+        const previewPort = '1' + currentPort;
+        this.previewBaseUrl = `${window.location.protocol}//${window.location.hostname}:${previewPort}`;
+
+        // Setup iframe navigation buttons
+        const homeBtn = this.querySelector('.terminal-ui__iframe-home');
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
+        const iframe = this.querySelector('.terminal-ui__iframe');
+
+        if (homeBtn) {
+            homeBtn.addEventListener('click', () => {
+                this.setIframeUrl(this.previewBaseUrl + '/');
+            });
+        }
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
         }
 
+        // Track iframe URL changes (limited by cross-origin policy)
+        if (iframe) {
+            iframe.addEventListener('load', () => this.updateIframeUrlDisplay());
+        }
+
         // Load initial URL
-        this.setIframeUrl(this.basicUiUrl);
+        this.setIframeUrl(this.previewBaseUrl);
 
         // Re-fit terminal after layout change
         if (this.fitAddon) {
@@ -3611,7 +3643,13 @@ class TerminalUI extends HTMLElement {
         const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
 
         if (urlDisplay) {
-            urlDisplay.textContent = url;
+            // Show path relative to base, or full URL if different origin
+            try {
+                const urlObj = new URL(url);
+                urlDisplay.textContent = urlObj.pathname + urlObj.search + urlObj.hash || '/';
+            } catch (e) {
+                urlDisplay.textContent = url;
+            }
             urlDisplay.title = url;
         }
 
@@ -3648,6 +3686,30 @@ class TerminalUI extends HTMLElement {
             }
             // Force reload by setting src again
             iframe.src = iframe.src;
+        }
+    }
+
+    updateIframeUrlDisplay() {
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        const urlDisplay = this.querySelector('.terminal-ui__iframe-url');
+        if (!iframe || !urlDisplay) return;
+
+        try {
+            // Try to read current URL (may fail due to cross-origin policy)
+            const currentUrl = iframe.contentWindow?.location?.href;
+            if (currentUrl && currentUrl !== 'about:blank') {
+                // Show path + query string relative to base URL
+                const url = new URL(currentUrl);
+                const displayUrl = url.pathname + url.search + url.hash;
+                urlDisplay.textContent = displayUrl || '/';
+                urlDisplay.title = currentUrl;
+            }
+        } catch (e) {
+            // Cross-origin: can't read iframe location, show base URL
+            if (this.previewBaseUrl) {
+                urlDisplay.textContent = this.previewBaseUrl;
+                urlDisplay.title = this.previewBaseUrl;
+            }
         }
     }
 

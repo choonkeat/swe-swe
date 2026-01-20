@@ -748,7 +748,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml which only needs the DOCKER condition
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, basicUI bool, hostUID int, hostGID int) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -769,6 +769,11 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 
 		if strings.Contains(trimmed, "{{IF NO_SSL}}") {
 			skip = strings.HasPrefix(ssl, "selfsign")
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF BASIC_UI}}") {
+			skip = !basicUI
 			continue
 		}
 
@@ -1344,12 +1349,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, basicUi != "", hostUID, hostGID))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, basicUi != "", hostUID, hostGID))
 			}
 
 			// Process entrypoint.sh template with conditional sections

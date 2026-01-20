@@ -57,7 +57,8 @@ acquire_slot() {
                 date +%s > "$lock_dir/timestamp"
 
                 # Calculate port and project name
-                local port=$((19770 + slot))
+                # Port must be ≤ 9999 so preview port (1${port}) stays under 65535
+                local port=$((9770 + slot))
                 local project_name="swe-test-${slot}"
 
                 echo "$port" > "$lock_dir/port"

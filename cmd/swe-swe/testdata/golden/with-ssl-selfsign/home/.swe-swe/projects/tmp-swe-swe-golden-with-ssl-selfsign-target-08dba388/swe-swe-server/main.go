@@ -13,6 +13,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +43,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "0c3f60b2"
+	GitCommit = "6febb116"
 )
 
 var indexTemplate *template.Template
@@ -1021,6 +1023,96 @@ func detectAvailableAssistants() error {
 	return nil
 }
 
+// previewProxyErrorPage returns an HTML error page with auto-retry for when the app is not running
+// Note: %% is used to escape % characters in CSS (e.g., 50%%, 100vh) for fmt.Fprintf
+const previewProxyErrorPage = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>App Preview</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #1e1e1e;
+            color: #ccc;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+        }
+        h1 { color: #fff; font-size: 1.5rem; margin-bottom: 1rem; }
+        p { margin: 0.5rem 0; }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            margin: 1rem auto;
+            border: 3px solid #333;
+            border-top-color: #007acc;
+            border-radius: 50%%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .port { color: #007acc; font-family: monospace; }
+        .countdown { color: #888; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Waiting for App</h1>
+        <div class="spinner"></div>
+        <p>Connecting to <span class="port">localhost:%s</span></p>
+        <p class="countdown">Retrying in <span id="countdown">5</span>s...</p>
+    </div>
+    <script>
+        let seconds = 5;
+        const countdown = document.getElementById('countdown');
+        const timer = setInterval(() => {
+            seconds--;
+            countdown.textContent = seconds;
+            if (seconds <= 0) {
+                clearInterval(timer);
+                location.reload();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>`
+
+// startPreviewProxy starts the app preview reverse proxy server on port 9899
+// It proxies requests to localhost:targetPort and shows an error page if unavailable
+func startPreviewProxy(targetPort string) {
+	targetURL, err := url.Parse("http://localhost:" + targetPort)
+	if err != nil {
+		log.Printf("Preview proxy: invalid target URL: %v", err)
+		return
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	// Custom error handler to show retry page when app is not running
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("Preview proxy error: %v", err)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, previewProxyErrorPage, targetPort)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
+	})
+
+	log.Printf("Starting preview proxy on :9899 -> localhost:%s", targetPort)
+	if err := http.ListenAndServe(":9899", mux); err != nil {
+		log.Printf("Preview proxy error: %v", err)
+	}
+}
+
 func main() {
 	addr := flag.String("addr", ":9898", "Listen address")
 	version := flag.Bool("version", false, "Show version and exit")
@@ -1088,6 +1180,11 @@ func main() {
 
 	// Start session reaper
 	go sessionReaper()
+
+	// Start preview proxy if SWE_PREVIEW_TARGET_PORT is set (for basic-ui mode)
+	if previewTargetPort := os.Getenv("SWE_PREVIEW_TARGET_PORT"); previewTargetPort != "" {
+		go startPreviewProxy(previewTargetPort)
+	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Root path: show assistant selection page
