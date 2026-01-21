@@ -401,7 +401,7 @@ class TerminalUI extends HTMLElement {
                     border-bottom: 3px solid var(--status-bar-border-dark);
                 }
                 /* Hide status bar when embedded inside an iframe (panel view) */
-                .terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
+                terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
                     display: none;
                 }
                 .terminal-ui__status-bar.connected {
@@ -1262,11 +1262,11 @@ class TerminalUI extends HTMLElement {
                                 </a>
                                 <a href="" target="_blank" class="settings-panel__nav-btn settings-panel__nav-tab" data-tab="preview">
                                     <span class="settings-panel__nav-icon">📡</span>
-                                    <span>Preview</span>
+                                    <span>App Preview</span>
                                 </a>
                                 <a href="/chrome/" target="swe-swe-browser" class="settings-panel__nav-btn settings-panel__nav-tab" data-tab="browser">
                                     <span class="settings-panel__nav-icon">🌐</span>
-                                    <span>Browser</span>
+                                    <span>Agent View</span>
                                 </a>
                             </nav>
                         </div>
@@ -1561,9 +1561,9 @@ class TerminalUI extends HTMLElement {
         // All services use path-based routing
         const baseUrl = this.getBaseUrl();
         const services = [
-            { name: 'vscode', url: this.getVSCodeUrl() },
-            { name: 'preview', url: this.previewBaseUrl || `${window.location.protocol}//${window.location.hostname}:1${window.location.port || '80'}` },
-            { name: 'browser', url: `${baseUrl}/chrome/` }
+            { name: 'vscode', label: 'VSCode', url: this.getVSCodeUrl() },
+            { name: 'preview', label: 'App Preview', url: this.previewBaseUrl || `${window.location.protocol}//${window.location.hostname}:1${window.location.port || '80'}` },
+            { name: 'browser', label: 'Agent View', url: `${baseUrl}/chrome/` }
         ];
 
         // Add shell link if not already in a shell session
@@ -1571,7 +1571,7 @@ class TerminalUI extends HTMLElement {
             const shellUUID = this.deriveShellUUID(this.uuid);
             const debugQS = this.debugMode ? '&debug=1' : '';
             const shellUrl = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
-            services.unshift({ name: 'shell', url: shellUrl });
+            services.unshift({ name: 'shell', label: 'Shell', url: shellUrl });
         }
 
         const container = document.createElement('div');
@@ -1583,7 +1583,7 @@ class TerminalUI extends HTMLElement {
             a.target = `swe-swe-${service.name}`;
             a.className = 'terminal-ui__status-link terminal-ui__status-tab';
             a.dataset.tab = service.name;
-            a.textContent = service.name;
+            a.textContent = service.label;
 
             // Add click handler for tab toggle behavior
             a.addEventListener('click', (e) => this.handleTabClick(e, service.name, service.url));
@@ -3539,7 +3539,13 @@ class TerminalUI extends HTMLElement {
             iframe.addEventListener('load', () => this.updateIframeUrlDisplay());
         }
 
-        // Note: Don't load iframe URL yet - it will be loaded when user opens the pane
+        // Open preview tab by default on desktop (if wide enough for split view)
+        if (this.canShowSplitPane()) {
+            // Use setTimeout to ensure DOM is ready and terminal has been initialized
+            setTimeout(() => {
+                this.openIframePane('preview', this.previewBaseUrl + '/');
+            }, 100);
+        }
     }
 
     // Check if viewport is wide enough for split-pane layout

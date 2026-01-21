@@ -43,7 +43,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "b015f7a8"
+	GitCommit = "12a0ae12"
 )
 
 var indexTemplate *template.Template
@@ -1023,7 +1023,8 @@ func detectAvailableAssistants() error {
 	return nil
 }
 
-// previewProxyErrorPage returns an HTML error page with auto-retry for when the app is not running
+// previewProxyErrorPage returns an HTML error page for when the app is not running
+// Uses fetch-based polling to avoid white flash on reload
 // Note: %% is used to escape % characters in CSS (e.g., 50%%, 100vh) for fmt.Fprintf
 const previewProxyErrorPage = `<!DOCTYPE html>
 <html>
@@ -1039,46 +1040,80 @@ const previewProxyErrorPage = `<!DOCTYPE html>
             min-height: 100vh;
             margin: 0;
             background: #1e1e1e;
-            color: #ccc;
+            color: #9ca3af;
         }
         .container {
             text-align: center;
             padding: 2rem;
+            max-width: 400px;
         }
-        h1 { color: #fff; font-size: 1.5rem; margin-bottom: 1rem; }
-        p { margin: 0.5rem 0; }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            margin: 1rem auto;
-            border: 3px solid #333;
-            border-top-color: #007acc;
+        h1 { color: #e5e7eb; font-size: 1.25rem; font-weight: 500; margin-bottom: 1.5rem; }
+        .instruction {
+            background: #262626;
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin: 1rem 0;
+            text-align: left;
+        }
+        .instruction-label {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+        }
+        .instruction-text {
+            color: #d1d5db;
+            font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .port { color: #60a5fa; }
+        .status {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 1.5rem;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #6b7280;
             border-radius: 50%%;
-            animation: spin 1s linear infinite;
+            margin-right: 6px;
+            animation: pulse 2s ease-in-out infinite;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .port { color: #007acc; font-family: monospace; }
-        .countdown { color: #888; font-size: 0.9rem; }
+        @keyframes pulse {
+            0%%, 100%% { opacity: 0.4; }
+            50%% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Waiting for App</h1>
-        <div class="spinner"></div>
-        <p>Connecting to <span class="port">localhost:%s</span></p>
-        <p class="countdown">Retrying in <span id="countdown">5</span>s...</p>
+        <h1>App Preview</h1>
+        <div class="instruction">
+            <div class="instruction-label">Tell your agent:</div>
+            <div class="instruction-text">Start a hot-reload web app on port <span class="port">%s</span></div>
+        </div>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span id="status-text">Listening for app...</span>
+        </div>
     </div>
     <script>
-        let seconds = 5;
-        const countdown = document.getElementById('countdown');
-        const timer = setInterval(() => {
-            seconds--;
-            countdown.textContent = seconds;
-            if (seconds <= 0) {
-                clearInterval(timer);
-                location.reload();
+        // Poll for app availability without page reload (no white flash)
+        async function checkApp() {
+            try {
+                const response = await fetch(window.location.href, { method: 'HEAD' });
+                // 502 = proxy error (this page), 200 = app is running
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch (e) {
+                // Network error, keep polling
             }
-        }, 1000);
+        }
+        // Check every 3 seconds
+        setInterval(checkApp, 3000);
     </script>
 </body>
 </html>`
