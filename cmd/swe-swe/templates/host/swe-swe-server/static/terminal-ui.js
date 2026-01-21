@@ -401,7 +401,7 @@ class TerminalUI extends HTMLElement {
                     border-bottom: 3px solid var(--status-bar-border-dark);
                 }
                 /* Hide status bar when embedded inside an iframe (panel view) */
-                .terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
+                terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
                     display: none;
                 }
                 .terminal-ui__status-bar.connected {
