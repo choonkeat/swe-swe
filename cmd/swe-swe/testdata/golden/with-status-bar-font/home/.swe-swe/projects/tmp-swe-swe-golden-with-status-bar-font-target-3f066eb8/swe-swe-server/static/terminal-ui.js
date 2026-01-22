@@ -3,6 +3,7 @@ import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
+import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -11,7 +12,7 @@ class TerminalUI extends HTMLElement {
         this.term = null;
         this.fitAddon = null;
         this.connectedAt = null;
-        this.reconnectAttempts = 0;
+        this.reconnectState = createReconnectState();
         this.reconnectTimeout = null;
         this.countdownInterval = null;
         this.uptimeInterval = null;
@@ -551,10 +552,6 @@ class TerminalUI extends HTMLElement {
         if (timerEl) timerEl.textContent = '';
     }
 
-    getReconnectDelay() {
-        return Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
-    }
-
     getAssistantLink() {
         const name = this.assistantName || this.assistant;
         const debugQS = getDebugQueryString(this.debugMode);
@@ -562,10 +559,10 @@ class TerminalUI extends HTMLElement {
     }
 
     scheduleReconnect() {
-        const delay = this.getReconnectDelay();
-        this.reconnectAttempts++;
+        const delay = getDelay(this.reconnectState);
+        this.reconnectState = nextAttempt(this.reconnectState);
 
-        let remaining = Math.ceil(delay / 1000);
+        let remaining = formatCountdown(delay);
         this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantLink()} in ${remaining}s...`);
 
         this.countdownInterval = setInterval(() => {
@@ -643,7 +640,7 @@ class TerminalUI extends HTMLElement {
         this.ws.onopen = () => {
             clearTimeout(connectTimeout);
             console.log('[WS] Connected to', url);
-            this.reconnectAttempts = 0;
+            this.reconnectState = resetAttempts(this.reconnectState);
             this.updateStatus('connected', 'Connected');
             this.startUptimeTimer();
             this.sendResize();
@@ -1949,7 +1946,7 @@ class TerminalUI extends HTMLElement {
                     this.ws = null;
                 }
                 // Reset backoff on manual retry
-                this.reconnectAttempts = 0;
+                this.reconnectState = resetAttempts(this.reconnectState);
                 this.connect();
             } else if (statusBar.classList.contains('connected')) {
                 // When connected, open settings panel

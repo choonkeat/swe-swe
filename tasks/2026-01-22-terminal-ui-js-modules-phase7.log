@@ -1,3 +1,43 @@
 224427 Starting Phase 7: Extract reconnect.js (pure reconnection state reducer)
 224427 Step 1: Create static/modules/reconnect.js with pure state functions
 224427 Expected: reconnect.js with createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown
+224520 Observed: reconnect.js created with 2 constants and 5 pure functions (69 lines)
+224520 Constants: RECONNECT_BASE_DELAY=1000, RECONNECT_MAX_DELAY=60000
+224520 Functions:
+224520   - createReconnectState(config): Create initial state with attempts=0
+224520   - getDelay(state): Calculate delay with exponential backoff formula
+224520   - nextAttempt(state): Immutable state update, attempts+1
+224520   - resetAttempts(state): Immutable state update, attempts=0
+224520   - formatCountdown(delayMs): Convert ms to seconds (ceil)
+224520 Step 2: Create reconnect.test.js with unit tests
+224520 Observed: reconnect.test.js created with 33 test cases
+224520 Step 3: Run unit tests
+224520 Command: node --test reconnect.test.js
+224520 Observed: All 33 tests pass (192ms)
+224520 Test coverage:
+224520   - Constants: 2 tests
+224520   - createReconnectState: 6 tests (defaults, custom config)
+224520   - getDelay: 10 tests (exponential backoff, capping at maxDelay)
+224520   - nextAttempt: 5 tests (increment, immutability)
+224520   - resetAttempts: 5 tests (reset, immutability)
+224520   - formatCountdown: 4 tests (rounding, edge cases)
+224520   - Integration: 1 test (complete workflow)
+224631 Step 4: Update terminal-ui.js to import from modules/reconnect.js
+224631 Observed: Added import statement for createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown
+224631 Observed: Replaced this.reconnectAttempts = 0 with this.reconnectState = createReconnectState()
+224631 Observed: Removed getReconnectDelay() method (replaced with imported getDelay)
+224631 Observed: Updated scheduleReconnect(): uses getDelay(this.reconnectState), nextAttempt(), formatCountdown()
+224631 Observed: Updated ws.onopen: this.reconnectState = resetAttempts(this.reconnectState)
+224631 Observed: Updated status bar click handler: this.reconnectState = resetAttempts(this.reconnectState)
+224631 Step 5: Add reconnect.js to main.go hostFiles
+224631 Observed: Added "templates/host/swe-swe-server/static/modules/reconnect.js" to hostFiles
+224631 Step 6: Build and test
+224631 Command: make build golden-update
+224742 make build golden-update: Success
+224742 make test: All tests pass
+224742 Phase 7 PASSED: reconnect.js extraction verified via unit tests (33 tests)
+224742 Changes summary:
+224742   - Removed getReconnectDelay() method (1 method)
+224742   - Replaced this.reconnectAttempts with this.reconnectState (immutable state object)
+224742   - 3 call sites updated to use pure functions
+224742   - Total lines removed: ~4 lines
