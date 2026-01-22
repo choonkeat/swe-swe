@@ -1,0 +1,4 @@
+043131 - Starting Phase 1: Script Injection Infrastructure
+043131 - Step 1.1: Add ModifyResponse callback to reverse proxy
+       - Will: Add ModifyResponse to existing httputil.NewSingleHostReverseProxy in startPreviewProxy()
+       - Expect: Callback is called for each response, can inspect Content-Type header
