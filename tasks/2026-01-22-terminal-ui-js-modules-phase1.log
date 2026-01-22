@@ -1,3 +1,9 @@
 213053 Starting Phase 1: Extract CSS to external stylesheet
 213053 Step 1: Create static/styles/terminal-ui.css with CSS from render() method
 213053 Expected: CSS file created with ~500 lines of styles
+213548 Observed: CSS file created with 1199 lines (more than expected due to proper formatting)
+213548 terminal-ui.js reduced from 3880 to 2844 lines (1036 lines removed)
+213548 index.html updated to load /styles/terminal-ui.css
+213548 Build succeeded
+213548 Step 2: Integration test via test container + MCP browser
+213548 Expected: Status bar renders with correct color, terminal displays correctly, settings panel opens/closes
