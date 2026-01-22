@@ -40,10 +40,10 @@ Enable the container script to forward stdin to the proxied command on the host 
   ```
 
 ### Step 1.3: Modify container script - TTY detection, warning, stdin capture
-- [ ] Add TTY detection with `[[ -t 0 ]]`
-- [ ] If TTY: print warning to stderr, skip stdin capture
-- [ ] If not TTY: read stdin into `$PROXY_DIR/$uuid.stdin` file
-- [ ] Code:
+- [x] Add TTY detection with `[[ -t 0 ]]`
+- [x] If TTY: print warning to stderr, skip stdin capture
+- [x] If not TTY: read stdin into `$PROXY_DIR/$uuid.stdin` file
+- [x] Code:
   ```bash
   stdin_file="$PROXY_DIR/$uuid.stdin"
   if [[ -t 0 ]]; then

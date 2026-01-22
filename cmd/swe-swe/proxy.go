@@ -138,6 +138,7 @@ tmp_file="$PROXY_DIR/$uuid.req.tmp"
 exit_file="$PROXY_DIR/$uuid.exit"
 stdout_file="$PROXY_DIR/$uuid.stdout"
 stderr_file="$PROXY_DIR/$uuid.stderr"
+stdin_file="$PROXY_DIR/$uuid.stdin"
 heartbeat_file="$PROXY_DIR/.heartbeat"
 heartbeat_pid=""
 
@@ -148,7 +149,7 @@ cleanup() {
         kill "$heartbeat_pid" 2>/dev/null || true
         wait "$heartbeat_pid" 2>/dev/null || true
     fi
-    rm -f "$stdout_file" "$stderr_file" "$exit_file"
+    rm -f "$stdout_file" "$stderr_file" "$exit_file" "$stdin_file"
 }
 trap cleanup EXIT
 
@@ -184,6 +185,13 @@ stream_file() {
         sleep 0.05
     done
 }
+
+# Capture stdin if not a TTY (piped or redirected input)
+if [[ -t 0 ]]; then
+    echo "[proxy] Warning: stdin is a TTY, input will not be forwarded (use piping instead)" >&2
+else
+    cat > "$stdin_file"
+fi
 
 # Write request atomically (NUL-delimited arguments)
 if [[ $# -gt 0 ]]; then

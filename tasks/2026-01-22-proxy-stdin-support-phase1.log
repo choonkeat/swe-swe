@@ -25,3 +25,19 @@
 - UUID format changed from "254c1029-3699-4e2c-98b5-5cdd463d38e8" to "601b962fdf4e5bb538588fe5b40cfe08"
 - Also fixed duplicate skipIfNotLinux() call in test and updated comment
 - Conclusion: UUID generation now cross-platform compatible
+
+## Step 1.3: Modify container script - TTY detection, warning, stdin capture
+
+### Before implementation
+- Action: Add TTY detection, warning message, and stdin capture to container script
+- Expected: Script will detect if stdin is a TTY, print warning if so, otherwise capture stdin to file
+
+### After implementation (033311)
+- Added stdin_file variable to container script
+- Added stdin_file to cleanup function
+- Added TTY detection with -t 0 check
+- Added warning message for TTY stdin
+- Added stdin capture with cat > "$stdin_file"
+- Verified: TestIntegration_BasicFlow PASSED (no TTY warning since test doesn't use TTY)
+- Verified: TestIntegration_StdinForwarding still FAILS (expected - host side not done yet)
+- Conclusion: Container-side stdin capture implemented, awaiting host-side processing
