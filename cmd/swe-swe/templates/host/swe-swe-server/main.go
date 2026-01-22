@@ -1118,8 +1118,61 @@ const previewProxyErrorPage = `<!DOCTYPE html>
 </body>
 </html>`
 
+// debugScriptTag is injected into HTML responses to enable debug channel
+const debugScriptTag = `<script src="/__swe-swe-debug__/inject.js"></script>`
+
+// debugInjectScriptRe matches <head> or <body> tag (case insensitive)
+var debugInjectScriptRe = regexp.MustCompile(`(?i)(<head[^>]*>|<body[^>]*>)`)
+
+// injectDebugScript injects the debug script tag after the FIRST <head> or <body> tag only
+func injectDebugScript(body []byte) []byte {
+	loc := debugInjectScriptRe.FindIndex(body)
+	if loc == nil {
+		return body // No match found
+	}
+	// Insert script tag after the first match
+	result := make([]byte, 0, len(body)+len(debugScriptTag))
+	result = append(result, body[:loc[1]]...)
+	result = append(result, debugScriptTag...)
+	result = append(result, body[loc[1]:]...)
+	return result
+}
+
+// modifyCSPHeader modifies Content-Security-Policy header to allow debug script and WebSocket
+func modifyCSPHeader(h http.Header) {
+	csp := h.Get("Content-Security-Policy")
+	if csp == "" {
+		return
+	}
+
+	// Add 'self' to script-src for our injected script
+	if strings.Contains(csp, "script-src") {
+		csp = strings.Replace(csp, "script-src", "script-src 'self'", 1)
+	} else {
+		// No script-src directive, add one
+		csp = csp + "; script-src 'self'"
+	}
+
+	// Add ws: and wss: to connect-src for WebSocket
+	if strings.Contains(csp, "connect-src") {
+		csp = strings.Replace(csp, "connect-src", "connect-src ws: wss:", 1)
+	} else {
+		// No connect-src directive, add one
+		csp = csp + "; connect-src ws: wss:"
+	}
+
+	h.Set("Content-Security-Policy", csp)
+}
+
+// debugInjectJS is a placeholder script served at /__swe-swe-debug__/inject.js
+// This will be replaced with the full debug script in Phase 2
+const debugInjectJS = `// swe-swe debug injection placeholder
+console.log('[swe-swe-debug] Debug script loaded (placeholder)');
+`
+
 // startPreviewProxy starts the app preview reverse proxy server on port 9899
 // It proxies requests to localhost:targetPort and shows an error page if unavailable
+// It also injects a debug script into HTML responses for console/error/network forwarding
 func startPreviewProxy(targetPort string) {
 	targetURL, err := url.Parse("http://localhost:" + targetPort)
 	if err != nil {
@@ -1137,7 +1190,64 @@ func startPreviewProxy(targetPort string) {
 		fmt.Fprintf(w, previewProxyErrorPage, targetPort)
 	}
 
+	// ModifyResponse injects debug script into HTML responses
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "text/html") {
+			return nil // Pass through non-HTML responses unchanged
+		}
+
+		// Read the response body
+		var body []byte
+		var readErr error
+
+		// Handle compressed responses
+		encoding := resp.Header.Get("Content-Encoding")
+		switch encoding {
+		case "gzip":
+			gr, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				return err
+			}
+			body, readErr = io.ReadAll(gr)
+			gr.Close()
+		case "br":
+			// For brotli, we'd need an external library
+			// For now, pass through brotli responses unchanged
+			return nil
+		default:
+			body, readErr = io.ReadAll(resp.Body)
+		}
+		resp.Body.Close()
+
+		if readErr != nil {
+			return readErr
+		}
+
+		// Inject the debug script
+		injected := injectDebugScript(body)
+
+		// Modify CSP header if present
+		modifyCSPHeader(resp.Header)
+
+		// Update response body and headers
+		resp.Body = io.NopCloser(bytes.NewReader(injected))
+		resp.ContentLength = int64(len(injected))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(injected)))
+		resp.Header.Del("Content-Encoding") // We've decompressed it
+
+		return nil
+	}
+
 	mux := http.NewServeMux()
+
+	// Serve debug script
+	mux.HandleFunc("/__swe-swe-debug__/inject.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(debugInjectJS))
+	})
+
+	// Proxy all other requests
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(w, r)
 	})

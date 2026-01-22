@@ -12,3 +12,14 @@
 043256 - Writing tests for Phase 1
        - Will: Create main_test.go with tests for injection, CSP, gzip, non-HTML passthrough
        - Expect: All tests pass
+043520 - Tests completed
+       - Created: debug_inject_test.go with 5 test functions
+       - Fixed: injectDebugScript to only inject FIRST match (head OR body, not both)
+       - Fixed: Test expectations for CSP (function correctly modifies both directives)
+       - Result: All tests PASS (make test-server succeeds)
+       - Tests verified:
+         * TestInjectDebugScript - 8 cases (head, body, case insensitive, attributes, etc.)
+         * TestModifyCSPHeader - 6 cases (empty, existing directives, missing directives)
+         * TestDebugInjectJSEndpoint - serves placeholder JS
+         * TestProxyHTMLInjection - documents integration expectations
+         * TestGzipDecompression - verifies gzip roundtrip and injection
