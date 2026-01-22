@@ -1,4 +1,4 @@
-import { formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks } from './modules/util.js';
+import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './modules/url-builder.js';
@@ -6,6 +6,7 @@ import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChu
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
+import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -425,30 +426,14 @@ class TerminalUI extends HTMLElement {
             existingContainer.remove();
         }
 
-        const links = parseLinks(this.links);
-        if (links.length === 0) return;
+        // Use pure render function for custom links HTML
+        const html = renderCustomLinks(this.links);
+        if (!html) return;
 
-        const container = document.createElement('div');
-        container.className = 'terminal-ui__status-links';
-
-        links.forEach((link, index) => {
-            const a = document.createElement('a');
-            a.href = link.url;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            a.className = 'terminal-ui__status-link';
-            a.textContent = link.text;
-            container.appendChild(a);
-
-            // Add separator between links
-            if (index < links.length - 1) {
-                const sep = document.createElement('span');
-                sep.className = 'terminal-ui__status-link-sep';
-                sep.textContent = ' | ';
-                container.appendChild(sep);
-            }
-        });
-
+        // Insert HTML string by creating a wrapper
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const container = temp.firstChild;
         statusRight.insertBefore(container, statusRight.firstChild);
     }
 
@@ -462,7 +447,7 @@ class TerminalUI extends HTMLElement {
             existingContainer.remove();
         }
 
-        // All services use path-based routing
+        // Build services list
         const baseUrl = getBaseUrl(window.location);
         const services = [
             { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
@@ -477,28 +462,20 @@ class TerminalUI extends HTMLElement {
             services.unshift({ name: 'shell', label: 'Shell', url: shellUrl });
         }
 
-        const container = document.createElement('div');
-        container.className = 'terminal-ui__status-service-links';
+        // Use pure render function for service links HTML
+        const html = renderServiceLinks({ services });
+        if (!html) return;
 
-        services.forEach((service, index) => {
-            const a = document.createElement('a');
-            a.href = service.url;
-            a.target = `swe-swe-${service.name}`;
-            a.className = 'terminal-ui__status-link terminal-ui__status-tab';
-            a.dataset.tab = service.name;
-            a.textContent = service.label;
+        // Insert HTML string by creating a wrapper
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const container = temp.firstChild;
 
-            // Add click handler for tab toggle behavior
-            a.addEventListener('click', (e) => this.handleTabClick(e, service.name, service.url));
-
-            container.appendChild(a);
-
-            // Add separator between links
-            if (index < services.length - 1) {
-                const sep = document.createElement('span');
-                sep.className = 'terminal-ui__status-link-sep';
-                sep.textContent = ' | ';
-                container.appendChild(sep);
+        // Attach click handlers after insertion (event handlers can't be in pure HTML)
+        services.forEach((service) => {
+            const link = container.querySelector(`[data-tab="${service.name}"]`);
+            if (link) {
+                link.addEventListener('click', (e) => this.handleTabClick(e, service.name, service.url));
             }
         });
 
@@ -552,9 +529,11 @@ class TerminalUI extends HTMLElement {
     }
 
     getAssistantLink() {
-        const name = this.assistantName || this.assistant;
-        const debugQS = getDebugQueryString(this.debugMode);
-        return `<a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
+        return renderAssistantLink({
+            assistantName: this.assistantName,
+            assistant: this.assistant,
+            debugMode: this.debugMode
+        });
     }
 
     scheduleReconnect() {
@@ -916,32 +895,21 @@ class TerminalUI extends HTMLElement {
         // Toggle yolo class based on YOLO mode
         statusBar.classList.toggle('yolo', this.yoloMode);
 
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            // Build "Connected/YOLO as {name} with {agent}" message with separate clickable parts
-            const userName = this.currentUserName;
-            const debugQS = getDebugQueryString(this.debugMode);
+        const isConnected = this.ws && this.ws.readyState === WebSocket.OPEN;
 
-            // Show "YOLO" or "Connected" based on mode, make clickable if YOLO is supported
-            const statusWord = this.yoloMode ? 'YOLO' : 'Connected';
-            let html;
-            if (this.yoloSupported) {
-                html = `<span class="terminal-ui__status-link terminal-ui__status-yolo-toggle">${statusWord}</span> as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
-            } else {
-                html = `${statusWord} as <span class="terminal-ui__status-link terminal-ui__status-name">${userName}</span>`;
-            }
-            if (this.assistantName) {
-                html += ` with <a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${this.assistantName}</a>`;
-            }
-
-            // Add viewer suffix if more than 1 viewer
-            if (this.viewers > 1) {
-                html += ` and <span class="terminal-ui__status-link terminal-ui__status-others">${this.viewers - 1} others</span>`;
-            }
-
-            // Add session name display
-            const sessionDisplay = this.sessionName || `Unnamed session ${this.uuidShort}`;
-            html += ` on <span class="terminal-ui__status-link terminal-ui__status-session">${sessionDisplay}</span>`;
-
+        if (isConnected) {
+            // Use pure render function for status info HTML
+            const html = renderStatusInfo({
+                connected: true,
+                userName: this.currentUserName,
+                assistantName: this.assistantName,
+                sessionName: this.sessionName,
+                uuidShort: this.uuidShort,
+                viewers: this.viewers,
+                yoloMode: this.yoloMode,
+                yoloSupported: this.yoloSupported,
+                debugMode: this.debugMode
+            });
             statusText.innerHTML = html;
 
             // Display dimensions separately on the right

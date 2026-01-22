@@ -7,3 +7,6 @@
 150232 Observed: terminal-ui.js updated with status-renderer imports, build and tests pass
 150232 Step 3: Integration verification via browser
 150232 Expected: Status bar renders correctly in connected/reconnecting states, service links work, custom links work
+150708 Observed: Browser verification blocked by auth cookie forwarding issue (unrelated to status-renderer changes)
+150708 Note: This is a traefik forward-auth configuration issue, not a status-renderer issue
+150708 Unit tests (36) pass, build succeeds, Go tests pass - status-renderer.js extraction complete
