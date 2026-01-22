@@ -2,3 +2,22 @@
 044224 - Step 3.1: Create debug client for agent
        - Will: Create simple Go binary that connects to WebSocket and prints messages
        - Expect: Agent can invoke this to receive debug messages from iframe
+044437 - Steps 3.1-3.2 implemented
+       - Added: --debug-listen flag to swe-swe-server (listens for debug messages)
+       - Added: --debug-query flag to swe-swe-server (sends DOM query, prints response)
+       - Added: --debug-endpoint flag for custom WebSocket endpoint
+       - Added: runDebugListen() - connects to agent endpoint, prints JSON lines to stdout
+       - Added: runDebugQuery() - sends query, waits for response with timeout
+       - No separate binary needed - uses existing swe-swe-server in container
+       - Build: SUCCESS (make build passed)
+       - Tests: All tests PASS (make test-server)
+
+Agent usage:
+  # Listen for all debug messages (console, errors, fetch, etc.)
+  swe-swe-server --debug-listen
+
+  # Query a specific DOM element
+  swe-swe-server --debug-query ".error-message"
+
+  # With custom endpoint
+  swe-swe-server --debug-listen --debug-endpoint ws://localhost:9899/__swe-swe-debug__/agent

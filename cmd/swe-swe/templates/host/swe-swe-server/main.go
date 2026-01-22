@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -1590,9 +1591,103 @@ func startPreviewProxy(targetPort string) {
 	}
 }
 
+// runDebugListen connects to the debug channel and prints messages to stdout
+// This allows agents to receive debug messages from the user's app
+func runDebugListen(endpoint string) {
+	// Default to the preview proxy debug endpoint
+	if endpoint == "" {
+		endpoint = "ws://localhost:9899/__swe-swe-debug__/agent"
+	}
+
+	fmt.Fprintf(os.Stderr, "[debug-listen] Connecting to %s\n", endpoint)
+
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-listen] Connection error: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	fmt.Fprintf(os.Stderr, "[debug-listen] Connected. Messages will be printed to stdout as JSON lines.\n")
+	fmt.Fprintf(os.Stderr, "[debug-listen] Press Ctrl+C to disconnect.\n")
+
+	// Handle interrupt signal
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					fmt.Fprintf(os.Stderr, "[debug-listen] Connection closed\n")
+				} else {
+					fmt.Fprintf(os.Stderr, "[debug-listen] Read error: %v\n", err)
+				}
+				return
+			}
+			// Print each message as a JSON line to stdout
+			fmt.Printf("%s\n", message)
+		}
+	}()
+
+	// Wait for interrupt or connection close
+	select {
+	case <-done:
+	case <-interrupt:
+		fmt.Fprintf(os.Stderr, "\n[debug-listen] Disconnecting...\n")
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// runDebugQuery sends a DOM query to the debug channel and prints the response
+func runDebugQuery(endpoint string, selector string) {
+	// Default to the preview proxy debug endpoint
+	if endpoint == "" {
+		endpoint = "ws://localhost:9899/__swe-swe-debug__/agent"
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-query] Connection error: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	// Generate a unique query ID
+	queryID := fmt.Sprintf("q%d", time.Now().UnixNano())
+
+	// Send query
+	query := fmt.Sprintf(`{"t":"query","id":"%s","selector":"%s"}`, queryID, selector)
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(query)); err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-query] Send error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Wait for response with timeout
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-query] Read error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s\n", message)
+}
+
 func main() {
 	addr := flag.String("addr", ":9898", "Listen address")
 	version := flag.Bool("version", false, "Show version and exit")
+	debugListen := flag.Bool("debug-listen", false, "Listen for debug messages from preview proxy")
+	debugQuery := flag.String("debug-query", "", "Send DOM query to preview proxy (CSS selector)")
+	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:9899/__swe-swe-debug__/agent)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
@@ -1602,6 +1697,18 @@ func main() {
 	if *version {
 		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
 		os.Exit(0)
+	}
+
+	// Handle --debug-listen flag
+	if *debugListen {
+		runDebugListen(*debugEndpoint)
+		return
+	}
+
+	// Handle --debug-query flag
+	if *debugQuery != "" {
+		runDebugQuery(*debugEndpoint, *debugQuery)
+		return
 	}
 
 	log.Printf("swe-swe-server %s (%s)", Version, GitCommit)

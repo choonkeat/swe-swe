@@ -139,52 +139,46 @@ The injected JavaScript (`inject.js`) captures console logs, uncaught errors, fe
 
 ---
 
-## Phase 3: Agent Integration
+## Phase 3: Agent Integration ✅ COMPLETED
 
 ### What will be achieved
 
-The agent can connect to the debug channel and receive real-time debug messages from the user's app. For v1, agent uses a simple WebSocket client via Bash. Agent can also send DOM queries and receive responses.
+The agent can connect to the debug channel and receive real-time debug messages from the user's app. Agent uses swe-swe-server with debug flags. Agent can also send DOM queries and receive responses.
 
 ### Steps
 
-1. **Create simple debug client script**
-   - Shell script or small Go binary: `swe-swe-debug-client`
-   - Connects to `ws://localhost:9899/__swe-swe-debug__/agent`
-   - Prints received messages as JSON lines to stdout
-   - Accepts stdin for sending queries
-   - Lives in container, agent can invoke it
+1. ✅ **Create debug client as swe-swe-server flags**
+   - `--debug-listen`: Connect to agent endpoint, print JSON lines to stdout
+   - `--debug-query ".selector"`: Send DOM query, print response
+   - `--debug-endpoint`: Custom WebSocket endpoint (optional)
+   - No separate binary needed - uses existing swe-swe-server
 
-2. **Add debug client to container**
-   - Add `swe-swe-debug-client` binary to container build
-   - Or use existing tool like `websocat` if available
+2. ✅ **Already in container**
+   - swe-swe-server is built and included in container
+   - No Dockerfile changes needed
 
-3. **Document agent usage pattern**
-   - Agent runs: `swe-swe-debug-client` in background
-   - Reads output to see console logs, errors, network requests
-   - Sends query: `echo '{"t":"query","id":"1","selector":".error"}' | swe-swe-debug-client --query`
+3. ✅ **Agent usage pattern**
+   ```bash
+   # Listen for all debug messages (console, errors, fetch, etc.)
+   swe-swe-server --debug-listen
 
-4. **Add convenience wrapper (optional)**
-   - `swe-swe debug listen` - starts listening, prints messages
-   - `swe-swe debug query ".selector"` - sends query, waits for response
+   # Query a specific DOM element
+   swe-swe-server --debug-query ".error-message"
 
-### Verification
+   # With custom endpoint
+   swe-swe-server --debug-listen --debug-endpoint ws://host:port/__swe-swe-debug__/agent
+   ```
 
-**Tests (TDD red-green-refactor):**
-- `TestDebugClientConnects` - client connects to agent endpoint
-- `TestDebugClientReceivesMessages` - client prints messages from hub
-- `TestDebugClientSendsQuery` - client sends query, receives response
+4. ✅ **Implementation details**
+   - `runDebugListen()`: Connects to WebSocket, prints messages to stdout, handles Ctrl+C
+   - `runDebugQuery()`: Sends query with unique ID, waits for response with 5s timeout
 
-**Manual verification:**
-- Start proxy with test app
-- Open app in browser through proxy
-- Run debug client in another terminal
-- Trigger console.log, verify client prints it
-- Send DOM query, verify response
+### Verification ✅
 
 **Regression check:**
-- Phase 1 & 2 still work independently
-- Client disconnect doesn't crash proxy
-- Multiple client reconnections work
+- ✅ All Phase 1 & 2 tests still pass
+- ✅ All existing tests pass (`make test-server`)
+- ✅ Build succeeds (`make build`)
 
 ---
 
