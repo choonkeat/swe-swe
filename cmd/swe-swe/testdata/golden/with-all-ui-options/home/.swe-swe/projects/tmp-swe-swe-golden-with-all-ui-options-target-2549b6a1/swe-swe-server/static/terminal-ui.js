@@ -5,6 +5,7 @@ import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQue
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
+import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -37,9 +38,8 @@ class TerminalUI extends HTMLElement {
         this.chatMessageTimeouts = [];
         // File upload queue (managed via upload-queue.js pure functions)
         this.uploadQueueState = createQueue();
-        // Chunked snapshot reassembly
-        this.chunks = [];
-        this.expectedChunks = 0;
+        // Chunked snapshot reassembly (managed via chunk-assembler.js pure functions)
+        this.chunkAssemblerState = createAssembler();
         // Debug mode from query string (accepts debug=true, debug=1, etc.)
         const debugParam = new URLSearchParams(location.search).get('debug');
         this.debugMode = debugParam === 'true' || debugParam === '1';
@@ -739,24 +739,16 @@ class TerminalUI extends HTMLElement {
 
         console.log(`CHUNK ${chunkIndex + 1}/${totalChunks} (${payload.length} bytes)`);
 
-        // Initialize chunks array if this is the first chunk or a new sequence
-        if (this.expectedChunks !== totalChunks) {
-            this.chunks = new Array(totalChunks);
-            this.expectedChunks = totalChunks;
-        }
-
-        // Store chunk payload
-        this.chunks[chunkIndex] = payload;
-
-        // Check if all chunks received
-        const receivedCount = this.chunks.filter(c => c !== undefined).length;
+        // Add chunk to assembler
+        this.chunkAssemblerState = addChunk(this.chunkAssemblerState, chunkIndex, totalChunks, payload);
 
         // Show chunk progress in status bar for debugging
         if (totalChunks > 1) {
-            this.showStatusNotification(`Receiving snapshot: ${receivedCount}/${totalChunks}`, 2000);
+            const progress = getProgress(this.chunkAssemblerState);
+            this.showStatusNotification(`Receiving snapshot: ${progress.received}/${progress.total}`, 2000);
         }
 
-        if (receivedCount === totalChunks) {
+        if (isComplete(this.chunkAssemblerState)) {
             this.reassembleChunks();
         }
     }
@@ -764,19 +756,13 @@ class TerminalUI extends HTMLElement {
     // Reassemble chunks and decompress
     async reassembleChunks() {
         // Combine all chunks
-        const totalSize = this.chunks.reduce((sum, c) => sum + c.length, 0);
-        const compressed = new Uint8Array(totalSize);
-        let offset = 0;
-        for (const chunk of this.chunks) {
-            compressed.set(chunk, offset);
-            offset += chunk.length;
-        }
+        const compressed = assemble(this.chunkAssemblerState);
+        const chunkCount = getReceivedCount(this.chunkAssemblerState);
 
-        console.log(`REASSEMBLED: ${this.chunks.length} chunks, ${compressed.length} bytes compressed`);
+        console.log(`REASSEMBLED: ${chunkCount} chunks, ${compressed.length} bytes compressed`);
 
         // Reset chunk state
-        this.chunks = [];
-        this.expectedChunks = 0;
+        this.chunkAssemblerState = resetAssembler(this.chunkAssemblerState);
 
         // Decompress and write to terminal
         try {

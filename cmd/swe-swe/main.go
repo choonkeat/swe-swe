@@ -1282,6 +1282,7 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/modules/messages.js",
 			"templates/host/swe-swe-server/static/modules/reconnect.js",
 			"templates/host/swe-swe-server/static/modules/upload-queue.js",
+			"templates/host/swe-swe-server/static/modules/chunk-assembler.js",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)

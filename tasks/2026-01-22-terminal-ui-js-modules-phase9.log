@@ -1,3 +1,34 @@
 225252 Starting Phase 9: Extract chunk-assembler.js (pure chunk assembly state)
 225252 Step 1: Create static/modules/chunk-assembler.js with pure state functions
 225252 Expected: chunk-assembler.js with createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset, getProgress
+225352 Observed: chunk-assembler.js created with 7 pure functions (98 lines)
+225352 Functions:
+225352   - createAssembler(): Create initial state
+225352   - addChunk(state, index, total, payload): Store chunk (immutable)
+225352   - isComplete(state): Check if all chunks received
+225352   - getReceivedCount(state): Count received chunks
+225352   - assemble(state): Combine all chunks into Uint8Array
+225352   - reset(state): Clear for next sequence
+225352   - getProgress(state): Get {received, total} for UI
+225352 Step 2: Create chunk-assembler.test.js with unit tests
+225352 Observed: chunk-assembler.test.js created with 25 test cases
+225352 Step 3: Run unit tests
+225352 Command: node --test chunk-assembler.test.js
+225352 Observed: All 25 tests pass (144ms)
+225452 Step 4: Update terminal-ui.js to import from modules/chunk-assembler.js
+225452 Observed: Added import statement for createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset (as resetAssembler), getProgress
+225452 Observed: Replaced this.chunks/expectedChunks with this.chunkAssemblerState
+225452 Observed: Updated handleChunk() to use addChunk, getProgress, isComplete
+225452 Observed: Updated reassembleChunks() to use assemble, getReceivedCount, resetAssembler
+225452 Step 5: Add chunk-assembler.js to main.go hostFiles
+225452 Observed: Added "templates/host/swe-swe-server/static/modules/chunk-assembler.js" to hostFiles
+225452 Step 6: Build and test
+225452 Command: make build golden-update
+225613 make build golden-update: Success
+225613 make test: All tests pass
+225613 Phase 9 PASSED: chunk-assembler.js extraction verified via unit tests (25 tests)
+225613 Changes summary:
+225613   - Replaced 2 instance variables with single chunkAssemblerState object
+225613   - Updated handleChunk() to use pure functions
+225613   - Updated reassembleChunks() to use pure functions
+225613   - Total lines removed: ~15 lines
