@@ -7,3 +7,9 @@
 213548 Build succeeded
 213548 Step 2: Integration test via test container + MCP browser
 213548 Expected: Status bar renders with correct color, terminal displays correctly, settings panel opens/closes
+214505 Observed: Terminal UI renders correctly with external CSS
+214505 - Status bar shows: green indicator, user info, navigation links
+214505 - Split pane: terminal left, App Preview right
+214505 - Dark theme background applied
+214505 - CSS loaded from /styles/terminal-ui.css (HTTP 200)
+214505 Phase 1 PASSED: CSS extraction verified

@@ -1274,6 +1274,7 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/xterm-addon-fit.js",
 			"templates/host/swe-swe-server/static/xterm.css",
 			"templates/host/swe-swe-server/static/xterm.js",
+			"templates/host/swe-swe-server/static/styles/terminal-ui.css",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)
@@ -1355,6 +1356,11 @@ func handleInit() {
 
 			// Process terminal-ui.js template with UI customization values
 			if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
+				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
+			}
+
+			// Process terminal-ui.css template with UI customization values
+			if hostFile == "templates/host/swe-swe-server/static/styles/terminal-ui.css" {
 				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
 			}
 

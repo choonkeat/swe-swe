@@ -38,13 +38,13 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-//go:embed static/*
+//go:embed all:static
 var staticFS embed.FS
 
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "25757188"
+	GitCommit = "6e1fb5e5"
 )
 
 var indexTemplate *template.Template

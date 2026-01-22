@@ -38,7 +38,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-//go:embed static/*
+//go:embed all:static
 var staticFS embed.FS
 
 // Version information set at build time via ldflags
