@@ -1,4 +1,5 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks } from './modules/util.js';
+import { validateUsername, validateSessionName } from './modules/validation.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -1029,24 +1030,6 @@ class TerminalUI extends HTMLElement {
         return `User${randomNum}`;
     }
 
-    validateUsername(name) {
-        name = name.trim();
-
-        if (name.length === 0) {
-            return { valid: false, error: 'Name cannot be empty' };
-        }
-
-        if (name.length > 16) {
-            return { valid: false, error: 'Name must be 16 characters or less' };
-        }
-
-        if (!/^[a-zA-Z0-9 ]+$/.test(name)) {
-            return { valid: false, error: 'Name can only contain letters, numbers, and spaces' };
-        }
-
-        return { valid: true, name: name.trim() };
-    }
-
     getUserName() {
         if (this.currentUserName) {
             return this.currentUserName;
@@ -1069,7 +1052,7 @@ class TerminalUI extends HTMLElement {
                 return null;
             }
 
-            const validation = this.validateUsername(name);
+            const validation = validateUsername(name);
             if (validation.valid) {
                 this.setUsername(validation.name);
                 return validation.name;
@@ -1093,7 +1076,7 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
-            const validation = this.validateUsername(newName);
+            const validation = validateUsername(newName);
             if (validation.valid) {
                 this.setUsername(validation.name);
                 return;
@@ -1101,25 +1084,6 @@ class TerminalUI extends HTMLElement {
                 alert('Invalid name: ' + validation.error + '\nPlease try again.');
             }
         }
-    }
-
-    validateSessionName(name) {
-        name = name.trim();
-
-        // Empty name is valid (clears the session name)
-        if (name.length === 0) {
-            return { valid: true, name: '' };
-        }
-
-        if (name.length > 32) {
-            return { valid: false, error: 'Name must be 32 characters or less' };
-        }
-
-        if (!/^[a-zA-Z0-9 \-_]+$/.test(name)) {
-            return { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, and underscores' };
-        }
-
-        return { valid: true, name: name };
     }
 
     promptRenameSession() {
@@ -1131,7 +1095,7 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
-            const validation = this.validateSessionName(newName);
+            const validation = validateSessionName(newName);
             if (validation.valid) {
                 // Send rename request to server
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -1261,7 +1225,7 @@ class TerminalUI extends HTMLElement {
         const usernameInput = panel.querySelector('#settings-username');
         if (usernameInput) {
             usernameInput.addEventListener('change', (e) => {
-                const validation = this.validateUsername(e.target.value);
+                const validation = validateUsername(e.target.value);
                 if (validation.valid) {
                     this.setUsername(validation.name);
                 } else {
@@ -1275,7 +1239,7 @@ class TerminalUI extends HTMLElement {
         const sessionInput = panel.querySelector('#settings-session');
         if (sessionInput) {
             sessionInput.addEventListener('change', (e) => {
-                const validation = this.validateSessionName(e.target.value);
+                const validation = validateSessionName(e.target.value);
                 if (validation.valid) {
                     this.setSessionName(validation.name);
                 } else {
