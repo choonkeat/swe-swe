@@ -1,0 +1,8 @@
+# Phase 1 Log: stdin support for swe-swe proxy
+
+## Step 1.1: Add integration test for stdin (RED)
+
+### Before test creation
+- Time: Starting step 1.1
+- Action: Adding integration test that pipes stdin to a proxied command
+- Expected: Test will FAIL because stdin forwarding is not yet implemented
