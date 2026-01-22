@@ -2,6 +2,7 @@ import { formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks 
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './modules/url-builder.js';
+import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -582,12 +583,7 @@ class TerminalUI extends HTMLElement {
 
     sendResize() {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            const msg = new Uint8Array([
-                0x00,
-                (this.term.rows >> 8) & 0xFF, this.term.rows & 0xFF,
-                (this.term.cols >> 8) & 0xFF, this.term.cols & 0xFF
-            ]);
-            this.ws.send(msg);
+            this.ws.send(encodeResize(this.term.rows, this.term.cols));
         }
     }
 
@@ -657,18 +653,17 @@ class TerminalUI extends HTMLElement {
         this.ws.onmessage = (event) => {
             if (event.data instanceof ArrayBuffer) {
                 const data = new Uint8Array(event.data);
-                // Check for chunk message (0x02 prefix)
-                if (data.length >= 3 && data[0] === 0x02) {
+                if (isChunkMessage(data)) {
                     this.handleChunk(data);
                 } else {
                     this.onTerminalData(data);
                 }
             } else if (typeof event.data === 'string') {
-                try {
-                    const msg = JSON.parse(event.data);
+                const msg = parseServerMessage(event.data);
+                if (msg !== null) {
                     this.handleJSONMessage(msg);
-                } catch (e) {
-                    console.error('Invalid JSON from server:', e);
+                } else {
+                    console.error('Invalid JSON from server:', event.data);
                 }
             }
         };
@@ -743,11 +738,8 @@ class TerminalUI extends HTMLElement {
     }
 
     // Handle chunked snapshot message
-    // Format: [0x02, chunkIndex, totalChunks, ...payload]
     handleChunk(data) {
-        const chunkIndex = data[1];
-        const totalChunks = data[2];
-        const payload = data.slice(3);
+        const { chunkIndex, totalChunks, payload } = decodeChunkHeader(data);
 
         console.log(`CHUNK ${chunkIndex + 1}/${totalChunks} (${payload.length} bytes)`);
 
@@ -2190,26 +2182,13 @@ class TerminalUI extends HTMLElement {
             this.ws.send(encoder.encode(text));
             this.showStatusNotification(`Pasted: ${file.name} (${formatFileSize(text.length)})`);
         } else {
-            // Binary file: send as binary upload with 0x01 prefix
-            // Format: [0x01, name_len_hi, name_len_lo, ...name_bytes, ...file_data]
+            // Binary file upload
             const fileData = await this.readFileAsBinary(file);
             if (fileData === null) {
                 this.showStatusNotification(`Error reading: ${file.name}`, 5000);
                 return;
             }
-            const encoder = new TextEncoder();
-            const nameBytes = encoder.encode(file.name);
-            const nameLen = nameBytes.length;
-
-            // Build the message: 0x01 + 2-byte name length + name + file data
-            const message = new Uint8Array(1 + 2 + nameLen + fileData.length);
-            message[0] = 0x01; // file upload message type
-            message[1] = (nameLen >> 8) & 0xFF; // name length high byte
-            message[2] = nameLen & 0xFF; // name length low byte
-            message.set(nameBytes, 3);
-            message.set(fileData, 3 + nameLen);
-
-            this.ws.send(message);
+            this.ws.send(encodeFileUpload(file.name, fileData));
             this.showStatusNotification(`Uploaded: ${file.name} (${formatFileSize(file.size)}, temporary)`);
         }
     }

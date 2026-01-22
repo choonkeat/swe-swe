@@ -2,3 +2,44 @@
 224018 Step 1: Create static/modules/messages.js with 5 pure functions + 3 constants
 224018 Expected: messages.js with OPCODE_RESIZE, OPCODE_FILE_UPLOAD, OPCODE_CHUNK constants
 224018 Expected: encodeResize, encodeFileUpload, decodeChunkHeader, isChunkMessage, parseServerMessage
+224124 Observed: messages.js created with 3 constants and 5 pure functions (79 lines)
+224124 Constants: OPCODE_RESIZE=0x00, OPCODE_FILE_UPLOAD=0x01, OPCODE_CHUNK=0x02
+224124 Functions:
+224124   - encodeResize(rows, cols): Build resize binary message (5 bytes)
+224124   - encodeFileUpload(filename, data): Build file upload binary message
+224124   - isChunkMessage(data): Check if binary is chunk message
+224124   - decodeChunkHeader(data): Parse chunk header (chunkIndex, totalChunks, payload)
+224124   - parseServerMessage(jsonStr): Parse JSON message (returns null on error)
+224124 Step 2: Create messages.test.js with unit tests
+224124 Observed: messages.test.js created with 39 test cases
+224124 Step 3: Run unit tests
+224124 Command: node --test messages.test.js
+224124 Observed: All 39 tests pass (142ms)
+224124 Test coverage:
+224124   - Constants: 3 tests
+224124   - encodeResize: 7 tests (big-endian encoding, edge cases)
+224124   - encodeFileUpload: 8 tests (header encoding, unicode, empty cases)
+224124   - isChunkMessage: 6 tests (opcode check, length validation)
+224124   - decodeChunkHeader: 7 tests (header parsing, payload extraction)
+224124   - parseServerMessage: 8 tests (JSON parsing, error handling, edge cases)
+224235 Step 4: Update terminal-ui.js to import from modules/messages.js
+224235 Observed: Added import statement for OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage
+224235 Observed: Updated sendResize(): Replaced 5-line Uint8Array construction with encodeResize(rows, cols)
+224235 Observed: Updated onmessage handler: Replaced inline chunk check with isChunkMessage(data)
+224235 Observed: Updated onmessage handler: Replaced try/catch JSON.parse with parseServerMessage()
+224235 Observed: Updated handleChunk(): Replaced 3-line header extraction with decodeChunkHeader(data)
+224235 Observed: Updated processFile(): Replaced 13-line binary message construction with encodeFileUpload()
+224235 Step 5: Add messages.js to main.go hostFiles
+224235 Observed: Added "templates/host/swe-swe-server/static/modules/messages.js" to hostFiles
+224235 Step 6: Build and test
+224235 Command: make build golden-update
+224349 make build golden-update: Success
+224349 make test: All tests pass
+224349 Phase 6 PASSED: messages.js extraction verified via unit tests (39 tests)
+224349 Call sites updated:
+224349   - sendResize(): 1 call site (5 lines -> 1 line)
+224349   - onmessage isChunkMessage: 1 call site (inline check -> function call)
+224349   - onmessage parseServerMessage: 1 call site (try/catch -> function call)
+224349   - handleChunk decodeChunkHeader: 1 call site (3 lines -> 1 line destructuring)
+224349   - processFile encodeFileUpload: 1 call site (13 lines -> 1 line)
+224349 Total lines removed from terminal-ui.js: ~20 lines
