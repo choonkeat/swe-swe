@@ -1164,10 +1164,336 @@ func modifyCSPHeader(h http.Header) {
 	h.Set("Content-Security-Policy", csp)
 }
 
-// debugInjectJS is a placeholder script served at /__swe-swe-debug__/inject.js
-// This will be replaced with the full debug script in Phase 2
-const debugInjectJS = `// swe-swe debug injection placeholder
-console.log('[swe-swe-debug] Debug script loaded (placeholder)');
+// DebugHub manages WebSocket connections between iframe debug scripts and agent
+type DebugHub struct {
+	iframeClients map[*websocket.Conn]bool // Connected iframe debug scripts
+	agentConn     *websocket.Conn          // Connected agent (only one allowed)
+	mu            sync.RWMutex
+}
+
+// Global debug hub instance for the preview proxy
+var debugHub = &DebugHub{
+	iframeClients: make(map[*websocket.Conn]bool),
+}
+
+// AddIframeClient registers an iframe debug script connection
+func (h *DebugHub) AddIframeClient(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.iframeClients[conn] = true
+	log.Printf("[DebugHub] Iframe client connected (total: %d)", len(h.iframeClients))
+}
+
+// RemoveIframeClient unregisters an iframe debug script connection
+func (h *DebugHub) RemoveIframeClient(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.iframeClients, conn)
+	log.Printf("[DebugHub] Iframe client disconnected (total: %d)", len(h.iframeClients))
+}
+
+// SetAgent registers the agent connection (replaces existing if any)
+func (h *DebugHub) SetAgent(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.agentConn != nil {
+		h.agentConn.Close() // Close previous agent connection
+	}
+	h.agentConn = conn
+	log.Printf("[DebugHub] Agent connected")
+}
+
+// RemoveAgent unregisters the agent connection
+func (h *DebugHub) RemoveAgent(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.agentConn == conn {
+		h.agentConn = nil
+		log.Printf("[DebugHub] Agent disconnected")
+	}
+}
+
+// ForwardToAgent sends a message from iframe to the connected agent
+func (h *DebugHub) ForwardToAgent(msg []byte) {
+	h.mu.RLock()
+	agent := h.agentConn
+	h.mu.RUnlock()
+
+	if agent != nil {
+		if err := agent.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("[DebugHub] Error forwarding to agent: %v", err)
+		}
+	}
+}
+
+// ForwardToIframes sends a message from agent to all connected iframes
+func (h *DebugHub) ForwardToIframes(msg []byte) {
+	h.mu.RLock()
+	clients := make([]*websocket.Conn, 0, len(h.iframeClients))
+	for conn := range h.iframeClients {
+		clients = append(clients, conn)
+	}
+	h.mu.RUnlock()
+
+	for _, conn := range clients {
+		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("[DebugHub] Error forwarding to iframe: %v", err)
+		}
+	}
+}
+
+// handleDebugIframeWS handles WebSocket connections from iframe debug scripts
+func handleDebugIframeWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[DebugHub] Iframe WS upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	debugHub.AddIframeClient(conn)
+	defer debugHub.RemoveIframeClient(conn)
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				break
+			}
+			log.Printf("[DebugHub] Iframe read error: %v", err)
+			break
+		}
+		// Forward message from iframe to agent
+		debugHub.ForwardToAgent(msg)
+	}
+}
+
+// handleDebugAgentWS handles WebSocket connection from the agent
+func handleDebugAgentWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[DebugHub] Agent WS upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	debugHub.SetAgent(conn)
+	defer debugHub.RemoveAgent(conn)
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				break
+			}
+			log.Printf("[DebugHub] Agent read error: %v", err)
+			break
+		}
+		// Forward message from agent to all iframes (e.g., DOM queries)
+		debugHub.ForwardToIframes(msg)
+	}
+}
+
+// debugInjectJS is the debug script served at /__swe-swe-debug__/inject.js
+// It captures console logs, errors, fetch/XHR requests and forwards them via WebSocket
+const debugInjectJS = `(function() {
+  'use strict';
+
+  // Prevent double initialization
+  if (window.__sweSweDebugInit) return;
+  window.__sweSweDebugInit = true;
+
+  var ws = null;
+  var wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/__swe-swe-debug__/ws';
+  var messageQueue = [];
+  var reconnectAttempts = 0;
+  var maxReconnectAttempts = 5;
+
+  // Serialize values safely (handle circular refs, DOM nodes, etc.)
+  function serialize(val, depth) {
+    if (depth === undefined) depth = 0;
+    if (depth > 3) return '[max depth]';
+    if (val === null) return null;
+    if (val === undefined) return '[undefined]';
+    if (typeof val === 'function') return '[function]';
+    if (typeof val === 'symbol') return val.toString();
+    if (val instanceof Error) return { name: val.name, message: val.message, stack: val.stack };
+    if (val instanceof HTMLElement) return '<' + val.tagName.toLowerCase() + (val.id ? '#' + val.id : '') + '>';
+    if (val instanceof Event) return { type: val.type, target: serialize(val.target, depth + 1) };
+    if (Array.isArray(val)) return val.slice(0, 10).map(function(v) { return serialize(v, depth + 1); });
+    if (typeof val === 'object') {
+      try {
+        var obj = {};
+        var keys = Object.keys(val).slice(0, 20);
+        for (var i = 0; i < keys.length; i++) {
+          obj[keys[i]] = serialize(val[keys[i]], depth + 1);
+        }
+        return obj;
+      } catch (e) {
+        return '[object]';
+      }
+    }
+    return val;
+  }
+
+  function send(msg) {
+    var data = JSON.stringify(msg);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    } else {
+      messageQueue.push(data);
+      if (messageQueue.length > 100) messageQueue.shift();
+    }
+  }
+
+  function connect() {
+    if (reconnectAttempts >= maxReconnectAttempts) return;
+
+    try {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = function() {
+        reconnectAttempts = 0;
+        // Flush queued messages
+        while (messageQueue.length > 0) {
+          ws.send(messageQueue.shift());
+        }
+      };
+
+      ws.onclose = function() {
+        reconnectAttempts++;
+        setTimeout(connect, Math.min(1000 * reconnectAttempts, 5000));
+      };
+
+      ws.onerror = function() {
+        // Error handling done in onclose
+      };
+
+      ws.onmessage = function(e) {
+        try {
+          var cmd = JSON.parse(e.data);
+          if (cmd.t === 'query') {
+            var el = document.querySelector(cmd.selector);
+            send({
+              t: 'queryResult',
+              id: cmd.id,
+              found: !!el,
+              text: el ? el.textContent : null,
+              html: el ? el.innerHTML.substring(0, 1000) : null,
+              visible: el ? (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) : false,
+              rect: el ? el.getBoundingClientRect() : null
+            });
+          }
+        } catch (err) {
+          // Ignore parse errors
+        }
+      };
+    } catch (e) {
+      // WebSocket not supported or blocked
+    }
+  }
+
+  // Wrap console methods
+  ['log', 'warn', 'error', 'info', 'debug'].forEach(function(method) {
+    var original = console[method];
+    console[method] = function() {
+      var args = Array.prototype.slice.call(arguments);
+      send({ t: 'console', m: method, args: args.map(function(a) { return serialize(a); }), ts: Date.now() });
+      return original.apply(console, arguments);
+    };
+  });
+
+  // Capture uncaught errors
+  window.addEventListener('error', function(e) {
+    send({
+      t: 'error',
+      msg: e.message,
+      file: e.filename,
+      line: e.lineno,
+      col: e.colno,
+      stack: e.error ? e.error.stack : null,
+      ts: Date.now()
+    });
+  });
+
+  // Capture unhandled promise rejections
+  window.addEventListener('unhandledrejection', function(e) {
+    send({
+      t: 'rejection',
+      reason: serialize(e.reason),
+      ts: Date.now()
+    });
+  });
+
+  // Wrap fetch
+  var originalFetch = window.fetch;
+  if (originalFetch) {
+    window.fetch = function(input, init) {
+      var url = typeof input === 'string' ? input : (input.url || String(input));
+      var method = (init && init.method) || 'GET';
+      var start = Date.now();
+
+      return originalFetch.apply(this, arguments).then(function(response) {
+        send({
+          t: 'fetch',
+          url: url,
+          method: method,
+          status: response.status,
+          ok: response.ok,
+          ms: Date.now() - start,
+          ts: Date.now()
+        });
+        return response;
+      }).catch(function(err) {
+        send({
+          t: 'fetch',
+          url: url,
+          method: method,
+          error: err.message,
+          ms: Date.now() - start,
+          ts: Date.now()
+        });
+        throw err;
+      });
+    };
+  }
+
+  // Wrap XMLHttpRequest
+  var XHROpen = XMLHttpRequest.prototype.open;
+  var XHRSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this.__sweMethod = method;
+    this.__sweUrl = url;
+    this.__sweStart = null;
+    return XHROpen.apply(this, arguments);
+  };
+
+  XMLHttpRequest.prototype.send = function() {
+    var xhr = this;
+    xhr.__sweStart = Date.now();
+
+    xhr.addEventListener('loadend', function() {
+      send({
+        t: 'xhr',
+        url: xhr.__sweUrl,
+        method: xhr.__sweMethod,
+        status: xhr.status,
+        ok: xhr.status >= 200 && xhr.status < 300,
+        ms: Date.now() - xhr.__sweStart,
+        ts: Date.now()
+      });
+    });
+
+    return XHRSend.apply(this, arguments);
+  };
+
+  // Connect to debug channel
+  connect();
+
+  // Send initial page load message
+  send({ t: 'init', url: location.href, ts: Date.now() });
+})();
 `
 
 // startPreviewProxy starts the app preview reverse proxy server on port 9899
@@ -1246,6 +1572,12 @@ func startPreviewProxy(targetPort string) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(debugInjectJS))
 	})
+
+	// WebSocket endpoint for iframe debug scripts
+	mux.HandleFunc("/__swe-swe-debug__/ws", handleDebugIframeWS)
+
+	// WebSocket endpoint for agent
+	mux.HandleFunc("/__swe-swe-debug__/agent", handleDebugAgentWS)
 
 	// Proxy all other requests
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

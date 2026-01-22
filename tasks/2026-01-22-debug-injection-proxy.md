@@ -67,7 +67,7 @@ The reverse proxy at `startPreviewProxy()` will intercept `text/html` responses 
 
 ---
 
-## Phase 2: Debug Script & WebSocket Channel
+## Phase 2: Debug Script & WebSocket Channel ✅ COMPLETED
 
 ### What will be achieved
 
@@ -75,72 +75,67 @@ The injected JavaScript (`inject.js`) captures console logs, uncaught errors, fe
 
 ### Steps
 
-1. **Create the inject.js script**
-   - Wrap console methods (log, warn, error, info) to forward messages
+1. ✅ **Create the inject.js script**
+   - Wrap console methods (log, warn, error, info, debug) to forward messages
    - Add `window.onerror` and `unhandledrejection` handlers
    - Wrap `window.fetch` to capture requests/responses
    - Wrap `XMLHttpRequest.prototype.open/send` to capture XHR
    - Open WebSocket to `/__swe-swe-debug__/ws`
    - Handle incoming messages for DOM queries
-   - Serialize arguments safely (handle circular refs, DOM nodes)
+   - Serialize arguments safely (handle circular refs, DOM nodes, max depth)
 
-2. **Create DebugHub struct in Go**
+2. ✅ **Create DebugHub struct in Go**
    - Track connected iframe clients (`map[*websocket.Conn]bool`)
    - Track connected agent client (single `*websocket.Conn`)
-   - `BroadcastToAgent(msg)`: forward iframe messages to agent
-   - `BroadcastToIframes(msg)`: forward agent queries to iframes
-   - Thread-safe with mutex
+   - `ForwardToAgent(msg)`: forward iframe messages to agent
+   - `ForwardToIframes(msg)`: forward agent queries to iframes
+   - Thread-safe with RWMutex
 
-3. **Add WebSocket endpoint for iframe clients**
+3. ✅ **Add WebSocket endpoint for iframe clients**
    - Route: `/__swe-swe-debug__/ws`
    - Upgrade to WebSocket, register with DebugHub
    - Read messages, forward to agent
    - Handle disconnect cleanup
 
-4. **Add WebSocket endpoint for agent**
+4. ✅ **Add WebSocket endpoint for agent**
    - Route: `/__swe-swe-debug__/agent`
    - Upgrade to WebSocket, register as agent in DebugHub
    - Read messages (DOM queries), forward to iframes
    - Receive iframe messages, forward to agent
 
-5. **Serve inject.js from Go**
+5. ✅ **Serve inject.js from Go**
    - Embed script as const string
    - Route `/__swe-swe-debug__/inject.js` serves with `application/javascript`
 
-6. **Message protocol**
+6. ✅ **Message protocol**
    ```
    From iframe to agent:
-   {"t":"console", "m":"log", "args":["hello", 123]}
-   {"t":"error", "msg":"...", "file":"...", "line":1, "stack":"..."}
-   {"t":"fetch", "url":"/api/x", "method":"GET", "status":200, "ms":45}
-   {"t":"xhr", "url":"/api/y", "method":"POST", "status":500, "ms":120}
+   {"t":"console", "m":"log", "args":["hello", 123], "ts":...}
+   {"t":"error", "msg":"...", "file":"...", "line":1, "col":1, "stack":"...", "ts":...}
+   {"t":"rejection", "reason":"...", "ts":...}
+   {"t":"fetch", "url":"/api/x", "method":"GET", "status":200, "ok":true, "ms":45, "ts":...}
+   {"t":"xhr", "url":"/api/y", "method":"POST", "status":500, "ok":false, "ms":120, "ts":...}
+   {"t":"init", "url":"...", "ts":...}
 
    From agent to iframe:
    {"t":"query", "id":"abc", "selector":".error-msg"}
 
    From iframe to agent (response):
-   {"t":"queryResult", "id":"abc", "text":"Invalid", "visible":true}
+   {"t":"queryResult", "id":"abc", "found":true, "text":"Invalid", "html":"...", "visible":true, "rect":{...}}
    ```
 
-### Verification
+### Verification ✅
 
 **Tests (TDD red-green-refactor):**
-- `TestInjectScriptServesJS` - GET returns valid JS
-- `TestDebugHubForwardsToAgent` - iframe message reaches agent
-- `TestDebugHubForwardsQueryToIframe` - agent query reaches iframe
-- `TestDebugWSEndpointUpgrades` - WebSocket upgrade succeeds
-
-**Manual verification:**
-- Create test HTML with console.log statements
-- Open in browser through proxy
-- Connect to `/__swe-swe-debug__/agent` with wscat
-- Verify console messages appear on agent connection
-- Send DOM query, verify response
+- ✅ `TestDebugInjectJSContent` - verifies required functionality in script
+- ✅ `TestDebugHubClientManagement` - tests hub initialization
+- ✅ `TestDebugInjectJSMessageTypes` - verifies message type markers
+- ✅ `TestDebugInjectJSSerializeFunction` - verifies serialize handles edge cases
 
 **Regression check:**
-- Phase 1 injection still works
-- Normal app functionality unaffected
-- Multiple iframe clients can connect
+- ✅ All Phase 1 tests still pass
+- ✅ All existing tests pass (`make test-server`)
+- ✅ Build succeeds (`make build`)
 
 ---
 

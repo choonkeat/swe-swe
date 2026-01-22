@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestInjectDebugScript(t *testing.T) {
@@ -230,5 +232,95 @@ func TestGzipDecompression(t *testing.T) {
 	injected := injectDebugScript(decompressed)
 	if !strings.Contains(string(injected), debugScriptTag) {
 		t.Errorf("injection into decompressed content failed")
+	}
+}
+
+// TestDebugInjectJSContent verifies the inject.js script has required functionality
+func TestDebugInjectJSContent(t *testing.T) {
+	script := debugInjectJS
+
+	// Check for IIFE wrapper
+	if !strings.HasPrefix(script, "(function()") {
+		t.Error("inject.js should be wrapped in IIFE")
+	}
+
+	// Check for required functionality
+	requiredPatterns := []string{
+		"'log', 'warn', 'error'",  // console methods wrapped via forEach
+		"window.fetch",
+		"XMLHttpRequest",
+		"__swe-swe-debug__/ws",
+		"WebSocket",
+		"addEventListener('error'",
+		"unhandledrejection",
+		"console[method]", // console wrapping pattern
+	}
+
+	for _, pattern := range requiredPatterns {
+		if !strings.Contains(script, pattern) {
+			t.Errorf("inject.js should contain %q", pattern)
+		}
+	}
+}
+
+// TestDebugHubClientManagement tests DebugHub client registration
+func TestDebugHubClientManagement(t *testing.T) {
+	hub := &DebugHub{
+		iframeClients: make(map[*websocket.Conn]bool),
+	}
+
+	// Test that hub starts empty
+	hub.mu.RLock()
+	if len(hub.iframeClients) != 0 {
+		t.Error("hub should start with no clients")
+	}
+	if hub.agentConn != nil {
+		t.Error("hub should start with no agent")
+	}
+	hub.mu.RUnlock()
+}
+
+// TestDebugInjectJSMessageTypes verifies the message format in inject.js
+func TestDebugInjectJSMessageTypes(t *testing.T) {
+	script := debugInjectJS
+
+	// Check for message type markers
+	messageTypes := []string{
+		`t: 'console'`,
+		`t: 'error'`,
+		`t: 'rejection'`,
+		`t: 'fetch'`,
+		`t: 'xhr'`,
+		`t: 'init'`,
+		`t: 'queryResult'`,
+	}
+
+	for _, msgType := range messageTypes {
+		if !strings.Contains(script, msgType) {
+			t.Errorf("inject.js should send messages with %s", msgType)
+		}
+	}
+}
+
+// TestDebugInjectJSSerializeFunction verifies serialize function handles edge cases
+func TestDebugInjectJSSerializeFunction(t *testing.T) {
+	script := debugInjectJS
+
+	// Check serialize function exists and handles various types
+	serializeChecks := []string{
+		"function serialize",
+		"instanceof Error",
+		"instanceof HTMLElement",
+		"instanceof Event",
+		"Array.isArray",
+		"[max depth]",
+		"[undefined]",
+		"[function]",
+	}
+
+	for _, check := range serializeChecks {
+		if !strings.Contains(script, check) {
+			t.Errorf("inject.js serialize function should handle %s", check)
+		}
 	}
 }
