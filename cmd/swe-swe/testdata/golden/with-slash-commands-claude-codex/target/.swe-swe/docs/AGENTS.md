@@ -15,5 +15,6 @@
 
 ## Documentation
 
+- `app-preview.md` - App preview panel and debug channel
 - `browser-automation.md` - MCP browser at /chrome/
 - `docker.md` - Docker access from container
