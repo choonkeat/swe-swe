@@ -1275,6 +1275,7 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/xterm.css",
 			"templates/host/swe-swe-server/static/xterm.js",
 			"templates/host/swe-swe-server/static/styles/terminal-ui.css",
+			"templates/host/swe-swe-server/static/modules/util.js",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)

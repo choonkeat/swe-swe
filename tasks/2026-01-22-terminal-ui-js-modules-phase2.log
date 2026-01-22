@@ -1,0 +1,19 @@
+214814 Starting Phase 2: Extract util.js (pure utilities)
+214814 Step 1: Create static/modules/util.js with 5 pure functions
+214814 Expected: util.js with formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks
+214910 Observed: util.js created with 5 pure functions (71 lines)
+214910 Step 2: Create util.test.js with unit tests
+214910 Observed: util.test.js created with 24 test cases
+214910 Step 3: Run unit tests
+214910 Observed: All 24 tests pass
+214910 Step 4: Update terminal-ui.js to import from modules/util.js
+215157 Observed: terminal-ui.js updated to import from modules/util.js
+215157 Removed 5 method definitions: formatDuration, parseLinks, escapeHtml, escapeFilename, formatFileSize
+215157 index.html updated: script type="module" for terminal-ui.js
+215157 Build succeeded
+215157 Step 5: Integration test via test container + MCP browser
+215403 Observed: Terminal UI functional, util.js module loaded (200 OK)
+215403 - Status bar shows: uptime timer counting (formatDuration working)
+215403 - WebSocket connected successfully
+215403 - OpenCode ASCII art displayed (terminal rendering)
+215403 Phase 2 PASSED: util.js extraction verified

@@ -1,3 +1,5 @@
+import { formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks } from './modules/util.js';
+
 class TerminalUI extends HTMLElement {
     constructor() {
         super();
@@ -409,31 +411,6 @@ class TerminalUI extends HTMLElement {
         this.term.write('Session: ' + this.uuid + '\r\n');
     }
 
-    formatDuration(ms) {
-        const seconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        if (hours > 0) {
-            return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
-        } else if (minutes > 0) {
-            return `${minutes}m ${seconds % 60}s`;
-        }
-        return `${seconds}s`;
-    }
-
-    parseLinks(linksStr) {
-        if (!linksStr) return [];
-        // Parse markdown-style links: [text](url)
-        // Pattern handles escaped brackets if needed
-        const regex = /\[([^\]]+)\]\(([^)]+)\)/g;
-        const links = [];
-        let match;
-        while ((match = regex.exec(linksStr)) !== null) {
-            links.push({ text: match[1], url: match[2] });
-        }
-        return links;
-    }
-
     renderLinks() {
         const statusRight = this.querySelector('.terminal-ui__status-right');
         if (!statusRight) return;
@@ -444,7 +421,7 @@ class TerminalUI extends HTMLElement {
             existingContainer.remove();
         }
 
-        const links = this.parseLinks(this.links);
+        const links = parseLinks(this.links);
         if (links.length === 0) return;
 
         const container = document.createElement('div');
@@ -597,7 +574,7 @@ class TerminalUI extends HTMLElement {
         this.connectedAt = Date.now();
         const timerEl = this.querySelector('.terminal-ui__status-timer');
         this.uptimeInterval = setInterval(() => {
-            timerEl.textContent = this.formatDuration(Date.now() - this.connectedAt);
+            timerEl.textContent = formatDuration(Date.now() - this.connectedAt);
         }, 1000);
         timerEl.textContent = '0s';
     }
@@ -1563,7 +1540,7 @@ class TerminalUI extends HTMLElement {
 
         const msgEl = document.createElement('div');
         msgEl.className = `terminal-ui__chat-message ${isOwn ? 'own' : 'other'}`;
-        msgEl.innerHTML = `<span class="terminal-ui__chat-message-username">${this.escapeHtml(userName)}:</span> ${this.escapeHtml(text)}`;
+        msgEl.innerHTML = `<span class="terminal-ui__chat-message-username">${escapeHtml(userName)}:</span> ${escapeHtml(text)}`;
 
         // Click message to open chat input
         msgEl.addEventListener('click', () => {
@@ -1586,12 +1563,6 @@ class TerminalUI extends HTMLElement {
             this.unreadChatCount++;
             this.showChatNotification(this.unreadChatCount);
         }
-    }
-
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     showStatusNotification(message, durationMs = 3000) {
@@ -2296,7 +2267,7 @@ class TerminalUI extends HTMLElement {
             }
             const encoder = new TextEncoder();
             this.ws.send(encoder.encode(text));
-            this.showStatusNotification(`Pasted: ${file.name} (${this.formatFileSize(text.length)})`);
+            this.showStatusNotification(`Pasted: ${file.name} (${formatFileSize(text.length)})`);
         } else {
             // Binary file: send as binary upload with 0x01 prefix
             // Format: [0x01, name_len_hi, name_len_lo, ...name_bytes, ...file_data]
@@ -2318,7 +2289,7 @@ class TerminalUI extends HTMLElement {
             message.set(fileData, 3 + nameLen);
 
             this.ws.send(message);
-            this.showStatusNotification(`Uploaded: ${file.name} (${this.formatFileSize(file.size)}, temporary)`);
+            this.showStatusNotification(`Uploaded: ${file.name} (${formatFileSize(file.size)}, temporary)`);
         }
     }
 
@@ -2332,11 +2303,6 @@ class TerminalUI extends HTMLElement {
         return textExtensions.test(file.name);
     }
 
-    escapeFilename(name) {
-        // Escape special shell characters
-        return name.replace(/(['"\\$`!])/g, '\\$1').replace(/ /g, '\\ ');
-    }
-
     readFileAsBinary(file) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -2344,12 +2310,6 @@ class TerminalUI extends HTMLElement {
             reader.onerror = () => resolve(null);
             reader.readAsArrayBuffer(file);
         });
-    }
-
-    formatFileSize(bytes) {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
 
     readFileAsText(file) {
