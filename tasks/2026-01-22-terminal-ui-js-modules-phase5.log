@@ -1,0 +1,3 @@
+223431 Starting Phase 5: Extract url-builder.js (pure URL construction)
+223431 Step 1: Create static/modules/url-builder.js with pure functions
+223431 Expected: url-builder.js with getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString
