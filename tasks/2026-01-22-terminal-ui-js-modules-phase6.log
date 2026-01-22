@@ -1,0 +1,4 @@
+224018 Starting Phase 6: Extract messages.js (pure binary message encoding/decoding)
+224018 Step 1: Create static/modules/messages.js with 5 pure functions + 3 constants
+224018 Expected: messages.js with OPCODE_RESIZE, OPCODE_FILE_UPLOAD, OPCODE_CHUNK constants
+224018 Expected: encodeResize, encodeFileUpload, decodeChunkHeader, isChunkMessage, parseServerMessage
