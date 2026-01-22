@@ -251,7 +251,8 @@ func TestGenerateContainerScript_Content(t *testing.T) {
 		{"shebang", "#!/usr/bin/env bash"},
 		{"strict mode", "set -euo pipefail"},
 		{"command name", "proxying 'echo' commands"},
-		{"uuid generation", "/proc/sys/kernel/random/uuid"},
+		{"uuid generation", "/dev/urandom"},
+		{"uuid uniqueness check", `[[ ! -f "$PROXY_DIR/$uuid.req" ]] && break`},
 		{"NUL-delimited args", `printf '%s\0' "$@"`},
 		{"atomic rename", "mv \"$tmp_file\" \"$req_file\""},
 		{"inotifywait", "inotifywait"},
@@ -266,6 +267,10 @@ func TestGenerateContainerScript_Content(t *testing.T) {
 		// Phase 6: Exit code parsing
 		{"exit content read", "exit_content=$(cat \"$exit_file\")"},
 		{"exit code parse", "exit_code=\"${exit_content%%:*}\""},
+		// Stdin support
+		{"stdin TTY detection", "[[ -t 0 ]]"},
+		{"stdin TTY warning", "stdin is a TTY"},
+		{"stdin capture", "cat > \"$stdin_file\""},
 	}
 
 	for _, check := range checks {

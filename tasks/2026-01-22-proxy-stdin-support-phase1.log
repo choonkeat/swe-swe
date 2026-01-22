@@ -74,3 +74,20 @@
   - terminal-ui.js changes (from previous commit 532274f9 - iframe embed fix)
 - Note: proxy script template is not part of golden tests (init templates only)
 - Conclusion: Golden files updated correctly
+
+## Step 1.6: Run full test suite
+
+### Before test run
+- Action: Run make test
+- Expected: All tests pass with no regressions
+
+### First test run (033643)
+- Observed: TestGenerateContainerScript_Content/uuid_generation FAILED
+- Reason: Test was checking for old UUID pattern "/proc/sys/kernel/random/uuid"
+- Fix: Updated test to check for new pattern "/dev/urandom" and added stdin checks
+
+### After fix (034105)
+- Observed: All tests PASS
+- cmd/swe-swe: PASS
+- cmd/swe-swe-server: PASS
+- Conclusion: No regressions, all tests pass

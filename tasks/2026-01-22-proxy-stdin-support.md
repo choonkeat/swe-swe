@@ -64,18 +64,18 @@ Enable the container script to forward stdin to the proxied command on the host 
 - [x] Commit golden updates
 
 ### Step 1.6: Run full test suite
-- [ ] Run `make test`
-- [ ] Verify all tests pass (no regressions)
+- [x] Run `make test`
+- [x] Verify all tests pass (no regressions)
 
 ---
 
 ## Verification Checklist
 
-- [ ] `echo "hello" | .swe-swe/proxy/cat` outputs "hello"
-- [ ] `.swe-swe/proxy/echo test` works without hanging (TTY case)
-- [ ] TTY case prints warning to stderr
-- [ ] `make test` passes
-- [ ] Golden diff is minimal and correct
+- [x] `echo "hello" | .swe-swe/proxy/cat` outputs "hello"
+- [x] `.swe-swe/proxy/echo test` works without hanging (TTY case)
+- [x] TTY case prints warning to stderr
+- [x] `make test` passes
+- [x] Golden diff is minimal and correct
 
 ---
 
