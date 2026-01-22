@@ -4,3 +4,6 @@
 145942 Observed: Module status-renderer.js created with 6 functions, 36 unit tests all passing
 145942 Step 2: Update terminal-ui.js to import and use status-renderer functions
 145942 Expected: terminal-ui.js imports from status-renderer.js, updateStatus/updateStatusInfo use pure render functions
+150232 Observed: terminal-ui.js updated with status-renderer imports, build and tests pass
+150232 Step 3: Integration verification via browser
+150232 Expected: Status bar renders correctly in connected/reconnecting states, service links work, custom links work
