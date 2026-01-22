@@ -1,0 +1,3 @@
+224427 Starting Phase 7: Extract reconnect.js (pure reconnection state reducer)
+224427 Step 1: Create static/modules/reconnect.js with pure state functions
+224427 Expected: reconnect.js with createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown
