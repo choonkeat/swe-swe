@@ -2,3 +2,13 @@
 043131 - Step 1.1: Add ModifyResponse callback to reverse proxy
        - Will: Add ModifyResponse to existing httputil.NewSingleHostReverseProxy in startPreviewProxy()
        - Expect: Callback is called for each response, can inspect Content-Type header
+043239 - Step 1.1-1.5 implemented in single edit (all steps are related)
+       - Added: ModifyResponse callback that checks Content-Type for text/html
+       - Added: gzip decompression (brotli passed through unchanged for now)
+       - Added: injectDebugScript() using regex for <head> or <body> tag
+       - Added: modifyCSPHeader() to add script-src 'self' and connect-src ws: wss:
+       - Added: /__swe-swe-debug__/inject.js endpoint serving placeholder
+       - Build: SUCCESS (make build passed)
+043256 - Writing tests for Phase 1
+       - Will: Create main_test.go with tests for injection, CSP, gzip, non-HTML passthrough
+       - Expect: All tests pass
