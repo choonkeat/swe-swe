@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -43,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "d10c1126"
+	GitCommit = "83d70bbd"
 )
 
 var indexTemplate *template.Template
@@ -1118,8 +1119,387 @@ const previewProxyErrorPage = `<!DOCTYPE html>
 </body>
 </html>`
 
+// debugScriptTag is injected into HTML responses to enable debug channel
+const debugScriptTag = `<script src="/__swe-swe-debug__/inject.js"></script>`
+
+// debugInjectScriptRe matches <head> or <body> tag (case insensitive)
+var debugInjectScriptRe = regexp.MustCompile(`(?i)(<head[^>]*>|<body[^>]*>)`)
+
+// injectDebugScript injects the debug script tag after the FIRST <head> or <body> tag only
+func injectDebugScript(body []byte) []byte {
+	loc := debugInjectScriptRe.FindIndex(body)
+	if loc == nil {
+		return body // No match found
+	}
+	// Insert script tag after the first match
+	result := make([]byte, 0, len(body)+len(debugScriptTag))
+	result = append(result, body[:loc[1]]...)
+	result = append(result, debugScriptTag...)
+	result = append(result, body[loc[1]:]...)
+	return result
+}
+
+// modifyCSPHeader modifies Content-Security-Policy header to allow debug script and WebSocket
+func modifyCSPHeader(h http.Header) {
+	csp := h.Get("Content-Security-Policy")
+	if csp == "" {
+		return
+	}
+
+	// Add 'self' to script-src for our injected script
+	if strings.Contains(csp, "script-src") {
+		csp = strings.Replace(csp, "script-src", "script-src 'self'", 1)
+	} else {
+		// No script-src directive, add one
+		csp = csp + "; script-src 'self'"
+	}
+
+	// Add ws: and wss: to connect-src for WebSocket
+	if strings.Contains(csp, "connect-src") {
+		csp = strings.Replace(csp, "connect-src", "connect-src ws: wss:", 1)
+	} else {
+		// No connect-src directive, add one
+		csp = csp + "; connect-src ws: wss:"
+	}
+
+	h.Set("Content-Security-Policy", csp)
+}
+
+// DebugHub manages WebSocket connections between iframe debug scripts and agent
+type DebugHub struct {
+	iframeClients map[*websocket.Conn]bool // Connected iframe debug scripts
+	agentConn     *websocket.Conn          // Connected agent (only one allowed)
+	mu            sync.RWMutex
+}
+
+// Global debug hub instance for the preview proxy
+var debugHub = &DebugHub{
+	iframeClients: make(map[*websocket.Conn]bool),
+}
+
+// AddIframeClient registers an iframe debug script connection
+func (h *DebugHub) AddIframeClient(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.iframeClients[conn] = true
+	log.Printf("[DebugHub] Iframe client connected (total: %d)", len(h.iframeClients))
+}
+
+// RemoveIframeClient unregisters an iframe debug script connection
+func (h *DebugHub) RemoveIframeClient(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.iframeClients, conn)
+	log.Printf("[DebugHub] Iframe client disconnected (total: %d)", len(h.iframeClients))
+}
+
+// SetAgent registers the agent connection (replaces existing if any)
+func (h *DebugHub) SetAgent(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.agentConn != nil {
+		h.agentConn.Close() // Close previous agent connection
+	}
+	h.agentConn = conn
+	log.Printf("[DebugHub] Agent connected")
+}
+
+// RemoveAgent unregisters the agent connection
+func (h *DebugHub) RemoveAgent(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.agentConn == conn {
+		h.agentConn = nil
+		log.Printf("[DebugHub] Agent disconnected")
+	}
+}
+
+// ForwardToAgent sends a message from iframe to the connected agent
+func (h *DebugHub) ForwardToAgent(msg []byte) {
+	h.mu.RLock()
+	agent := h.agentConn
+	h.mu.RUnlock()
+
+	if agent != nil {
+		if err := agent.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("[DebugHub] Error forwarding to agent: %v", err)
+		}
+	}
+}
+
+// ForwardToIframes sends a message from agent to all connected iframes
+func (h *DebugHub) ForwardToIframes(msg []byte) {
+	h.mu.RLock()
+	clients := make([]*websocket.Conn, 0, len(h.iframeClients))
+	for conn := range h.iframeClients {
+		clients = append(clients, conn)
+	}
+	h.mu.RUnlock()
+
+	for _, conn := range clients {
+		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("[DebugHub] Error forwarding to iframe: %v", err)
+		}
+	}
+}
+
+// handleDebugIframeWS handles WebSocket connections from iframe debug scripts
+func handleDebugIframeWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[DebugHub] Iframe WS upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	debugHub.AddIframeClient(conn)
+	defer debugHub.RemoveIframeClient(conn)
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				break
+			}
+			log.Printf("[DebugHub] Iframe read error: %v", err)
+			break
+		}
+		// Forward message from iframe to agent
+		debugHub.ForwardToAgent(msg)
+	}
+}
+
+// handleDebugAgentWS handles WebSocket connection from the agent
+func handleDebugAgentWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("[DebugHub] Agent WS upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	debugHub.SetAgent(conn)
+	defer debugHub.RemoveAgent(conn)
+
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				break
+			}
+			log.Printf("[DebugHub] Agent read error: %v", err)
+			break
+		}
+		// Forward message from agent to all iframes (e.g., DOM queries)
+		debugHub.ForwardToIframes(msg)
+	}
+}
+
+// debugInjectJS is the debug script served at /__swe-swe-debug__/inject.js
+// It captures console logs, errors, fetch/XHR requests and forwards them via WebSocket
+const debugInjectJS = `(function() {
+  'use strict';
+
+  // Prevent double initialization
+  if (window.__sweSweDebugInit) return;
+  window.__sweSweDebugInit = true;
+
+  var ws = null;
+  var wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/__swe-swe-debug__/ws';
+  var messageQueue = [];
+  var reconnectAttempts = 0;
+  var maxReconnectAttempts = 5;
+
+  // Serialize values safely (handle circular refs, DOM nodes, etc.)
+  function serialize(val, depth) {
+    if (depth === undefined) depth = 0;
+    if (depth > 3) return '[max depth]';
+    if (val === null) return null;
+    if (val === undefined) return '[undefined]';
+    if (typeof val === 'function') return '[function]';
+    if (typeof val === 'symbol') return val.toString();
+    if (val instanceof Error) return { name: val.name, message: val.message, stack: val.stack };
+    if (val instanceof HTMLElement) return '<' + val.tagName.toLowerCase() + (val.id ? '#' + val.id : '') + '>';
+    if (val instanceof Event) return { type: val.type, target: serialize(val.target, depth + 1) };
+    if (Array.isArray(val)) return val.slice(0, 10).map(function(v) { return serialize(v, depth + 1); });
+    if (typeof val === 'object') {
+      try {
+        var obj = {};
+        var keys = Object.keys(val).slice(0, 20);
+        for (var i = 0; i < keys.length; i++) {
+          obj[keys[i]] = serialize(val[keys[i]], depth + 1);
+        }
+        return obj;
+      } catch (e) {
+        return '[object]';
+      }
+    }
+    return val;
+  }
+
+  function send(msg) {
+    var data = JSON.stringify(msg);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    } else {
+      messageQueue.push(data);
+      if (messageQueue.length > 100) messageQueue.shift();
+    }
+  }
+
+  function connect() {
+    if (reconnectAttempts >= maxReconnectAttempts) return;
+
+    try {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = function() {
+        reconnectAttempts = 0;
+        // Flush queued messages
+        while (messageQueue.length > 0) {
+          ws.send(messageQueue.shift());
+        }
+      };
+
+      ws.onclose = function() {
+        reconnectAttempts++;
+        setTimeout(connect, Math.min(1000 * reconnectAttempts, 5000));
+      };
+
+      ws.onerror = function() {
+        // Error handling done in onclose
+      };
+
+      ws.onmessage = function(e) {
+        try {
+          var cmd = JSON.parse(e.data);
+          if (cmd.t === 'query') {
+            var el = document.querySelector(cmd.selector);
+            send({
+              t: 'queryResult',
+              id: cmd.id,
+              found: !!el,
+              text: el ? el.textContent : null,
+              html: el ? el.innerHTML.substring(0, 1000) : null,
+              visible: el ? (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) : false,
+              rect: el ? el.getBoundingClientRect() : null
+            });
+          }
+        } catch (err) {
+          // Ignore parse errors
+        }
+      };
+    } catch (e) {
+      // WebSocket not supported or blocked
+    }
+  }
+
+  // Wrap console methods
+  ['log', 'warn', 'error', 'info', 'debug'].forEach(function(method) {
+    var original = console[method];
+    console[method] = function() {
+      var args = Array.prototype.slice.call(arguments);
+      send({ t: 'console', m: method, args: args.map(function(a) { return serialize(a); }), ts: Date.now() });
+      return original.apply(console, arguments);
+    };
+  });
+
+  // Capture uncaught errors
+  window.addEventListener('error', function(e) {
+    send({
+      t: 'error',
+      msg: e.message,
+      file: e.filename,
+      line: e.lineno,
+      col: e.colno,
+      stack: e.error ? e.error.stack : null,
+      ts: Date.now()
+    });
+  });
+
+  // Capture unhandled promise rejections
+  window.addEventListener('unhandledrejection', function(e) {
+    send({
+      t: 'rejection',
+      reason: serialize(e.reason),
+      ts: Date.now()
+    });
+  });
+
+  // Wrap fetch
+  var originalFetch = window.fetch;
+  if (originalFetch) {
+    window.fetch = function(input, init) {
+      var url = typeof input === 'string' ? input : (input.url || String(input));
+      var method = (init && init.method) || 'GET';
+      var start = Date.now();
+
+      return originalFetch.apply(this, arguments).then(function(response) {
+        send({
+          t: 'fetch',
+          url: url,
+          method: method,
+          status: response.status,
+          ok: response.ok,
+          ms: Date.now() - start,
+          ts: Date.now()
+        });
+        return response;
+      }).catch(function(err) {
+        send({
+          t: 'fetch',
+          url: url,
+          method: method,
+          error: err.message,
+          ms: Date.now() - start,
+          ts: Date.now()
+        });
+        throw err;
+      });
+    };
+  }
+
+  // Wrap XMLHttpRequest
+  var XHROpen = XMLHttpRequest.prototype.open;
+  var XHRSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this.__sweMethod = method;
+    this.__sweUrl = url;
+    this.__sweStart = null;
+    return XHROpen.apply(this, arguments);
+  };
+
+  XMLHttpRequest.prototype.send = function() {
+    var xhr = this;
+    xhr.__sweStart = Date.now();
+
+    xhr.addEventListener('loadend', function() {
+      send({
+        t: 'xhr',
+        url: xhr.__sweUrl,
+        method: xhr.__sweMethod,
+        status: xhr.status,
+        ok: xhr.status >= 200 && xhr.status < 300,
+        ms: Date.now() - xhr.__sweStart,
+        ts: Date.now()
+      });
+    });
+
+    return XHRSend.apply(this, arguments);
+  };
+
+  // Connect to debug channel
+  connect();
+
+  // Send initial page load message
+  send({ t: 'init', url: location.href, ts: Date.now() });
+})();
+`
+
 // startPreviewProxy starts the app preview reverse proxy server on port 9899
 // It proxies requests to localhost:targetPort and shows an error page if unavailable
+// It also injects a debug script into HTML responses for console/error/network forwarding
 func startPreviewProxy(targetPort string) {
 	targetURL, err := url.Parse("http://localhost:" + targetPort)
 	if err != nil {
@@ -1137,7 +1517,70 @@ func startPreviewProxy(targetPort string) {
 		fmt.Fprintf(w, previewProxyErrorPage, targetPort)
 	}
 
+	// ModifyResponse injects debug script into HTML responses
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "text/html") {
+			return nil // Pass through non-HTML responses unchanged
+		}
+
+		// Read the response body
+		var body []byte
+		var readErr error
+
+		// Handle compressed responses
+		encoding := resp.Header.Get("Content-Encoding")
+		switch encoding {
+		case "gzip":
+			gr, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				return err
+			}
+			body, readErr = io.ReadAll(gr)
+			gr.Close()
+		case "br":
+			// For brotli, we'd need an external library
+			// For now, pass through brotli responses unchanged
+			return nil
+		default:
+			body, readErr = io.ReadAll(resp.Body)
+		}
+		resp.Body.Close()
+
+		if readErr != nil {
+			return readErr
+		}
+
+		// Inject the debug script
+		injected := injectDebugScript(body)
+
+		// Modify CSP header if present
+		modifyCSPHeader(resp.Header)
+
+		// Update response body and headers
+		resp.Body = io.NopCloser(bytes.NewReader(injected))
+		resp.ContentLength = int64(len(injected))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(injected)))
+		resp.Header.Del("Content-Encoding") // We've decompressed it
+
+		return nil
+	}
+
 	mux := http.NewServeMux()
+
+	// Serve debug script
+	mux.HandleFunc("/__swe-swe-debug__/inject.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(debugInjectJS))
+	})
+
+	// WebSocket endpoint for iframe debug scripts
+	mux.HandleFunc("/__swe-swe-debug__/ws", handleDebugIframeWS)
+
+	// WebSocket endpoint for agent
+	mux.HandleFunc("/__swe-swe-debug__/agent", handleDebugAgentWS)
+
+	// Proxy all other requests
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		proxy.ServeHTTP(w, r)
 	})
@@ -1148,9 +1591,103 @@ func startPreviewProxy(targetPort string) {
 	}
 }
 
+// runDebugListen connects to the debug channel and prints messages to stdout
+// This allows agents to receive debug messages from the user's app
+func runDebugListen(endpoint string) {
+	// Default to the preview proxy debug endpoint
+	if endpoint == "" {
+		endpoint = "ws://localhost:9899/__swe-swe-debug__/agent"
+	}
+
+	fmt.Fprintf(os.Stderr, "[debug-listen] Connecting to %s\n", endpoint)
+
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-listen] Connection error: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	fmt.Fprintf(os.Stderr, "[debug-listen] Connected. Messages will be printed to stdout as JSON lines.\n")
+	fmt.Fprintf(os.Stderr, "[debug-listen] Press Ctrl+C to disconnect.\n")
+
+	// Handle interrupt signal
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					fmt.Fprintf(os.Stderr, "[debug-listen] Connection closed\n")
+				} else {
+					fmt.Fprintf(os.Stderr, "[debug-listen] Read error: %v\n", err)
+				}
+				return
+			}
+			// Print each message as a JSON line to stdout
+			fmt.Printf("%s\n", message)
+		}
+	}()
+
+	// Wait for interrupt or connection close
+	select {
+	case <-done:
+	case <-interrupt:
+		fmt.Fprintf(os.Stderr, "\n[debug-listen] Disconnecting...\n")
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// runDebugQuery sends a DOM query to the debug channel and prints the response
+func runDebugQuery(endpoint string, selector string) {
+	// Default to the preview proxy debug endpoint
+	if endpoint == "" {
+		endpoint = "ws://localhost:9899/__swe-swe-debug__/agent"
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-query] Connection error: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	// Generate a unique query ID
+	queryID := fmt.Sprintf("q%d", time.Now().UnixNano())
+
+	// Send query
+	query := fmt.Sprintf(`{"t":"query","id":"%s","selector":"%s"}`, queryID, selector)
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(query)); err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-query] Send error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Wait for response with timeout
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[debug-query] Read error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("%s\n", message)
+}
+
 func main() {
 	addr := flag.String("addr", ":9898", "Listen address")
 	version := flag.Bool("version", false, "Show version and exit")
+	debugListen := flag.Bool("debug-listen", false, "Listen for debug messages from preview proxy")
+	debugQuery := flag.String("debug-query", "", "Send DOM query to preview proxy (CSS selector)")
+	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:9899/__swe-swe-debug__/agent)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
@@ -1160,6 +1697,18 @@ func main() {
 	if *version {
 		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
 		os.Exit(0)
+	}
+
+	// Handle --debug-listen flag
+	if *debugListen {
+		runDebugListen(*debugEndpoint)
+		return
+	}
+
+	// Handle --debug-query flag
+	if *debugQuery != "" {
+		runDebugQuery(*debugEndpoint, *debugQuery)
+		return
 	}
 
 	log.Printf("swe-swe-server %s (%s)", Version, GitCommit)

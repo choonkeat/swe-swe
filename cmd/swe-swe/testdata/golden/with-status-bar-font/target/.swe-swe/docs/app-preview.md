@@ -32,3 +32,43 @@ The preview port is computed as "1" + SWE_PORT:
 **Note**: SWE_PORT must be ≤ 9999 for valid preview port (max 19999 < 65535).
 
 Inside the container, the preview proxy forwards requests to `localhost:3000` by default. Set `SWE_PREVIEW_TARGET_PORT` to use a different port.
+
+## Debug Channel
+
+The preview proxy injects a debug script into HTML responses, allowing you to receive console logs, errors, and network requests from the user's browser in real-time.
+
+### Listening for Debug Messages
+
+```bash
+# Listen for all debug messages (console, errors, fetch, etc.)
+swe-swe-server --debug-listen
+```
+
+Output is JSON lines:
+```json
+{"t":"init","url":"http://...","ts":...}
+{"t":"console","m":"log","args":["Hello!",{"time":123}],"ts":...}
+{"t":"console","m":"warn","args":["Warning!"],"ts":...}
+{"t":"error","msg":"Uncaught Error: ...","stack":"...","ts":...}
+{"t":"fetch","url":"/api/test","method":"GET","status":200,"ms":45,"ts":...}
+```
+
+### Querying DOM Elements
+
+```bash
+# Query an element by CSS selector
+swe-swe-server --debug-query "h1"
+swe-swe-server --debug-query ".error-message"
+swe-swe-server --debug-query "#submit-btn"
+```
+
+Response:
+```json
+{"t":"queryResult","found":true,"text":"Page Title","html":"...","visible":true,"rect":{"x":0,"y":0,"width":100,"height":50}}
+```
+
+### Limitations
+
+- Only works for web apps served through the App Preview (port 3000 by default)
+- The user must have the preview open in their browser for messages to flow
+- DOM queries return the first matching element only
