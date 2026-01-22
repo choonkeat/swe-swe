@@ -1,6 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './modules/url-builder.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -391,7 +392,7 @@ class TerminalUI extends HTMLElement {
         // Register file path link provider for clickable paths
         if (typeof registerFileLinkProvider === 'function') {
             registerFileLinkProvider(this.term, {
-                getVSCodeUrl: () => this.getVSCodeUrl(),
+                getVSCodeUrl: () => buildVSCodeUrl(getBaseUrl(window.location), this.workDir),
                 onCopy: (path) => this.showStatusNotification('Copied: ' + path),
                 onHint
             });
@@ -450,20 +451,6 @@ class TerminalUI extends HTMLElement {
         statusRight.insertBefore(container, statusRight.firstChild);
     }
 
-    getBaseUrl() {
-        const protocol = window.location.protocol;
-        const port = window.location.port;
-        return port ? `${protocol}//${window.location.hostname}:${port}` : `${protocol}//${window.location.hostname}`;
-    }
-
-    getVSCodeUrl() {
-        const baseUrl = this.getBaseUrl();
-        if (this.workDir) {
-            return `${baseUrl}/vscode/?folder=${encodeURIComponent(this.workDir)}`;
-        }
-        return `${baseUrl}/vscode/`;
-    }
-
     renderServiceLinks() {
         const statusRight = this.querySelector('.terminal-ui__status-right');
         if (!statusRight) return;
@@ -475,18 +462,17 @@ class TerminalUI extends HTMLElement {
         }
 
         // All services use path-based routing
-        const baseUrl = this.getBaseUrl();
+        const baseUrl = getBaseUrl(window.location);
         const services = [
-            { name: 'vscode', label: 'VSCode', url: this.getVSCodeUrl() },
-            { name: 'preview', label: 'App Preview', url: this.previewBaseUrl || `${window.location.protocol}//${window.location.hostname}:1${window.location.port || '80'}` },
+            { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
+            { name: 'preview', label: 'App Preview', url: this.previewBaseUrl || buildPreviewUrl(window.location) },
             { name: 'browser', label: 'Agent View', url: `${baseUrl}/chrome/` }
         ];
 
         // Add shell link if not already in a shell session
         if (this.assistant !== 'shell') {
             const shellUUID = deriveShellUUID(this.uuid);
-            const debugQS = this.debugMode ? '&debug=1' : '';
-            const shellUrl = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
+            const shellUrl = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
             services.unshift({ name: 'shell', label: 'Shell', url: shellUrl });
         }
 
@@ -568,13 +554,9 @@ class TerminalUI extends HTMLElement {
         return Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
     }
 
-    getDebugQueryString() {
-        return this.debugMode ? '?debug=1' : '';
-    }
-
     getAssistantLink() {
         const name = this.assistantName || this.assistant;
-        const debugQS = this.getDebugQueryString();
+        const debugQS = getDebugQueryString(this.debugMode);
         return `<a href="/${debugQS}" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">${name}</a>`;
     }
 
@@ -944,7 +926,7 @@ class TerminalUI extends HTMLElement {
             : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
 
         if (confirm(message)) {
-            window.location.href = '/' + this.getDebugQueryString();
+            window.location.href = '/' + getDebugQueryString(this.debugMode);
         }
     }
 
@@ -963,7 +945,7 @@ class TerminalUI extends HTMLElement {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             // Build "Connected/YOLO as {name} with {agent}" message with separate clickable parts
             const userName = this.currentUserName;
-            const debugQS = this.getDebugQueryString();
+            const debugQS = getDebugQueryString(this.debugMode);
 
             // Show "YOLO" or "Connected" based on mode, make clickable if YOLO is supported
             const statusWord = this.yoloMode ? 'YOLO' : 'Connected';
@@ -1396,10 +1378,10 @@ class TerminalUI extends HTMLElement {
         this.updateActiveSwatches(currentColor);
 
         // Update navigation links with dynamic URLs and add click handlers
-        const baseUrl = this.getBaseUrl();
+        const baseUrl = getBaseUrl(window.location);
         const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
         if (vscodeLink) {
-            vscodeLink.href = this.getVSCodeUrl();
+            vscodeLink.href = buildVSCodeUrl(baseUrl, this.workDir);
         }
 
         // Update nav tab links with dynamic URLs and add click handlers for iframe toggle

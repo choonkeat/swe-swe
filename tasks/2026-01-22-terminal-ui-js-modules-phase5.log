@@ -1,3 +1,15 @@
 223431 Starting Phase 5: Extract url-builder.js (pure URL construction)
 223431 Step 1: Create static/modules/url-builder.js with pure functions
 223431 Expected: url-builder.js with getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString
+223518 Observed: url-builder.js created with 5 pure functions (57 lines)
+223518 Step 2: Create url-builder.test.js with unit tests
+223518 Observed: url-builder.test.js created with 21 test cases
+223518 Step 3: Run unit tests
+223518 Observed: All 21 tests pass (146ms)
+223719 Step 4: Update terminal-ui.js to import from modules/url-builder.js
+223719 Observed: Added import, removed 3 method definitions
+223719 Updated call sites: 8 occurrences updated to use pure functions
+223719 Step 5: Build and test
+223834 Observed: make build golden-update: Success
+223834 Observed: make test: All tests pass
+223834 Phase 5 PASSED: url-builder.js extraction verified via unit tests
