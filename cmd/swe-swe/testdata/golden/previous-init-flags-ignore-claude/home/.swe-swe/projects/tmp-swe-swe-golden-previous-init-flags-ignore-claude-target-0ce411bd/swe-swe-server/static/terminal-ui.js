@@ -1,5 +1,6 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename, parseLinks } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
+import { deriveShellUUID } from './modules/uuid.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -463,32 +464,6 @@ class TerminalUI extends HTMLElement {
         return `${baseUrl}/vscode/`;
     }
 
-    // Derive a deterministic shell UUID from parent session UUID
-    // Uses djb2 hash algorithm (works in both HTTP and HTTPS contexts)
-    deriveShellUUID(parentUUID) {
-        const input = 'shell:' + parentUUID;
-        // djb2 hash function - fast and produces good distribution
-        const djb2 = (str, seed = 5381) => {
-            let hash = seed;
-            for (let i = 0; i < str.length; i++) {
-                hash = ((hash << 5) + hash) + str.charCodeAt(i);
-                hash = hash >>> 0; // Convert to unsigned 32-bit integer
-            }
-            return hash;
-        };
-        // Generate enough hash values to fill a UUID (128 bits = 4 x 32-bit)
-        const h1 = djb2(input);
-        const h2 = djb2(input, h1);
-        const h3 = djb2(input, h2);
-        const h4 = djb2(input, h3);
-        // Format as UUID: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-        const hex = (h1.toString(16).padStart(8, '0') +
-                     h2.toString(16).padStart(8, '0') +
-                     h3.toString(16).padStart(8, '0') +
-                     h4.toString(16).padStart(8, '0'));
-        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80).toString(16)}${hex.slice(18, 20)}-${hex.slice(20, 32)}`;
-    }
-
     renderServiceLinks() {
         const statusRight = this.querySelector('.terminal-ui__status-right');
         if (!statusRight) return;
@@ -509,7 +484,7 @@ class TerminalUI extends HTMLElement {
 
         // Add shell link if not already in a shell session
         if (this.assistant !== 'shell') {
-            const shellUUID = this.deriveShellUUID(this.uuid);
+            const shellUUID = deriveShellUUID(this.uuid);
             const debugQS = this.debugMode ? '&debug=1' : '';
             const shellUrl = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
             services.unshift({ name: 'shell', label: 'Shell', url: shellUrl });
@@ -1438,7 +1413,7 @@ class TerminalUI extends HTMLElement {
                     link.style.display = 'none';
                     return;
                 }
-                const shellUUID = this.deriveShellUUID(this.uuid);
+                const shellUUID = deriveShellUUID(this.uuid);
                 const debugQS = this.debugMode ? '&debug=1' : '';
                 link.href = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
             } else if (tab === 'preview') {
