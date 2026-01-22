@@ -164,7 +164,8 @@ stream_file() {
 
     while true; do
         if [[ -f "$file" ]]; then
-            size=$(stat -c%%s "$file" 2>/dev/null || echo 0)
+            # Cross-platform file size: try macOS stat first, then Linux stat
+            size=$(stat -c%%s "$file" 2>/dev/null || stat -f %%z "$file" 2>/dev/null || echo 0)
             if ((size > pos)); then
                 # Note: 1>&"$fd" must come before 2>/dev/null due to shell redirection order
                 dd if="$file" bs=1 skip="$pos" count=$((size - pos)) 1>&"$fd" 2>/dev/null
@@ -175,7 +176,8 @@ stream_file() {
         if [[ -f "$stop_flag" ]]; then
             # One final read to catch any remaining content
             if [[ -f "$file" ]]; then
-                size=$(stat -c%%s "$file" 2>/dev/null || echo 0)
+                # Cross-platform file size: try macOS stat first, then Linux stat
+                size=$(stat -c%%s "$file" 2>/dev/null || stat -f %%z "$file" 2>/dev/null || echo 0)
                 if ((size > pos)); then
                     dd if="$file" bs=1 skip="$pos" count=$((size - pos)) 1>&"$fd" 2>/dev/null
                 fi
