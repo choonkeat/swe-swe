@@ -1,0 +1,4 @@
+043717 - Starting Phase 2: Debug Script & WebSocket Channel
+043717 - Step 2.1: Create inject.js debug script
+       - Will: Create JavaScript that wraps console, captures errors, intercepts fetch/XHR
+       - Expect: Script connects to WebSocket and forwards debug messages
