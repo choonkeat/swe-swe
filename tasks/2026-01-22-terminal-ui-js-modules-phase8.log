@@ -1,0 +1,3 @@
+224825 Starting Phase 8: Extract upload-queue.js (pure queue state reducer)
+224825 Step 1: Create static/modules/upload-queue.js with pure state functions
+224825 Expected: upload-queue.js with createQueue, enqueue, dequeue, peek, isEmpty, getQueueInfo, startUploading, stopUploading
