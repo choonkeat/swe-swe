@@ -1,0 +1,4 @@
+044224 - Starting Phase 3: Agent Integration
+044224 - Step 3.1: Create debug client for agent
+       - Will: Create simple Go binary that connects to WebSocket and prints messages
+       - Expect: Agent can invoke this to receive debug messages from iframe
