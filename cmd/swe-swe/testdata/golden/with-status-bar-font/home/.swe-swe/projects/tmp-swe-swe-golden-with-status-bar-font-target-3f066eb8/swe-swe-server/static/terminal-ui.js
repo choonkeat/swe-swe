@@ -3540,7 +3540,8 @@ class TerminalUI extends HTMLElement {
         }
 
         // Open preview tab by default on desktop (if wide enough for split view)
-        if (this.canShowSplitPane()) {
+        // Skip when embedded in iframe (right panel) - avoid nested iframes
+        if (this.canShowSplitPane() && !this.classList.contains('embedded-in-iframe')) {
             // Use setTimeout to ensure DOM is ready and terminal has been initialized
             setTimeout(() => {
                 this.openIframePane('preview', this.previewBaseUrl + '/');

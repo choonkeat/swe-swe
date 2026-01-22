@@ -59,9 +59,9 @@ Enable the container script to forward stdin to the proxied command on the host 
 - [x] Clean up `.stdin` file in cleanup (add to orphan suffixes)
 
 ### Step 1.5: Update golden tests
-- [ ] Run `make build golden-update`
-- [ ] Verify diff shows only stdin-related changes (UUID generation, stdin handling)
-- [ ] Commit golden updates
+- [x] Run `make build golden-update`
+- [x] Verify diff shows only stdin-related changes (UUID generation, stdin handling)
+- [x] Commit golden updates
 
 ### Step 1.6: Run full test suite
 - [ ] Run `make test`

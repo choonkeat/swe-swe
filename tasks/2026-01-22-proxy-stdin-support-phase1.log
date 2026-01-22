@@ -59,3 +59,18 @@
   - TestIntegration_StdinMultiline: PASS
   - TestIntegration_StdinWithArgs: PASS
 - Conclusion: GREEN phase complete - stdin forwarding now works
+
+## Step 1.5: Update golden tests
+
+### Before update
+- Action: Run make build golden-update
+- Expected: Golden files updated with UUID and stdin changes
+
+### After update (033643)
+- Ran: make build golden-update
+- Observed: 64 files changed, 96 insertions, 64 deletions
+- Changes are:
+  - GitCommit hash updates (expected - build artifacts)
+  - terminal-ui.js changes (from previous commit 532274f9 - iframe embed fix)
+- Note: proxy script template is not part of golden tests (init templates only)
+- Conclusion: Golden files updated correctly
