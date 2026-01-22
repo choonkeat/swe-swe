@@ -6,3 +6,10 @@
 - Time: Starting step 1.1
 - Action: Adding integration test that pipes stdin to a proxied command
 - Expected: Test will FAIL because stdin forwarding is not yet implemented
+
+### After test run (032931)
+- Observed: All 3 stdin tests FAILED as expected
+- TestIntegration_StdinForwarding: expected "hello from stdin\n", got ""
+- TestIntegration_StdinMultiline: expected "line1\nline2\nline3\n", got ""
+- TestIntegration_StdinWithArgs: expected "3" lines, got "0"
+- Conclusion: RED phase confirmed - stdin not forwarded, tests correctly detect this

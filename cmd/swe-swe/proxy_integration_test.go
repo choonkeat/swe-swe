@@ -200,6 +200,68 @@ func TestIntegration_NoArguments(t *testing.T) {
 	}
 }
 
+// TestIntegration_StdinForwarding tests that piped stdin is forwarded to the command.
+func TestIntegration_StdinForwarding(t *testing.T) {
+	skipIfNotLinux(t)
+	helper := newProxyTestHelper(t, "cat")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	// Pipe stdin data to cat - should echo it back
+	stdout, stderr, exitCode := helper.runContainerScriptWithStdin("hello from stdin\n")
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+	if got := stdout; got != "hello from stdin\n" {
+		t.Errorf("expected stdout 'hello from stdin\\n', got %q", got)
+	}
+	// stderr may contain TTY warning when stdin IS a pipe - but in this test stdin is a pipe
+	// so there should be no warning
+	if strings.Contains(stderr, "Warning") {
+		t.Errorf("unexpected warning in stderr: %q", stderr)
+	}
+}
+
+// TestIntegration_StdinMultiline tests stdin with multiple lines.
+func TestIntegration_StdinMultiline(t *testing.T) {
+	skipIfNotLinux(t)
+	helper := newProxyTestHelper(t, "cat")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	input := "line1\nline2\nline3\n"
+	stdout, _, exitCode := helper.runContainerScriptWithStdin(input)
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+	if stdout != input {
+		t.Errorf("expected stdout %q, got %q", input, stdout)
+	}
+}
+
+// TestIntegration_StdinWithArgs tests stdin combined with command arguments.
+func TestIntegration_StdinWithArgs(t *testing.T) {
+	skipIfNotLinux(t)
+	helper := newProxyTestHelper(t, "sh")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	// Use wc -l to count lines from stdin
+	stdout, _, exitCode := helper.runContainerScriptWithStdin("line1\nline2\nline3\n", "-c", "wc -l")
+
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+	if got := strings.TrimSpace(stdout); got != "3" {
+		t.Errorf("expected '3' lines, got %q", got)
+	}
+}
+
 // TestIntegration_CommandNotFound tests handling of non-existent commands.
 func TestIntegration_CommandNotFound(t *testing.T) {
 	skipIfNotLinux(t)
@@ -367,6 +429,34 @@ func (h *proxyTestHelper) runContainerScript(args ...string) (stdout, stderr str
 	cmd := exec.Command(h.scriptPath, args...)
 	cmd.Dir = h.tmpDir
 	cmd.Env = append(os.Environ(), "PROXY_DIR="+h.proxyDir)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	err := cmd.Run()
+
+	stdout = stdoutBuf.String()
+	stderr = stderrBuf.String()
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			h.t.Fatalf("failed to run container script: %v", err)
+		}
+	}
+
+	return
+}
+
+func (h *proxyTestHelper) runContainerScriptWithStdin(stdinData string, args ...string) (stdout, stderr string, exitCode int) {
+	h.t.Helper()
+
+	cmd := exec.Command(h.scriptPath, args...)
+	cmd.Dir = h.tmpDir
+	cmd.Env = append(os.Environ(), "PROXY_DIR="+h.proxyDir)
+	cmd.Stdin = strings.NewReader(stdinData)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
