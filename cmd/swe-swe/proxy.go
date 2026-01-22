@@ -128,8 +128,11 @@ set -euo pipefail
 PROXY_DIR="${PROXY_DIR:-.swe-swe/proxy}"
 TIMEOUT="${PROXY_TIMEOUT:-300}"
 
-# Generate unique request ID
-uuid=$(cat /proc/sys/kernel/random/uuid)
+# Generate unique request ID (cross-platform: works on Linux and macOS)
+while true; do
+    uuid=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
+    [[ ! -f "$PROXY_DIR/$uuid.req" ]] && break
+done
 req_file="$PROXY_DIR/$uuid.req"
 tmp_file="$PROXY_DIR/$uuid.req.tmp"
 exit_file="$PROXY_DIR/$uuid.exit"

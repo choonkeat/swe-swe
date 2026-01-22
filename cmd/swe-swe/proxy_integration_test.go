@@ -15,7 +15,7 @@ import (
 )
 
 // skipIfNotLinux skips the test if not running on Linux
-// Integration tests require Linux-specific features like /proc/sys/kernel/random/uuid
+// Integration tests require Linux-specific features like process groups and signals
 func skipIfNotLinux(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skipf("Integration tests only run on Linux, skipping on %s", runtime.GOOS)
@@ -24,7 +24,6 @@ func skipIfNotLinux(t *testing.T) {
 
 // TestIntegration_BasicFlow tests the complete request/response cycle.
 func TestIntegration_BasicFlow(t *testing.T) {
-	skipIfNotLinux(t)
 	skipIfNotLinux(t)
 	helper := newProxyTestHelper(t, "echo")
 	defer helper.cleanup()

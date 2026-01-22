@@ -13,3 +13,15 @@
 - TestIntegration_StdinMultiline: expected "line1\nline2\nline3\n", got ""
 - TestIntegration_StdinWithArgs: expected "3" lines, got "0"
 - Conclusion: RED phase confirmed - stdin not forwarded, tests correctly detect this
+
+## Step 1.2: Fix UUID generation for cross-platform compatibility
+
+### Before implementation
+- Action: Replace /proc/sys/kernel/random/uuid with /dev/urandom approach
+- Expected: UUID generation will work on both Linux and macOS
+
+### After implementation (033110)
+- Observed: TestIntegration_BasicFlow PASSED
+- UUID format changed from "254c1029-3699-4e2c-98b5-5cdd463d38e8" to "601b962fdf4e5bb538588fe5b40cfe08"
+- Also fixed duplicate skipIfNotLinux() call in test and updated comment
+- Conclusion: UUID generation now cross-platform compatible

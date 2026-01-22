@@ -29,9 +29,9 @@ Enable the container script to forward stdin to the proxied command on the host 
 - [x] Verify test fails (stdin not implemented yet)
 
 ### Step 1.2: Fix UUID generation for cross-platform compatibility
-- [ ] Replace `/proc/sys/kernel/random/uuid` with `/dev/urandom` approach
-- [ ] Add uniqueness loop to prevent collisions
-- [ ] Code:
+- [x] Replace `/proc/sys/kernel/random/uuid` with `/dev/urandom` approach
+- [x] Add uniqueness loop to prevent collisions
+- [x] Code:
   ```bash
   while true; do
       uuid=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
