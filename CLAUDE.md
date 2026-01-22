@@ -6,7 +6,9 @@ Always use `make test` (not `go test` directly) to run tests. The Makefile ensur
 
 ## `swe-swe init` Changes
 
-Always run `make build golden-update` after modifying templates or generated files, then verify:
+Templates live in `cmd/swe-swe/templates/host/` and are embedded in the binary at build time. See `docs/dev/template-editing-guide.md` for the full workflow.
+
+After modifying templates, always run `make build golden-update` then verify:
 ```bash
 git add -A cmd/swe-swe/testdata/golden
 git diff --cached -- cmd/swe-swe/testdata/golden

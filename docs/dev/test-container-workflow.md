@@ -1,8 +1,12 @@
 # Test Container Workflow
 
+This workflow enables testing swe-swe container builds without affecting the development container.
+
+**Related**: See [template-editing-guide.md](template-editing-guide.md) for how to modify templates.
+
 ## Overview
 
-This workflow enables testing swe-swe container builds without affecting the development container. It uses:
+It uses:
 - **Slot-based semaphore**: Supports multiple concurrent test stacks (slots 0-2)
 - **Docker label constraints**: Each Traefik only discovers its own project's containers
 - **Docker-in-Docker path translation**: Automatically handles container/host path differences
@@ -57,6 +61,8 @@ This prevents conflicts when multiple swe-swe instances run simultaneously.
 
 ## Troubleshooting
 
+### Common Issues
+
 **Slot stuck**: Locks auto-expire after 1 hour, or remove manually:
 ```bash
 rm -rf /tmp/swe-swe-test-slot-*.lock
@@ -70,3 +76,44 @@ docker compose -f /workspace/.test-home-0/.swe-swe/projects/*/docker-compose.yml
 ```
 
 **Claude auth blocked**: If Claude sessions fail due to authentication issues, use OpenCode instead. OpenCode uses `ANTHROPIC_API_KEY` from the environment and doesn't require interactive login. When testing via MCP browser, create sessions under the OpenCode agent dropdown.
+
+### Login / Cookie Issues
+
+**Can't login (cookie not being sent):**
+- Test container uses HTTP (not HTTPS) - cookies are set without `Secure` flag
+- Clear any existing cookies for the domain before testing
+- Access via `http://` URL only (not `https://`)
+
+**Password**: Default is `changeme` (set via `SWE_SWE_PASSWORD` in `.env`). To override:
+```bash
+SWE_SWE_INIT_FLAGS="--password=mypassword" ./scripts/test-container/01-init.sh
+```
+
+**iOS Safari / Direct IP access**: Safari may block cookies on direct IP addresses. Use `host.docker.internal` hostname or a proper domain.
+
+### Template vs Generated Files
+
+**IMPORTANT**: Never copy raw template files directly. Templates contain `{{variables}}` that must be processed by `swe-swe init`.
+
+- **Template files** (what to edit): `/workspace/cmd/swe-swe/templates/host/`
+- **Generated files** (what gets run): `~/.swe-swe/projects/<name>/`
+
+Workflow when modifying templates:
+```bash
+# 1. Edit template file
+vim cmd/swe-swe/templates/host/docker-compose.yml
+
+# 2. Rebuild binary (processes templates)
+make build
+
+# 3. Regenerate test project
+./scripts/test-container/01-init.sh
+
+# 4. Rebuild containers
+./scripts/test-container/02-build.sh
+
+# 5. Run
+./scripts/test-container/03-run.sh
+```
+
+If you copy a template file directly (without `make build` + `swe-swe init`), you'll see broken `{{IF SSL}}`, `{{UID}}`, etc. in the output files.
