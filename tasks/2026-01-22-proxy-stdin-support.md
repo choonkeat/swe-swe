@@ -54,9 +54,9 @@ Enable the container script to forward stdin to the proxied command on the host 
   ```
 
 ### Step 1.4: Modify host `processRequest()` - pipe stdin file to command
-- [ ] Check if `<uuid>.stdin` file exists
-- [ ] If exists: open and set as `cmd.Stdin`
-- [ ] Clean up `.stdin` file in cleanup (add to orphan suffixes)
+- [x] Check if `<uuid>.stdin` file exists
+- [x] If exists: open and set as `cmd.Stdin`
+- [x] Clean up `.stdin` file in cleanup (add to orphan suffixes)
 
 ### Step 1.5: Update golden tests
 - [ ] Run `make build golden-update`

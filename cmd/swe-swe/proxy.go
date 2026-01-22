@@ -517,6 +517,7 @@ func processRequest(command, uuid string) {
 	reqFile := filepath.Join(proxyDir, uuid+".req")
 	stdoutFile := filepath.Join(proxyDir, uuid+".stdout")
 	stderrFile := filepath.Join(proxyDir, uuid+".stderr")
+	stdinFile := filepath.Join(proxyDir, uuid+".stdin")
 	exitFile := filepath.Join(proxyDir, uuid+".exit")
 
 	// Read the request file
@@ -554,11 +555,27 @@ func processRequest(command, uuid string) {
 	}
 	defer stderrF.Close()
 
+	// Check for stdin file (created by container when stdin was piped)
+	var stdinF *os.File
+	if _, err := os.Stat(stdinFile); err == nil {
+		stdinF, err = os.Open(stdinFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[proxy] Failed to open stdin file: %v\n", err)
+			writeExitFile(exitFile, 1, "")
+			return
+		}
+		defer stdinF.Close()
+		defer os.Remove(stdinFile) // Clean up stdin file after use
+	}
+
 	// Execute the command with output streaming directly to files
 	// Use process group so we can kill the entire tree if needed
 	cmd := exec.Command(command, args...)
 	cmd.Stdout = stdoutF
 	cmd.Stderr = stderrF
+	if stdinF != nil {
+		cmd.Stdin = stdinF
+	}
 	setSysProcAttr(cmd) // Platform-specific process group setup
 
 	// Start the command (don't use Run so we can get the PID)
@@ -687,7 +704,7 @@ func checkAndClaimPIDFile(pidFile, command string) error {
 // Orphans can occur when:
 // - Container crashed after submitting request but before reading response
 // - Host crashed after writing response but before container read it
-// We only clean up response files (.stdout, .stderr, .exit), not .req files
+// We only clean up response files (.stdout, .stderr, .exit, .stdin), not .req files
 // since those might be legitimate pending requests.
 func cleanupOrphanFiles(dir string) {
 	const maxAge = 5 * time.Minute
@@ -699,7 +716,7 @@ func cleanupOrphanFiles(dir string) {
 	}
 
 	now := time.Now()
-	orphanSuffixes := []string{".stdout", ".stderr", ".exit"}
+	orphanSuffixes := []string{".stdout", ".stderr", ".exit", ".stdin"}
 
 	for _, entry := range entries {
 		if entry.IsDir() {

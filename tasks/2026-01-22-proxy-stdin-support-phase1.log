@@ -41,3 +41,21 @@
 - Verified: TestIntegration_BasicFlow PASSED (no TTY warning since test doesn't use TTY)
 - Verified: TestIntegration_StdinForwarding still FAILS (expected - host side not done yet)
 - Conclusion: Container-side stdin capture implemented, awaiting host-side processing
+
+## Step 1.4: Modify host processRequest() - pipe stdin file to command
+
+### Before implementation
+- Action: Modify host to read stdin file and pipe to command
+- Expected: Stdin tests will PASS after this step
+
+### After implementation (033518)
+- Added stdinFile path variable in processRequest()
+- Added check for stdin file existence with os.Stat()
+- Added stdin file open and set as cmd.Stdin
+- Added defer to close and remove stdin file
+- Added .stdin to orphan cleanup suffixes
+- Verified: All 3 stdin tests PASSED
+  - TestIntegration_StdinForwarding: PASS
+  - TestIntegration_StdinMultiline: PASS
+  - TestIntegration_StdinWithArgs: PASS
+- Conclusion: GREEN phase complete - stdin forwarding now works
