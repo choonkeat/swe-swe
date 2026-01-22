@@ -91,3 +91,23 @@
 - cmd/swe-swe: PASS
 - cmd/swe-swe-server: PASS
 - Conclusion: No regressions, all tests pass
+
+---
+
+## Summary: Problems Encountered & Workarounds
+
+### Problem 1: Duplicate skipIfNotLinux() call (Step 1.2)
+- **Found**: While updating UUID test comment, noticed duplicate `skipIfNotLinux(t)` call in TestIntegration_BasicFlow
+- **Impact**: Minor - test still worked but ran skip check twice
+- **Workaround**: Removed duplicate call
+
+### Problem 2: Unit test checking old UUID pattern (Step 1.6)
+- **Found**: `TestGenerateContainerScript_Content/uuid_generation` failed after full test suite run
+- **Impact**: Blocking - test suite failed
+- **Root cause**: Test was checking for `/proc/sys/kernel/random/uuid` which we replaced with `/dev/urandom`
+- **Workaround**: Updated test to check for new UUID pattern and added stdin-related checks
+
+### No other unexpected issues encountered
+- All steps 1.1-1.5 completed without problems
+- Integration tests worked as expected (RED → GREEN progression)
+- Golden tests updated cleanly
