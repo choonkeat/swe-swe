@@ -4,6 +4,7 @@ import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
+import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -34,10 +35,8 @@ class TerminalUI extends HTMLElement {
         this.chatInputOpen = false;
         this.unreadChatCount = 0;
         this.chatMessageTimeouts = [];
-        // File upload queue
-        this.uploadQueue = [];
-        this.isUploading = false;
-        this.uploadStartTime = null;
+        // File upload queue (managed via upload-queue.js pure functions)
+        this.uploadQueueState = createQueue();
         // Chunked snapshot reassembly
         this.chunks = [];
         this.expectedChunks = 0;
@@ -1877,11 +1876,11 @@ class TerminalUI extends HTMLElement {
         });
 
         fileInput.addEventListener('change', () => {
-            const wasEmpty = this.uploadQueue.length === 0;
+            const wasEmpty = isQueueEmpty(this.uploadQueueState);
             for (const file of fileInput.files) {
                 this.addFileToQueue(file);
             }
-            if (wasEmpty && this.uploadQueue.length > 0) {
+            if (wasEmpty && !isQueueEmpty(this.uploadQueueState)) {
                 this.processUploadQueue();
             }
             fileInput.value = '';
@@ -2144,7 +2143,7 @@ class TerminalUI extends HTMLElement {
             overlay.classList.remove('visible');
 
             const files = e.dataTransfer.files;
-            const wasEmpty = this.uploadQueue.length === 0;
+            const wasEmpty = isQueueEmpty(this.uploadQueueState);
 
             // Add all dropped files to queue
             for (const file of files) {
@@ -2152,7 +2151,7 @@ class TerminalUI extends HTMLElement {
             }
 
             // If queue was empty, start processing immediately
-            if (wasEmpty && this.uploadQueue.length > 0) {
+            if (wasEmpty && !isQueueEmpty(this.uploadQueueState)) {
                 this.processUploadQueue();
             }
 
@@ -2219,33 +2218,27 @@ class TerminalUI extends HTMLElement {
     }
 
     addFileToQueue(file) {
-        this.uploadQueue.push(file);
+        this.uploadQueueState = enqueue(this.uploadQueueState, file);
         this.updateUploadOverlay();
     }
 
     removeFileFromQueue() {
-        this.uploadQueue.shift();
+        this.uploadQueueState = dequeue(this.uploadQueueState);
         this.updateUploadOverlay();
     }
 
     clearUploadQueue() {
-        this.uploadQueue = [];
+        this.uploadQueueState = clearQueue(this.uploadQueueState);
         this.updateUploadOverlay();
     }
 
-    getQueueCount() {
-        return this.uploadQueue.length;
-    }
-
     startUpload() {
-        this.isUploading = true;
-        this.uploadStartTime = Date.now();
+        this.uploadQueueState = startUploading(this.uploadQueueState);
         this.updateUploadOverlay();
     }
 
     endUpload() {
-        this.isUploading = false;
-        this.uploadStartTime = null;
+        this.uploadQueueState = stopUploading(this.uploadQueueState);
     }
 
     updateUploadOverlay() {
@@ -2255,15 +2248,10 @@ class TerminalUI extends HTMLElement {
         const filenameEl = overlay.querySelector('.terminal-ui__upload-filename');
         const queueEl = overlay.querySelector('.terminal-ui__upload-queue');
 
-        if (this.uploadQueue.length > 0) {
-            const currentFile = this.uploadQueue[0];
-            filenameEl.textContent = `Uploading: ${currentFile.name}`;
-
-            if (this.uploadQueue.length > 1) {
-                queueEl.textContent = `${this.uploadQueue.length - 1} file(s) queued`;
-            } else {
-                queueEl.textContent = '';
-            }
+        const info = getQueueInfo(this.uploadQueueState);
+        if (info.current) {
+            filenameEl.textContent = `Uploading: ${info.current.name}`;
+            queueEl.textContent = info.remaining > 0 ? `${info.remaining} file(s) queued` : '';
         }
     }
 
@@ -2288,7 +2276,7 @@ class TerminalUI extends HTMLElement {
     }
 
     async processUploadQueue() {
-        if (this.isUploading || this.uploadQueue.length === 0) {
+        if (this.uploadQueueState.isUploading || isQueueEmpty(this.uploadQueueState)) {
             return;
         }
 
@@ -2299,8 +2287,8 @@ class TerminalUI extends HTMLElement {
             this.showUploadOverlay();
         }, 1000);
 
-        while (this.uploadQueue.length > 0) {
-            const file = this.uploadQueue[0];
+        while (!isQueueEmpty(this.uploadQueueState)) {
+            const file = peek(this.uploadQueueState);
             await this.handleFile(file);
             this.removeFileFromQueue();
         }

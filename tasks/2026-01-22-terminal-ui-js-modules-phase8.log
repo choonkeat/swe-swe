@@ -1,3 +1,39 @@
 224825 Starting Phase 8: Extract upload-queue.js (pure queue state reducer)
 224825 Step 1: Create static/modules/upload-queue.js with pure state functions
 224825 Expected: upload-queue.js with createQueue, enqueue, dequeue, peek, isEmpty, getQueueInfo, startUploading, stopUploading
+224919 Observed: upload-queue.js created with 10 pure functions (113 lines)
+224919 Functions:
+224919   - createQueue(): Create initial state with empty files array
+224919   - enqueue(state, file): Add file to queue (immutable)
+224919   - dequeue(state): Remove first file (immutable)
+224919   - peek(state): Get first file without removing
+224919   - isEmpty(state): Check if queue is empty
+224919   - getQueueCount(state): Get number of files
+224919   - getQueueInfo(state): Get {current, remaining} for UI
+224919   - startUploading(state, now): Mark upload in progress
+224919   - stopUploading(state): Mark upload complete
+224919   - clearQueue(state): Clear all files (immutable)
+224919 Step 2: Create upload-queue.test.js with unit tests
+224919 Observed: upload-queue.test.js created with 35 test cases
+224919 Step 3: Run unit tests
+224919 Command: node --test upload-queue.test.js
+224919 Observed: All 35 tests pass (159ms)
+225053 Step 4: Update terminal-ui.js to import from modules/upload-queue.js
+225053 Observed: Added import statement for all 10 functions (isEmpty renamed to isQueueEmpty)
+225053 Observed: Replaced this.uploadQueue/isUploading/uploadStartTime with this.uploadQueueState
+225053 Observed: Updated 6 methods: addFileToQueue, removeFileFromQueue, clearUploadQueue, startUpload, endUpload, updateUploadOverlay
+225053 Observed: Updated processUploadQueue to use isQueueEmpty, peek
+225053 Observed: Updated 2 event handlers (fileInput.change, drop) to use isQueueEmpty
+225053 Observed: Removed getQueueCount method (replaced by imported getQueueCount function)
+225053 Step 5: Add upload-queue.js to main.go hostFiles
+225053 Observed: Added "templates/host/swe-swe-server/static/modules/upload-queue.js" to hostFiles
+225053 Step 6: Build and test
+225053 Command: make build golden-update
+225208 make build golden-update: Success
+225208 make test: All tests pass
+225208 Phase 8 PASSED: upload-queue.js extraction verified via unit tests (35 tests)
+225208 Changes summary:
+225208   - Replaced 3 instance variables with single uploadQueueState object
+225208   - Updated 6 methods to use pure functions
+225208   - Removed getQueueCount method (replaced by imported function)
+225208   - Total lines removed: ~10 lines
