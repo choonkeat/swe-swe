@@ -411,10 +411,10 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 
 ### Network
 
-All containers communicate via the `swe-network` bridge. This allows:
-- Service discovery by container name
-- Isolated environment per project
-- No port conflicts when running multiple projects
+Each project gets its own isolated Docker network (`{PROJECT_NAME}_swe-network`). This provides:
+- Service discovery by container name within each project
+- True network isolation between projects (no DNS conflicts)
+- Multiple stacks can run simultaneously without interference
 
 ## Configuration
 

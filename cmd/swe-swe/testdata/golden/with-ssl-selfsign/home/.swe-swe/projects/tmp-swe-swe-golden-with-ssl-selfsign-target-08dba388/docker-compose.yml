@@ -6,7 +6,7 @@ services:
       - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=swe-network"
+      - "--providers.docker.network=${PROJECT_NAME}_swe-network"
       # Only discover containers with matching project label (enables multi-project isolation)
       - "--providers.docker.constraints=Label(`swe.project`,`${PROJECT_NAME}`)"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
@@ -188,5 +188,4 @@ services:
     restart: unless-stopped
 networks:
   swe-network:
-    name: swe-network
     driver: bridge

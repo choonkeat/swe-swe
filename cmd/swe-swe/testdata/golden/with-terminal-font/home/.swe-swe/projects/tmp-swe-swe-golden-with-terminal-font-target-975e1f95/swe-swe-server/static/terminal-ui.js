@@ -1706,18 +1706,20 @@ class TerminalUI extends HTMLElement {
         this.lastKeyboardHeight = keyboardHeight;
 
         const mobileKeyboard = this.querySelector('.mobile-keyboard');
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
         const terminalContainer = this.querySelector('.terminal-ui');
 
         if (keyboardVisible) {
             // Keyboard is showing - adjust layout
-            if (mobileKeyboard) {
-                // Move mobile keyboard above virtual keyboard
-                mobileKeyboard.style.marginBottom = `${keyboardHeight}px`;
+            // Apply margin to the bottom-most element (status bar) so there's no gap
+            // between mobile keyboard and status bar
+            if (statusBar) {
+                statusBar.style.marginBottom = `${keyboardHeight}px`;
             }
         } else {
             // Keyboard hidden - reset layout
-            if (mobileKeyboard) {
-                mobileKeyboard.style.marginBottom = '0';
+            if (statusBar) {
+                statusBar.style.marginBottom = '0';
             }
         }
 

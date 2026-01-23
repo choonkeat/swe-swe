@@ -170,7 +170,7 @@ chrome:
   volumes:
     - ./certs:/swe-swe/certs:ro
   networks:
-    - swe-network
+    - swe-network  # Compose-internal alias; actual network is ${PROJECT_NAME}_swe-network
   deploy:
     resources:
       limits:
