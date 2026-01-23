@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "226d09d1"
+	GitCommit = "2dc571c8"
 )
 
 var indexTemplate *template.Template
@@ -3491,7 +3491,10 @@ func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
 	return result
 }
 
-// handleRecordingPage serves the streaming recording playback page
+// handleRecordingPage serves the recording playback page
+// Query params:
+//   - render=streaming: use streaming approach (experimental, fetch data via JS)
+//   - (default): use embedded approach (stable, data in HTML)
 func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -3528,10 +3531,40 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Use streaming HTML that fetches session data via fetch()
-	html, err := recordtui.RenderStreamingHTML(recordtui.StreamingOptions{
-		Title:   name,
-		DataURL: "./session.log",
+	// Check render mode query parameter
+	renderMode := r.URL.Query().Get("render")
+
+	if renderMode == "streaming" {
+		// Experimental: streaming HTML that fetches session data via fetch()
+		// DataURL must include UUID since page is at /recording/{uuid} (no trailing slash)
+		html, err := recordtui.RenderStreamingHTML(recordtui.StreamingOptions{
+			Title:   name,
+			DataURL: recordingUUID + "/session.log",
+			FooterLink: recordtui.FooterLink{
+				Text: "swe-swe",
+				URL:  "https://github.com/choonkeat/swe-swe",
+			},
+		})
+		if err != nil {
+			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(html))
+		return
+	}
+
+	// Default: embedded approach - read file, embed content in HTML
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		http.Error(w, "Failed to read recording", http.StatusInternalServerError)
+		return
+	}
+	// Strip metadata and neutralize clear sequences
+	stripped := recordtui.StripMetadata(string(content))
+	html, err := recordtui.RenderHTML([]recordtui.Frame{
+		{Timestamp: 0, Content: stripped},
+	}, recordtui.Options{
+		Title: name,
 		FooterLink: recordtui.FooterLink{
 			Text: "swe-swe",
 			URL:  "https://github.com/choonkeat/swe-swe",
@@ -3544,7 +3577,9 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	w.Write([]byte(html))
 }
 
-// handleRecordingSessionLog serves raw session.log for streaming playback
+// handleRecordingSessionLog serves pre-processed session.log for streaming playback
+// Content is stripped of metadata (header/footer) and clear sequences are neutralized
+// so the streaming JS doesn't need to reimplement this logic
 func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -3553,7 +3588,18 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 	}
 
 	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
-	http.ServeFile(w, r, logPath)
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		http.Error(w, "Recording not found", http.StatusNotFound)
+		return
+	}
+
+	// Pre-process: strip metadata (header/footer) and neutralize clear sequences
+	// This matches what the embedded approach does in Go
+	processed := recordtui.StripMetadata(string(content))
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(processed))
 }
 
 // handleRecordingAPI routes recording API requests

@@ -1114,7 +1114,7 @@ func TestPlaybackPage_InvalidUUID(t *testing.T) {
 	}
 }
 
-func TestPlaybackPage_StreamingHTML(t *testing.T) {
+func TestPlaybackPage_EmbeddedHTML_Default(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1133,6 +1133,7 @@ func TestPlaybackPage_StreamingHTML(t *testing.T) {
 	server := h.createTestServer()
 	defer server.Close()
 
+	// Default (no query param) should use embedded HTML
 	resp, err := http.Get(server.URL + "/recording/" + testUUID)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -1170,8 +1171,54 @@ func TestPlaybackPage_StreamingHTML(t *testing.T) {
 		t.Error("expected page to contain record-tui reference")
 	}
 
+	// Embedded HTML should have base64-encoded frame data (framesBase64)
+	if !strings.Contains(html, "framesBase64") {
+		t.Error("expected embedded HTML to have framesBase64 data")
+	}
+}
+
+func TestPlaybackPage_StreamingHTML_WithQueryParam(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logContent:    "Hello\r\nWorld\r\n",
+		withTiming:    true,
+		timingContent: "0.1 5\n0.5 6\n",
+		metadata: &RecordingMetadata{
+			UUID:    testUUID,
+			Name:    "Test Recording",
+			MaxCols: 80,
+			MaxRows: 24,
+		},
+	})
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	// ?render=streaming should use streaming HTML
+	resp, err := http.Get(server.URL + "/recording/" + testUUID + "?render=streaming")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	html := string(body)
+
+	// Should use xterm.js for rendering
+	if !strings.Contains(html, "xterm") {
+		t.Error("expected playback page to use xterm.js")
+	}
+
 	// Streaming HTML should fetch data via fetch(), not embed it
-	// It should reference the DataURL (./session.log)
 	if !strings.Contains(html, "fetch") {
 		t.Error("expected streaming HTML to use fetch() for data loading")
 	}
