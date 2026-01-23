@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y \
     git \
     build-essential \
     ca-certificates \
+    jq \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 
