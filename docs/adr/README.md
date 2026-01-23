@@ -46,3 +46,7 @@ Bad: ...
 | [018](0018-session-naming.md) | Session naming | Accepted |
 | [019](0019-terminal-recording.md) | Terminal recording with script command | Accepted |
 | [020](0020-git-worktree-integration.md) | Git worktree integration for sessions | Accepted |
+| [021](0021-worktree-mount-path.md) | Worktree mount path | Accepted |
+| [022](0022-simplified-worktree-exit.md) | Simplified worktree exit | Accepted |
+| [023](0023-unique-mcp-server-name.md) | Unique MCP server name | Accepted |
+| [024](0024-debug-injection-proxy-security.md) | Debug injection proxy security | Accepted |

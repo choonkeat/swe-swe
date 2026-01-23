@@ -191,6 +191,7 @@ Bridges the container-host boundary by letting containers execute specific host 
 **Key features:**
 - **Real-time streaming**: Output appears immediately, not after command completes
 - **Exit code propagation**: Container script exits with the host command's exit code
+- **Stdin forwarding**: Piped/redirected input is forwarded to the host command (e.g., `echo "data" | .swe-swe/proxy/cat`)
 - **Concurrent requests**: Multiple container processes can use the same proxy simultaneously
 - **Efficient file watching**: Uses inotify when available, falls back to polling
 
@@ -235,6 +236,7 @@ swe-swe proxy npm
 ├── <command>           # Generated container script (executable)
 ├── <command>.pid       # Host PID file (prevents duplicate proxies)
 ├── <uuid>.req          # Request file (NUL-delimited args)
+├── <uuid>.stdin        # Request stdin (if piped/redirected input)
 ├── <uuid>.stdout       # Response stdout (streamed)
 ├── <uuid>.stderr       # Response stderr (streamed)
 └── <uuid>.exit         # Exit code (signals completion)
