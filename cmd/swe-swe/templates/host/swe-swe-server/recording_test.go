@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -159,8 +158,21 @@ func (h *testHelper) createTestServer() *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/recording/", handleRecordingAPI)
 	mux.HandleFunc("/recording/", func(w http.ResponseWriter, r *http.Request) {
-		recordingUUID := r.URL.Path[len("/recording/"):]
-		handleRecordingPage(w, r, recordingUUID)
+		path := strings.TrimPrefix(r.URL.Path, "/recording/")
+		if path == "" {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+
+		// Serve raw session.log for streaming
+		if strings.HasSuffix(path, "/session.log") {
+			recordingUUID := strings.TrimSuffix(path, "/session.log")
+			handleRecordingSessionLog(w, r, recordingUUID)
+			return
+		}
+
+		// Serve streaming HTML page
+		handleRecordingPage(w, r, path)
 	})
 	return httptest.NewServer(mux)
 }
@@ -1102,7 +1114,7 @@ func TestPlaybackPage_InvalidUUID(t *testing.T) {
 	}
 }
 
-func TestPlaybackPage_WithTiming_StaticHTML(t *testing.T) {
+func TestPlaybackPage_StreamingHTML(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1157,13 +1169,19 @@ func TestPlaybackPage_WithTiming_StaticHTML(t *testing.T) {
 	if !strings.Contains(html, "record-tui") {
 		t.Error("expected page to contain record-tui reference")
 	}
+
+	// Streaming HTML should fetch data via fetch(), not embed it
+	// It should reference the DataURL (./session.log)
+	if !strings.Contains(html, "fetch") {
+		t.Error("expected streaming HTML to use fetch() for data loading")
+	}
 }
 
-func TestPlaybackPage_WithoutTiming_StaticHTML(t *testing.T) {
+func TestPlaybackPage_SessionLogEndpoint(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	// Content with distinctive first and last parts to verify ENTIRE content is embedded
+	// Content with distinctive first and last parts to verify ENTIRE content is served
 	logContent := "FIRST_LINE\r\n...middle content...\r\nLAST_LINE\r\n"
 	h.createRecordingFiles(testUUID, recordingOpts{
 		logContent: logContent,
@@ -1177,7 +1195,8 @@ func TestPlaybackPage_WithoutTiming_StaticHTML(t *testing.T) {
 	server := h.createTestServer()
 	defer server.Close()
 
-	resp, err := http.Get(server.URL + "/recording/" + testUUID)
+	// Test the session.log endpoint that streaming HTML fetches from
+	resp, err := http.Get(server.URL + "/recording/" + testUUID + "/session.log")
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -1191,54 +1210,56 @@ func TestPlaybackPage_WithoutTiming_StaticHTML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read response body: %v", err)
 	}
-	html := string(body)
-
-	// Should have xterm.js for rendering
-	if !strings.Contains(html, "xterm") {
-		t.Error("expected playback to use xterm.js")
-	}
-
-	// Should NOT have play button (static mode shows final state only)
-	if strings.Contains(html, "playBtn") || strings.Contains(html, "play-btn") {
-		t.Error("expected static mode NOT to have play button")
-	}
-
-	// Should NOT have timeline/progress controls
-	if strings.Contains(html, "progressBar") || strings.Contains(html, "progress-bar") {
-		t.Error("expected static mode NOT to have progress bar")
-	}
-
-	// Verify the ENTIRE content is embedded (not just first frame)
-	// Extract the base64 content from the HTML and decode it
-	// record-tui uses: const framesBase64 = '...';
-	contentMatch := strings.Index(html, "const framesBase64 = '")
-	if contentMatch == -1 {
-		t.Fatal("could not find framesBase64 in HTML")
-	}
-	start := contentMatch + len("const framesBase64 = '")
-	end := strings.Index(html[start:], "'")
-	if end == -1 {
-		t.Fatal("could not find end of framesBase64 string")
-	}
-	base64Content := html[start : start+end]
-
-	// Decode base64 (it's JSON-encoded frames)
-	decoded, err := base64.StdEncoding.DecodeString(base64Content)
-	if err != nil {
-		t.Fatalf("failed to decode base64 content: %v", err)
-	}
-	decodedStr := string(decoded)
+	content := string(body)
 
 	// CRITICAL: Verify both first AND last parts are present
-	// This confirms we're showing the entire recording, not just first frame
-	if !strings.Contains(decodedStr, "FIRST_LINE") {
-		t.Error("expected decoded content to contain FIRST_LINE")
+	// This confirms we're serving the entire recording
+	if !strings.Contains(content, "FIRST_LINE") {
+		t.Error("expected session.log to contain FIRST_LINE")
 	}
-	if !strings.Contains(decodedStr, "LAST_LINE") {
-		t.Error("expected decoded content to contain LAST_LINE - should show ALL content")
+	if !strings.Contains(content, "LAST_LINE") {
+		t.Error("expected session.log to contain LAST_LINE - should serve ALL content")
 	}
-	if !strings.Contains(decodedStr, "middle content") {
-		t.Error("expected decoded content to contain middle content")
+	if !strings.Contains(content, "middle content") {
+		t.Error("expected session.log to contain middle content")
+	}
+}
+
+func TestPlaybackPage_SessionLogEndpoint_NotFound(t *testing.T) {
+	h := newTestHelper(t)
+	_ = h // Just set up the test helper
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Test session.log for non-existent recording (use valid UUID format that doesn't exist)
+	resp, err := http.Get(server.URL + "/recording/00000000-0000-0000-0000-000000000000/session.log")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPlaybackPage_SessionLogEndpoint_InvalidUUID(t *testing.T) {
+	h := newTestHelper(t)
+	_ = h // Just set up the test helper
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Test session.log with invalid UUID (too short)
+	resp, err := http.Get(server.URL + "/recording/short/session.log")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
 	}
 }
 

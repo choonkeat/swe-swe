@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "952d3acb"
+	GitCommit = "226d09d1"
 )
 
 var indexTemplate *template.Template
@@ -1901,14 +1901,23 @@ func main() {
 		}
 
 
-		// Recording playback page
+		// Recording playback page and raw session data
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
-			recordingUUID := strings.TrimPrefix(r.URL.Path, "/recording/")
-			if recordingUUID == "" {
+			path := strings.TrimPrefix(r.URL.Path, "/recording/")
+			if path == "" {
 				http.Redirect(w, r, "/", http.StatusFound)
 				return
 			}
-			handleRecordingPage(w, r, recordingUUID)
+
+			// Serve raw session.log for streaming
+			if strings.HasSuffix(path, "/session.log") {
+				recordingUUID := strings.TrimSuffix(path, "/session.log")
+				handleRecordingSessionLog(w, r, recordingUUID)
+				return
+			}
+
+			// Serve streaming HTML page
+			handleRecordingPage(w, r, path)
 			return
 		}
 
@@ -3482,7 +3491,7 @@ func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
 	return result
 }
 
-// handleRecordingPage serves the recording playback page
+// handleRecordingPage serves the streaming recording playback page
 func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -3492,8 +3501,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 
 	// Check if recording exists
 	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
-	logContent, err := os.ReadFile(logPath)
-	if err != nil {
+	if _, err := os.Stat(logPath); err != nil {
 		http.Error(w, "Recording not found", http.StatusNotFound)
 		return
 	}
@@ -3520,11 +3528,10 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Strip script metadata and render HTML using record-tui
-	cleaned := recordtui.StripMetadata(string(logContent))
-	frames := []recordtui.Frame{{Timestamp: 0, Content: cleaned}}
-	html, err := recordtui.RenderHTML(frames, recordtui.Options{
-		Title: name,
+	// Use streaming HTML that fetches session data via fetch()
+	html, err := recordtui.RenderStreamingHTML(recordtui.StreamingOptions{
+		Title:   name,
+		DataURL: "./session.log",
 		FooterLink: recordtui.FooterLink{
 			Text: "swe-swe",
 			URL:  "https://github.com/choonkeat/swe-swe",
@@ -3535,6 +3542,18 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		return
 	}
 	w.Write([]byte(html))
+}
+
+// handleRecordingSessionLog serves raw session.log for streaming playback
+func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recordingUUID string) {
+	// Validate UUID format
+	if len(recordingUUID) < 32 {
+		http.Error(w, "Invalid UUID", http.StatusBadRequest)
+		return
+	}
+
+	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
+	http.ServeFile(w, r, logPath)
 }
 
 // handleRecordingAPI routes recording API requests

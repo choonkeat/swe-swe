@@ -3,7 +3,7 @@ module github.com/choonkeat/swe-swe/cmd/swe-swe-server
 go 1.22
 
 require (
-	github.com/choonkeat/record-tui v0.0.0-20260119061752-47b20a8f9ab1
+	github.com/choonkeat/record-tui v0.0.0-20260123100207-52b1bfde59b1
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
