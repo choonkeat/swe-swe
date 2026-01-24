@@ -1,7 +1,7 @@
 # Streaming vs Embedded Recording Playback Rendering Differences
 
 **Date**: 2026-01-24
-**Status**: Root cause found - stale template dependencies; fix pending reboot
+**Status**: Fixed - metadata dimensions now passed to streaming playback
 
 ## Problem
 
@@ -176,3 +176,473 @@ After next reboot:
 1. Verify streaming uses cols: 240 (check xterm-screen width = 2160px)
 2. Verify streaming content starts with Claude Code logo
 3. Compare embedded vs streaming DOM content for parity
+
+---
+
+## Terminal Cleared Delimiter Encoding Issue (2026-01-24 continued)
+
+### Symptom
+
+After reboot, most content renders correctly, but the "terminal cleared" delimiter looks wrong:
+
+| Mode | Rendering |
+|------|-----------|
+| Embedded | `── terminal cleared ──` (correct box-drawing chars) |
+| Streaming | `âââââââââ terminal cleared âââââââââ` (broken) |
+
+### Source Code Location
+
+The record-tui source is at `dist/choonkeat/record-tui` (git repo).
+
+### Root Cause: JavaScript String Escape vs UTF-8 Mismatch
+
+**Go constant (clear.go:9):**
+```go
+const ClearSeparator = "\n\n──────── terminal cleared ────────\n\n"
+```
+Uses actual UTF-8 character `─` (U+2500), stored as 3 bytes: `E2 94 80`
+
+**JS constant (cleaner-core.js:13):**
+```javascript
+const CLEAR_SEPARATOR = '\n\n\xe2\x94\x80\xe2\x94\x80... terminal cleared ...\n\n';
+```
+Uses escape sequences that create **three separate characters**, not one.
+
+### Why `\xe2\x94\x80` Doesn't Work in Browser
+
+JavaScript string escapes like `\xe2` create characters by **code point**, not bytes:
+- `'\xe2'` → character U+00E2 → `â` (Latin Small Letter A With Circumflex)
+- `'\x94'` → character U+0094 → C1 control character (invisible)
+- `'\x80'` → character U+0080 → C1 control character (invisible)
+
+So `'\xe2\x94\x80'` is a **3-character string** showing as `â` + invisible + invisible.
+
+The correct way to represent `─` (U+2500) in JavaScript would be:
+- `'\u2500'` (Unicode escape)
+- `'─'` (literal character)
+
+### Why This Design Exists (Test Infrastructure Parity)
+
+The cleaner-core.js comment explains:
+```javascript
+// Using raw UTF-8 bytes for '─' (U+2500) = 0xe2 0x94 0x80 to ensure byte-level parity with Go
+// when processing files as latin1 (raw bytes)
+```
+
+The test infrastructure (generate_output.js:85-89) reads files as Latin-1:
+```javascript
+content = fs.readFileSync(realPath, 'latin1');
+```
+
+When bytes `E2 94 80` are read as Latin-1:
+- `E2` → JS char `\xe2` (â)
+- `94` → JS char `\x94`
+- `80` → JS char `\x80`
+
+The CLEAR_SEPARATOR with `\xe2\x94\x80` correctly matches these transformed characters. Output is written as Latin-1, so `\xe2` → byte `E2`. This achieves **byte-level parity** with Go.
+
+### The Gap: Browser Uses UTF-8, Not Latin-1
+
+Browser streaming (template_streaming.go:122-137):
+```javascript
+const reader = response.body.getReader();
+const decoder = new TextDecoder();  // Default: UTF-8
+// ...
+cleaner.write(decoder.decode(result.value, { stream: true }));
+```
+
+1. `fetch()` gets raw bytes
+2. `TextDecoder()` with UTF-8 decodes bytes `E2 94 80` → single char `─`
+3. JS cleaner inserts `CLEAR_SEPARATOR` with chars `â`, `\x94`, `\x80`
+4. `xterm.write()` displays those Latin-1 characters literally
+
+**The cleaner was designed for Latin-1 byte processing, but browser uses UTF-8 string processing.**
+
+### Other Edge Cases to Watch For
+
+This encoding mismatch could affect any multi-byte UTF-8 characters:
+- Box-drawing characters: `─│┌┐└┘├┤┬┴┼` etc.
+- Emojis in terminal output
+- International characters in filenames or output
+
+If the session.log contains UTF-8 multi-byte sequences, they would be decoded correctly by TextDecoder. The issue is specifically with **inserted** text (like CLEAR_SEPARATOR) that uses wrong escapes.
+
+### Solution Options
+
+**Option 1: Use ASCII-Only Separator**
+Change both Go and JS to use simple dashes:
+```
+\n\n-------- terminal cleared --------\n\n
+```
+Pros: Works everywhere, no encoding issues
+Cons: Less visually distinctive
+
+**Option 2: Use Unicode Escapes in JS**
+Change cleaner-core.js:
+```javascript
+const CLEAR_SEPARATOR = '\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 terminal cleared \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n';
+```
+Pros: Correct UTF-8 output in browser
+Cons: Breaks byte-level test parity (test reads Latin-1)
+
+**Option 3: Conditional Constants**
+Use different constants for:
+- Test mode (Latin-1 byte processing): `\xe2\x94\x80`
+- Browser mode (UTF-8 string processing): `\u2500`
+Pros: Correct everywhere
+Cons: Complex, two sources of truth
+
+**Option 4: Change Test Infrastructure to UTF-8**
+Modify generate_output.js to read/write as UTF-8:
+```javascript
+content = fs.readFileSync(realPath, 'utf8');
+fs.appendFileSync(outputPath, cleanedContent, 'utf8');
+```
+Update CLEAR_SEPARATOR to use `\u2500` or literal `─`.
+Pros: Simplifies everything, UTF-8 is modern standard
+Cons: Need to verify Go also processes as UTF-8 (it does: Go strings are UTF-8)
+
+### Recommended Solution
+
+**Option 4 is likely the cleanest fix.** Go strings are already UTF-8, so the test infrastructure's Latin-1 approach is an artificial constraint. By switching tests to UTF-8:
+1. JS CLEAR_SEPARATOR can use proper Unicode (`\u2500` or `'─'`)
+2. Browser streaming works correctly
+3. Test parity is maintained (both process UTF-8)
+4. No conditional logic needed
+
+The Latin-1 approach was likely chosen to handle arbitrary binary in session logs, but ANSI terminal output is fundamentally text-based and should be UTF-8 compatible.
+
+### Design Tension: Single Source of Truth Problem
+
+From commit 6c7e1b68:
+> refactor(cleaner): single source of truth for JS cleaner logic
+> - cleaner-core.js → cleaner.js → generate_output.js (test-js)
+> - cleaner-core.js → embed.go → template_streaming.go (browser)
+
+The design aimed to have `cleaner-core.js` be the single source of truth for both:
+1. **Test infrastructure**: Node.js reading files as Latin-1 (byte-preserving)
+2. **Browser streaming**: TextDecoder reading as UTF-8 (proper text decoding)
+
+These are **incompatible encodings**. The `\xe2\x94\x80` escape sequence works for Latin-1 byte processing but produces garbage in UTF-8 string processing.
+
+**Why Latin-1 for Tests?**
+
+Go's `os.ReadFile()` → `string()` treats bytes as raw bytes (no encoding validation). To match this in JS:
+```javascript
+// Go: string(bytes) - bytes as-is
+// JS: fs.readFileSync(path, 'latin1') - bytes as code points
+```
+
+Latin-1 is "transparent" - byte 0xE2 becomes JS char `\xe2` (code point 226). This preserves arbitrary binary data through the processing pipeline.
+
+**Why This Doesn't Matter for Session Logs**
+
+Terminal session logs are fundamentally UTF-8 text (Claude Code outputs UTF-8). The Latin-1 approach was overly conservative. The test infrastructure could safely use UTF-8:
+- Go's `string(bytes)` works correctly on UTF-8 (Go strings ARE UTF-8)
+- JS's `fs.readFileSync(path, 'utf8')` would match
+
+### Summary
+
+The encoding mismatch is an artifact of the test infrastructure choosing Latin-1 for byte-level parity with Go's `string([]byte)`, without considering that:
+1. Session logs are UTF-8 text, not arbitrary binary
+2. The same code would run in browsers with UTF-8 TextDecoder
+3. Go strings are UTF-8 internally, so UTF-8 parity is the correct goal
+
+---
+
+## Blank Vertical Space at End of Page (2026-01-24 continued)
+
+### Symptom
+
+After charset issue was fixed, streaming mode shows extra blank vertical space at the end of the page (after the content, before the footer). Embedded mode does not have this issue.
+
+### Key Code Differences
+
+**Embedded mode (template.go):**
+```javascript
+// Starts with estimated rows based on content pre-analysis
+const estimatedRows = Math.max(maxUsedRow, lineCount, 24);
+const xterm = new Terminal({ rows: estimatedRows, ... });
+
+// Post-render resize (setTimeout 0ms)
+setTimeout(() => {
+  // Find last content row
+  const actualHeight = Math.max(lastContentRow, cursorRow, 1);
+  // Only resize if shrinking
+  if (actualHeight < estimatedRows) {
+    xterm.resize(contentCols, actualHeight);
+  }
+}, 0);
+```
+
+**Streaming mode (template_streaming.go):**
+```javascript
+// Starts with large fixed value
+const xterm = new Terminal({ rows: 1000, ... });
+
+// Post-render resize (setTimeout 100ms)
+setTimeout(function() {
+  resizeToFitContent(xterm, COLS);
+}, 100);
+
+function resizeToFitContent(xterm, cols) {
+  // Find last content row
+  const actualHeight = Math.max(lastContentRow, 1); // NOTE: ignores cursor
+  xterm.resize(cols, actualHeight); // Always resizes
+}
+```
+
+### Differences That Could Cause Blank Space
+
+1. **Initial rows**: Embedded estimates closely, streaming starts at 1000
+2. **Cursor inclusion**: Embedded includes cursor position, streaming ignores it
+3. **Resize timing**: Embedded uses 0ms, streaming uses 100ms
+4. **Resize condition**: Embedded only shrinks if needed, streaming always resizes
+
+### xterm.js Resize Behavior Research
+
+From [xterm.js issues](https://github.com/xtermjs/xterm.js/issues):
+
+1. **Issue #98**: "Reducing rows in a resize messes up the terminal" - problems occur "when there are empty lines at the bottom of the terminal"
+
+2. **Issue #3564**: xterm-addon-fit shrinking issues - viewport width gets locked to initial value
+
+3. **Viewport.ts scrollHeight calculation**:
+   ```
+   scrollHeight = cellHeight * buffer.lines.length
+   ```
+   If `buffer.lines.length` doesn't shrink after resize, scrollHeight remains large.
+
+### Hypothesis
+
+When streaming mode creates terminal with 1000 rows, then resizes to actual content (e.g., 200 rows):
+
+1. xterm creates DOM elements for 1000 rows initially
+2. `xterm.resize(cols, 200)` updates internal state
+3. BUT: `buffer.lines.length` may still be 1000
+4. Viewport scrollHeight = 1000 * cellHeight (too large)
+5. This causes blank scrollable area at bottom
+
+**Alternative hypothesis**: The `.xterm-screen` or `.xterm-viewport` DOM elements retain their initial height CSS values and don't shrink properly.
+
+### Investigation Plan
+
+1. Boot test container
+2. Open same recording in embedded vs streaming mode
+3. Use browser DevTools to compare:
+   - `xterm.buffer.active.length` after render
+   - `.xterm-screen` computed height
+   - `.xterm-viewport` computed height
+   - `#terminal` container height
+4. Identify which element has extra height
+
+### Potential Solutions
+
+**Solution 1: Pre-estimate streaming content size**
+Make initial fetch to count newlines/size before creating terminal with closer estimate.
+
+**Solution 2: Force DOM height after resize**
+```javascript
+function resizeToFitContent(xterm, cols) {
+  // ... existing logic ...
+  xterm.resize(cols, actualHeight);
+
+  // Force DOM update
+  const screen = document.querySelector('.xterm-screen');
+  const cellHeight = /* get from xterm internals */;
+  screen.style.height = (actualHeight * cellHeight) + 'px';
+}
+```
+
+**Solution 3: Use FitAddon in reverse**
+After resize, set container height to match content, then call `fitAddon.fit()`.
+
+**Solution 4: Recreate terminal after streaming**
+1. Stream to hidden terminal
+2. Count actual rows
+3. Create visible terminal with correct size
+4. Write content to visible terminal
+
+### Next Steps
+
+Empirical testing needed to confirm hypothesis and identify exact source of blank space.
+
+---
+
+## Better Solution: Use swe-swe Metadata (2026-01-24 discussion)
+
+### Key Insight
+
+swe-swe already tracks terminal dimensions during recording:
+
+```go
+// RecordingMetadata (main.go:184-195)
+type RecordingMetadata struct {
+    // ...
+    MaxCols   uint16     `json:"max_cols,omitempty"` // Max terminal columns during recording
+    MaxRows   uint16     `json:"max_rows,omitempty"` // Max terminal rows during recording
+}
+```
+
+These are updated during the session (main.go:427-433):
+```go
+// Track max dimensions for recording playback
+if minCols > s.Metadata.MaxCols {
+    s.Metadata.MaxCols = minCols
+}
+if minRows > s.Metadata.MaxRows {
+    s.Metadata.MaxRows = minRows
+}
+```
+
+### Current Gap
+
+In `handleRecordingPage` (main.go:3695-3775):
+- Metadata is loaded: `metadata *RecordingMetadata`
+- But dimensions are **not passed** to render functions:
+  ```go
+  // Streaming mode - no dimensions passed
+  recordtui.RenderStreamingHTML(recordtui.StreamingOptions{
+      Title:   name,
+      DataURL: recordingUUID + "/session.log",
+      // Missing: Cols, Rows
+  })
+
+  // Embedded mode - no dimensions passed
+  recordtui.RenderHTML([]recordtui.Frame{...}, recordtui.Options{
+      Title: name,
+      // Missing: Cols, Rows
+  })
+  ```
+
+### Proposed Solution
+
+**1. Add dimension options to record-tui:**
+
+```go
+// internal/html/template_streaming.go
+type StreamingOptions struct {
+    Title      string
+    DataURL    string
+    FooterLink FooterLink
+    Cols       uint16  // NEW: Optional terminal columns (0 = auto-detect)
+    Rows       uint16  // NEW: Optional terminal rows (0 = auto-detect)
+}
+
+// internal/html/template.go (embedded)
+// Similar addition to Options struct
+```
+
+**2. Use dimensions in templates:**
+
+```javascript
+// Streaming template
+const COLS = opts.Cols > 0 ? opts.Cols : 240;  // Use provided or fallback
+const ROWS = opts.Rows > 0 ? opts.Rows : 1000; // Use provided or fallback to large
+
+const xterm = new Terminal({
+    cols: COLS,
+    rows: ROWS,
+    // ...
+});
+```
+
+**3. Update swe-swe to pass dimensions:**
+
+```go
+// handleRecordingPage
+if metadata != nil && metadata.MaxCols > 0 && metadata.MaxRows > 0 {
+    html, err := recordtui.RenderStreamingHTML(recordtui.StreamingOptions{
+        Title:   name,
+        DataURL: recordingUUID + "/session.log",
+        Cols:    metadata.MaxCols,
+        Rows:    metadata.MaxRows,  // Exact rows, no guessing!
+    })
+}
+```
+
+### Why This Is Better
+
+| Approach | Initial Rows | Post-render Resize | Blank Space Risk |
+|----------|-------------|-------------------|------------------|
+| Current streaming | 1000 (guess) | Shrink dramatically | High |
+| Current embedded | Estimated from content | Small adjustment | Low |
+| **With metadata** | Exact from recording | None needed | None |
+
+### Graceful Degradation
+
+For record-tui CLI (standalone, no swe-swe metadata):
+- Continue using current "best effort" estimation
+- Accept some blank space may occur
+- The fix benefits swe-swe-rendered recordings specifically
+
+### Implementation Steps
+
+1. **record-tui changes:**
+   - Add `Cols`, `Rows` to `StreamingOptions` and `Options`
+   - Update templates to use these when provided
+   - Fall back to current behavior when 0
+
+2. **swe-swe changes:**
+   - Pass `metadata.MaxCols`, `metadata.MaxRows` to render functions
+   - No other changes needed - metadata already tracked
+
+### Trade-offs
+
+**Pros:**
+- Eliminates blank space problem for swe-swe recordings
+- No post-render resize jank
+- Simpler, more predictable rendering
+- Uses accurate data instead of heuristics
+
+**Cons:**
+- Requires changes in both repos (record-tui + swe-swe)
+- Standalone record-tui CLI still has the issue (but that's expected)
+- Metadata file must exist (but it always does for swe-swe recordings)
+
+---
+
+## Implementation (2026-01-24)
+
+### record-tui changes
+
+Commit `9d1f74e` on `dev` branch:
+- Added `Cols`, `Rows` fields to `StreamingOptions` struct
+- When provided (non-zero), terminal created with exact dimensions
+- When 0 (default), falls back to auto-detect (240 cols, 1000 rows + post-resize)
+
+```go
+type StreamingOptions struct {
+    Title      string
+    DataURL    string
+    FooterLink FooterLink
+    Cols       uint16  // Terminal columns (0 = auto-detect, default 240)
+    Rows       uint16  // Terminal rows (0 = auto-detect via post-render resize)
+}
+```
+
+### swe-swe changes
+
+Commit `616e3011`:
+- Pass `metadata.MaxCols`, `metadata.MaxRows` to `RenderStreamingHTML` when available
+- Updated record-tui dependency to `v0.0.0-20260124064553-9d1f74edf92c`
+
+```go
+opts := recordtui.StreamingOptions{
+    Title:   name,
+    DataURL: recordingUUID + "/session.log",
+    // ...
+}
+if metadata != nil && metadata.MaxCols > 0 && metadata.MaxRows > 0 {
+    opts.Cols = metadata.MaxCols
+    opts.Rows = metadata.MaxRows
+}
+html, err := recordtui.RenderStreamingHTML(opts)
+```
+
+### Verification
+
+After reboot:
+1. Open a recording with `?render=streaming`
+2. Verify no blank space at bottom
+3. Check browser console for `TERM_COLS` and `TERM_ROWS` values matching metadata
