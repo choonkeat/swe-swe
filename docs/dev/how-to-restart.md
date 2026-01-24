@@ -23,10 +23,13 @@ From inside the swe-swe container (with Docker socket access), run these command
 # 1. Re-init
 bash .swe-swe/pre-restart.sh
 
-# 2. Stop the chrome container first (it doesn't always respond to compose down)
+# 2. Stop any test containers first
+docker compose -p swe-swe-test down -t 10 2>/dev/null || true
+
+# 3. Stop the chrome container (it doesn't always respond to compose down)
 docker stop -t 10 home-app-workspace-swe-swe-6f7a1ba3-chrome-1
 
-# 3. Bring down the rest of the stack (we're all going offline here, including agent)
+# 4. Bring down the rest of the stack (we're all going offline here, including agent)
 docker compose -p home-app-workspace-swe-swe-6f7a1ba3 down -t 20
 ```
 
