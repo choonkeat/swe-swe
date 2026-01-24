@@ -10,7 +10,7 @@ bash .swe-swe/pre-restart.sh
 docker stop -t 10 home-app-workspace-swe-swe-6f7a1ba3-chrome-1
 
 # 3. Bring down the rest of the stack (we're all going offline here, including agent)
-docker compose -p home-app-workspace-swe-swe-6f7a1ba3 down
+docker compose -p home-app-workspace-swe-swe-6f7a1ba3 down -t 20
 ```
 
 This will cause the host's restart loop (`.swe-swe/restart-loop.sh`) to re-init and bring everything back up with the latest changes.
