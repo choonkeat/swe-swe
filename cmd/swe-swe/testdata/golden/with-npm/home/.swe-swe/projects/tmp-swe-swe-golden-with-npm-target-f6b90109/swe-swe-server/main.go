@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -13,7 +14,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "2dc571c8"
+	GitCommit = "2213ee21"
 )
 
 var indexTemplate *template.Template
@@ -1497,74 +1497,25 @@ const debugInjectJS = `(function() {
 })();
 `
 
+// Dynamic proxy target state
+var (
+	proxyTargetMu       sync.RWMutex
+	proxyTargetURL      *url.URL // nil = use default localhost:targetPort
+	proxyDefaultTarget  *url.URL // The default localhost:targetPort
+	proxyDefaultPortStr string   // String version of default port for error pages
+)
+
 // startPreviewProxy starts the app preview reverse proxy server on port 9899
-// It proxies requests to localhost:targetPort and shows an error page if unavailable
+// It proxies requests to localhost:targetPort (or a dynamically set target URL)
 // It also injects a debug script into HTML responses for console/error/network forwarding
 func startPreviewProxy(targetPort string) {
-	targetURL, err := url.Parse("http://localhost:" + targetPort)
+	var err error
+	proxyDefaultTarget, err = url.Parse("http://localhost:" + targetPort)
 	if err != nil {
 		log.Printf("Preview proxy: invalid target URL: %v", err)
 		return
 	}
-
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-	// Custom error handler to show retry page when app is not running
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf("Preview proxy error: %v", err)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprintf(w, previewProxyErrorPage, targetPort)
-	}
-
-	// ModifyResponse injects debug script into HTML responses
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		contentType := resp.Header.Get("Content-Type")
-		if !strings.Contains(contentType, "text/html") {
-			return nil // Pass through non-HTML responses unchanged
-		}
-
-		// Read the response body
-		var body []byte
-		var readErr error
-
-		// Handle compressed responses
-		encoding := resp.Header.Get("Content-Encoding")
-		switch encoding {
-		case "gzip":
-			gr, err := gzip.NewReader(resp.Body)
-			if err != nil {
-				return err
-			}
-			body, readErr = io.ReadAll(gr)
-			gr.Close()
-		case "br":
-			// For brotli, we'd need an external library
-			// For now, pass through brotli responses unchanged
-			return nil
-		default:
-			body, readErr = io.ReadAll(resp.Body)
-		}
-		resp.Body.Close()
-
-		if readErr != nil {
-			return readErr
-		}
-
-		// Inject the debug script
-		injected := injectDebugScript(body)
-
-		// Modify CSP header if present
-		modifyCSPHeader(resp.Header)
-
-		// Update response body and headers
-		resp.Body = io.NopCloser(bytes.NewReader(injected))
-		resp.ContentLength = int64(len(injected))
-		resp.Header.Set("Content-Length", strconv.Itoa(len(injected)))
-		resp.Header.Del("Content-Encoding") // We've decompressed it
-
-		return nil
-	}
+	proxyDefaultPortStr = targetPort
 
 	mux := http.NewServeMux()
 
@@ -1580,15 +1531,261 @@ func startPreviewProxy(targetPort string) {
 	// WebSocket endpoint for agent
 	mux.HandleFunc("/__swe-swe-debug__/agent", handleDebugAgentWS)
 
+	// API endpoint to get current proxy target
+	mux.HandleFunc("GET /__swe-swe-debug__/target", handleGetProxyTarget)
+
+	// API endpoint to set proxy target
+	mux.HandleFunc("POST /__swe-swe-debug__/target", handleSetProxyTarget)
+
 	// Proxy all other requests
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		proxy.ServeHTTP(w, r)
-	})
+	mux.HandleFunc("/", handleProxyRequest)
 
 	log.Printf("Starting preview proxy on :9899 -> localhost:%s", targetPort)
 	if err := http.ListenAndServe(":9899", mux); err != nil {
 		log.Printf("Preview proxy error: %v", err)
 	}
+}
+
+// handleGetProxyTarget returns the current proxy target URL
+func handleGetProxyTarget(w http.ResponseWriter, r *http.Request) {
+	proxyTargetMu.RLock()
+	target := proxyTargetURL
+	proxyTargetMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var targetStr string
+	if target != nil {
+		targetStr = target.String()
+	} else {
+		targetStr = proxyDefaultTarget.String()
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"url":       targetStr,
+		"isDefault": target == nil,
+	})
+}
+
+// handleSetProxyTarget sets the proxy target URL from JSON body
+func handleSetProxyTarget(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	// Empty URL resets to default
+	if req.URL == "" {
+		proxyTargetMu.Lock()
+		proxyTargetURL = nil
+		proxyTargetMu.Unlock()
+		log.Printf("Preview proxy: reset to default target localhost:%s", proxyDefaultPortStr)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"url":       proxyDefaultTarget.String(),
+			"isDefault": true,
+		})
+		return
+	}
+
+	// Parse and validate the URL
+	target, err := url.Parse(req.URL)
+	if err != nil {
+		http.Error(w, "Invalid URL: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Ensure scheme is http or https
+	if target.Scheme != "http" && target.Scheme != "https" {
+		http.Error(w, "URL must be http or https", http.StatusBadRequest)
+		return
+	}
+
+	proxyTargetMu.Lock()
+	proxyTargetURL = target
+	proxyTargetMu.Unlock()
+
+	log.Printf("Preview proxy: target set to %s", target.String())
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"url":       target.String(),
+		"isDefault": false,
+	})
+}
+
+// handleProxyRequest proxies requests to the current target
+func handleProxyRequest(w http.ResponseWriter, r *http.Request) {
+	proxyTargetMu.RLock()
+	target := proxyTargetURL
+	if target == nil {
+		target = proxyDefaultTarget
+	}
+	proxyTargetMu.RUnlock()
+
+	// Build the target URL with the request path
+	targetURL := *target
+	targetURL.Path = singleJoiningSlash(target.Path, r.URL.Path)
+	targetURL.RawQuery = r.URL.RawQuery
+
+	// Create HTTP client with TLS config that allows self-signed certs
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+		// Don't follow redirects automatically - let the browser handle them
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// Create outgoing request
+	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
+	if err != nil {
+		log.Printf("Preview proxy: failed to create request: %v", err)
+		http.Error(w, "Failed to create request", http.StatusInternalServerError)
+		return
+	}
+
+	// Copy headers from incoming request
+	for key, values := range r.Header {
+		// Skip hop-by-hop headers
+		if isHopByHopHeader(key) {
+			continue
+		}
+		for _, value := range values {
+			outReq.Header.Add(key, value)
+		}
+	}
+
+	// Set Host header to target host
+	outReq.Host = target.Host
+
+	// Make the request
+	resp, err := client.Do(outReq)
+	if err != nil {
+		log.Printf("Preview proxy error: %v", err)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, previewProxyErrorPage, target.String())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Process response (inject debug script for HTML, handle cookies)
+	processProxyResponse(w, resp, target)
+}
+
+// processProxyResponse handles the response: injects debug script for HTML, strips Domain from cookies
+func processProxyResponse(w http.ResponseWriter, resp *http.Response, target *url.URL) {
+	// Copy response headers, handling cookies specially
+	for key, values := range resp.Header {
+		if isHopByHopHeader(key) {
+			continue
+		}
+		// Handle Set-Cookie specially to strip Domain attribute
+		if strings.EqualFold(key, "Set-Cookie") {
+			for _, cookie := range resp.Cookies() {
+				// Strip Domain so cookie applies to proxy domain
+				cookie.Domain = ""
+				// Also strip Secure flag if we're proxying (allows cookies over non-HTTPS proxy)
+				cookie.Secure = false
+				http.SetCookie(w, cookie)
+			}
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+
+	// Check if HTML for debug script injection
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		// Non-HTML: pass through as-is
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	// HTML response: read, decompress if needed, inject script
+	var body []byte
+	var readErr error
+
+	encoding := resp.Header.Get("Content-Encoding")
+	switch encoding {
+	case "gzip":
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			log.Printf("Preview proxy: gzip decode error: %v", err)
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+			return
+		}
+		body, readErr = io.ReadAll(gr)
+		gr.Close()
+	case "br":
+		// Brotli requires external library, pass through unchanged
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	default:
+		body, readErr = io.ReadAll(resp.Body)
+	}
+
+	if readErr != nil {
+		log.Printf("Preview proxy: read body error: %v", readErr)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// Inject the debug script
+	injected := injectDebugScript(body)
+
+	// Modify CSP header if present
+	modifyCSPHeader(w.Header())
+
+	// Update content length and remove encoding (we decompressed)
+	w.Header().Set("Content-Length", strconv.Itoa(len(injected)))
+	w.Header().Del("Content-Encoding")
+
+	w.WriteHeader(resp.StatusCode)
+	w.Write(injected)
+}
+
+// isHopByHopHeader returns true if the header is a hop-by-hop header
+func isHopByHopHeader(header string) bool {
+	hopByHop := map[string]bool{
+		"Connection":          true,
+		"Keep-Alive":          true,
+		"Proxy-Authenticate":  true,
+		"Proxy-Authorization": true,
+		"Te":                  true,
+		"Trailers":            true,
+		"Transfer-Encoding":   true,
+		"Upgrade":             true,
+	}
+	return hopByHop[http.CanonicalHeaderKey(header)]
+}
+
+// singleJoiningSlash joins two URL paths properly
+func singleJoiningSlash(a, b string) string {
+	aSlash := strings.HasSuffix(a, "/")
+	bSlash := strings.HasPrefix(b, "/")
+	switch {
+	case aSlash && bSlash:
+		return a + b[1:]
+	case !aSlash && !bSlash:
+		return a + "/" + b
+	}
+	return a + b
 }
 
 // runDebugListen connects to the debug channel and prints messages to stdout

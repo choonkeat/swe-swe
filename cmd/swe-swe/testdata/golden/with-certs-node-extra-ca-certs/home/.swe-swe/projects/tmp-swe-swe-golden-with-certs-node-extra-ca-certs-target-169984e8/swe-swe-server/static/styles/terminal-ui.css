@@ -1142,6 +1142,29 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     color: #555;
 }
 
+.terminal-ui__iframe-url-input {
+    flex: 1;
+    min-width: 100px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1e1e1e;
+    color: #ccc;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.terminal-ui__iframe-url-input:focus {
+    border-color: #007acc;
+    background: #252525;
+}
+
+.terminal-ui__iframe-url-input::placeholder {
+    color: #666;
+}
+
 .terminal-ui__iframe-container {
     flex: 1;
     position: relative;

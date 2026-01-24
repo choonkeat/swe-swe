@@ -283,6 +283,8 @@ class TerminalUI extends HTMLElement {
                             <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
                             <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
                             <span class="terminal-ui__iframe-url"></span>
+                            <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL to debug..." />
+                            <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                         </div>
                         <div class="terminal-ui__iframe-container">
                             <div class="terminal-ui__iframe-placeholder">
@@ -2290,12 +2292,63 @@ class TerminalUI extends HTMLElement {
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
 
         if (homeBtn) {
-            homeBtn.addEventListener('click', () => {
+            homeBtn.addEventListener('click', async () => {
+                // Reset proxy target to default (localhost)
+                try {
+                    await fetch(this.previewBaseUrl + '/__swe-swe-debug__/target', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: '' }) // Empty URL resets to default
+                    });
+                    // Clear the URL input
+                    const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
+                    if (urlInput) urlInput.value = '';
+                } catch (err) {
+                    console.warn('[TerminalUI] Failed to reset proxy target:', err);
+                }
                 this.setIframeUrl(this.previewBaseUrl + '/');
             });
         }
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
+        }
+
+        // Setup URL input for external URL debugging
+        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
+        const goBtn = this.querySelector('.terminal-ui__iframe-go');
+
+        const navigateToExternalUrl = async () => {
+            const targetUrl = urlInput.value.trim();
+            if (!targetUrl) return;
+
+            try {
+                // Set proxy target via API
+                const resp = await fetch(this.previewBaseUrl + '/__swe-swe-debug__/target', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: targetUrl })
+                });
+
+                if (!resp.ok) {
+                    const errorText = await resp.text();
+                    console.error('[TerminalUI] Failed to set proxy target:', errorText);
+                    return;
+                }
+
+                // Navigate iframe to proxy root (which now proxies to target)
+                this.setIframeUrl(this.previewBaseUrl + '/');
+            } catch (err) {
+                console.error('[TerminalUI] Error setting proxy target:', err);
+            }
+        };
+
+        if (goBtn) {
+            goBtn.addEventListener('click', navigateToExternalUrl);
+        }
+        if (urlInput) {
+            urlInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') navigateToExternalUrl();
+            });
         }
 
         // Track iframe URL changes (limited by cross-origin policy)
