@@ -1,5 +1,22 @@
 # How to Restart swe-swe Stack
 
+## Prerequisites
+
+**IMPORTANT**: Before restarting, verify that template dependencies are in sync:
+
+```bash
+# Check that swe-swe-server template uses the same record-tui version as main go.mod
+diff <(grep record-tui go.mod) <(grep record-tui cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt)
+```
+
+If they differ, update the template files to match:
+- `cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt`
+- `cmd/swe-swe/templates/host/swe-swe-server/go.sum.txt`
+
+The swe-swe-server is built inside Docker using its own go.mod, so stale template files will cause the container to run old dependency versions even after restart.
+
+## Restart Commands
+
 From inside the swe-swe container (with Docker socket access), run these commands to restart the entire stack:
 
 ```bash
