@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "c47fec85"
+	GitCommit = "b10eea6e"
 )
 
 var indexTemplate *template.Template
@@ -3746,10 +3746,12 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		if metadata != nil && metadata.MaxCols > 0 {
 			opts.Cols = metadata.MaxCols
 		}
-		// Calculate estimated rows from session.log content (same as embedded mode)
+		// Calculate estimated rows from PROCESSED session.log content (same as embedded mode)
 		// This gives streaming mode exact sizing without needing large scrollback buffer
+		// Must use StripMetadata to match embedded mode's line count (removes headers/footers/clear sequences)
 		if content, err := os.ReadFile(logPath); err == nil {
-			lineCount := bytes.Count(content, []byte("\n"))
+			stripped := recordtui.StripMetadata(string(content))
+			lineCount := strings.Count(stripped, "\n")
 			opts.EstimatedRows = uint32(lineCount + 10) // Small margin like embedded mode
 		}
 		html, err := recordtui.RenderStreamingHTML(opts)

@@ -992,3 +992,55 @@ Updated dependency: `github.com/choonkeat/record-tui v0.0.0-20260124085617-d0b9b
 2. Check browser console: `TERM_SCROLLBACK` should be `0` (not `1000000`)
 3. Verify no blank space at bottom
 4. Scroll up - full session history should be visible (Claude Code logo at top)
+
+---
+
+## EstimatedRows Calculated from Raw Content (2026-01-24 continued)
+
+### Symptom
+
+After reboot with `EstimatedRows` implementation, streaming page is "super tall" with blank space at the bottom. Embedded page height is correct (~200% viewport).
+
+From uploaded DOMs:
+| Mode | xterm-screen height | TERM_ROWS |
+|------|--------------------:|----------:|
+| Streaming | 53064px | 2948 |
+| Embedded | 2106px | ~117 |
+
+Streaming mode is ~25x taller than it should be!
+
+### Root Cause
+
+Bug in `EstimatedRows` calculation (swe-swe main.go):
+```go
+// BUGGY: Counts lines in RAW session.log
+lineCount := bytes.Count(content, []byte("\n"))  // Result: 2948
+opts.EstimatedRows = uint32(lineCount + 10)
+```
+
+**Why this is wrong:**
+- Raw session.log contains: headers, footers, ANSI escape sequences, clear sequences, cursor movements
+- Embedded mode's `lineCount` is calculated AFTER `StripMetadata()` processes the content
+- Processed content has far fewer lines (~117 vs 2948)
+
+### Fix
+
+```go
+// FIXED: Count lines in PROCESSED content (matches embedded mode)
+stripped := recordtui.StripMetadata(string(content))
+lineCount := strings.Count(stripped, "\n")  // Result: ~117
+opts.EstimatedRows = uint32(lineCount + 10)
+```
+
+This ensures streaming's `EstimatedRows` matches embedded's `estimatedRows` calculation - both count lines in processed content, not raw bytes.
+
+### Files Changed
+
+- `cmd/swe-swe/templates/host/swe-swe-server/main.go`: Use `StripMetadata()` before counting lines
+
+### Verification After Reboot
+
+1. Open a recording with `?render=streaming`
+2. Compare page height with embedded mode - should be similar (~200% viewport, not 2500%)
+3. No blank space at bottom
+4. Full scroll history visible (Claude Code logo at top)
