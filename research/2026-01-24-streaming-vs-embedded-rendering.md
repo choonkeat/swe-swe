@@ -646,3 +646,349 @@ After reboot:
 1. Open a recording with `?render=streaming`
 2. Verify no blank space at bottom
 3. Check browser console for `TERM_COLS` and `TERM_ROWS` values matching metadata
+
+---
+
+## MaxRows Truncates Scroll History (2026-01-24 continued)
+
+### Symptom
+
+After metadata dimensions fix, streaming mode renders a short page. Scrolling up is cut short - earlier content is missing.
+
+### Root Cause Analysis
+
+**What `MaxRows` actually represents:**
+```go
+// swe-swe tracking (main.go:427-433)
+if minRows > s.Metadata.MaxRows {
+    s.Metadata.MaxRows = minRows  // This is the viewport HEIGHT, not content height!
+}
+```
+
+`MaxRows` is the terminal **window size** during recording (e.g., 50 rows viewport), NOT the **content height** (could be 500+ rows of output).
+
+**The bug in streaming template:**
+```go
+// template_streaming.go:38-41
+autoResizeEnabled := rows == 0
+if rows == 0 {
+    rows = 1000 // Large initial value for auto-detect mode
+}
+```
+
+When `opts.Rows` is set from metadata:
+1. `rows = 50` (viewport size from metadata)
+2. `autoResizeEnabled = false`
+3. Terminal created with only 50 rows of buffer
+4. Content exceeding 50 rows is truncated (no scroll history)
+5. `AUTO_RESIZE = false` so `resizeToFitContent()` never runs
+
+**Compare to embedded mode:**
+```javascript
+// template.go:114-125 - Pre-analyzes content
+const lineCount = content.split('\n').length;
+const estimatedRows = Math.max(maxUsedRow, lineCount, 24);
+// Creates terminal with rows = content height, not viewport height
+```
+
+Embedded mode counts content lines and creates terminal with enough rows for ALL content.
+
+### The Semantic Mismatch
+
+| Metadata Field | Meaning | Correct Usage |
+|----------------|---------|---------------|
+| `MaxCols` | Terminal width during recording | Use for xterm cols ✓ |
+| `MaxRows` | Terminal viewport height | **NOT** for xterm rows ✗ |
+
+xterm's `rows` parameter controls scrollback buffer size. Using viewport height truncates history.
+
+### Fix
+
+**Option 1: Only pass Cols, not Rows** (simplest)
+
+In swe-swe's `handleRecordingPage`:
+```go
+// Before (broken)
+if metadata != nil && metadata.MaxCols > 0 && metadata.MaxRows > 0 {
+    opts.Cols = metadata.MaxCols
+    opts.Rows = metadata.MaxRows  // ← Causes truncation!
+}
+
+// After (fixed)
+if metadata != nil && metadata.MaxCols > 0 {
+    opts.Cols = metadata.MaxCols
+    // Don't pass Rows - let streaming use large buffer + post-resize
+}
+```
+
+This keeps:
+- Correct terminal width from metadata
+- Large buffer (1000 rows) for full scroll history
+- Post-render resize to remove blank space
+
+**Option 2: Track content height separately** (more work)
+
+Add a new metadata field during recording:
+```go
+type RecordingMetadata struct {
+    MaxCols       uint16 // Viewport width
+    MaxRows       uint16 // Viewport height (not useful for playback)
+    ContentRows   uint32 // NEW: Total output lines (useful for playback)
+}
+```
+
+But this requires tracking content during session, which is complex.
+
+### Recommended Fix
+
+Option 1 - only pass `Cols` to streaming, not `Rows`. The original "blank space" problem was solved by post-render resize, which works when `AUTO_RESIZE = true`.
+
+### Fix Applied
+
+Commit pending:
+```go
+// Before (broken)
+if metadata != nil && metadata.MaxCols > 0 && metadata.MaxRows > 0 {
+    opts.Cols = metadata.MaxCols
+    opts.Rows = metadata.MaxRows  // ← Caused truncation!
+}
+
+// After (fixed)
+if metadata != nil && metadata.MaxCols > 0 {
+    opts.Cols = metadata.MaxCols
+    // Don't pass Rows - let streaming use large buffer + post-resize
+}
+```
+
+**File changed:** `cmd/swe-swe/templates/host/swe-swe-server/main.go`
+
+### Verification After Reboot
+
+1. Open a recording with `?render=streaming`
+2. Scroll up - should see full session history (Claude Code logo at top)
+3. Browser console should show `TERM_ROWS: 1000` and `AUTO_RESIZE: true`
+4. After streaming completes, blank space at bottom should be removed by resize
+
+---
+
+## xterm.js Scrollback Limit (2026-01-24 continued)
+
+### Symptom
+
+After fixing `MaxRows` truncation, streaming playback still doesn't show the beginning of long sessions. Scrolling up shows mid-session content, not the Claude Code logo.
+
+### Root Cause
+
+xterm.js has two separate buffer concepts:
+- `rows`: Visible viewport height (default: 24)
+- `scrollback`: Lines kept above viewport (default: 1000)
+
+Total buffer = `rows + scrollback`. With `rows: 1000` and default `scrollback: 1000`, only ~2000 lines are kept.
+
+For a session with 250k+ lines, only the last ~2000 are retained.
+
+### Test Results
+
+```javascript
+// Session 0cccf614 test:
+viewportScrollHeight: 51000  // ~1500 rows in buffer
+viewportClientHeight: 34000  // 1000 rows visible
+// First content at scroll top: git commits (mid-session)
+// NOT Claude Code logo (beginning of session)
+```
+
+### Difference from Embedded Mode
+
+**Embedded template:**
+```javascript
+const estimatedRows = Math.max(maxUsedRow, lineCount, 24);
+const xterm = new Terminal({
+  rows: estimatedRows,  // Set to content size (e.g., 250k)
+  // No scrollback needed - rows IS the buffer
+});
+```
+
+Embedded mode sets `rows` to match content, so ALL content fits in the main buffer.
+
+**Streaming template:**
+```javascript
+const xterm = new Terminal({
+  rows: 1000,  // Fixed large value
+  // scrollback defaults to 1000
+  // Total: 2000 lines max
+});
+```
+
+Streaming has no way to know content size upfront (it streams), so it uses fixed values.
+
+### Fix Options
+
+**Option 1: Large scrollback value**
+```javascript
+const xterm = new Terminal({
+  rows: TERM_ROWS,
+  scrollback: 1000000,  // 1 million lines
+  ...
+});
+```
+Pros: Simple
+Cons: Memory usage for large buffers
+
+**Option 2: Pre-fetch content length**
+1. HEAD request to get Content-Length
+2. Estimate lines from size
+3. Set appropriate scrollback
+
+Cons: Extra request, complexity
+
+**Option 3: Dynamic scrollback**
+Use xterm.js option `scrollOnUserInput: false` and manage buffer manually.
+
+Cons: Complex, may not be well supported
+
+### Recommended Fix
+
+Option 1 - set `scrollback: 1000000` for playback. Memory is acceptable for static playback (not interactive terminal).
+
+### Implementation
+
+In `template_streaming.go`:
+```javascript
+const xterm = new Terminal({
+  cols: TERM_COLS,
+  rows: TERM_ROWS,
+  scrollback: 1000000,  // Large buffer for playback
+  fontSize: 15,
+  ...
+});
+```
+
+This change needs to be made in record-tui, then dependency updated in swe-swe.
+
+---
+
+## Better Approach: swe-swe Supplies Estimated Rows (2026-01-24 discussion)
+
+### Key Insight
+
+The embedded template uses `rows: estimatedRows` which is calculated from content line count, so it doesn't need scrollback. Streaming needs large scrollback because content size is unknown upfront.
+
+**But this is only true for record-tui CLI usage.** swe-swe's usage is different:
+
+| Context | Session.log available at render time? | Can pre-calculate rows? |
+|---------|--------------------------------------|------------------------|
+| record-tui CLI (streaming) | No (streams from network) | No |
+| swe-swe server | Yes (reads file from disk) | Yes |
+
+swe-swe already reads session.log to render embedded mode. It could calculate `estimatedRows` the same way and pass it to the streaming renderer.
+
+### Proposed API Change
+
+**record-tui's `StreamingOptions`:**
+```go
+type StreamingOptions struct {
+    Title      string
+    DataURL    string
+    FooterLink FooterLink
+    Cols       uint16  // Terminal columns (0 = auto-detect)
+    Rows       uint16  // Terminal rows - this is viewport height, NOT useful
+
+    // NEW: Optional content-based row estimate
+    // If provided, streaming template uses this instead of large scrollback
+    // If 0, falls back to large scrollback buffer (for CLI usage)
+    EstimatedRows uint32
+}
+```
+
+**Streaming template logic:**
+```javascript
+// If caller provided content-based estimate, use it (swe-swe case)
+// Otherwise use large scrollback for arbitrary streaming (CLI case)
+const useEstimatedRows = ESTIMATED_ROWS > 0;
+
+const xterm = new Terminal({
+  cols: TERM_COLS,
+  rows: useEstimatedRows ? ESTIMATED_ROWS : 1000,
+  scrollback: useEstimatedRows ? 0 : 1000000,  // No scrollback needed if rows = content
+  ...
+});
+```
+
+**swe-swe's `handleRecordingPage`:**
+```go
+// Calculate estimated rows same way embedded does
+content, _ := os.ReadFile(logPath)
+lineCount := bytes.Count(content, []byte("\n"))
+
+opts := recordtui.StreamingOptions{
+    Title:         name,
+    DataURL:       recordingUUID + "/session.log",
+    EstimatedRows: uint32(lineCount + 10), // Same margin as embedded
+}
+if metadata != nil && metadata.MaxCols > 0 {
+    opts.Cols = metadata.MaxCols
+}
+html, err := recordtui.RenderStreamingHTML(opts)
+```
+
+### Why This Is Best
+
+| Approach | swe-swe | record-tui CLI |
+|----------|---------|----------------|
+| Large scrollback (current) | Works but uses memory | Works |
+| Estimated rows (proposed) | Optimal - exact sizing | Falls back to large scrollback |
+
+Benefits:
+- swe-swe recordings get exact sizing like embedded mode
+- No wasted memory on scrollback buffer
+- record-tui CLI still works with fallback
+- Single source of truth for row calculation (same logic as embedded)
+
+### Implementation Steps
+
+1. **record-tui:** Add `EstimatedRows` to `StreamingOptions`
+2. **record-tui:** Update streaming template to use `EstimatedRows` when provided
+3. **swe-swe:** Calculate line count from session.log, pass as `EstimatedRows`
+
+### Trade-off: Reading File Twice
+
+swe-swe would read session.log twice:
+1. To calculate `EstimatedRows` for the template
+2. When browser fetches `{uuid}/session.log` endpoint
+
+This is acceptable because:
+- OS file cache makes second read fast
+- Session logs are typically <10MB
+- This matches what embedded mode already does (reads entire file)
+
+---
+
+## Implementation Complete (2026-01-24)
+
+### record-tui changes
+
+Commit `d0b9b3b` pushed to `dev` branch:
+- Added `EstimatedRows uint32` to `StreamingOptions`
+- When `EstimatedRows > 0`: uses it as `rows`, sets `scrollback: 0`
+- When `EstimatedRows == 0`: falls back to `rows: 1000`, `scrollback: 1000000`
+
+### swe-swe changes
+
+Updated `handleRecordingPage` in template:
+```go
+// Calculate estimated rows from session.log content (same as embedded mode)
+// This gives streaming mode exact sizing without needing large scrollback buffer
+if content, err := os.ReadFile(logPath); err == nil {
+    lineCount := bytes.Count(content, []byte("\n"))
+    opts.EstimatedRows = uint32(lineCount + 10) // Small margin like embedded mode
+}
+```
+
+Updated dependency: `github.com/choonkeat/record-tui v0.0.0-20260124085617-d0b9b3b4b2d9`
+
+### Verification After Reboot
+
+1. Open a recording with `?render=streaming`
+2. Check browser console: `TERM_SCROLLBACK` should be `0` (not `1000000`)
+3. Verify no blank space at bottom
+4. Scroll up - full session history should be visible (Claude Code logo at top)

@@ -3742,10 +3742,15 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 				URL:  "https://github.com/choonkeat/swe-swe",
 			},
 		}
-		// Pass terminal dimensions from metadata if available (eliminates blank space issues)
-		if metadata != nil && metadata.MaxCols > 0 && metadata.MaxRows > 0 {
+		// Pass terminal width from metadata if available (correct column width)
+		if metadata != nil && metadata.MaxCols > 0 {
 			opts.Cols = metadata.MaxCols
-			opts.Rows = metadata.MaxRows
+		}
+		// Calculate estimated rows from session.log content (same as embedded mode)
+		// This gives streaming mode exact sizing without needing large scrollback buffer
+		if content, err := os.ReadFile(logPath); err == nil {
+			lineCount := bytes.Count(content, []byte("\n"))
+			opts.EstimatedRows = uint32(lineCount + 10) // Small margin like embedded mode
 		}
 		html, err := recordtui.RenderStreamingHTML(opts)
 		if err != nil {
