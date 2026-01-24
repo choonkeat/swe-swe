@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "2213ee21"
+	GitCommit = "4eacfecf"
 )
 
 var indexTemplate *template.Template
@@ -3774,9 +3774,9 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	w.Write([]byte(html))
 }
 
-// handleRecordingSessionLog serves pre-processed session.log for streaming playback
-// Content is stripped of metadata (header/footer) and clear sequences are neutralized
-// so the streaming JS doesn't need to reimplement this logic
+// handleRecordingSessionLog serves raw session.log for streaming playback.
+// The streaming JS cleaner handles header/footer stripping and clear sequence
+// neutralization - this keeps JS as the single source of truth for streaming mode.
 func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -3785,18 +3785,7 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 	}
 
 	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		http.Error(w, "Recording not found", http.StatusNotFound)
-		return
-	}
-
-	// Pre-process: strip metadata (header/footer) and neutralize clear sequences
-	// This matches what the embedded approach does in Go
-	processed := recordtui.StripMetadata(string(content))
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte(processed))
+	http.ServeFile(w, r, logPath)
 }
 
 // handleRecordingAPI routes recording API requests
