@@ -3734,14 +3734,20 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	if renderMode == "streaming" {
 		// Experimental: streaming HTML that fetches session data via fetch()
 		// DataURL must include UUID since page is at /recording/{uuid} (no trailing slash)
-		html, err := recordtui.RenderStreamingHTML(recordtui.StreamingOptions{
+		opts := recordtui.StreamingOptions{
 			Title:   name,
 			DataURL: recordingUUID + "/session.log",
 			FooterLink: recordtui.FooterLink{
 				Text: "swe-swe",
 				URL:  "https://github.com/choonkeat/swe-swe",
 			},
-		})
+		}
+		// Pass terminal dimensions from metadata if available (eliminates blank space issues)
+		if metadata != nil && metadata.MaxCols > 0 && metadata.MaxRows > 0 {
+			opts.Cols = metadata.MaxCols
+			opts.Rows = metadata.MaxRows
+		}
+		html, err := recordtui.RenderStreamingHTML(opts)
 		if err != nil {
 			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
 			return
