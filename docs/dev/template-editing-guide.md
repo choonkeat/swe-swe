@@ -151,6 +151,35 @@ swe-swe init ...  # Now uses updated templates
 | `chrome-screencast/Dockerfile` | Browser container for MCP Playwright |
 | `code-server/Dockerfile` | VS Code server container |
 
+## swe-swe-server Dependencies
+
+The `swe-swe-server` template has its own `go.mod.txt`/`go.sum.txt` (renamed to avoid confusing Go tooling). These are separate from the main project's go.mod.
+
+### Updating dependencies
+
+When changing swe-swe-server imports or updating dependencies like `record-tui`:
+
+```bash
+# 1. Update go.mod.txt with new dependency version
+vim cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt
+
+# 2. Run test-server to sync go.sum.txt via `go mod tidy`
+make test-server
+
+# 3. Rebuild and update golden tests
+make build golden-update
+```
+
+**Why this matters**: The template's go.mod.txt is copied into the Docker build context. If go.sum.txt is out of sync, the container build will fail or use wrong versions.
+
+### Common issue: stale versions accumulating
+
+If go.sum.txt accumulates old versions (e.g., multiple `record-tui` entries), run:
+
+```bash
+make test-server  # Runs go mod tidy, keeps only required versions
+```
+
 ## Testing Tips
 
 - Use `NO_CACHE=1 ./scripts/test-container/02-build.sh` to force full rebuild
