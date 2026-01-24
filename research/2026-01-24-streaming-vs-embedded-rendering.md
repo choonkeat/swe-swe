@@ -1044,3 +1044,114 @@ This ensures streaming's `EstimatedRows` matches embedded's `estimatedRows` calc
 2. Compare page height with embedded mode - should be similar (~200% viewport, not 2500%)
 3. No blank space at bottom
 4. Full scroll history visible (Claude Code logo at top)
+
+---
+
+## Issue 8: Streaming Uses 80 Columns Instead of 240
+
+**Date**: 2026-01-24
+**Status**: Fixed
+
+### Problem
+
+User-provided DOM comparison showed:
+- Embedded: xterm-screen width: 1899px (~240 cols)
+- Streaming: xterm-screen width: 720px (~80 cols)
+
+Streaming was using 80 columns instead of the correct ~240 columns, causing excessive line wrapping and a much taller terminal.
+
+### Root Cause Analysis
+
+**Embedded mode** (correct):
+- Auto-calculates `contentCols` from actual content (lines 127-135 in template.go)
+- Scans content for max line length, caps at 240
+- Result: correct column width based on actual content
+
+**Streaming mode** (broken):
+- Uses `opts.Cols` from `metadata.MaxCols`
+- `metadata.MaxCols` defaults to 80 at session creation
+- Gets updated during resize, but may not be saved/loaded correctly
+- Result: stuck at 80 cols
+
+The code path:
+```go
+// In handleRecordingPage:
+if metadata != nil && metadata.MaxCols > 0 {
+    opts.Cols = metadata.MaxCols  // If MaxCols is 80, uses 80
+}
+```
+
+### Solution
+
+Parse `COLUMNS` from the session.log header as a fallback. Linux script command writes the actual terminal columns in the header:
+
+```
+Script started on 2026-01-12 06:41:43+00:00 [COMMAND="claude" TERM="xterm-256color" COLUMNS="226" LINES="49" ...]
+```
+
+**Changes:**
+
+1. Added `parseSessionLogColumns()` function to extract COLUMNS from session.log header
+2. Updated streaming path logic:
+   - If `metadata.MaxCols > 80`: use metadata (actual resize occurred)
+   - Else if session.log header has COLUMNS: use that (recording-time value)
+   - Else: let record-tui default to 240
+
+```go
+// Pass terminal width from metadata if available (correct column width).
+// If metadata.MaxCols is still at default (80), try parsing from session.log header
+// which contains the actual COLUMNS value at recording time.
+if metadata != nil && metadata.MaxCols > 80 {
+    opts.Cols = metadata.MaxCols
+} else if cols := parseSessionLogColumns(logPath); cols > 0 {
+    opts.Cols = cols
+}
+// If neither source provides cols, record-tui defaults to 240.
+```
+
+### Files Changed
+
+- `cmd/swe-swe/templates/host/swe-swe-server/main.go`:
+  - Added `parseSessionLogColumns()` function
+  - Added `bufio` import
+  - Updated streaming path to use session.log header as fallback
+
+### Test Added
+
+- `TestParseSessionLogColumns` in `recording_test.go` - tests Linux format, macOS format, edge cases
+
+### Verification
+
+After rebuilding and redeploying:
+1. Open a recording with `?render=streaming`
+2. Check xterm-screen width matches embedded mode (~1899px for 240 cols)
+3. Terminal content should not wrap excessively
+
+---
+
+## Appendix: Embedded vs Streaming Parity Analysis
+
+Comprehensive comparison of what each mode derives/receives:
+
+| Aspect | Embedded (record-tui JS) | Streaming (record-tui JS) | swe-swe passes | Status |
+|--------|--------------------------|---------------------------|----------------|--------|
+| **cols** | `min(max(maxLineLength, 80), 240)` from content | `TERM_COLS` from opts.Cols | metadata.MaxCols > 80 OR session.log COLUMNS | ✓ Fixed (Issue 8) |
+| **rows** | `max(cursorPositions, lineCount, 24)` | `TERM_ROWS` (1000 if auto-resize) | Not passed (uses auto-resize) | ✓ OK |
+| **scrollback** | 0 (implicit) | 0 or 1000000 | Not passed | ✓ OK |
+| **post-resize** | `max(lastContentRow, cursorY, 1)` | `max(lastContentRow, 1)` | AUTO_RESIZE=true | ~ Different (intentional) |
+| **fontSize** | 15 | 15 | N/A (hardcoded in record-tui) | ✓ Same |
+| **theme** | `#1e1e1e` / `#d4d4d4` | `#1e1e1e` / `#d4d4d4` | N/A (hardcoded in record-tui) | ✓ Same |
+| **title** | from opts.Title | from opts.Title | name (from metadata or UUID) | ✓ Same |
+| **footerLink** | from opts.FooterLink | from opts.FooterLink | swe-swe GitHub link | ✓ Same |
+
+### Intentional Differences (in record-tui, not swe-swe)
+
+**Post-resize height calculation:**
+- Embedded: `actualHeight = max(lastContentRow, cursorY, 1)` - includes cursor position
+- Streaming: `actualHeight = max(lastContentRow, 1)` - ignores cursor position
+
+This is intentional in record-tui. The streaming comment says "cursor may be far below content" because during streaming the cursor can end up at arbitrary positions that don't reflect actual content height.
+
+### Conclusion
+
+After the Issue 8 fix (parsing COLUMNS from session.log header), streaming should have functional parity with embedded. The post-resize difference is a deliberate design choice in record-tui that swe-swe cannot control.

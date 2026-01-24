@@ -1893,3 +1893,86 @@ func TestCleanupRecentRecordings_LimitPerAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestCalculateTerminalDimensions(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      string
+		expectedCols uint16
+		expectedRows uint32
+	}{
+		{
+			name: "content with cursor positioning",
+			content: "Script started on 2026-01-12 06:41:43+00:00\n" +
+				"line1\n" +
+				"\x1b[10;5H" + // cursor to row 10
+				"positioned content\n" +
+				"\x1b[25;1H" + // cursor to row 25
+				"more content\n",
+			expectedCols: 80,  // min cols (no long lines)
+			expectedRows: 25,  // max cursor row
+		},
+		{
+			name: "content with long lines",
+			content: "Script started on 2026-01-12 06:41:43+00:00\n" +
+				strings.Repeat("x", 150) + "\n" + // 150 char line
+				"short line\n",
+			expectedCols: 150, // max line length
+			expectedRows: 24,  // min rows (line count < 24)
+		},
+		{
+			name: "content with many newlines",
+			content: "Script started on 2026-01-12 06:41:43+00:00\n" +
+				strings.Repeat("line\n", 100), // 100 lines after header stripped
+			expectedCols: 80,  // min cols
+			expectedRows: 100, // line count (header stripped)
+		},
+		{
+			name: "empty content after stripping",
+			content: "Script started on 2026-01-12 06:41:43+00:00\n" +
+				"Script done on 2026-01-12 06:41:43+00:00\n",
+			expectedCols: 80, // min cols
+			expectedRows: 24, // min rows
+		},
+		{
+			name: "line length exceeds 240 cap",
+			content: "Script started on 2026-01-12 06:41:43+00:00\n" +
+				strings.Repeat("x", 300) + "\n", // 300 char line
+			expectedCols: 240, // capped at 240
+			expectedRows: 24,  // min rows
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create temp file with content
+			tmpFile, err := os.CreateTemp("", "session-*.log")
+			if err != nil {
+				t.Fatalf("Failed to create temp file: %v", err)
+			}
+			defer os.Remove(tmpFile.Name())
+
+			if _, err := tmpFile.WriteString(tc.content); err != nil {
+				t.Fatalf("Failed to write content: %v", err)
+			}
+			tmpFile.Close()
+
+			result := calculateTerminalDimensions(tmpFile.Name())
+			if result.Cols != tc.expectedCols {
+				t.Errorf("calculateTerminalDimensions().Cols = %d, want %d", result.Cols, tc.expectedCols)
+			}
+			if result.Rows != tc.expectedRows {
+				t.Errorf("calculateTerminalDimensions().Rows = %d, want %d", result.Rows, tc.expectedRows)
+			}
+		})
+	}
+
+	// Test non-existent file returns defaults
+	t.Run("non-existent file returns defaults", func(t *testing.T) {
+		result := calculateTerminalDimensions("/non/existent/path/session.log")
+		if result.Cols != 240 || result.Rows != 24 {
+			t.Errorf("calculateTerminalDimensions() for non-existent file = {%d, %d}, want {240, 24}",
+				result.Cols, result.Rows)
+		}
+	})
+}

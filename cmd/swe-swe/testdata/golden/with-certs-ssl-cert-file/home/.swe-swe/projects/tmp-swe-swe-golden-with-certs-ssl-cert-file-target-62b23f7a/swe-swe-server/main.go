@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "d293f6dc"
+	GitCommit = "149a544f"
 )
 
 var indexTemplate *template.Template
@@ -183,17 +183,19 @@ type AgentWithSessions struct {
 
 // RecordingMetadata stores information about a terminal recording session
 type RecordingMetadata struct {
-	UUID      string     `json:"uuid"`
-	Name      string     `json:"name,omitempty"`
-	Agent     string     `json:"agent"`
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	KeptAt    *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
-	Command   []string   `json:"command"`
-	Visitors  []Visitor  `json:"visitors,omitempty"`
-	MaxCols   uint16     `json:"max_cols,omitempty"` // Max terminal columns during recording
-	MaxRows   uint16     `json:"max_rows,omitempty"` // Max terminal rows during recording
-	WorkDir   string     `json:"work_dir,omitempty"` // Working directory for VS Code links in playback
+	UUID         string     `json:"uuid"`
+	Name         string     `json:"name,omitempty"`
+	Agent        string     `json:"agent"`
+	StartedAt    time.Time  `json:"started_at"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
+	KeptAt       *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
+	Command      []string   `json:"command"`
+	Visitors     []Visitor  `json:"visitors,omitempty"`
+	MaxCols      uint16     `json:"max_cols,omitempty"`      // Max terminal columns during recording
+	MaxRows      uint16     `json:"max_rows,omitempty"`      // Max terminal rows during recording
+	PlaybackCols uint16     `json:"playback_cols,omitempty"` // Content-based cols for playback (calculated at session end)
+	PlaybackRows uint32     `json:"playback_rows,omitempty"` // Content-based rows for playback (calculated at session end)
+	WorkDir      string     `json:"work_dir,omitempty"`      // Working directory for VS Code links in playback
 }
 
 // Visitor represents a client that joined the session
@@ -3424,6 +3426,7 @@ func ensureRecordingsDir() error {
 
 // saveMetadata writes the session's recording metadata to disk
 // Only writes if metadata exists (name was set or visitor joined)
+// When session has ended, also calculates playback dimensions from content.
 func (s *Session) saveMetadata() error {
 	s.mu.RLock()
 	metadata := s.Metadata
@@ -3432,6 +3435,16 @@ func (s *Session) saveMetadata() error {
 
 	if metadata == nil {
 		return nil // Nothing to save
+	}
+
+	// Calculate playback dimensions when session ends (only once)
+	if metadata.EndedAt != nil && metadata.PlaybackCols == 0 {
+		logPath := fmt.Sprintf("%s/session-%s.log", recordingsDir, recordingUUID)
+		dims := calculateTerminalDimensions(logPath)
+		s.mu.Lock()
+		s.Metadata.PlaybackCols = dims.Cols
+		s.Metadata.PlaybackRows = dims.Rows
+		s.mu.Unlock()
 	}
 
 	path := fmt.Sprintf("%s/session-%s.metadata.json", recordingsDir, recordingUUID)
@@ -3688,6 +3701,75 @@ func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
 	return result
 }
 
+// TerminalDimensions holds calculated terminal dimensions from content analysis.
+// This mirrors what embedded mode's JavaScript calculates in the browser.
+type TerminalDimensions struct {
+	Cols uint16 // Terminal columns (from max line length, capped 80-240)
+	Rows uint32 // Terminal rows (from cursor positions and line count)
+}
+
+// calculateTerminalDimensions analyzes session.log content to calculate dimensions.
+// This replicates the embedded mode's JavaScript calculation:
+//   - Cols: min(max(maxLineLength, 80), 240)
+//   - Rows: max(maxCursorRow, lineCount, 24)
+func calculateTerminalDimensions(logPath string) TerminalDimensions {
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		return TerminalDimensions{Cols: 240, Rows: 24} // defaults
+	}
+
+	// Strip metadata (same as embedded mode)
+	stripped := recordtui.StripMetadata(string(content))
+
+	// Parse cursor position sequences: ESC[row;colH
+	// This finds the maximum row used by cursor positioning
+	maxUsedRow := uint32(1)
+	cursorPosRegex := regexp.MustCompile(`\x1b\[(\d+);(\d+)H`)
+	matches := cursorPosRegex.FindAllStringSubmatch(stripped, -1)
+	for _, match := range matches {
+		if len(match) >= 2 {
+			var row int
+			fmt.Sscanf(match[1], "%d", &row)
+			if row > 0 && uint32(row) > maxUsedRow {
+				maxUsedRow = uint32(row)
+			}
+		}
+	}
+
+	// Count newlines as fallback minimum height
+	lineCount := uint32(strings.Count(stripped, "\n") + 1)
+
+	// Calculate rows: max(maxUsedRow, lineCount, 24)
+	rows := maxUsedRow
+	if lineCount > rows {
+		rows = lineCount
+	}
+	if rows < 24 {
+		rows = 24
+	}
+
+	// Calculate cols from max line length
+	normalized := strings.ReplaceAll(stripped, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
+	maxLineLength := 0
+	for _, line := range lines {
+		if len(line) > maxLineLength {
+			maxLineLength = len(line)
+		}
+	}
+	// Clamp to 80-240 range
+	cols := maxLineLength
+	if cols < 80 {
+		cols = 80
+	}
+	if cols > 240 {
+		cols = 240
+	}
+
+	return TerminalDimensions{Cols: uint16(cols), Rows: rows}
+}
+
 // handleRecordingPage serves the recording playback page
 // Query params:
 //   - render=streaming: use streaming approach (experimental, fetch data via JS)
@@ -3732,8 +3814,20 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	renderMode := r.URL.Query().Get("render")
 
 	if renderMode == "streaming" {
-		// Experimental: streaming HTML that fetches session data via fetch()
-		// DataURL must include UUID since page is at /recording/{uuid} (no trailing slash)
+		// Use pre-calculated playback dimensions from metadata (fast path).
+		// Fall back to calculating from content for older recordings without these fields.
+		var cols uint16
+		var rows uint32
+		if metadata != nil && metadata.PlaybackCols > 0 {
+			cols = metadata.PlaybackCols
+			rows = metadata.PlaybackRows
+		} else {
+			// Legacy fallback: calculate from content (same algorithm as embedded mode's JS)
+			dims := calculateTerminalDimensions(logPath)
+			cols = dims.Cols
+			rows = dims.Rows
+		}
+
 		opts := recordtui.StreamingOptions{
 			Title:   name,
 			DataURL: recordingUUID + "/session.log",
@@ -3741,18 +3835,8 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 				Text: "swe-swe",
 				URL:  "https://github.com/choonkeat/swe-swe",
 			},
-		}
-		// Pass terminal width from metadata if available (correct column width)
-		if metadata != nil && metadata.MaxCols > 0 {
-			opts.Cols = metadata.MaxCols
-		}
-		// Calculate estimated rows from PROCESSED session.log content (same as embedded mode)
-		// This gives streaming mode exact sizing without needing large scrollback buffer
-		// Must use StripMetadata to match embedded mode's line count (removes headers/footers/clear sequences)
-		if content, err := os.ReadFile(logPath); err == nil {
-			stripped := recordtui.StripMetadata(string(content))
-			lineCount := strings.Count(stripped, "\n")
-			opts.EstimatedRows = uint32(lineCount + 10) // Small margin like embedded mode
+			Cols:          cols,
+			EstimatedRows: rows,
 		}
 		html, err := recordtui.RenderStreamingHTML(opts)
 		if err != nil {
