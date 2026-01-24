@@ -8,6 +8,8 @@ require github.com/gorilla/websocket v1.5.3
 
 require github.com/creack/pty v1.1.24
 
+require golang.org/x/text v0.21.0
+
 require (
 	github.com/choonkeat/record-tui v0.0.0-20260124085617-d0b9b3b4b2d9 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
