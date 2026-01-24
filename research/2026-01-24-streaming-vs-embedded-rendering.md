@@ -1,7 +1,7 @@
 # Streaming vs Embedded Recording Playback Rendering Differences
 
 **Date**: 2026-01-24
-**Status**: Fixed - metadata dimensions now passed to streaming playback
+**Status**: Fixed - streaming now has full parity with embedded (same dimension calculation, stored in metadata)
 
 ## Problem
 
@@ -1129,29 +1129,97 @@ After rebuilding and redeploying:
 
 ---
 
-## Appendix: Embedded vs Streaming Parity Analysis
+## Issue 9: Full Parity - Calculate Dimensions Like Embedded Mode
 
-Comprehensive comparison of what each mode derives/receives:
+**Date**: 2026-01-24
+**Status**: Fixed
 
-| Aspect | Embedded (record-tui JS) | Streaming (record-tui JS) | swe-swe passes | Status |
-|--------|--------------------------|---------------------------|----------------|--------|
-| **cols** | `min(max(maxLineLength, 80), 240)` from content | `TERM_COLS` from opts.Cols | metadata.MaxCols > 80 OR session.log COLUMNS | ✓ Fixed (Issue 8) |
-| **rows** | `max(cursorPositions, lineCount, 24)` | `TERM_ROWS` (1000 if auto-resize) | Not passed (uses auto-resize) | ✓ OK |
-| **scrollback** | 0 (implicit) | 0 or 1000000 | Not passed | ✓ OK |
-| **post-resize** | `max(lastContentRow, cursorY, 1)` | `max(lastContentRow, 1)` | AUTO_RESIZE=true | ~ Different (intentional) |
-| **fontSize** | 15 | 15 | N/A (hardcoded in record-tui) | ✓ Same |
-| **theme** | `#1e1e1e` / `#d4d4d4` | `#1e1e1e` / `#d4d4d4` | N/A (hardcoded in record-tui) | ✓ Same |
-| **title** | from opts.Title | from opts.Title | name (from metadata or UUID) | ✓ Same |
-| **footerLink** | from opts.FooterLink | from opts.FooterLink | swe-swe GitHub link | ✓ Same |
+### Problem
 
-### Intentional Differences (in record-tui, not swe-swe)
+Issue 8 only fixed cols by parsing from session.log header. But rows were still using auto-resize mode (1000 rows + 1M scrollback) instead of matching embedded's calculation. This could cause:
+- Different initial terminal size
+- Different scroll behavior
+- Memory overhead from large scrollback buffer
 
-**Post-resize height calculation:**
-- Embedded: `actualHeight = max(lastContentRow, cursorY, 1)` - includes cursor position
-- Streaming: `actualHeight = max(lastContentRow, 1)` - ignores cursor position
+### Solution
 
-This is intentional in record-tui. The streaming comment says "cursor may be far below content" because during streaming the cursor can end up at arbitrary positions that don't reflect actual content height.
+Replicate embedded mode's JavaScript dimension calculation in Go:
 
-### Conclusion
+```go
+// calculateTerminalDimensions analyzes session.log content to calculate dimensions.
+// This replicates the embedded mode's JavaScript calculation:
+//   - Cols: min(max(maxLineLength, 80), 240)
+//   - Rows: max(maxCursorRow, lineCount, 24)
+func calculateTerminalDimensions(logPath string) TerminalDimensions {
+    content, _ := os.ReadFile(logPath)
+    stripped := recordtui.StripMetadata(string(content))
 
-After the Issue 8 fix (parsing COLUMNS from session.log header), streaming should have functional parity with embedded. The post-resize difference is a deliberate design choice in record-tui that swe-swe cannot control.
+    // Parse cursor position sequences: ESC[row;colH
+    maxUsedRow := findMaxCursorRow(stripped)
+    lineCount := strings.Count(stripped, "\n") + 1
+    rows := max(maxUsedRow, lineCount, 24)
+
+    // Calculate cols from max line length, capped 80-240
+    cols := min(max(maxLineLength(stripped), 80), 240)
+
+    return TerminalDimensions{Cols: cols, Rows: rows}
+}
+```
+
+### Optimization: Calculate at Save Time
+
+To avoid re-scanning large logs on every view:
+
+1. **At session end**: Calculate dimensions and store in metadata
+2. **New metadata fields**: `PlaybackCols`, `PlaybackRows`
+3. **At view time**: Read from metadata (instant)
+4. **Legacy fallback**: Calculate on-demand for older recordings
+
+```go
+// In saveMetadata(), when session ends:
+if metadata.EndedAt != nil && metadata.PlaybackCols == 0 {
+    dims := calculateTerminalDimensions(logPath)
+    metadata.PlaybackCols = dims.Cols
+    metadata.PlaybackRows = dims.Rows
+}
+```
+
+### Files Changed
+
+- `cmd/swe-swe/templates/host/swe-swe-server/main.go`:
+  - Added `TerminalDimensions` struct
+  - Added `calculateTerminalDimensions()` function
+  - Added `PlaybackCols`, `PlaybackRows` to `RecordingMetadata`
+  - Updated `saveMetadata()` to calculate dimensions at session end
+  - Updated streaming path to use metadata dimensions with fallback
+
+---
+
+## Appendix: Final Embedded vs Streaming Parity
+
+After all fixes, streaming now has full parity with embedded:
+
+| Aspect | Embedded (record-tui JS) | Streaming (swe-swe Go → record-tui) | Status |
+|--------|--------------------------|-------------------------------------|--------|
+| **cols** | `min(max(maxLineLength, 80), 240)` | Same algorithm in Go → `opts.Cols` | ✓ Identical |
+| **rows** | `max(cursorPositions, lineCount, 24)` | Same algorithm in Go → `opts.EstimatedRows` | ✓ Identical |
+| **scrollback** | 0 | 0 (when EstimatedRows provided) | ✓ Same |
+| **post-resize** | `max(lastContentRow, cursorY, 1)` | `max(lastContentRow, 1)` | ~ Minor diff |
+| **fontSize** | 15 | 15 | ✓ Same |
+| **theme** | `#1e1e1e` / `#d4d4d4` | `#1e1e1e` / `#d4d4d4` | ✓ Same |
+| **title** | from opts.Title | from opts.Title | ✓ Same |
+| **footerLink** | from opts.FooterLink | from opts.FooterLink | ✓ Same |
+
+### Remaining Minor Difference
+
+**Post-resize height calculation** (in record-tui, not controllable by swe-swe):
+- Embedded: includes cursor position in height
+- Streaming: ignores cursor position
+
+This is intentional in record-tui - streaming cursor can be at arbitrary positions.
+
+### Performance
+
+- **New recordings**: Dimensions pre-calculated at session end, stored in metadata
+- **View time**: Just reads metadata fields (no file scanning)
+- **Legacy recordings**: Falls back to on-demand calculation
