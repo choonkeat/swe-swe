@@ -2,16 +2,9 @@
 
 ## Prerequisites
 
-**IMPORTANT**: Before restarting, verify that template dependencies are in sync:
-
-```bash
-# Check that swe-swe-server template uses the same record-tui version as main go.mod
-diff <(grep record-tui go.mod) <(grep record-tui cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt)
-```
-
-If they differ, update the template files to match:
-- `cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt`
-- `cmd/swe-swe/templates/host/swe-swe-server/go.sum.txt`
+**IMPORTANT**: Before restarting, verify that template dependencies are correct
+- see docs/dev/template-editing-guide.md
+- make sure both go.mod and cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt are using the same version of libraries if used on both sides
 
 The swe-swe-server is built inside Docker using its own go.mod, so stale template files will cause the container to run old dependency versions even after restart.
 
