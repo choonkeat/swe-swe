@@ -1,3 +1,12 @@
 173455 - Starting Phase 1: Interleave Recordings
 Expected: Modify Go backend to add ExpiresIn field, update template to show single interleaved recordings list sorted by EndedAt desc
 
+173805 - Starting manual browser test
+Will do: Start test container, navigate to homepage, verify recordings display
+Expected: 
+  - Single interleaved recordings section (not separate Recent/Kept)
+  - Each recording shows status (Saved or Expires in Xm)
+  - Saved recordings show Delete button
+  - Expiring recordings show Keep button
+  - Recordings sorted by end time descending
+

@@ -283,6 +283,17 @@
             font-size: 12px;
             color: #888;
         }
+        .recording-item__status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .recording-item__status--saved {
+            color: #4caf50;
+        }
+        .recording-item__status--expires {
+            color: #ff9800;
+        }
         .recording-item__actions {
             display: flex;
             gap: 8px;
@@ -473,31 +484,21 @@
                         <span class="worktree-link__icon">↳</span>
                         <span class="worktree-link__text">Start new worktree session...</span>
                     </a>
-                    {{if .RecentRecordings}}
-                    <div class="recordings-section recordings-section--recent">
-                        <div class="recordings-section__label">Recent (auto-deletes after 1h)</div>
-                        {{range .RecentRecordings}}
-                        <div class="recording-item" data-uuid="{{.UUID}}">
+                    {{if .Recordings}}
+                    <div class="recordings-section">
+                        <div class="recordings-section__label">Recordings</div>
+                        {{range .Recordings}}
+                        <div class="recording-item{{if .IsKept}} recording-item--kept{{end}}" data-uuid="{{.UUID}}">
                             <span class="recording-item__name">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
                             <span class="recording-item__time">{{.EndedAgo}}</span>
+                            <span class="recording-item__status{{if .IsKept}} recording-item__status--saved{{else}} recording-item__status--expires{{end}}">{{if .IsKept}}Saved{{else}}Expires in {{.ExpiresIn}}{{end}}</span>
                             <div class="recording-item__actions">
                                 <a href="/recording/{{.UUID}}" class="recording-item__play">View</a>
-                                <button class="recording-item__keep" onclick="keepRecording('{{.UUID}}', this)">Keep</button>
-                            </div>
-                        </div>
-                        {{end}}
-                    </div>
-                    {{end}}
-                    {{if .KeptRecordings}}
-                    <div class="recordings-section recordings-section--kept">
-                        <div class="recordings-section__label">Kept</div>
-                        {{range .KeptRecordings}}
-                        <div class="recording-item recording-item--kept" data-uuid="{{.UUID}}">
-                            <span class="recording-item__name">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
-                            <span class="recording-item__time">{{.EndedAgo}}</span>
-                            <div class="recording-item__actions">
-                                <a href="/recording/{{.UUID}}" class="recording-item__play">View</a>
+                                {{if .IsKept}}
                                 <button class="recording-item__delete" onclick="deleteRecording('{{.UUID}}', this)">Delete</button>
+                                {{else}}
+                                <button class="recording-item__keep" onclick="keepRecording('{{.UUID}}', this)">Keep</button>
+                                {{end}}
                             </div>
                         </div>
                         {{end}}
