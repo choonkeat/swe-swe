@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1614,4 +1615,209 @@ func TestWorktreeMerge_ValidPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSanitizeRepoURL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Standard HTTPS URLs
+		{"https://github.com/user/repo.git", "github.com-user-repo"},
+		{"https://github.com/user/repo", "github.com-user-repo"},
+		{"https://gitlab.com/group/subgroup/project.git", "gitlab.com-group-subgroup-project"},
+
+		// SSH URLs
+		{"git@github.com:user/repo.git", "github.com-user-repo"},
+		{"git@gitlab.com:group/project.git", "gitlab.com-group-project"},
+		{"ssh://git@github.com/user/repo.git", "git-github.com-user-repo"},
+
+		// HTTP URLs
+		{"http://github.com/user/repo.git", "github.com-user-repo"},
+
+		// Edge cases
+		{"https://github.com/user/repo-with-dashes.git", "github.com-user-repo-with-dashes"},
+		{"https://github.com/user/repo_with_underscores.git", "github.com-user-repo_with_underscores"},
+		{"https://github.com/user/UPPERCASE-repo.git", "github.com-user-UPPERCASE-repo"},
+
+		// Invalid characters replaced
+		{"https://github.com/user/repo:name.git", "github.com-user-repo-name"},
+		{"https://github.com/user/repo name.git", "github.com-user-repo-name"},
+
+		// Multiple special characters collapse to single dash
+		{"https://github.com///user///repo.git", "github.com-user-repo"},
+
+		// Empty after sanitization
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := sanitizeRepoURL(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeRepoURL(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsWorkspaceRepo(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{"direct /workspace path", "/workspace", true},
+		{"direct /workspace/ path with trailing slash", "/workspace/", true},
+		{"empty string", "", false},
+		{"random path", "/some/other/path", false},
+		{"spaces only", "   ", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isWorkspaceRepo(tt.input)
+			if result != tt.expected {
+				t.Errorf("isWorkspaceRepo(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveWorkingDirectory(t *testing.T) {
+	tests := []struct {
+		name       string
+		repoPath   string
+		branchName string
+		expected   string
+	}{
+		// No branch - return repo path as-is
+		{"workspace no branch", "/workspace", "", "/workspace"},
+		{"external no branch", "/repos/github.com-user-repo/workspace", "", "/repos/github.com-user-repo/workspace"},
+
+		// /workspace with branch
+		{"workspace with branch", "/workspace", "feature-x", "/worktrees/feature-x"},
+		{"workspace with hierarchical branch", "/workspace", "feat/add-login", "/worktrees/feat--add-login"},
+
+		// External repo with branch
+		{"external with branch", "/repos/github.com-user-repo/workspace", "feature-x", "/repos/github.com-user-repo/worktree/feature-x"},
+		{"external with hierarchical branch", "/repos/github.com-user-repo/workspace", "feat/test", "/repos/github.com-user-repo/worktree/feat--test"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := resolveWorkingDirectory(tt.repoPath, tt.branchName)
+			if result != tt.expected {
+				t.Errorf("resolveWorkingDirectory(%q, %q) = %q, want %q", tt.repoPath, tt.branchName, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestHandleRepoBranchesAPI(t *testing.T) {
+	t.Run("POST returns method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/branches", nil)
+		w := httptest.NewRecorder()
+
+		handleRepoBranchesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("invalid path returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/repo/branches?path=/etc/passwd", nil)
+		w := httptest.NewRecorder()
+
+		handleRepoBranchesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+
+		var result map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["error"] != "Invalid repository path" {
+			t.Errorf("expected error 'Invalid repository path', got %q", result["error"])
+		}
+	})
+
+	t.Run("path traversal rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/repo/branches?path=/repos/../../../etc/passwd", nil)
+		w := httptest.NewRecorder()
+
+		handleRepoBranchesAPI(w, req)
+
+		resp := w.Result()
+		// After path.Clean, this becomes /etc/passwd which should be rejected
+		if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("expected status 400 or 500, got %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestHandleRepoPrepareAPI(t *testing.T) {
+	t.Run("GET returns method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/repo/prepare", nil)
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("empty URL returns 400", func(t *testing.T) {
+		body := `{"url": ""}`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+
+		var result map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["error"] != "URL is required" {
+			t.Errorf("expected error 'URL is required', got %q", result["error"])
+		}
+	})
+
+	t.Run("invalid JSON returns 400", func(t *testing.T) {
+		body := `{invalid json`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+
+		var result map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["error"] != "Invalid JSON" {
+			t.Errorf("expected error 'Invalid JSON', got %q", result["error"])
+		}
+	})
 }

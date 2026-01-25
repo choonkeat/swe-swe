@@ -2093,6 +2093,18 @@ func main() {
 			return
 		}
 
+		// Repo prepare API endpoint (clone/fetch)
+		if r.URL.Path == "/api/repo/prepare" {
+			handleRepoPrepareAPI(w, r)
+			return
+		}
+
+		// Repo branches API endpoint
+		if r.URL.Path == "/api/repo/branches" {
+			handleRepoBranchesAPI(w, r)
+			return
+		}
+
 		// Recording API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 			handleRecordingAPI(w, r)
@@ -2801,6 +2813,331 @@ func handleWorktreeCheckAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// reposDir is the base directory for external repository clones.
+// External repos are cloned to /repos/{sanitized-url}/workspace
+var reposDir = "/repos"
+
+// sanitizeRepoURL converts a repository URL to a filesystem-safe directory name.
+// Replaces invalid filesystem characters with "-".
+func sanitizeRepoURL(repoURL string) string {
+	// Remove protocol prefix
+	sanitized := repoURL
+	sanitized = strings.TrimPrefix(sanitized, "https://")
+	sanitized = strings.TrimPrefix(sanitized, "http://")
+	sanitized = strings.TrimPrefix(sanitized, "git@")
+	sanitized = strings.TrimPrefix(sanitized, "ssh://")
+	sanitized = strings.TrimSuffix(sanitized, ".git")
+
+	// Replace invalid filesystem characters with "-"
+	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", "@", " "}
+	for _, char := range invalidChars {
+		sanitized = strings.ReplaceAll(sanitized, char, "-")
+	}
+
+	// Collapse multiple dashes
+	for strings.Contains(sanitized, "--") {
+		sanitized = strings.ReplaceAll(sanitized, "--", "-")
+	}
+
+	// Trim leading/trailing dashes
+	sanitized = strings.Trim(sanitized, "-")
+
+	return sanitized
+}
+
+// getWorkspaceOriginURL returns the origin remote URL of /workspace repo
+func getWorkspaceOriginURL() (string, error) {
+	cmd := exec.Command("git", "-C", "/workspace", "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get origin URL: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// isWorkspaceRepo checks if the given URL matches the /workspace repo's origin
+func isWorkspaceRepo(repoURL string) bool {
+	// Normalize input
+	repoURL = strings.TrimSpace(repoURL)
+	if repoURL == "" {
+		return false
+	}
+
+	// Check if it's a local path that is /workspace
+	if repoURL == "/workspace" || repoURL == "/workspace/" {
+		return true
+	}
+
+	// Get workspace origin
+	originURL, err := getWorkspaceOriginURL()
+	if err != nil {
+		return false
+	}
+
+	// Normalize both URLs for comparison
+	normalizeGitURL := func(u string) string {
+		u = strings.TrimSpace(u)
+		u = strings.TrimSuffix(u, ".git")
+		u = strings.TrimPrefix(u, "https://")
+		u = strings.TrimPrefix(u, "http://")
+		u = strings.TrimPrefix(u, "git@")
+		u = strings.TrimPrefix(u, "ssh://")
+		u = strings.ReplaceAll(u, ":", "/")
+		return strings.ToLower(u)
+	}
+
+	return normalizeGitURL(repoURL) == normalizeGitURL(originURL)
+}
+
+// handleRepoPrepareAPI handles POST /api/repo/prepare
+// Input: { "url": "https://..." }
+// For /workspace: runs git fetch --all
+// For external URL: clones to /repos/{sanitized-url}/workspace
+// Returns: { "path": "/repos/...", "isWorkspace": bool }
+func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "URL is required"})
+		return
+	}
+
+	// Check if this is the workspace repo
+	if isWorkspaceRepo(req.URL) {
+		// Fetch all for workspace
+		log.Printf("Fetching all for /workspace")
+		cmd := exec.Command("git", "-C", "/workspace", "fetch", "--all")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Git fetch failed: %v, output: %s", err, string(output))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git fetch failed: %s", string(output))})
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"path":        "/workspace",
+			"isWorkspace": true,
+		})
+		return
+	}
+
+	// External repo - clone to /repos/{sanitized-url}/workspace
+	sanitizedURL := sanitizeRepoURL(req.URL)
+	if sanitizedURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid repository URL"})
+		return
+	}
+
+	repoBase := filepath.Join(reposDir, sanitizedURL)
+	repoPath := filepath.Join(repoBase, "workspace")
+
+	// Check if already cloned
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
+		// Already cloned, fetch instead
+		log.Printf("Repository already exists at %s, fetching", repoPath)
+		cmd := exec.Command("git", "-C", repoPath, "fetch", "--all")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Git fetch failed: %v, output: %s", err, string(output))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git fetch failed: %s", string(output))})
+			return
+		}
+	} else {
+		// Clone the repo
+		log.Printf("Cloning %s to %s", req.URL, repoPath)
+		if err := os.MkdirAll(repoBase, 0755); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to create directory: %v", err)})
+			return
+		}
+
+		cmd := exec.Command("git", "clone", req.URL, repoPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Git clone failed: %v, output: %s", err, string(output))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git clone failed: %s", string(output))})
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"path":        repoPath,
+		"isWorkspace": false,
+	})
+}
+
+// handleRepoBranchesAPI handles GET /api/repo/branches?path=/workspace
+// Returns: { "branches": ["main", "origin/feature-x", ...] }
+func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	repoPath := r.URL.Query().Get("path")
+	if repoPath == "" {
+		repoPath = "/workspace"
+	}
+
+	// Security check: only allow /workspace or /repos/* paths
+	if repoPath != "/workspace" && !strings.HasPrefix(repoPath, reposDir+"/") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid repository path"})
+		return
+	}
+
+	// Clean path to prevent traversal
+	repoPath = filepath.Clean(repoPath)
+
+	// Get all branches (local and remote)
+	cmd := exec.Command("git", "-C", repoPath, "branch", "-a", "--format=%(refname:short)")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Git branch list failed for %s: %v", repoPath, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to list branches"})
+		return
+	}
+
+	// Parse branch names
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	branches := make([]string, 0, len(lines))
+	seen := make(map[string]bool)
+
+	for _, line := range lines {
+		branch := strings.TrimSpace(line)
+		if branch == "" {
+			continue
+		}
+		// Skip HEAD pointer
+		if strings.Contains(branch, "HEAD") {
+			continue
+		}
+		// Avoid duplicates
+		if seen[branch] {
+			continue
+		}
+		seen[branch] = true
+		branches = append(branches, branch)
+	}
+
+	// Sort: local branches first, then remote
+	sort.Slice(branches, func(i, j int) bool {
+		iRemote := strings.HasPrefix(branches[i], "origin/")
+		jRemote := strings.HasPrefix(branches[j], "origin/")
+		if iRemote != jRemote {
+			return !iRemote // local before remote
+		}
+		return branches[i] < branches[j]
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"branches": branches,
+	})
+}
+
+// resolveWorkingDirectory calculates the working directory for a session
+// based on repoPath and optional branchName.
+// - Branch blank: return repoPath (no worktree)
+// - /workspace + branch: /worktrees/{branch}
+// - External + branch: /repos/{sanitized-url}/worktree/{branch}
+func resolveWorkingDirectory(repoPath, branchName string) string {
+	if branchName == "" {
+		return repoPath
+	}
+
+	// For /workspace, use /worktrees directory
+	if repoPath == "/workspace" {
+		return filepath.Join(worktreeDir, worktreeDirName(branchName))
+	}
+
+	// For external repos, use worktree subdirectory within the repo
+	// e.g., /repos/github.com-user-repo/worktree/feature-branch
+	return filepath.Join(filepath.Dir(repoPath), "worktree", worktreeDirName(branchName))
+}
+
+// createWorktreeInRepo creates a worktree for a specific repo (may be external)
+// Similar to createWorktree but supports external repos at different paths
+func createWorktreeInRepo(repoPath, branchName string) (string, error) {
+	if branchName == "" {
+		return repoPath, nil
+	}
+
+	worktreePath := resolveWorkingDirectory(repoPath, branchName)
+
+	// Check if worktree already exists
+	if _, err := os.Stat(worktreePath); err == nil {
+		log.Printf("Re-entering existing worktree at %s", worktreePath)
+		return worktreePath, nil
+	}
+
+	// Ensure parent directory exists
+	parentDir := filepath.Dir(worktreePath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create worktree directory: %w", err)
+	}
+
+	var cmd *exec.Cmd
+	var output []byte
+	var err error
+
+	// Check if local branch exists in this repo
+	localCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", branchName)
+	localExists := localCmd.Run() == nil
+
+	// Check if remote branch exists
+	remoteCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "origin/"+branchName)
+	remoteExists := remoteCmd.Run() == nil
+
+	if localExists {
+		log.Printf("Attaching worktree to existing local branch %s in %s", branchName, repoPath)
+		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", worktreePath, branchName)
+	} else if remoteExists {
+		log.Printf("Creating worktree tracking remote branch origin/%s in %s", branchName, repoPath)
+		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "--track", "-b", branchName, worktreePath, "origin/"+branchName)
+	} else {
+		log.Printf("Creating new worktree with fresh branch %s in %s", branchName, repoPath)
+		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "-b", branchName, worktreePath)
+	}
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
+	}
+
+	return worktreePath, nil
+}
+
 // isValidWorktreePath checks if a path is a valid worktree path (under worktreeDir).
 // This is a security check to prevent path traversal attacks.
 func isValidWorktreePath(path string) bool {
@@ -2977,9 +3314,10 @@ func deleteRecordingFiles(uuid string) {
 
 // getOrCreateSession returns an existing session or creates a new one
 // The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
-// The name parameter sets the session name (optional, can be empty)
+// The name parameter sets the session name/branch (optional, can be empty)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
-func getOrCreateSession(sessionUUID string, assistant string, name string, workDir string) (*Session, bool, error) {
+// The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
+func getOrCreateSession(sessionUUID string, assistant string, name string, workDir string, repoPath string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -3006,17 +3344,29 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		log.Printf("Warning: failed to create recordings directory: %v", err)
 	}
 
-	// If session has a name, create a git worktree for it
+	// Determine working directory and create worktree if needed
 	var branchName string
-	if name != "" && workDir == "" {
-		branchName = deriveBranchName(name)
-		if branchName != "" {
+	if workDir == "" {
+		// If repoPath provided, use it as base; otherwise default to /workspace
+		baseRepo := repoPath
+		if baseRepo == "" {
+			baseRepo = "/workspace"
+		}
+
+		// If name (branch) is provided, create/use worktree
+		if name != "" {
+			branchName = name
+			// Use createWorktreeInRepo which supports both /workspace and external repos
 			var err error
-			workDir, err = createWorktree(branchName)
+			workDir, err = createWorktreeInRepo(baseRepo, branchName)
 			if err != nil {
-				log.Printf("Warning: failed to create worktree for branch %s: %v", branchName, err)
-				// Continue without worktree - will use /workspace
+				log.Printf("Warning: failed to create worktree for branch %s in %s: %v", branchName, baseRepo, err)
+				// Fall back to base repo without worktree
+				workDir = baseRepo
 			}
+		} else {
+			// No branch specified, use base repo directly
+			workDir = baseRepo
 		}
 	}
 
@@ -3120,8 +3470,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		return
 	}
 
-	// Get optional session name from query param
+	// Get optional session name (branch name for new session dialog)
 	sessionName := r.URL.Query().Get("name")
+
+	// Get optional pwd (base repo path for new session dialog)
+	pwd := r.URL.Query().Get("pwd")
 
 	// Get optional parent session UUID to inherit workDir (for shell sessions)
 	parentUUID := r.URL.Query().Get("parent")
@@ -3135,7 +3488,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionsMu.RUnlock()
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, workDir)
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, workDir, pwd)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
