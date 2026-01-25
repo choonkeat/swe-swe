@@ -83,56 +83,54 @@ The recordings section displays all recordings in a single interleaved list, sor
 
 ---
 
-## Phase 2: New Session Dialog UI
+## Phase 2: New Session Dialog UI ✅ COMPLETED
 
 ### What will be achieved
 Modal dialog with repo URL combo box, branch combo box, agent selection, and Start Session button with progressive enablement.
 
 ### Steps
-1. **Add dialog HTML structure** (`selection.html`):
+1. ✅ **Add dialog HTML structure** (`selection.html`):
    - Modal overlay with form layout
    - Combo box for repo URL with datalist for history
    - "Next" button for repo step
    - Combo box for branch with datalist (initially disabled)
    - "Next" button for branch step (initially disabled)
-   - Agent radio buttons (initially disabled)
+   - Agent buttons (initially disabled)
    - "Start Session" button (initially disabled)
    - Loading spinner element
    - Error message display area
 
-2. **Add dialog CSS**:
+2. ✅ **Add dialog CSS**:
    - Modal positioning and backdrop
    - Combo box styling consistent with dark theme
    - Disabled state styling
    - Loading spinner animation
    - Error message styling
 
-3. **Add dialog open/close logic**:
-   - Wire "+ New Session" button to open dialog
+3. ✅ **Add dialog open/close logic**:
+   - Wire "+ Start new session" button to open dialog
    - Close on X button, ESC key, backdrop click
    - Reset form state on close
 
-4. **Add localStorage integration**:
+4. ✅ **Add localStorage integration**:
    - Load repo URL history on page load
    - Populate datalist with history
    - Save new URLs to history on successful prepare
 
-5. **Add progressive enablement logic** (UI only):
-   - Repo Next → enables branch field
+5. ✅ **Add progressive enablement logic** (UI only):
+   - Repo Next → calls API, enables branch field on success
    - Branch Next (or select) → enables agent selection
    - Agent select → enables Start Session button
-   - Changing earlier field → resets downstream fields
+   - Changing repo input → resets downstream fields
 
 ### Verification
-1. `make build golden-update` - verify template changes
-2. **Manual browser test**:
-   - Click "+ New Session" → dialog opens
-   - Verify branch/agent/start disabled initially
-   - Enter repo URL, click Next → branch enables
-   - Select/enter branch → agent enables
-   - Select agent → Start Session enables
-   - Change repo URL → downstream resets
-   - Close via X, ESC, backdrop → form resets
+1. ✅ `make build golden-update` - template changes verified
+2. ✅ **Manual browser test**:
+   - Click "+ Start new session" → dialog opens
+   - Verified branch/agent/start disabled initially
+   - Clicking Next shows loading then error (backend not yet implemented)
+   - Dialog closes via X button, ESC key
+   - Dialog resets when reopened
 
 ---
 

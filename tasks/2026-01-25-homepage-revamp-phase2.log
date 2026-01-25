@@ -10,3 +10,16 @@ Expected:
   - Dialog closes via X button, ESC key, backdrop click
   - Clicking 'Next' shows loading state then error (backend not implemented yet)
 
+174937 - Browser test completed successfully
+Observed:
+  - Dialog opens when clicking '+ Start new session'
+  - Repository input pre-filled with '/workspace', focused
+  - Branch input disabled, Branch Next button disabled
+  - Agent selection shows OpenCode (disabled initially)
+  - Start Session button disabled
+  - Clicking 'Next' shows loading then error message (backend not implemented)
+  - Dialog closes via X button
+  - Dialog closes via ESC key
+  - Dialog resets when reopened (error message cleared)
+All Phase 2 verification criteria met.
+

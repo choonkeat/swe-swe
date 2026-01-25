@@ -398,6 +398,182 @@
             background: #b45309;
             border-color: #b45309;
         }
+        /* New Session Dialog */
+        .new-session-dialog-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .new-session-dialog {
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .new-session-dialog__header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .new-session-dialog__title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .new-session-dialog__close {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .new-session-dialog__close:hover {
+            color: #fff;
+        }
+        .new-session-dialog__field {
+            margin-bottom: 20px;
+        }
+        .new-session-dialog__label {
+            display: block;
+            font-size: 14px;
+            color: #d4d4d4;
+            margin-bottom: 8px;
+        }
+        .new-session-dialog__row {
+            display: flex;
+            gap: 8px;
+        }
+        .new-session-dialog__input {
+            flex: 1;
+            padding: 10px 12px;
+            font-size: 14px;
+            background: #1e1e1e;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            color: #d4d4d4;
+        }
+        .new-session-dialog__input:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+        .new-session-dialog__input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .new-session-dialog__next {
+            padding: 10px 16px;
+            font-size: 14px;
+            background: #404040;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            color: #d4d4d4;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .new-session-dialog__next:hover:not(:disabled) {
+            background: #505050;
+            border-color: #007acc;
+        }
+        .new-session-dialog__next:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .new-session-dialog__agents {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .new-session-dialog__agent {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: #1e1e1e;
+            border: 1px solid #404040;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .new-session-dialog__agent:hover:not(.new-session-dialog__agent--disabled) {
+            border-color: #007acc;
+        }
+        .new-session-dialog__agent--selected {
+            border-color: #007acc;
+            background: #2d3748;
+        }
+        .new-session-dialog__agent--disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .new-session-dialog__agent-icon {
+            font-size: 16px;
+        }
+        .new-session-dialog__agent-name {
+            font-size: 14px;
+            color: #d4d4d4;
+        }
+        .new-session-dialog__agent input[type="radio"] {
+            display: none;
+        }
+        .new-session-dialog__footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+        }
+        .new-session-dialog__error {
+            color: #ef4444;
+            font-size: 13px;
+            flex: 1;
+        }
+        .new-session-dialog__start {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            background: #22c55e;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .new-session-dialog__start:hover:not(:disabled) {
+            background: #16a34a;
+        }
+        .new-session-dialog__start:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .new-session-dialog__loading {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #888;
+        }
+        .new-session-dialog__spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #404040;
+            border-top-color: #007acc;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
         .recording-item__keep {
             padding: 4px 8px;
             font-size: 12px;
@@ -445,6 +621,51 @@
             <div class="conflict-dialog__actions">
                 <button class="conflict-dialog__btn conflict-dialog__btn--rename" id="conflict-rename-btn">Rename</button>
                 <button class="conflict-dialog__btn conflict-dialog__btn--use" id="conflict-use-btn">Use existing</button>
+            </div>
+        </div>
+    </div>
+    <!-- New Session dialog -->
+    <div class="new-session-dialog-overlay" id="new-session-dialog-overlay">
+        <div class="new-session-dialog">
+            <div class="new-session-dialog__header">
+                <div class="new-session-dialog__title">New Session</div>
+                <button class="new-session-dialog__close" id="new-session-close">&times;</button>
+            </div>
+            <div class="new-session-dialog__field">
+                <label class="new-session-dialog__label">Repository</label>
+                <div class="new-session-dialog__row">
+                    <input type="text" class="new-session-dialog__input" id="new-session-repo" list="repo-history" placeholder="Repository URL or /workspace">
+                    <datalist id="repo-history"></datalist>
+                    <button class="new-session-dialog__next" id="new-session-repo-next">Next</button>
+                </div>
+            </div>
+            <div class="new-session-dialog__field">
+                <label class="new-session-dialog__label">Branch (optional)</label>
+                <div class="new-session-dialog__row">
+                    <input type="text" class="new-session-dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
+                    <datalist id="branch-list"></datalist>
+                    <button class="new-session-dialog__next" id="new-session-branch-next" disabled>Next</button>
+                </div>
+            </div>
+            <div class="new-session-dialog__field">
+                <label class="new-session-dialog__label">Agent</label>
+                <div class="new-session-dialog__agents" id="new-session-agents">
+                    {{range .Agents}}
+                    <label class="new-session-dialog__agent new-session-dialog__agent--disabled" data-agent="{{.Assistant.Binary}}">
+                        <input type="radio" name="new-session-agent" value="{{.Assistant.Binary}}" disabled>
+                        <span class="new-session-dialog__agent-icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
+                        <span class="new-session-dialog__agent-name">{{.Assistant.Name}}</span>
+                    </label>
+                    {{end}}
+                </div>
+            </div>
+            <div class="new-session-dialog__footer">
+                <div class="new-session-dialog__error" id="new-session-error"></div>
+                <div class="new-session-dialog__loading" id="new-session-loading">
+                    <div class="new-session-dialog__spinner"></div>
+                    <span id="new-session-loading-text">Loading...</span>
+                </div>
+                <button class="new-session-dialog__start" id="new-session-start" disabled>Start Session</button>
             </div>
         </div>
     </div>
@@ -555,8 +776,8 @@
         })();
 
         function startNewSession(assistant, sessionUUID, debug) {
-            // Start immediately without prompting (non-worktree session)
-            navigateToSession(assistant, sessionUUID, debug, '');
+            // Open New Session dialog with agent pre-selected
+            openNewSessionDialog(assistant, sessionUUID, debug);
         }
 
         function startWorktreeSession(assistant, sessionUUID, debug) {
@@ -818,6 +1039,335 @@
                 .catch(function(err) {
                     console.error('Failed to fetch worktrees:', err);
                 });
+        })();
+
+        // New Session Dialog functionality
+        (function() {
+            var overlay = document.getElementById('new-session-dialog-overlay');
+            var closeBtn = document.getElementById('new-session-close');
+            var repoInput = document.getElementById('new-session-repo');
+            var repoNextBtn = document.getElementById('new-session-repo-next');
+            var branchInput = document.getElementById('new-session-branch');
+            var branchNextBtn = document.getElementById('new-session-branch-next');
+            var agentsContainer = document.getElementById('new-session-agents');
+            var startBtn = document.getElementById('new-session-start');
+            var errorDiv = document.getElementById('new-session-error');
+            var loadingDiv = document.getElementById('new-session-loading');
+            var loadingText = document.getElementById('new-session-loading-text');
+            var repoHistoryList = document.getElementById('repo-history');
+            var branchList = document.getElementById('branch-list');
+
+            // Dialog state
+            var dialogState = {
+                sessionUUID: '',
+                debug: false,
+                repoPath: '',
+                selectedBranch: '',
+                selectedAgent: '',
+                preSelectedAgent: ''
+            };
+
+            // localStorage key for repo history
+            var REPO_HISTORY_KEY = 'swe-swe-repo-history';
+
+            // Load repo history from localStorage
+            function loadRepoHistory() {
+                try {
+                    var history = JSON.parse(localStorage.getItem(REPO_HISTORY_KEY) || '[]');
+                    repoHistoryList.innerHTML = '';
+                    history.forEach(function(url) {
+                        var option = document.createElement('option');
+                        option.value = url;
+                        repoHistoryList.appendChild(option);
+                    });
+                } catch (e) {
+                    console.error('Failed to load repo history:', e);
+                }
+            }
+
+            // Save URL to repo history
+            function saveToRepoHistory(url) {
+                try {
+                    var history = JSON.parse(localStorage.getItem(REPO_HISTORY_KEY) || '[]');
+                    // Remove if already exists
+                    history = history.filter(function(u) { return u !== url; });
+                    // Add to front
+                    history.unshift(url);
+                    // Keep only last 10
+                    history = history.slice(0, 10);
+                    localStorage.setItem(REPO_HISTORY_KEY, JSON.stringify(history));
+                } catch (e) {
+                    console.error('Failed to save repo history:', e);
+                }
+            }
+
+            // Get default repo URL from /workspace
+            function getDefaultRepoUrl() {
+                // For now, default to /workspace - backend will resolve this
+                return '/workspace';
+            }
+
+            // Reset dialog to initial state
+            function resetDialog() {
+                repoInput.value = getDefaultRepoUrl();
+                repoInput.disabled = false;
+                repoNextBtn.disabled = false;
+                branchInput.value = '';
+                branchInput.disabled = true;
+                branchNextBtn.disabled = true;
+                branchList.innerHTML = '';
+                errorDiv.textContent = '';
+                loadingDiv.style.display = 'none';
+                startBtn.disabled = true;
+
+                // Reset agents
+                var agentLabels = agentsContainer.querySelectorAll('.new-session-dialog__agent');
+                agentLabels.forEach(function(label) {
+                    label.classList.add('new-session-dialog__agent--disabled');
+                    label.classList.remove('new-session-dialog__agent--selected');
+                    var radio = label.querySelector('input[type="radio"]');
+                    if (radio) {
+                        radio.disabled = true;
+                        radio.checked = false;
+                    }
+                });
+
+                dialogState.repoPath = '';
+                dialogState.selectedBranch = '';
+                dialogState.selectedAgent = '';
+            }
+
+            // Open the dialog
+            window.openNewSessionDialog = function(preSelectedAgent, sessionUUID, debug) {
+                dialogState.sessionUUID = sessionUUID;
+                dialogState.debug = debug;
+                dialogState.preSelectedAgent = preSelectedAgent || '';
+
+                resetDialog();
+                loadRepoHistory();
+                overlay.style.display = 'flex';
+
+                // Focus repo input
+                setTimeout(function() { repoInput.focus(); }, 100);
+            };
+
+            // Close the dialog
+            function closeDialog() {
+                overlay.style.display = 'none';
+                resetDialog();
+            }
+
+            // Show error message
+            function showError(msg) {
+                errorDiv.textContent = msg;
+                loadingDiv.style.display = 'none';
+            }
+
+            // Show loading state
+            function showLoading(msg) {
+                loadingText.textContent = msg || 'Loading...';
+                loadingDiv.style.display = 'flex';
+                errorDiv.textContent = '';
+            }
+
+            // Hide loading state
+            function hideLoading() {
+                loadingDiv.style.display = 'none';
+            }
+
+            // Enable branch field
+            function enableBranchField() {
+                branchInput.disabled = false;
+                branchNextBtn.disabled = false;
+            }
+
+            // Enable agent selection
+            function enableAgentSelection() {
+                var agentLabels = agentsContainer.querySelectorAll('.new-session-dialog__agent');
+                agentLabels.forEach(function(label) {
+                    label.classList.remove('new-session-dialog__agent--disabled');
+                    var radio = label.querySelector('input[type="radio"]');
+                    if (radio) {
+                        radio.disabled = false;
+                    }
+                });
+
+                // If there's a pre-selected agent, select it
+                if (dialogState.preSelectedAgent) {
+                    var preSelectedLabel = agentsContainer.querySelector('[data-agent="' + dialogState.preSelectedAgent + '"]');
+                    if (preSelectedLabel) {
+                        var radio = preSelectedLabel.querySelector('input[type="radio"]');
+                        if (radio) {
+                            radio.checked = true;
+                            preSelectedLabel.classList.add('new-session-dialog__agent--selected');
+                            dialogState.selectedAgent = dialogState.preSelectedAgent;
+                            startBtn.disabled = false;
+                        }
+                    }
+                }
+            }
+
+            // Handle Repo Next button
+            repoNextBtn.addEventListener('click', function() {
+                var repoUrl = repoInput.value.trim();
+                if (!repoUrl) {
+                    showError('Please enter a repository URL');
+                    return;
+                }
+
+                showLoading('Preparing repository...');
+                repoInput.disabled = true;
+                repoNextBtn.disabled = true;
+
+                // For Phase 2 (UI only), just simulate the async operation
+                // Phase 3 will add the actual backend call
+                fetch('/api/repo/prepare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: repoUrl })
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        return response.json().then(function(data) {
+                            throw new Error(data.error || 'Failed to prepare repository');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(function(data) {
+                    dialogState.repoPath = data.path;
+                    saveToRepoHistory(repoUrl);
+
+                    // Fetch branches
+                    return fetch('/api/repo/branches?path=' + encodeURIComponent(data.path));
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch branches');
+                    }
+                    return response.json();
+                })
+                .then(function(data) {
+                    hideLoading();
+
+                    // Populate branch datalist
+                    branchList.innerHTML = '';
+                    (data.branches || []).forEach(function(branch) {
+                        var option = document.createElement('option');
+                        option.value = branch;
+                        branchList.appendChild(option);
+                    });
+
+                    enableBranchField();
+                    branchInput.focus();
+                })
+                .catch(function(err) {
+                    hideLoading();
+                    repoInput.disabled = false;
+                    repoNextBtn.disabled = false;
+                    showError(err.message || 'Failed to prepare repository');
+                });
+            });
+
+            // Handle Branch Next button
+            branchNextBtn.addEventListener('click', function() {
+                dialogState.selectedBranch = branchInput.value.trim();
+                enableAgentSelection();
+            });
+
+            // Handle branch input change (selecting from dropdown)
+            branchInput.addEventListener('change', function() {
+                // If user selected from dropdown, auto-advance
+                if (branchInput.value) {
+                    dialogState.selectedBranch = branchInput.value.trim();
+                    enableAgentSelection();
+                }
+            });
+
+            // Handle agent selection
+            agentsContainer.addEventListener('click', function(e) {
+                var label = e.target.closest('.new-session-dialog__agent');
+                if (!label || label.classList.contains('new-session-dialog__agent--disabled')) {
+                    return;
+                }
+
+                // Deselect all
+                var allLabels = agentsContainer.querySelectorAll('.new-session-dialog__agent');
+                allLabels.forEach(function(l) {
+                    l.classList.remove('new-session-dialog__agent--selected');
+                });
+
+                // Select this one
+                label.classList.add('new-session-dialog__agent--selected');
+                var radio = label.querySelector('input[type="radio"]');
+                if (radio) {
+                    radio.checked = true;
+                    dialogState.selectedAgent = radio.value;
+                    startBtn.disabled = false;
+                }
+            });
+
+            // Handle Start Session button
+            startBtn.addEventListener('click', function() {
+                if (!dialogState.selectedAgent) {
+                    showError('Please select an agent');
+                    return;
+                }
+
+                // Navigate to session with appropriate parameters
+                var url = '/session/' + dialogState.sessionUUID + '?assistant=' + encodeURIComponent(dialogState.selectedAgent);
+                if (dialogState.debug) {
+                    url += '&debug=1';
+                }
+                if (dialogState.repoPath && dialogState.repoPath !== '/workspace') {
+                    url += '&pwd=' + encodeURIComponent(dialogState.repoPath);
+                }
+                if (dialogState.selectedBranch) {
+                    url += '&name=' + encodeURIComponent(dialogState.selectedBranch);
+                }
+
+                window.location.href = url;
+            });
+
+            // Close button
+            closeBtn.addEventListener('click', closeDialog);
+
+            // Close on overlay click
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) {
+                    closeDialog();
+                }
+            });
+
+            // Close on Escape key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && overlay.style.display === 'flex') {
+                    closeDialog();
+                }
+            });
+
+            // Handle repo input change (resetting downstream fields)
+            repoInput.addEventListener('input', function() {
+                // If repo changes, reset downstream
+                branchInput.value = '';
+                branchInput.disabled = true;
+                branchNextBtn.disabled = true;
+                branchList.innerHTML = '';
+                dialogState.selectedBranch = '';
+                dialogState.selectedAgent = '';
+                startBtn.disabled = true;
+
+                var agentLabels = agentsContainer.querySelectorAll('.new-session-dialog__agent');
+                agentLabels.forEach(function(label) {
+                    label.classList.add('new-session-dialog__agent--disabled');
+                    label.classList.remove('new-session-dialog__agent--selected');
+                    var radio = label.querySelector('input[type="radio"]');
+                    if (radio) {
+                        radio.disabled = true;
+                        radio.checked = false;
+                    }
+                });
+            });
         })();
     </script>
 </body>
