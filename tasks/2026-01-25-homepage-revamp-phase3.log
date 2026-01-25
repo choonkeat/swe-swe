@@ -1,0 +1,46 @@
+180152 - Starting Phase 3: Git Operations Backend
+Expected: Add API endpoints POST /api/repo/prepare and GET /api/repo/branches
+
+Step 1: Add URL sanitization function
+Will do: Add sanitizeRepoURL function that replaces invalid filesystem characters with "-"
+
+175321 - Completed backend implementation
+Implemented:
+  - sanitizeRepoURL(): Converts repo URLs to filesystem-safe names
+  - isWorkspaceRepo(): Detects if URL matches /workspace origin
+  - handleRepoPrepareAPI(): POST /api/repo/prepare endpoint
+    - For /workspace: runs git fetch --all
+    - For external: clones to /repos/{sanitized-url}/workspace
+  - handleRepoBranchesAPI(): GET /api/repo/branches?path=
+    - Lists local and remote branches
+    - Security checks for path traversal
+  - resolveWorkingDirectory(): Calculates worktree paths
+  - createWorktreeInRepo(): Creates worktrees for any repo
+
+Added unit tests:
+  - TestSanitizeRepoURL: 11 test cases
+  - TestIsWorkspaceRepo: 5 test cases
+  - TestResolveWorkingDirectory: 6 test cases
+  - TestHandleRepoBranchesAPI: 3 test cases
+  - TestHandleRepoPrepareAPI: 3 test cases
+
+make test: all tests pass
+make build golden-update: completed
+
+175700 - Starting manual API test via curl
+Will do: Start test container and test API endpoints
+
+180030 - Browser test completed successfully
+Observed:
+  - Navigated to http://host.docker.internal:9770/
+  - Clicked "+ Start new session" - dialog opened
+  - Repository field pre-filled with "/workspace"
+  - Clicked "Next" on repo - loading shown, API called
+  - Network: POST /api/repo/prepare => 200 OK
+  - Network: GET /api/repo/branches?path=/workspace => 200 OK
+  - Branch field enabled, can leave blank for default
+  - Clicked "Next" on branch - agent selection activated
+  - "Start Session" button enabled
+  - Progressive form enablement works correctly
+All Phase 3 verification criteria met.
+

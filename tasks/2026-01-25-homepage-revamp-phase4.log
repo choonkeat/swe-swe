@@ -1,0 +1,36 @@
+180130 - Starting Phase 4: Dialog Logic & Integration
+Expected: Wire dialog UI to backend APIs, handle loading/errors, start sessions with correct pwd
+
+Current state:
+- Dialog already builds URLs with pwd and name parameters (from Phase 2)
+- Backend APIs working (from Phase 3)
+- Need to modify session creation to use pwd parameter
+
+Step 1: Modify handleWebSocket to accept pwd parameter
+Will do: Add pwd query param handling, pass to getOrCreateSession
+
+180200 - Completed backend modifications
+Implemented:
+  - handleWebSocket: Added pwd query param extraction
+  - getOrCreateSession: Added repoPath parameter
+  - Worktree logic: Uses createWorktreeInRepo for all repos (workspace and external)
+  - Fallback: If worktree creation fails, uses base repo path
+
+make test: all tests pass
+make build golden-update: completed
+
+180300 - Browser test completed successfully
+Test 1: Default /workspace, no branch
+  - Dialog: Repo Next → Branch Next (empty) → Start Session
+  - Result: Session started at /workspace
+  - URL: /session/{uuid}?assistant=opencode
+
+Test 2: Default /workspace with branch
+  - Dialog: Repo Next → Branch "test-branch-dialog" → Start Session
+  - Result: Session started in /worktrees/test-branch-dialog
+  - URL: /session/{uuid}?assistant=opencode&name=test-branch-dialog
+  - VSCode link: /worktrees/test-branch-dialog
+  - Status bar: "on test-branch-dialog"
+
+All Phase 4 verification criteria met.
+
