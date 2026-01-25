@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## v2.9.0 - Split-Pane UI, UID:GID Mapping & Streaming Playback
+
+### Major Features
+
+- **Host UID:GID mapping**: Container now runs with matching host user permissions, eliminating file permission conflicts between host and container editing. Uses `{{UID}}`/`{{GID}}` Dockerfile placeholders with automatic capture at `swe-swe init`
+- **Split-pane UI**: Always-available side panel with Preview, Browser, and Shell tabs. Click tab to toggle panel; desktop supports Ctrl+click for quick access. Preview proxy includes home/refresh navigation buttons
+- **Debug injection proxy**: Agents can debug web apps via injected script providing WebSocket channel for console logs, DOM inspection, and network requests. New `--debug-browser` and `--debug-localhost` flags for agent integration
+- **Streaming recording playback**: Now the default mode for session recordings. Streams session.log directly to xterm.js instead of embedding in HTML, improving performance for large recordings with exact terminal dimensions from metadata
+
+### Terminal UI
+
+- **JS module extraction**: Refactored monolithic HTML into 10 independent modules (util, validation, uuid, url-builder, messages, reconnect, upload-queue, chunk-assembler, status-renderer, CSS stylesheet)
+- **Multi-line URL detection**: Detect and activate URLs wrapped across multiple terminal lines
+- **Session page UX**: Improved default behavior with smart auto-open logic for preview panel
+
+### Infrastructure
+
+- **Network isolation**: Docker networks isolated per project to prevent cross-project conflicts
+- **CDP screencast**: Replaced VNC with Chrome DevTools Protocol for browser preview
+- **Auto-detect version**: Build version automatically derived from git tags
+- **Base dependencies**: Added jq, vim, unzip to container image
+- **Golang 1.23**: Upgraded server-builder to golang:1.23-alpine
+
+### Bug Fixes
+
+- **Traefik routing**: Fix 404 errors with SSL preview proxy configuration
+- **Iframe embedding**: Hide status bar when terminal embedded in iframe; prevent iframe nesting
+- **Container users**: Handle existing GID when creating users with matching host permissions
+- **Mobile keyboard**: Apply proper margin to status bar when virtual keyboard appears
+- **Cross-platform**: Use /dev/urandom for UUID generation (macOS/Linux compatibility)
+- **DigitalOcean**: Run init as swe-swe user with proper home directory ownership
+
+### Slash Commands
+
+- **`/debug-with-app-preview`**: New slash command teaching agents how to use the debug channel for real-time console logs, errors, network requests, and DOM queries from the user's browser
+
+### Documentation
+
+- ADR-0024: Debug injection proxy security model (`docs/adr/0024-debug-injection-proxy-security.md`)
+- Template editing guide (`docs/dev/template-editing-guide.md`)
+- Record-tui workflow (`docs/dev/record-tui-workflow.md`)
+- Streaming vs embedded rendering research (`research/2026-01-24-streaming-vs-embedded-rendering.md`)
+
 ## v2.8.0 - Shell Terminal, Heartbeat Cleanup & Deployment Automation
 
 ### Major Features
