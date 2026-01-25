@@ -123,60 +123,29 @@
         .new-session__text {
             font-size: 14px;
         }
-        .worktree-link {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            margin: 2px 0 2px 24px;
-            background: transparent;
-            border: 1px dashed #333;
-            border-radius: 6px;
-            text-decoration: none;
-            color: #666;
-            font-size: 13px;
-            transition: all 0.15s ease;
-        }
-        .worktree-link:hover {
-            border-color: #007acc;
-            color: #9cdcfe;
-            background: #2d2d2d;
-        }
-        .worktree-link__icon {
-            font-size: 12px;
-        }
-        .worktree-link__text {
-            font-size: 13px;
-        }
         /* Assistant-specific hover colors */
         .agent-group[data-assistant="claude"] .session-item:hover,
-        .agent-group[data-assistant="claude"] .new-session:hover,
-        .agent-group[data-assistant="claude"] .worktree-link:hover {
+        .agent-group[data-assistant="claude"] .new-session:hover {
             border-color: #d97706;
         }
         .agent-group[data-assistant="gemini"] .session-item:hover,
-        .agent-group[data-assistant="gemini"] .new-session:hover,
-        .agent-group[data-assistant="gemini"] .worktree-link:hover {
+        .agent-group[data-assistant="gemini"] .new-session:hover {
             border-color: #4285f4;
         }
         .agent-group[data-assistant="codex"] .session-item:hover,
-        .agent-group[data-assistant="codex"] .new-session:hover,
-        .agent-group[data-assistant="codex"] .worktree-link:hover {
+        .agent-group[data-assistant="codex"] .new-session:hover {
             border-color: #10a37f;
         }
         .agent-group[data-assistant="goose"] .session-item:hover,
-        .agent-group[data-assistant="goose"] .new-session:hover,
-        .agent-group[data-assistant="goose"] .worktree-link:hover {
+        .agent-group[data-assistant="goose"] .new-session:hover {
             border-color: #f472b6;
         }
         .agent-group[data-assistant="aider"] .session-item:hover,
-        .agent-group[data-assistant="aider"] .new-session:hover,
-        .agent-group[data-assistant="aider"] .worktree-link:hover {
+        .agent-group[data-assistant="aider"] .new-session:hover {
             border-color: #22c55e;
         }
         .agent-group[data-assistant="custom"] .session-item:hover,
-        .agent-group[data-assistant="custom"] .new-session:hover,
-        .agent-group[data-assistant="custom"] .worktree-link:hover {
+        .agent-group[data-assistant="custom"] .new-session:hover {
             border-color: #a855f7;
         }
         .selection-page__footer {
@@ -325,78 +294,6 @@
             color: #ef4444;
             border-color: #ef4444;
             background: rgba(239, 68, 68, 0.1);
-        }
-/* Conflict warning dialog */
-        .conflict-dialog-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-        .conflict-dialog {
-            background: #2d2d2d;
-            border: 1px solid #404040;
-            border-radius: 8px;
-            padding: 24px;
-            max-width: 400px;
-            width: 90%;
-        }
-        .conflict-dialog__title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #fbbf24;
-            margin-bottom: 12px;
-        }
-        .conflict-dialog__message {
-            font-size: 14px;
-            color: #d4d4d4;
-            margin-bottom: 20px;
-            line-height: 1.5;
-        }
-        .conflict-dialog__type {
-            display: inline-block;
-            padding: 4px 8px;
-            background: #404040;
-            border-radius: 4px;
-            font-size: 12px;
-            color: #9cdcfe;
-            margin-bottom: 16px;
-        }
-        .conflict-dialog__actions {
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-        }
-        .conflict-dialog__btn {
-            padding: 8px 16px;
-            font-size: 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-        .conflict-dialog__btn--rename {
-            background: transparent;
-            border: 1px solid #404040;
-            color: #888;
-        }
-        .conflict-dialog__btn--rename:hover {
-            border-color: #007acc;
-            color: #fff;
-        }
-        .conflict-dialog__btn--use {
-            background: #d97706;
-            border: 1px solid #d97706;
-            color: #fff;
-        }
-        .conflict-dialog__btn--use:hover {
-            background: #b45309;
-            border-color: #b45309;
         }
         /* New Session Dialog */
         .new-session-dialog-overlay {
@@ -612,18 +509,6 @@
     </style>
 </head>
 <body>
-    <!-- Conflict warning dialog -->
-    <div class="conflict-dialog-overlay" id="conflict-dialog-overlay">
-        <div class="conflict-dialog">
-            <div class="conflict-dialog__title">Branch already exists</div>
-            <div class="conflict-dialog__type" id="conflict-type"></div>
-            <div class="conflict-dialog__message" id="conflict-message"></div>
-            <div class="conflict-dialog__actions">
-                <button class="conflict-dialog__btn conflict-dialog__btn--rename" id="conflict-rename-btn">Rename</button>
-                <button class="conflict-dialog__btn conflict-dialog__btn--use" id="conflict-use-btn">Use existing</button>
-            </div>
-        </div>
-    </div>
     <!-- New Session dialog -->
     <div class="new-session-dialog-overlay" id="new-session-dialog-overlay">
         <div class="new-session-dialog">
@@ -701,10 +586,6 @@
                         <span class="new-session__icon">+</span>
                         <span class="new-session__text">Start new session</span>
                     </a>
-                    <a href="#" onclick="startWorktreeSession('{{.Assistant.Binary}}', '{{$.NewUUID}}', {{$.Debug}}); return false;" class="worktree-link worktree-link--new">
-                        <span class="worktree-link__icon">↳</span>
-                        <span class="worktree-link__text">Start new worktree session...</span>
-                    </a>
                     {{if .Recordings}}
                     <div class="recordings-section">
                         <div class="recordings-section__label">Recordings</div>
@@ -778,102 +659,6 @@
         function startNewSession(assistant, sessionUUID, debug) {
             // Open New Session dialog with agent pre-selected
             openNewSessionDialog(assistant, sessionUUID, debug);
-        }
-
-        function startWorktreeSession(assistant, sessionUUID, debug) {
-            var name = prompt('Worktree name:');
-
-            // User clicked Cancel
-            if (name === null) {
-                return;
-            }
-
-            // Trim and validate - must be non-empty
-            name = name.trim();
-            if (name.length === 0) {
-                alert('Worktree name cannot be empty');
-                return;
-            }
-
-            if (name.length > 128) {
-                name = name.substring(0, 128);
-            }
-
-            // Check for conflicts
-            fetch('/api/worktree/check?name=' + encodeURIComponent(name))
-                .then(function(response) {
-                    return response.json();
-                })
-                .then(function(data) {
-                    if (data.exists) {
-                        showConflictDialog(assistant, sessionUUID, debug, name, data.type, data.branch);
-                    } else {
-                        navigateToSession(assistant, sessionUUID, debug, name);
-                    }
-                })
-                .catch(function(err) {
-                    console.error('Error checking worktree:', err);
-                    // Proceed anyway on error
-                    navigateToSession(assistant, sessionUUID, debug, name);
-                });
-        }
-
-        function navigateToSession(assistant, sessionUUID, debug, name) {
-            var url = '/session/' + sessionUUID + '?assistant=' + encodeURIComponent(assistant);
-            if (debug) {
-                url += '&debug=1';
-            }
-            if (name.length > 0) {
-                url += '&name=' + encodeURIComponent(name);
-            }
-            window.location.href = url;
-        }
-
-        function showConflictDialog(assistant, sessionUUID, debug, name, conflictType, branchName) {
-            var overlay = document.getElementById('conflict-dialog-overlay');
-            var typeEl = document.getElementById('conflict-type');
-            var messageEl = document.getElementById('conflict-message');
-            var renameBtn = document.getElementById('conflict-rename-btn');
-            var useBtn = document.getElementById('conflict-use-btn');
-
-            // Set type label
-            var typeLabels = {
-                'worktree': 'Existing worktree',
-                'local': 'Local branch (no worktree)',
-                'remote': 'Remote branch'
-            };
-            typeEl.textContent = typeLabels[conflictType] || conflictType;
-
-            // Set message
-            var messages = {
-                'worktree': 'A worktree for "' + branchName + '" already exists. You can enter the existing session or choose a different name.',
-                'local': 'Local branch "' + branchName + '" exists. A new worktree will be attached to this branch.',
-                'remote': 'Remote branch "origin/' + branchName + '" exists. A new worktree will be created tracking this remote branch.'
-            };
-            messageEl.textContent = messages[conflictType] || 'Branch "' + branchName + '" already exists.';
-
-            // Show dialog
-            overlay.style.display = 'flex';
-
-            // Handle rename button
-            renameBtn.onclick = function() {
-                overlay.style.display = 'none';
-                // Re-prompt for new name
-                promptForName(assistant, sessionUUID, debug);
-            };
-
-            // Handle use existing button
-            useBtn.onclick = function() {
-                overlay.style.display = 'none';
-                navigateToSession(assistant, sessionUUID, debug, name);
-            };
-
-            // Close on overlay click
-            overlay.onclick = function(e) {
-                if (e.target === overlay) {
-                    overlay.style.display = 'none';
-                }
-            };
         }
 
         function deleteRecording(uuid, button) {
@@ -967,80 +752,6 @@
             });
         }
 
-        // Fetch and display existing worktrees as quick-start links
-        (function() {
-            fetch('/api/worktrees')
-                .then(function(response) {
-                    return response.json();
-                })
-                .then(function(data) {
-                    var worktrees = data.worktrees || [];
-                    if (worktrees.length === 0) {
-                        return;
-                    }
-
-                    // For each agent group, add worktree links after the "Start new worktree session..." link
-                    var agentGroups = document.querySelectorAll('.agent-group');
-                    agentGroups.forEach(function(group) {
-                        var assistant = group.getAttribute('data-assistant');
-                        var newWorktreeLink = group.querySelector('.worktree-link--new');
-                        if (!newWorktreeLink) {
-                            return;
-                        }
-
-                        // Check if debug mode is enabled (from existing link)
-                        var existingSessionLink = group.querySelector('.session-item');
-                        var debug = existingSessionLink && existingSessionLink.href.indexOf('debug=1') !== -1;
-
-                        // Create worktree links
-                        worktrees.forEach(function(wt) {
-                            var link = document.createElement('a');
-
-                            // Check if worktree has an active session for this assistant
-                            if (wt.activeSession && wt.activeSession.assistant === assistant) {
-                                // Join existing session - use worktree-link styling (same as "Start new session in ...")
-                                link.className = 'worktree-link';
-                                var url = '/session/' + wt.activeSession.uuid + '?assistant=' + encodeURIComponent(assistant);
-                                if (debug) {
-                                    url += '&debug=1';
-                                }
-                                link.href = url;
-
-                                // Build HTML matching worktree-link structure
-                                link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
-                                    '<span class="worktree-link__text">Join session in ' + wt.name + '</span>';
-                            } else {
-                                // Start new session in worktree
-                                link.className = 'worktree-link';
-
-                                // Generate a new UUID for this session
-                                var uuid = crypto.randomUUID ? crypto.randomUUID() :
-                                    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                                        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                                        return v.toString(16);
-                                    });
-
-                                // Build URL and set href directly so cmd-click/middle-click work
-                                var url = '/session/' + uuid + '?assistant=' + encodeURIComponent(assistant) + '&name=' + encodeURIComponent(wt.name);
-                                if (debug) {
-                                    url += '&debug=1';
-                                }
-                                link.href = url;
-
-                                link.innerHTML = '<span class="worktree-link__icon">↳</span>' +
-                                    '<span class="worktree-link__text">Start new session in ' + wt.name + '</span>';
-                            }
-
-                            // Insert after "Start new worktree session..." link
-                            newWorktreeLink.parentNode.insertBefore(link, newWorktreeLink.nextSibling);
-                        });
-                    });
-                })
-                .catch(function(err) {
-                    console.error('Failed to fetch worktrees:', err);
-                });
-        })();
-
         // New Session Dialog functionality
         (function() {
             var overlay = document.getElementById('new-session-dialog-overlay');
@@ -1101,10 +812,9 @@
                 }
             }
 
-            // Get default repo URL from /workspace
+            // Get default repo URL from backend (workspace origin URL)
             function getDefaultRepoUrl() {
-                // For now, default to /workspace - backend will resolve this
-                return '/workspace';
+                return '{{.DefaultRepoUrl}}';
             }
 
             // Reset dialog to initial state

@@ -608,6 +608,11 @@ class TerminalUI extends HTMLElement {
         if (nameParam) {
             url += '&name=' + encodeURIComponent(nameParam);
         }
+        // Forward pwd param from page URL to WebSocket URL (for external repo base path)
+        const pwdParam = new URLSearchParams(location.search).get('pwd');
+        if (pwdParam) {
+            url += '&pwd=' + encodeURIComponent(pwdParam);
+        }
         // Forward parent param from page URL to WebSocket URL (for shell session workDir inheritance)
         const parentParam = new URLSearchParams(location.search).get('parent');
         if (parentParam) {

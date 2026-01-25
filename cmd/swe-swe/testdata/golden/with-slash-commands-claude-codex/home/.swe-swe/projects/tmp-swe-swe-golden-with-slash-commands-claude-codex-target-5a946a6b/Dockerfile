@@ -76,6 +76,9 @@ RUN if ! getent group 1000 > /dev/null; then groupadd -g 1000 app; fi && \
 # Create worktrees directory with app ownership (used for git worktrees)
 RUN mkdir -p /worktrees && chown 1000:1000 /worktrees
 
+# Create repos directory with app ownership (used for cloning external repos)
+RUN mkdir -p /repos && chown 1000:1000 /repos
+
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

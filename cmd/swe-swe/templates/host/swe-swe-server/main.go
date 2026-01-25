@@ -2050,16 +2050,26 @@ func main() {
 
 			// Check if SSL certificate is available
 			_, hasSSLCert := os.Stat(tlsCertPath)
+
+			// Get the workspace origin URL for the default repo
+			defaultRepoUrl, err := getWorkspaceOriginURL()
+			if err != nil {
+				// Fallback to /workspace if we can't get origin URL
+				defaultRepoUrl = "/workspace"
+			}
+
 			data := struct {
-				Agents     []AgentWithSessions
-				NewUUID    string
-				HasSSLCert bool
-				Debug      bool
+				Agents        []AgentWithSessions
+				NewUUID       string
+				HasSSLCert    bool
+				Debug         bool
+				DefaultRepoUrl string
 			}{
-				Agents:     agents,
-				NewUUID:    uuid.New().String(),
-				HasSSLCert: hasSSLCert == nil,
-				Debug:      debugMode,
+				Agents:        agents,
+				NewUUID:       uuid.New().String(),
+				HasSSLCert:    hasSSLCert == nil,
+				Debug:         debugMode,
+				DefaultRepoUrl: defaultRepoUrl,
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)

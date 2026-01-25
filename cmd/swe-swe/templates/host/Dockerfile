@@ -153,6 +153,9 @@ RUN if ! getent group {{GID}} > /dev/null; then groupadd -g {{GID}} app; fi && \
 # Create worktrees directory with app ownership (used for git worktrees)
 RUN mkdir -p /worktrees && chown {{UID}}:{{GID}} /worktrees
 
+# Create repos directory with app ownership (used for cloning external repos)
+RUN mkdir -p /repos && chown {{UID}}:{{GID}} /repos
+
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
