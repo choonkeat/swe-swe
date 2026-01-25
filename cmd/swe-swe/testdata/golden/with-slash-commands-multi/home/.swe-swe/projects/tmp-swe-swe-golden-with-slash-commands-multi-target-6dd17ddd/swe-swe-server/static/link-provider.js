@@ -109,6 +109,7 @@ function getLinkModifierHint() {
  * @param {Terminal} terminal - xterm.js Terminal instance
  * @param {Object} options - Configuration options
  * @param {Function} options.onColorClick - Callback when a color is clicked (receives color string)
+ * @param {Function} [options.onCopy] - Optional callback when color is copied to clipboard (receives color string)
  * @param {Function} [options.onHint] - Optional callback to show hint when clicked without modifier
  */
 function registerColorLinkProvider(terminal, options) {
@@ -166,12 +167,24 @@ function registerColorLinkProvider(terminal, options) {
                     end: { x: color.startIndex + color.text.length + 1, y: bufferLineNumber }
                 },
                 activate: (event, text) => {
+                    // Always copy to clipboard
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(text).catch(err => {
+                            console.warn('Failed to copy to clipboard:', err);
+                        });
+                    }
+
                     if (!hasLinkModifier(event)) {
                         if (options.onHint) {
-                            options.onHint(getLinkModifierHint() + ' to set status bar color');
+                            options.onHint('Copied! ' + getLinkModifierHint() + ' to set status bar color');
                         }
                         return;
                     }
+
+                    if (options.onCopy) {
+                        options.onCopy(text);
+                    }
+
                     if (options.onColorClick) {
                         options.onColorClick(text);
                     }
@@ -282,22 +295,22 @@ function registerFileLinkProvider(terminal, options) {
                         end: { x: startIndex + filePath.length + 1, y: bufferLineNumber }
                     },
                     activate: (event, text) => {
+                        // Always copy path to clipboard
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(text).catch(err => {
+                                console.warn('Failed to copy to clipboard:', err);
+                            });
+                        }
+
                         if (!hasLinkModifier(event)) {
                             if (options.onHint) {
-                                options.onHint(getLinkModifierHint() + ' to open file');
+                                options.onHint('Copied! ' + getLinkModifierHint() + ' to open file');
                             }
                             return;
                         }
 
-                        // Copy path to clipboard (requires secure context)
-                        if (navigator.clipboard) {
-                            navigator.clipboard.writeText(text).then(() => {
-                                if (options.onCopy) {
-                                    options.onCopy(text);
-                                }
-                            }).catch(err => {
-                                console.warn('Failed to copy to clipboard:', err);
-                            });
+                        if (options.onCopy) {
+                            options.onCopy(text);
                         }
 
                         // Open VS Code
@@ -327,6 +340,7 @@ function registerFileLinkProvider(terminal, options) {
  * Makes http/https URLs clickable, including URLs that wrap across multiple lines.
  * @param {Terminal} terminal - xterm.js Terminal instance
  * @param {Object} [options] - Configuration options
+ * @param {Function} [options.onCopy] - Optional callback when URL is copied to clipboard (receives URL string)
  * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
  * @param {Function} [options.onHint] - Optional callback to show hint when clicked without modifier
  */
@@ -396,11 +410,22 @@ function registerUrlLinkProvider(terminal, options = {}) {
                         end: endPos
                     },
                     activate: (event, text) => {
+                        // Always copy URL to clipboard
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(text).catch(err => {
+                                console.warn('Failed to copy to clipboard:', err);
+                            });
+                        }
+
                         if (!hasLinkModifier(event)) {
                             if (options.onHint) {
-                                options.onHint(getLinkModifierHint() + ' to open link');
+                                options.onHint('Copied! ' + getLinkModifierHint() + ' to open link');
                             }
                             return;
+                        }
+
+                        if (options.onCopy) {
+                            options.onCopy(text);
                         }
 
                         // Open URL in new tab

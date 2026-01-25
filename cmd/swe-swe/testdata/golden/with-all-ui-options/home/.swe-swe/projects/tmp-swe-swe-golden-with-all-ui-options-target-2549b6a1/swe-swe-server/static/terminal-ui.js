@@ -406,13 +406,17 @@ class TerminalUI extends HTMLElement {
         if (typeof registerColorLinkProvider === 'function') {
             registerColorLinkProvider(this.term, {
                 onColorClick: (color) => this.setStatusBarColor(color),
+                onCopy: (color) => this.showStatusNotification('Copied: ' + color),
                 onHint
             });
         }
 
         // Register URL link provider for clickable http/https URLs
         if (typeof registerUrlLinkProvider === 'function') {
-            registerUrlLinkProvider(this.term, { onHint });
+            registerUrlLinkProvider(this.term, {
+                onCopy: (url) => this.showStatusNotification('Copied: ' + url),
+                onHint
+            });
         }
 
         this.term.write('Session: ' + this.uuid + '\r\n');
@@ -2033,6 +2037,23 @@ class TerminalUI extends HTMLElement {
 
         // Clipboard paste support for files
         this.setupClipboardPaste();
+
+        // Clipboard copy - trim trailing whitespace from terminal lines
+        this.setupClipboardCopy();
+    }
+
+    setupClipboardCopy() {
+        // Intercept copy events to trim trailing whitespace from each line.
+        // Terminal lines are fixed-width, so selections include padding spaces.
+        document.addEventListener('copy', (e) => {
+            if (!this.term) return;
+            const selection = this.term.getSelection();
+            if (selection) {
+                const cleaned = selection.split('\n').map(line => line.trimEnd()).join('\n');
+                e.clipboardData.setData('text/plain', cleaned);
+                e.preventDefault();
+            }
+        });
     }
 
     setupClipboardPaste() {
