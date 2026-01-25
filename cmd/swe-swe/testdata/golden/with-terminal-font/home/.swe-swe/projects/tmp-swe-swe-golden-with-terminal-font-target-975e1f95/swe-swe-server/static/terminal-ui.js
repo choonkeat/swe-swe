@@ -568,6 +568,24 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    // Fit terminal and preserve scroll position, unless user is near bottom
+    // (within half screen height), in which case scroll to bottom.
+    fitAndPreserveScroll() {
+        if (!this.term || !this.fitAddon) return;
+
+        const buffer = this.term.buffer.active;
+        const maxLine = buffer.length - this.term.rows;
+        const scrolledUp = maxLine - buffer.viewportY;
+        const nearBottom = scrolledUp < this.term.rows / 2;
+
+        this.fitAddon.fit();
+        this.sendResize();
+
+        if (nearBottom) {
+            this.term.scrollToBottom();
+        }
+    }
+
     connect() {
         this.debugLog('connect() called');
         if (this.reconnectTimeout) {
@@ -1863,8 +1881,7 @@ class TerminalUI extends HTMLElement {
 
         // Window resize
         this._resizeHandler = () => {
-            this.fitAddon.fit();
-            this.sendResize();
+            this.fitAndPreserveScroll();
         };
         window.addEventListener('resize', this._resizeHandler);
 
@@ -2450,12 +2467,7 @@ class TerminalUI extends HTMLElement {
         this.updateActiveTabIndicator();
 
         // Re-fit terminal after layout change
-        if (this.fitAddon) {
-            setTimeout(() => {
-                this.fitAddon.fit();
-                this.sendResize();
-            }, 50);
-        }
+        setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
     // Close iframe pane and return to 100% terminal
@@ -2477,12 +2489,7 @@ class TerminalUI extends HTMLElement {
         this.updateActiveTabIndicator();
 
         // Re-fit terminal to full width
-        if (this.fitAddon) {
-            setTimeout(() => {
-                this.fitAddon.fit();
-                this.sendResize();
-            }, 50);
-        }
+        setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
     // Update visual indicator for active tab (status bar and settings panel)
@@ -2573,12 +2580,7 @@ class TerminalUI extends HTMLElement {
             if (iframePane) iframePane.style.pointerEvents = '';
             this.savePaneWidth();
             // Trigger terminal resize and notify backend
-            if (this.fitAddon) {
-                setTimeout(() => {
-                    this.fitAddon.fit();
-                    this.sendResize();
-                }, 50);
-            }
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
         };
 
         // Double-click to reset to 50/50
@@ -2586,12 +2588,7 @@ class TerminalUI extends HTMLElement {
             this.iframePaneWidth = 50;
             this.applyPaneWidth();
             this.savePaneWidth();
-            if (this.fitAddon) {
-                setTimeout(() => {
-                    this.fitAddon.fit();
-                    this.sendResize();
-                }, 50);
-            }
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
         });
 
         resizer.addEventListener('mousedown', onMouseDown);
