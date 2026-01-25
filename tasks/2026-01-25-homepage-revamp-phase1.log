@@ -10,3 +10,12 @@ Expected:
   - Expiring recordings show Keep button
   - Recordings sorted by end time descending
 
+174226 - Browser test completed successfully
+Observed:
+  - Single 'Recordings' section (not separate Recent/Kept)
+  - Recording 1: session-370e7885, 'just now', 'Expires in 59m', Keep button
+  - Recording 2: session-90087e79, '2m ago', 'Saved', Delete button
+  - Recordings sorted by end time descending (most recent first)
+  - Kept and non-kept recordings interleaved correctly
+All Phase 1 verification criteria met.
+

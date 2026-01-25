@@ -61,25 +61,25 @@ else:
 
 ---
 
-## Phase 1: Interleave Recordings
+## Phase 1: Interleave Recordings ✅ COMPLETED
 
 ### What will be achieved
 The recordings section displays all recordings in a single interleaved list, sorted by session end time descending.
 
 ### Steps
-1. **Modify Go backend** (`main.go`): Change `AgentWithSessions` to provide single `Recordings []RecordingInfo` slice instead of separate `RecentRecordings` and `KeptRecordings`
-2. **Update sorting logic**: Sort combined recordings by `EndedAt` descending
-3. **Modify HTML template** (`selection.html`): Replace two recording sections with single loop that renders status/actions conditionally based on `IsKept`
+1. ✅ **Modify Go backend** (`main.go`): Added `ExpiresIn` field to `RecordingInfo` struct, calculate remaining time until auto-deletion
+2. ✅ **Update sorting logic**: Recordings already sorted by `EndedAt` descending in `loadEndedRecordings()`
+3. ✅ **Modify HTML template** (`selection.html`): Replaced two recording sections with single loop, shows "Saved"/"Expires in Xm" status and Keep/Delete buttons conditionally
 
 ### Verification
-1. `make test` - ensure no regressions
-2. `make build golden-update` - verify expected template changes
-3. **Manual browser test**:
-   - Start test container
-   - Navigate to homepage via MCP browser
-   - Create sessions, let some expire, keep some
-   - Verify recordings appear interleaved by end time
-   - Verify "Saved" recordings show Delete button, "Expires" show Keep button
+1. ✅ `make test` - all tests pass
+2. ✅ `make build golden-update` - golden tests updated
+3. ✅ **Manual browser test**:
+   - Started test container, navigated to homepage
+   - Created two sessions, kept one, left other expiring
+   - Verified single "Recordings" section with interleaved recordings
+   - Verified "Saved" recordings show Delete button, "Expires in Xm" show Keep button
+   - Verified sorting by end time descending (most recent first)
 
 ---
 

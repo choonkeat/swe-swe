@@ -3556,6 +3556,7 @@ type RecordingInfo struct {
 	EndedAt   time.Time  // actual timestamp for sorting
 	KeptAt    *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
 	IsKept    bool       // Convenience field for templates
+	ExpiresIn string     // "59m", "30m" - time until auto-deletion (only for non-kept)
 }
 
 // formatTimeAgo returns a human-readable relative time string
@@ -3655,6 +3656,21 @@ func loadEndedRecordings() []RecordingInfo {
 			if fileInfo, err := entry.Info(); err == nil {
 				info.EndedAt = fileInfo.ModTime()
 				info.EndedAgo = formatTimeAgo(fileInfo.ModTime())
+			}
+		}
+
+		// Calculate ExpiresIn for non-kept recordings
+		if !info.IsKept {
+			remaining := recentRecordingMaxAge - time.Since(info.EndedAt)
+			if remaining > 0 {
+				mins := int(remaining.Minutes())
+				if mins < 1 {
+					info.ExpiresIn = "<1m"
+				} else {
+					info.ExpiresIn = fmt.Sprintf("%dm", mins)
+				}
+			} else {
+				info.ExpiresIn = "soon"
 			}
 		}
 
