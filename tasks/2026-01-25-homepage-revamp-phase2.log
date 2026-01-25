@@ -1,3 +1,12 @@
 174328 - Starting Phase 2: New Session Dialog UI
 Expected: Add modal dialog with repo URL combo box, branch combo box, agent selection, Start Session button with progressive enablement
 
+174730 - Starting manual browser test for Phase 2
+Will do: Start test container, click '+ Start new session', verify dialog UI
+Expected: 
+  - Dialog opens when clicking '+ Start new session'
+  - Dialog has repo URL input with 'Next' button
+  - Branch input and agent selection are disabled initially
+  - Dialog closes via X button, ESC key, backdrop click
+  - Clicking 'Next' shows loading state then error (backend not implemented yet)
+
