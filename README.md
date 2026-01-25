@@ -373,6 +373,9 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - File upload via drag-and-drop (saved to `.swe-swe/uploads/`)
   - In-session chat for collaboration
   - YOLO mode toggle for supported agents (auto-approve actions)
+  - **Split-pane UI**: Side panel with Preview, Browser, and Shell tabs for app preview and debugging
+  - **Session recordings**: Automatic terminal recording with playback (streaming mode for large recordings)
+  - **Debug channel**: Agents can receive console logs, errors, and network requests from the App Preview via `swe-swe-server --debug-listen`
 
 #### chrome
 - **Ports**: 9223 (CDP), 6080 (VNC/noVNC)
@@ -426,6 +429,8 @@ The Dockerfile is located in `$HOME/.swe-swe/projects/{sanitized-path}/Dockerfil
 - Add Python: `apt-get install -y python3 python3-pip`
 - Add Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`
 - Add other tools via `apt-get`
+
+**UID:GID Placeholders**: The Dockerfile supports `{{UID}}` and `{{GID}}` placeholders that are replaced with the host user's UID/GID at init time. This ensures files created in the container have matching permissions on the host, eliminating permission conflicts when editing files from both sides.
 
 ### API Keys
 
@@ -622,6 +627,40 @@ YOLO mode allows agents to auto-approve actions without user confirmation. Toggl
 | OpenCode | Not supported (toggle hidden) |
 
 When toggled, the agent restarts with the appropriate YOLO flag. The status bar shows "YOLO" with a border indicator when active.
+
+### App Preview Debugging
+
+The App Preview (port 3000 by default) includes a debug channel that forwards browser events to agents. This lets agents debug what users see without needing visual access.
+
+**Listening for debug messages:**
+```bash
+# Inside container - receive console logs, errors, fetch/XHR requests
+swe-swe-server --debug-listen
+```
+
+Output is JSON lines:
+```json
+{"t":"console","m":"log","args":["Hello!"],"ts":...}
+{"t":"error","msg":"Uncaught TypeError","stack":"...","ts":...}
+{"t":"fetch","url":"/api/users","method":"GET","status":200,"ms":45,"ts":...}
+```
+
+**Querying DOM elements:**
+```bash
+# Query element by CSS selector
+swe-swe-server --debug-query ".error-message"
+```
+
+Response:
+```json
+{"t":"queryResult","found":true,"text":"Invalid email","visible":true}
+```
+
+**Prerequisites:**
+- User must have the Preview tab open in the split-pane UI
+- App must be running on port 3000 (or `SWE_PREVIEW_TARGET_PORT`)
+
+For detailed usage, see the `/debug-with-app-preview` slash command.
 
 ### Authentication
 
