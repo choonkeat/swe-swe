@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "0f5df858"
+	GitCommit = "f964a136"
 )
 
 var indexTemplate *template.Template
@@ -3746,6 +3746,14 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 	}
 	if rows < 24 {
 		rows = 24
+	}
+
+	// Cap at reasonable maximum to avoid huge pages from logs with many newlines
+	// 10000 rows is plenty for any reasonable terminal session
+	// The streaming template uses large scrollback (1M) so no content is lost
+	const maxRows = uint32(10000)
+	if rows > maxRows {
+		rows = maxRows
 	}
 
 	// Calculate cols from max line length
