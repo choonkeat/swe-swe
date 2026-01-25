@@ -538,6 +538,21 @@
             }
         })();
 
+        // Use embedded rendering for recordings on mobile devices.
+        // Streaming mode lacks touch-scroll-proxy that terminal-ui.js has,
+        // causing broken/janky scrolling. Embedded mode renders better.
+        (function() {
+            var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                           (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+            if (isMobile) {
+                document.querySelectorAll('a.recording-item__play').forEach(function(link) {
+                    if (link.href && link.href.indexOf('?') === -1) {
+                        link.href += '?render=embedded';
+                    }
+                });
+            }
+        })();
+
         function startNewSession(assistant, sessionUUID, debug) {
             // Start immediately without prompting (non-worktree session)
             navigateToSession(assistant, sessionUUID, debug, '');
