@@ -1114,7 +1114,7 @@ func TestPlaybackPage_InvalidUUID(t *testing.T) {
 	}
 }
 
-func TestPlaybackPage_EmbeddedHTML_Default(t *testing.T) {
+func TestPlaybackPage_StreamingHTML_Default(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1133,7 +1133,7 @@ func TestPlaybackPage_EmbeddedHTML_Default(t *testing.T) {
 	server := h.createTestServer()
 	defer server.Close()
 
-	// Default (no query param) should use embedded HTML
+	// Default (no query param) should use streaming HTML
 	resp, err := http.Get(server.URL + "/recording/" + testUUID)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -1171,13 +1171,13 @@ func TestPlaybackPage_EmbeddedHTML_Default(t *testing.T) {
 		t.Error("expected page to contain record-tui reference")
 	}
 
-	// Embedded HTML should have base64-encoded frame data (framesBase64)
-	if !strings.Contains(html, "framesBase64") {
-		t.Error("expected embedded HTML to have framesBase64 data")
+	// Streaming HTML should fetch data via fetch(), not embed it
+	if !strings.Contains(html, "fetch") {
+		t.Error("expected streaming HTML to use fetch() for data loading")
 	}
 }
 
-func TestPlaybackPage_StreamingHTML_WithQueryParam(t *testing.T) {
+func TestPlaybackPage_EmbeddedHTML_WithQueryParam(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1196,8 +1196,8 @@ func TestPlaybackPage_StreamingHTML_WithQueryParam(t *testing.T) {
 	server := h.createTestServer()
 	defer server.Close()
 
-	// ?render=streaming should use streaming HTML
-	resp, err := http.Get(server.URL + "/recording/" + testUUID + "?render=streaming")
+	// ?render=embedded should use embedded HTML
+	resp, err := http.Get(server.URL + "/recording/" + testUUID + "?render=embedded")
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -1218,9 +1218,9 @@ func TestPlaybackPage_StreamingHTML_WithQueryParam(t *testing.T) {
 		t.Error("expected playback page to use xterm.js")
 	}
 
-	// Streaming HTML should fetch data via fetch(), not embed it
-	if !strings.Contains(html, "fetch") {
-		t.Error("expected streaming HTML to use fetch() for data loading")
+	// Embedded HTML should have base64-encoded frame data (framesBase64)
+	if !strings.Contains(html, "framesBase64") {
+		t.Error("expected embedded HTML to have framesBase64 data")
 	}
 }
 

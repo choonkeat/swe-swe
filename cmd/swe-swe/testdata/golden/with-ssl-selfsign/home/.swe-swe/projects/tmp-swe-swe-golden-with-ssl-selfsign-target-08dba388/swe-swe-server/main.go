@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "f964a136"
+	GitCommit = "ba1810ea"
 )
 
 var indexTemplate *template.Template
@@ -3780,8 +3780,8 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 
 // handleRecordingPage serves the recording playback page
 // Query params:
-//   - render=streaming: use streaming approach (experimental, fetch data via JS)
-//   - (default): use embedded approach (stable, data in HTML)
+//   - render=embedded: use embedded approach (data in HTML, no streaming)
+//   - (default): use streaming approach (fetch data via JS)
 func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -3821,32 +3821,24 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	// Check render mode query parameter
 	renderMode := r.URL.Query().Get("render")
 
-	if renderMode == "streaming" {
-		// Use pre-calculated playback dimensions from metadata (fast path).
-		// Fall back to calculating from content for older recordings without these fields.
-		var cols uint16
-		var rows uint32
-		if metadata != nil && metadata.PlaybackCols > 0 {
-			cols = metadata.PlaybackCols
-			rows = metadata.PlaybackRows
-		} else {
-			// Legacy fallback: calculate from content (same algorithm as embedded mode's JS)
-			dims := calculateTerminalDimensions(logPath)
-			cols = dims.Cols
-			rows = dims.Rows
+	if renderMode == "embedded" {
+		// Embedded approach - read file, embed content in HTML
+		content, err := os.ReadFile(logPath)
+		if err != nil {
+			http.Error(w, "Failed to read recording", http.StatusInternalServerError)
+			return
 		}
-
-		opts := recordtui.StreamingOptions{
-			Title:   name,
-			DataURL: recordingUUID + "/session.log",
+		// Strip metadata and neutralize clear sequences
+		stripped := recordtui.StripMetadata(string(content))
+		html, err := recordtui.RenderHTML([]recordtui.Frame{
+			{Timestamp: 0, Content: stripped},
+		}, recordtui.Options{
+			Title: name,
 			FooterLink: recordtui.FooterLink{
 				Text: "swe-swe",
 				URL:  "https://github.com/choonkeat/swe-swe",
 			},
-			Cols:          cols,
-			EstimatedRows: rows,
-		}
-		html, err := recordtui.RenderStreamingHTML(opts)
+		})
 		if err != nil {
 			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
 			return
@@ -3855,23 +3847,27 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		return
 	}
 
-	// Default: embedded approach - read file, embed content in HTML
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		http.Error(w, "Failed to read recording", http.StatusInternalServerError)
-		return
+	// Default: streaming approach
+	var cols uint16
+	if metadata != nil && metadata.PlaybackCols > 0 {
+		cols = metadata.PlaybackCols
+	} else {
+		// Legacy fallback: calculate from content (same algorithm as embedded mode's JS)
+		dims := calculateTerminalDimensions(logPath)
+		cols = dims.Cols
 	}
-	// Strip metadata and neutralize clear sequences
-	stripped := recordtui.StripMetadata(string(content))
-	html, err := recordtui.RenderHTML([]recordtui.Frame{
-		{Timestamp: 0, Content: stripped},
-	}, recordtui.Options{
-		Title: name,
+
+	opts := recordtui.StreamingOptions{
+		Title:   name,
+		DataURL: recordingUUID + "/session.log",
 		FooterLink: recordtui.FooterLink{
 			Text: "swe-swe",
 			URL:  "https://github.com/choonkeat/swe-swe",
 		},
-	})
+		Cols:    cols,
+		MaxRows: 100000,
+	}
+	html, err := recordtui.RenderStreamingHTML(opts)
 	if err != nil {
 		http.Error(w, "Failed to render playback", http.StatusInternalServerError)
 		return
