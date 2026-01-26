@@ -306,6 +306,7 @@ class TerminalUI extends HTMLElement {
                     <div class="terminal-ui__terminal-bar-left desktop-only">
                         <span class="terminal-ui__terminal-icon">>_</span>
                         <span>Agent Terminal</span>
+                        <span class="terminal-ui__assistant-badge">CLAUDE</span>
                     </div>
                     <!-- Mobile view switcher in terminal bar -->
                     <div class="terminal-ui__view-tabs mobile-only">
@@ -318,7 +319,14 @@ class TerminalUI extends HTMLElement {
                             <span>Workspace</span>
                         </button>
                     </div>
-                    <span class="terminal-ui__assistant-badge">CLAUDE</span>
+                    <span class="terminal-ui__assistant-badge mobile-only">CLAUDE</span>
+                    <div class="terminal-ui__nav-divider desktop-only"></div>
+                    <div class="terminal-ui__panel-tabs desktop-only">
+                        <button data-tab="preview" class="active">Preview</button>
+                        <button data-tab="vscode">Code</button>
+                        <button data-tab="shell">Terminal</button>
+                        <button data-tab="browser">Agent View</button>
+                    </div>
                 </div>
 
                 <!-- Main Content -->
@@ -332,12 +340,6 @@ class TerminalUI extends HTMLElement {
                         </div>
                         <div class="terminal-ui__resizer"></div>
                         <div class="terminal-ui__iframe-pane">
-                            <div class="terminal-ui__panel-tabs desktop-only">
-                                <button data-tab="preview" class="active">Preview</button>
-                                <button data-tab="vscode">Code</button>
-                                <button data-tab="shell">Terminal</button>
-                                <button data-tab="browser">Agent View</button>
-                            </div>
                             <div class="terminal-ui__panel-dropdown mobile-only">
                                 <select class="terminal-ui__panel-select">
                                     <option value="preview">Preview</option>

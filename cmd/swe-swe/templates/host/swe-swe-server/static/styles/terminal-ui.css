@@ -1446,12 +1446,12 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
 .terminal-ui__terminal-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     height: 40px;
     padding: 0 16px;
     background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
+    gap: 0;
 }
 
 .terminal-ui__terminal-bar-left {
@@ -1460,6 +1460,13 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     gap: 8px;
     font-size: 13px;
     color: var(--text-muted);
+}
+
+.terminal-ui__nav-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border-primary);
+    margin: 0 12px;
 }
 
 .terminal-ui__terminal-icon {
@@ -1541,14 +1548,11 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     inset: 0;
 }
 
-/* === Panel Tabs === */
+/* === Panel Tabs (now inside terminal bar) === */
 .terminal-ui__panel-tabs {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 8px 12px;
-    background: var(--bg-tertiary);
-    border-bottom: 1px solid var(--border-primary);
 }
 
 .terminal-ui__panel-tabs button {

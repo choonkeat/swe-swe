@@ -72,7 +72,7 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 5: Session Page Top Navigation Colors Inconsistent
 
-**Status**: Open
+**Status**: Fixed (2026-01-26)
 
 **Description**: The colors of the top navigation elements on the session page don't match - some areas use the correct navy blue theme while others have different styling.
 
@@ -86,7 +86,7 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 6: Second-Level Navigation Layout Wrong (Two Rows Instead of One)
 
-**Status**: Open
+**Status**: Fixed (2026-01-26)
 
 **Description**: The second-level navigation on the session page is split across two rows when it should be a single row.
 
