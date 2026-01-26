@@ -172,3 +172,6 @@ curl http://localhost:3000/
 ```
 
 If localhost works but `swe-swe:3000` doesn't from Chrome, check Docker networking.
+
+### MCP browser can't click on terminal
+Xterm's `touch-scroll-proxy` div intercepts pointer events. Use `browser_type` with `fill` + `submit: true` instead of `browser_click` on the terminal textarea.
