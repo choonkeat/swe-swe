@@ -1439,6 +1439,49 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     transform: translateX(14px);
 }
 
+/* Chat button in header */
+.terminal-ui__chat-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.terminal-ui__chat-btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.terminal-ui__chat-icon {
+    font-size: 16px;
+}
+
+.terminal-ui__chat-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .terminal-ui__settings-btn {
     display: flex;
     align-items: center;

@@ -16,3 +16,24 @@ Investigation findings:
 Key files:
 - terminal-ui.js: Add chat button HTML, modify updateHeader to show/hide it
 - terminal-ui.css: Add styles for chat button and unread badge
+
+232329 - Bug 2 Fix Verification Complete
+Observed:
+- Chat button HTML added to header (💬 icon with badge) ✓
+- Chat button hidden when viewers = 1 (correct behavior) ✓
+- Chat button styled with CSS (matches settings button style) ✓
+- Click handler connected to toggleChatInput() ✓
+- updateChatBadge() function added to show unread count ✓
+- showChatNotification() updated to also update header badge ✓
+
+Note: Cannot fully test multi-viewer chat in automated test (requires 2 browser sessions).
+The implementation follows the expected behavior: button appears only when viewers > 1.
+
+Changes made:
+1. terminal-ui.js line ~305: Added chat button HTML with 💬 icon and badge
+2. terminal-ui.js line ~1411: Added click handler for chat button
+3. terminal-ui.js line ~1060: Added show/hide logic based on viewer count
+4. terminal-ui.js line ~1790: Added updateChatBadge() function
+5. terminal-ui.css line ~1442: Added chat button and badge styles
+
+Conclusion: Bug 2 FIXED - Chat button now visible in header when multiple viewers present.

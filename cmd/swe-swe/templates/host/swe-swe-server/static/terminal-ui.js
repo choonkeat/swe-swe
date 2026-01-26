@@ -302,6 +302,10 @@ class TerminalUI extends HTMLElement {
                     </div>
                     <div class="terminal-ui__header-right">
                         <span class="terminal-ui__viewers desktop-only"></span>
+                        <button class="terminal-ui__chat-btn desktop-only" title="Chat with viewers" style="display: none;">
+                            <span class="terminal-ui__chat-icon">💬</span>
+                            <span class="terminal-ui__chat-badge" style="display: none;">0</span>
+                        </button>
                         <span class="terminal-ui__yolo-toggle desktop-only" style="display: none;">
                             <span>YOLO</span>
                             <span class="toggle-switch"></span>
@@ -1053,6 +1057,12 @@ class TerminalUI extends HTMLElement {
             }
         }
 
+        // Show/hide chat button based on viewer count
+        const chatBtn = this.querySelector('.terminal-ui__chat-btn');
+        if (chatBtn) {
+            chatBtn.style.display = (this.viewers > 1) ? 'inline-flex' : 'none';
+        }
+
         if (assistantBadge) {
             // Show assistant name in badge
             assistantBadge.textContent = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
@@ -1401,6 +1411,17 @@ class TerminalUI extends HTMLElement {
         if (yoloToggle) {
             yoloToggle.addEventListener('click', () => {
                 this.toggleYoloMode();
+            });
+        }
+
+        // Chat button in header
+        const chatBtn = this.querySelector('.terminal-ui__chat-btn');
+        if (chatBtn) {
+            chatBtn.addEventListener('click', () => {
+                this.toggleChatInput();
+                // Reset unread count when opening chat
+                this.unreadChatCount = 0;
+                this.updateChatBadge();
             });
         }
 
@@ -1767,6 +1788,20 @@ class TerminalUI extends HTMLElement {
         } else {
             badge.textContent = count;
             badge.style.display = 'block';
+        }
+        // Also update header chat badge
+        this.updateChatBadge();
+    }
+
+    updateChatBadge() {
+        const badge = this.querySelector('.terminal-ui__chat-badge');
+        if (!badge) return;
+
+        if (this.unreadChatCount > 0) {
+            badge.textContent = this.unreadChatCount > 99 ? '99+' : this.unreadChatCount;
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
         }
     }
 
