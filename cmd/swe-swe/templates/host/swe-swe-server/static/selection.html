@@ -33,26 +33,30 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 24px 32px;
+            padding: 16px 24px;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
         }
         .header__logo {
-            width: 48px;
-            height: 48px;
+            width: 40px;
+            height: 40px;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: rgba(124, 58, 237, 0.15);
+            border-radius: 8px;
         }
         .header__logo svg {
-            width: 32px;
-            height: 32px;
+            width: 24px;
+            height: 24px;
         }
         .header__text h1 {
-            font-size: 24px;
-            font-weight: 700;
+            font-size: 18px;
+            font-weight: 600;
             color: #f8fafc;
         }
         .header__text p {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 500;
             color: #64748b;
             text-transform: uppercase;
@@ -716,21 +720,21 @@
         /* Mobile responsiveness */
         @media (max-width: 640px) {
             .header {
-                padding: 16px 20px;
+                padding: 12px 16px;
             }
             .header__logo {
-                width: 40px;
-                height: 40px;
+                width: 36px;
+                height: 36px;
             }
             .header__logo svg {
-                width: 28px;
-                height: 28px;
+                width: 20px;
+                height: 20px;
             }
             .header__text h1 {
-                font-size: 20px;
+                font-size: 16px;
             }
             .header__text p {
-                font-size: 10px;
+                font-size: 9px;
             }
 
             .main {
@@ -942,14 +946,6 @@
                                     </svg>
                                     {{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}
                                 </div>
-                                {{if .Branch}}
-                                <div class="session-card__branch">
-                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M6 3V15M6 15C7.65685 15 9 16.3431 9 18C9 19.6569 7.65685 21 6 21C4.34315 21 3 19.6569 3 18C3 16.3431 4.34315 15 6 15ZM18 9C19.6569 9 21 7.65685 21 6C21 4.34315 19.6569 3 18 3C16.3431 3 15 4.34315 15 6C15 7.65685 16.3431 9 18 9ZM18 9V10C18 12.2091 16.2091 14 14 14H9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                    </svg>
-                                    {{.Branch}}
-                                </div>
-                                {{end}}
                             </div>
                             <span class="agent-badge agent-badge--{{.Assistant}}">{{.Assistant}}</span>
                         </div>
