@@ -18,3 +18,21 @@
 - Change `this.closeIframePane()` to `this.switchPanelTab('preview')`
 - This will keep the right panel open but show the App Preview instead of the exited shell
 
+### 2026-01-26 23:33 - Fix Implementation
+
+**Fix implemented**: Changed line 2220 from `this.closeIframePane()` to `this.switchPanelTab('preview')`
+
+Build and tests passed.
+
+### 2026-01-26 23:34 - Verification Phase
+
+**What will be done**:
+1. Navigate to test container homepage at http://host.docker.internal:9770/
+2. Login with password "changeme"
+3. Create a new OpenCode session
+4. Click "Terminal" tab in right panel to open a shell
+5. Type "exit" in the shell to close it
+6. Verify that the panel switches to "Preview" tab instead of closing
+
+**Expected outcome**: After typing "exit" in the right-panel shell, the right panel should remain visible and switch to the Preview tab.
+
