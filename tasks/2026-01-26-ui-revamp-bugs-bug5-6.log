@@ -55,3 +55,12 @@ Target layout:
 
 Action: Restructure HTML so each panel has its own header row
 Expected: Two side-by-side panel headers at same vertical position
+
+225056 - Verification step: Navigate to session page with ?preview mode
+Expected:
+1. LEFT panel has its own header row containing: ">_ Agent Terminal [CLAUDE badge]"
+2. RIGHT panel has its own header row containing: "Preview | Code | Terminal | Agent View" tabs
+3. Both headers have same navy blue background (var(--bg-tertiary))
+4. Headers sit side-by-side, NOT in a single full-width bar
+
+Action: Navigate to http://host.docker.internal:9770/opencode?preview
