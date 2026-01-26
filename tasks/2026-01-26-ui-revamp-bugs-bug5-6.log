@@ -39,3 +39,19 @@ Screenshot bug5-6-preview-mode.png confirms:
 - Consistent background color across entire navigation bar
 
 Result: Bug 5+6 VERIFIED FIXED
+
+224706 - REDO Bug 5+6: Previous fix was wrong
+Previous fix created a single full-width nav bar with both left and right sections.
+CORRECT layout requires SEPARATE panel headers inside each panel container.
+
+Target layout:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ←  Session [main]  ● Connected • 0m          U1 +24  [YOLO]  ⚙             │  <- Main Header
+├───────────────────────────────────┬─────────────────────────────────────────┤
+│ >_ Agent Terminal    [CLAUDE SAFE]│ ⊕Preview  </>Code  >_Terminal  ⚡Agent  │  <- Panel headers (SEPARATE)
+├───────────────────────────────────┼─────────────────────────────────────────┤
+│           {xterm}                 │            {app preview}                │
+└───────────────────────────────────┴─────────────────────────────────────────┘
+
+Action: Restructure HTML so each panel has its own header row
+Expected: Two side-by-side panel headers at same vertical position
