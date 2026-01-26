@@ -17,6 +17,9 @@ cmd/swe-swe/templates/host/swe-swe-server/
 ## Quick Start
 
 ```bash
+# From /workspace root directory
+cd /workspace
+
 # Start dev server on port 3000 (background, with logs)
 make run > /tmp/server.log 2>&1 &
 
