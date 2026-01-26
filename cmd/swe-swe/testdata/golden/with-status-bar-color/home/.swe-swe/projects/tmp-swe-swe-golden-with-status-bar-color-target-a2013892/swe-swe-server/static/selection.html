@@ -414,6 +414,11 @@
             display: flex;
             align-items: center;
             gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .recording-card:hover .recording-card__btn-group {
+            opacity: 1;
         }
         .btn-icon {
             width: 32px;
