@@ -4,3 +4,24 @@ Bug 6: Second-level navigation should be single row, not two rows
 
 Action: Investigate terminal-ui.css and terminal-ui.js for navigation structure
 Expected: Find the navigation elements and understand current layout
+
+222617 - Implementation complete
+Changes made:
+
+1. terminal-ui.js:
+   - Moved panel tabs (Preview, Code, Terminal, Agent View) into .terminal-ui__terminal-bar
+   - Added .terminal-ui__nav-divider between left side (Agent Terminal + badge) and right side (panel tabs)
+   - Moved assistant badge inside .terminal-ui__terminal-bar-left for desktop
+   - Kept separate mobile badge for mobile view
+   - Removed duplicate panel tabs from .terminal-ui__iframe-pane
+
+2. terminal-ui.css:
+   - Removed justify-content: space-between from terminal bar (now uses natural flex)
+   - Added .terminal-ui__nav-divider styles (1px vertical line, 20px height)
+   - Removed background/border/padding from .terminal-ui__panel-tabs (now inherits from terminal bar)
+
+Result: Single row navigation with divider:
+  [>_ Agent Terminal] [CLAUDE badge] | [Preview] [Code] [Terminal] [Agent View]
+
+Note: Visual verification not possible in dev environment (WebSocket required for terminal UI).
+JS syntax verified clean via node --check.
