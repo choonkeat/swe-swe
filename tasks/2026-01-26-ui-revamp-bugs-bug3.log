@@ -1,0 +1,3 @@
+144336 - Starting Bug 3: Session Keep/Trash Icons Only Visible on Hover
+Action: Investigate homepage CSS for session list hover styles
+Expected: Find CSS rules that hide icons by default and show on hover
