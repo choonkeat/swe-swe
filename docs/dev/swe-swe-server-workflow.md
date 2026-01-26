@@ -17,12 +17,17 @@ cmd/swe-swe/templates/host/swe-swe-server/
 ## Quick Start
 
 ```bash
-# Start dev server on port 3000
-make run &
+# Start dev server on port 3000 (background, with logs)
+make run > /tmp/server.log 2>&1 &
+
+# View startup logs
+cat /tmp/server.log
 
 # Stop dev server
 make stop
 ```
+
+**Note**: First run downloads Go dependencies, which may take a moment.
 
 ## Access Points
 
@@ -42,16 +47,20 @@ Both work because:
 # 1. Edit server code
 vim cmd/swe-swe/templates/host/swe-swe-server/main.go
 
-# 2. Start dev server (runs in foreground, use & for background)
-make run &
+# 2. Start dev server (background with logs)
+make run > /tmp/server.log 2>&1 &
 
-# 3. Test via MCP browser
+# 3. Verify server started
+cat /tmp/server.log
+curl -s http://localhost:3000/ | head -1  # should show <!DOCTYPE html>
+
+# 4. Test via MCP browser
 #    Navigate to: http://swe-swe:3000
 
-# 4. Stop server when done or before restarting
+# 5. Stop server when done or before restarting
 make stop
 
-# 5. Repeat from step 1
+# 6. Repeat from step 1
 ```
 
 ## Makefile Targets
@@ -113,7 +122,7 @@ This copies the template to `/tmp`, runs tests, and syncs `go.sum` changes back.
 | Aspect | Dev Server | Production |
 |--------|------------|------------|
 | Port | 3000 | 9898 |
-| Preview proxy | Skipped (port busy) | Runs on 9899 |
+| Preview proxy | Disabled via `-no-preview-proxy` | Runs on 9899 |
 | Build | `go run` (JIT compile) | Pre-compiled binary |
 | Source | Template directory | Embedded in CLI |
 
