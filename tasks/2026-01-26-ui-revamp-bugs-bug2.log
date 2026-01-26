@@ -1,0 +1,18 @@
+231932 - Bug 2 Investigation Complete
+What will be done: Add visible chat button to header when viewers > 1
+Expected outcome:
+- Chat icon/button should appear in header when there are 2+ viewers
+- Clicking the button should toggle the chat input overlay
+- Button should show unread message badge when new messages arrive
+- Chat functionality (send/receive) should continue working as before
+
+Investigation findings:
+- Chat is NOT broken - fully implemented on frontend and backend
+- WebSocket chat messages work (type: 'chat')
+- Chat overlay, input field, and JavaScript functions all present
+- The issue is discoverability - "X others" link is hidden in legacy status bar
+- Need to add a visible chat trigger in the new header design
+
+Key files:
+- terminal-ui.js: Add chat button HTML, modify updateHeader to show/hide it
+- terminal-ui.css: Add styles for chat button and unread badge
