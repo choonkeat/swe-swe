@@ -1043,8 +1043,8 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     flex-direction: row;
 }
 
-.terminal-ui.iframe-visible .terminal-ui__terminal {
-    /* Terminal takes left side, width controlled by JS */
+.terminal-ui.iframe-visible .terminal-ui__terminal-wrapper {
+    /* Terminal wrapper takes left side, width controlled by JS */
     flex: none;
     width: 50%;
 }
@@ -1209,7 +1209,7 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     .terminal-ui.iframe-visible .terminal-ui__split-pane {
         flex-direction: column;
     }
-    .terminal-ui.iframe-visible .terminal-ui__terminal {
+    .terminal-ui.iframe-visible .terminal-ui__terminal-wrapper {
         width: 100% !important;
         flex: 1;
     }
@@ -1218,5 +1218,454 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     }
     .terminal-ui.iframe-visible .terminal-ui__iframe-pane {
         display: none;
+    }
+}
+
+/* === New Header (56px) === */
+.terminal-ui__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 16px;
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+    z-index: 20;
+}
+
+.terminal-ui__header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1;
+}
+
+.terminal-ui__header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.terminal-ui__back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: #333;
+    border: none;
+    border-radius: 8px;
+    color: #d4d4d4;
+    font-size: 18px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.terminal-ui__back-btn:hover {
+    background: #444;
+}
+
+.terminal-ui__session-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.terminal-ui__session-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+.terminal-ui__session-name:hover {
+    color: #fff;
+}
+
+.terminal-ui__branch-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    background: #3c3c3c;
+    color: #a0a0a0;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.terminal-ui__connection-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #888;
+}
+
+.terminal-ui__status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #888;
+}
+
+.terminal-ui__status-dot.connected {
+    background: #4caf50;
+}
+
+.terminal-ui__status-dot.connecting,
+.terminal-ui__status-dot.reconnecting {
+    background: #f5a623;
+    animation: terminal-ui-pulse 1s infinite;
+}
+
+.terminal-ui__status-dot.error {
+    background: #ef4444;
+}
+
+.terminal-ui__status-text {
+    display: inline;
+}
+
+.terminal-ui__uptime {
+    color: #666;
+}
+
+.terminal-ui__viewers {
+    display: flex;
+    align-items: center;
+}
+
+.terminal-ui__viewer-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #555;
+    border: 2px solid #1e1e1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #d4d4d4;
+    margin-left: -8px;
+}
+
+.terminal-ui__viewer-avatar:first-child {
+    margin-left: 0;
+}
+
+.terminal-ui__viewer-count {
+    font-size: 12px;
+    color: #888;
+    margin-left: 4px;
+}
+
+.terminal-ui__yolo-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #888;
+    cursor: pointer;
+}
+
+.terminal-ui__yolo-toggle .toggle-switch {
+    width: 32px;
+    height: 18px;
+    background: #505050;
+    border-radius: 9px;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.terminal-ui__yolo-toggle .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.terminal-ui__yolo-toggle.active .toggle-switch {
+    background: #f97316;
+}
+
+.terminal-ui__yolo-toggle.active .toggle-switch::after {
+    transform: translateX(14px);
+}
+
+.terminal-ui__settings-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: #888;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.terminal-ui__settings-btn:hover {
+    background: #333;
+    color: #d4d4d4;
+}
+
+/* === Terminal Bar (40px) === */
+.terminal-ui__terminal-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 40px;
+    padding: 0 16px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+
+.terminal-ui__terminal-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #888;
+}
+
+.terminal-ui__terminal-icon {
+    font-family: monospace;
+    font-size: 14px;
+    color: #4caf50;
+}
+
+.terminal-ui__assistant-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+/* === Main Content Area === */
+.terminal-ui__main-content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* === Terminal Wrapper (contains terminal + touch scroll proxy) === */
+.terminal-ui__terminal-wrapper {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+}
+
+.terminal-ui__terminal-wrapper .terminal-ui__terminal {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+
+.terminal-ui__terminal-wrapper .touch-scroll-proxy {
+    position: absolute;
+    inset: 0;
+}
+
+/* === Panel Tabs === */
+.terminal-ui__panel-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 12px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+}
+
+.terminal-ui__panel-tabs button {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    background: transparent;
+    color: #888;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.terminal-ui__panel-tabs button:hover {
+    background: #333;
+    color: #d4d4d4;
+}
+
+.terminal-ui__panel-tabs button.active {
+    background: #333;
+    color: #fff;
+}
+
+/* === Panel Dropdown (mobile alternative to tabs) === */
+.terminal-ui__panel-dropdown {
+    display: none;
+    padding: 8px 12px;
+    background: #252525;
+    border-bottom: 1px solid #333;
+}
+
+.terminal-ui__panel-dropdown select {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    background: #333;
+    color: #d4d4d4;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    outline: none;
+}
+
+/* === Mobile Bottom Nav (56px) === */
+.terminal-ui__mobile-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: #1e1e1e;
+    border-top: 1px solid #333;
+    z-index: 25;
+}
+
+.terminal-ui__mobile-nav button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.2s, background 0.2s;
+}
+
+.terminal-ui__mobile-nav button:active {
+    background: #333;
+}
+
+.terminal-ui__mobile-nav button.active {
+    color: #4caf50;
+}
+
+.terminal-ui__mobile-nav-icon {
+    font-size: 20px;
+}
+
+/* === Responsive: Desktop-only / Mobile-only === */
+.desktop-only {
+    display: inline-flex;
+}
+
+.mobile-only {
+    display: none;
+}
+
+@media (max-width: 639px) {
+    .desktop-only {
+        display: none !important;
+    }
+
+    .mobile-only {
+        display: flex !important;
+    }
+
+    /* Mobile header adjustments */
+    .terminal-ui__header {
+        height: 48px;
+        padding: 0 12px;
+    }
+
+    .terminal-ui__header-left {
+        gap: 8px;
+    }
+
+    .terminal-ui__back-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+    }
+
+    .terminal-ui__session-name {
+        font-size: 13px;
+        max-width: 120px;
+    }
+
+    /* Mobile terminal bar adjustments */
+    .terminal-ui__terminal-bar {
+        height: 32px;
+        padding: 0 12px;
+    }
+
+    .terminal-ui__terminal-bar-left {
+        font-size: 12px;
+    }
+
+    /* Show mobile bottom nav */
+    .terminal-ui__mobile-nav {
+        display: flex;
+    }
+
+    /* Add padding for fixed mobile nav */
+    .terminal-ui__main-content {
+        padding-bottom: 56px;
+    }
+
+    /* Mobile view switching */
+    .terminal-ui.mobile-view-workspace .terminal-ui__terminal-wrapper {
+        display: none;
+    }
+
+    .terminal-ui.mobile-view-workspace .terminal-ui__iframe-pane {
+        display: flex !important;
+        flex: 1;
+    }
+
+    .terminal-ui.mobile-view-workspace .mobile-keyboard {
+        display: none !important;
+    }
+
+    .terminal-ui.mobile-view-terminal .terminal-ui__iframe-pane {
+        display: none !important;
+    }
+
+    /* Panel dropdown on mobile */
+    .terminal-ui__panel-tabs {
+        display: none;
+    }
+
+    .terminal-ui__panel-dropdown {
+        display: block;
     }
 }

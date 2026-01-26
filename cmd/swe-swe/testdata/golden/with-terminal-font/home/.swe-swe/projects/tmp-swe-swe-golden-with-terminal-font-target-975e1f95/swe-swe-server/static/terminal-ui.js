@@ -56,6 +56,8 @@ class TerminalUI extends HTMLElement {
         // Split-pane constants for desktop detection
         this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
         this.RESIZER_WIDTH = 8;     // width of the resizer handle
+        // Mobile view state
+        this.mobileActiveView = 'terminal'; // 'terminal' | 'workspace'
     }
 
     static get observedAttributes() {
@@ -275,31 +277,84 @@ class TerminalUI extends HTMLElement {
                         <button class="terminal-ui__paste-cancel-btn">Cancel</button>
                     </div>
                 </div>
-                <div class="terminal-ui__split-pane">
-                    <div class="terminal-ui__terminal"></div>
-                    <div class="terminal-ui__resizer"></div>
-                    <div class="terminal-ui__iframe-pane">
-                        <div class="terminal-ui__iframe-location">
-                            <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
-                            <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
-                            <span class="terminal-ui__iframe-url"></span>
-                            <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL to debug..." />
-                            <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
+                <!-- Header -->
+                <header class="terminal-ui__header">
+                    <div class="terminal-ui__header-left">
+                        <a href="/" class="terminal-ui__back-btn" title="Back to sessions">←</a>
+                        <div class="terminal-ui__session-info">
+                            <span class="terminal-ui__session-name">Session</span>
+                            <span class="terminal-ui__branch-badge desktop-only"></span>
                         </div>
-                        <div class="terminal-ui__iframe-container">
-                            <div class="terminal-ui__iframe-placeholder">
-                                Loading...
-                                <div class="terminal-ui__iframe-placeholder-hint">
-                                    If you have issues, check the URL or try refreshing.
-                                </div>
+                        <span class="terminal-ui__connection-status">
+                            <span class="terminal-ui__status-dot"></span>
+                            <span class="terminal-ui__status-text desktop-only">Connecting...</span>
+                            <span class="terminal-ui__uptime desktop-only"></span>
+                        </span>
+                    </div>
+                    <div class="terminal-ui__header-right">
+                        <span class="terminal-ui__viewers desktop-only"></span>
+                        <span class="terminal-ui__yolo-toggle desktop-only" style="display: none;">
+                            <span>YOLO</span>
+                            <span class="toggle-switch"></span>
+                        </span>
+                        <button class="terminal-ui__settings-btn" title="Settings">⚙</button>
+                    </div>
+                </header>
+
+                <!-- Terminal Bar -->
+                <div class="terminal-ui__terminal-bar">
+                    <div class="terminal-ui__terminal-bar-left">
+                        <span class="terminal-ui__terminal-icon">>_</span>
+                        <span>Agent Terminal</span>
+                    </div>
+                    <span class="terminal-ui__assistant-badge">CLAUDE</span>
+                </div>
+
+                <!-- Main Content -->
+                <div class="terminal-ui__main-content">
+                    <div class="terminal-ui__split-pane">
+                        <div class="terminal-ui__terminal-wrapper">
+                            <div class="terminal-ui__terminal"></div>
+                            <div class="touch-scroll-proxy">
+                                <div class="scroll-spacer"></div>
                             </div>
-                            <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+                        </div>
+                        <div class="terminal-ui__resizer"></div>
+                        <div class="terminal-ui__iframe-pane">
+                            <div class="terminal-ui__panel-tabs desktop-only">
+                                <button data-tab="preview" class="active">Preview</button>
+                                <button data-tab="vscode">Code</button>
+                                <button data-tab="shell">Terminal</button>
+                                <button data-tab="browser">Agent View</button>
+                            </div>
+                            <div class="terminal-ui__panel-dropdown mobile-only">
+                                <select class="terminal-ui__panel-select">
+                                    <option value="preview">Preview</option>
+                                    <option value="vscode">Code</option>
+                                    <option value="shell">Terminal</option>
+                                    <option value="browser">Agent View</option>
+                                </select>
+                            </div>
+                            <div class="terminal-ui__iframe-location">
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
+                                <span class="terminal-ui__iframe-url"></span>
+                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL to debug..." />
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
+                            </div>
+                            <div class="terminal-ui__iframe-container">
+                                <div class="terminal-ui__iframe-placeholder">
+                                    Loading...
+                                    <div class="terminal-ui__iframe-placeholder-hint">
+                                        If you have issues, check the URL or try refreshing.
+                                    </div>
+                                </div>
+                                <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="touch-scroll-proxy">
-                    <div class="scroll-spacer"></div>
-                </div>
+
                 <div class="mobile-keyboard">
                     <div class="mobile-keyboard__main">
                         <button data-key="Escape">Esc</button>
@@ -336,10 +391,24 @@ class TerminalUI extends HTMLElement {
                         <button class="mobile-keyboard__send">Enter</button>
                     </div>
                 </div>
-                <div class="terminal-ui__status-bar">
+
+                <!-- Mobile Bottom Nav -->
+                <nav class="terminal-ui__mobile-nav mobile-only">
+                    <button data-view="terminal" class="active">
+                        <span class="terminal-ui__mobile-nav-icon">>_</span>
+                        <span>Terminal</span>
+                    </button>
+                    <button data-view="workspace">
+                        <span class="terminal-ui__mobile-nav-icon">📁</span>
+                        <span>Workspace</span>
+                    </button>
+                </nav>
+
+                <!-- Status bar (legacy, will be removed) -->
+                <div class="terminal-ui__status-bar" style="display: none;">
                     <div class="terminal-ui__status-left">
                         <div class="terminal-ui__status-icon"></div>
-                        <span class="terminal-ui__status-text">Connecting...</span>
+                        <span class="terminal-ui__status-text-legacy">Connecting...</span>
                     </div>
                     <div class="terminal-ui__status-right">
                         <span class="terminal-ui__status-info"></span>
@@ -495,18 +564,46 @@ class TerminalUI extends HTMLElement {
     }
 
     updateStatus(state, message) {
-        const statusBar = this.querySelector('.terminal-ui__status-bar');
+        // Update new header elements
+        const statusDot = this.querySelector('.terminal-ui__status-dot');
         const statusText = this.querySelector('.terminal-ui__status-text');
         const terminalEl = this.querySelector('.terminal-ui__terminal');
 
-        // Preserve multiuser class if present
-        const isMultiuser = statusBar.classList.contains('multiuser');
-        statusBar.className = 'terminal-ui__status-bar ' + state;
-        if (isMultiuser) {
-            statusBar.classList.add('multiuser');
+        // Update status dot class
+        if (statusDot) {
+            statusDot.className = 'terminal-ui__status-dot';
+            if (state) {
+                statusDot.classList.add(state);
+            }
         }
-        statusText.innerHTML = message;
+
+        // Update status text (only in header, not the legacy status bar)
+        if (statusText) {
+            // For non-connected states, show the message
+            // For connected state, updateStatusInfo will handle the display
+            if (state !== 'connected') {
+                statusText.textContent = message;
+            } else {
+                statusText.textContent = 'Connected';
+            }
+        }
+
+        // Update terminal disconnected state
         terminalEl.classList.toggle('disconnected', state !== 'connected' && state !== '');
+
+        // Legacy: also update status bar if present (for backwards compatibility)
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
+        if (statusBar) {
+            const isMultiuser = statusBar.classList.contains('multiuser');
+            statusBar.className = 'terminal-ui__status-bar ' + state;
+            if (isMultiuser) {
+                statusBar.classList.add('multiuser');
+            }
+            const legacyStatusText = statusBar.querySelector('.terminal-ui__status-text-legacy');
+            if (legacyStatusText) {
+                legacyStatusText.innerHTML = message;
+            }
+        }
 
         // Clear status info when not connected
         if (state !== 'connected') {
@@ -518,11 +615,17 @@ class TerminalUI extends HTMLElement {
     startUptimeTimer() {
         if (this.uptimeInterval) clearInterval(this.uptimeInterval);
         this.connectedAt = Date.now();
+        // Update new header uptime element
+        const uptimeEl = this.querySelector('.terminal-ui__uptime');
+        // Also update legacy timer element
         const timerEl = this.querySelector('.terminal-ui__status-timer');
         this.uptimeInterval = setInterval(() => {
-            timerEl.textContent = formatDuration(Date.now() - this.connectedAt);
+            const duration = formatDuration(Date.now() - this.connectedAt);
+            if (uptimeEl) uptimeEl.textContent = '• ' + duration;
+            if (timerEl) timerEl.textContent = duration;
         }, 1000);
-        timerEl.textContent = '0s';
+        if (uptimeEl) uptimeEl.textContent = '• 0s';
+        if (timerEl) timerEl.textContent = '0s';
     }
 
     stopUptimeTimer() {
@@ -530,6 +633,8 @@ class TerminalUI extends HTMLElement {
             clearInterval(this.uptimeInterval);
             this.uptimeInterval = null;
         }
+        const uptimeEl = this.querySelector('.terminal-ui__uptime');
+        if (uptimeEl) uptimeEl.textContent = '';
         const timerEl = this.querySelector('.terminal-ui__status-timer');
         if (timerEl) timerEl.textContent = '';
     }
@@ -913,20 +1018,51 @@ class TerminalUI extends HTMLElement {
     }
 
     updateStatusInfo() {
-        const statusBar = this.querySelector('.terminal-ui__status-bar');
-        const statusText = this.querySelector('.terminal-ui__status-text');
-        const dimsEl = this.querySelector('.terminal-ui__status-dims');
-
-        if (!statusText) return;
-
-        // Toggle multiuser class based on viewer count
-        statusBar.classList.toggle('multiuser', this.viewers > 1);
-        // Toggle yolo class based on YOLO mode
-        statusBar.classList.toggle('yolo', this.yoloMode);
-
         const isConnected = this.ws && this.ws.readyState === WebSocket.OPEN;
 
-        if (isConnected) {
+        // Update new header elements
+        const sessionNameEl = this.querySelector('.terminal-ui__session-name');
+        const viewersEl = this.querySelector('.terminal-ui__viewers');
+        const assistantBadge = this.querySelector('.terminal-ui__assistant-badge');
+        const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
+
+        if (sessionNameEl) {
+            sessionNameEl.textContent = this.sessionName || this.uuidShort || 'Session';
+        }
+
+        if (viewersEl && isConnected) {
+            if (this.viewers > 1) {
+                // Show viewer count
+                viewersEl.innerHTML = `<span class="terminal-ui__viewer-count">${this.viewers} viewers</span>`;
+            } else {
+                viewersEl.innerHTML = '';
+            }
+        }
+
+        if (assistantBadge) {
+            // Show assistant name in badge
+            assistantBadge.textContent = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
+        }
+
+        if (yoloToggle) {
+            // Show/hide YOLO toggle based on support
+            yoloToggle.style.display = this.yoloSupported ? 'flex' : 'none';
+            yoloToggle.classList.toggle('active', this.yoloMode);
+        }
+
+        // Legacy: Update old status bar elements for backwards compatibility
+        const statusBar = this.querySelector('.terminal-ui__status-bar');
+        const statusText = this.querySelector('.terminal-ui__status-text-legacy') || this.querySelector('.terminal-ui__status-bar .terminal-ui__status-text');
+        const dimsEl = this.querySelector('.terminal-ui__status-dims');
+
+        if (statusBar) {
+            // Toggle multiuser class based on viewer count
+            statusBar.classList.toggle('multiuser', this.viewers > 1);
+            // Toggle yolo class based on YOLO mode
+            statusBar.classList.toggle('yolo', this.yoloMode);
+        }
+
+        if (isConnected && statusText) {
             // Use pure render function for status info HTML
             const html = renderStatusInfo({
                 connected: true,
@@ -1226,6 +1362,106 @@ class TerminalUI extends HTMLElement {
 
         // Restore saved color from localStorage
         this.restoreStatusBarColor();
+    }
+
+    // Setup event listeners for the new header and navigation UI
+    setupHeaderEventListeners() {
+        // Session name click → rename session
+        const sessionName = this.querySelector('.terminal-ui__session-name');
+        if (sessionName) {
+            sessionName.addEventListener('click', () => {
+                this.promptRenameSession();
+            });
+        }
+
+        // Settings button → open settings panel
+        const settingsBtn = this.querySelector('.terminal-ui__settings-btn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                this.openSettingsPanel();
+            });
+        }
+
+        // YOLO toggle in header
+        const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
+        if (yoloToggle) {
+            yoloToggle.addEventListener('click', () => {
+                this.toggleYoloMode();
+            });
+        }
+
+        // Panel tabs in iframe pane
+        const panelTabs = this.querySelectorAll('.terminal-ui__panel-tabs button');
+        panelTabs.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                this.switchPanelTab(tab);
+            });
+        });
+
+        // Panel dropdown (mobile)
+        const panelDropdown = this.querySelector('.terminal-ui__panel-select');
+        if (panelDropdown) {
+            panelDropdown.addEventListener('change', (e) => {
+                const tab = e.target.value;
+                this.switchPanelTab(tab);
+            });
+        }
+
+        // Mobile bottom nav buttons
+        const mobileNavBtns = this.querySelectorAll('.terminal-ui__mobile-nav button');
+        mobileNavBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const view = btn.dataset.view;
+                this.switchMobileView(view);
+            });
+        });
+    }
+
+    // Switch to a different panel tab (changes iframe content)
+    switchPanelTab(tab) {
+        if (tab === this.activeTab) return;
+
+        const baseUrl = getBaseUrl(window.location);
+        let url;
+
+        switch (tab) {
+            case 'preview':
+                url = this.previewBaseUrl || buildPreviewUrl(window.location);
+                break;
+            case 'vscode':
+                url = buildVSCodeUrl(baseUrl, this.workDir);
+                break;
+            case 'shell':
+                const shellUUID = deriveShellUUID(this.uuid);
+                url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
+                break;
+            case 'browser':
+                url = `${baseUrl}/chrome/`;
+                break;
+            default:
+                return;
+        }
+
+        // Show/hide toolbar based on tab
+        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
+        if (iframePane) {
+            if (tab === 'preview') {
+                iframePane.classList.add('show-toolbar');
+            } else {
+                iframePane.classList.remove('show-toolbar');
+            }
+        }
+
+        this.activeTab = tab;
+        this.setIframeUrl(url);
+        this.updateActiveTabIndicator();
+
+        // Update mobile dropdown to match
+        const panelDropdown = this.querySelector('.terminal-ui__panel-select');
+        if (panelDropdown) {
+            panelDropdown.value = tab;
+        }
     }
 
     // Set username helper
@@ -1734,21 +1970,22 @@ class TerminalUI extends HTMLElement {
         }
         this.lastKeyboardHeight = keyboardHeight;
 
+        // Target the bottom-most fixed element for margin adjustment
+        // Priority: mobile nav (new UI) -> mobile keyboard (fallback)
+        const mobileNav = this.querySelector('.terminal-ui__mobile-nav');
         const mobileKeyboard = this.querySelector('.mobile-keyboard');
-        const statusBar = this.querySelector('.terminal-ui__status-bar');
-        const terminalContainer = this.querySelector('.terminal-ui');
+        const target = mobileNav || mobileKeyboard;
 
         if (keyboardVisible) {
             // Keyboard is showing - adjust layout
-            // Apply margin to the bottom-most element (status bar) so there's no gap
-            // between mobile keyboard and status bar
-            if (statusBar) {
-                statusBar.style.marginBottom = `${keyboardHeight}px`;
+            // Apply margin to the bottom-most element so there's no gap
+            if (target) {
+                target.style.marginBottom = `${keyboardHeight}px`;
             }
         } else {
             // Keyboard hidden - reset layout
-            if (statusBar) {
-                statusBar.style.marginBottom = '0';
+            if (target) {
+                target.style.marginBottom = '0';
             }
         }
 
@@ -1906,6 +2143,9 @@ class TerminalUI extends HTMLElement {
 
         // Settings panel setup
         this.setupSettingsPanel();
+
+        // Header and navigation event handlers
+        this.setupHeaderEventListeners();
 
         // Listen for session-ended messages from iframe to auto-close pane
         window.addEventListener('message', (e) => {
@@ -2497,11 +2737,21 @@ class TerminalUI extends HTMLElement {
         setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
-    // Update visual indicator for active tab (status bar and settings panel)
+    // Update visual indicator for active tab (status bar, panel tabs, and settings panel)
     updateActiveTabIndicator() {
         // Update status bar tabs
         const statusTabs = this.querySelectorAll('.terminal-ui__status-tab');
         statusTabs.forEach(tab => {
+            if (tab.dataset.tab === this.activeTab) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+
+        // Update panel tabs in iframe pane
+        const panelTabs = this.querySelectorAll('.terminal-ui__panel-tabs button');
+        panelTabs.forEach(tab => {
             if (tab.dataset.tab === this.activeTab) {
                 tab.classList.add('active');
             } else {
@@ -2520,12 +2770,47 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    // Switch between terminal and workspace views on mobile
+    switchMobileView(view) {
+        if (view === this.mobileActiveView) return;
+
+        this.mobileActiveView = view;
+        const terminalUi = this.querySelector('.terminal-ui');
+        const mobileNav = this.querySelector('.terminal-ui__mobile-nav');
+
+        // Update container class for CSS-based view switching
+        terminalUi.classList.remove('mobile-view-terminal', 'mobile-view-workspace');
+        terminalUi.classList.add(`mobile-view-${view}`);
+
+        // Update mobile nav button states
+        if (mobileNav) {
+            mobileNav.querySelectorAll('button').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.view === view);
+            });
+        }
+
+        // If switching to terminal, refit and scroll to bottom
+        if (view === 'terminal') {
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        }
+
+        // If switching to workspace, ensure iframe pane is initialized
+        if (view === 'workspace' && !this.activeTab) {
+            // Default to preview tab
+            const baseUrl = getBaseUrl(window.location);
+            const previewUrl = this.previewBaseUrl || buildPreviewUrl(window.location);
+            this.activeTab = 'preview';
+            this.setIframeUrl(previewUrl);
+            this.updateActiveTabIndicator();
+        }
+    }
+
     setupResizer() {
         const resizer = this.querySelector('.terminal-ui__resizer');
-        const terminal = this.querySelector('.terminal-ui__terminal');
+        const terminalWrapper = this.querySelector('.terminal-ui__terminal-wrapper');
         const splitPane = this.querySelector('.terminal-ui__split-pane');
         const iframePane = this.querySelector('.terminal-ui__iframe-pane');
-        if (!resizer || !terminal || !splitPane) return;
+        if (!resizer || !terminalWrapper || !splitPane) return;
 
         let isDragging = false;
         let startX = 0;
@@ -2546,7 +2831,7 @@ class TerminalUI extends HTMLElement {
         const onMouseDown = (e) => {
             isDragging = true;
             startX = e.clientX || e.touches?.[0]?.clientX || 0;
-            startWidth = terminal.offsetWidth;
+            startWidth = terminalWrapper.offsetWidth;
             resizer.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
@@ -2605,9 +2890,9 @@ class TerminalUI extends HTMLElement {
     }
 
     applyPaneWidth() {
-        const terminal = this.querySelector('.terminal-ui__terminal');
-        if (terminal) {
-            terminal.style.width = (100 - this.iframePaneWidth) + '%';
+        const terminalWrapper = this.querySelector('.terminal-ui__terminal-wrapper');
+        if (terminalWrapper) {
+            terminalWrapper.style.width = (100 - this.iframePaneWidth) + '%';
         }
     }
 
