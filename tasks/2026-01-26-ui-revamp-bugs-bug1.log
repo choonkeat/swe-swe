@@ -1,0 +1,15 @@
+231341 - Bug 1 Investigation Complete
+What will be done: Add visual affordances to make session name clickable/discoverable
+Expected outcome:
+- Session name should have cursor:pointer on hover
+- Session name should have subtle hover effect (color change or underline)
+- An edit icon should appear on hover to indicate editability
+- Clicking should open the rename prompt (already works, just not discoverable)
+
+Investigation findings:
+- Session naming is NOT broken - functionality works via:
+  1. ?name= URL parameter
+  2. Settings panel input field
+  3. Click-to-rename on session name span
+- The issue is purely discoverability - no visual affordance that it's clickable
+- Key files: terminal-ui.js (line 1386 - click handler), terminal-ui.css (needs styling)
