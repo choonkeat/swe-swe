@@ -25,7 +25,7 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 2: Chat Feature Not Discoverable
 
-**Status**: Incomplete - pending visual verification via ?preview
+**Status**: Fixed (2026-01-26)
 
 **Description**: The chat feature was not discoverable after the UI revamp (not actually broken).
 
@@ -40,10 +40,7 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 - [x] Chat was fully implemented but trigger was hidden in legacy status bar
 - [x] WebSocket chat messages work correctly (`type: 'chat'`)
 - [x] Added visible chat button to header that shows when viewers > 1
-
-**Pending verification**:
-- [ ] Use `?preview` mode to visually verify chat button appears correctly in header
-- [ ] Verify chat button styling matches design
+- [x] Verified via `?preview` mode - chat button visible and styled correctly
 
 ---
 

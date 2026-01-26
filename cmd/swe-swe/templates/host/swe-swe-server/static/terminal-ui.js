@@ -129,6 +129,9 @@ class TerminalUI extends HTMLElement {
                 }, 200);
             } else {
                 console.log('[TerminalUI] Preview mode: skipping terminal/WebSocket init');
+                // In preview mode, manually trigger status update to show UI elements like chat button
+                // Use setTimeout to ensure all initialization is complete
+                setTimeout(() => this.updateStatusInfo(), 100);
             }
             this.setupEventListeners();
             this.renderLinks();
@@ -1055,10 +1058,10 @@ class TerminalUI extends HTMLElement {
             }
         }
 
-        // Show/hide chat button based on viewer count
+        // Show/hide chat button based on viewer count (always show in preview mode for testing)
         const chatBtn = this.querySelector('.terminal-ui__chat-btn');
         if (chatBtn) {
-            chatBtn.style.display = (this.viewers > 1) ? 'inline-flex' : 'none';
+            chatBtn.style.display = (this.previewMode || this.viewers > 1) ? 'inline-flex' : 'none';
         }
 
         // Update all assistant badges (mobile + desktop) with name and mode
