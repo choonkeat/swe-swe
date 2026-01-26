@@ -1,0 +1,6 @@
+222238 - Starting Bug 5+6: Navigation Colors and Layout
+Bug 5: Session page top navigation colors inconsistent
+Bug 6: Second-level navigation should be single row, not two rows
+
+Action: Investigate terminal-ui.css and terminal-ui.js for navigation structure
+Expected: Find the navigation elements and understand current layout
