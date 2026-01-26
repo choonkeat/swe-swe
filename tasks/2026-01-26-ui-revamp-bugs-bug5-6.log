@@ -25,3 +25,17 @@ Result: Single row navigation with divider:
 
 Note: Visual verification not possible in dev environment (WebSocket required for terminal UI).
 JS syntax verified clean via node --check.
+
+223406 - Added preview mode and verified fix
+Added ?preview query param to skip terminal/WebSocket initialization for UI iteration.
+
+Also added template substitution for {{TERMINAL_FONT_SIZE}} and {{TERMINAL_FONT_FAMILY}} in
+the dev server's main.go to fix JS syntax errors during development.
+
+Screenshot bug5-6-preview-mode.png confirms:
+- Single row navigation with divider between left and right sections
+- Left: >_ Agent Terminal [CLAUDE badge]
+- Right: Preview | Code | Terminal | Agent View (all tabs in same row)
+- Consistent background color across entire navigation bar
+
+Result: Bug 5+6 VERIFIED FIXED
