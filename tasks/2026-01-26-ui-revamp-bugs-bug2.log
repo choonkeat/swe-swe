@@ -37,3 +37,14 @@ Changes made:
 5. terminal-ui.css line ~1442: Added chat button and badge styles
 
 Conclusion: Bug 2 FIXED - Chat button now visible in header when multiple viewers present.
+
+235131 - Bug 2 Visual Verification via ?preview Mode
+What will be done: 
+1. Modify chat button to show in preview mode (bypass >1 viewer constraint)
+2. Start dev server and navigate to session page with ?preview
+3. Verify chat button appears correctly in header with proper styling
+
+Expected outcome:
+- Chat button (💬) visible in header
+- Button styled consistently with other header buttons
+- Badge element present for unread count
