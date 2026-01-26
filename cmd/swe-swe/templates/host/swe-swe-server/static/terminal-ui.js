@@ -111,16 +111,25 @@ class TerminalUI extends HTMLElement {
             if (window.self !== window.top) {
                 this.classList.add('embedded-in-iframe');
             }
-            this.initTerminal();
-            this.debugLog('initTerminal done');
-            // iOS Safari needs a brief delay before WebSocket connection
-            // Without this, the connection silently fails (works with Web Inspector attached
-            // because the debugger adds enough delay)
-            this.debugLog('scheduling connect() in 200ms');
-            setTimeout(() => {
-                this.debugLog('setTimeout fired, calling connect()');
-                this.connect();
-            }, 200);
+
+            // Preview mode: skip terminal/WebSocket for UI iteration
+            const urlParams = new URLSearchParams(window.location.search);
+            this.previewMode = urlParams.has('preview');
+
+            if (!this.previewMode) {
+                this.initTerminal();
+                this.debugLog('initTerminal done');
+                // iOS Safari needs a brief delay before WebSocket connection
+                // Without this, the connection silently fails (works with Web Inspector attached
+                // because the debugger adds enough delay)
+                this.debugLog('scheduling connect() in 200ms');
+                setTimeout(() => {
+                    this.debugLog('setTimeout fired, calling connect()');
+                    this.connect();
+                }, 200);
+            } else {
+                console.log('[TerminalUI] Preview mode: skipping terminal/WebSocket init');
+            }
             this.setupEventListeners();
             this.renderLinks();
             this.renderServiceLinks();
@@ -2131,33 +2140,36 @@ class TerminalUI extends HTMLElement {
     }
 
     setupEventListeners() {
-        // Terminal data handler - send as binary to distinguish from JSON control messages
-        this.term.onData(data => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                const encoder = new TextEncoder();
-                this.ws.send(encoder.encode(data));
-            }
-        });
+        // Skip terminal-related event listeners in preview mode
+        if (this.term) {
+            // Terminal data handler - send as binary to distinguish from JSON control messages
+            this.term.onData(data => {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const encoder = new TextEncoder();
+                    this.ws.send(encoder.encode(data));
+                }
+            });
 
-        // Window resize
-        this._resizeHandler = () => {
-            this.fitAndPreserveScroll();
-        };
-        window.addEventListener('resize', this._resizeHandler);
+            // Window resize
+            this._resizeHandler = () => {
+                this.fitAndPreserveScroll();
+            };
+            window.addEventListener('resize', this._resizeHandler);
 
-        // Mobile keyboard setup
-        this.setupMobileKeyboard();
+            // Mobile keyboard setup
+            this.setupMobileKeyboard();
 
-        // Touch scroll proxy for iOS momentum scrolling
-        this.setupTouchScrollProxy();
+            // Touch scroll proxy for iOS momentum scrolling
+            this.setupTouchScrollProxy();
 
-        // visualViewport keyboard handling for iOS
-        this.setupViewportListeners();
+            // visualViewport keyboard handling for iOS
+            this.setupViewportListeners();
 
-        // Terminal click to focus
-        this.querySelector('.terminal-ui__terminal').addEventListener('click', () => {
-            this.term.focus();
-        });
+            // Terminal click to focus
+            this.querySelector('.terminal-ui__terminal').addEventListener('click', () => {
+                this.term.focus();
+            });
+        }
 
         // Settings panel setup
         this.setupSettingsPanel();

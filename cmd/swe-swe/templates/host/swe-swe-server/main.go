@@ -1962,6 +1962,20 @@ func main() {
 	}
 	staticHandler := http.FileServer(http.FS(staticContent))
 
+	// Handler for terminal-ui.js with template substitution (dev mode compatibility)
+	http.HandleFunc("/terminal-ui.js", func(w http.ResponseWriter, r *http.Request) {
+		content, err := staticFS.ReadFile("static/terminal-ui.js")
+		if err != nil {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		// Replace template variables with defaults for dev mode
+		result := strings.ReplaceAll(string(content), "{{TERMINAL_FONT_SIZE}}", "14")
+		result = strings.ReplaceAll(result, "{{TERMINAL_FONT_FAMILY}}", "Monaco, Menlo, Consolas, monospace")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Write([]byte(result))
+	})
+
 	// Start session reaper
 	go sessionReaper()
 
