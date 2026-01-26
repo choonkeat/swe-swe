@@ -1,0 +1,20 @@
+## Bug 7: Shell Exit Closes Entire Right Panel - Investigation & Fix Log
+
+### 2026-01-26 - Investigation Phase
+
+[Time: Starting investigation]
+
+**What will be done**: Investigate how shell exit is handled in terminal-ui.js and implement fix to switch to Preview tab instead of closing the panel.
+
+**Expected outcome**: After fix, when shell exits in right panel, the UI should automatically switch to the Preview tab instead of closing the entire right panel.
+
+**Investigation findings**:
+- Line 2218-2222 in terminal-ui.js listens for 'swe-swe-session-ended' message from iframe
+- Current behavior: calls `this.closeIframePane()` which hides the entire right panel
+- Fix needed: change to `this.switchPanelTab('preview')` to switch to Preview tab instead
+
+**Fix approach**:
+- Modify the message listener at line 2218-2222
+- Change `this.closeIframePane()` to `this.switchPanelTab('preview')`
+- This will keep the right panel open but show the App Preview instead of the exited shell
+
