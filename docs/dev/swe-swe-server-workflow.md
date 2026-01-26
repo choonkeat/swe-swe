@@ -129,6 +129,26 @@ This copies the template to `/tmp`, runs tests, and syncs `go.sum` changes back.
 | Build | `go run` (JIT compile) | Pre-compiled binary |
 | Source | Template directory | Embedded in CLI |
 
+## Session Page UI Development
+
+The session page requires WebSocket connection for the terminal, which makes it difficult to iterate on HTML/CSS. Use **preview mode** to render the UI shell without terminal/WebSocket:
+
+```bash
+# View session page UI without WebSocket
+http://swe-swe:3000/session/test123?assistant=claude&preview
+```
+
+The `?preview` query param:
+- Renders the full session page HTML/CSS
+- Skips terminal initialization and WebSocket connection
+- Allows visual iteration on navigation, panels, styling, etc.
+
+This is useful for fixing:
+- Navigation bar layout and colors
+- Panel tabs styling
+- Header/status bar appearance
+- Any CSS that doesn't depend on terminal content
+
 ## Troubleshooting
 
 ### Server won't start
