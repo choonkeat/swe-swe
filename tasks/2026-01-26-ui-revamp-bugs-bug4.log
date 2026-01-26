@@ -1,0 +1,19 @@
+232503 - Bug 4 Investigation Complete
+What will be done: Combine URL display and input into single editable field
+Expected outcome:
+- Single URL input field that shows current URL and allows editing
+- Remove separate read-only URL span
+- Keep home, refresh, and go buttons
+- Input value updates when iframe URL changes
+- User can edit input and press Enter or click Go to navigate
+
+Investigation findings:
+- Currently has separate span (terminal-ui__iframe-url) and input (terminal-ui__iframe-url-input)
+- The span shows current URL, input is for debugging external URLs
+- Need to merge into single input that does both
+- Input should be pre-populated with current iframe URL
+- When URL changes, input should update to reflect new location
+
+Key files:
+- terminal-ui.js: Modify HTML structure and JS to use single input
+- terminal-ui.css: May need style adjustments for combined element
