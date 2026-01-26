@@ -13,3 +13,19 @@ Investigation findings:
   3. Click-to-rename on session name span
 - The issue is purely discoverability - no visual affordance that it's clickable
 - Key files: terminal-ui.js (line 1386 - click handler), terminal-ui.css (needs styling)
+
+231656 - Bug 1 Fix Verification Complete
+Observed:
+- Session name shows tooltip "Click to rename session" ✓
+- Edit icon (✎) is visible next to session name ✓
+- Cursor shows as pointer on hover ✓
+- Hover effect: text turns white with underline ✓
+- Clicking opens rename prompt dialog ✓
+
+Screenshot saved: bug1-session-name-hover.png
+
+Changes made:
+1. terminal-ui.css: Added ::after pseudo-element with edit icon, hover underline, transitions
+2. terminal-ui.js: Added title="Click to rename session" to session name span
+
+Conclusion: Bug 1 FIXED - Session naming was never broken, just undiscoverable. Now has clear visual affordances.

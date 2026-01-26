@@ -291,7 +291,7 @@ class TerminalUI extends HTMLElement {
                     <div class="terminal-ui__header-left">
                         <a href="/" class="terminal-ui__back-btn" title="Back to sessions">←</a>
                         <div class="terminal-ui__session-info">
-                            <span class="terminal-ui__session-name">Session</span>
+                            <span class="terminal-ui__session-name" title="Click to rename session">Session</span>
                             <span class="terminal-ui__branch-badge desktop-only"></span>
                         </div>
                         <span class="terminal-ui__connection-status">

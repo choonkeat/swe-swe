@@ -1303,10 +1303,27 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
+    transition: color 0.15s ease;
+    position: relative;
+    padding-right: 18px; /* space for edit icon */
+}
+
+.terminal-ui__session-name::after {
+    content: '✎';
+    position: absolute;
+    right: 0;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
 }
 
 .terminal-ui__session-name:hover {
     color: #fff;
+    text-decoration: underline;
+}
+
+.terminal-ui__session-name:hover::after {
+    opacity: 0.7;
 }
 
 .terminal-ui__branch-badge {

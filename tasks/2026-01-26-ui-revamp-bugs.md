@@ -2,20 +2,24 @@
 
 Bugs introduced after the terminal UI revamp that need to be fixed.
 
-## Bug 1: Session Naming Broken
+## Bug 1: Session Naming Not Discoverable
 
-**Status**: Open
+**Status**: Fixed (2026-01-26)
 
-**Description**: The ability to name a session is broken after the UI revamp.
+**Description**: The session naming feature was not discoverable after the UI revamp (not actually broken).
 
-**Expected behavior**: User should be able to name/rename their session.
+**Expected behavior**: User should be able to name/rename their session with clear visual affordances.
 
-**Current behavior**: TBD - need to investigate how this was previously exposed and what broke.
+**Current behavior**: ~~Session name appears as plain text with no indication it's clickable.~~ Fixed - session name now shows:
+- Edit icon (✎) on hover
+- Underline on hover
+- Tooltip "Click to rename session"
+- Cursor changes to pointer
 
-**Investigation needed**:
-- [ ] Find where session naming UI was previously located
-- [ ] Check if the `?name=` URL parameter still works
-- [ ] Determine if this needs a UI element (input field, edit button, etc.)
+**Investigation findings**:
+- [x] Session naming works via: (1) `?name=` URL parameter, (2) Settings panel input, (3) Click-to-rename
+- [x] The issue was purely discoverability - no visual affordance that it's clickable
+- [x] Fixed by adding CSS hover effects and title attribute
 
 ---
 
