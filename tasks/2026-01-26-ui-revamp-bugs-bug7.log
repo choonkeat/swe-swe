@@ -36,3 +36,23 @@ Build and tests passed.
 
 **Expected outcome**: After typing "exit" in the right-panel shell, the right panel should remain visible and switch to the Preview tab.
 
+### 2026-01-26 23:35 - Verification Results
+
+**Test performed via MCP browser**:
+1. Navigated to http://host.docker.internal:9770/
+2. Created new OpenCode session (no login required for test container)
+3. Session loaded with Agent Terminal (left) and Preview (right)
+4. Clicked "Terminal" tab in right panel - shell session opened with prompt `app@6b5d4657f6c3:/workspace$`
+5. Typed "exit" and pressed Enter in the shell
+
+**Observed outcome**:
+- Right panel **remained visible** (did NOT close)
+- Content **switched to App Preview** showing:
+  - "App Preview" heading
+  - "Tell your agent: Start a hot-reload web app on port http://localhost:3000"
+  - "Listening for app..."
+- URL toolbar reappeared showing `http://host.docker.internal:19770`
+- All tab buttons (Preview, Code, Terminal, Agent View) remained available
+
+**Conclusion**: FIX VERIFIED SUCCESSFULLY - Shell exit now switches to Preview tab instead of closing the entire right panel.
+

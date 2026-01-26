@@ -2214,10 +2214,11 @@ class TerminalUI extends HTMLElement {
         // Header and navigation event handlers
         this.setupHeaderEventListeners();
 
-        // Listen for session-ended messages from iframe to auto-close pane
+        // Listen for session-ended messages from iframe to switch to Preview tab
+        // (When shell in right panel exits, show Preview instead of closing the panel)
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'swe-swe-session-ended') {
-                this.closeIframePane();
+                this.switchPanelTab('preview');
             }
         });
 

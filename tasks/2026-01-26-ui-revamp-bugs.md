@@ -124,17 +124,15 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 7: Shell Exit Closes Entire Right Panel
 
-**Status**: Open
+**Status**: Fixed (2026-01-26)
 
 **Description**: When the shell/terminal in the right panel exits, it closes the entire right panel.
 
 **Expected behavior**: When shell exits, automatically switch to the App Preview tab instead of closing the panel.
 
-**Current behavior**: Exiting the shell closes the entire right panel, leaving only the Agent Terminal visible.
+**Current behavior**: ~~Exiting the shell closes the entire right panel.~~ Fixed - shell exit now switches to Preview tab.
 
-**Problem**: The new design doesn't have a layout without the right panel - it should always be visible. Closing the panel breaks the intended layout.
-
-**Fix approach**: On shell exit event, switch the active tab to "Preview" (App Preview) instead of hiding/closing the panel.
+**Fix implemented**: Changed the `swe-swe-session-ended` message handler in terminal-ui.js from `closeIframePane()` to `switchPanelTab('preview')`. The right panel now stays visible and shows App Preview when the shell exits.
 
 ---
 
