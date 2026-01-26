@@ -1,3 +1,29 @@
 144336 - Starting Bug 3: Session Keep/Trash Icons Only Visible on Hover
 Action: Investigate homepage CSS for session list hover styles
 Expected: Find CSS rules that hide icons by default and show on hover
+
+144426 - Investigation complete
+Observed: In selection.html CSS (lines 413-446), .btn-icon and .recording-card__btn-group have NO hiding styles.
+The icons are always visible in the current code. No opacity:0, display:none, or hover-based show/hide.
+Conclusion: Bug 3 appears to already be fixed OR the bug description is outdated.
+Need to visually verify with browser testing.
+
+144647 - Visual verification via MCP browser
+Action: Navigated to http://swe-swe:3000 and took screenshot
+Observed: Screenshot confirms bookmark and trash icons ARE VISIBLE next to "Expires in 40m" text.
+
+144835 - Clarification from user
+The bug is INVERTED from what I understood:
+- Current: Icons always visible
+- Expected: Icons should be HIDDEN by default and only show on HOVER of recording row
+Action: Add CSS to hide .recording-card__btn-group by default and show on .recording-card:hover
+
+144945 - Fix implemented and verified
+Changes made to selection.html:
+- Added opacity: 0 and transition to .recording-card__btn-group
+- Added .recording-card:hover .recording-card__btn-group { opacity: 1 }
+
+Verification via MCP browser:
+- Screenshot bug3-icons-hidden.png: Icons NOT visible when not hovering
+- Screenshot bug3-icons-on-hover.png: Icons VISIBLE when hovering over row
+Result: Bug 3 FIXED
