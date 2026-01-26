@@ -3,13 +3,16 @@
 build: build-cli
 
 RUN_ARGS ?=
+DEV_PORT ?= 3000
 run:
 	@cp cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt cmd/swe-swe/templates/host/swe-swe-server/go.mod
 	@cp cmd/swe-swe/templates/host/swe-swe-server/go.sum.txt cmd/swe-swe/templates/host/swe-swe-server/go.sum
-	go run cmd/swe-swe/templates/host/swe-swe-server/* $(RUN_ARGS)
+	cd cmd/swe-swe/templates/host/swe-swe-server && go run main.go -addr :$(DEV_PORT) -no-preview-proxy $(RUN_ARGS)
 
 stop:
-	lsof -ti :9898 | xargs kill -9 2>/dev/null || true
+	@pid=$$(ps aux | grep '[e]xe/main.*-addr :$(DEV_PORT)' | awk '{print $$2}' | head -1); \
+	if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "Stopped dev server (pid $$pid)"; \
+	else echo "No dev server running on :$(DEV_PORT)"; fi
 
 test: test-cli test-server
 

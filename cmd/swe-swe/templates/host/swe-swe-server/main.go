@@ -1887,6 +1887,7 @@ func main() {
 	debugListen := flag.Bool("debug-listen", false, "Listen for debug messages from preview proxy")
 	debugQuery := flag.String("debug-query", "", "Send DOM query to preview proxy (CSS selector)")
 	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:9899/__swe-swe-debug__/agent)")
+	noPreviewProxy := flag.Bool("no-preview-proxy", false, "Disable the preview proxy server (useful for dev mode)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
@@ -1965,7 +1966,8 @@ func main() {
 	go sessionReaper()
 
 	// Start preview proxy if SWE_PREVIEW_TARGET_PORT is set (for split-pane preview)
-	if previewTargetPort := os.Getenv("SWE_PREVIEW_TARGET_PORT"); previewTargetPort != "" {
+	// Skip if -no-preview-proxy flag is set (useful for dev mode when production proxy is running)
+	if previewTargetPort := os.Getenv("SWE_PREVIEW_TARGET_PORT"); previewTargetPort != "" && !*noPreviewProxy {
 		go startPreviewProxy(previewTargetPort)
 	}
 
