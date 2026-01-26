@@ -64,3 +64,23 @@ Expected:
 4. Headers sit side-by-side, NOT in a single full-width bar
 
 Action: Navigate to http://host.docker.internal:9770/opencode?preview
+
+225153 - Verification result: SUCCESS
+Observed layout (screenshot: bug5-6-redo-verification.png):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ← 6f0e3  ─  ● Connected • 5s                                            ⚙  │  <- Main Header
+├────────────────────────────┬────────────────────────────────────────────────┤
+│ >_ Agent Terminal [CLAUDE] │ Preview | Code | Terminal | Agent View         │  <- Panel headers (SEPARATE!)
+├────────────────────────────┼────────────────────────────────────────────────┤
+│                            │  ⌂ ↻ http://...  [URL input] →                 │
+│    {terminal content}      ├────────────────────────────────────────────────┤
+│                            │         {App Preview iframe}                   │
+└────────────────────────────┴────────────────────────────────────────────────┘
+
+Verification checklist:
+✓ LEFT panel has its own header row containing: ">_ Agent Terminal [CLAUDE badge]"
+✓ RIGHT panel has its own header row containing: "Preview | Code | Terminal | Agent View" tabs  
+✓ Both headers have same navy blue background (visual match)
+✓ Headers sit side-by-side, NOT in a single full-width bar
+
+Result: Bug 5+6 REDO VERIFIED FIXED
