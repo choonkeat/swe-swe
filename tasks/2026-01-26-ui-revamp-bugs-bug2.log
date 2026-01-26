@@ -48,3 +48,18 @@ Expected outcome:
 - Chat button (💬) visible in header
 - Button styled consistently with other header buttons
 - Badge element present for unread count
+
+235433 - Bug 2 Visual Verification Complete
+Observed:
+- Chat button (💬) visible in header, to the left of settings button ✓
+- Button styled consistently with other header buttons (same size, hover behavior) ✓
+- Badge element present (hidden when count is 0, as expected) ✓
+- Also verified: Agent badge now shows "CLAUDE (safe)" mode indicator ✓
+
+Screenshot saved: bug2-chat-button-verified.png
+
+Code changes made for preview mode support:
+1. terminal-ui.js line 1061: Added previewMode check to show chat button in preview mode
+2. terminal-ui.js line 134: Added setTimeout to call updateStatusInfo() in preview mode
+
+Conclusion: Bug 2 VERIFIED FIXED - Chat button visible in header with correct styling.
