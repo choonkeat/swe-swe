@@ -25,13 +25,13 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 2: Chat Feature Not Discoverable
 
-**Status**: Fixed (2026-01-26)
+**Status**: Incomplete - pending visual verification via ?preview
 
 **Description**: The chat feature was not discoverable after the UI revamp (not actually broken).
 
 **Expected behavior**: Users should be able to send chat messages to collaborate with others viewing the same session.
 
-**Current behavior**: ~~Chat trigger was hidden in legacy status bar.~~ Fixed - chat button (💬) now appears in header when there are 2+ viewers:
+**Current behavior**: ~~Chat trigger was hidden in legacy status bar.~~ Implementation added - chat button (💬) now appears in header when there are 2+ viewers:
 - Click button to open chat input
 - Badge shows unread message count
 - Existing chat overlay and WebSocket functionality unchanged
@@ -39,7 +39,11 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 **Investigation findings**:
 - [x] Chat was fully implemented but trigger was hidden in legacy status bar
 - [x] WebSocket chat messages work correctly (`type: 'chat'`)
-- [x] Fixed by adding visible chat button to header that shows when viewers > 1
+- [x] Added visible chat button to header that shows when viewers > 1
+
+**Pending verification**:
+- [ ] Use `?preview` mode to visually verify chat button appears correctly in header
+- [ ] Verify chat button styling matches design
 
 ---
 
