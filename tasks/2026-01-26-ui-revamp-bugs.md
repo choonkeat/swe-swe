@@ -72,37 +72,63 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 5: Session Page Top Navigation Colors Inconsistent
 
-**Status**: Fixed (2026-01-26)
+**Status**: NEEDS REDO (depends on Bug 6 fix)
 
 **Description**: The colors of the top navigation elements on the session page don't match - some areas use the correct navy blue theme while others have different styling.
 
-**Expected behavior**: All top navigation elements (header bar with session ID, "Agent Terminal" tab, panel tabs like "Preview"/"Code") should share the same CSS classes/variables for consistent coloring.
+**Expected behavior**: All navigation elements should use consistent navy blue theme:
+- Main header bar (with session ID, back button)
+- Left panel header (Agent Terminal + badge)
+- Right panel header (Preview, Code, Terminal tabs)
 
-**Current behavior**: Inconsistent colors across the navigation elements as shown in the annotated screenshot with "Correct" labels indicating which elements have the right styling.
+**Current behavior**: Inconsistent colors across the navigation elements.
 
-**Fix approach**: Share CSS classes/variables across all top nav elements to ensure consistent styling with the homepage navy blue theme.
+**Fix approach**: After Bug 6 is fixed (separate panel headers), ensure both panel headers use same CSS variables for consistent navy blue background.
 
 ---
 
-## Bug 6: Second-Level Navigation Layout Wrong (Two Rows Instead of One)
+## Bug 6: Second-Level Navigation Layout Wrong
 
-**Status**: Fixed (2026-01-26)
+**Status**: NEEDS REDO (previous fix was wrong)
 
-**Description**: The second-level navigation on the session page is split across two rows when it should be a single row.
+**Description**: Each panel should have its own header row, NOT one shared full-width nav bar.
 
-**Expected behavior**: Single row layout:
+### CORRECT Layout (target):
 ```
-Agent Terminal | CLAUDE (safe) |divider| Preview | Code | Terminal | Agent View
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ←  replit/vibe-code [main]  ● Connected • 0m          U1 +24  [YOLO]  ⚙    │  <- Header
+├───────────────────────────────────┬─────────────────────────────────────────┤
+│ >_ Agent Terminal    [CLAUDE SAFE]│ ⊕Preview  </>Code  >_Terminal  ⚡Agent  │  <- Panel headers (separate)
+├───────────────────────────────────┼─────────────────────────────────────────┤
+│                                   │                                         │
+│           {xterm}                 │            {app preview}                │  <- Content
+│                                   │                                         │
+└───────────────────────────────────┴─────────────────────────────────────────┘
 ```
-All tabs on one line with a divider separating the left panel tabs from the right panel tabs.
+- LEFT panel has its own header: `>_ Agent Terminal [CLAUDE (SAFE)]`
+- RIGHT panel has its own header: `Preview | Code | Terminal | Chat | Agent View`
+- Headers are INSIDE their respective panels, side-by-side
 
-**Current behavior**: Two separate rows:
-- Row 1: Full-width "Agent Terminal" + "CLAUDE" badge
-- Row 2: At top of right panel - "Preview | Code | Terminal | Agent View"
+### WRONG Layout (current - our broken fix):
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ←  Session  ● Connecting...                                            ⚙   │  <- Header
+├─────────────────────────────────────────────────────────────────────────────┤
+│ >_ Agent Terminal [CLAUDE] | Preview  Code  Terminal  Agent View            │  <- WRONG: one full-width bar
+├───────────────────────────────────┬─────────────────────────────────────────┤
+│                                   │  ⌂ ↻ http://...  [URL input] →          │  <- URL bar in wrong place
+│           {xterm}                 ├─────────────────────────────────────────┤
+│                                   │            {app preview}                │
+└───────────────────────────────────┴─────────────────────────────────────────┘
+```
+- WRONG: All tabs merged into one full-width bar
+- WRONG: Panel tabs (Preview, Code, etc.) not associated with right panel
 
-**Problem**: This wastes vertical space and doesn't match the intended design. The panel tabs should be part of the same navigation bar, not a separate element attached to the right panel.
-
-**Fix approach**: Combine into a single navigation bar with left-side tabs (Agent Terminal + badge) and right-side tabs (Preview, Code, etc.) separated by a visual divider.
+### Fix approach:
+1. Remove panel tabs from terminal-bar (undo previous change)
+2. Put panel tabs back inside `.terminal-ui__iframe-pane` as header
+3. Each panel should have its own header row that spans only that panel's width
+4. The two panel headers sit side-by-side at the same vertical position
 
 ---
 
