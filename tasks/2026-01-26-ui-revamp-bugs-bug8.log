@@ -6,3 +6,28 @@
 
 **Expected outcome**: Agent badge should display "CLAUDE (safe)" or "CLAUDE (YOLO)" instead of just "CLAUDE".
 
+**Investigation findings**:
+- Agent badge is rendered at two locations: line 330 (mobile) and line 341 (desktop)
+- `this.yoloMode` tracks the current mode (true = YOLO, false = safe)
+- Line 1067 updated the badge but only with the name, not the mode
+- Used `querySelector` which only finds the first badge
+
+### 2026-01-26 23:40 - Fix Implementation
+
+**Fix implemented**:
+- Changed from `querySelector` to `querySelectorAll` to update both mobile and desktop badges
+- Modified badge text format from `NAME` to `NAME (mode)`
+- Removed unused `assistantBadge` variable
+
+Build and tests passed.
+
+### 2026-01-26 23:41 - Verification Phase
+
+**What will be done**:
+1. Boot up test container
+2. Navigate to test container and create an OpenCode session
+3. Verify agent badge shows "OPENCODE (safe)" in both mobile and desktop views
+4. (Optional) Toggle YOLO mode if available and verify badge updates
+
+**Expected outcome**: Agent badge should show mode indicator (safe/YOLO) after the name.
+
