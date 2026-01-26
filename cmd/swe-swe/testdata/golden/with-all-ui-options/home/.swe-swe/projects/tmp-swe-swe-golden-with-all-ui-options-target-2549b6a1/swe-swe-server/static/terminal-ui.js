@@ -303,9 +303,20 @@ class TerminalUI extends HTMLElement {
 
                 <!-- Terminal Bar -->
                 <div class="terminal-ui__terminal-bar">
-                    <div class="terminal-ui__terminal-bar-left">
+                    <div class="terminal-ui__terminal-bar-left desktop-only">
                         <span class="terminal-ui__terminal-icon">>_</span>
                         <span>Agent Terminal</span>
+                    </div>
+                    <!-- Mobile view switcher in terminal bar -->
+                    <div class="terminal-ui__view-tabs mobile-only">
+                        <button data-view="terminal" class="active">
+                            <span class="terminal-ui__view-tab-icon">>_</span>
+                            <span>Terminal</span>
+                        </button>
+                        <button data-view="workspace">
+                            <span class="terminal-ui__view-tab-icon">📁</span>
+                            <span>Workspace</span>
+                        </button>
                     </div>
                     <span class="terminal-ui__assistant-badge">CLAUDE</span>
                 </div>
@@ -392,17 +403,6 @@ class TerminalUI extends HTMLElement {
                     </div>
                 </div>
 
-                <!-- Mobile Bottom Nav -->
-                <nav class="terminal-ui__mobile-nav mobile-only">
-                    <button data-view="terminal" class="active">
-                        <span class="terminal-ui__mobile-nav-icon">>_</span>
-                        <span>Terminal</span>
-                    </button>
-                    <button data-view="workspace">
-                        <span class="terminal-ui__mobile-nav-icon">📁</span>
-                        <span>Workspace</span>
-                    </button>
-                </nav>
 
                 <!-- Status bar (legacy, will be removed) -->
                 <div class="terminal-ui__status-bar" style="display: none;">
@@ -1408,9 +1408,9 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // Mobile bottom nav buttons
-        const mobileNavBtns = this.querySelectorAll('.terminal-ui__mobile-nav button');
-        mobileNavBtns.forEach(btn => {
+        // Mobile view tabs in terminal bar
+        const viewTabBtns = this.querySelectorAll('.terminal-ui__view-tabs button');
+        viewTabBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 const view = btn.dataset.view;
                 this.switchMobileView(view);
@@ -1814,6 +1814,18 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    blurMobileKeyboard() {
+        // Blur the text input to dismiss the mobile keyboard
+        const textInput = this.querySelector('.mobile-keyboard__text');
+        if (textInput) {
+            textInput.blur();
+        }
+        // Also blur any other focused element
+        if (document.activeElement && document.activeElement !== document.body) {
+            document.activeElement.blur();
+        }
+    }
+
     setupKeyboardVisibility() {
         const keyboard = this.querySelector('.mobile-keyboard');
         if (!keyboard) return;
@@ -2031,7 +2043,8 @@ class TerminalUI extends HTMLElement {
                 if (KEY_CODES[key]) {
                     this.sendKey(KEY_CODES[key]);
                 }
-                this.term.focus();
+                // Blur to dismiss mobile keyboard
+                this.blurMobileKeyboard();
             });
         });
 
@@ -2055,7 +2068,8 @@ class TerminalUI extends HTMLElement {
                 if (CTRL_CODES[key]) {
                     this.sendKey(CTRL_CODES[key]);
                 }
-                this.term.focus();
+                // Blur to dismiss mobile keyboard
+                this.blurMobileKeyboard();
             });
         });
 
@@ -2079,12 +2093,14 @@ class TerminalUI extends HTMLElement {
                 sendBtn.textContent = 'Enter';
                 setTimeout(() => {
                     this.sendKey('\r');
-                    this.term.focus();
+                    // Blur to dismiss mobile keyboard
+                    this.blurMobileKeyboard();
                 }, 300);
             } else {
                 // Send just Enter
                 this.sendKey('\r');
-                this.term.focus();
+                // Blur to dismiss mobile keyboard
+                this.blurMobileKeyboard();
             }
         });
 
@@ -2776,15 +2792,15 @@ class TerminalUI extends HTMLElement {
 
         this.mobileActiveView = view;
         const terminalUi = this.querySelector('.terminal-ui');
-        const mobileNav = this.querySelector('.terminal-ui__mobile-nav');
+        const viewTabs = this.querySelector('.terminal-ui__view-tabs');
 
         // Update container class for CSS-based view switching
         terminalUi.classList.remove('mobile-view-terminal', 'mobile-view-workspace');
         terminalUi.classList.add(`mobile-view-${view}`);
 
-        // Update mobile nav button states
-        if (mobileNav) {
-            mobileNav.querySelectorAll('button').forEach(btn => {
+        // Update view tab button states
+        if (viewTabs) {
+            viewTabs.querySelectorAll('button').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.view === view);
             });
         }
