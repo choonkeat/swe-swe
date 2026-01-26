@@ -367,8 +367,7 @@ class TerminalUI extends HTMLElement {
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
-                                <span class="terminal-ui__iframe-url"></span>
-                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL to debug..." />
+                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL - edit to navigate" />
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                             </div>
                             <div class="terminal-ui__iframe-container">
@@ -2996,18 +2995,13 @@ class TerminalUI extends HTMLElement {
         }
 
         const iframe = this.querySelector('.terminal-ui__iframe');
-        const urlDisplay = this.querySelector('.terminal-ui__iframe-url');
+        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
         const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
 
-        if (urlDisplay) {
-            // Show path relative to base, or full URL if different origin
-            try {
-                const urlObj = new URL(url);
-                urlDisplay.textContent = urlObj.pathname + urlObj.search + urlObj.hash || '/';
-            } catch (e) {
-                urlDisplay.textContent = url;
-            }
-            urlDisplay.title = url;
+        if (urlInput) {
+            // Show full URL in input field
+            urlInput.value = url;
+            urlInput.title = url;
         }
 
         if (iframe) {
@@ -3048,24 +3042,22 @@ class TerminalUI extends HTMLElement {
 
     updateIframeUrlDisplay() {
         const iframe = this.querySelector('.terminal-ui__iframe');
-        const urlDisplay = this.querySelector('.terminal-ui__iframe-url');
-        if (!iframe || !urlDisplay) return;
+        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
+        if (!iframe || !urlInput) return;
 
         try {
             // Try to read current URL (may fail due to cross-origin policy)
             const currentUrl = iframe.contentWindow?.location?.href;
             if (currentUrl && currentUrl !== 'about:blank') {
-                // Show path + query string relative to base URL
-                const url = new URL(currentUrl);
-                const displayUrl = url.pathname + url.search + url.hash;
-                urlDisplay.textContent = displayUrl || '/';
-                urlDisplay.title = currentUrl;
+                // Show full URL in input field
+                urlInput.value = currentUrl;
+                urlInput.title = currentUrl;
             }
         } catch (e) {
             // Cross-origin: can't read iframe location, show base URL
             if (this.previewBaseUrl) {
-                urlDisplay.textContent = this.previewBaseUrl;
-                urlDisplay.title = this.previewBaseUrl;
+                urlInput.value = this.previewBaseUrl;
+                urlInput.title = this.previewBaseUrl;
             }
         }
     }

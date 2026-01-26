@@ -59,20 +59,18 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 4: Preview Panel Has Redundant URL Bars
 
-**Status**: Open
+**Status**: Fixed (2026-01-26)
 
-**Description**: The preview panel shows two URL-related inputs: a read-only location bar displaying the current URL, plus a separate "Enter URL to debug..." input field below it.
+**Description**: The preview panel showed two URL-related inputs: a read-only location bar displaying the current URL, plus a separate "Enter URL to debug..." input field below it.
 
 **Expected behavior**: A single URL bar that serves both purposes (shows current URL and allows navigation/debugging).
 
-**Current behavior**: Two separate UI elements for URLs which is confusing and wastes vertical space.
+**Current behavior**: ~~Two separate UI elements for URLs.~~ Fixed - single URL input that:
+- Shows current iframe URL
+- Allows editing to navigate to a different URL
+- Has placeholder "Enter URL..."
 
-**Screenshot reference**: See annotated screenshot showing the preview area with both URL elements.
-
-**Fix options**:
-1. Combine into a single editable URL bar (recommended)
-2. Remove the debug URL input if redundant
-3. Clarify the purpose of each if they serve different functions
+**Fix implemented**: Combined the read-only URL span and debug input into a single editable input field.
 
 ---
 

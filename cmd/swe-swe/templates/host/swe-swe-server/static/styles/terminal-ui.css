@@ -1123,15 +1123,6 @@ terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
     display: flex; /* Show toolbar only for preview tab */
 }
 
-.terminal-ui__iframe-url {
-    flex: 1;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 11px;
-}
-
 .terminal-ui__iframe-nav-btn {
     background: none;
     border: none;

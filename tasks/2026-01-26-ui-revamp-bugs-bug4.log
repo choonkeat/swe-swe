@@ -17,3 +17,21 @@ Investigation findings:
 Key files:
 - terminal-ui.js: Modify HTML structure and JS to use single input
 - terminal-ui.css: May need style adjustments for combined element
+
+232845 - Bug 4 Fix Verification Complete
+Observed:
+- Single URL input field in preview toolbar ✓
+- Input shows current URL (http://host.docker.internal:19770) ✓
+- Placeholder text "Enter URL..." ✓
+- Removed redundant URL span element ✓
+- Home, refresh, and go buttons still present ✓
+
+Screenshot saved: bug4-single-url-bar.png
+
+Changes made:
+1. terminal-ui.js: Removed <span class="terminal-ui__iframe-url"></span> from HTML
+2. terminal-ui.js: Updated setIframeSrc() to set input.value instead of span.textContent
+3. terminal-ui.js: Updated updateIframeUrlDisplay() to set input.value instead of span.textContent
+4. terminal-ui.css: Removed unused .terminal-ui__iframe-url style
+
+Conclusion: Bug 4 FIXED - Single URL input that shows current URL and allows navigation.
