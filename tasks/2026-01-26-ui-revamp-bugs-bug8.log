@@ -1,0 +1,8 @@
+## Bug 8: Agent Label Missing Safe/YOLO Indicator - Investigation & Fix Log
+
+### 2026-01-26 23:38 - Investigation Phase
+
+**What will be done**: Investigate how the agent badge is rendered and where autoApprove mode is stored, then update the badge to display the mode.
+
+**Expected outcome**: Agent badge should display "CLAUDE (safe)" or "CLAUDE (YOLO)" instead of just "CLAUDE".
+
