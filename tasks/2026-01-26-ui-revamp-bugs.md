@@ -138,15 +138,17 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 8: Agent Label Missing Safe/YOLO Indicator
 
-**Status**: Open
+**Status**: Fixed (2026-01-26)
 
 **Description**: The agent label on the session page (e.g., "CLAUDE") does not show whether the session is in "Safe" or "YOLO" mode.
 
 **Expected behavior**: Agent badge should display the mode, e.g., "CLAUDE (safe)" or "CLAUDE (YOLO)" to match the design shown in screenshots.
 
-**Current behavior**: Agent badge only shows the agent name without the mode indicator.
+**Current behavior**: ~~Agent badge only shows the agent name without the mode indicator.~~ Fixed - badge now shows "NAME (safe)" or "NAME (YOLO)".
 
-**Fix approach**: Update the agent badge rendering to include the current autoApprove mode (safe/YOLO) from session state.
+**Fix implemented**: Updated `updateStatusInfo()` in terminal-ui.js to:
+- Use `querySelectorAll` to update all assistant badges (mobile + desktop)
+- Include the mode indicator in badge text: `${name} (${mode})`
 
 ---
 

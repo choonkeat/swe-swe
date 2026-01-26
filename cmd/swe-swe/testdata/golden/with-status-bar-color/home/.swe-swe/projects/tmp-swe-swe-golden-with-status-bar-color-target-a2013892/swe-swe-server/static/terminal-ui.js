@@ -1040,7 +1040,6 @@ class TerminalUI extends HTMLElement {
         // Update new header elements
         const sessionNameEl = this.querySelector('.terminal-ui__session-name');
         const viewersEl = this.querySelector('.terminal-ui__viewers');
-        const assistantBadge = this.querySelector('.terminal-ui__assistant-badge');
         const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
 
         if (sessionNameEl) {
@@ -1062,10 +1061,13 @@ class TerminalUI extends HTMLElement {
             chatBtn.style.display = (this.viewers > 1) ? 'inline-flex' : 'none';
         }
 
-        if (assistantBadge) {
-            // Show assistant name in badge
-            assistantBadge.textContent = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
-        }
+        // Update all assistant badges (mobile + desktop) with name and mode
+        const assistantBadges = this.querySelectorAll('.terminal-ui__assistant-badge');
+        assistantBadges.forEach(badge => {
+            const name = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
+            const mode = this.yoloMode ? 'YOLO' : 'safe';
+            badge.textContent = `${name} (${mode})`;
+        });
 
         if (yoloToggle) {
             // Show/hide YOLO toggle based on support

@@ -31,3 +31,16 @@ Build and tests passed.
 
 **Expected outcome**: Agent badge should show mode indicator (safe/YOLO) after the name.
 
+### 2026-01-26 23:43 - Verification Results
+
+**Test performed via MCP browser**:
+1. Navigated to http://host.docker.internal:9770/
+2. Created new OpenCode session
+3. Session loaded - checked agent badge in left panel header
+
+**Observed outcome**:
+- Agent badge displays **"OPENCODE (safe)"** in the desktop left panel header (next to "Agent Terminal")
+- The badge correctly shows both the agent name (OPENCODE) and the mode indicator (safe)
+
+**Conclusion**: FIX VERIFIED SUCCESSFULLY - Agent badge now displays the mode indicator (safe/YOLO) after the agent name.
+
