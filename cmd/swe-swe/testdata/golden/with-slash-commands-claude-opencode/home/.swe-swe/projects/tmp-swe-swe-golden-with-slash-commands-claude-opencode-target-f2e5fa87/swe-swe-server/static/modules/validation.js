@@ -40,12 +40,12 @@ export function validateSessionName(name) {
         return { valid: true, name: '' };
     }
 
-    if (name.length > 32) {
-        return { valid: false, error: 'Name must be 32 characters or less' };
+    if (name.length > 256) {
+        return { valid: false, error: 'Name must be 256 characters or less' };
     }
 
-    if (!/^[a-zA-Z0-9 \-_]+$/.test(name)) {
-        return { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, and underscores' };
+    if (!/^[a-zA-Z0-9 \-_/.@]+$/.test(name)) {
+        return { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, underscores, slashes, dots, and @' };
     }
 
     return { valid: true, name: name };

@@ -76,8 +76,8 @@ test('validateSessionName accepts name with spaces', () => {
     assert.deepStrictEqual(validateSessionName('My Session'), { valid: true, name: 'My Session' });
 });
 
-test('validateSessionName accepts 32 character name', () => {
-    const name = 'a'.repeat(32);
+test('validateSessionName accepts 256 character name', () => {
+    const name = 'a'.repeat(256);
     assert.deepStrictEqual(validateSessionName(name), { valid: true, name: name });
 });
 
@@ -89,20 +89,25 @@ test('validateSessionName accepts hyphen and underscore', () => {
     assert.deepStrictEqual(validateSessionName('my-session_name'), { valid: true, name: 'my-session_name' });
 });
 
-// validateSessionName - invalid cases
-test('validateSessionName rejects name over 32 chars', () => {
-    const name = 'a'.repeat(33);
-    assert.deepStrictEqual(validateSessionName(name), { valid: false, error: 'Name must be 32 characters or less' });
+// validateSessionName - now valid cases (@ . / are allowed)
+test('validateSessionName accepts name with @ symbol', () => {
+    assert.deepStrictEqual(validateSessionName('owner/repo@branch'), { valid: true, name: 'owner/repo@branch' });
 });
 
-test('validateSessionName rejects name with @ symbol', () => {
-    assert.deepStrictEqual(validateSessionName('session@home'), { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, and underscores' });
+test('validateSessionName accepts name with period', () => {
+    assert.deepStrictEqual(validateSessionName('my.org/repo@main'), { valid: true, name: 'my.org/repo@main' });
+});
+
+test('validateSessionName accepts name with slash', () => {
+    assert.deepStrictEqual(validateSessionName('owner/repo@feature/login'), { valid: true, name: 'owner/repo@feature/login' });
+});
+
+// validateSessionName - invalid cases
+test('validateSessionName rejects name over 256 chars', () => {
+    const name = 'a'.repeat(257);
+    assert.deepStrictEqual(validateSessionName(name), { valid: false, error: 'Name must be 256 characters or less' });
 });
 
 test('validateSessionName rejects name with special chars', () => {
-    assert.deepStrictEqual(validateSessionName('session!#$%'), { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, and underscores' });
-});
-
-test('validateSessionName rejects name with period', () => {
-    assert.deepStrictEqual(validateSessionName('session.name'), { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, and underscores' });
+    assert.deepStrictEqual(validateSessionName('session!#$%'), { valid: false, error: 'Name can only contain letters, numbers, spaces, hyphens, underscores, slashes, dots, and @' });
 });

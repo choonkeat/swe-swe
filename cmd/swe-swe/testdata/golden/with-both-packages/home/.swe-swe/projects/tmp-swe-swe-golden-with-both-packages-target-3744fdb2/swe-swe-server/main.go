@@ -44,7 +44,7 @@ var staticFS embed.FS
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
-	GitCommit = "cff4cbe89"
+	GitCommit = "dcb300de5"
 )
 
 var indexTemplate *template.Template
@@ -2881,6 +2881,80 @@ func getWorkspaceOriginURL() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// getRepoOriginURL returns the origin remote URL for a given repo path
+func getRepoOriginURL(repoPath string) (string, error) {
+	cmd := exec.Command("git", "-C", repoPath, "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get origin URL: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// getCurrentBranch returns the current branch name for a given repo path
+func getCurrentBranch(repoPath string) (string, error) {
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// extractOwnerRepo extracts "owner/repo" from a git URL
+// Handles: https://github.com/owner/repo.git, git@github.com:owner/repo.git, etc.
+func extractOwnerRepo(gitURL string) string {
+	gitURL = strings.TrimSpace(gitURL)
+	gitURL = strings.TrimSuffix(gitURL, ".git")
+
+	// Handle SSH format: git@github.com:owner/repo
+	if strings.HasPrefix(gitURL, "git@") {
+		// git@github.com:owner/repo -> owner/repo
+		if idx := strings.Index(gitURL, ":"); idx != -1 {
+			return gitURL[idx+1:]
+		}
+	}
+
+	// Handle HTTPS/HTTP format: https://github.com/owner/repo
+	// Extract last two path segments
+	gitURL = strings.TrimPrefix(gitURL, "https://")
+	gitURL = strings.TrimPrefix(gitURL, "http://")
+	gitURL = strings.TrimPrefix(gitURL, "ssh://")
+
+	// Split by "/" and take last 2 segments
+	parts := strings.Split(gitURL, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return ""
+}
+
+// deriveDefaultSessionName derives a default session name from repo and branch info
+// Format: {owner}/{repo}@{branch}
+func deriveDefaultSessionName(repoPath string) string {
+	originURL, err := getRepoOriginURL(repoPath)
+	if err != nil {
+		log.Printf("Warning: could not get origin URL for %s: %v", repoPath, err)
+		return ""
+	}
+
+	branchName, err := getCurrentBranch(repoPath)
+	if err != nil {
+		log.Printf("Warning: could not get current branch for %s: %v", repoPath, err)
+		return ""
+	}
+
+	ownerRepo := extractOwnerRepo(originURL)
+	if ownerRepo == "" {
+		return ""
+	}
+
+	return ownerRepo + "@" + branchName
+}
+
 // isWorkspaceRepo checks if the given URL matches the /workspace repo's origin
 func isWorkspaceRepo(repoURL string) bool {
 	// Normalize input
@@ -3396,6 +3470,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		}
 	}
 
+	// Derive default session name if none provided
+	// Format: {owner}/{repo}@{branch}
+	if name == "" && workDir != "" {
+		name = deriveDefaultSessionName(workDir)
+		if name != "" {
+			log.Printf("Derived default session name: %s", name)
+		}
+	}
+
 	// Generate recording UUID
 	recordingUUID := uuid.New().String()
 
@@ -3646,14 +3729,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			case "rename_session":
 				// Handle session rename request
 				name := strings.TrimSpace(msg.Name)
-				// Validate: max 32 chars, alphanumeric + spaces + hyphens + underscores
-				if len(name) > 32 {
+				// Validate: max 256 chars, alphanumeric + spaces + hyphens + underscores + slashes + dots + @
+				if len(name) > 256 {
 					log.Printf("Session rename rejected: name too long (%d chars)", len(name))
 					continue
 				}
 				valid := true
 				for _, r := range name {
-					if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_') {
+					if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' || r == '/' || r == '.' || r == '@') {
 						valid = false
 						break
 					}

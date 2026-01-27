@@ -73,6 +73,22 @@
     display: none;
 }
 
+/* Style xterm scrollbar to match dark theme */
+.xterm .xterm-viewport::-webkit-scrollbar {
+    width: 10px;
+    background: var(--bg-primary);
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background: var(--border-secondary);
+    border-radius: 5px;
+    border: 2px solid var(--bg-primary);
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
 .scroll-spacer {
     width: 100%;
     pointer-events: none;

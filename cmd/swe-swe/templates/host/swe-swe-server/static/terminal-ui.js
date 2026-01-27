@@ -205,7 +205,7 @@ class TerminalUI extends HTMLElement {
                                 </div>
                                 <div class="settings-panel__field">
                                     <label class="settings-panel__label" for="settings-session">Session Name</label>
-                                    <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="32">
+                                    <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
                                 </div>
                                 <div class="settings-panel__field">
                                     <label class="settings-panel__label">Status Bar Color</label>
@@ -1185,7 +1185,7 @@ class TerminalUI extends HTMLElement {
 
     promptRenameSession() {
         while (true) {
-            const newName = window.prompt('Enter session name (max 32 chars):', this.sessionName);
+            const newName = window.prompt('Enter session name:', this.sessionName);
 
             // User clicked Cancel
             if (newName === null) {
