@@ -25,3 +25,4 @@ deploy/digitalocean/manifest.json
 .claude
 .playwright-mcp
 .test-repos
+tools/
