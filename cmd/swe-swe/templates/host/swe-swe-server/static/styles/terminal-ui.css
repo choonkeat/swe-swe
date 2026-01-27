@@ -1544,6 +1544,9 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .terminal-ui__assistant-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 10px;
     font-weight: 600;
     padding: 3px 8px;
@@ -1551,6 +1554,44 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: #fff;
     border-radius: 4px;
     letter-spacing: 0.5px;
+}
+
+.terminal-ui__assistant-badge.yolo {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+}
+
+.terminal-ui__assistant-badge .mode-label {
+    font-weight: 400;
+    opacity: 0.9;
+}
+
+.terminal-ui__assistant-badge .badge-toggle {
+    width: 20px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.terminal-ui__assistant-badge .badge-toggle::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s;
+}
+
+.terminal-ui__assistant-badge .badge-toggle.active {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.terminal-ui__assistant-badge .badge-toggle.active::after {
+    transform: translateX(8px);
 }
 
 /* === Mobile View Tabs (in terminal bar) === */

@@ -224,12 +224,6 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__swatch" style="background: #ec4899" data-color="#ec4899" title="Pink"></button>
                                     </div>
                                 </div>
-                                <div class="settings-panel__field settings-panel__field--yolo">
-                                    <div class="settings-panel__toggle-row">
-                                        <label class="settings-panel__label">YOLO Mode</label>
-                                        <div class="settings-panel__toggle" id="settings-yolo-toggle" role="switch" aria-checked="false" tabindex="0"></div>
-                                    </div>
-                                </div>
                             </section>
                             <nav class="settings-panel__nav">
                                 <a href="/" target="swe-swe-home" class="settings-panel__nav-btn">
@@ -301,10 +295,6 @@ class TerminalUI extends HTMLElement {
                             <span class="terminal-ui__status-dot"></span>
                             <span class="terminal-ui__status-text desktop-only">Connecting...</span>
                             <span class="terminal-ui__uptime desktop-only"></span>
-                        </span>
-                        <span class="terminal-ui__yolo-toggle desktop-only" style="display: none; margin-left: auto;">
-                            <span>YOLO</span>
-                            <span class="toggle-switch"></span>
                         </span>
                     </div>
                     <div class="terminal-ui__header-right">
@@ -989,8 +979,6 @@ class TerminalUI extends HTMLElement {
                 this.yoloMode = msg.yoloMode || false;
                 this.yoloSupported = msg.yoloSupported || false;
                 this.updateStatusInfo();
-                // Update settings panel toggle if open
-                this.updateSettingsYoloToggle();
                 break;
             case 'chat':
                 // Incoming chat message
@@ -1048,7 +1036,6 @@ class TerminalUI extends HTMLElement {
         // Update new header elements
         const sessionNameEl = this.querySelector('.terminal-ui__session-name');
         const viewersEl = this.querySelector('.terminal-ui__viewers');
-        const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
 
         if (sessionNameEl) {
             sessionNameEl.textContent = this.sessionName || this.uuidShort || 'Session';
@@ -1069,19 +1056,27 @@ class TerminalUI extends HTMLElement {
             chatBtn.style.display = (this.previewMode || this.viewers > 1) ? 'inline-flex' : 'none';
         }
 
-        // Update all assistant badges (mobile + desktop) with name and mode
+        // Update all assistant badges (mobile + desktop) with name and mode toggle
         const assistantBadges = this.querySelectorAll('.terminal-ui__assistant-badge');
         assistantBadges.forEach(badge => {
             const name = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
-            const mode = this.yoloMode ? 'YOLO' : 'safe';
-            badge.textContent = `${name} (${mode})`;
+            if (this.yoloSupported) {
+                // Show toggle with mode label: "NAME [toggle] safe" or "NAME yolo [toggle]"
+                const toggleClass = this.yoloMode ? 'active' : '';
+                const modeLabel = this.yoloMode ? 'yolo' : 'safe';
+                if (this.yoloMode) {
+                    badge.innerHTML = `${name} <span class="mode-label">${modeLabel}</span> <span class="badge-toggle ${toggleClass}"></span>`;
+                } else {
+                    badge.innerHTML = `${name} <span class="badge-toggle ${toggleClass}"></span> <span class="mode-label">${modeLabel}</span>`;
+                }
+                badge.style.cursor = 'pointer';
+                badge.classList.toggle('yolo', this.yoloMode);
+            } else {
+                badge.textContent = name;
+                badge.style.cursor = 'default';
+                badge.classList.remove('yolo');
+            }
         });
-
-        if (yoloToggle) {
-            // Show/hide YOLO toggle based on support
-            yoloToggle.style.display = this.yoloSupported ? 'flex' : 'none';
-            yoloToggle.classList.toggle('active', this.yoloMode);
-        }
 
         // Legacy: Update old status bar elements for backwards compatibility
         const statusBar = this.querySelector('.terminal-ui__status-bar');
@@ -1378,21 +1373,6 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // YOLO toggle
-        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
-        if (yoloToggle) {
-            const handleYoloToggle = () => {
-                this.toggleYoloMode();
-            };
-            yoloToggle.addEventListener('click', handleYoloToggle);
-            yoloToggle.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleYoloToggle();
-                }
-            });
-        }
-
         // Restore saved color from localStorage
         this.restoreStatusBarColor();
     }
@@ -1415,13 +1395,15 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // YOLO toggle in header
-        const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
-        if (yoloToggle) {
-            yoloToggle.addEventListener('click', () => {
-                this.toggleYoloMode();
+        // Assistant badges toggle YOLO mode when clicked
+        const assistantBadges = this.querySelectorAll('.terminal-ui__assistant-badge');
+        assistantBadges.forEach(badge => {
+            badge.addEventListener('click', () => {
+                if (this.yoloSupported) {
+                    this.toggleYoloMode();
+                }
             });
-        }
+        });
 
         // Chat button in header
         const chatBtn = this.querySelector('.terminal-ui__chat-btn');
@@ -1577,16 +1559,6 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Update YOLO toggle in settings panel (called on status update)
-    updateSettingsYoloToggle() {
-        const yoloField = this.querySelector('.settings-panel__field--yolo');
-        const yoloToggle = this.querySelector('#settings-yolo-toggle');
-        if (yoloField && yoloToggle) {
-            yoloField.classList.toggle('supported', this.yoloSupported);
-            yoloToggle.classList.toggle('active', this.yoloMode);
-            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
-        }
-    }
 
     // Populate settings inputs when panel opens
     populateSettingsPanel() {
@@ -1664,16 +1636,6 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // YOLO toggle
-        const yoloField = panel.querySelector('.settings-panel__field--yolo');
-        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
-        if (yoloField && yoloToggle) {
-            // Show/hide based on agent support
-            yoloField.classList.toggle('supported', this.yoloSupported);
-            // Set toggle state
-            yoloToggle.classList.toggle('active', this.yoloMode);
-            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
-        }
     }
 
     showPasteOverlay() {
