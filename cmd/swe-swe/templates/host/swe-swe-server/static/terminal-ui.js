@@ -129,6 +129,9 @@ class TerminalUI extends HTMLElement {
                 }, 200);
             } else {
                 console.log('[TerminalUI] Preview mode: skipping terminal/WebSocket init');
+                // In preview mode, enable yolo toggle for UI testing
+                this.yoloSupported = true;
+                this.yoloMode = urlParams.has('yolo');
                 // In preview mode, manually trigger status update to show UI elements like chat button
                 // Use setTimeout to ensure all initialization is complete
                 setTimeout(() => this.updateStatusInfo(), 100);
@@ -1049,14 +1052,10 @@ class TerminalUI extends HTMLElement {
         assistantBadges.forEach(badge => {
             const name = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
             if (this.yoloSupported) {
-                // Show toggle with mode label: "NAME [toggle] safe" or "NAME yolo [toggle]"
+                // Show toggle with mode label inside: "NAME [● normal]" or "NAME [yolo ●]"
                 const toggleClass = this.yoloMode ? 'active' : '';
-                const modeLabel = this.yoloMode ? 'yolo' : 'safe';
-                if (this.yoloMode) {
-                    badge.innerHTML = `${name} <span class="mode-label">${modeLabel}</span> <span class="badge-toggle ${toggleClass}"></span>`;
-                } else {
-                    badge.innerHTML = `${name} <span class="badge-toggle ${toggleClass}"></span> <span class="mode-label">${modeLabel}</span>`;
-                }
+                const modeLabel = this.yoloMode ? 'yolo' : 'normal';
+                badge.innerHTML = `${name} <span class="badge-toggle ${toggleClass}">${modeLabel}</span>`;
                 badge.style.cursor = 'pointer';
                 badge.classList.toggle('yolo', this.yoloMode);
             } else {

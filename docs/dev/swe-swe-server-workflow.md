@@ -134,19 +134,24 @@ This copies the template to `/tmp`, runs tests, and syncs `go.sum` changes back.
 The session page requires WebSocket connection for the terminal, which makes it difficult to iterate on HTML/CSS. Use **preview mode** to render the UI shell without terminal/WebSocket:
 
 ```bash
-# View session page UI without WebSocket
+# View session page UI without WebSocket (safe mode)
 http://swe-swe:3000/session/test123?assistant=claude&preview
+
+# View session page UI in YOLO mode
+http://swe-swe:3000/session/test123?assistant=claude&preview&yolo
 ```
 
 The `?preview` query param:
 - Renders the full session page HTML/CSS
 - Skips terminal initialization and WebSocket connection
+- Enables YOLO toggle for UI testing (add `&yolo` to test YOLO mode styling)
 - Allows visual iteration on navigation, panels, styling, etc.
 
 This is useful for fixing:
 - Navigation bar layout and colors
 - Panel tabs styling
 - Header/status bar appearance
+- YOLO toggle styling (use `&yolo` to test both states)
 - Any CSS that doesn't depend on terminal content
 
 ## Troubleshooting
