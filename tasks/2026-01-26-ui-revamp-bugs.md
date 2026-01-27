@@ -153,6 +153,38 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ---
 
+## Bug 9: Reconnecting Status Shows Raw HTML
+
+**Status**: Pending
+
+**Description**: When the WebSocket connection is reconnecting, the status message displays raw HTML tags instead of rendered text.
+
+**Expected behavior**: Status should display plain text like "Reconnecting to OpenCode in 34s..."
+
+**Current behavior**: Status displays raw HTML: `Reconnecting to <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">OpenCode</a> in 34s...`
+
+**Investigation findings**:
+- [ ] Find where the reconnecting status message is being set
+- [ ] Fix to use textContent or escape HTML properly
+
+---
+
+## Bug 10: Shell Panel Shows Redundant Header When Embedded
+
+**Status**: Pending
+
+**Description**: When viewing the Shell/Terminal tab in the right panel (iframe), the `>_ Agent Terminal [SHELL (safe)]` header bar is still visible. This is redundant since the parent page already shows "Terminal" as the active tab.
+
+**Expected behavior**: When terminal-ui is embedded inside an iframe (right panel), the panel header should be hidden.
+
+**Current behavior**: Panel header `>_ Agent Terminal [SHELL (safe)]` is visible even when embedded, taking up vertical space unnecessarily.
+
+**Investigation findings**:
+- [ ] terminal-ui.js already detects iframe embedding via `window.self !== window.top`
+- [ ] Need to hide `.terminal-ui__panel-header` (or equivalent) when embedded
+
+---
+
 ## Files to Investigate
 
 - `cmd/swe-swe/templates/host/swe-swe-server/static/terminal-ui.js`
