@@ -1775,8 +1775,34 @@ func TestHandleRepoPrepareAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("empty URL returns 400", func(t *testing.T) {
+	t.Run("empty URL defaults to workspace mode", func(t *testing.T) {
 		body := `{"url": ""}`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["path"] != "/workspace" {
+			t.Errorf("expected path '/workspace', got %q", result["path"])
+		}
+		if result["isWorkspace"] != true {
+			t.Errorf("expected isWorkspace true, got %v", result["isWorkspace"])
+		}
+	})
+
+	t.Run("clone mode requires URL", func(t *testing.T) {
+		body := `{"mode": "clone", "url": ""}`
 		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -1793,8 +1819,54 @@ func TestHandleRepoPrepareAPI(t *testing.T) {
 			t.Fatalf("failed to decode response: %v", err)
 		}
 
-		if result["error"] != "URL is required" {
-			t.Errorf("expected error 'URL is required', got %q", result["error"])
+		if result["error"] != "URL is required for clone mode" {
+			t.Errorf("expected error 'URL is required for clone mode', got %q", result["error"])
+		}
+	})
+
+	t.Run("create mode requires name", func(t *testing.T) {
+		body := `{"mode": "create", "name": ""}`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+
+		var result map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["error"] != "Project name is required" {
+			t.Errorf("expected error 'Project name is required', got %q", result["error"])
+		}
+	})
+
+	t.Run("invalid mode returns 400", func(t *testing.T) {
+		body := `{"mode": "invalid"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+
+		var result map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["error"] != "Invalid mode. Use 'workspace', 'clone', or 'create'" {
+			t.Errorf("expected error about invalid mode, got %q", result["error"])
 		}
 	})
 

@@ -1279,7 +1279,8 @@
                 selectedBranch: '',
                 selectedAgent: '',
                 preSelectedAgent: '',
-                isNewProject: false
+                isNewProject: false,
+                projectName: ''
             };
 
             var REPO_HISTORY_KEY = 'swe-swe-repo-history';
@@ -1343,6 +1344,7 @@
                 dialogState.selectedBranch = '';
                 dialogState.selectedAgent = '';
                 dialogState.isNewProject = false;
+                dialogState.projectName = '';
             }
 
             function resetBranchAndAgent() {
@@ -1370,6 +1372,7 @@
                 dialogState.selectedBranch = '';
                 dialogState.selectedAgent = '';
                 dialogState.isNewProject = false;
+                dialogState.projectName = '';
             }
 
             window.openNewSessionDialog = function(preSelectedAgent, sessionUUID, debug) {
@@ -1481,6 +1484,9 @@
                 .then(function(data) {
                     dialogState.repoPath = data.path;
                     dialogState.isNewProject = data.isNew || false;
+                    if (dialogState.mode === 'create' && body.name) {
+                        dialogState.projectName = body.name;
+                    }
 
                     // Save to history for clone mode
                     if (dialogState.mode === 'clone' && body.url) {
@@ -1575,8 +1581,10 @@
                 if (dialogState.repoPath && dialogState.repoPath !== '/workspace') {
                     url += '&pwd=' + encodeURIComponent(dialogState.repoPath);
                 }
-                if (dialogState.selectedBranch) {
-                    url += '&name=' + encodeURIComponent(dialogState.selectedBranch);
+                // Use project name for new projects, branch for existing repos
+                var sessionName = dialogState.isNewProject ? dialogState.projectName : dialogState.selectedBranch;
+                if (sessionName) {
+                    url += '&name=' + encodeURIComponent(sessionName);
                 }
 
                 window.location.href = url;

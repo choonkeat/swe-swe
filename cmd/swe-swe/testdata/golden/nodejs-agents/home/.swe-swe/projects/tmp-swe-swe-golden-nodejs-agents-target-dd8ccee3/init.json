@@ -10,6 +10,6 @@
   "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
   "statusBarFontSize": 12,
   "statusBarFontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  "hostUID": 501,
-  "hostGID": 20
+  "hostUID": 1000,
+  "hostGID": 1000
 }

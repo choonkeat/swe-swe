@@ -88,14 +88,14 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Create non-root user for running swe-swe-server
 # If target GID already exists (e.g., dialout=20), use that group; otherwise create app group
 # Use -K to suppress warnings about macOS UIDs (501+) being below Linux UID_MIN (1000)
-RUN if ! getent group 20 > /dev/null; then groupadd -K GID_MIN=20 -g 20 app; fi && \
-    useradd -m -K UID_MIN=100 -u 501 -g 20 -s /bin/bash app
+RUN if ! getent group 1000 > /dev/null; then groupadd -K GID_MIN=20 -g 1000 app; fi && \
+    useradd -m -K UID_MIN=100 -u 1000 -g 1000 -s /bin/bash app
 
 # Create worktrees directory with app ownership (used for git worktrees)
-RUN mkdir -p /worktrees && chown 501:20 /worktrees
+RUN mkdir -p /worktrees && chown 1000:1000 /worktrees
 
 # Create repos directory with app ownership (used for cloning external repos)
-RUN mkdir -p /repos && chown 501:20 /repos
+RUN mkdir -p /repos && chown 1000:1000 /repos
 
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server
