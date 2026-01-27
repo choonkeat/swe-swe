@@ -169,9 +169,6 @@ wss.on('connection', (ws) => {
       const msg = JSON.parse(message);
 
       switch (msg.type) {
-        case 'resize':
-          await handleResize(msg.width, msg.height);
-          break;
         case 'navigate':
           await handleNavigate(msg.url);
           break;
