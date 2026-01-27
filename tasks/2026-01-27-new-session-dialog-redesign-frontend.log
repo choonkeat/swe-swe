@@ -1,2 +1,16 @@
 145625 Starting Frontend Phase 1: Add CSS for new elements (.dialog__select, .dialog__warning, .dialog__field--hidden)
 145625 Expected: CSS classes added after .dialog__start:disabled section around line 736
+145644 CSS added: .dialog__select (with custom dropdown arrow), .dialog__warning (amber color), .dialog__field--hidden
+145652 Starting step 2: Update Dialog HTML - replacing Repository field with mode selector and conditional fields
+145708 HTML updated: mode selector dropdown, clone-url-field, create-name-field, prepare button with warning div, branch-field with id
+145720 Starting step 3: Update JavaScript - replacing old repo flow with new mode-based flow
+145816 JavaScript updated: new mode-based flow with modeSelect, prepareBtn, warning display, conditional branch field visibility
+145821 Starting dev server for manual testing via App Preview
+145821 Expected: Server starts, dialog shows dropdown with 3 options, each mode shows appropriate fields
+150023 TESTING RESULTS:
+150023 - Workspace mode: dropdown shows 3 options, Next button prepares repo, branch field enabled, agent selection works - PASS
+150023 - Clone mode: selecting 'Clone external repository' shows URL input field - PASS
+150023 - Create mode: selecting 'Create new project' shows name field, after Next branch field is hidden, goes directly to agent selection - PASS
+150106 Running make build golden-update
+150106 Expected: Golden files updated with new dialog HTML/JS
+150122 Golden update completed successfully

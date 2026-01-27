@@ -734,6 +734,39 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        .dialog__select {
+            flex: 1;
+            padding: 12px 14px;
+            font-size: 14px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #f8fafc;
+            font-family: inherit;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+        .dialog__select:focus {
+            outline: none;
+            border-color: #7c3aed;
+        }
+        .dialog__select option {
+            background: #1e293b;
+            color: #f8fafc;
+        }
+        .dialog__warning {
+            color: #f59e0b;
+            font-size: 12px;
+            margin-top: 8px;
+            display: none;
+        }
+        .dialog__field--hidden {
+            display: none;
+        }
 
         /* Mobile responsiveness */
         @media (max-width: 640px) {
@@ -866,15 +899,37 @@
                 <div class="dialog__title">New Session</div>
                 <button class="dialog__close" id="new-session-close">&times;</button>
             </div>
+            <!-- Mode selector -->
             <div class="dialog__field">
-                <label class="dialog__label">Repository</label>
+                <label class="dialog__label">Repository Type</label>
+                <select class="dialog__select" id="new-session-mode">
+                    <option value="workspace">Default workspace (/workspace)</option>
+                    <option value="clone">Clone external repository</option>
+                    <option value="create">Create new project</option>
+                </select>
+            </div>
+            <!-- Clone URL field (shown when mode=clone) -->
+            <div class="dialog__field dialog__field--hidden" id="clone-url-field">
+                <label class="dialog__label">Repository URL</label>
                 <div class="dialog__row">
-                    <input type="text" class="dialog__input" id="new-session-repo" list="repo-history" placeholder="Repository URL or /workspace">
+                    <input type="text" class="dialog__input" id="new-session-url" list="repo-history" placeholder="https://github.com/... or git@github.com:...">
                     <datalist id="repo-history"></datalist>
-                    <button class="dialog__next" id="new-session-repo-next">Next</button>
                 </div>
             </div>
+            <!-- Project name field (shown when mode=create) -->
+            <div class="dialog__field dialog__field--hidden" id="create-name-field">
+                <label class="dialog__label">Project Name</label>
+                <div class="dialog__row">
+                    <input type="text" class="dialog__input" id="new-session-name" placeholder="my-project (letters, numbers, dashes)">
+                </div>
+            </div>
+            <!-- Next button (prepare repo) -->
             <div class="dialog__field">
+                <button class="dialog__next" id="new-session-prepare" style="width: 100%;">Next</button>
+                <div class="dialog__warning" id="new-session-warning"></div>
+            </div>
+            <!-- Branch field (hidden for create mode) -->
+            <div class="dialog__field" id="branch-field">
                 <label class="dialog__label">Branch (optional)</label>
                 <div class="dialog__row">
                     <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
@@ -1198,8 +1253,14 @@
         (function() {
             var overlay = document.getElementById('new-session-dialog-overlay');
             var closeBtn = document.getElementById('new-session-close');
-            var repoInput = document.getElementById('new-session-repo');
-            var repoNextBtn = document.getElementById('new-session-repo-next');
+            var modeSelect = document.getElementById('new-session-mode');
+            var cloneUrlField = document.getElementById('clone-url-field');
+            var createNameField = document.getElementById('create-name-field');
+            var urlInput = document.getElementById('new-session-url');
+            var nameInput = document.getElementById('new-session-name');
+            var prepareBtn = document.getElementById('new-session-prepare');
+            var warningDiv = document.getElementById('new-session-warning');
+            var branchField = document.getElementById('branch-field');
             var branchInput = document.getElementById('new-session-branch');
             var branchNextBtn = document.getElementById('new-session-branch-next');
             var agentsContainer = document.getElementById('new-session-agents');
@@ -1213,10 +1274,12 @@
             var dialogState = {
                 sessionUUID: '',
                 debug: false,
+                mode: 'workspace',
                 repoPath: '',
                 selectedBranch: '',
                 selectedAgent: '',
-                preSelectedAgent: ''
+                preSelectedAgent: '',
+                isNewProject: false
             };
 
             var REPO_HISTORY_KEY = 'swe-swe-repo-history';
@@ -1247,14 +1310,16 @@
                 }
             }
 
-            function getDefaultRepoUrl() {
-                return '{{.DefaultRepoUrl}}';
-            }
-
             function resetDialog() {
-                repoInput.value = getDefaultRepoUrl();
-                repoInput.disabled = false;
-                repoNextBtn.disabled = false;
+                modeSelect.value = 'workspace';
+                dialogState.mode = 'workspace';
+                cloneUrlField.classList.add('dialog__field--hidden');
+                createNameField.classList.add('dialog__field--hidden');
+                urlInput.value = '';
+                nameInput.value = '';
+                warningDiv.style.display = 'none';
+                warningDiv.textContent = '';
+                branchField.classList.remove('dialog__field--hidden');
                 branchInput.value = '';
                 branchInput.disabled = true;
                 branchNextBtn.disabled = true;
@@ -1277,6 +1342,34 @@
                 dialogState.repoPath = '';
                 dialogState.selectedBranch = '';
                 dialogState.selectedAgent = '';
+                dialogState.isNewProject = false;
+            }
+
+            function resetBranchAndAgent() {
+                warningDiv.style.display = 'none';
+                warningDiv.textContent = '';
+                branchField.classList.remove('dialog__field--hidden');
+                branchInput.value = '';
+                branchInput.disabled = true;
+                branchNextBtn.disabled = true;
+                branchList.innerHTML = '';
+                startBtn.disabled = true;
+
+                var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
+                agentLabels.forEach(function(label) {
+                    label.classList.add('dialog__agent--disabled');
+                    label.classList.remove('dialog__agent--selected');
+                    var radio = label.querySelector('input[type="radio"]');
+                    if (radio) {
+                        radio.disabled = true;
+                        radio.checked = false;
+                    }
+                });
+
+                dialogState.repoPath = '';
+                dialogState.selectedBranch = '';
+                dialogState.selectedAgent = '';
+                dialogState.isNewProject = false;
             }
 
             window.openNewSessionDialog = function(preSelectedAgent, sessionUUID, debug) {
@@ -1288,7 +1381,7 @@
                 loadRepoHistory();
                 overlay.style.display = 'flex';
 
-                setTimeout(function() { repoInput.focus(); }, 100);
+                setTimeout(function() { modeSelect.focus(); }, 100);
             };
 
             function closeDialog() {
@@ -1340,21 +1433,42 @@
                 }
             }
 
-            repoNextBtn.addEventListener('click', function() {
-                var repoUrl = repoInput.value.trim();
-                if (!repoUrl) {
-                    showError('Please enter a repository URL');
-                    return;
+            // Mode change handler
+            modeSelect.addEventListener('change', function() {
+                dialogState.mode = modeSelect.value;
+
+                // Show/hide relevant fields
+                cloneUrlField.classList.toggle('dialog__field--hidden', dialogState.mode !== 'clone');
+                createNameField.classList.toggle('dialog__field--hidden', dialogState.mode !== 'create');
+
+                // Reset downstream fields
+                resetBranchAndAgent();
+            });
+
+            // Prepare button handler
+            prepareBtn.addEventListener('click', function() {
+                var body = { mode: dialogState.mode };
+
+                if (dialogState.mode === 'clone') {
+                    body.url = urlInput.value.trim();
+                    if (!body.url) {
+                        showError('Please enter a repository URL');
+                        return;
+                    }
+                } else if (dialogState.mode === 'create') {
+                    body.name = nameInput.value.trim();
+                    if (!body.name) {
+                        showError('Please enter a project name');
+                        return;
+                    }
                 }
 
                 showLoading('Preparing repository...');
-                repoInput.disabled = true;
-                repoNextBtn.disabled = true;
 
                 fetch('/api/repo/prepare', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: repoUrl })
+                    body: JSON.stringify(body)
                 })
                 .then(function(response) {
                     if (!response.ok) {
@@ -1366,16 +1480,40 @@
                 })
                 .then(function(data) {
                     dialogState.repoPath = data.path;
-                    saveToRepoHistory(repoUrl);
-                    return fetch('/api/repo/branches?path=' + encodeURIComponent(data.path));
+                    dialogState.isNewProject = data.isNew || false;
+
+                    // Save to history for clone mode
+                    if (dialogState.mode === 'clone' && body.url) {
+                        saveToRepoHistory(body.url);
+                    }
+
+                    // Show warning if present (soft fail for workspace mode)
+                    if (data.warning) {
+                        warningDiv.textContent = data.warning;
+                        warningDiv.style.display = 'block';
+                    } else {
+                        warningDiv.style.display = 'none';
+                    }
+
+                    if (dialogState.isNewProject) {
+                        // Skip branch selection for new projects
+                        hideLoading();
+                        branchField.classList.add('dialog__field--hidden');
+                        enableAgentSelection();
+                    } else {
+                        // Fetch branches
+                        return fetch('/api/repo/branches?path=' + encodeURIComponent(data.path));
+                    }
                 })
                 .then(function(response) {
+                    if (!response) return; // Already handled new project case
                     if (!response.ok) {
                         throw new Error('Failed to fetch branches');
                     }
                     return response.json();
                 })
                 .then(function(data) {
+                    if (!data) return; // Already handled new project case
                     hideLoading();
                     branchList.innerHTML = '';
                     (data.branches || []).forEach(function(branch) {
@@ -1388,8 +1526,6 @@
                 })
                 .catch(function(err) {
                     hideLoading();
-                    repoInput.disabled = false;
-                    repoNextBtn.disabled = false;
                     showError(err.message || 'Failed to prepare repository');
                 });
             });
@@ -1460,26 +1596,9 @@
                 }
             });
 
-            repoInput.addEventListener('input', function() {
-                branchInput.value = '';
-                branchInput.disabled = true;
-                branchNextBtn.disabled = true;
-                branchList.innerHTML = '';
-                dialogState.selectedBranch = '';
-                dialogState.selectedAgent = '';
-                startBtn.disabled = true;
-
-                var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
-                agentLabels.forEach(function(label) {
-                    label.classList.add('dialog__agent--disabled');
-                    label.classList.remove('dialog__agent--selected');
-                    var radio = label.querySelector('input[type="radio"]');
-                    if (radio) {
-                        radio.disabled = true;
-                        radio.checked = false;
-                    }
-                });
-            });
+            // Reset downstream when mode-specific inputs change
+            urlInput.addEventListener('input', resetBranchAndAgent);
+            nameInput.addEventListener('input', resetBranchAndAgent);
         })();
     </script>
 </body>
