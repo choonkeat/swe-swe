@@ -309,17 +309,13 @@ class TerminalUI extends HTMLElement {
 
                 <!-- Mobile Terminal Bar (mobile only) -->
                 <div class="terminal-ui__terminal-bar mobile-only">
-                    <!-- Mobile view switcher in terminal bar -->
-                    <div class="terminal-ui__view-tabs">
-                        <button data-view="terminal" class="active">
-                            <span class="terminal-ui__view-tab-icon">>_</span>
-                            <span>Terminal</span>
-                        </button>
-                        <button data-view="workspace">
-                            <span class="terminal-ui__view-tab-icon">📁</span>
-                            <span>Workspace</span>
-                        </button>
-                    </div>
+                    <select class="terminal-ui__mobile-nav-select">
+                        <option value="agent-terminal">Agent Terminal</option>
+                        <option value="preview">App Preview</option>
+                        <option value="vscode">Code</option>
+                        <option value="shell">Terminal</option>
+                        <option value="browser">Agent View</option>
+                    </select>
                     <span class="terminal-ui__assistant-badge">CLAUDE</span>
                 </div>
 
@@ -348,14 +344,6 @@ class TerminalUI extends HTMLElement {
                                     <button data-tab="shell">Terminal</button>
                                     <button data-tab="browser">Agent View</button>
                                 </div>
-                            </div>
-                            <div class="terminal-ui__panel-dropdown mobile-only">
-                                <select class="terminal-ui__panel-select">
-                                    <option value="preview">Preview</option>
-                                    <option value="vscode">Code</option>
-                                    <option value="shell">Terminal</option>
-                                    <option value="browser">Agent View</option>
-                                </select>
                             </div>
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
@@ -1425,23 +1413,13 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // Panel dropdown (mobile)
-        const panelDropdown = this.querySelector('.terminal-ui__panel-select');
-        if (panelDropdown) {
-            panelDropdown.addEventListener('change', (e) => {
-                const tab = e.target.value;
-                this.switchPanelTab(tab);
+        // Mobile navigation dropdown (unified view switcher)
+        const mobileNavSelect = this.querySelector('.terminal-ui__mobile-nav-select');
+        if (mobileNavSelect) {
+            mobileNavSelect.addEventListener('change', (e) => {
+                this.switchMobileNav(e.target.value);
             });
         }
-
-        // Mobile view tabs in terminal bar
-        const viewTabBtns = this.querySelectorAll('.terminal-ui__view-tabs button');
-        viewTabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const view = btn.dataset.view;
-                this.switchMobileView(view);
-            });
-        });
     }
 
     // Switch to a different panel tab (changes iframe content)
@@ -2816,24 +2794,35 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Switch between terminal and workspace views on mobile
+    // Switch mobile navigation (unified dropdown: agent-terminal + workspace panels)
+    switchMobileNav(value) {
+        const terminalUi = this.querySelector('.terminal-ui');
+
+        if (value === 'agent-terminal') {
+            // Show terminal, hide iframe
+            terminalUi.classList.remove('mobile-view-workspace');
+            terminalUi.classList.add('mobile-view-terminal');
+            this.mobileActiveView = 'terminal';
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        } else {
+            // Show iframe, hide terminal
+            terminalUi.classList.remove('mobile-view-terminal');
+            terminalUi.classList.add('mobile-view-workspace');
+            this.mobileActiveView = 'workspace';
+            this.switchPanelTab(value); // Reuse existing logic for panel switching
+        }
+    }
+
+    // Switch between terminal and workspace views on mobile (legacy method, kept for compatibility)
     switchMobileView(view) {
         if (view === this.mobileActiveView) return;
 
         this.mobileActiveView = view;
         const terminalUi = this.querySelector('.terminal-ui');
-        const viewTabs = this.querySelector('.terminal-ui__view-tabs');
 
         // Update container class for CSS-based view switching
         terminalUi.classList.remove('mobile-view-terminal', 'mobile-view-workspace');
         terminalUi.classList.add(`mobile-view-${view}`);
-
-        // Update view tab button states
-        if (viewTabs) {
-            viewTabs.querySelectorAll('button').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.view === view);
-            });
-        }
 
         // If switching to terminal, refit and scroll to bottom
         if (view === 'terminal') {

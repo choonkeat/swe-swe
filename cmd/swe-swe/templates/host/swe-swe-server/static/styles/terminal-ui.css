@@ -1516,11 +1516,29 @@ terminal-ui.embedded-in-iframe .mobile-only {
     display: flex;
     align-items: center;
     height: 40px;
-    padding: 0 16px;
+    padding: 0 12px;
     background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
-    gap: 0;
+    gap: 8px;
+}
+
+/* === Mobile Navigation Dropdown === */
+.terminal-ui__mobile-nav-select {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    outline: none;
+}
+
+.terminal-ui__mobile-nav-select:focus {
+    border-color: var(--accent-primary);
 }
 
 /* === Panel Headers (desktop - inside each panel) === */
@@ -1594,40 +1612,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     transform: translateX(8px);
 }
 
-/* === Mobile View Tabs (in terminal bar) === */
-.terminal-ui__view-tabs {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.terminal-ui__view-tabs button {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    font-size: 12px;
-    font-family: inherit;
-    background: transparent;
-    color: var(--text-muted);
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-}
-
-.terminal-ui__view-tabs button:active {
-    background: var(--bg-elevated);
-}
-
-.terminal-ui__view-tabs button.active {
-    background: var(--bg-elevated);
-    color: #4caf50;
-}
-
-.terminal-ui__view-tab-icon {
-    font-size: 14px;
-}
 
 /* === Main Content Area === */
 .terminal-ui__main-content {
@@ -1687,27 +1671,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: #fff;
 }
 
-/* === Panel Dropdown (mobile alternative to tabs) === */
-.terminal-ui__panel-dropdown {
-    display: none;
-    padding: 8px 12px;
-    background: var(--bg-tertiary);
-    border-bottom: 1px solid var(--border-primary);
-}
-
-.terminal-ui__panel-dropdown select {
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 14px;
-    font-family: inherit;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border: 1px solid var(--border-primary);
-    border-radius: 6px;
-    outline: none;
-}
-
-
 /* === Responsive: Desktop-only / Mobile-only === */
 .desktop-only {
     display: inline-flex;
@@ -1749,18 +1712,13 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
     /* Mobile terminal bar adjustments */
     .terminal-ui__terminal-bar {
-        height: 32px;
-        padding: 0 12px;
+        height: 36px;
+        padding: 0 8px;
     }
 
-    /* Mobile view tabs in terminal bar */
-    .terminal-ui__view-tabs button {
-        padding: 4px 10px;
-        font-size: 11px;
-    }
-
-    .terminal-ui__view-tab-icon {
+    .terminal-ui__mobile-nav-select {
         font-size: 12px;
+        padding: 4px 8px;
     }
 
     /* Mobile view switching */
@@ -1781,12 +1739,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
         display: none !important;
     }
 
-    /* Panel dropdown on mobile */
+    /* Hide panel tabs on mobile - navigation handled by mobile-nav-select */
     .terminal-ui__panel-tabs {
         display: none;
-    }
-
-    .terminal-ui__panel-dropdown {
-        display: block;
     }
 }

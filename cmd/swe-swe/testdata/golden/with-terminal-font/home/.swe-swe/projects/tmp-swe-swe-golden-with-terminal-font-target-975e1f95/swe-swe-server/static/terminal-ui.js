@@ -224,12 +224,6 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__swatch" style="background: #ec4899" data-color="#ec4899" title="Pink"></button>
                                     </div>
                                 </div>
-                                <div class="settings-panel__field settings-panel__field--yolo">
-                                    <div class="settings-panel__toggle-row">
-                                        <label class="settings-panel__label">YOLO Mode</label>
-                                        <div class="settings-panel__toggle" id="settings-yolo-toggle" role="switch" aria-checked="false" tabindex="0"></div>
-                                    </div>
-                                </div>
                             </section>
                             <nav class="settings-panel__nav">
                                 <a href="/" target="swe-swe-home" class="settings-panel__nav-btn">
@@ -309,27 +303,19 @@ class TerminalUI extends HTMLElement {
                             <span class="terminal-ui__chat-icon">💬</span>
                             <span class="terminal-ui__chat-badge" style="display: none;">0</span>
                         </button>
-                        <span class="terminal-ui__yolo-toggle desktop-only" style="display: none;">
-                            <span>YOLO</span>
-                            <span class="toggle-switch"></span>
-                        </span>
                         <button class="terminal-ui__settings-btn" title="Settings">⚙</button>
                     </div>
                 </header>
 
                 <!-- Mobile Terminal Bar (mobile only) -->
                 <div class="terminal-ui__terminal-bar mobile-only">
-                    <!-- Mobile view switcher in terminal bar -->
-                    <div class="terminal-ui__view-tabs">
-                        <button data-view="terminal" class="active">
-                            <span class="terminal-ui__view-tab-icon">>_</span>
-                            <span>Terminal</span>
-                        </button>
-                        <button data-view="workspace">
-                            <span class="terminal-ui__view-tab-icon">📁</span>
-                            <span>Workspace</span>
-                        </button>
-                    </div>
+                    <select class="terminal-ui__mobile-nav-select">
+                        <option value="agent-terminal">Agent Terminal</option>
+                        <option value="preview">App Preview</option>
+                        <option value="vscode">Code</option>
+                        <option value="shell">Terminal</option>
+                        <option value="browser">Agent View</option>
+                    </select>
                     <span class="terminal-ui__assistant-badge">CLAUDE</span>
                 </div>
 
@@ -358,14 +344,6 @@ class TerminalUI extends HTMLElement {
                                     <button data-tab="shell">Terminal</button>
                                     <button data-tab="browser">Agent View</button>
                                 </div>
-                            </div>
-                            <div class="terminal-ui__panel-dropdown mobile-only">
-                                <select class="terminal-ui__panel-select">
-                                    <option value="preview">Preview</option>
-                                    <option value="vscode">Code</option>
-                                    <option value="shell">Terminal</option>
-                                    <option value="browser">Agent View</option>
-                                </select>
                             </div>
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
@@ -989,8 +967,6 @@ class TerminalUI extends HTMLElement {
                 this.yoloMode = msg.yoloMode || false;
                 this.yoloSupported = msg.yoloSupported || false;
                 this.updateStatusInfo();
-                // Update settings panel toggle if open
-                this.updateSettingsYoloToggle();
                 break;
             case 'chat':
                 // Incoming chat message
@@ -1048,7 +1024,6 @@ class TerminalUI extends HTMLElement {
         // Update new header elements
         const sessionNameEl = this.querySelector('.terminal-ui__session-name');
         const viewersEl = this.querySelector('.terminal-ui__viewers');
-        const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
 
         if (sessionNameEl) {
             sessionNameEl.textContent = this.sessionName || this.uuidShort || 'Session';
@@ -1069,19 +1044,27 @@ class TerminalUI extends HTMLElement {
             chatBtn.style.display = (this.previewMode || this.viewers > 1) ? 'inline-flex' : 'none';
         }
 
-        // Update all assistant badges (mobile + desktop) with name and mode
+        // Update all assistant badges (mobile + desktop) with name and mode toggle
         const assistantBadges = this.querySelectorAll('.terminal-ui__assistant-badge');
         assistantBadges.forEach(badge => {
             const name = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
-            const mode = this.yoloMode ? 'YOLO' : 'safe';
-            badge.textContent = `${name} (${mode})`;
+            if (this.yoloSupported) {
+                // Show toggle with mode label: "NAME [toggle] safe" or "NAME yolo [toggle]"
+                const toggleClass = this.yoloMode ? 'active' : '';
+                const modeLabel = this.yoloMode ? 'yolo' : 'safe';
+                if (this.yoloMode) {
+                    badge.innerHTML = `${name} <span class="mode-label">${modeLabel}</span> <span class="badge-toggle ${toggleClass}"></span>`;
+                } else {
+                    badge.innerHTML = `${name} <span class="badge-toggle ${toggleClass}"></span> <span class="mode-label">${modeLabel}</span>`;
+                }
+                badge.style.cursor = 'pointer';
+                badge.classList.toggle('yolo', this.yoloMode);
+            } else {
+                badge.textContent = name;
+                badge.style.cursor = 'default';
+                badge.classList.remove('yolo');
+            }
         });
-
-        if (yoloToggle) {
-            // Show/hide YOLO toggle based on support
-            yoloToggle.style.display = this.yoloSupported ? 'flex' : 'none';
-            yoloToggle.classList.toggle('active', this.yoloMode);
-        }
 
         // Legacy: Update old status bar elements for backwards compatibility
         const statusBar = this.querySelector('.terminal-ui__status-bar');
@@ -1378,21 +1361,6 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // YOLO toggle
-        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
-        if (yoloToggle) {
-            const handleYoloToggle = () => {
-                this.toggleYoloMode();
-            };
-            yoloToggle.addEventListener('click', handleYoloToggle);
-            yoloToggle.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleYoloToggle();
-                }
-            });
-        }
-
         // Restore saved color from localStorage
         this.restoreStatusBarColor();
     }
@@ -1415,13 +1383,15 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // YOLO toggle in header
-        const yoloToggle = this.querySelector('.terminal-ui__header .terminal-ui__yolo-toggle');
-        if (yoloToggle) {
-            yoloToggle.addEventListener('click', () => {
-                this.toggleYoloMode();
+        // Assistant badges toggle YOLO mode when clicked
+        const assistantBadges = this.querySelectorAll('.terminal-ui__assistant-badge');
+        assistantBadges.forEach(badge => {
+            badge.addEventListener('click', () => {
+                if (this.yoloSupported) {
+                    this.toggleYoloMode();
+                }
             });
-        }
+        });
 
         // Chat button in header
         const chatBtn = this.querySelector('.terminal-ui__chat-btn');
@@ -1443,23 +1413,13 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // Panel dropdown (mobile)
-        const panelDropdown = this.querySelector('.terminal-ui__panel-select');
-        if (panelDropdown) {
-            panelDropdown.addEventListener('change', (e) => {
-                const tab = e.target.value;
-                this.switchPanelTab(tab);
+        // Mobile navigation dropdown (unified view switcher)
+        const mobileNavSelect = this.querySelector('.terminal-ui__mobile-nav-select');
+        if (mobileNavSelect) {
+            mobileNavSelect.addEventListener('change', (e) => {
+                this.switchMobileNav(e.target.value);
             });
         }
-
-        // Mobile view tabs in terminal bar
-        const viewTabBtns = this.querySelectorAll('.terminal-ui__view-tabs button');
-        viewTabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const view = btn.dataset.view;
-                this.switchMobileView(view);
-            });
-        });
     }
 
     // Switch to a different panel tab (changes iframe content)
@@ -1577,16 +1537,6 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Update YOLO toggle in settings panel (called on status update)
-    updateSettingsYoloToggle() {
-        const yoloField = this.querySelector('.settings-panel__field--yolo');
-        const yoloToggle = this.querySelector('#settings-yolo-toggle');
-        if (yoloField && yoloToggle) {
-            yoloField.classList.toggle('supported', this.yoloSupported);
-            yoloToggle.classList.toggle('active', this.yoloMode);
-            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
-        }
-    }
 
     // Populate settings inputs when panel opens
     populateSettingsPanel() {
@@ -1664,16 +1614,6 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // YOLO toggle
-        const yoloField = panel.querySelector('.settings-panel__field--yolo');
-        const yoloToggle = panel.querySelector('#settings-yolo-toggle');
-        if (yoloField && yoloToggle) {
-            // Show/hide based on agent support
-            yoloField.classList.toggle('supported', this.yoloSupported);
-            // Set toggle state
-            yoloToggle.classList.toggle('active', this.yoloMode);
-            yoloToggle.setAttribute('aria-checked', this.yoloMode ? 'true' : 'false');
-        }
     }
 
     showPasteOverlay() {
@@ -2854,24 +2794,35 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Switch between terminal and workspace views on mobile
+    // Switch mobile navigation (unified dropdown: agent-terminal + workspace panels)
+    switchMobileNav(value) {
+        const terminalUi = this.querySelector('.terminal-ui');
+
+        if (value === 'agent-terminal') {
+            // Show terminal, hide iframe
+            terminalUi.classList.remove('mobile-view-workspace');
+            terminalUi.classList.add('mobile-view-terminal');
+            this.mobileActiveView = 'terminal';
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        } else {
+            // Show iframe, hide terminal
+            terminalUi.classList.remove('mobile-view-terminal');
+            terminalUi.classList.add('mobile-view-workspace');
+            this.mobileActiveView = 'workspace';
+            this.switchPanelTab(value); // Reuse existing logic for panel switching
+        }
+    }
+
+    // Switch between terminal and workspace views on mobile (legacy method, kept for compatibility)
     switchMobileView(view) {
         if (view === this.mobileActiveView) return;
 
         this.mobileActiveView = view;
         const terminalUi = this.querySelector('.terminal-ui');
-        const viewTabs = this.querySelector('.terminal-ui__view-tabs');
 
         // Update container class for CSS-based view switching
         terminalUi.classList.remove('mobile-view-terminal', 'mobile-view-workspace');
         terminalUi.classList.add(`mobile-view-${view}`);
-
-        // Update view tab button states
-        if (viewTabs) {
-            viewTabs.querySelectorAll('button').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.view === view);
-            });
-        }
 
         // If switching to terminal, refit and scroll to bottom
         if (view === 'terminal') {
