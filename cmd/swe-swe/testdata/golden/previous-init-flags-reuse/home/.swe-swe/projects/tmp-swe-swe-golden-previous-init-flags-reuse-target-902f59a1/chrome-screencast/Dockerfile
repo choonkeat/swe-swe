@@ -46,4 +46,4 @@ EXPOSE 9223 6080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Start supervisor to manage Chrome, nginx, and screencast server
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/usr/local/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
