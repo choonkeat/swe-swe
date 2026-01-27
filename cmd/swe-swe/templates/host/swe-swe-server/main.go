@@ -2990,10 +2990,12 @@ func isWorkspaceRepo(repoURL string) bool {
 }
 
 // handleRepoPrepareAPI handles POST /api/repo/prepare
-// Input: { "url": "https://..." }
-// For /workspace: runs git fetch --all
-// For external URL: clones to /repos/{sanitized-url}/workspace
-// Returns: { "path": "/repos/...", "isWorkspace": bool }
+// Input: { "mode": "workspace|clone|create", "url": "...", "name": "..." }
+// Modes:
+//   - workspace: use /workspace, fetch (soft fail with warning)
+//   - clone: clone external URL to /repos/{sanitized-url}/workspace (hard fail)
+//   - create: create new project at /repos/{name}/workspace with git init
+// Returns: { "path": "/repos/...", "isWorkspace": bool, "warning": "..." }
 func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -3001,7 +3003,9 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		URL string `json:"url"`
+		Mode string `json:"mode"` // "workspace", "clone", or "create"
+		URL  string `json:"url"`  // for clone mode
+		Name string `json:"name"` // for create mode
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -3010,38 +3014,72 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Mode = strings.TrimSpace(req.Mode)
 	req.URL = strings.TrimSpace(req.URL)
-	if req.URL == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "URL is required"})
-		return
+	req.Name = strings.TrimSpace(req.Name)
+
+	// Default mode for backwards compatibility
+	if req.Mode == "" {
+		if req.URL == "" || isWorkspaceRepo(req.URL) {
+			req.Mode = "workspace"
+		} else {
+			req.Mode = "clone"
+		}
 	}
 
-	// Check if this is the workspace repo
-	if isWorkspaceRepo(req.URL) {
-		// Fetch all for workspace
+	switch req.Mode {
+	case "workspace":
+		handleRepoPrepareWorkspace(w)
+	case "clone":
+		handleRepoPrepareClone(w, req.URL)
+	case "create":
+		handleRepoPrepareCreate(w, req.Name)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid mode. Use 'workspace', 'clone', or 'create'"})
+	}
+}
+
+// handleRepoPrepareWorkspace handles the workspace mode - use /workspace with soft fetch
+func handleRepoPrepareWorkspace(w http.ResponseWriter) {
+	response := map[string]interface{}{
+		"path":        "/workspace",
+		"isWorkspace": true,
+	}
+
+	// Check if workspace has any remotes configured
+	remoteCmd := exec.Command("git", "-C", "/workspace", "remote")
+	remoteOutput, err := remoteCmd.Output()
+	hasRemote := err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0
+
+	if hasRemote {
 		log.Printf("Fetching all for /workspace")
 		cmd := exec.Command("git", "-C", "/workspace", "fetch", "--all")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Printf("Git fetch failed: %v, output: %s", err, string(output))
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git fetch failed: %s", string(output))})
-			return
+			// Soft fail - return warning instead of error
+			log.Printf("Git fetch failed (continuing with cached): %v, output: %s", err, string(output))
+			response["warning"] = "Unable to fetch latest changes. Using cached branches."
 		}
+	} else {
+		log.Printf("No remote configured for /workspace, skipping fetch")
+	}
 
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// handleRepoPrepareClone handles the clone mode - clone external URL (hard fail)
+func handleRepoPrepareClone(w http.ResponseWriter, url string) {
+	if url == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"path":        "/workspace",
-			"isWorkspace": true,
-		})
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "URL is required for clone mode"})
 		return
 	}
 
-	// External repo - clone to /repos/{sanitized-url}/workspace
-	sanitizedURL := sanitizeRepoURL(req.URL)
+	sanitizedURL := sanitizeRepoURL(url)
 	if sanitizedURL == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -3054,7 +3092,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 
 	// Check if already cloned
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-		// Already cloned, fetch instead
+		// Already cloned, fetch instead (but still hard fail for clone mode)
 		log.Printf("Repository already exists at %s, fetching", repoPath)
 		cmd := exec.Command("git", "-C", repoPath, "fetch", "--all")
 		output, err := cmd.CombinedOutput()
@@ -3067,7 +3105,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Clone the repo
-		log.Printf("Cloning %s to %s", req.URL, repoPath)
+		log.Printf("Cloning %s to %s", url, repoPath)
 		if err := os.MkdirAll(repoBase, 0755); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -3075,7 +3113,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		cmd := exec.Command("git", "clone", req.URL, repoPath)
+		cmd := exec.Command("git", "clone", url, repoPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			log.Printf("Git clone failed: %v, output: %s", err, string(output))
@@ -3090,6 +3128,62 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"path":        repoPath,
 		"isWorkspace": false,
+	})
+}
+
+// handleRepoPrepareCreate handles the create mode - create new project with git init
+func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
+	if name == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Project name is required"})
+		return
+	}
+
+	// Validate name: alphanumeric, dashes, underscores only
+	validName := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+	if !validName.MatchString(name) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid project name. Use only letters, numbers, dashes, and underscores. Must start with a letter or number."})
+		return
+	}
+
+	repoPath := filepath.Join(reposDir, name, "workspace")
+
+	// Check if already exists
+	if _, err := os.Stat(repoPath); err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Project '%s' already exists", name)})
+		return
+	}
+
+	// Create directory
+	log.Printf("Creating new project at %s", repoPath)
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to create directory: %v", err)})
+		return
+	}
+
+	// Initialize git repo
+	cmd := exec.Command("git", "-C", repoPath, "init")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Git init failed: %v, output: %s", err, string(output))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git init failed: %s", string(output))})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"path":        repoPath,
+		"isWorkspace": false,
+		"isNew":       true,
 	})
 }
 
