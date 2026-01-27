@@ -147,8 +147,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Create non-root user for running swe-swe-server
 # If target GID already exists (e.g., dialout=20), use that group; otherwise create app group
-RUN if ! getent group {{GID}} > /dev/null; then groupadd -g {{GID}} app; fi && \
-    useradd -m -u {{UID}} -g {{GID}} -s /bin/bash app
+# Use -K to suppress warnings about macOS UIDs (501+) being below Linux UID_MIN (1000)
+RUN if ! getent group {{GID}} > /dev/null; then groupadd -K GID_MIN=20 -g {{GID}} app; fi && \
+    useradd -m -K UID_MIN=100 -u {{UID}} -g {{GID}} -s /bin/bash app
 
 # Create worktrees directory with app ownership (used for git worktrees)
 RUN mkdir -p /worktrees && chown {{UID}}:{{GID}} /worktrees

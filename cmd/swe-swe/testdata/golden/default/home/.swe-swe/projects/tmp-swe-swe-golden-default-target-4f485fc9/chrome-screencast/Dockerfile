@@ -7,10 +7,12 @@ FROM mcr.microsoft.com/playwright:v1.48.0-noble
 USER root
 
 # Install nginx for CDP reverse proxy and supervisor for process management
+# Note: supervisor installed via pip to avoid transient Ubuntu mirror issues on ARM64
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
-    supervisor \
+    python3-pip \
     libnss3-tools \
+    && pip3 install --break-system-packages supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Create directories for supervisor and logs
