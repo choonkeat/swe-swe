@@ -155,17 +155,18 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 9: Reconnecting Status Shows Raw HTML
 
-**Status**: Pending
+**Status**: Fixed (2026-01-27)
 
 **Description**: When the WebSocket connection is reconnecting, the status message displays raw HTML tags instead of rendered text.
 
 **Expected behavior**: Status should display plain text like "Reconnecting to OpenCode in 34s..."
 
-**Current behavior**: Status displays raw HTML: `Reconnecting to <a href="/" target="swe-swe-model-selector" class="terminal-ui__status-link terminal-ui__status-agent">OpenCode</a> in 34s...`
+**Current behavior**: ~~Status displays raw HTML~~ Fixed - status now displays plain text.
 
 **Investigation findings**:
-- [ ] Find where the reconnecting status message is being set
-- [ ] Fix to use textContent or escape HTML properly
+- [x] Root cause: `updateStatus()` used `textContent` but message contained HTML from `getAssistantLink()`
+- [x] Fix: Added `getAssistantName()` method that returns plain text (no HTML)
+- [x] Updated `scheduleReconnect()` and `connect()` to use `getAssistantName()` instead of `getAssistantLink()`
 
 ---
 

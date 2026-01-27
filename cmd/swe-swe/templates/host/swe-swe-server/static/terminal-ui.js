@@ -667,17 +667,22 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    // Plain text assistant name for status messages (no HTML)
+    getAssistantName() {
+        return this.assistantName || this.assistant || '';
+    }
+
     scheduleReconnect() {
         const delay = getDelay(this.reconnectState);
         this.reconnectState = nextAttempt(this.reconnectState);
 
         let remaining = formatCountdown(delay);
-        this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantLink()} in ${remaining}s...`);
+        this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantName()} in ${remaining}s...`);
 
         this.countdownInterval = setInterval(() => {
             remaining--;
             if (remaining > 0) {
-                this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantLink()} in ${remaining}s...`);
+                this.updateStatus('reconnecting', `Reconnecting to ${this.getAssistantName()} in ${remaining}s...`);
             }
         }, 1000);
 
@@ -722,7 +727,7 @@ class TerminalUI extends HTMLElement {
             this.countdownInterval = null;
         }
 
-        this.updateStatus('connecting', `Connecting to ${this.getAssistantLink()}...`);
+        this.updateStatus('connecting', `Connecting to ${this.getAssistantName()}...`);
         const timerEl = this.querySelector('.terminal-ui__status-timer');
         if (timerEl) timerEl.textContent = '';
 

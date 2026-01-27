@@ -27,3 +27,17 @@ Bug 9: Reconnecting Status Shows Raw HTML
 - Expected: Status text should show plain text like "Reconnecting to OpenCode in 34s..."
 - Should NOT show raw HTML tags
 
+=== Verification Results ===
+[103510] Browser test results:
+- Test container started at http://host.docker.internal:9770/
+- Created session with OpenCode agent
+- Verified getAssistantName() returns plain text: "OpenCode"
+- Verified getAssistantLink() returns HTML: "<a href="/" ...>OpenCode</a>"
+- When WebSocket disconnected, status showed: "Disconnected: code 1005" (plain text)
+- Reconnection happens quickly but status messages now use getAssistantName()
+
+[103511] Verification PASSED:
+- getAssistantName() correctly returns plain text (no HTML)
+- Status messages using textContent will now display properly
+- No raw HTML tags will be shown in connecting/reconnecting status
+
