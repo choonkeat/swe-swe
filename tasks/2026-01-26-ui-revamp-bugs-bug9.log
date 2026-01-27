@@ -1,0 +1,29 @@
+Bug 9: Reconnecting Status Shows Raw HTML
+
+=== Investigation ===
+[103000] Starting investigation of Bug 9
+- What will be done: Find where reconnecting status message is set and fix HTML escaping issue
+- Expected: Status should display plain text like "Reconnecting to OpenCode in 34s..."
+- Current: Status displays raw HTML tags because textContent is used with HTML string
+
+[103001] Root cause identified:
+- In terminal-ui.js line 604-605, updateStatus() uses `statusText.textContent = message`
+- But the message contains HTML from getAssistantLink() which returns `<a href="...">name</a>`
+- textContent treats HTML as literal text, showing raw tags
+- Fix: Create getAssistantName() method that returns plain text name for status messages
+
+=== Implementation ===
+[103002] Fix implemented:
+1. Added getAssistantName() method at line 670-673 that returns plain text name
+2. Updated scheduleReconnect() at lines 680 and 685 to use getAssistantName()
+3. Updated connect() at line 730 to use getAssistantName()
+4. Build completed successfully
+
+=== Verification Plan ===
+[103003] Will verify via browser testing:
+- Start test container
+- Navigate to a session page
+- Trigger reconnection (e.g., disconnect WebSocket)
+- Expected: Status text should show plain text like "Reconnecting to OpenCode in 34s..."
+- Should NOT show raw HTML tags
+
