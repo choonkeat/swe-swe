@@ -1,0 +1,33 @@
+Bug 10: Shell Panel Shows Redundant Header When Embedded
+
+=== Investigation ===
+[103600] Starting investigation of Bug 10
+- What will be done: Find where iframe embedding is detected and hide panel header when embedded
+- Expected: Panel header should be hidden when terminal-ui is inside an iframe
+- Current: Panel header shows "Agent Terminal [SHELL (safe)]" even when embedded
+
+[103601] Root cause identified:
+- terminal-ui already adds `embedded-in-iframe` class when inside iframe
+- CSS rule at line 282-288 hides header, terminal-bar, status-bar but NOT panel-header
+- Additionally, mobile view uses `!important` to show `.mobile-only` elements
+
+=== Implementation ===
+[103700] Fix implemented:
+1. Added `.terminal-ui__panel-header` to the embedded-in-iframe hide rule
+2. Added `.mobile-only` to the same rule (iframe is narrow, triggers mobile view)
+3. Added `!important` to ensure rules override mobile media query
+
+=== Verification ===
+[103800] Browser verification via dev server (make run):
+- Navigated to http://swe-swe:3000/session/newtest?assistant=claude&preview
+- Clicked Terminal tab to load embedded terminal-ui
+- Verified embedded-in-iframe class is applied: true
+- Verified terminal-bar display: none
+- Verified panel-header display: none
+- Visual confirmation: No redundant header visible in embedded terminal
+
+[103801] Verification PASSED:
+- Embedded terminal-ui no longer shows panel header or terminal bar
+- Only the terminal input and output are visible
+- Clean, non-redundant UI when terminal is in the right panel
+

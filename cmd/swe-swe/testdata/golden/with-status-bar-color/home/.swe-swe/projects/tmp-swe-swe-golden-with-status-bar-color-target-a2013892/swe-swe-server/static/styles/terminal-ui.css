@@ -282,8 +282,10 @@
 /* Hide navigation when embedded inside an iframe (panel view) */
 terminal-ui.embedded-in-iframe .terminal-ui__header,
 terminal-ui.embedded-in-iframe .terminal-ui__terminal-bar,
-terminal-ui.embedded-in-iframe .terminal-ui__status-bar {
-    display: none;
+terminal-ui.embedded-in-iframe .terminal-ui__status-bar,
+terminal-ui.embedded-in-iframe .terminal-ui__panel-header,
+terminal-ui.embedded-in-iframe .mobile-only {
+    display: none !important;
 }
 
 .terminal-ui__status-bar.connected {

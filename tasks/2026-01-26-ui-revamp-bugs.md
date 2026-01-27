@@ -172,17 +172,18 @@ Bugs introduced after the terminal UI revamp that need to be fixed.
 
 ## Bug 10: Shell Panel Shows Redundant Header When Embedded
 
-**Status**: Pending
+**Status**: Fixed (2026-01-27)
 
 **Description**: When viewing the Shell/Terminal tab in the right panel (iframe), the `>_ Agent Terminal [SHELL (safe)]` header bar is still visible. This is redundant since the parent page already shows "Terminal" as the active tab.
 
 **Expected behavior**: When terminal-ui is embedded inside an iframe (right panel), the panel header should be hidden.
 
-**Current behavior**: Panel header `>_ Agent Terminal [SHELL (safe)]` is visible even when embedded, taking up vertical space unnecessarily.
+**Current behavior**: ~~Panel header visible when embedded~~ Fixed - panel header and terminal bar are now hidden when embedded.
 
 **Investigation findings**:
-- [ ] terminal-ui.js already detects iframe embedding via `window.self !== window.top`
-- [ ] Need to hide `.terminal-ui__panel-header` (or equivalent) when embedded
+- [x] terminal-ui.js already detects iframe embedding via `window.self !== window.top`
+- [x] Added `.terminal-ui__panel-header` and `.mobile-only` to the embedded-in-iframe CSS rule
+- [x] Used `!important` to override mobile media query rules
 
 ---
 
