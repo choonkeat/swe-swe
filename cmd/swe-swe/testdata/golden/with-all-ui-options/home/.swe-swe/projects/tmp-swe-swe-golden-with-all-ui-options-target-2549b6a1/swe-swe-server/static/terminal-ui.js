@@ -2606,21 +2606,27 @@ class TerminalUI extends HTMLElement {
             this.showUploadOverlay();
         }, 1000);
 
-        while (!isQueueEmpty(this.uploadQueueState)) {
+        // Process files recursively with 300ms delay between each
+        // This ensures paths are sent to terminal at least 300ms apart
+        const processNext = () => {
+            if (isQueueEmpty(this.uploadQueueState)) {
+                this.endUpload();
+                clearTimeout(overlayTimeout);
+                if (this.querySelector('.terminal-ui__upload-overlay').classList.contains('visible')) {
+                    this.hideUploadOverlay();
+                }
+                return;
+            }
+
             const file = peek(this.uploadQueueState);
-            await this.handleFile(file);
             this.removeFileFromQueue();
-        }
 
-        this.endUpload();
+            this.handleFile(file)
+                .then(() => new Promise(resolve => setTimeout(resolve, 300)))
+                .then(processNext);
+        };
 
-        // Clear timeout if uploads finished quickly (under 1 second)
-        clearTimeout(overlayTimeout);
-
-        // Only hide if overlay was actually shown
-        if (this.querySelector('.terminal-ui__upload-overlay').classList.contains('visible')) {
-            this.hideUploadOverlay();
-        }
+        processNext();
     }
 
     // === Split-Pane UI Methods ===
