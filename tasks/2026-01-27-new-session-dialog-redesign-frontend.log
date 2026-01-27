@@ -1,0 +1,2 @@
+145625 Starting Frontend Phase 1: Add CSS for new elements (.dialog__select, .dialog__warning, .dialog__field--hidden)
+145625 Expected: CSS classes added after .dialog__start:disabled section around line 736
