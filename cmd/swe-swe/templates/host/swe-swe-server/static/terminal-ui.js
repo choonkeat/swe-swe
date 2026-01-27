@@ -302,6 +302,10 @@ class TerminalUI extends HTMLElement {
                             <span class="terminal-ui__status-text desktop-only">Connecting...</span>
                             <span class="terminal-ui__uptime desktop-only"></span>
                         </span>
+                        <span class="terminal-ui__yolo-toggle desktop-only" style="display: none; margin-left: auto;">
+                            <span>YOLO</span>
+                            <span class="toggle-switch"></span>
+                        </span>
                     </div>
                     <div class="terminal-ui__header-right">
                         <span class="terminal-ui__viewers desktop-only"></span>
@@ -309,10 +313,6 @@ class TerminalUI extends HTMLElement {
                             <span class="terminal-ui__chat-icon">💬</span>
                             <span class="terminal-ui__chat-badge" style="display: none;">0</span>
                         </button>
-                        <span class="terminal-ui__yolo-toggle desktop-only" style="display: none;">
-                            <span>YOLO</span>
-                            <span class="toggle-switch"></span>
-                        </span>
                         <button class="terminal-ui__settings-btn" title="Settings">⚙</button>
                     </div>
                 </header>
