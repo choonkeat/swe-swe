@@ -3,3 +3,15 @@
 110833: Will store ParentUUID when creating shell session with parent param
 110833: Will inherit parent's name with " (Terminal)" suffix
 110833: Expected outcome: Shell sessions opened from agent sessions show "{parentName} (Terminal)"
+
+111038: Verification test completed
+111038: Test steps performed via MCP browser:
+111038:   1. Created parent agent session: http://swe-swe:3000/session/parent-session?assistant=claude&name=fixing-bug
+111038:   2. Verified parent session shows "fixing-bug" in header
+111038:   3. Created child shell session: http://swe-swe:3000/session/child-shell?assistant=shell&parent=parent-session
+111038: Observed outcome:
+111038:   - Shell session name shows "fixing-bug (Terminal)" in header
+111038:   - Working directory inherited: /worktrees/fixing-bug
+111038:   - Server log confirmed: "Shell session inheriting name from parent: fixing-bug (Terminal)"
+111038:   - Server log confirmed: "Shell session inheriting workDir from parent parent-session: /worktrees/fixing-bug"
+111038: RESULT: SUCCESS - Phase 2 verification passed
