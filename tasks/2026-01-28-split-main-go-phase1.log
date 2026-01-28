@@ -29,3 +29,6 @@ Result: BUILD SUCCESS
 Expected: File compiles successfully with `go build ./cmd/swe-swe`
 114847 Build successful after creating init.go
 Result: BUILD SUCCESS - main.go now only 117 lines (was 1834)
+
+114913 Phase 3: Running make test
+Expected: All tests pass
