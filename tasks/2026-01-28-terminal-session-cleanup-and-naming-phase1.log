@@ -1,0 +1,3 @@
+110621: Starting Phase 1 - Clean up dead sessions on reconnect
+110621: Will modify getOrCreateSession() in main.go to check if existing session's process has exited
+110621: Expected outcome: When reconnecting to a dead session, user gets fresh shell instead of old output
