@@ -6,6 +6,8 @@ Usage of init:
     	Additional packages to install via apt-get (comma-separated)
   -copy-home-paths string
     	Comma-separated paths relative to $HOME to copy into container home
+  -email string
+    	Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)
   -exclude-agents string
     	Comma-separated list of agents to exclude
   -npm-install string
@@ -15,7 +17,7 @@ Usage of init:
   -project-directory string
     	Project directory to initialize (default ".")
   -ssl string
-    	SSL mode: 'no' (default) or 'selfsign' for self-signed certificates (default "no")
+    	SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain' (default "no")
   -status-bar-font-family string
     	Status bar font family (default "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")
   -status-bar-font-size int

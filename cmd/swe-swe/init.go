@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +87,7 @@ type InitConfig struct {
 	WithDocker          bool                `json:"withDocker,omitempty"`
 	SlashCommands       []SlashCommandsRepo `json:"slashCommands,omitempty"`
 	SSL                 string              `json:"ssl,omitempty"`
+	Email               string              `json:"email,omitempty"`
 	CopyHomePaths       []string            `json:"copyHomePaths,omitempty"`
 	TerminalFontSize    int                 `json:"terminalFontSize,omitempty"`
 	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
@@ -331,7 +333,8 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
-	sslFlag := fs.String("ssl", "no", "SSL mode: 'no' (default) or 'selfsign' for self-signed certificates")
+	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
+	emailFlag := fs.String("email", "", "Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)")
 	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
 	terminalFontSize := fs.Int("terminal-font-size", 14, "Terminal font size in pixels")
 	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
@@ -346,16 +349,41 @@ func handleInit() {
 		os.Exit(1)
 	}
 
-	// Validate --ssl flag: 'no', 'selfsign', or 'selfsign@hostname/ip'
+	// Validate --ssl flag: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'
 	sslMode := *sslFlag
 	sslHost := ""
+	sslDomain := ""
 	if strings.HasPrefix(*sslFlag, "selfsign@") {
 		sslMode = "selfsign"
 		sslHost = strings.TrimPrefix(*sslFlag, "selfsign@")
+	} else if strings.HasPrefix(*sslFlag, "letsencrypt-staging@") {
+		sslMode = "letsencrypt-staging"
+		sslDomain = strings.TrimPrefix(*sslFlag, "letsencrypt-staging@")
+	} else if strings.HasPrefix(*sslFlag, "letsencrypt@") {
+		sslMode = "letsencrypt"
+		sslDomain = strings.TrimPrefix(*sslFlag, "letsencrypt@")
 	}
-	if sslMode != "no" && sslMode != "selfsign" {
-		fmt.Fprintf(os.Stderr, "Error: --ssl must be 'no', 'selfsign', or 'selfsign@<hostname/ip>', got %q\n", *sslFlag)
+	if sslMode != "no" && sslMode != "selfsign" && sslMode != "letsencrypt" && sslMode != "letsencrypt-staging" {
+		fmt.Fprintf(os.Stderr, "Error: --ssl must be 'no', 'selfsign', 'selfsign@<hostname>', 'letsencrypt@<domain>', or 'letsencrypt-staging@<domain>', got %q\n", *sslFlag)
 		os.Exit(1)
+	}
+
+	// Validate letsencrypt requirements
+	if sslMode == "letsencrypt" || sslMode == "letsencrypt-staging" {
+		if sslDomain == "" {
+			fmt.Fprintf(os.Stderr, "Error: --ssl=%s requires a domain (e.g., --ssl=%s@example.com)\n", sslMode, sslMode)
+			os.Exit(1)
+		}
+		if *emailFlag == "" {
+			fmt.Fprintf(os.Stderr, "Error: --email is required when using Let's Encrypt (for certificate expiry notifications)\n")
+			os.Exit(1)
+		}
+		// Validate domain resolves
+		if _, err := net.LookupHost(sslDomain); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: domain %q does not resolve: %v\n", sslDomain, err)
+			fmt.Fprintf(os.Stderr, "  Make sure your domain's DNS is configured before using Let's Encrypt.\n")
+			os.Exit(1)
+		}
 	}
 
 	// Parse and validate --copy-home-paths flag
@@ -484,6 +512,7 @@ func handleInit() {
 		if *sslFlag == "" {
 			*sslFlag = "no" // Default for old configs without SSL field
 		}
+		*emailFlag = savedConfig.Email
 		copyHomePaths = savedConfig.CopyHomePaths
 		// UI customization flags
 		if savedConfig.TerminalFontSize != 0 {
@@ -824,6 +853,7 @@ func handleInit() {
 		WithDocker:          *withDocker,
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
+		Email:               *emailFlag,
 		CopyHomePaths:       copyHomePaths,
 		TerminalFontSize:    *terminalFontSize,
 		TerminalFontFamily:  *terminalFontFamily,

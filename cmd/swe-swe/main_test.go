@@ -690,6 +690,8 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-slash-commands-opencode-only", []string{"--agents", "opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-claude-opencode", []string{"--agents", "claude,opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-ssl-selfsign", []string{"--ssl", "selfsign"}},
+		{"with-ssl-letsencrypt", []string{"--ssl", "letsencrypt@google.com", "--email", "admin@example.com"}},
+		{"with-ssl-letsencrypt-staging", []string{"--ssl", "letsencrypt-staging@google.com", "--email", "admin@example.com"}},
 		{"with-certs-no-certs", []string{}},
 		{"with-certs-node-extra-ca-certs", []string{}},
 		{"with-certs-ssl-cert-file", []string{}},
@@ -797,6 +799,8 @@ func TestGoldenFiles(t *testing.T) {
 				v.name == "with-npm" ||
 				v.name == "with-both-packages" ||
 				v.name == "with-ssl-selfsign" ||
+				v.name == "with-ssl-letsencrypt" ||
+				v.name == "with-ssl-letsencrypt-staging" ||
 				v.name == "with-certs-no-certs" ||
 				v.name == "with-certs-node-extra-ca-certs" ||
 				v.name == "with-certs-ssl-cert-file" ||
@@ -851,6 +855,8 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		{"with-slash-commands-opencode-only", []string{"opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-claude-opencode", []string{"claude", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-ssl-selfsign", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
+		{"with-ssl-letsencrypt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
+		{"with-ssl-letsencrypt-staging", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
 	}
 
 	// Read the template

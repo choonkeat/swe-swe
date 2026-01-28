@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser - swe-swe</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background: #1e1e1e;
+    }
+
+    #screen {
+      display: block;
+    }
+
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(30, 30, 30, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ccc;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      z-index: 100;
+    }
+
+    #overlay.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #007acc;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    #status {
+      font-size: 14px;
+    }
+
+    /* URL bar for navigation */
+    #urlbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      background: #2d2d2d;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 8px;
+      z-index: 50;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #urlbar:hover, #urlbar:focus-within {
+      opacity: 1;
+    }
+
+    #urlbar input {
+      flex: 1;
+      height: 24px;
+      background: #1e1e1e;
+      border: 1px solid #404040;
+      border-radius: 4px;
+      color: #ccc;
+      padding: 0 8px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    #urlbar input:focus {
+      border-color: #007acc;
+    }
+
+    #urlbar button {
+      height: 24px;
+      padding: 0 12px;
+      background: #007acc;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    #urlbar button:hover {
+      background: #0066b3;
+    }
+  </style>
+</head>
+<body>
+  <div id="urlbar">
+    <input type="text" id="url" placeholder="Enter URL..." />
+    <button id="go">Go</button>
+  </div>
+  <canvas id="screen"></canvas>
+  <div id="overlay">
+    <div class="spinner"></div>
+    <div id="status">Connecting...</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('screen');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const statusEl = document.getElementById('status');
+    const urlInput = document.getElementById('url');
+    const goButton = document.getElementById('go');
+
+    let ws = null;
+    let reconnectTimeout = null;
+    let frameCount = 0;
+
+    // Image for drawing frames
+    const img = new Image();
+    img.onload = () => {
+      // Size canvas to image's natural dimensions (actual Chrome viewport size)
+      if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+      }
+      ctx.drawImage(img, 0, 0);
+    };
+
+    function connect() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/chrome/websockify`;
+
+      statusEl.textContent = 'Connecting...';
+      overlay.classList.remove('hidden');
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        statusEl.textContent = 'Connected, waiting for frames...';
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'frame') {
+            // Hide overlay on first frame
+            if (frameCount === 0) {
+              overlay.classList.add('hidden');
+            }
+            frameCount++;
+
+            // Draw frame to canvas
+            img.src = 'data:image/jpeg;base64,' + msg.data;
+          }
+        } catch (err) {
+          console.error('Failed to parse message:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        frameCount = 0;
+        statusEl.textContent = 'Disconnected. Reconnecting...';
+        overlay.classList.remove('hidden');
+
+        // Reconnect after delay
+        reconnectTimeout = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+      };
+    }
+
+    function navigate(url) {
+      if (!url) return;
+
+      // Add protocol if missing
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'navigate',
+          url: url
+        }));
+      }
+    }
+
+    // URL bar handlers
+    goButton.addEventListener('click', () => {
+      navigate(urlInput.value);
+    });
+
+    urlInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        navigate(urlInput.value);
+      }
+    });
+
+    // Start connection
+    connect();
+  </script>
+</body>
+</html>
