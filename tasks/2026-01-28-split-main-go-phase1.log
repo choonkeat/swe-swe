@@ -14,3 +14,8 @@ Result: BUILD SUCCESS after removing functions from main.go and unused strconv i
 Expected: File compiles successfully with `go build ./cmd/swe-swe`
 114409 Build successful after creating certs.go
 Result: BUILD SUCCESS after removing 8 unused crypto/net/time imports from main.go
+
+114429 Creating paths.go with path utility functions
+Expected: File compiles successfully with `go build ./cmd/swe-swe`
+114541 Build successful after creating paths.go
+Result: BUILD SUCCESS after removing crypto/md5 and regexp imports from main.go
