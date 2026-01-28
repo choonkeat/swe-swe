@@ -4471,6 +4471,24 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		cols = dims.Cols
 	}
 
+	// Detect Safari (has "Safari" but not "Chrome"/"Chromium" which also include "Safari")
+	// Safari struggles with large terminal row allocations, so use actual content rows
+	userAgent := r.Header.Get("User-Agent")
+	isSafari := strings.Contains(userAgent, "Safari") &&
+		!strings.Contains(userAgent, "Chrome") &&
+		!strings.Contains(userAgent, "Chromium")
+
+	var maxRows uint32 = 100000
+	if isSafari {
+		// Use actual content rows for Safari to avoid memory allocation issues
+		if metadata != nil && metadata.PlaybackRows > 0 {
+			maxRows = metadata.PlaybackRows
+		} else {
+			// Fallback to a reasonable default for Safari
+			maxRows = 10000
+		}
+	}
+
 	opts := recordtui.StreamingOptions{
 		Title:   name,
 		DataURL: recordingUUID + "/session.log",
@@ -4479,7 +4497,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 			URL:  "https://github.com/choonkeat/swe-swe",
 		},
 		Cols:    cols,
-		MaxRows: 100000,
+		MaxRows: maxRows,
 	}
 	html, err := recordtui.RenderStreamingHTML(opts)
 	if err != nil {

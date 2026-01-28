@@ -86,6 +86,21 @@ All core phases complete. Users can now:
 
 The color cascade priority: session > repo-type > server-default > fallback (#7c3aed)
 
+## CSP Compliance Fixes
+
+The implementation required Content Security Policy (CSP) compliance for App Preview:
+
+### Phase 6: CSP-Compliant JavaScript ✅
+- [x] Created `homepage-main.js` - external script for all homepage functionality
+- [x] Removed inline `<script>` blocks from selection.html
+- [x] Converted `onclick` handlers to `data-action` attributes with event delegation
+- [x] Created `session-theme.js` and `homepage-theme.js` as external ES modules
+
+### Text Color Consistency Fix ✅
+- [x] Fixed logo SVG to use `stroke="currentColor"` instead of hardcoded `"white"`
+- [x] Added `color: var(--accent-text)` to `.header__logo svg` CSS
+- [x] Now both logo icon and button text use the same computed contrast color
+
 ## Testing
 
 Use dev server workflow:
