@@ -6,4 +6,11 @@
 
 224124 - Step 1.1: Read current init.go to understand SSL flag parsing
 224124 - Expected: Find existing SSL flag handling to extend
+224157 - Observed: Found SSL flag at line 334, validates 'no' or 'selfsign' or 'selfsign@host'
+224157 - Observed: InitConfig struct at line 82, has SSL field
+224157 - Observed: processSimpleTemplate in templates.go handles {{IF SSL}} and {{IF NO_SSL}}
+224157 - Result: PASS - understood current architecture
+
+224157 - Step 1.2: Implement flag parsing for letsencrypt
+224157 - Expected: Add --email flag, extend SSL validation to accept letsencrypt/letsencrypt-staging
 
