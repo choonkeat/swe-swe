@@ -13,17 +13,6 @@
     --text-muted: #64748b;
     --accent-primary: #7c3aed;
     --accent-hover: #8b5cf6;
-
-    --status-bar-color: #007acc;
-    /* Auto-contrast text: white text unless background is very light (l > 0.62)
-       Using 0.62 threshold instead of 0.5 because:
-       - Black text needs high lightness backgrounds to be legible
-       - White text works well on dark AND medium-brightness saturated colors
-       - APCA research shows polarity matters: dark-on-light needs more contrast */
-    --status-bar-text-color: oklch(from var(--status-bar-color) clamp(0, (0.62 - l) * 999, 1) 0 0);
-    /* Border shades using color-mix */
-    --status-bar-border-light: color-mix(in oklch, var(--status-bar-color), white 25%);
-    --status-bar-border-dark: color-mix(in oklch, var(--status-bar-color), black 25%);
 }
 
 .terminal-ui {
@@ -279,157 +268,16 @@
     color: #fff;
 }
 
-.terminal-ui__status-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    background: #f57c00;
-    position: relative;
-    z-index: 15;
-    color: var(--status-bar-text-color);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 12px;
-    transition: background-color 0.3s ease, border-color 0.3s ease;
-    border-top: 3px solid var(--status-bar-border-light);
-    border-bottom: 3px solid var(--status-bar-border-dark);
-}
-
 /* Hide navigation when embedded inside an iframe (panel view) */
 terminal-ui.embedded-in-iframe .terminal-ui__header,
 terminal-ui.embedded-in-iframe .terminal-ui__terminal-bar,
-terminal-ui.embedded-in-iframe .terminal-ui__status-bar,
 terminal-ui.embedded-in-iframe .terminal-ui__panel-header,
 terminal-ui.embedded-in-iframe .mobile-only {
     display: none !important;
 }
 
-.terminal-ui__status-bar.connected {
-    background: var(--status-bar-color);
-}
-
-.terminal-ui__status-bar.multiuser {
-    border-color: var(--status-bar-text-color);
-}
-
-.terminal-ui__status-bar.yolo {
-    border-color: {{STATUS_BAR_TEXT_COLOR}};
-}
-
-.terminal-ui__status-yolo-toggle {
-    text-decoration: underline;
-    cursor: pointer;
-}
-
-.terminal-ui__status-bar.connecting,
-.terminal-ui__status-bar.error,
-.terminal-ui__status-bar.reconnecting {
-    color: #fff;
-    cursor: pointer;
-    animation: terminal-ui-bar-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes terminal-ui-bar-pulse {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(0.7); }
-}
-
-.terminal-ui__status-icon {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #4caf50;
-    margin-right: 8px;
-}
-
-.terminal-ui__status-bar.connecting .terminal-ui__status-icon,
-.terminal-ui__status-bar.error .terminal-ui__status-icon,
-.terminal-ui__status-bar.reconnecting .terminal-ui__status-icon {
-    background: #fff;
-    animation: terminal-ui-pulse 1s infinite;
-}
-
-@keyframes terminal-ui-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-}
-
-.terminal-ui__status-left {
-    display: flex;
-    align-items: center;
-}
-
-.terminal-ui__status-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.terminal-ui__status-links {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.terminal-ui__status-service-links {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-right: 8px;
-}
-
-.terminal-ui__status-link {
-    color: var(--status-bar-text-color);
-    text-decoration: none;
-    cursor: pointer;
-    transition: opacity 0.2s;
-    white-space: nowrap;
-}
-
-.terminal-ui__status-link:hover {
-    opacity: 0.8;
-    text-decoration: underline;
-}
-
-.terminal-ui__status-link-sep {
-    opacity: 0.5;
-}
-
-/* Active tab indicator */
-.terminal-ui__status-tab.active {
-    text-decoration: solid underline var(--status-bar-text-color);
-    text-underline-offset: 3px;
-    font-weight: 600;
-}
-
-.terminal-ui__status-bar.connecting:hover,
-.terminal-ui__status-bar.error:hover,
-.terminal-ui__status-bar.reconnecting:hover {
-    animation-play-state: paused;
-    filter: brightness(1.1);
-}
-
 .terminal-ui__status-text {
     display: inline;
-}
-
-.terminal-ui__status-link {
-    cursor: pointer;
-    text-decoration: dotted underline var(--status-bar-text-color);
-    text-underline-offset: 2px;
-    transition: opacity 0.2s;
-}
-
-.terminal-ui__status-link:hover {
-    opacity: 0.8;
-}
-
-.terminal-ui__status-info {
-    opacity: 0.9;
-}
-
-.terminal-ui__status-dims {
-    opacity: 0.9;
 }
 
 .terminal-ui__drop-overlay {
@@ -838,8 +686,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: var(--status-bar-color);
-    color: var(--status-bar-text-color);
+    background: var(--accent-primary);
+    color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
     font-weight: 600;
@@ -901,61 +749,9 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .settings-panel__input:focus {
-    border-color: var(--status-bar-color);
+    border-color: var(--accent-primary);
 }
 
-.settings-panel__color-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.settings-panel__color-picker {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border: 2px solid var(--border-primary);
-    border-radius: 6px;
-    cursor: pointer;
-    background: none;
-}
-
-.settings-panel__color-picker::-webkit-color-swatch-wrapper {
-    padding: 2px;
-}
-
-.settings-panel__color-picker::-webkit-color-swatch {
-    border: none;
-    border-radius: 3px;
-}
-
-.settings-panel__color-input {
-    flex: 1;
-}
-
-.settings-panel__swatches {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-}
-
-.settings-panel__swatch {
-    width: 32px;
-    height: 32px;
-    border: 2px solid transparent;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: transform 0.1s, border-color 0.2s;
-}
-
-.settings-panel__swatch:hover {
-    transform: scale(1.1);
-}
-
-.settings-panel__swatch.active {
-    border-color: #fff;
-}
 
 .settings-panel__toggle-row {
     display: flex;
@@ -1037,7 +833,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .settings-panel__nav-btn.active {
     background: var(--border-secondary);
-    border-bottom: 2px solid var(--status-bar-bg-color, #007acc);
+    border-bottom: 2px solid var(--accent-primary);
 }
 
 .settings-panel__nav-icon {

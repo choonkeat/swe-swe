@@ -9,7 +9,6 @@
     }
   ],
   "ssl": "no",
-  "statusBarColor": "#007acc",
   "terminalFontSize": 14,
   "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
   "statusBarFontSize": 12,

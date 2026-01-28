@@ -87,7 +87,6 @@ type InitConfig struct {
 	SlashCommands       []SlashCommandsRepo `json:"slashCommands,omitempty"`
 	SSL                 string              `json:"ssl,omitempty"`
 	CopyHomePaths       []string            `json:"copyHomePaths,omitempty"`
-	StatusBarColor      string              `json:"statusBarColor,omitempty"`
 	TerminalFontSize    int                 `json:"terminalFontSize,omitempty"`
 	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
 	StatusBarFontSize   int                 `json:"statusBarFontSize,omitempty"`
@@ -334,19 +333,12 @@ func handleInit() {
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no' (default) or 'selfsign' for self-signed certificates")
 	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
-	statusBarColor := fs.String("status-bar-color", "#007acc", "Status bar background color (CSS color name or hex)")
 	terminalFontSize := fs.Int("terminal-font-size", 14, "Terminal font size in pixels")
 	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
-
-	// Handle --status-bar-color=list: print color swatches and exit
-	if *statusBarColor == "list" {
-		PrintColorSwatches()
-		os.Exit(0)
-	}
 
 	// Validate --previous-init-flags
 	if *previousInitFlags != "" && *previousInitFlags != "reuse" && *previousInitFlags != "ignore" {
@@ -494,9 +486,6 @@ func handleInit() {
 		}
 		copyHomePaths = savedConfig.CopyHomePaths
 		// UI customization flags
-		if savedConfig.StatusBarColor != "" {
-			*statusBarColor = savedConfig.StatusBarColor
-		}
 		if savedConfig.TerminalFontSize != 0 {
 			*terminalFontSize = savedConfig.TerminalFontSize
 		}
@@ -769,12 +758,12 @@ func handleInit() {
 
 			// Process terminal-ui.js template with UI customization values
 			if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
-				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
+				content = []byte(processTerminalUITemplate(string(content), *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
 			}
 
 			// Process terminal-ui.css template with UI customization values
 			if hostFile == "templates/host/swe-swe-server/static/styles/terminal-ui.css" {
-				content = []byte(processTerminalUITemplate(string(content), *statusBarColor, *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
+				content = []byte(processTerminalUITemplate(string(content), *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
 			}
 
 			// Calculate destination path, preserving subdirectories
@@ -836,7 +825,6 @@ func handleInit() {
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		CopyHomePaths:       copyHomePaths,
-		StatusBarColor:      *statusBarColor,
 		TerminalFontSize:    *terminalFontSize,
 		TerminalFontFamily:  *terminalFontFamily,
 		StatusBarFontSize:   *statusBarFontSize,

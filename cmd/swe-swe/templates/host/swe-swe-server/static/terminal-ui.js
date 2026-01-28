@@ -210,23 +210,6 @@ class TerminalUI extends HTMLElement {
                                     <label class="settings-panel__label" for="settings-session">Session Name</label>
                                     <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
                                 </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label">Status Bar Color</label>
-                                    <div class="settings-panel__color-row">
-                                        <input type="color" class="settings-panel__color-picker" value="#007acc">
-                                        <input type="text" class="settings-panel__input settings-panel__color-input" placeholder="#007acc or color name">
-                                    </div>
-                                    <div class="settings-panel__swatches">
-                                        <button class="settings-panel__swatch" style="background: #007acc" data-color="#007acc" title="Blue"></button>
-                                        <button class="settings-panel__swatch" style="background: #dc2626" data-color="#dc2626" title="Red"></button>
-                                        <button class="settings-panel__swatch" style="background: #16a34a" data-color="#16a34a" title="Green"></button>
-                                        <button class="settings-panel__swatch" style="background: #f97316" data-color="#f97316" title="Orange"></button>
-                                        <button class="settings-panel__swatch" style="background: #8b5cf6" data-color="#8b5cf6" title="Purple"></button>
-                                        <button class="settings-panel__swatch" style="background: #64748b" data-color="#64748b" title="Gray"></button>
-                                        <button class="settings-panel__swatch" style="background: #eab308" data-color="#eab308" title="Yellow"></button>
-                                        <button class="settings-panel__swatch" style="background: #ec4899" data-color="#ec4899" title="Pink"></button>
-                                    </div>
-                                </div>
                             </section>
                             <nav class="settings-panel__nav">
                                 <a href="/" target="swe-swe-home" class="settings-panel__nav-btn">
@@ -1328,40 +1311,6 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // Color picker
-        const colorPicker = panel.querySelector('.settings-panel__color-picker');
-        const colorInput = panel.querySelector('.settings-panel__color-input');
-        const swatches = panel.querySelectorAll('.settings-panel__swatch');
-
-        if (colorPicker) {
-            colorPicker.addEventListener('input', (e) => {
-                this.setStatusBarColor(e.target.value);
-                if (colorInput) colorInput.value = e.target.value;
-            });
-        }
-
-        if (colorInput) {
-            colorInput.addEventListener('change', (e) => {
-                const color = e.target.value.trim();
-                if (color) {
-                    this.setStatusBarColor(color);
-                    if (colorPicker) colorPicker.value = this.normalizeColorForPicker(color);
-                }
-            });
-        }
-
-        swatches.forEach(swatch => {
-            swatch.addEventListener('click', () => {
-                const color = swatch.dataset.color;
-                this.setStatusBarColor(color);
-                if (colorPicker) colorPicker.value = color;
-                if (colorInput) colorInput.value = color;
-                this.updateActiveSwatches(color);
-            });
-        });
-
-        // Restore saved color from localStorage
-        this.restoreStatusBarColor();
     }
 
     // Setup event listeners for the new header and navigation UI
@@ -1484,59 +1433,6 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Set status bar color with live preview and persistence
-    setStatusBarColor(color) {
-        document.documentElement.style.setProperty('--status-bar-color', color);
-        try {
-            localStorage.setItem('settings:statusBarColor', color);
-        } catch (e) {
-            console.warn('[TerminalUI] Could not save color:', e);
-        }
-        this.updateActiveSwatches(color);
-    }
-
-    // Restore status bar color from localStorage
-    restoreStatusBarColor() {
-        try {
-            const savedColor = localStorage.getItem('settings:statusBarColor');
-            if (savedColor) {
-                document.documentElement.style.setProperty('--status-bar-color', savedColor);
-            }
-        } catch (e) {
-            console.warn('[TerminalUI] Could not restore color:', e);
-        }
-    }
-
-    // Normalize a CSS color to hex for the color picker input
-    normalizeColorForPicker(color) {
-        // Try to convert to hex using a temporary element
-        const temp = document.createElement('div');
-        temp.style.color = color;
-        document.body.appendChild(temp);
-        const computed = getComputedStyle(temp).color;
-        document.body.removeChild(temp);
-
-        // Parse rgb(r, g, b) format
-        const match = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-        if (match) {
-            const r = parseInt(match[1]).toString(16).padStart(2, '0');
-            const g = parseInt(match[2]).toString(16).padStart(2, '0');
-            const b = parseInt(match[3]).toString(16).padStart(2, '0');
-            return `#${r}${g}${b}`;
-        }
-
-        return color;
-    }
-
-    // Update active swatch highlighting
-    updateActiveSwatches(activeColor) {
-        const swatches = this.querySelectorAll('.settings-panel__swatch');
-        swatches.forEach(swatch => {
-            swatch.classList.toggle('active', swatch.dataset.color === activeColor);
-        });
-    }
-
-
     // Populate settings inputs when panel opens
     populateSettingsPanel() {
         const panel = this.querySelector('.settings-panel');
@@ -1553,29 +1449,6 @@ class TerminalUI extends HTMLElement {
         if (sessionInput) {
             sessionInput.value = this.sessionName || '';
         }
-
-        // Color - read from CSS variable first (set by server), then localStorage
-        const colorPicker = panel.querySelector('.settings-panel__color-picker');
-        const colorInput = panel.querySelector('.settings-panel__color-input');
-        let currentColor = '#007acc';
-        try {
-            // First try to get the actual CSS variable (set by server template)
-            const cssColor = getComputedStyle(document.documentElement).getPropertyValue('--status-bar-color').trim();
-            if (cssColor) {
-                currentColor = cssColor;
-            } else {
-                // Fall back to localStorage
-                currentColor = localStorage.getItem('settings:statusBarColor') || '#007acc';
-            }
-        } catch (e) {}
-
-        if (colorPicker) {
-            colorPicker.value = this.normalizeColorForPicker(currentColor);
-        }
-        if (colorInput) {
-            colorInput.value = currentColor;
-        }
-        this.updateActiveSwatches(currentColor);
 
         // Update navigation links with dynamic URLs and add click handlers
         const baseUrl = getBaseUrl(window.location);

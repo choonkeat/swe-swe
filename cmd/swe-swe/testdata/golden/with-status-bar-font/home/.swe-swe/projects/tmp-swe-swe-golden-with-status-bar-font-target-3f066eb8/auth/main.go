@@ -166,11 +166,6 @@ func renderLoginForm(redirectURL, errorMsg string) string {
             border-color: #007bff;
             box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
         }
-        input[readonly] {
-            background: #f5f5f5;
-            color: #666;
-            cursor: not-allowed;
-        }
         button {
             width: 100%%;
             padding: 16px;
@@ -190,13 +185,43 @@ func renderLoginForm(redirectURL, errorMsg string) string {
     <div class="container">
         <h1>swe-swe</h1>
         %s
-        <form method="POST" action="/swe-swe-auth/login">
+        <form method="POST" action="/swe-swe-auth/login" id="login-form">
             %s
-            <input type="text" name="username" id="username" value="admin" autocomplete="username" readonly>
+            <input type="text" name="username" id="username" placeholder="Your name" autocomplete="username">
             <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required autofocus>
             <button type="submit">Login</button>
         </form>
     </div>
+    <script>
+        // localStorage key matches terminal-ui.js
+        const USERNAME_KEY = 'swe-swe-username';
+        const usernameInput = document.getElementById('username');
+        const form = document.getElementById('login-form');
+
+        // On load: prefill from localStorage if available
+        try {
+            const savedName = localStorage.getItem(USERNAME_KEY);
+            if (savedName) {
+                usernameInput.value = savedName;
+            }
+        } catch (e) {
+            console.warn('Could not read localStorage:', e);
+        }
+
+        // On submit: save to localStorage (or clear if empty)
+        form.addEventListener('submit', function() {
+            try {
+                const name = usernameInput.value.trim();
+                if (name) {
+                    localStorage.setItem(USERNAME_KEY, name);
+                } else {
+                    localStorage.removeItem(USERNAME_KEY);
+                }
+            } catch (e) {
+                console.warn('Could not write localStorage:', e);
+            }
+        });
+    </script>
 </body>
 </html>`, errorHTML, redirectField)
 }
