@@ -11,8 +11,18 @@
     --text-primary: #e2e8f0;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+
+    /* Accent colors - can be overridden by theme */
     --accent-primary: #7c3aed;
     --accent-hover: #8b5cf6;
+    --accent-dark: #6d28d9;
+    --accent-light: #a78bfa;
+    --accent-10: rgba(124, 58, 237, 0.1);
+    --accent-20: rgba(124, 58, 237, 0.2);
+    --accent-30: rgba(124, 58, 237, 0.3);
+    --accent-text: #ffffff;
+    --accent-gradient: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    --accent-gradient-hover: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
 }
 
 .terminal-ui {

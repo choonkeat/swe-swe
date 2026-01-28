@@ -8,6 +8,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            /* Accent colors - can be overridden by theme */
+            --accent-primary: #7c3aed;
+            --accent-hover: #8b5cf6;
+            --accent-dark: #6d28d9;
+            --accent-light: #a78bfa;
+            --accent-10: rgba(124, 58, 237, 0.1);
+            --accent-20: rgba(124, 58, 237, 0.2);
+            --accent-30: rgba(124, 58, 237, 0.3);
+            --accent-text: #ffffff;
+            --accent-gradient: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            --accent-gradient-hover: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }
         * {
             margin: 0;
             padding: 0;
@@ -47,7 +60,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #7c3aed;
+            background: var(--accent-primary);
             border-radius: 10px;
         }
         .header__logo svg {
@@ -107,8 +120,8 @@
             min-width: 24px;
             height: 24px;
             padding: 0 8px;
-            background: #7c3aed;
-            color: #fff;
+            background: var(--accent-primary);
+            color: var(--accent-text);
             font-size: 12px;
             font-weight: 600;
             border-radius: 12px;
@@ -120,8 +133,8 @@
             align-items: center;
             gap: 8px;
             padding: 10px 20px;
-            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-            color: #fff;
+            background: var(--accent-gradient);
+            color: var(--accent-text);
             font-size: 14px;
             font-weight: 500;
             border: none;
@@ -130,7 +143,7 @@
             transition: all 0.2s ease;
         }
         .btn-new-session:hover {
-            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            background: var(--accent-gradient-hover);
             transform: translateY(-1px);
         }
         .btn-new-session svg {
@@ -282,19 +295,19 @@
             justify-content: center;
             gap: 8px;
             padding: 10px 20px;
-            background: rgba(124, 58, 237, 0.1);
-            color: #a78bfa;
+            background: var(--accent-10);
+            color: var(--accent-light);
             font-size: 14px;
             font-weight: 500;
-            border: 1px solid rgba(124, 58, 237, 0.2);
+            border: 1px solid var(--accent-20);
             border-radius: 8px;
             cursor: pointer;
             text-decoration: none;
             transition: all 0.2s ease;
         }
         .btn-join:hover {
-            background: rgba(124, 58, 237, 0.2);
-            border-color: rgba(124, 58, 237, 0.4);
+            background: var(--accent-20);
+            border-color: var(--accent-30);
         }
         .btn-join svg {
             width: 16px;
@@ -347,17 +360,17 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(124, 58, 237, 0.1);
-            border: 1px solid rgba(124, 58, 237, 0.2);
+            background: var(--accent-10);
+            border: 1px solid var(--accent-20);
             border-radius: 50%;
-            color: #a78bfa;
+            color: var(--accent-light);
             cursor: pointer;
             transition: all 0.2s ease;
             flex-shrink: 0;
         }
         .recording-card__play:hover {
-            background: rgba(124, 58, 237, 0.2);
-            border-color: rgba(124, 58, 237, 0.4);
+            background: var(--accent-20);
+            border-color: var(--accent-30);
         }
         .recording-card__play svg {
             width: 18px;
@@ -620,7 +633,7 @@
         }
         .dialog__input:focus {
             outline: none;
-            border-color: #7c3aed;
+            border-color: var(--accent-primary);
         }
         .dialog__input:disabled {
             opacity: 0.5;
@@ -665,11 +678,11 @@
             transition: all 0.2s ease;
         }
         .dialog__agent:hover:not(.dialog__agent--disabled) {
-            border-color: #7c3aed;
+            border-color: var(--accent-primary);
         }
         .dialog__agent--selected {
-            border-color: #7c3aed;
-            background: rgba(124, 58, 237, 0.1);
+            border-color: var(--accent-primary);
+            background: var(--accent-10);
         }
         .dialog__agent--disabled {
             opacity: 0.5;
@@ -708,7 +721,7 @@
             width: 16px;
             height: 16px;
             border: 2px solid #334155;
-            border-top-color: #7c3aed;
+            border-top-color: var(--accent-primary);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
@@ -719,16 +732,16 @@
             padding: 12px 24px;
             font-size: 14px;
             font-weight: 500;
-            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            background: var(--accent-gradient);
             border: none;
             border-radius: 8px;
-            color: #fff;
+            color: var(--accent-text);
             cursor: pointer;
             transition: all 0.2s ease;
             font-family: inherit;
         }
         .dialog__start:hover:not(:disabled) {
-            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            background: var(--accent-gradient-hover);
         }
         .dialog__start:disabled {
             opacity: 0.5;
@@ -752,7 +765,7 @@
         }
         .dialog__select:focus {
             outline: none;
-            border-color: #7c3aed;
+            border-color: var(--accent-primary);
         }
         .dialog__select option {
             background: #1e293b;
@@ -1608,6 +1621,23 @@
             urlInput.addEventListener('input', resetBranchAndAgent);
             nameInput.addEventListener('input', resetBranchAndAgent);
         })();
+    </script>
+    <script type="module">
+        // Load and apply theme color
+        import { applyTheme, getEffectivePrimaryColor, COLOR_STORAGE_KEYS, saveColorPreference } from '/color-utils.js';
+
+        // Apply theme on page load
+        const primaryColor = getEffectivePrimaryColor();
+        applyTheme(primaryColor);
+
+        // Expose for settings UI (to be added)
+        window.sweSweTheme = {
+            applyTheme,
+            getEffectivePrimaryColor,
+            COLOR_STORAGE_KEYS,
+            saveColorPreference,
+            getCurrentColor: () => getEffectivePrimaryColor()
+        };
     </script>
 </body>
 </html>
