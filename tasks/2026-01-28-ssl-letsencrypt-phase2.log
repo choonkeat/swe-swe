@@ -2,4 +2,44 @@
 
 230551 - Step 2.0: Read current templates to understand structure
 230551 - Expected: Find docker-compose.yml and traefik-dynamic.yml templates
+230551 - Observed: Found templates, understood {{IF SSL}}, {{IF NO_SSL}} pattern
+230551 - Result: PASS
+
+230551 - Step 2.1: Update templates.go with letsencrypt conditionals
+230551 - Expected: Add {{IF LETSENCRYPT}}, {{IF SELFSIGN}}, email/domain placeholders
+230904 - Implemented:
+230904 -   - Added isSSL, isLetsEncrypt, isSelfSign, isLetsEncryptStaging detection
+230904 -   - Added {{IF LETSENCRYPT}}, {{IF SELFSIGN}}, {{IF LETSENCRYPT_STAGING}}, {{IF LETSENCRYPT_PRODUCTION}}
+230904 -   - Added {{EMAIL}} and {{DOMAIN}} placeholder substitution
+230904 -   - Updated function signature to include email and domain parameters
+230904 -   - Updated all call sites (init.go, main_test.go)
+230904 - Result: PASS
+
+230904 - Step 2.2: Update docker-compose.yml template
+230904 - Implemented:
+230904 -   - Added port 80 entrypoint for ACME challenges ({{IF LETSENCRYPT}})
+230904 -   - Added HTTP→HTTPS redirect on port 80
+230904 -   - Added certificatesresolvers config (production and staging)
+230904 -   - Added port 80 mapping
+230904 -   - Changed TLS volume mount to {{IF SELFSIGN}}
+230904 -   - Added ACME volume mount ({{IF LETSENCRYPT}})
+230904 -   - Updated all service TLS labels to use certResolver for letsencrypt
+230904 - Result: PASS
+
+230904 - Step 2.3: Update traefik-dynamic.yml template
+230904 - Implemented:
+230904 -   - Dashboard router uses certResolver for letsencrypt
+230904 -   - Static TLS config moved to {{IF SELFSIGN}} only
+230904 - Result: PASS
+
+230904 - Step 2.4: Create ACME directory in init.go
+230904 - Implemented:
+230904 -   - Create ~/.swe-swe/acme/ directory for letsencrypt modes
+230904 -   - Create empty acme.json with 0600 permissions
+230904 -   - Print info about letsencrypt mode (production/staging)
+230904 - Observed: Code compiles successfully
+230904 - Result: PASS
+
+230904 - Step 2.5: Run make build golden-update
+230904 - Expected: Golden files show ACME config for letsencrypt variants
 
