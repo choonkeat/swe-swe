@@ -3870,6 +3870,29 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					log.Printf("Failed to save metadata: %v", err)
 				}
 				sess.BroadcastStatus()
+
+				// Propagate rename to child sessions (shell sessions opened from this agent session)
+				sessionsMu.RLock()
+				for _, childSess := range sessions {
+					if childSess.ParentUUID == sess.UUID {
+						childSess.mu.Lock()
+						var childName string
+						if name != "" {
+							childName = name + " (Terminal)"
+						}
+						childSess.Name = childName
+						if childSess.Metadata != nil {
+							childSess.Metadata.Name = childName
+						}
+						childSess.mu.Unlock()
+						log.Printf("Child session %s renamed to %q (parent %s renamed)", childSess.UUID, childName, sess.UUID)
+						if err := childSess.saveMetadata(); err != nil {
+							log.Printf("Failed to save child metadata: %v", err)
+						}
+						childSess.BroadcastStatus()
+					}
+				}
+				sessionsMu.RUnlock()
 			case "toggle_yolo":
 				// Handle YOLO mode toggle request
 				// Check if agent supports YOLO mode
