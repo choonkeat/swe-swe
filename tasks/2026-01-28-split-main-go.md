@@ -146,7 +146,7 @@ Files in `tasks/`, `research/`, and `docs/adr/` contain historical line number r
 - [x] Create `templates.go` with template processing
 - [x] Create `certs.go` with certificate handling
 - [x] Create `paths.go` with path utilities
-- [ ] Create `list.go` with list command
+- [x] Create `list.go` with list command
 
 ### Phase 2: Trim main.go
 - [ ] Remove moved functions from main.go
