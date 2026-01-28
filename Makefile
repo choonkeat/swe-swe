@@ -136,6 +136,8 @@ golden-update: build-cli
 	@# Normalize TLS files to avoid flip-flopping due to random cert generation
 	@find $(GOLDEN_TESTDATA) -name "server.crt" -exec cp $(GOLDEN_TESTDATA)/../standard-tls/server.crt {} \;
 	@find $(GOLDEN_TESTDATA) -name "server.key" -exec cp $(GOLDEN_TESTDATA)/../standard-tls/server.key {} \;
+	@# Normalize GitCommit in main.go to avoid flip-flopping due to changing git SHA
+	@find $(GOLDEN_TESTDATA) -path "*/swe-swe-server/main.go" -exec sed -i 's/GitCommit = "[^"]*"/GitCommit = "GOLDEN_TEST"/' {} \;
 	@rm -f /tmp/swe-swe-golden
 	@echo "Golden files updated in $(GOLDEN_TESTDATA)"
 
