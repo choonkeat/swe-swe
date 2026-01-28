@@ -144,7 +144,7 @@ Files in `tasks/`, `research/`, and `docs/adr/` contain historical line number r
 - [x] Create `docker.go` with docker-related code
 - [ ] Create `init.go` with init command code and embeds
 - [x] Create `templates.go` with template processing
-- [ ] Create `certs.go` with certificate handling
+- [x] Create `certs.go` with certificate handling
 - [ ] Create `paths.go` with path utilities
 - [ ] Create `list.go` with list command
 
