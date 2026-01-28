@@ -55,10 +55,11 @@ Allow users to pick a primary color at 3 levels to distinguish servers/sessions:
 - [x] Apply on page load
 - [x] Verified: color persists after page refresh
 
-### Phase 4: Repository Type Color
-- [ ] Add color picker to New Session dialog (repo type section)
-- [ ] Store per-repo-type: `swe-swe-color-{repoType}`
-- [ ] Override server default when set
+### Phase 4: Repository Type Color ✅
+- [x] Add color picker to New Session dialog (repo type section)
+- [x] Store per-repo-type: `swe-swe-color-repo-{repoType}`
+- [x] Override server default when set
+- [x] Pass color to session via URL param `?color=hex`
 
 ### Phase 5: Session-Specific Color
 - [ ] Add color picker to session page (settings panel or header)
@@ -71,8 +72,8 @@ Allow users to pick a primary color at 3 levels to distinguish servers/sessions:
 - [x] Phase 1: Color utilities - `color-utils.js` created
 - [x] Phase 2: CSS variables - homepage updated, theming verified
 - [x] Phase 3: Server default - settings gear icon + color picker modal
-- [ ] Phase 4: Repository type
-- [ ] Phase 5: Session-specific
+- [x] Phase 4: Repository type - color picker in New Session dialog
+- [ ] Phase 5: Session-specific - need to add to session page
 
 ## Testing
 

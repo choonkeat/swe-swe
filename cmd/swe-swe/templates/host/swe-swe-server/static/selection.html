@@ -1014,6 +1014,15 @@
                     <option value="create">Create new project</option>
                 </select>
             </div>
+            <!-- Theme color for this repo type (optional) -->
+            <div class="dialog__field">
+                <label class="dialog__label">Theme Color (optional)</label>
+                <div class="color-picker__custom" style="margin-top: 8px;">
+                    <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
+                    <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
+                    <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+                </div>
+            </div>
             <!-- Clone URL field (shown when mode=clone) -->
             <div class="dialog__field dialog__field--hidden" id="clone-url-field">
                 <label class="dialog__label">Repository URL</label>
@@ -1408,6 +1417,9 @@
             var loadingText = document.getElementById('new-session-loading-text');
             var repoHistoryList = document.getElementById('repo-history');
             var branchList = document.getElementById('branch-list');
+            var newSessionColorInput = document.getElementById('new-session-color-input');
+            var newSessionColorHex = document.getElementById('new-session-color-hex');
+            var newSessionColorClear = document.getElementById('new-session-color-clear');
 
             var dialogState = {
                 sessionUUID: '',
@@ -1418,7 +1430,8 @@
                 selectedAgent: '',
                 preSelectedAgent: '',
                 isNewProject: false,
-                projectName: ''
+                projectName: '',
+                sessionColor: ''
             };
 
             var REPO_HISTORY_KEY = 'swe-swe-repo-history';
@@ -1483,6 +1496,14 @@
                 dialogState.selectedAgent = '';
                 dialogState.isNewProject = false;
                 dialogState.projectName = '';
+                dialogState.sessionColor = '';
+
+                // Reset color picker
+                if (window.sweSweTheme) {
+                    newSessionColorInput.value = window.sweSweTheme.getCurrentColor();
+                }
+                newSessionColorHex.value = '';
+                newSessionColorHex.placeholder = 'Use server default';
             }
 
             function resetBranchAndAgent() {
@@ -1582,8 +1603,56 @@
                 cloneUrlField.classList.toggle('dialog__field--hidden', dialogState.mode !== 'clone');
                 createNameField.classList.toggle('dialog__field--hidden', dialogState.mode !== 'create');
 
+                // Load saved color for this repo type
+                loadRepoTypeColor();
+
                 // Reset downstream fields
                 resetBranchAndAgent();
+            });
+
+            // Color picker for new session
+            function loadRepoTypeColor() {
+                if (!window.sweSweTheme) return;
+                var repoTypeKey = dialogState.mode;
+                var savedColor = localStorage.getItem(window.sweSweTheme.COLOR_STORAGE_KEYS.REPO_TYPE_PREFIX + repoTypeKey);
+                if (savedColor) {
+                    newSessionColorInput.value = savedColor;
+                    newSessionColorHex.value = savedColor;
+                    dialogState.sessionColor = savedColor;
+                } else {
+                    var serverDefault = window.sweSweTheme.getCurrentColor();
+                    newSessionColorInput.value = serverDefault;
+                    newSessionColorHex.value = '';
+                    newSessionColorHex.placeholder = 'Use server default';
+                    dialogState.sessionColor = '';
+                }
+            }
+
+            newSessionColorInput.addEventListener('input', function() {
+                var color = newSessionColorInput.value;
+                newSessionColorHex.value = color;
+                dialogState.sessionColor = color;
+            });
+
+            newSessionColorHex.addEventListener('change', function() {
+                var val = newSessionColorHex.value.trim();
+                if (!val) {
+                    dialogState.sessionColor = '';
+                    return;
+                }
+                if (!val.startsWith('#')) val = '#' + val;
+                if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                    newSessionColorInput.value = val;
+                    dialogState.sessionColor = val;
+                }
+            });
+
+            newSessionColorClear.addEventListener('click', function() {
+                newSessionColorHex.value = '';
+                dialogState.sessionColor = '';
+                if (window.sweSweTheme) {
+                    newSessionColorInput.value = window.sweSweTheme.getCurrentColor();
+                }
             });
 
             // Prepare button handler
@@ -1723,6 +1792,19 @@
                 var sessionName = dialogState.isNewProject ? dialogState.projectName : dialogState.selectedBranch;
                 if (sessionName) {
                     url += '&name=' + encodeURIComponent(sessionName);
+                }
+
+                // Add color if set
+                if (dialogState.sessionColor) {
+                    url += '&color=' + encodeURIComponent(dialogState.sessionColor.replace('#', ''));
+                    // Save color for this repo type
+                    var repoTypeKey = dialogState.mode === 'clone' ? urlInput.value.trim() : dialogState.mode;
+                    if (repoTypeKey && window.sweSweTheme) {
+                        window.sweSweTheme.saveColorPreference(
+                            window.sweSweTheme.COLOR_STORAGE_KEYS.REPO_TYPE_PREFIX + repoTypeKey,
+                            dialogState.sessionColor
+                        );
+                    }
                 }
 
                 window.location.href = url;
