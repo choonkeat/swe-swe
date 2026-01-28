@@ -1158,12 +1158,12 @@ func modifyCSPHeader(h http.Header) {
 		csp = csp + "; script-src 'self'"
 	}
 
-	// Add ws: and wss: to connect-src for WebSocket
+	// Add ws:, wss:, and 'self' to connect-src for WebSocket and fetch API
 	if strings.Contains(csp, "connect-src") {
-		csp = strings.Replace(csp, "connect-src", "connect-src ws: wss:", 1)
+		csp = strings.Replace(csp, "connect-src", "connect-src 'self' ws: wss:", 1)
 	} else {
 		// No connect-src directive, add one
-		csp = csp + "; connect-src ws: wss:"
+		csp = csp + "; connect-src 'self' ws: wss:"
 	}
 
 	h.Set("Content-Security-Policy", csp)
@@ -3048,6 +3048,15 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter) {
 	response := map[string]interface{}{
 		"path":        "/workspace",
 		"isWorkspace": true,
+	}
+
+	// Check if workspace is a git repository
+	if _, err := os.Stat("/workspace/.git"); os.IsNotExist(err) {
+		log.Printf("/workspace is not a git repository, skipping git operations")
+		response["nonGit"] = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
 	}
 
 	// Check if workspace has any remotes configured

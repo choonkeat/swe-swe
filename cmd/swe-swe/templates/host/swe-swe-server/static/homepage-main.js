@@ -421,8 +421,8 @@ function keepRecording(uuid, button) {
                 warningDiv.style.display = 'none';
             }
 
-            if (dialogState.isNewProject) {
-                // Skip branch selection for new projects
+            if (dialogState.isNewProject || data.nonGit) {
+                // Skip branch selection for new projects and non-git workspaces
                 hideLoading();
                 branchField.classList.add('dialog__field--hidden');
                 enableAgentSelection();

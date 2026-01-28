@@ -84,27 +84,27 @@ func TestModifyCSPHeader(t *testing.T) {
 		{
 			name:     "adds to existing script-src and adds connect-src",
 			csp:      "script-src 'unsafe-inline'",
-			expected: "script-src 'self' 'unsafe-inline'; connect-src ws: wss:",
+			expected: "script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:",
 		},
 		{
 			name:     "adds script-src and connect-src if both missing",
 			csp:      "default-src 'self'",
-			expected: "default-src 'self'; script-src 'self'; connect-src ws: wss:",
+			expected: "default-src 'self'; script-src 'self'; connect-src 'self' ws: wss:",
 		},
 		{
 			name:     "adds to existing connect-src and adds script-src",
 			csp:      "connect-src https://api.example.com",
-			expected: "connect-src ws: wss: https://api.example.com; script-src 'self'",
+			expected: "connect-src 'self' ws: wss: https://api.example.com; script-src 'self'",
 		},
 		{
 			name:     "modifies both existing script-src and connect-src",
 			csp:      "script-src 'self'; connect-src https://api.example.com",
-			expected: "script-src 'self' 'self'; connect-src ws: wss: https://api.example.com",
+			expected: "script-src 'self' 'self'; connect-src 'self' ws: wss: https://api.example.com",
 		},
 		{
 			name:     "handles full CSP with all directives",
 			csp:      "default-src 'self'; script-src 'unsafe-inline'; connect-src https://api.example.com",
-			expected: "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src ws: wss: https://api.example.com",
+			expected: "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss: https://api.example.com",
 		},
 	}
 
