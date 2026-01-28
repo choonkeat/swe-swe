@@ -1,0 +1,4 @@
+224057 - Starting Phase 1: Flag Parsing & Validation
+224057 - Step 1.0: Run `make build golden-update` to confirm clean baseline
+224057 - Expected: No unexpected diffs, clean golden files
+
