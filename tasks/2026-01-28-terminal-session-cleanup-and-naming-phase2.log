@@ -1,0 +1,5 @@
+110833: Starting Phase 2 - Shell sessions inherit parent name
+110833: Will add ParentUUID field to Session struct
+110833: Will store ParentUUID when creating shell session with parent param
+110833: Will inherit parent's name with " (Terminal)" suffix
+110833: Expected outcome: Shell sessions opened from agent sessions show "{parentName} (Terminal)"
