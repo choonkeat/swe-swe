@@ -1,0 +1,2 @@
+113102 Creating docker.go with docker-related code from main.go
+Expected: File compiles successfully with `go build ./cmd/swe-swe`
