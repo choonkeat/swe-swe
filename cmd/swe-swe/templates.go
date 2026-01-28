@@ -119,7 +119,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -188,6 +188,14 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 			}
 			if strings.Contains(line, "{{DOMAIN}}") {
 				line = strings.ReplaceAll(line, "{{DOMAIN}}", domain)
+			}
+			// Handle REPOS_DIR placeholder - default to .swe-swe/repos if not specified
+			if strings.Contains(line, "{{REPOS_DIR}}") {
+				reposDirValue := reposDir
+				if reposDirValue == "" {
+					reposDirValue = "${WORKSPACE_DIR:-.}/.swe-swe/repos"
+				}
+				line = strings.ReplaceAll(line, "{{REPOS_DIR}}", reposDirValue)
 			}
 			result = append(result, line)
 		}
