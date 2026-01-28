@@ -5,3 +5,7 @@ Result: BUILD SUCCESS
 
 113638 Creating init.go with init command code and embeds from main.go
 Expected: File compiles successfully with `go build ./cmd/swe-swe`
+Note: Reordering - doing templates.go first as it's self-contained
+
+114221 Created templates.go with 4 template processing functions
+Result: BUILD SUCCESS after removing functions from main.go and unused strconv import
