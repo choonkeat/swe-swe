@@ -4,6 +4,17 @@
 
 # Stage 1: Build swe-swe-server from source
 FROM golang:1.23-alpine AS server-builder
+# {{IF CERTS}}
+# Install enterprise certificates for Go module downloads (e.g., Cloudflare WARP)
+RUN apk add --no-cache ca-certificates
+COPY certs/ /tmp/enterprise-certs/
+RUN mkdir -p /usr/local/share/ca-certificates && \
+    for cert in /tmp/enterprise-certs/*; do \
+      cp "$cert" "/usr/local/share/ca-certificates/$(basename "$cert").crt"; \
+    done && \
+    update-ca-certificates && \
+    rm -rf /tmp/enterprise-certs
+# {{ENDIF}}
 WORKDIR /build
 COPY swe-swe-server/go.mod swe-swe-server/go.sum ./
 RUN go mod download
