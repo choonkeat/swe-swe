@@ -142,15 +142,15 @@ Files in `tasks/`, `research/`, and `docs/adr/` contain historical line number r
 
 ### Phase 1: Create New Files
 - [x] Create `docker.go` with docker-related code
-- [ ] Create `init.go` with init command code and embeds
+- [x] Create `init.go` with init command code and embeds
 - [x] Create `templates.go` with template processing
 - [x] Create `certs.go` with certificate handling
 - [x] Create `paths.go` with path utilities
 - [x] Create `list.go` with list command
 
 ### Phase 2: Trim main.go
-- [ ] Remove moved functions from main.go
-- [ ] Verify main.go only contains: `main()`, `printUsage()`, version vars
+- [x] Remove moved functions from main.go
+- [x] Verify main.go only contains: `main()`, `printUsage()`, version vars
 
 ### Phase 3: Verify
 - [ ] Run `make test` - all tests pass

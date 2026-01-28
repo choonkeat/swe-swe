@@ -24,3 +24,8 @@ Result: BUILD SUCCESS after removing crypto/md5 and regexp imports from main.go
 Expected: File compiles successfully with `go build ./cmd/swe-swe`
 114701 Build successful after creating list.go
 Result: BUILD SUCCESS
+
+114725 Creating init.go with handleInit, embeds, agent parsing, etc.
+Expected: File compiles successfully with `go build ./cmd/swe-swe`
+114847 Build successful after creating init.go
+Result: BUILD SUCCESS - main.go now only 117 lines (was 1834)
