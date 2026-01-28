@@ -1564,52 +1564,52 @@ terminal-ui.embedded-in-iframe .mobile-only {
 .terminal-ui__assistant-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     font-size: 10px;
     font-weight: 600;
-    padding: 3px 8px;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: #fff;
-    border-radius: 4px;
+    padding: 3px 0;
+    color: #e0e0e0;
     letter-spacing: 0.5px;
 }
 
-.terminal-ui__assistant-badge.yolo {
-    background: linear-gradient(135deg, #f97316, #ea580c);
-}
-
-.terminal-ui__assistant-badge .mode-label {
-    font-weight: 400;
-    opacity: 0.9;
-}
-
 .terminal-ui__assistant-badge .badge-toggle {
-    width: 20px;
-    height: 12px;
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 52px;
+    height: 18px;
+    padding: 0 6px 0 18px;
+    background: #4a5568;
+    border-radius: 9px;
     position: relative;
     transition: background 0.2s;
+    font-size: 9px;
+    font-weight: 500;
+    color: #fff;
+    letter-spacing: 0.3px;
+    text-transform: lowercase;
 }
 
 .terminal-ui__assistant-badge .badge-toggle::after {
     content: '';
     position: absolute;
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     background: #fff;
     border-radius: 50%;
-    top: 2px;
-    left: 2px;
-    transition: transform 0.2s;
+    top: 3px;
+    left: 3px;
+    transition: left 0.2s;
 }
 
 .terminal-ui__assistant-badge .badge-toggle.active {
-    background: rgba(255, 255, 255, 0.5);
+    justify-content: flex-start;
+    padding: 0 18px 0 6px;
+    background: linear-gradient(135deg, #f97316, #ea580c);
 }
 
 .terminal-ui__assistant-badge .badge-toggle.active::after {
-    transform: translateX(8px);
+    left: calc(100% - 15px);
 }
 
 

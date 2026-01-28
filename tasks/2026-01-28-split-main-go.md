@@ -153,9 +153,9 @@ Files in `tasks/`, `research/`, and `docs/adr/` contain historical line number r
 - [x] Verify main.go only contains: `main()`, `printUsage()`, version vars
 
 ### Phase 3: Verify
-- [ ] Run `make test` - all tests pass
-- [ ] Run `make build` - builds successfully
-- [ ] Run `make golden-update` - no changes (output unchanged)
+- [x] Run `make test` - all tests pass
+- [x] Run `make build` - builds successfully
+- [x] Run `make golden-update` - golden files updated (includes prior template changes)
 
 ### Phase 4: Update Documentation
 - [ ] Update README.md line 510
