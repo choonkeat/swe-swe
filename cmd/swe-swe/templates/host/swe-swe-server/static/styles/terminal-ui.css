@@ -872,6 +872,86 @@ terminal-ui.embedded-in-iframe .mobile-only {
     }
 }
 
+/* Settings Panel Color Picker */
+.settings-panel__color-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settings-panel__color-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.settings-panel__color-preset {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.settings-panel__color-preset:hover {
+    transform: scale(1.1);
+}
+
+.settings-panel__color-preset.selected {
+    border-color: #f8fafc;
+    box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.3);
+}
+
+.settings-panel__color-custom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-panel__color-input {
+    width: 36px;
+    height: 28px;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.settings-panel__color-hex {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: monospace;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+}
+
+.settings-panel__color-hex:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.settings-panel__color-reset {
+    padding: 6px 10px;
+    font-size: 12px;
+    background: transparent;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.settings-panel__color-reset:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
 /* === Basic UI Split-Pane Layout === */
 .terminal-ui__split-pane {
     display: flex;
@@ -1088,19 +1168,19 @@ terminal-ui.embedded-in-iframe .mobile-only {
     justify-content: center;
     width: 36px;
     height: 36px;
-    background: var(--bg-elevated);
+    background: var(--accent-primary);
     border: none;
     border-radius: 8px;
-    color: var(--text-primary);
+    color: var(--accent-text);
     font-size: 18px;
     text-decoration: none;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s, opacity 0.2s;
     flex-shrink: 0;
 }
 
 .terminal-ui__back-btn:hover {
-    background: var(--bg-elevated);
+    opacity: 0.85;
 }
 
 .terminal-ui__session-info {
@@ -1473,8 +1553,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .terminal-ui__panel-tabs button.active {
-    background: var(--bg-elevated);
-    color: #fff;
+    background: var(--accent-primary);
+    color: var(--accent-text);
 }
 
 /* === Responsive: Desktop-only / Mobile-only === */

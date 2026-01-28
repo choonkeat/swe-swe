@@ -210,6 +210,19 @@ class TerminalUI extends HTMLElement {
                                     <label class="settings-panel__label" for="settings-session">Session Name</label>
                                     <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
                                 </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label">Theme Color</label>
+                                    <div class="settings-panel__color-picker">
+                                        <div class="settings-panel__color-presets" id="settings-color-presets">
+                                            <!-- Populated by JS -->
+                                        </div>
+                                        <div class="settings-panel__color-custom">
+                                            <input type="color" class="settings-panel__color-input" id="settings-color-input" value="#7c3aed">
+                                            <input type="text" class="settings-panel__color-hex" id="settings-color-hex" value="#7c3aed" placeholder="#7c3aed">
+                                            <button class="settings-panel__color-reset" id="settings-color-reset">Reset</button>
+                                        </div>
+                                    </div>
+                                </div>
                             </section>
                             <nav class="settings-panel__nav">
                                 <a href="/" target="swe-swe-home" class="settings-panel__nav-btn">
@@ -1311,6 +1324,9 @@ class TerminalUI extends HTMLElement {
             });
         }
 
+        // Theme color picker
+        this.setupColorPicker();
+
     }
 
     // Setup event listeners for the new header and navigation UI
@@ -1450,6 +1466,9 @@ class TerminalUI extends HTMLElement {
             sessionInput.value = this.sessionName || '';
         }
 
+        // Theme color picker
+        this.populateColorPicker();
+
         // Update navigation links with dynamic URLs and add click handlers
         const baseUrl = getBaseUrl(window.location);
         const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
@@ -1486,6 +1505,134 @@ class TerminalUI extends HTMLElement {
             });
         });
 
+    }
+
+    // Color picker preset colors
+    static PRESET_COLORS = [
+        '#7c3aed', // Purple (default)
+        '#2563eb', // Blue
+        '#0891b2', // Cyan
+        '#059669', // Emerald
+        '#16a34a', // Green
+        '#ca8a04', // Yellow
+        '#ea580c', // Orange
+        '#dc2626', // Red
+        '#db2777', // Pink
+        '#9333ea', // Violet
+    ];
+
+    // Populate color picker presets and current value
+    populateColorPicker() {
+        const presetsContainer = this.querySelector('#settings-color-presets');
+        const colorInput = this.querySelector('#settings-color-input');
+        const colorHex = this.querySelector('#settings-color-hex');
+        if (!presetsContainer || !colorInput || !colorHex) return;
+
+        // Get current color from theme system
+        const currentColor = window.sweSweTheme?.getCurrentColor() || '#7c3aed';
+
+        // Update inputs
+        colorInput.value = currentColor;
+        colorHex.value = currentColor;
+
+        // Populate presets if not already done
+        if (presetsContainer.children.length === 0) {
+            TerminalUI.PRESET_COLORS.forEach(color => {
+                const btn = document.createElement('button');
+                btn.className = 'settings-panel__color-preset';
+                btn.style.backgroundColor = color;
+                btn.dataset.color = color;
+                btn.title = color;
+                presetsContainer.appendChild(btn);
+            });
+        }
+
+        // Update selected state
+        presetsContainer.querySelectorAll('.settings-panel__color-preset').forEach(btn => {
+            btn.classList.toggle('selected', btn.dataset.color === currentColor);
+        });
+    }
+
+    // Setup color picker event listeners
+    setupColorPicker() {
+        const presetsContainer = this.querySelector('#settings-color-presets');
+        const colorInput = this.querySelector('#settings-color-input');
+        const colorHex = this.querySelector('#settings-color-hex');
+        const colorReset = this.querySelector('#settings-color-reset');
+        if (!presetsContainer || !colorInput || !colorHex) return;
+
+        // Preset click
+        presetsContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('.settings-panel__color-preset');
+            if (btn && btn.dataset.color) {
+                this.selectColor(btn.dataset.color);
+            }
+        });
+
+        // Color input change
+        colorInput.addEventListener('input', () => {
+            this.selectColor(colorInput.value);
+        });
+
+        // Hex input change
+        colorHex.addEventListener('change', () => {
+            let val = colorHex.value.trim();
+            if (!val.startsWith('#')) val = '#' + val;
+            if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                this.selectColor(val);
+            }
+        });
+
+        // Reset button
+        if (colorReset) {
+            colorReset.addEventListener('click', () => {
+                // Clear session-specific color and use default
+                if (window.sweSweTheme) {
+                    const sessionKey = window.sweSweTheme.COLOR_STORAGE_KEYS.SESSION_PREFIX + this.uuid;
+                    localStorage.removeItem(sessionKey);
+                }
+                this.selectColor('#7c3aed');
+            });
+        }
+    }
+
+    // Apply and save selected color
+    selectColor(color) {
+        const presetsContainer = this.querySelector('#settings-color-presets');
+        const colorInput = this.querySelector('#settings-color-input');
+        const colorHex = this.querySelector('#settings-color-hex');
+
+        // Update inputs
+        if (colorInput) colorInput.value = color;
+        if (colorHex) colorHex.value = color;
+
+        // Update preset selection
+        if (presetsContainer) {
+            presetsContainer.querySelectorAll('.settings-panel__color-preset').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.color === color);
+            });
+        }
+
+        // Apply theme
+        if (window.sweSweTheme?.applyTheme) {
+            window.sweSweTheme.applyTheme(color);
+        }
+
+        // Save for this session
+        if (window.sweSweTheme?.saveColorPreference && this.uuid) {
+            const sessionKey = window.sweSweTheme.COLOR_STORAGE_KEYS.SESSION_PREFIX + this.uuid;
+            window.sweSweTheme.saveColorPreference(sessionKey, color);
+        }
+
+        // Update URL to reflect color (for sharing)
+        this.updateUrlColor(color);
+    }
+
+    // Update URL query parameter with new color
+    updateUrlColor(color) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('color', color.replace('#', ''));
+        window.history.replaceState({}, '', url.toString());
     }
 
     showPasteOverlay() {
