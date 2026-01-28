@@ -36,8 +36,9 @@ Bad:
 - Users expecting Safari to work may be confused initially
 
 Neutral:
-- Production deployments should use Let's Encrypt certificates
+- Production deployments should use Let's Encrypt certificates (now supported via `--ssl=letsencrypt@domain`)
 - This limitation only affects development/self-signed scenarios
+- Let's Encrypt certificates work correctly in iOS Safari
 
 ## Alternatives Considered
 

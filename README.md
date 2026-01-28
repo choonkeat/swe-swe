@@ -73,7 +73,8 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands for Claude, Codex, and OpenCode (space-separated, format: `[alias@]<git-url>`)
-- `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP) or `selfsign` (HTTPS with auto-generated self-signed certificate)
+- `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP), `selfsign` (HTTPS with self-signed certificate), `letsencrypt@domain` (HTTPS with Let's Encrypt), or `letsencrypt-staging@domain` (internal testing)
+- `--email EMAIL`: Email for Let's Encrypt certificate expiry notifications (required with letsencrypt)
 - `--copy-home-paths PATHS`: Comma-separated paths relative to `$HOME` to copy into the container's home directory (e.g., `.gitconfig,.ssh/config`)
 - `--status-bar-color COLOR`: Status bar background color (default: `#007acc`). Use `--status-bar-color=list` to see available preset colors.
 - `--terminal-font-size SIZE`: Terminal font size in pixels (default: `14`)
@@ -108,6 +109,12 @@ swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-command
 
 # Initialize with HTTPS (self-signed certificate)
 swe-swe init --ssl=selfsign
+
+# Initialize with HTTPS (Let's Encrypt - requires public domain + port 80 access)
+swe-swe init --ssl=letsencrypt@mydomain.com --email=admin@mydomain.com
+
+# Initialize with Let's Encrypt staging (for testing - certs not browser-trusted)
+swe-swe init --ssl=letsencrypt-staging@mydomain.com --email=admin@mydomain.com
 
 # Initialize with git and SSH config copied from host
 swe-swe init --copy-home-paths=.gitconfig,.ssh/config
@@ -351,7 +358,8 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 ├── chrome/                 # Chrome/noVNC service (Dockerfile, configs)
 ├── home/                   # Persistent VSCode/shell home (volume)
 ├── certs/                  # Enterprise certificates (if detected)
-└── tls/                    # Self-signed TLS certificates (if --ssl=selfsign)
+├── tls/                    # Self-signed TLS certificates (if --ssl=selfsign)
+└── acme/                   # Let's Encrypt ACME storage (if --ssl=letsencrypt@domain)
 ```
 
 **Why metadata is stored outside the project:**
@@ -565,6 +573,38 @@ Alternatively, modify `$HOME/.swe-swe/projects/{sanitized-path}/docker-compose.y
 2. Check containers are healthy: `swe-swe ps --project-directory ~/my-project`
 3. Check Traefik logs: `swe-swe logs traefik --project-directory ~/my-project`
 4. Verify you're using correct paths: `http://0.0.0.0:1977/`, `http://0.0.0.0:1977/vscode`, `http://0.0.0.0:1977/chrome`
+
+### Let's Encrypt Certificate Issues
+
+**Error**: `domain "example.com" does not resolve`
+
+**Solution**: Ensure your domain's DNS is configured and points to your server before running init:
+```bash
+# Verify DNS resolution
+dig +short mydomain.com
+```
+
+**Error**: ACME challenge fails / certificate not issued
+
+**Solutions**:
+1. Ensure port 80 is accessible from the internet (firewall/security groups)
+2. Verify domain resolves to this server's public IP
+3. Try staging mode first to avoid rate limits: `--ssl=letsencrypt-staging@domain`
+
+**Error**: Rate limited by Let's Encrypt
+
+**Solution**: Let's Encrypt allows 50 certificates per domain per week. Use staging mode for testing, or wait before retrying.
+
+**Certificate not renewing**
+
+Let's Encrypt certs renew automatically via Traefik. If renewal fails:
+1. Ensure the container is running: `swe-swe ps`
+2. Check Traefik logs: `swe-swe logs traefik`
+3. Verify port 80 is still accessible
+
+**iOS Safari works with Let's Encrypt**
+
+Unlike self-signed certificates, Let's Encrypt certs work in iOS Safari without issues. This is the recommended approach for mobile access.
 
 ### Persistent Home Issues
 

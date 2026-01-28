@@ -2,4 +2,27 @@
 
 231209 - Step 4.0: Find existing documentation to update
 231209 - Expected: Find docs/ directory and ADR files
+231209 - Observed: Found README.md and docs/adr/0016-ios-safari-websocket-self-signed-certs.md
+231209 - Result: PASS
+
+231344 - Step 4.1: Update README.md with Let's Encrypt documentation
+231344 - Implemented:
+231344 -   - Updated --ssl flag description to include letsencrypt options
+231344 -   - Added --email flag description
+231344 -   - Added Let's Encrypt examples in Examples section
+231344 -   - Added Let's Encrypt troubleshooting section
+231344 -   - Updated directory structure to show acme/ directory
+231344 - Result: PASS
+
+231344 - Step 4.2: Update ADR-016
+231344 - Implemented:
+231344 -   - Added note that Let's Encrypt is now supported via --ssl=letsencrypt@domain
+231344 -   - Added note that Let's Encrypt certs work in iOS Safari
+231344 - Result: PASS
+
+231344 - Step 4.3: Verify --help output
+231344 - Note: Help text was already updated in Phase 1 (flag definition includes full description)
+231344 - Result: PASS (completed in Phase 1)
+
+231344 - Phase 4 Complete: Documentation updated
 
