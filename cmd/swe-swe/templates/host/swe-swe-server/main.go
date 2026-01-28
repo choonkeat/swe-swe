@@ -3516,7 +3516,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	defer sessionsMu.Unlock()
 
 	if sess, ok := sessions[sessionUUID]; ok {
-		return sess, false, nil // existing session
+		// Check if the session's process has exited - clean up and create fresh session
+		if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
+			log.Printf("Cleaning up dead session on reconnect: %s (exit code=%d)", sessionUUID, sess.Cmd.ProcessState.ExitCode())
+			sess.Close()
+			delete(sessions, sessionUUID)
+			// Fall through to create a new session
+		} else {
+			return sess, false, nil // existing session
+		}
 	}
 
 	// Find the assistant config

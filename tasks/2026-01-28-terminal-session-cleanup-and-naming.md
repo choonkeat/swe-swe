@@ -1,7 +1,7 @@
 # Terminal Session Cleanup and Naming
 
 **Date**: 2026-01-28
-**Status**: Planned
+**Status**: In Progress (Phase 1 complete)
 
 ## High Level Goal
 
@@ -20,7 +20,7 @@ Additionally, shell sessions opened from agent sessions have no name, making rec
 
 ---
 
-## Phase 1: Clean up dead sessions on reconnect
+## Phase 1: Clean up dead sessions on reconnect [DONE]
 
 ### What will be achieved
 
