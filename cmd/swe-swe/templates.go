@@ -118,11 +118,17 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 }
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
-// This is used for docker-compose.yml which only needs the DOCKER condition
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int) string {
+// This is used for docker-compose.yml and traefik-dynamic.yml
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
+
+	// SSL mode detection
+	isSSL := strings.HasPrefix(ssl, "selfsign") || strings.HasPrefix(ssl, "letsencrypt")
+	isLetsEncrypt := strings.HasPrefix(ssl, "letsencrypt")
+	isSelfSign := strings.HasPrefix(ssl, "selfsign")
+	isLetsEncryptStaging := strings.HasPrefix(ssl, "letsencrypt-staging")
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -134,12 +140,32 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 		}
 
 		if strings.Contains(trimmed, "{{IF SSL}}") {
-			skip = !strings.HasPrefix(ssl, "selfsign")
+			skip = !isSSL
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF NO_SSL}}") {
-			skip = strings.HasPrefix(ssl, "selfsign")
+			skip = isSSL
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF LETSENCRYPT}}") {
+			skip = !isLetsEncrypt
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF SELFSIGN}}") {
+			skip = !isSelfSign
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF LETSENCRYPT_STAGING}}") {
+			skip = !isLetsEncryptStaging
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF LETSENCRYPT_PRODUCTION}}") {
+			skip = isLetsEncryptStaging || !isLetsEncrypt
 			continue
 		}
 
@@ -155,6 +181,13 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 			}
 			if strings.Contains(line, "{{GID}}") {
 				line = strings.ReplaceAll(line, "{{GID}}", fmt.Sprintf("%d", hostGID))
+			}
+			// Handle Let's Encrypt placeholders
+			if strings.Contains(line, "{{EMAIL}}") {
+				line = strings.ReplaceAll(line, "{{EMAIL}}", email)
+			}
+			if strings.Contains(line, "{{DOMAIN}}") {
+				line = strings.ReplaceAll(line, "{{DOMAIN}}", domain)
 			}
 			result = append(result, line)
 		}

@@ -42,4 +42,22 @@
 
 230904 - Step 2.5: Run make build golden-update
 230904 - Expected: Golden files show ACME config for letsencrypt variants
+231108 - Observed: Golden files updated correctly:
+231108 -   - with-ssl-letsencrypt: ACME production config, certResolver, port 80
+231108 -   - with-ssl-letsencrypt-staging: ACME staging config with staging CA server
+231108 -   - with-ssl-selfsign: Minor reordering, still uses static TLS
+231108 -   - New acme/ directories created for letsencrypt variants
+231108 - Result: PASS
+
+231108 - Step 2.6: Run make test
+231108 - Expected: All tests pass
+231108 - Observed: All tests PASS (ok github.com/choonkeat/swe-swe 1.522s)
+231108 - Result: PASS
+
+231108 - Step 2.7: Verify regression
+231108 - Expected: selfsign variant unchanged except minor reordering
+231108 - Observed: selfsign docker-compose.yml has line reordering only (tls=true moved, comment updated)
+231108 - Result: PASS - no functional regression
+
+231108 - Phase 2 Complete: Template implementation commit ready
 

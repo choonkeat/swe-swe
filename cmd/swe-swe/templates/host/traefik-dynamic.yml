@@ -21,10 +21,18 @@ http:
 # {{IF SSL}}
       entryPoints:
         - "websecure"
+# {{ENDIF}}
+# {{IF SELFSIGN}}
       tls: {}
 # {{ENDIF}}
+# {{IF LETSENCRYPT}}
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "{{DOMAIN}}"
+# {{ENDIF}}
 
-# {{IF SSL}}
+# {{IF SELFSIGN}}
 # TLS configuration for self-signed certificate
 tls:
   stores:

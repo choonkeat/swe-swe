@@ -666,6 +666,31 @@ func handleInit() {
 		}
 	}
 
+	// Create ACME directory for Let's Encrypt certificate storage
+	if sslMode == "letsencrypt" || sslMode == "letsencrypt-staging" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("Failed to get user home directory: %v", err)
+		}
+		acmeDir := filepath.Join(userHome, ".swe-swe", "acme")
+		if err := os.MkdirAll(acmeDir, 0755); err != nil {
+			log.Fatalf("Failed to create ACME directory: %v", err)
+		}
+		// Create empty acme.json if it doesn't exist (Traefik requires proper permissions)
+		acmeFile := filepath.Join(acmeDir, "acme.json")
+		if _, err := os.Stat(acmeFile); os.IsNotExist(err) {
+			if err := os.WriteFile(acmeFile, []byte("{}"), 0600); err != nil {
+				log.Fatalf("Failed to create ACME storage file: %v", err)
+			}
+		}
+		modeStr := "production"
+		if sslMode == "letsencrypt-staging" {
+			modeStr = "staging (internal testing)"
+		}
+		fmt.Printf("Let's Encrypt SSL enabled for %s (%s)\n", sslDomain, modeStr)
+		fmt.Printf("ACME storage: %s\n", acmeDir)
+	}
+
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	hostFiles := []string{
@@ -764,12 +789,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain))
 			}
 
 			// Process entrypoint.sh template with conditional sections

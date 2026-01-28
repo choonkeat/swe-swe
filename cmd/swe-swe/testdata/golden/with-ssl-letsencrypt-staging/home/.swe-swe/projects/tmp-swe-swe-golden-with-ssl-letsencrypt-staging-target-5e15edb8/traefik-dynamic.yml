@@ -18,4 +18,10 @@ http:
       middlewares:
         - "forwardauth"
       priority: 150
+      entryPoints:
+        - "websecure"
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "google.com"
 

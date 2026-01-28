@@ -97,10 +97,10 @@ services:
       # Preview proxy routing through traefik for TLS termination
       - "traefik.http.routers.${PROJECT_NAME}-preview.rule=PathPrefix(`/`)"
       - "traefik.http.routers.${PROJECT_NAME}-preview.entrypoints=previewsecure"
-      - "traefik.http.routers.${PROJECT_NAME}-preview.tls=true"
       - "traefik.http.routers.${PROJECT_NAME}-preview.middlewares=forwardauth@file"
       - "traefik.http.routers.${PROJECT_NAME}-preview.service=${PROJECT_NAME}-preview"
       - "traefik.http.services.${PROJECT_NAME}-preview.loadbalancer.server.port=9899"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.tls=true"
     depends_on:
       - chrome
     volumes:
@@ -112,7 +112,7 @@ services:
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
-      # SSL certificate for download endpoint
+      # SSL certificate for download endpoint (self-signed only)
       - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
       # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
       - type: tmpfs

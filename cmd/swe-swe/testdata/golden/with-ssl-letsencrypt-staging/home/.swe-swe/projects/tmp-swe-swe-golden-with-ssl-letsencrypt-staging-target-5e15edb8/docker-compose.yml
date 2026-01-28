@@ -13,13 +13,30 @@ services:
       - "--log.level=DEBUG"
       - "--accesslog=true"
       - "--accesslog.format=json"
-      - "--entrypoints.web.address=:7000"
-      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=60s"
+      # Port 80 for ACME HTTP-01 challenges and HTTP→HTTPS redirect
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.websecure.address=:7443"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
+      # Preview proxy entrypoint (separate port for app preview iframe)
+      - "--entrypoints.previewsecure.address=:17443"
+      - "--entrypoints.previewsecure.transport.respondingTimeouts.readTimeout=60s"
+      # Let's Encrypt ACME configuration (staging - for internal testing)
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@example.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
     ports:
-      - "${SWE_PORT:-1977}:7000"
+      # Port 80 for ACME challenges and HTTP redirect
+      - "80:80"
+      - "${SWE_PORT:-1977}:7443"
+      # Preview proxy port (prepend "1" to SWE_PORT, e.g., 1977 -> 11977)
+      - "1${SWE_PORT:-1977}:17443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "${HOME}/.swe-swe/acme:/etc/traefik/acme"
     labels:
       # Project label for multi-instance isolation
       - "swe.project=${PROJECT_NAME}"
@@ -40,6 +57,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.${PROJECT_NAME}-auth.rule=PathPrefix(`/swe-swe-auth`)"
       - "traefik.http.routers.${PROJECT_NAME}-auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.tls.domains[0].main=google.com"
       - "traefik.http.services.${PROJECT_NAME}-auth.loadbalancer.server.port=4180"
     networks:
       - swe-network
@@ -56,6 +76,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.${PROJECT_NAME}-chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
       - "traefik.http.routers.${PROJECT_NAME}-chrome.priority=100"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-chrome.tls.domains[0].main=google.com"
       - "traefik.http.routers.${PROJECT_NAME}-chrome.middlewares=forwardauth@file,${PROJECT_NAME}-chrome-redirect@docker,${PROJECT_NAME}-chrome-strip@docker"
       - "traefik.http.services.${PROJECT_NAME}-chrome.loadbalancer.server.port=6080"
       - "traefik.http.middlewares.${PROJECT_NAME}-chrome-redirect.redirectregex.regex=^/chrome$$"
@@ -72,10 +95,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      # App preview port for split-pane iframe (prepend "1" to SWE_PORT)
-      # Direct mapping when no SSL (traefik handles this port when SSL is enabled)
-      - "1${SWE_PORT:-1977}:9899"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -83,9 +102,20 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.rule=PathPrefix(`/`)"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.priority=10"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.tls.domains[0].main=google.com"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
+      # Preview proxy routing through traefik for TLS termination
+      - "traefik.http.routers.${PROJECT_NAME}-preview.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.entrypoints=previewsecure"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.middlewares=forwardauth@file"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.service=${PROJECT_NAME}-preview"
+      - "traefik.http.services.${PROJECT_NAME}-preview.loadbalancer.server.port=9899"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-preview.tls.domains[0].main=google.com"
     depends_on:
       - chrome
     volumes:
@@ -130,6 +160,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.${PROJECT_NAME}-vscode.rule=PathPrefix(`/vscode`)"
       - "traefik.http.routers.${PROJECT_NAME}-vscode.priority=100"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.tls.domains[0].main=google.com"
       - "traefik.http.routers.${PROJECT_NAME}-vscode.middlewares=forwardauth@file"
       - "traefik.http.services.${PROJECT_NAME}-vscode.loadbalancer.server.port=8081"
     depends_on:
