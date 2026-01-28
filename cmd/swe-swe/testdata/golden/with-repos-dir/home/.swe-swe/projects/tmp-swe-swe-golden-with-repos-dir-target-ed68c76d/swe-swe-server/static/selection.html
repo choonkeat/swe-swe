@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>swe-swe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Accent colors - can be overridden by theme */
+            --accent-primary: #7c3aed;
+            --accent-hover: #8b5cf6;
+            --accent-dark: #6d28d9;
+            --accent-light: #a78bfa;
+            --accent-10: rgba(124, 58, 237, 0.1);
+            --accent-20: rgba(124, 58, 237, 0.2);
+            --accent-30: rgba(124, 58, 237, 0.3);
+            --accent-text: #ffffff;
+            --accent-gradient: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            --accent-gradient-hover: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            background: #0f1729;
+            color: #f8fafc;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.5;
+        }
+
+        /* Main container */
+        .app {
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(30, 41, 59, 0.8);
+            border-bottom: 1px solid #334155;
+        }
+        .header__inner {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+        .header__logo {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--accent-primary);
+            border-radius: 10px;
+        }
+        .header__logo svg {
+            width: 20px;
+            height: 20px;
+            color: var(--accent-text);
+        }
+        .header__text h1 {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.45px;
+            color: #f8fafc;
+        }
+        .header__text p {
+            font-size: 10px;
+            font-weight: 400;
+            font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Main content */
+        .main {
+            flex: 1;
+            padding: 32px 16px;
+            max-width: 1280px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Section headers */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .section-header__left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .section-header__icon {
+            width: 24px;
+            height: 24px;
+            color: #64748b;
+        }
+        .section-header__title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+        .section-header__count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            height: 24px;
+            padding: 0 8px;
+            background: var(--accent-primary);
+            color: var(--accent-text);
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 12px;
+        }
+
+        /* New Session button */
+        .btn-new-session {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--accent-gradient);
+            color: var(--accent-text);
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-new-session:hover {
+            background: var(--accent-gradient-hover);
+            transform: translateY(-1px);
+        }
+        .btn-new-session svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Sessions section */
+        .sessions-section {
+            margin-bottom: 40px;
+        }
+
+        /* Session cards container */
+        .sessions-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 16px;
+        }
+
+        /* Session card */
+        .session-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.2s ease;
+        }
+        .session-card:hover {
+            border-color: #334155;
+            background: rgba(30, 41, 59, 0.7);
+        }
+
+        .session-card__top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .session-card__info {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .session-card__repo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #f8fafc;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+        .session-card__repo svg {
+            width: 18px;
+            height: 18px;
+            color: #64748b;
+        }
+        .session-card__branch {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            color: #22c55e;
+        }
+        .session-card__branch svg {
+            width: 14px;
+            height: 14px;
+        }
+        .session-card__branch--pink {
+            color: #ec4899;
+        }
+
+        /* Agent badge */
+        .agent-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-radius: 4px;
+            border: 1px solid;
+        }
+        .agent-badge--claude {
+            color: #f97316;
+            border-color: #f97316;
+            background: rgba(249, 115, 22, 0.1);
+        }
+        .agent-badge--goose {
+            color: #14b8a6;
+            border-color: #14b8a6;
+            background: rgba(20, 184, 166, 0.1);
+        }
+        .agent-badge--gemini {
+            color: #3b82f6;
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+        .agent-badge--codex {
+            color: #10b981;
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .agent-badge--aider {
+            color: #22c55e;
+            border-color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+        .agent-badge--custom {
+            color: #a855f7;
+            border-color: #a855f7;
+            background: rgba(168, 85, 247, 0.1);
+        }
+
+        /* Session meta row */
+        .session-card__meta {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .session-card__meta-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .session-card__meta-item svg {
+            width: 14px;
+            height: 14px;
+            color: #64748b;
+        }
+
+        /* Session actions */
+        .session-card__actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .btn-join {
+            flex: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--accent-10);
+            color: var(--accent-light);
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid var(--accent-20);
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .btn-join:hover {
+            background: var(--accent-20);
+            border-color: var(--accent-30);
+        }
+        .btn-join svg {
+            width: 16px;
+            height: 16px;
+        }
+        .btn-end {
+            padding: 10px 16px;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-end:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* Recordings section */
+        .recordings-section {
+            margin-bottom: 40px;
+        }
+        .recordings-section .section-header__left {
+            gap: 12px;
+        }
+
+        /* Recording card */
+        .recording-card {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 12px;
+            transition: all 0.2s ease;
+        }
+        .recording-card:hover {
+            border-color: #334155;
+            background: rgba(30, 41, 59, 0.7);
+        }
+
+        .recording-card__play {
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--accent-10);
+            border: 1px solid var(--accent-20);
+            border-radius: 50%;
+            color: var(--accent-light);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+        .recording-card__play:hover {
+            background: var(--accent-20);
+            border-color: var(--accent-30);
+        }
+        .recording-card__play svg {
+            width: 18px;
+            height: 18px;
+            margin-left: 2px;
+        }
+
+        .recording-card__info {
+            flex: 1;
+            min-width: 0;
+        }
+        .recording-card__title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .recording-card__meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+            flex-wrap: wrap;
+        }
+        .recording-card__branch {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 4px;
+        }
+        .recording-card__dot {
+            color: #475569;
+        }
+
+        .recording-card__right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .recording-card__status {
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .recording-card__status--expires {
+            color: #f59e0b;
+        }
+        .recording-card__status--saved {
+            color: #22c55e;
+        }
+
+        .recording-card__btn-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .recording-card:hover .recording-card__btn-group {
+            opacity: 1;
+        }
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-icon:hover {
+            background: rgba(100, 116, 139, 0.1);
+            color: #94a3b8;
+        }
+        .btn-icon--keep:hover {
+            color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+        .btn-icon--delete:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .btn-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .btn-view {
+            padding: 8px 16px;
+            background: transparent;
+            color: #f8fafc;
+            font-size: 12px;
+            font-weight: 500;
+            border: 1px solid #f8fafc;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .btn-view:hover {
+            background: rgba(248, 250, 252, 0.1);
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #64748b;
+        }
+        .empty-state__icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            color: #475569;
+        }
+        .empty-state__text {
+            font-size: 14px;
+        }
+
+        /* iOS Safari Warning */
+        .ios-safari-warning {
+            display: none;
+            max-width: 800px;
+            margin: 0 auto 24px;
+            padding: 12px 16px;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 8px;
+        }
+        .ios-safari-warning__title {
+            font-weight: 600;
+            color: #fbbf24;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+        .ios-safari-warning__text {
+            color: #fcd34d;
+            font-size: 13px;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 24px 32px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .footer-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            color: #94a3b8;
+            font-size: 13px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .footer-link:hover {
+            border-color: #334155;
+            color: #f8fafc;
+        }
+        .footer-link svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* New Session Dialog */
+        .dialog-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .dialog {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .dialog__header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .dialog__title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+        .dialog__close {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: #64748b;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .dialog__close:hover {
+            background: rgba(100, 116, 139, 0.1);
+            color: #f8fafc;
+        }
+        .dialog__field {
+            margin-bottom: 20px;
+        }
+        .dialog__label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }
+        .dialog__row {
+            display: flex;
+            gap: 8px;
+        }
+        .dialog__input {
+            flex: 1;
+            padding: 12px 14px;
+            font-size: 14px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #f8fafc;
+            font-family: inherit;
+        }
+        .dialog__input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .dialog__input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .dialog__input::placeholder {
+            color: #64748b;
+        }
+        .dialog__next {
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            background: #334155;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            color: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .dialog__next:hover:not(:disabled) {
+            background: #475569;
+        }
+        .dialog__next:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .dialog__agents {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .dialog__agent {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .dialog__agent:hover:not(.dialog__agent--disabled) {
+            border-color: var(--accent-primary);
+        }
+        .dialog__agent--selected {
+            border-color: var(--accent-primary);
+            background: var(--accent-10);
+        }
+        .dialog__agent--disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .dialog__agent-icon {
+            font-size: 18px;
+        }
+        .dialog__agent-name {
+            font-size: 14px;
+            color: #f8fafc;
+        }
+        .dialog__agent input[type="radio"] {
+            display: none;
+        }
+        .dialog__footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            gap: 16px;
+        }
+        .dialog__error {
+            color: #ef4444;
+            font-size: 13px;
+            flex: 1;
+        }
+        .dialog__loading {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .dialog__spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #334155;
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .dialog__start {
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            background: var(--accent-gradient);
+            border: none;
+            border-radius: 8px;
+            color: var(--accent-text);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .dialog__start:hover:not(:disabled) {
+            background: var(--accent-gradient-hover);
+        }
+        .dialog__start:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .dialog__select {
+            flex: 1;
+            padding: 12px 14px;
+            font-size: 14px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #f8fafc;
+            font-family: inherit;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+        .dialog__select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .dialog__select option {
+            background: #1e293b;
+            color: #f8fafc;
+        }
+        .dialog__warning {
+            color: #f59e0b;
+            font-size: 12px;
+            margin-top: 8px;
+            display: none;
+        }
+        .dialog__field--hidden {
+            display: none;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 640px) {
+            .header {
+                padding: 12px 16px;
+            }
+            .header__logo {
+                width: 36px;
+                height: 36px;
+            }
+            .header__logo svg {
+                width: 20px;
+                height: 20px;
+            }
+            .header__text h1 {
+                font-size: 16px;
+            }
+            .header__text p {
+                font-size: 9px;
+            }
+
+            .main {
+                padding: 0 16px 24px;
+            }
+
+            .section-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .section-header__title {
+                font-size: 18px;
+            }
+            .btn-new-session {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .session-card {
+                padding: 16px;
+            }
+            .session-card__top {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .session-card__repo {
+                font-size: 15px;
+            }
+            .session-card__meta {
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+            .session-card__actions {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .btn-join {
+                width: 100%;
+            }
+            .btn-end {
+                width: 100%;
+                text-align: center;
+            }
+
+            .recording-card {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 16px;
+            }
+            .recording-card__play {
+                width: 36px;
+                height: 36px;
+            }
+            .recording-card__play svg {
+                width: 14px;
+                height: 14px;
+            }
+            .recording-card__info {
+                width: 100%;
+            }
+            .recording-card__title {
+                font-size: 14px;
+            }
+            .recording-card__meta {
+                font-size: 12px;
+            }
+            .recording-card__right {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .recording-card__status {
+                font-size: 12px;
+            }
+
+            .footer {
+                padding: 16px 20px;
+            }
+            .footer-link {
+                flex: 1;
+                justify-content: center;
+                min-width: 140px;
+            }
+
+            .dialog {
+                padding: 20px;
+                border-radius: 12px;
+            }
+            .dialog__agents {
+                flex-direction: column;
+            }
+            .dialog__agent {
+                width: 100%;
+            }
+            .dialog__footer {
+                flex-direction: column;
+                gap: 12px;
+            }
+            .dialog__start {
+                width: 100%;
+            }
+        }
+
+        /* Settings button in header */
+        .header__settings {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .header__settings:hover {
+            background: rgba(100, 116, 139, 0.2);
+            color: #f8fafc;
+        }
+        .header__settings svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Color picker styles */
+        .color-picker {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .color-picker__presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .color-picker__preset {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .color-picker__preset:hover {
+            transform: scale(1.1);
+        }
+        .color-picker__preset.selected {
+            border-color: #f8fafc;
+            box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.3);
+        }
+        .color-picker__custom {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .color-picker__input {
+            width: 48px;
+            height: 36px;
+            padding: 2px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: transparent;
+        }
+        .color-picker__hex {
+            flex: 1;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-family: monospace;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #f8fafc;
+        }
+        .color-picker__hex:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .color-picker__reset {
+            padding: 8px 16px;
+            font-size: 13px;
+            background: transparent;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .color-picker__reset:hover {
+            background: rgba(100, 116, 139, 0.1);
+            color: #f8fafc;
+        }
+    </style>
+</head>
+<body>
+    <!-- New Session dialog -->
+    <div class="dialog-overlay" id="new-session-dialog-overlay">
+        <div class="dialog">
+            <div class="dialog__header">
+                <div class="dialog__title">New Session</div>
+                <button class="dialog__close" id="new-session-close">&times;</button>
+            </div>
+            <!-- Mode selector -->
+            <div class="dialog__field">
+                <label class="dialog__label">Repository Type</label>
+                <select class="dialog__select" id="new-session-mode">
+                    <option value="workspace">Default workspace (/workspace)</option>
+                    <option value="clone">Clone external repository</option>
+                    <option value="create">Create new project</option>
+                </select>
+            </div>
+            <!-- Theme color for this repo type (optional) -->
+            <div class="dialog__field">
+                <label class="dialog__label">Theme Color (optional)</label>
+                <div class="color-picker__custom" style="margin-top: 8px;">
+                    <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
+                    <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
+                    <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+                </div>
+            </div>
+            <!-- Clone URL field (shown when mode=clone) -->
+            <div class="dialog__field dialog__field--hidden" id="clone-url-field">
+                <label class="dialog__label">Repository URL</label>
+                <div class="dialog__row">
+                    <input type="text" class="dialog__input" id="new-session-url" list="repo-history" placeholder="https://github.com/... or git@github.com:...">
+                    <datalist id="repo-history"></datalist>
+                </div>
+            </div>
+            <!-- Project name field (shown when mode=create) -->
+            <div class="dialog__field dialog__field--hidden" id="create-name-field">
+                <label class="dialog__label">Project Name</label>
+                <div class="dialog__row">
+                    <input type="text" class="dialog__input" id="new-session-name" placeholder="my-project (letters, numbers, dashes)">
+                </div>
+            </div>
+            <!-- Next button (prepare repo) -->
+            <div class="dialog__field">
+                <button class="dialog__next" id="new-session-prepare" style="width: 100%;">Next</button>
+                <div class="dialog__warning" id="new-session-warning"></div>
+            </div>
+            <!-- Branch field (hidden for create mode) -->
+            <div class="dialog__field" id="branch-field">
+                <label class="dialog__label">Branch (optional)</label>
+                <div class="dialog__row">
+                    <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
+                    <datalist id="branch-list"></datalist>
+                    <button class="dialog__next" id="new-session-branch-next" disabled>Next</button>
+                </div>
+            </div>
+            <div class="dialog__field">
+                <label class="dialog__label">Agent</label>
+                <div class="dialog__agents" id="new-session-agents">
+                    {{range .Agents}}
+                    <label class="dialog__agent dialog__agent--disabled" data-agent="{{.Assistant.Binary}}">
+                        <input type="radio" name="new-session-agent" value="{{.Assistant.Binary}}" disabled>
+                        <span class="dialog__agent-icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
+                        <span class="dialog__agent-name">{{.Assistant.Name}}</span>
+                    </label>
+                    {{end}}
+                </div>
+            </div>
+            <div class="dialog__footer">
+                <div class="dialog__error" id="new-session-error"></div>
+                <div class="dialog__loading" id="new-session-loading">
+                    <div class="dialog__spinner"></div>
+                    <span id="new-session-loading-text">Loading...</span>
+                </div>
+                <button class="dialog__start" id="new-session-start" disabled>Start Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings dialog -->
+    <div class="dialog-overlay" id="settings-dialog-overlay">
+        <div class="dialog" style="max-width: 400px;">
+            <div class="dialog__header">
+                <div class="dialog__title">Settings</div>
+                <button class="dialog__close" id="settings-close">&times;</button>
+            </div>
+            <div class="dialog__field">
+                <label class="dialog__label">Server Theme Color</label>
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">
+                    Choose a primary color for this server to help distinguish it from others.
+                </p>
+                <div class="color-picker">
+                    <div class="color-picker__presets" id="color-presets">
+                        <!-- Preset colors populated by JS -->
+                    </div>
+                    <div class="color-picker__custom">
+                        <input type="color" class="color-picker__input" id="color-input" value="#7c3aed">
+                        <input type="text" class="color-picker__hex" id="color-hex" value="#7c3aed" placeholder="#7c3aed">
+                        <button class="color-picker__reset" id="color-reset">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app">
+        <header class="header">
+            <div class="header__inner">
+                <div class="header__logo">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 3L8 21M16 3L14 21M3 8H21M3 16H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="header__text">
+                    <h1>swe-swe</h1>
+                    <p>Session Manager</p>
+                </div>
+                <button class="header__settings" id="settings-btn" title="Settings">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="2"/>
+                        <path d="M19.4 15C19.2669 15.3016 19.2272 15.6362 19.286 15.9606C19.3448 16.285 19.4995 16.5843 19.73 16.82L19.79 16.88C19.976 17.0657 20.1235 17.2863 20.2241 17.5291C20.3248 17.7719 20.3766 18.0322 20.3766 18.295C20.3766 18.5578 20.3248 18.8181 20.2241 19.0609C20.1235 19.3037 19.976 19.5243 19.79 19.71C19.6043 19.896 19.3837 20.0435 19.1409 20.1441C18.8981 20.2448 18.6378 20.2966 18.375 20.2966C18.1122 20.2966 17.8519 20.2448 17.6091 20.1441C17.3663 20.0435 17.1457 19.896 16.96 19.71L16.9 19.65C16.6643 19.4195 16.365 19.2648 16.0406 19.206C15.7162 19.1472 15.3816 19.1869 15.08 19.32C14.7842 19.4468 14.532 19.6572 14.3543 19.9255C14.1766 20.1938 14.0813 20.5082 14.08 20.83V21C14.08 21.5304 13.8693 22.0391 13.4942 22.4142C13.1191 22.7893 12.6104 23 12.08 23C11.5496 23 11.0409 22.7893 10.6658 22.4142C10.2907 22.0391 10.08 21.5304 10.08 21V20.91C10.0723 20.579 9.96512 20.258 9.77251 19.9887C9.5799 19.7194 9.31074 19.5143 9 19.4C8.69838 19.2669 8.36381 19.2272 8.03941 19.286C7.71502 19.3448 7.41568 19.4995 7.18 19.73L7.12 19.79C6.93425 19.976 6.71368 20.1235 6.47088 20.2241C6.22808 20.3248 5.96783 20.3766 5.705 20.3766C5.44217 20.3766 5.18192 20.3248 4.93912 20.2241C4.69632 20.1235 4.47575 19.976 4.29 19.79C4.10405 19.6043 3.95653 19.3837 3.85588 19.1409C3.75523 18.8981 3.70343 18.6378 3.70343 18.375C3.70343 18.1122 3.75523 17.8519 3.85588 17.6091C3.95653 17.3663 4.10405 17.1457 4.29 16.96L4.35 16.9C4.58054 16.6643 4.73519 16.365 4.794 16.0406C4.85282 15.7162 4.81312 15.3816 4.68 15.08C4.55324 14.7842 4.34276 14.532 4.07447 14.3543C3.80618 14.1766 3.49179 14.0813 3.17 14.08H3C2.46957 14.08 1.96086 13.8693 1.58579 13.4942C1.21071 13.1191 1 12.6104 1 12.08C1 11.5496 1.21071 11.0409 1.58579 10.6658C1.96086 10.2907 2.46957 10.08 3 10.08H3.09C3.42099 10.0723 3.742 9.96512 4.0113 9.77251C4.28059 9.5799 4.48572 9.31074 4.6 9C4.73312 8.69838 4.77282 8.36381 4.714 8.03941C4.65519 7.71502 4.50054 7.41568 4.27 7.18L4.21 7.12C4.02405 6.93425 3.87653 6.71368 3.77588 6.47088C3.67523 6.22808 3.62343 5.96783 3.62343 5.705C3.62343 5.44217 3.67523 5.18192 3.77588 4.93912C3.87653 4.69632 4.02405 4.47575 4.21 4.29C4.39575 4.10405 4.61632 3.95653 4.85912 3.85588C5.10192 3.75523 5.36217 3.70343 5.625 3.70343C5.88783 3.70343 6.14808 3.75523 6.39088 3.85588C6.63368 3.95653 6.85425 4.10405 7.04 4.29L7.1 4.35C7.33568 4.58054 7.63502 4.73519 7.95941 4.794C8.28381 4.85282 8.61838 4.81312 8.92 4.68H9C9.29577 4.55324 9.54802 4.34276 9.72569 4.07447C9.90337 3.80618 9.99872 3.49179 10 3.17V3C10 2.46957 10.2107 1.96086 10.5858 1.58579C10.9609 1.21071 11.4696 1 12 1C12.5304 1 13.0391 1.21071 13.4142 1.58579C13.7893 1.96086 14 2.46957 14 3V3.09C14.0013 3.41179 14.0966 3.72618 14.2743 3.99447C14.452 4.26276 14.7042 4.47324 15 4.6C15.3016 4.73312 15.6362 4.77282 15.9606 4.714C16.285 4.65519 16.5843 4.50054 16.82 4.27L16.88 4.21C17.0657 4.02405 17.2863 3.87653 17.5291 3.77588C17.7719 3.67523 18.0322 3.62343 18.295 3.62343C18.5578 3.62343 18.8181 3.67523 19.0609 3.77588C19.3037 3.87653 19.5243 4.02405 19.71 4.21C19.896 4.39575 20.0435 4.61632 20.1441 4.85912C20.2448 5.10192 20.2966 5.36217 20.2966 5.625C20.2966 5.88783 20.2448 6.14808 20.1441 6.39088C20.0435 6.63368 19.896 6.85425 19.71 7.04L19.65 7.1C19.4195 7.33568 19.2648 7.63502 19.206 7.95941C19.1472 8.28381 19.1869 8.61838 19.32 8.92V9C19.4468 9.29577 19.6572 9.54802 19.9255 9.72569C20.1938 9.90337 20.5082 9.99872 20.83 10H21C21.5304 10 22.0391 10.2107 22.4142 10.5858C22.7893 10.9609 23 11.4696 23 12C23 12.5304 22.7893 13.0391 22.4142 13.4142C22.0391 13.7893 21.5304 14 21 14H20.91C20.5882 14.0013 20.2738 14.0966 20.0055 14.2743C19.7372 14.452 19.5268 14.7042 19.4 15Z" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="ios-safari-warning" id="ios-safari-warning">
+            <div class="ios-safari-warning__title">iOS Safari + Self-Signed Certs</div>
+            <div class="ios-safari-warning__text">
+                WebSocket connections may not work in Safari with self-signed certificates.
+                Please use <strong>Chrome</strong> or another browser on iOS for best results.
+            </div>
+        </div>
+
+        <main class="main">
+            <!-- Active Sessions Section -->
+            <section class="sessions-section">
+                <div class="section-header">
+                    <div class="section-header__left">
+                        <svg class="section-header__icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                            <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                            <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                            <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <h2 class="section-header__title">Active Sessions</h2>
+                    </div>
+                    <button class="btn-new-session" id="btn-new-session" data-uuid="{{.NewUUID}}" data-debug="{{.Debug}}">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        New Session
+                    </button>
+                </div>
+
+                <div class="sessions-list">
+                    {{range .Agents}}
+                    {{range .Sessions}}
+                    <div class="session-card">
+                        <div class="session-card__top">
+                            <div class="session-card__info">
+                                <div class="session-card__repo">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M4 17V7C4 5.89543 4.89543 5 6 5H18C19.1046 5 20 5.89543 20 7V17C20 18.1046 19.1046 19 18 19H6C4.89543 19 4 18.1046 4 17Z" stroke="currentColor" stroke-width="2"/>
+                                        <path d="M8 9H8.01M12 9H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        <path d="M7 13L10 16L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
+                                    </svg>
+                                    {{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}
+                                </div>
+                            </div>
+                            <span class="agent-badge agent-badge--{{.Assistant}}">{{.Assistant}}</span>
+                        </div>
+                        <div class="session-card__meta">
+                            <span class="session-card__meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M17 21V19C17 16.7909 15.2091 15 13 15H5C2.79086 15 1 16.7909 1 19V21M23 21V19C22.9986 17.177 21.765 15.5857 20 15.13M16 3.13C17.7699 3.58317 19.0078 5.17798 19.0078 7.005C19.0078 8.83202 17.7699 10.4268 16 10.88M13 7C13 9.20914 11.2091 11 9 11C6.79086 11 5 9.20914 5 7C5 4.79086 6.79086 3 9 3C11.2091 3 13 4.79086 13 7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                {{.ClientCount}} active
+                            </span>
+                            <span class="session-card__meta-item">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                                    <path d="M12 6V12L16 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                                {{.DurationStr}}
+                            </span>
+                        </div>
+                        <div class="session-card__actions">
+                            <a href="/session/{{.UUID}}?assistant={{.Assistant}}{{if $.Debug}}&debug=1{{end}}" class="btn-join">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+                                    <path d="M8 21H16M12 17V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                                Join Session
+                            </a>
+                            <button class="btn-end" data-action="end-session" data-uuid="{{.UUID}}">End</button>
+                        </div>
+                    </div>
+                    {{end}}
+                    {{end}}
+                </div>
+            </section>
+
+            <!-- Session Recordings Section -->
+            {{$hasRecordings := false}}
+            {{range .Agents}}{{if .Recordings}}{{$hasRecordings = true}}{{end}}{{end}}
+            {{if $hasRecordings}}
+            <section class="recordings-section">
+                <div class="section-header">
+                    <div class="section-header__left">
+                        <svg class="section-header__icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21 8V21H3V8M1 3H23V8H1V3Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M10 12H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        <h2 class="section-header__title">Session Recordings</h2>
+                    </div>
+                </div>
+
+                <div class="recordings-list">
+                    {{range .Agents}}
+                    {{range .Recordings}}
+                    <div class="recording-card" data-uuid="{{.UUID}}">
+                        <a href="/recording/{{.UUID}}" class="recording-card__play" title="Play recording">
+                            <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M8 5.14V19.14L19 12.14L8 5.14Z"/>
+                            </svg>
+                        </a>
+                        <div class="recording-card__info">
+                            <h3 class="recording-card__title">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</h3>
+                            <div class="recording-card__meta">
+                                <span>{{.EndedAgo}}</span>
+                            </div>
+                        </div>
+                        <div class="recording-card__right">
+                            <span class="recording-card__status {{if .IsKept}}recording-card__status--saved{{else}}recording-card__status--expires{{end}}">
+                                {{if .IsKept}}Saved{{else}}Expires in {{.ExpiresIn}}{{end}}
+                            </span>
+                            <div class="recording-card__btn-group">
+                                {{if .IsKept}}
+                                <button class="btn-icon btn-icon--keep" title="Kept indefinitely">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M19 21L12 16L5 21V5C5 3.89543 5.89543 3 7 3H17C18.1046 3 19 3.89543 19 5V21Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor"/>
+                                    </svg>
+                                </button>
+                                <button class="btn-icon btn-icon--delete" data-action="delete-recording" data-uuid="{{.UUID}}" title="Delete">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M3 6H5H21M19 6V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V6M8 6V4C8 2.89543 8.89543 2 10 2H14C15.1046 2 16 2.89543 16 4V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                {{else}}
+                                <button class="btn-icon btn-icon--keep" data-action="keep-recording" data-uuid="{{.UUID}}" title="Keep to prevent auto-deletion">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M19 21L12 16L5 21V5C5 3.89543 5.89543 3 7 3H17C18.1046 3 19 3.89543 19 5V21Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <button class="btn-icon btn-icon--delete" data-action="delete-recording" data-uuid="{{.UUID}}" title="Delete">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M3 6H5H21M19 6V20C19 21.1046 18.1046 22 17 22H7C5.89543 22 5 21.1046 5 20V6M8 6V4C8 2.89543 8.89543 2 10 2H14C15.1046 2 16 2.89543 16 4V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                {{end}}
+                            </div>
+                            <a href="/recording/{{.UUID}}" class="btn-view">View</a>
+                        </div>
+                    </div>
+                    {{end}}
+                    {{end}}
+                </div>
+            </section>
+            {{end}}
+        </main>
+
+        <footer class="footer">
+            {{if .HasSSLCert}}
+            <a href="/ssl/ca.crt" class="footer-link">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" stroke-width="2"/>
+                    <path d="M7 11V7C7 4.23858 9.23858 2 12 2C14.7614 2 17 4.23858 17 7V11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                Install SSL Certificate
+            </a>
+            {{end}}
+            <a href="https://github.com/choonkeat/swe-swe" target="_blank" rel="noopener" class="footer-link">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+                GitHub
+            </a>
+        </footer>
+    </div>
+
+    <script src="/homepage-main.js"></script>
+    <script type="module" src="/homepage-theme.js"></script>
+</body>
+</html>

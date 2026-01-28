@@ -139,6 +139,31 @@ make build        # Embeds new templates
 swe-swe init ...  # Now uses updated templates
 ```
 
+### 4. Adding new static files without registering them
+
+When adding new files to `templates/host/`, you MUST also add them to the `hostFiles` list in `cmd/swe-swe/init.go`. Otherwise the file won't be copied during `swe-swe init` and will 404 at runtime.
+
+**Wrong**:
+```bash
+# Create new file
+vim cmd/swe-swe/templates/host/swe-swe-server/static/my-new-script.js
+make build golden-update
+# File appears in templates but is not copied → 404 errors at runtime!
+```
+
+**Right**:
+```bash
+# 1. Create new file
+vim cmd/swe-swe/templates/host/swe-swe-server/static/my-new-script.js
+
+# 2. Register it in init.go's hostFiles slice
+vim cmd/swe-swe/init.go
+# Add: "templates/host/swe-swe-server/static/my-new-script.js",
+
+# 3. Rebuild and test
+make build golden-update
+```
+
 ## File Reference
 
 | Template Path | Purpose |

@@ -108,6 +108,8 @@ services:
       - ${WORKSPACE_DIR:-.}:/workspace
       # Mount worktrees to /worktrees for cleaner agent path separation
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
+      # Mount external repos directory for persistence across container rebuilds
+      - ${WORKSPACE_DIR:-.}/.swe-swe/repos:/repos
       # Mount persistent home for auth/config storage
       - ./home:/home/app
       # Enterprise certificates (if certs/ directory exists with certificates)

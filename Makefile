@@ -85,6 +85,17 @@ LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.Bu
 
 build-cli:
 	@rm -f cmd/swe-swe/templates/host/swe-swe-server/go.mod cmd/swe-swe/templates/host/swe-swe-server/go.sum
+	@# Check for unregistered static files (excluding test files, README, and go.mod/go.sum)
+	@unregistered=$$(find cmd/swe-swe/templates/host/swe-swe-server/static -type f \
+		! -name '*.test.js' ! -name 'README.md' \
+		-exec sh -c 'grep -q "$$(echo {} | sed "s|cmd/swe-swe/||")" cmd/swe-swe/init.go || echo {}' \;); \
+	if [ -n "$$unregistered" ]; then \
+		echo ""; \
+		echo "WARNING: Unregistered static files found!"; \
+		echo "Add these to hostFiles in cmd/swe-swe/init.go:"; \
+		echo "$$unregistered" | sed 's|cmd/swe-swe/||g; s|^|  |'; \
+		echo ""; \
+	fi
 	mkdir -p ./dist
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe
 	GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.linux-arm64 ./cmd/swe-swe
@@ -125,6 +136,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-terminal-font FLAGS="--terminal-font-size 16 --terminal-font-family 'JetBrains Mono'"
 	@$(MAKE) _golden-variant NAME=with-status-bar-font FLAGS="--status-bar-font-size 14 --status-bar-font-family monospace"
 	@$(MAKE) _golden-variant NAME=with-all-ui-options FLAGS="--status-bar-color red --terminal-font-size 18 --status-bar-font-size 14"
+	@$(MAKE) _golden-variant NAME=with-repos-dir FLAGS="--repos-dir /data/repos"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs
 	@$(MAKE) _golden-certs-ssl-cert-file

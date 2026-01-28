@@ -16,6 +16,8 @@ Usage of init:
     	How to handle existing init config: 'reuse' or 'ignore'
   -project-directory string
     	Project directory to initialize (default ".")
+  -repos-dir string
+    	Host directory to mount at /repos for external repo clones (default: .swe-swe/repos in project)
   -ssl string
     	SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain' (default "no")
   -status-bar-font-family string

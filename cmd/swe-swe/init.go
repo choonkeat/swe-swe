@@ -89,6 +89,7 @@ type InitConfig struct {
 	SSL                 string              `json:"ssl,omitempty"`
 	Email               string              `json:"email,omitempty"`
 	CopyHomePaths       []string            `json:"copyHomePaths,omitempty"`
+	ReposDir            string              `json:"reposDir,omitempty"`
 	TerminalFontSize    int                 `json:"terminalFontSize,omitempty"`
 	TerminalFontFamily  string              `json:"terminalFontFamily,omitempty"`
 	StatusBarFontSize   int                 `json:"statusBarFontSize,omitempty"`
@@ -336,6 +337,7 @@ func handleInit() {
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
 	emailFlag := fs.String("email", "", "Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)")
 	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
+	reposDir := fs.String("repos-dir", "", "Host directory to mount at /repos for external repo clones (default: .swe-swe/repos in project)")
 	terminalFontSize := fs.Int("terminal-font-size", 14, "Terminal font size in pixels")
 	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
@@ -514,6 +516,7 @@ func handleInit() {
 		}
 		*emailFlag = savedConfig.Email
 		copyHomePaths = savedConfig.CopyHomePaths
+		*reposDir = savedConfig.ReposDir
 		// UI customization flags
 		if savedConfig.TerminalFontSize != 0 {
 			*terminalFontSize = savedConfig.TerminalFontSize
@@ -693,6 +696,10 @@ func handleInit() {
 
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
+	//
+	// IMPORTANT: When adding new files to templates/host/, you MUST add them to this list.
+	// Otherwise they won't be copied during `swe-swe init` and will 404 at runtime.
+	// After adding, run: make build golden-update
 	hostFiles := []string{
 			"templates/host/.dockerignore",
 			"templates/host/Dockerfile",
@@ -731,6 +738,10 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/modules/upload-queue.js",
 			"templates/host/swe-swe-server/static/modules/chunk-assembler.js",
 			"templates/host/swe-swe-server/static/modules/status-renderer.js",
+			"templates/host/swe-swe-server/static/color-utils.js",
+			"templates/host/swe-swe-server/static/homepage-main.js",
+			"templates/host/swe-swe-server/static/homepage-theme.js",
+			"templates/host/swe-swe-server/static/session-theme.js",
 		}
 
 		// Files that go to project directory (accessible by Claude in container)
@@ -789,12 +800,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir))
 			}
 
 			// Process entrypoint.sh template with conditional sections
@@ -880,6 +891,7 @@ func handleInit() {
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
 		CopyHomePaths:       copyHomePaths,
+		ReposDir:            *reposDir,
 		TerminalFontSize:    *terminalFontSize,
 		TerminalFontFamily:  *terminalFontFamily,
 		StatusBarFontSize:   *statusBarFontSize,
