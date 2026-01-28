@@ -292,6 +292,8 @@ type Session struct {
 	// Recording
 	RecordingUUID string             // UUID for recording files (separate from session UUID for restarts)
 	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
+	// Parent session relationship
+	ParentUUID string // UUID of parent session (for shell sessions opened from agent sessions)
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte  // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -3511,7 +3513,7 @@ func deleteRecordingFiles(uuid string) {
 // The name parameter sets the session name/branch (optional, can be empty)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
 // The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
-func getOrCreateSession(sessionUUID string, assistant string, name string, workDir string, repoPath string) (*Session, bool, error) {
+func getOrCreateSession(sessionUUID string, assistant string, name string, workDir string, repoPath string, parentUUID string, parentName string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -3570,6 +3572,12 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 			// No branch specified, use base repo directly
 			workDir = baseRepo
 		}
+	}
+
+	// Inherit name from parent session if this is a shell session with a parent
+	if name == "" && parentName != "" && assistant == "shell" {
+		name = parentName + " (Terminal)"
+		log.Printf("Shell session inheriting name from parent: %s", name)
 	}
 
 	// Derive default session name if none provided
@@ -3634,6 +3642,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
+		ParentUUID:      parentUUID,
 		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
@@ -3687,19 +3696,21 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Get optional pwd (base repo path for new session dialog)
 	pwd := r.URL.Query().Get("pwd")
 
-	// Get optional parent session UUID to inherit workDir (for shell sessions)
+	// Get optional parent session UUID to inherit workDir and name (for shell sessions)
 	parentUUID := r.URL.Query().Get("parent")
 	var workDir string
+	var parentName string
 	if parentUUID != "" {
 		sessionsMu.RLock()
 		if parentSess, ok := sessions[parentUUID]; ok {
 			workDir = parentSess.WorkDir
+			parentName = parentSess.Name
 			log.Printf("Shell session inheriting workDir from parent %s: %s", parentUUID, workDir)
 		}
 		sessionsMu.RUnlock()
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, workDir, pwd)
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, workDir, pwd, parentUUID, parentName)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
