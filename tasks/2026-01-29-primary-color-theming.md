@@ -61,10 +61,12 @@ Allow users to pick a primary color at 3 levels to distinguish servers/sessions:
 - [x] Override server default when set
 - [x] Pass color to session via URL param `?color=hex`
 
-### Phase 5: Session-Specific Color
-- [ ] Add color picker to session page (settings panel or header)
-- [ ] Store per-session: `swe-swe-color-session-{uuid}`
-- [ ] Pass via URL param for sharing: `?color=hex`
+### Phase 5: Session-Specific Color ✅
+- [x] Read `?color=hex` URL param on session page
+- [x] Apply theme via CSS variables
+- [x] Store per-session: `swe-swe-color-session-{uuid}`
+- [x] Settings panel header shows accent color
+- [ ] (Future) Add color picker UI to session settings panel
 
 ## Progress
 
@@ -73,7 +75,16 @@ Allow users to pick a primary color at 3 levels to distinguish servers/sessions:
 - [x] Phase 2: CSS variables - homepage updated, theming verified
 - [x] Phase 3: Server default - settings gear icon + color picker modal
 - [x] Phase 4: Repository type - color picker in New Session dialog
-- [ ] Phase 5: Session-specific - need to add to session page
+- [x] Phase 5: Session-specific - URL param + localStorage support
+
+## Summary
+
+All core phases complete. Users can now:
+1. Set a server-wide theme color via Settings gear on homepage
+2. Optionally set a per-repo-type color in New Session dialog
+3. Sessions inherit colors and can receive custom colors via `?color=hex` URL param
+
+The color cascade priority: session > repo-type > server-default > fallback (#7c3aed)
 
 ## Testing
 
