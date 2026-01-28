@@ -1,3 +1,15 @@
 110621: Starting Phase 1 - Clean up dead sessions on reconnect
 110621: Will modify getOrCreateSession() in main.go to check if existing session's process has exited
 110621: Expected outcome: When reconnecting to a dead session, user gets fresh shell instead of old output
+
+110754: Verification test completed
+110754: Test steps performed via MCP browser:
+110754:   1. Navigated to http://swe-swe:3000/session/test-dead-session?assistant=shell
+110754:   2. Typed "exit" to exit the shell, saw "[Process exited (code 0)]"
+110754:   3. Navigated away to home page http://swe-swe:3000/
+110754:   4. Navigated back to same URL http://swe-swe:3000/session/test-dead-session?assistant=shell
+110754: Observed outcome:
+110754:   - Fresh shell prompt "app@198362dc43da:/workspace$" appeared immediately
+110754:   - NO old "[Process exited (code 0)]" output visible
+110754:   - Server log confirmed: "Cleaning up dead session on reconnect: test-dead-session (exit code=0)"
+110754: RESULT: SUCCESS - Phase 1 verification passed
