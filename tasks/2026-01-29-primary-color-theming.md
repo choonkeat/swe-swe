@@ -48,11 +48,12 @@ Allow users to pick a primary color at 3 levels to distinguish servers/sessions:
 - [x] Create `applyTheme(primaryColor)` function
 - [x] Verified: purple, blue, yellow themes all work with correct text contrast
 
-### Phase 3: Server Default Color (Homepage)
-- [ ] Add settings icon/gear to homepage header
-- [ ] Create settings modal with color picker
-- [ ] Store in localStorage: `swe-swe-primary-color`
-- [ ] Apply on page load
+### Phase 3: Server Default Color (Homepage) ✅
+- [x] Add settings icon/gear to homepage header
+- [x] Create settings modal with color picker (10 presets + custom)
+- [x] Store in localStorage: `swe-swe-primary-color`
+- [x] Apply on page load
+- [x] Verified: color persists after page refresh
 
 ### Phase 4: Repository Type Color
 - [ ] Add color picker to New Session dialog (repo type section)
@@ -69,7 +70,7 @@ Allow users to pick a primary color at 3 levels to distinguish servers/sessions:
 - [x] Research complete - identified all UI elements and colors
 - [x] Phase 1: Color utilities - `color-utils.js` created
 - [x] Phase 2: CSS variables - homepage updated, theming verified
-- [ ] Phase 3: Server default - need settings UI
+- [x] Phase 3: Server default - settings gear icon + color picker modal
 - [ ] Phase 4: Repository type
 - [ ] Phase 5: Session-specific
 
