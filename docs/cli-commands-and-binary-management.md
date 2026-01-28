@@ -480,7 +480,7 @@ docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml lo
 
 ## Related Files
 
-- `cmd/swe-swe/main.go` — CLI command implementations
+- `cmd/swe-swe/*.go` — CLI command implementations (main, init, docker, templates, certs, paths, list, proxy, color, ansi)
 - `cmd/swe-swe/templates/host/docker-compose.yml` — Docker Compose configuration
 - `cmd/swe-swe/templates/host/Dockerfile` — Docker image definition (multi-stage build)
 - `cmd/swe-swe/templates/host/swe-swe-server/` — Server source code (embedded)

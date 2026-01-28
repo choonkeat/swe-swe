@@ -1,6 +1,6 @@
 # Split cmd/swe-swe/main.go into Multiple Files
 
-**Status**: Planning
+**Status**: Complete
 **Created**: 2026-01-28
 **Reason**: main.go is 1834 lines - too large for agents to handle effectively
 
@@ -158,8 +158,8 @@ Files in `tasks/`, `research/`, and `docs/adr/` contain historical line number r
 - [x] Run `make golden-update` - golden files updated (includes prior template changes)
 
 ### Phase 4: Update Documentation
-- [ ] Update README.md line 510
-- [ ] Update docs/cli-commands-and-binary-management.md line 483
+- [x] Update README.md line 510
+- [x] Update docs/cli-commands-and-binary-management.md line 483
 
 ## Notes
 

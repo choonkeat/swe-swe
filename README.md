@@ -507,7 +507,7 @@ The swe-swe-server is built from source at `docker-compose build` time using a m
 .
 ├── cmd/
 │   └── swe-swe/              # CLI tool
-│       ├── main.go
+│       ├── *.go              # main, init, docker, templates, certs, paths, list, proxy, color, ansi
 │       └── templates/        # Embedded Docker/server files
 │           └── host/
 │               ├── Dockerfile, docker-compose.yml, etc.
