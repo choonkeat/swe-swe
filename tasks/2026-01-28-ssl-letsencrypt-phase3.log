@@ -1,0 +1,39 @@
+231209 - Phase 3: Golden Tests & Integration
+
+231209 - Note: Phase 3 was effectively completed during Phases 1 and 2 via TDD approach
+
+231209 - Step 3.1: Test variants added in main_test.go
+231209 - Completed in Phase 1:
+231209 -   - with-ssl-letsencrypt variant
+231209 -   - with-ssl-letsencrypt-staging variant
+231209 - Result: PASS
+
+231209 - Step 3.2: Golden files generated
+231209 - Completed in Phase 1 (baseline) and Phase 2 (implementation):
+231209 -   - docker-compose.yml with ACME config
+231209 -   - traefik-dynamic.yml with certResolver
+231209 -   - acme.json storage file
+231209 - Result: PASS
+
+231209 - Step 3.3: Manual inspection of golden output
+231209 - Verified in Phase 2:
+231209 -   - Production variant: ACME config without caserver (uses default LE prod)
+231209 -   - Staging variant: ACME config with staging caserver URL
+231209 -   - Email placeholder substituted correctly
+231209 -   - Domain placeholder substituted correctly
+231209 -   - HTTP→HTTPS redirect configured on port 80
+231209 - Result: PASS
+
+231209 - Step 3.4: Full test suite
+231209 - Ran after each phase: `make test` passed
+231209 - Result: PASS
+
+231209 - Step 3.5: Regression check
+231209 - Verified:
+231209 -   - with-ssl-selfsign unchanged except minor line reordering
+231209 -   - default (no SSL) variants unchanged
+231209 -   - Other variants unchanged
+231209 - Result: PASS
+
+231209 - Phase 3 Complete: All golden tests pass, no regressions
+
