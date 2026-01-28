@@ -1,4 +1,9 @@
 224057 - Starting Phase 1: Flag Parsing & Validation
 224057 - Step 1.0: Run `make build golden-update` to confirm clean baseline
 224057 - Expected: No unexpected diffs, clean golden files
+224124 - Observed: `git status --porcelain` returned empty - no changes
+224124 - Result: PASS - baseline is clean
+
+224124 - Step 1.1: Read current init.go to understand SSL flag parsing
+224124 - Expected: Find existing SSL flag handling to extend
 
