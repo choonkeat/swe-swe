@@ -171,11 +171,14 @@ CSS updates for inline Next buttons, hidden field groups, and dropdown placehold
 
 ---
 
-## Bug: Session name shows branch only, not `{owner/repo}@{branch}`
+## Bug: Session name shows branch only, not `{owner/repo}@{branch}` ✅ FIXED
 
 ### Description
 When a session is a worktree of the default workspace, the session name displayed in the header only shows the branch/worktree name (e.g. `new-session-dialog`) instead of `{owner/repo}@new-session-dialog`. The full qualified name should include the repo identity so users can distinguish worktrees across different repos.
 
 ### Status
-- [ ] Investigate where session name is derived (likely in session creation or the header template)
-- [ ] Fix to prefix with `{owner/repo}@` when the session is a worktree
+- [x] Investigate where session name is derived (likely in session creation or the header template)
+- [x] Fix to prefix with `{owner/repo}@` when the session is a worktree
+
+### Root Cause
+Dialog passes `&name={branchName}` to server. `deriveDefaultSessionName()` only ran when `name == ""`, but name was already set to the branch name. Fixed by changing condition to `name == "" || name == branchName`.

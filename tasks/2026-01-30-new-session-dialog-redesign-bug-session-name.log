@@ -2,3 +2,22 @@
   - Search for session name assignment in main.go and session page template
   - Trace how the name query param flows into the session header
   - Expected: find the code path that sets session name and understand why it only shows branch name
+
+004620 RESULT: Investigation complete
+  Root cause: dialog passes &name={branchName}, server uses it as-is.
+  deriveDefaultSessionName() only runs when name=="" but name is already set to the branch name.
+  Fix: change condition from (name == "") to (name == "" || name == branchName) so the server
+  still derives {owner/repo}@{branch} even when a branch name was provided.
+
+043500 PLAN: Implement fix and verify via browser
+  - Change condition in getOrCreateSession at line 3625 of main.go
+  - Expected: session header shows "choonkeat/swe-swe@test-session-name" instead of just "test-session-name"
+
+043638 RESULT: Browser verification — PASS
+  - Started dev server on port 3001 (3000 occupied by production server)
+  - Created session with branch "test-session-name" via workspace flow
+  - Session header displayed: "choonkeat/swe-swe@test-session-name"
+  - Homepage session card also shows: "choonkeat/swe-swe@test-session-name"
+  - make test: ALL PASS
+  - make build golden-update: SUCCESS
+  - No console errors

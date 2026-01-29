@@ -3620,12 +3620,14 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		log.Printf("Shell session inheriting name from parent: %s", name)
 	}
 
-	// Derive default session name if none provided
+	// Derive default session name if none provided or if name is just the branch name.
+	// When the dialog passes a branch name, we want the full {owner/repo}@{branch} format.
 	// Format: {owner}/{repo}@{branch}
-	if name == "" && workDir != "" {
-		name = deriveDefaultSessionName(workDir)
-		if name != "" {
-			log.Printf("Derived default session name: %s", name)
+	if workDir != "" && (name == "" || name == branchName) {
+		derived := deriveDefaultSessionName(workDir)
+		if derived != "" {
+			log.Printf("Derived default session name: %s", derived)
+			name = derived
 		}
 	}
 
