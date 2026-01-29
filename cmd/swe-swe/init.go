@@ -542,23 +542,31 @@ func handleInit() {
 	hostGID := os.Getgid()
 	fmt.Printf("Detected host user: UID=%d GID=%d\n", hostUID, hostGID)
 
-	// Create bin, home, certs, and worktrees subdirectories
+	// Create bin, home, and certs subdirectories in sweDir (project config directory)
 	binDir := filepath.Join(sweDir, "bin")
 	homeDir := filepath.Join(sweDir, "home")
 	certsDir := filepath.Join(sweDir, "certs")
-	worktreesDir := filepath.Join(sweDir, "worktrees")
-	dirsToCreate := []string{binDir, homeDir, certsDir, worktreesDir}
+	for _, dir := range []string{binDir, homeDir, certsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			log.Fatalf("Failed to create directory %q: %v", dir, err)
+		}
+	}
+
+	// Create worktrees directory in workspace (absPath/.swe-swe/worktrees)
+	// This is where docker-compose.yml mounts from: ${WORKSPACE_DIR:-.}/.swe-swe/worktrees
+	workspaceSweDir := filepath.Join(absPath, ".swe-swe")
+	worktreesDir := filepath.Join(workspaceSweDir, "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		log.Fatalf("Failed to create directory %q: %v", worktreesDir, err)
+	}
 
 	// Create repos directory only when --repos-dir is NOT specified
 	// (when user specifies --repos-dir, they are responsible for the directory)
+	// This is in workspace: ${WORKSPACE_DIR:-.}/.swe-swe/repos
 	if *reposDir == "" {
-		reposDirPath := filepath.Join(sweDir, "repos")
-		dirsToCreate = append(dirsToCreate, reposDirPath)
-	}
-
-	for _, dir := range dirsToCreate {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Fatalf("Failed to create directory %q: %v", dir, err)
+		reposDirPath := filepath.Join(workspaceSweDir, "repos")
+		if err := os.MkdirAll(reposDirPath, 0755); err != nil {
+			log.Fatalf("Failed to create directory %q: %v", reposDirPath, err)
 		}
 	}
 

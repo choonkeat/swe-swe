@@ -1,8 +1,9 @@
 # Bug: External repo clone fails with "permission denied" when --repos-dir not specified
 
 **Date:** 2026-01-29
-**Status:** Open
+**Status:** Fixed
 **Severity:** High - Blocks external repository workflow
+**Fixed in:** commit (pending)
 
 ## Summary
 

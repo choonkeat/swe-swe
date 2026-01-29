@@ -3,3 +3,34 @@ Action: Boot test container, verify repos directory creation, test external repo
 Expected:
   1. .swe-swe/repos directory exists with correct ownership (not root)
   2. Clone external repository succeeds without "permission denied" error
+
+080531 - Observation: swe-swe init creates repos and worktrees directories
+Result: ls -la shows repos and worktrees dirs with app:app ownership (not root)
+  drwxr-xr-x  2 app app 4096 Jan 29 08:05 repos
+  drwxr-xr-x  2 app app 4096 Jan 29 08:05 worktrees
+Continuing to build and run container for full verification...
+
+080703 - Browser test: Reproduced the original error
+Result: Got "Failed to create directory: mkdir /repos/github.com-choonkeat-tiny-form-fields: permission denied"
+Note: This is expected - the test container was initialized BEFORE my fix (from dist binary)
+      Need to rebuild dist binary and re-run init to verify the fix
+Action: Rebuild binary and re-initialize test container
+
+081314 - Fix corrected: repos/worktrees directories now created in workspace/.swe-swe/ (not sweDir)
+Verification:
+  - ls -la /workspace/.test-repos/swe-swe-test-0/.swe-swe/ shows:
+    drwxr-xr-x 2 app app 4096 Jan 29 08:11 repos
+    drwxr-xr-x 2 app app 4096 Jan 29 08:11 worktrees
+  - Both directories have app:app ownership (not root:root)
+
+Browser test results:
+  1. Clicked "New Session" button
+  2. Selected "Clone external repository"
+  3. Entered URL: https://github.com/choonkeat/tiny-form-fields.git
+  4. Clicked "Next" - NO ERROR! Branch dropdown became enabled
+  5. Clicked second "Next" - Session creation flow completed successfully
+
+EXPECTED: Branch dropdown enabled, no "permission denied" error
+OBSERVED: Branch dropdown enabled, no error - FIX VERIFIED
+
+Phase 2 complete: Manual verification successful
