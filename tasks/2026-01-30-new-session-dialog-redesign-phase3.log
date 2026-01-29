@@ -4,3 +4,12 @@
   - Add script tag in selection.html
   - Implement: fetch repos on open, rewrite mode handler, inline Next, sticky color per Where
   - Expected: make build golden-update succeeds, all tests pass
+
+003830 RESULT: make build golden-update — SUCCESS, make test — ALL PASS
+  - Created static/new-session-dialog.js with full dialog logic
+  - Removed dialog IIFE (~430 lines) from homepage-main.js
+  - Added script tag in selection.html
+  - Implemented: fetch repos on open, mode change handler with auto-prepare,
+    inline Next buttons, enableBranchAndAgent (simultaneous), sticky color per whereKey,
+    reset behavior, loading indicators with dropdown disable
+  - ok github.com/choonkeat/swe-swe 1.461s

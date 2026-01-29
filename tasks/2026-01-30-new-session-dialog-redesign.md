@@ -85,7 +85,7 @@ Update `selection.html` dialog: "Where" dropdown with placeholder, inline Next b
 
 ---
 
-## Phase 3: JS — Rewrite dialog logic
+## Phase 3: JS — Rewrite dialog logic ✅ DONE
 
 ### What will be achieved
 New `new-session-dialog.js` file with all dialog logic. Old dialog IIFE removed from `homepage-main.js`. New flow: populate dropdown with existing repos, auto-prepare for workspace/existing repos, show branch+agent together, inline Next for clone/create, sticky color per Where.
