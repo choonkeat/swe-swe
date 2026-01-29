@@ -66,11 +66,118 @@ Each session gets its own preview port so multiple sessions don't collide on por
 - Proxy reads port from query string for WebSocket connections
 - Subdomain routing also works for WebSocket (Host header present on upgrade)
 
+## Cert Server: `certs.swe-swe.com`
+
+A Dockerfile that obtains and serves wildcard TLS certs for `*.https.local.swe-swe.com`.
+
+### How It Works
+
+1. On startup, runs [`lego`](https://github.com/go-acme/lego) to obtain a wildcard cert via Let's Encrypt DNS-01 challenge
+2. `lego` calls the [DNSimple Zone Records API](https://developer.dnsimple.com/v2/zones/records/) to create a `_acme-challenge.https.local.swe-swe.com` TXT record
+3. Let's Encrypt verifies the TXT record, issues the cert
+4. `lego` cleans up the TXT record
+5. A cron (daily) runs `lego renew` to keep the cert fresh (90-day expiry)
+6. Caddy (or nginx) serves the cert files over HTTPS
+
+### Dockerfile
+
+```dockerfile
+FROM golang:1.23-alpine AS builder
+RUN go install github.com/go-acme/lego/v4/cmd/lego@latest
+
+FROM caddy:2-alpine
+COPY --from=builder /go/bin/lego /usr/local/bin/lego
+COPY entrypoint.sh /entrypoint.sh
+COPY Caddyfile /etc/caddy/Caddyfile
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+### `entrypoint.sh`
+
+```bash
+#!/bin/sh
+set -e
+
+CERT_DIR=/certs
+DOMAIN="*.https.local.swe-swe.com"
+
+# Initial cert obtain (skips if already exists)
+if [ ! -f "$CERT_DIR/certificates/$DOMAIN.crt" ]; then
+  lego --accept-tos \
+       --email "$ACME_EMAIL" \
+       --dns dnsimple \
+       --domains "$DOMAIN" \
+       --path "$CERT_DIR" \
+       run
+fi
+
+# Copy to serving directory
+cp "$CERT_DIR/certificates/$DOMAIN.crt" /srv/cert.pem
+cp "$CERT_DIR/certificates/$DOMAIN.key" /srv/key.pem
+
+# Start cron for daily renewal
+echo "0 3 * * * lego --accept-tos --email $ACME_EMAIL --dns dnsimple --domains '$DOMAIN' --path $CERT_DIR renew && cp $CERT_DIR/certificates/$DOMAIN.crt /srv/cert.pem && cp $CERT_DIR/certificates/$DOMAIN.key /srv/key.pem" | crontab -
+crond
+
+# Start Caddy to serve the files
+caddy run --config /etc/caddy/Caddyfile
+```
+
+### `Caddyfile`
+
+```
+certs.swe-swe.com {
+    root * /srv
+    file_server
+}
+```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `DNSIMPLE_OAUTH_TOKEN` | Yes | DNSimple API token with write access to `swe-swe.com` zone. Get from: DNSimple → Account → Access Tokens → Account tokens |
+| `ACME_EMAIL` | Yes | Email for Let's Encrypt registration (e.g., `certs@swe-swe.com`) |
+
+### Deployment
+
+```bash
+docker run -d \
+  -e DNSIMPLE_OAUTH_TOKEN=your_token_here \
+  -e ACME_EMAIL=certs@swe-swe.com \
+  -v certs-data:/certs \
+  -p 443:443 -p 80:80 \
+  swe-swe-certs
+```
+
+The `-v certs-data:/certs` persists lego's account and cert data across container restarts so it doesn't re-register or re-issue unnecessarily.
+
+### Endpoints
+
+```
+GET https://certs.swe-swe.com/cert.pem   → fullchain certificate
+GET https://certs.swe-swe.com/key.pem    → private key
+```
+
+### DNSimple Setup (one-time)
+
+1. Create wildcard A records:
+   - `*.http.local.swe-swe.com` → `127.0.0.1`
+   - `*.https.local.swe-swe.com` → `127.0.0.1`
+2. Create A record for `certs.swe-swe.com` → public IP of the cert server
+3. Create an Account API token at DNSimple → Account → Access Tokens
+
+### Security Notes
+
+- The private key is served unauthenticated — this is intentional. The cert only covers `*.https.local.swe-swe.com` which resolves to `127.0.0.1`. An attacker with the key can only impersonate localhost to localhost, which is not a meaningful threat.
+- Optional: add a shared bearer token check in Caddy if you want to gate casual access.
+
 ## Phases
 
 ### Phase 1: DNS & Cert Infrastructure
-- [ ] Set up wildcard DNS records at DNSimple for `*.http.local.swe-swe.com` and `*.https.local.swe-swe.com` → `127.0.0.1`
-- [ ] Build/deploy cert server at `certs.swe-swe.com` (ACME + DNSimple + static file serve)
+- [ ] Set up wildcard DNS records at DNSimple (see "DNSimple Setup" above)
+- [ ] Build and deploy `certs.swe-swe.com` Docker container (see Dockerfile above)
 - [ ] Verify: `curl https://certs.swe-swe.com/cert.pem` returns valid wildcard cert
 
 ### Phase 2: Cert Fetching in swe-swe
