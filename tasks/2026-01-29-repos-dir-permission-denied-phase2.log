@@ -34,3 +34,10 @@ EXPECTED: Branch dropdown enabled, no "permission denied" error
 OBSERVED: Branch dropdown enabled, no error - FIX VERIFIED
 
 Phase 2 complete: Manual verification successful
+
+082609 - Cleanup: Removed redundant Dockerfile and entrypoint.sh code
+- Removed: RUN mkdir -p /repos && chown (Dockerfile)
+- Removed: RUN mkdir -p /worktrees && chown (Dockerfile)
+- Removed: chown app: /worktrees workaround (entrypoint.sh)
+Reason: Since we always mount from host, container-side directory creation is redundant
+Result: make test PASSED after golden-update

@@ -162,12 +162,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN if ! getent group {{GID}} > /dev/null; then groupadd -K GID_MIN=20 -g {{GID}} app; fi && \
     useradd -m -K UID_MIN=100 -u {{UID}} -g {{GID}} -s /bin/bash app
 
-# Create worktrees directory with app ownership (used for git worktrees)
-RUN mkdir -p /worktrees && chown {{UID}}:{{GID}} /worktrees
-
-# Create repos directory with app ownership (used for cloning external repos)
-RUN mkdir -p /repos && chown {{UID}}:{{GID}} /repos
-
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
