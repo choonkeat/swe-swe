@@ -4573,6 +4573,12 @@ func handleRecordingAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// PATCH /api/recording/{uuid}/rename
+	if len(parts) == 2 && parts[1] == "rename" && r.Method == http.MethodPatch {
+		handleRenameRecording(w, r, recordingUUID)
+		return
+	}
+
 	http.Error(w, "Not Found", http.StatusNotFound)
 }
 
@@ -4763,6 +4769,72 @@ func handleKeepRecording(w http.ResponseWriter, r *http.Request, uuid string) {
 		"kept_at":      meta.KeptAt,
 		"already_kept": false,
 	})
+}
+
+// handleRenameRecording updates the Name field in recording metadata
+func handleRenameRecording(w http.ResponseWriter, r *http.Request, uuid string) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate name: max 256 chars, alphanumeric + spaces + hyphens + underscores + slashes + dots + @
+	name := strings.TrimSpace(req.Name)
+	if len(name) > 256 {
+		http.Error(w, "Name too long (max 256 characters)", http.StatusBadRequest)
+		return
+	}
+	if name != "" {
+		for _, r := range name {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' || r == '/' || r == '.' || r == '@') {
+				http.Error(w, "Invalid characters in name", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+
+	// Read existing metadata
+	metaData, err := os.ReadFile(metadataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Recording not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Failed to read metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	var meta RecordingMetadata
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		log.Printf("Failed to parse metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	meta.Name = name
+
+	// Write back metadata
+	updatedMeta, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(metadataPath, updatedMeta, 0644); err != nil {
+		log.Printf("Failed to write metadata for %s: %v", uuid, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Recording %s renamed to %q", uuid, name)
+	w.WriteHeader(http.StatusOK)
 }
 
 // handleDownloadRecording creates a zip archive of the recording files
