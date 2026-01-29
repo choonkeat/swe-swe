@@ -758,6 +758,7 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/modules/status-renderer.js",
 			"templates/host/swe-swe-server/static/color-utils.js",
 			"templates/host/swe-swe-server/static/homepage-main.js",
+			"templates/host/swe-swe-server/static/new-session-dialog.js",
 			"templates/host/swe-swe-server/static/homepage-theme.js",
 			"templates/host/swe-swe-server/static/session-theme.js",
 		}
