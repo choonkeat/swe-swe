@@ -1324,7 +1324,7 @@ func TestCreateWorktreeInRepo_ReentryExisting(t *testing.T) {
 
 	// Pre-create worktree directory (simulating existing worktree)
 	worktreeParent := filepath.Dir(repoDir)
-	existingPath := filepath.Join(worktreeParent, "worktree", "existing-worktree")
+	existingPath := filepath.Join(worktreeParent, "worktrees", "existing-worktree")
 	os.MkdirAll(existingPath, 0755)
 
 	// Create a marker file to verify we got the same directory back
@@ -1382,7 +1382,7 @@ func TestCreateWorktreeInRepo_Fresh(t *testing.T) {
 	}
 
 	// Expected path is based on resolveWorkingDirectory logic
-	expectedPath := filepath.Join(filepath.Dir(repoDir), "worktree", "fresh-branch")
+	expectedPath := filepath.Join(filepath.Dir(repoDir), "worktrees", "fresh-branch")
 	if result != expectedPath {
 		t.Errorf("expected path %s, got %s", expectedPath, result)
 	}
@@ -1442,7 +1442,7 @@ func TestCreateWorktreeInRepo_AttachLocalBranch(t *testing.T) {
 	}
 
 	// Expected path is based on resolveWorkingDirectory logic
-	expectedPath := filepath.Join(filepath.Dir(repoDir), "worktree", "local-only-branch")
+	expectedPath := filepath.Join(filepath.Dir(repoDir), "worktrees", "local-only-branch")
 	if result != expectedPath {
 		t.Errorf("expected path %s, got %s", expectedPath, result)
 	}
@@ -1681,8 +1681,8 @@ func TestResolveWorkingDirectory(t *testing.T) {
 		{"workspace with hierarchical branch", "/workspace", "feat/add-login", "/worktrees/feat--add-login"},
 
 		// External repo with branch
-		{"external with branch", "/repos/github.com-user-repo/workspace", "feature-x", "/repos/github.com-user-repo/worktree/feature-x"},
-		{"external with hierarchical branch", "/repos/github.com-user-repo/workspace", "feat/test", "/repos/github.com-user-repo/worktree/feat--test"},
+		{"external with branch", "/repos/github.com-user-repo/workspace", "feature-x", "/repos/github.com-user-repo/worktrees/feature-x"},
+		{"external with hierarchical branch", "/repos/github.com-user-repo/workspace", "feat/test", "/repos/github.com-user-repo/worktrees/feat--test"},
 	}
 
 	for _, tt := range tests {
