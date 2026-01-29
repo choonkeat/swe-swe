@@ -11,3 +11,47 @@
     7. Reset: switch dropdown → downstream resets
     8. Ellipsis labels in dropdown
     9. No console errors
+
+004400 RESULT: MCP browser testing — ALL PASS
+  Note: had to restart server from /worktrees/new-session-dialog (not /workspace) to pick up changes.
+
+  Test 1 (Placeholder state): PASS
+    - Dialog shows only "Where" dropdown with "-- choose one --" placeholder in muted gray
+    - No other fields visible below
+
+  Test 2 (Workspace flow): PASS
+    - Select "Default workspace" → auto-prepare fires → color/branch/agent appear simultaneously
+    - Branch enabled, agents clickable
+    - Select Claude → Start Session enabled
+
+  Test 3 (Clone flow display): PASS
+    - Select "Clone external repository..." → URL input + inline Next button side by side
+    - Post-prepare fields hidden, Start Session disabled
+
+  Test 4 (Create flow display): PASS
+    - Select "Create new project..." → name input + inline Next button side by side
+    - Clone field hidden, post-prepare fields hidden
+
+  Test 5 (Existing repo flow): PASS
+    - Dynamic option "https://github.com/choonkeat/choonkeat.github.io.git" appeared in dropdown
+    - Select → auto-prepare fires → color/branch/agent appear
+    - Value confirmed as path: /repos/github.com-choonkeat-choonkeat.github.io/workspace
+
+  Test 6 (Reset between selections): PASS
+    - Switch from existing repo → clone: post-prepare disappears, clone URL+Next appears
+    - Switch from clone → workspace: clone disappears, auto-prepare fires, fields reappear
+
+  Test 7 (Console errors): PASS
+    - No JS errors in browser console
+
+  Test 8 (Ellipsis labels): PASS
+    - "Clone external repository..." and "Create new project..." with trailing ellipsis
+
+  Test 9 (Visual styling): PASS (screenshots captured)
+    - Placeholder text muted gray
+    - Inline Next compact beside input
+    - Dialog clean at max-width
+
+  Skipped tests (would require full session lifecycle, not feasible in dev server):
+    - Test 3 full (Start Session after clone prepare)
+    - Test 6 full (Sticky color persistence across session start)
