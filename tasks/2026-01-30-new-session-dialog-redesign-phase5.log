@@ -1,0 +1,13 @@
+004100 PLAN: Implementing Phase 5 — Manual browser testing, full end-to-end
+  - Start dev server with make run
+  - Test all dialog flows via MCP browser
+  - Expected:
+    1. Placeholder state: only "Where" dropdown, "-- choose one --", nothing below
+    2. Default workspace: select → loading → color/branch/agent appear → Start Session
+    3. Clone external: URL input + inline Next → enter URL → Next → loading → fields
+    4. Existing repo: appears in dropdown → select → auto-prepare → fields appear
+    5. Create project: name input + inline Next → enter name → Next → loading → fields
+    6. Sticky color: set color, start, reopen → color restored
+    7. Reset: switch dropdown → downstream resets
+    8. Ellipsis labels in dropdown
+    9. No console errors
