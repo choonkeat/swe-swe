@@ -1,2 +1,10 @@
 085128 - STEP 4: Verifying golden file diff shows only expected worktree -> worktrees change
 Expected: Diff shows only 'worktree' -> 'worktrees' in external repo paths (comments and code)
+085146 - SUCCESS: Diff verification passed
+Got: Only these unique line changes:
+  -// For external repos, use worktree subdirectory within the repo
+  +// For external repos, use worktrees subdirectory within the repo
+  -// e.g., /repos/github.com-user-repo/worktree/feature-branch
+  +// e.g., /repos/github.com-user-repo/worktrees/feature-branch
+  -return filepath.Join(filepath.Dir(repoPath), "worktree", worktreeDirName(branchName))
+  +return filepath.Join(filepath.Dir(repoPath), "worktrees", worktreeDirName(branchName))
