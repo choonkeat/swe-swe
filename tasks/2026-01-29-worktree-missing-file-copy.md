@@ -1,5 +1,7 @@
 # Bug: Worktree Creation Missing File Copy for All Repos
 
+**Status: FIXED** (2026-01-29)
+
 ## Summary
 
 When creating worktrees (for both `/workspace` and external repos), the critical files needed for agent functionality are not being copied. This breaks MCP browser and other agent features because `.swe-swe/docs/` is missing.

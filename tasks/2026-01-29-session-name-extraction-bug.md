@@ -1,5 +1,7 @@
 # Bug: Session Name Extraction Too Strict for SSH URLs with Subdirectories
 
+**Status: FIXED** (2026-01-29)
+
 ## Summary
 
 New sessions from external git clones don't set the session name properly. The expected format is `{owner}/{repo}@{branch}`, but the pattern matching for SSH URLs returns the entire path after the colon instead of just the last two segments.

@@ -1,3 +1,14 @@
 082614 - Starting fix for worktree-missing-file-copy bug
 082614 - Will add file copying calls to createWorktreeInRepo() in main.go:3296-3344
 082614 - Expected: After creating worktree, copyUntrackedFiles() and copySweSweDocsDir() should be called
+082803 - Applied fix: Added copyUntrackedFiles() and copySweSweDocsDir() calls after worktree creation
+082803 - Ran make build golden-update: SUCCESS
+082803 - Ran make test: ALL TESTS PASS
+082803 - Golden files show correct diff: createWorktreeInRepo() now has file copying at lines 3344-3357
+083016 - MCP BROWSER VERIFICATION:
+083016 - Created session with branch "test-worktree-fix" via UI
+083016 - Expected: .swe-swe/docs/ should be copied to worktree
+083016 - Observed: SUCCESS - verified via docker exec:
+083016 -   /worktrees/test-worktree-fix/.swe-swe/docs/ contains: AGENTS.md, app-preview.md, browser-automation.md
+083016 - Server logs confirm: "Copied .swe-swe/docs/ files to worktree: [AGENTS.md app-preview.md browser-automation.md]"
+083016 - CONCLUSION: Fix verified working
