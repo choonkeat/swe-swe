@@ -1,0 +1,4 @@
+080317 - Phase 1: Implement the fix in cmd/swe-swe/init.go
+Action: Add .swe-swe/repos directory creation when --repos-dir is NOT specified
+        Also add .swe-swe/worktrees directory creation (related issue mentioned in task)
+Expected: Code compiles, creates repos dir only when --repos-dir flag is empty
