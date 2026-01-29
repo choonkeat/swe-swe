@@ -2139,6 +2139,12 @@ func main() {
 			return
 		}
 
+		// Session end API endpoint
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
+			handleSessionEndAPI(w, r)
+			return
+		}
+
 
 		// Recording playback page and raw session data
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
@@ -4467,6 +4473,58 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 
 	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
 	http.ServeFile(w, r, logPath)
+}
+
+// handleSessionEndAPI handles POST /api/session/{uuid}/end
+func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse UUID from path: /api/session/{uuid}/end
+	path := strings.TrimPrefix(r.URL.Path, "/api/session/")
+	path = strings.TrimSuffix(path, "/end")
+	sessionUUID := path
+
+	if sessionUUID == "" {
+		http.Error(w, "Missing session UUID", http.StatusBadRequest)
+		return
+	}
+
+	// Find and close the session
+	sessionsMu.Lock()
+	session, exists := sessions[sessionUUID]
+	if !exists {
+		sessionsMu.Unlock()
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+	delete(sessions, sessionUUID)
+	sessionsMu.Unlock()
+
+	// Send SIGINT first for graceful shutdown, then SIGKILL after timeout
+	if session.Cmd != nil && session.Cmd.Process != nil {
+		session.Cmd.Process.Signal(syscall.SIGINT)
+		// Wait briefly for graceful shutdown
+		done := make(chan struct{})
+		go func() {
+			session.Cmd.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			// Process exited gracefully
+		case <-time.After(2 * time.Second):
+			// Force kill if still running
+			session.Cmd.Process.Kill()
+		}
+	}
+
+	// Close session resources (PTY, WebSocket clients, save metadata)
+	session.Close()
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRecordingAPI routes recording API requests

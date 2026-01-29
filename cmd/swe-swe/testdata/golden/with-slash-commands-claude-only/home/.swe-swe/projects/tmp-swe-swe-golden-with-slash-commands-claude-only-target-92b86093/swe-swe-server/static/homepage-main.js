@@ -37,20 +37,8 @@ function endSession(uuid, button) {
         method: 'POST'
     }).then(function(response) {
         if (response.ok) {
-            var card = button.closest('.session-card');
-            if (card) {
-                card.remove();
-            }
-            // Update count
-            var countEl = document.querySelector('.section-header__count');
-            if (countEl) {
-                var currentCount = parseInt(countEl.textContent) || 0;
-                if (currentCount > 1) {
-                    countEl.textContent = currentCount - 1;
-                } else {
-                    countEl.remove();
-                }
-            }
+            // Reload to show the new recording in the list
+            window.location.reload();
         } else {
             alert('Failed to end session');
         }
