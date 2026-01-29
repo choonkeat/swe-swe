@@ -55,3 +55,32 @@
 - 143900 Local Time
 - Action: Boot test container and verify rename button appears on recording cards
 - Expected: Rename button visible on hover over recording cards
+- 151800 Result: SUCCESS
+  - Rebuilt container with updated templates (01-init, 02-build, 03-run)
+  - Created test recording with metadata.json, .log, .timing files
+  - UI shows recordings section with "Rename" button between "Keep" and "Delete"
+
+### Step 3.2: Test rename API functionality
+- 151830 Local Time
+- Action: Test PATCH /api/recording/{uuid}/rename endpoint
+- Expected: Recording name updates in metadata.json
+- 151845 Result: SUCCESS
+  - curl -X PATCH -d '{"name": "My Renamed Recording"}' returned OK
+  - metadata.json shows updated name
+  - UI reflects new name after page refresh
+
+### Step 3.3: Test validation rules
+- 151900 Local Time
+- Action: Test validation for invalid chars, too-long name, and empty name
+- Expected: Invalid inputs rejected, empty name clears the name
+- 151915 Result: SUCCESS
+  - Invalid characters (<script> tag): "Invalid characters in name" - REJECTED
+  - Name > 256 chars: "Name too long (max 256 characters)" - REJECTED
+  - Empty name: Accepted, clears name (shows null in JSON) - OK
+
+## Summary
+
+All phases completed successfully:
+- Phase 1: API endpoint added (PATCH /api/recording/{uuid}/rename)
+- Phase 2: UI button and JavaScript handler added
+- Phase 3: Manual testing passed (API works, UI updates, validation correct)

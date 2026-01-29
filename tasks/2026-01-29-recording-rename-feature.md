@@ -1,7 +1,7 @@
 # Feature: Add rename capability for recordings
 
 **Date:** 2026-01-29
-**Status:** Open
+**Status:** Completed
 **Priority:** Low
 **Type:** Feature Request
 
