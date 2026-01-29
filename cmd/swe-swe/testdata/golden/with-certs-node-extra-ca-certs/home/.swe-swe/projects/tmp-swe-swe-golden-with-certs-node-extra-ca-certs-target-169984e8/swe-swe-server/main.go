@@ -3215,9 +3215,9 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 		return filepath.Join(worktreeDir, worktreeDirName(branchName))
 	}
 
-	// For external repos, use worktree subdirectory within the repo
-	// e.g., /repos/github.com-user-repo/worktree/feature-branch
-	return filepath.Join(filepath.Dir(repoPath), "worktree", worktreeDirName(branchName))
+	// For external repos, use worktrees subdirectory within the repo
+	// e.g., /repos/github.com-user-repo/worktrees/feature-branch
+	return filepath.Join(filepath.Dir(repoPath), "worktrees", worktreeDirName(branchName))
 }
 
 // createWorktreeInRepo creates a worktree for a specific repo

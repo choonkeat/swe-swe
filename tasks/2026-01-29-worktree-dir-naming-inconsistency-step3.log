@@ -1,2 +1,4 @@
 085044 - STEP 3: Running 'make build golden-update' to update golden files
 Expected: Golden files updated with 'worktrees' plural change
+085114 - SUCCESS: Golden files updated
+Got: Golden files updated in ./cmd/swe-swe/testdata/golden

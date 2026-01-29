@@ -52,6 +52,6 @@ Low - Cosmetic inconsistency, does not affect functionality.
   - Change `"worktree"` to `"worktrees"` in `resolveWorkingDirectory` function
 - [x] **Step 2**: Run `make test` to verify no tests break
   - Also updated test expectations in `worktree_test.go` (3 occurrences)
-- [ ] **Step 3**: Run `make build golden-update` to update golden files
+- [x] **Step 3**: Run `make build golden-update` to update golden files
 - [ ] **Step 4**: Verify golden file diff shows only the expected `worktree` → `worktrees` change
   - `git diff --cached -- cmd/swe-swe/testdata/golden`
