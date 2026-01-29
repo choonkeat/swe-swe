@@ -4,3 +4,5 @@ Expected: All tests pass
 Got: TestResolveWorkingDirectory/external_with_branch and external_with_hierarchical_branch failed
 The tests expected old 'worktree' (singular) but got new 'worktrees' (plural)
 Need to update test expectations in worktree_test.go
+084736 - RETRY: Running 'make test' after fixing test expectations
+Expected: All tests pass
