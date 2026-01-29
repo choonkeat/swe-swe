@@ -109,6 +109,45 @@ function keepRecording(uuid, button) {
     });
 }
 
+function renameRecording(uuid, button) {
+    var card = button.closest('.recording-card');
+    var titleEl = card ? card.querySelector('.recording-card__title') : null;
+    var currentName = titleEl ? titleEl.textContent.trim() : '';
+
+    var newName = prompt('Rename recording:', currentName);
+    if (newName === null) {
+        return; // User cancelled
+    }
+
+    newName = newName.trim();
+
+    // Validate: max 256 chars
+    if (newName.length > 256) {
+        alert('Name too long (max 256 characters)');
+        return;
+    }
+
+    fetch('/api/recording/' + uuid + '/rename', {
+        method: 'PATCH',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: newName })
+    }).then(function(response) {
+        if (response.ok) {
+            if (titleEl) {
+                titleEl.textContent = newName || 'session-' + uuid.substring(0, 8);
+            }
+        } else {
+            response.text().then(function(text) {
+                alert('Failed to rename recording: ' + text);
+            });
+        }
+    }).catch(function(err) {
+        alert('Error: ' + err.message);
+    });
+}
+
 // New Session Dialog functionality
 (function() {
     var overlay = document.getElementById('new-session-dialog-overlay');
@@ -568,6 +607,8 @@ document.addEventListener('DOMContentLoaded', function() {
             deleteRecording(uuid, btn);
         } else if (action === 'keep-recording') {
             keepRecording(uuid, btn);
+        } else if (action === 'rename-recording') {
+            renameRecording(uuid, btn);
         }
     });
 });

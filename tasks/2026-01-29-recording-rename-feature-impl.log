@@ -24,3 +24,34 @@
 - 143620 Local Time
 - Action: Add JavaScript function to handle rename UI and API call
 - Expected: Function added matching delete/keep patterns
+- 143820 Result: SUCCESS - Function added with:
+  - prompt() for user input with current name pre-filled
+  - Client-side max length validation (256 chars)
+  - PATCH /api/recording/{uuid}/rename call
+  - Title element update on success
+  - Action handler added for 'rename-recording'
+
+### Step 2.2: Add rename button to recording cards in selection.html
+- 143825 Local Time
+- Action: Add rename button with pencil/edit icon to both kept and non-kept recording cards
+- Expected: Button added in both template branches
+- 143830 Result: SUCCESS - Button added:
+  - Uses edit/pencil SVG icon matching other icon buttons
+  - Added in both {{if .IsKept}} and {{else}} branches
+  - data-action="rename-recording" data-uuid="{{.UUID}}"
+
+### Step 2.3: Build and golden update verification
+- 143835 Local Time
+- Action: make build golden-update && make test
+- Expected: Build succeeds, golden files updated, tests pass
+- 143850 Result: SUCCESS
+  - Build: OK
+  - Golden update: OK (shows changes in main.go, homepage-main.js, selection.html)
+  - Tests: PASS ok github.com/choonkeat/swe-swe 1.423s
+
+## Phase 3: Manual Testing
+
+### Step 3.1: Start test container and verify UI
+- 143900 Local Time
+- Action: Boot test container and verify rename button appears on recording cards
+- Expected: Rename button visible on hover over recording cards
