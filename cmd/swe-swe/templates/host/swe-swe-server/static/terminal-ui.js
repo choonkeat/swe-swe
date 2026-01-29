@@ -715,6 +715,11 @@ class TerminalUI extends HTMLElement {
         if (nameParam) {
             url += '&name=' + encodeURIComponent(nameParam);
         }
+        // Forward branch param from page URL to WebSocket URL (for worktree creation)
+        const branchParam = new URLSearchParams(location.search).get('branch');
+        if (branchParam) {
+            url += '&branch=' + encodeURIComponent(branchParam);
+        }
         // Forward pwd param from page URL to WebSocket URL (for external repo base path)
         const pwdParam = new URLSearchParams(location.search).get('pwd');
         if (pwdParam) {

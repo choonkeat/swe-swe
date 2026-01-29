@@ -2937,26 +2937,37 @@ func extractOwnerRepo(gitURL string) string {
 }
 
 // deriveDefaultSessionName derives a default session name from repo and branch info
-// Format: {owner}/{repo}@{branch}
+// Format: {owner}/{repo}@{branch} or {dirName}@{branch} for repos without origin
+// Falls back to just {owner}/{repo} or {dirName} if branch cannot be determined (e.g. empty repo)
 func deriveDefaultSessionName(repoPath string) string {
-	originURL, err := getRepoOriginURL(repoPath)
-	if err != nil {
-		log.Printf("Warning: could not get origin URL for %s: %v", repoPath, err)
-		return ""
-	}
-
 	branchName, err := getCurrentBranch(repoPath)
 	if err != nil {
 		log.Printf("Warning: could not get current branch for %s: %v", repoPath, err)
-		return ""
 	}
 
-	ownerRepo := extractOwnerRepo(originURL)
-	if ownerRepo == "" {
-		return ""
+	suffix := ""
+	if branchName != "" {
+		suffix = "@" + branchName
 	}
 
-	return ownerRepo + "@" + branchName
+	originURL, err := getRepoOriginURL(repoPath)
+	if err == nil {
+		ownerRepo := extractOwnerRepo(originURL)
+		if ownerRepo != "" {
+			return ownerRepo + suffix
+		}
+	}
+
+	// Fallback: use directory name for /repos/{name}/workspace paths
+	if strings.HasPrefix(repoPath, reposDir+"/") {
+		rel := strings.TrimPrefix(repoPath, reposDir+"/")
+		parts := strings.SplitN(rel, "/", 2)
+		if len(parts) > 0 && parts[0] != "" {
+			return parts[0] + suffix
+		}
+	}
+
+	return ""
 }
 
 // isWorkspaceRepo checks if the given URL matches the /workspace repo's origin
@@ -3163,6 +3174,19 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 	})
 }
 
+// sanitizeProjectDirName converts a display name to a safe directory name.
+// Replaces spaces and special chars with dashes, collapses runs, trims edges.
+func sanitizeProjectDirName(name string) string {
+	// Replace any character that isn't alphanumeric, dash, or underscore with a dash
+	re := regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+	sanitized := re.ReplaceAllString(name, "-")
+	// Collapse multiple dashes
+	sanitized = regexp.MustCompile(`-{2,}`).ReplaceAllString(sanitized, "-")
+	// Trim leading/trailing dashes
+	sanitized = strings.Trim(sanitized, "-")
+	return sanitized
+}
+
 // handleRepoPrepareCreate handles the create mode - create new project with git init
 func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 	if name == "" {
@@ -3172,22 +3196,22 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		return
 	}
 
-	// Validate name: alphanumeric, dashes, underscores only
-	validName := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
-	if !validName.MatchString(name) {
+	// Sanitize name for directory use (display name is passed separately via session URL)
+	dirName := sanitizeProjectDirName(name)
+	if dirName == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid project name. Use only letters, numbers, dashes, and underscores. Must start with a letter or number."})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Project name must contain at least one letter or number."})
 		return
 	}
 
-	repoPath := filepath.Join(reposDir, name, "workspace")
+	repoPath := filepath.Join(reposDir, dirName, "workspace")
 
 	// Check if already exists
 	if _, err := os.Stat(repoPath); err == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Project '%s' already exists", name)})
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Project '%s' already exists", dirName)})
 		return
 	}
 
@@ -3209,6 +3233,16 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git init failed: %s", string(output))})
 		return
+	}
+
+	// Create initial empty commit so git operations (rev-parse, worktree, etc.) work
+	commitCmd := exec.Command("git", "-C", repoPath,
+		"-c", "user.name=swe-swe", "-c", "user.email=swe-swe@localhost",
+		"commit", "--allow-empty", "-m", "initial")
+	commitOutput, err := commitCmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Warning: initial commit failed: %v, output: %s", err, string(commitOutput))
+		// Non-fatal: the repo still works, just without an initial commit
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -3550,10 +3584,11 @@ func deleteRecordingFiles(uuid string) {
 
 // getOrCreateSession returns an existing session or creates a new one
 // The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
-// The name parameter sets the session name/branch (optional, can be empty)
+// The name parameter sets the display name (optional, can be empty)
+// The branch parameter is used for worktree creation (optional, separate from display name)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
 // The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
-func getOrCreateSession(sessionUUID string, assistant string, name string, workDir string, repoPath string, parentUUID string, parentName string) (*Session, bool, error) {
+func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -3589,7 +3624,6 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	}
 
 	// Determine working directory and create worktree if needed
-	var branchName string
 	if workDir == "" {
 		// If repoPath provided, use it as base; otherwise default to /workspace
 		baseRepo := repoPath
@@ -3597,14 +3631,13 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 			baseRepo = "/workspace"
 		}
 
-		// If name (branch) is provided, create/use worktree
-		if name != "" {
-			branchName = name
+		// If branch is provided, create/use worktree
+		if branch != "" {
 			// Use createWorktreeInRepo which supports both /workspace and external repos
 			var err error
-			workDir, err = createWorktreeInRepo(baseRepo, branchName)
+			workDir, err = createWorktreeInRepo(baseRepo, branch)
 			if err != nil {
-				log.Printf("Warning: failed to create worktree for branch %s in %s: %v", branchName, baseRepo, err)
+				log.Printf("Warning: failed to create worktree for branch %s in %s: %v", branch, baseRepo, err)
 				// Fall back to base repo without worktree
 				workDir = baseRepo
 			}
@@ -3620,10 +3653,9 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 		log.Printf("Shell session inheriting name from parent: %s", name)
 	}
 
-	// Derive default session name if none provided or if name is just the branch name.
-	// When the dialog passes a branch name, we want the full {owner/repo}@{branch} format.
+	// Derive default session name if none provided.
 	// Format: {owner}/{repo}@{branch}
-	if workDir != "" && (name == "" || name == branchName) {
+	if workDir != "" && name == "" {
 		derived := deriveDefaultSessionName(workDir)
 		if derived != "" {
 			log.Printf("Derived default session name: %s", derived)
@@ -3670,7 +3702,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, workD
 	sess := &Session{
 		UUID:            sessionUUID,
 		Name:            name,
-		BranchName:      branchName,
+		BranchName:      branch,
 		WorkDir:         workDir,
 		Assistant:       assistant,
 		AssistantConfig: cfg,
@@ -3732,8 +3764,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		return
 	}
 
-	// Get optional session name (branch name for new session dialog)
+	// Get optional session name (display name for new session dialog)
 	sessionName := r.URL.Query().Get("name")
+
+	// Get optional branch (for worktree creation, separate from display name)
+	branchParam := r.URL.Query().Get("branch")
 
 	// Get optional pwd (base repo path for new session dialog)
 	pwd := r.URL.Query().Get("pwd")
@@ -3752,7 +3787,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionsMu.RUnlock()
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, workDir, pwd, parentUUID, parentName)
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
