@@ -1,0 +1,2 @@
+085044 - STEP 3: Running 'make build golden-update' to update golden files
+Expected: Golden files updated with 'worktrees' plural change
