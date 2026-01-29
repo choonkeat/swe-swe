@@ -2909,11 +2909,15 @@ func extractOwnerRepo(gitURL string) string {
 	gitURL = strings.TrimSpace(gitURL)
 	gitURL = strings.TrimSuffix(gitURL, ".git")
 
-	// Handle SSH format: git@github.com:owner/repo
+	// Handle SSH format: git@github.com:owner/repo or git@gitlab.com:group/subgroup/owner/repo
 	if strings.HasPrefix(gitURL, "git@") {
-		// git@github.com:owner/repo -> owner/repo
 		if idx := strings.Index(gitURL, ":"); idx != -1 {
-			return gitURL[idx+1:]
+			pathPart := gitURL[idx+1:]
+			parts := strings.Split(pathPart, "/")
+			if len(parts) >= 2 {
+				return parts[len(parts)-2] + "/" + parts[len(parts)-1]
+			}
+			return pathPart // fallback for edge cases
 		}
 	}
 
@@ -3338,6 +3342,16 @@ func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
+	}
+
+	log.Printf("Created worktree at %s (branch: %s)", worktreePath, branchName)
+
+	// Copy files to worktree (graceful degradation on failure)
+	if err := copyUntrackedFiles(repoPath, worktreePath); err != nil {
+		log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
+	}
+	if err := copySweSweDocsDir(repoPath, worktreePath); err != nil {
+		log.Printf("Warning: failed to copy .swe-swe/docs/ to worktree: %v", err)
 	}
 
 	return worktreePath, nil
