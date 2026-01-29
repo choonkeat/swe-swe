@@ -3,7 +3,7 @@
 **Date:** 2026-01-29
 **Status:** Fixed
 **Severity:** High - Blocks external repository workflow
-**Fixed in:** commit (pending)
+**Fixed in:** commits 613acf273, 25e4343cb
 
 ## Summary
 
@@ -87,9 +87,44 @@ for _, dir := range []string{binDir, homeDir, certsDir, reposDirPath} {  // ADD 
 
 Validate and create the repos directory in the template processing stage (`templates.go:192-198`), but host-side operations should ideally be in `init.go`.
 
+## Resolution
+
+### What was done
+
+1. **`cmd/swe-swe/init.go`**: Create `repos` and `worktrees` directories in `workspace/.swe-swe/` during `swe-swe init`:
+   - `repos`: only created when `--repos-dir` is NOT specified
+   - `worktrees`: always created
+
+2. **`cmd/swe-swe/templates/host/Dockerfile`**: Removed redundant lines:
+   ```dockerfile
+   RUN mkdir -p /repos && chown {{UID}}:{{GID}} /repos
+   RUN mkdir -p /worktrees && chown {{UID}}:{{GID}} /worktrees
+   ```
+
+3. **`cmd/swe-swe/templates/host/entrypoint.sh`**: Removed workaround:
+   ```bash
+   if [ -d /worktrees ]; then
+       chown app: /worktrees
+   fi
+   ```
+
+### Why the Dockerfile changes
+
+The container's `/repos` and `/worktrees` directories are **always** mounted from the host:
+- `/repos` mounts from `--repos-dir` or default `workspace/.swe-swe/repos`
+- `/worktrees` mounts from `workspace/.swe-swe/worktrees`
+
+When Docker mounts a host directory, it **overlays** the container's directory. The host directory's ownership takes precedence over whatever the Dockerfile created. Therefore:
+- Container-side `mkdir` is redundant (gets overwritten by mount)
+- The fix belongs in `swe-swe init` (host-side), not in the Dockerfile (container-side)
+
+### Why mount from host at all?
+
+**Persistence.** Without the mount, cloned repos would only exist inside the container and be lost on rebuild. With the mount, repos persist on the host filesystem across container rebuilds.
+
 ## Related Issues
 
-- Same issue may affect `.swe-swe/worktrees` directory (also mounted without pre-creation)
+- ~~Same issue may affect `.swe-swe/worktrees` directory~~ (fixed in same change)
 - See `tasks/2026-01-29-worktree-missing-file-copy.md` for related worktree issues
 
 ## Files Involved
