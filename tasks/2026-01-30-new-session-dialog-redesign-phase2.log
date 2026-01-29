@@ -1,0 +1,8 @@
+003330 PLAN: Implementing Phase 2 — HTML: Restructure dialog markup
+  - Replace "Repository Type" label with "Where", add placeholder option
+  - Wrap post-selection fields in #new-session-fields (hidden)
+  - Add inline Next buttons for clone/create fields
+  - Remove standalone Next button and branch Next button
+  - Wrap color/branch/agent in #post-prepare-fields (hidden)
+  - Reorder fields per spec
+  - Expected: make build golden-update succeeds, dialog shows only "Where" dropdown initially
