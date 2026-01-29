@@ -1,0 +1,6 @@
+002951 PLAN: Implementing Phase 1 — Backend: Add GET /api/repos endpoint
+  - Add handleReposAPI handler that scans /repos/ for git repos, returns JSON list
+  - Add route registration for GET /api/repos
+  - Extend POST /api/repo/prepare to accept optional "path" field for workspace mode
+  - Add tests in worktree_test.go
+  - Expected: make test-server passes with new tests
