@@ -1311,27 +1311,30 @@ func TestLocalBranchExists(t *testing.T) {
 	})
 }
 
-func TestCreateWorktree_ReentryExisting(t *testing.T) {
-	// Save original worktreeDir and restore after test
-	originalWorktreeDir := worktreeDir
-	defer func() { worktreeDir = originalWorktreeDir }()
+func TestCreateWorktreeInRepo_ReentryExisting(t *testing.T) {
+	// Create temp dirs for repo and worktree
+	repoDir := t.TempDir()
 
-	// Create temp dirs
-	tmpDir := t.TempDir()
-	worktreeDir = tmpDir
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
 
 	// Pre-create worktree directory (simulating existing worktree)
-	existingPath := filepath.Join(tmpDir, "existing-worktree")
-	os.Mkdir(existingPath, 0755)
+	worktreeParent := filepath.Dir(repoDir)
+	existingPath := filepath.Join(worktreeParent, "worktree", "existing-worktree")
+	os.MkdirAll(existingPath, 0755)
 
 	// Create a marker file to verify we got the same directory back
 	markerFile := filepath.Join(existingPath, ".marker")
 	os.WriteFile(markerFile, []byte("marker"), 0644)
 
-	// Call createWorktree - should return existing path without creating new one
-	result, err := createWorktree("existing-worktree")
+	// Call createWorktreeInRepo - should return existing path without creating new one
+	result, err := createWorktreeInRepo(repoDir, "existing-worktree")
 	if err != nil {
-		t.Fatalf("createWorktree failed: %v", err)
+		t.Fatalf("createWorktreeInRepo failed: %v", err)
 	}
 
 	if result != existingPath {
@@ -1344,11 +1347,7 @@ func TestCreateWorktree_ReentryExisting(t *testing.T) {
 	}
 }
 
-func TestCreateWorktree_Fresh(t *testing.T) {
-	// Save original worktreeDir and restore after test
-	originalWorktreeDir := worktreeDir
-	defer func() { worktreeDir = originalWorktreeDir }()
-
+func TestCreateWorktreeInRepo_Fresh(t *testing.T) {
 	// Create a temp git repo
 	repoDir := t.TempDir()
 
@@ -1376,21 +1375,14 @@ func TestCreateWorktree_Fresh(t *testing.T) {
 	cmd.Dir = repoDir
 	cmd.Run()
 
-	// Set up worktree directory inside the temp repo
-	worktreeDir = filepath.Join(repoDir, ".worktrees")
-
-	// Save and change directory
-	oldDir, _ := os.Getwd()
-	os.Chdir(repoDir)
-	defer os.Chdir(oldDir)
-
-	// Call createWorktree with fresh branch name
-	result, err := createWorktree("fresh-branch")
+	// Call createWorktreeInRepo with fresh branch name
+	result, err := createWorktreeInRepo(repoDir, "fresh-branch")
 	if err != nil {
-		t.Fatalf("createWorktree failed: %v", err)
+		t.Fatalf("createWorktreeInRepo failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(worktreeDir, "fresh-branch")
+	// Expected path is based on resolveWorkingDirectory logic
+	expectedPath := filepath.Join(filepath.Dir(repoDir), "worktree", "fresh-branch")
 	if result != expectedPath {
 		t.Errorf("expected path %s, got %s", expectedPath, result)
 	}
@@ -1408,11 +1400,7 @@ func TestCreateWorktree_Fresh(t *testing.T) {
 	}
 }
 
-func TestCreateWorktree_AttachLocalBranch(t *testing.T) {
-	// Save original worktreeDir and restore after test
-	originalWorktreeDir := worktreeDir
-	defer func() { worktreeDir = originalWorktreeDir }()
-
+func TestCreateWorktreeInRepo_AttachLocalBranch(t *testing.T) {
 	// Create a temp git repo
 	repoDir := t.TempDir()
 
@@ -1447,21 +1435,14 @@ func TestCreateWorktree_AttachLocalBranch(t *testing.T) {
 		t.Fatalf("git branch failed: %v\n%s", err, out)
 	}
 
-	// Set up worktree directory
-	worktreeDir = filepath.Join(repoDir, ".worktrees")
-
-	// Save and change directory
-	oldDir, _ := os.Getwd()
-	os.Chdir(repoDir)
-	defer os.Chdir(oldDir)
-
-	// Call createWorktree - should attach to existing local branch
-	result, err := createWorktree("local-only-branch")
+	// Call createWorktreeInRepo - should attach to existing local branch
+	result, err := createWorktreeInRepo(repoDir, "local-only-branch")
 	if err != nil {
-		t.Fatalf("createWorktree failed: %v", err)
+		t.Fatalf("createWorktreeInRepo failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(worktreeDir, "local-only-branch")
+	// Expected path is based on resolveWorkingDirectory logic
+	expectedPath := filepath.Join(filepath.Dir(repoDir), "worktree", "local-only-branch")
 	if result != expectedPath {
 		t.Errorf("expected path %s, got %s", expectedPath, result)
 	}

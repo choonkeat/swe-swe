@@ -2625,81 +2625,6 @@ func remoteBranchExists(branchName string) bool {
 	return cmd.Run() == nil
 }
 
-// createWorktree creates or re-enters a git worktree for the given branch name
-// Priority:
-// 1. If worktree exists -> return existing path (re-entry)
-// 2. If local branch exists -> git worktree add <path> <branch> (no -b)
-// 3. If remote branch exists -> git worktree add --track -b <branch> <path> origin/<branch>
-// 4. Otherwise -> git worktree add -b <branch> <path> (fresh branch)
-func createWorktree(branchName string) (string, error) {
-	if branchName == "" {
-		return "", fmt.Errorf("branch name cannot be empty")
-	}
-
-	// Use worktreeDirName for filesystem path (converts "/" to "--")
-	// but keep branchName unchanged for git operations
-	worktreePath := worktreeDir + "/" + worktreeDirName(branchName)
-
-	// Priority 1: Re-enter existing worktree
-	if worktreeExists(branchName) {
-		log.Printf("Re-entering existing worktree at %s", worktreePath)
-		return worktreePath, nil
-	}
-
-	// Ensure worktree directory exists
-	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create worktree directory: %w", err)
-	}
-
-	var cmd *exec.Cmd
-	var output []byte
-	var err error
-
-	// Priority 2: Attach to existing local branch
-	if localBranchExists(branchName) {
-		log.Printf("Attaching worktree to existing local branch %s", branchName)
-		cmd = exec.Command("git", "worktree", "add", worktreePath, branchName)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("failed to create worktree for existing branch: %w (output: %s)", err, string(output))
-		}
-	} else if remoteBranchExists(branchName) {
-		// Priority 3: Track remote branch
-		log.Printf("Creating worktree tracking remote branch origin/%s", branchName)
-		cmd = exec.Command("git", "worktree", "add", "--track", "-b", branchName, worktreePath, "origin/"+branchName)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("failed to create worktree tracking remote: %w (output: %s)", err, string(output))
-		}
-	} else {
-		// Priority 4: Create fresh branch
-		log.Printf("Creating new worktree with fresh branch %s", branchName)
-		cmd = exec.Command("git", "worktree", "add", worktreePath, "-b", branchName)
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
-		}
-	}
-
-	log.Printf("Created worktree at %s (branch: %s)", worktreePath, branchName)
-
-	// Copy untracked files to the worktree (graceful degradation on failure)
-	gitRoot, err := getGitRoot()
-	if err != nil {
-		log.Printf("Warning: could not determine git root for copying untracked files: %v", err)
-	} else {
-		if err := copyUntrackedFiles(gitRoot, worktreePath); err != nil {
-			log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
-		}
-		// Also copy .swe-swe/docs/ directory
-		if err := copySweSweDocsDir(gitRoot, worktreePath); err != nil {
-			log.Printf("Warning: failed to copy .swe-swe/docs/ to worktree: %v", err)
-		}
-	}
-
-	return worktreePath, nil
-}
-
 // WorktreeSessionInfo contains information about an active session running in a worktree
 type WorktreeSessionInfo struct {
 	UUID        string `json:"uuid"`
@@ -3295,8 +3220,8 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 	return filepath.Join(filepath.Dir(repoPath), "worktree", worktreeDirName(branchName))
 }
 
-// createWorktreeInRepo creates a worktree for a specific repo (may be external)
-// Similar to createWorktree but supports external repos at different paths
+// createWorktreeInRepo creates a worktree for a specific repo
+// Supports both /workspace and external repos at different paths
 func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 	if branchName == "" {
 		return repoPath, nil
