@@ -45,3 +45,12 @@ The `isValidWorktreePath` function (line 3287) only validates paths under `/work
 ## Priority
 
 Low - Cosmetic inconsistency, does not affect functionality.
+
+## Implementation Steps
+
+- [ ] **Step 1**: Edit `cmd/swe-swe/templates/host/swe-swe-server/main.go` line 3220
+  - Change `"worktree"` to `"worktrees"` in `resolveWorkingDirectory` function
+- [ ] **Step 2**: Run `make test` to verify no tests break
+- [ ] **Step 3**: Run `make build golden-update` to update golden files
+- [ ] **Step 4**: Verify golden file diff shows only the expected `worktree` → `worktrees` change
+  - `git diff --cached -- cmd/swe-swe/testdata/golden`
