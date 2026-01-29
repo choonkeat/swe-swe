@@ -6,3 +6,10 @@
   - Wrap color/branch/agent in #post-prepare-fields (hidden)
   - Reorder fields per spec
   - Expected: make build golden-update succeeds, dialog shows only "Where" dropdown initially
+
+003424 RESULT: make build golden-update — SUCCESS
+  - 66 golden files updated (33 main.go + 33 selection.html across all variants)
+  - make test: ALL PASS (ok github.com/choonkeat/swe-swe 1.424s)
+  - HTML restructured: "Where" dropdown with placeholder, inline Next buttons,
+    post-prepare fields group, removed standalone Next and branch Next buttons
+  - Note: browser verification deferred to Phase 5 (full end-to-end testing)

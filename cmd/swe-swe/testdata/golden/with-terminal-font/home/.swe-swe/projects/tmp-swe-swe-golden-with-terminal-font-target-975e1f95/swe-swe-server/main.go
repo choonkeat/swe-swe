@@ -2121,6 +2121,12 @@ func main() {
 			return
 		}
 
+		// Repos list API endpoint
+		if r.URL.Path == "/api/repos" {
+			handleReposAPI(w, r)
+			return
+		}
+
 		// Repo prepare API endpoint (clone/fetch)
 		if r.URL.Path == "/api/repo/prepare" {
 			handleRepoPrepareAPI(w, r)
@@ -2723,6 +2729,67 @@ func handleWorktreesAPI(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RepoInfo represents a previously-cloned repository found in /repos/
+type RepoInfo struct {
+	Path      string `json:"path"`
+	RemoteURL string `json:"remoteURL"`
+	DirName   string `json:"dirName"`
+}
+
+// handleReposAPI handles GET /api/repos
+// Scans /repos/ for existing git repositories and returns their info.
+// Returns: { "repos": [{"path": "/repos/foo/workspace", "remoteURL": "https://...", "dirName": "foo"}] }
+func handleReposAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	repos := []RepoInfo{}
+
+	entries, err := os.ReadDir(reposDir)
+	if err != nil {
+		// /repos/ doesn't exist or can't be read — return empty list
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"repos": repos,
+		})
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		dirName := entry.Name()
+		workspacePath := filepath.Join(reposDir, dirName, "workspace")
+
+		// Check if workspace/.git exists
+		if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+			continue
+		}
+
+		info := RepoInfo{
+			Path:    workspacePath,
+			DirName: dirName,
+		}
+
+		// Try to get remote URL
+		cmd := exec.Command("git", "-C", workspacePath, "remote", "get-url", "origin")
+		if output, err := cmd.Output(); err == nil {
+			info.RemoteURL = strings.TrimSpace(string(output))
+		}
+
+		repos = append(repos, info)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"repos": repos,
+	})
+}
+
 // handleWorktreeCheckAPI handles GET /api/worktree/check?name={branch}
 // Returns whether the branch/worktree exists and what type
 func handleWorktreeCheckAPI(w http.ResponseWriter, r *http.Request) {
@@ -2943,6 +3010,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		Mode string `json:"mode"` // "workspace", "clone", or "create"
 		URL  string `json:"url"`  // for clone mode
 		Name string `json:"name"` // for create mode
+		Path string `json:"path"` // for workspace mode: optional existing repo path
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -2964,9 +3032,11 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	req.Path = strings.TrimSpace(req.Path)
+
 	switch req.Mode {
 	case "workspace":
-		handleRepoPrepareWorkspace(w)
+		handleRepoPrepareWorkspace(w, req.Path)
 	case "clone":
 		handleRepoPrepareClone(w, req.URL)
 	case "create":
@@ -2978,16 +3048,32 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleRepoPrepareWorkspace handles the workspace mode - use /workspace with soft fetch
-func handleRepoPrepareWorkspace(w http.ResponseWriter) {
-	response := map[string]interface{}{
-		"path":        "/workspace",
-		"isWorkspace": true,
+// handleRepoPrepareWorkspace handles the workspace mode - use /workspace or an existing repo path with soft fetch
+func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
+	workDir := "/workspace"
+	isWorkspace := true
+
+	if repoPath != "" {
+		// Validate path: must start with /repos/ and not contain traversal
+		cleaned := filepath.Clean(repoPath)
+		if !strings.HasPrefix(cleaned, reposDir+"/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid repository path"})
+			return
+		}
+		workDir = cleaned
+		isWorkspace = false
 	}
 
-	// Check if workspace is a git repository
-	if _, err := os.Stat("/workspace/.git"); os.IsNotExist(err) {
-		log.Printf("/workspace is not a git repository, skipping git operations")
+	response := map[string]interface{}{
+		"path":        workDir,
+		"isWorkspace": isWorkspace,
+	}
+
+	// Check if it's a git repository
+	if _, err := os.Stat(filepath.Join(workDir, ".git")); os.IsNotExist(err) {
+		log.Printf("%s is not a git repository, skipping git operations", workDir)
 		response["nonGit"] = true
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
@@ -2995,13 +3081,13 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter) {
 	}
 
 	// Check if workspace has any remotes configured
-	remoteCmd := exec.Command("git", "-C", "/workspace", "remote")
+	remoteCmd := exec.Command("git", "-C", workDir, "remote")
 	remoteOutput, err := remoteCmd.Output()
 	hasRemote := err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0
 
 	if hasRemote {
-		log.Printf("Fetching all for /workspace")
-		cmd := exec.Command("git", "-C", "/workspace", "fetch", "--all")
+		log.Printf("Fetching all for %s", workDir)
+		cmd := exec.Command("git", "-C", workDir, "fetch", "--all")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			// Soft fail - return warning instead of error
@@ -3009,7 +3095,7 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter) {
 			response["warning"] = "Unable to fetch latest changes. Using cached branches."
 		}
 	} else {
-		log.Printf("No remote configured for /workspace, skipping fetch")
+		log.Printf("No remote configured for %s, skipping fetch", workDir)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

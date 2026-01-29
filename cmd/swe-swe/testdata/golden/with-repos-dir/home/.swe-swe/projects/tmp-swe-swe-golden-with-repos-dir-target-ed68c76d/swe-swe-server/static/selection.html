@@ -1011,72 +1011,80 @@
                 <div class="dialog__title">New Session</div>
                 <button class="dialog__close" id="new-session-close">&times;</button>
             </div>
-            <!-- Mode selector -->
+            <!-- Where selector -->
             <div class="dialog__field">
-                <label class="dialog__label">Repository Type</label>
+                <label class="dialog__label">Where</label>
                 <select class="dialog__select" id="new-session-mode">
+                    <option value="" disabled selected>-- choose one --</option>
                     <option value="workspace">Default workspace (/workspace)</option>
-                    <option value="clone">Clone external repository</option>
-                    <option value="create">Create new project</option>
+                    <!-- Dynamic repo options injected by JS here -->
+                    <option value="clone">Clone external repository...</option>
+                    <option value="create">Create new project...</option>
                 </select>
             </div>
-            <!-- Theme color for this repo type (optional) -->
-            <div class="dialog__field">
-                <label class="dialog__label">Theme Color (optional)</label>
-                <div class="color-picker__custom" style="margin-top: 8px;">
-                    <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
-                    <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
-                    <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+            <!-- All fields below dropdown, hidden until user picks something -->
+            <div id="new-session-fields" class="dialog__field--hidden">
+                <!-- Clone URL field (shown when mode=clone) -->
+                <div class="dialog__field dialog__field--hidden" id="clone-url-field">
+                    <label class="dialog__label">Repository URL</label>
+                    <div class="dialog__row">
+                        <input type="text" class="dialog__input" id="new-session-url" list="repo-history" placeholder="https://github.com/... or git@github.com:...">
+                        <datalist id="repo-history"></datalist>
+                        <button class="dialog__next" id="clone-next-btn">Next</button>
+                    </div>
                 </div>
-            </div>
-            <!-- Clone URL field (shown when mode=clone) -->
-            <div class="dialog__field dialog__field--hidden" id="clone-url-field">
-                <label class="dialog__label">Repository URL</label>
-                <div class="dialog__row">
-                    <input type="text" class="dialog__input" id="new-session-url" list="repo-history" placeholder="https://github.com/... or git@github.com:...">
-                    <datalist id="repo-history"></datalist>
+                <!-- Project name field (shown when mode=create) -->
+                <div class="dialog__field dialog__field--hidden" id="create-name-field">
+                    <label class="dialog__label">Project Name</label>
+                    <div class="dialog__row">
+                        <input type="text" class="dialog__input" id="new-session-name" placeholder="my-project (letters, numbers, dashes)">
+                        <button class="dialog__next" id="create-next-btn">Next</button>
+                    </div>
                 </div>
-            </div>
-            <!-- Project name field (shown when mode=create) -->
-            <div class="dialog__field dialog__field--hidden" id="create-name-field">
-                <label class="dialog__label">Project Name</label>
-                <div class="dialog__row">
-                    <input type="text" class="dialog__input" id="new-session-name" placeholder="my-project (letters, numbers, dashes)">
-                </div>
-            </div>
-            <!-- Next button (prepare repo) -->
-            <div class="dialog__field">
-                <button class="dialog__next" id="new-session-prepare" style="width: 100%;">Next</button>
+                <!-- Warning div -->
                 <div class="dialog__warning" id="new-session-warning"></div>
-            </div>
-            <!-- Branch field (hidden for create mode) -->
-            <div class="dialog__field" id="branch-field">
-                <label class="dialog__label">Branch (optional)</label>
-                <div class="dialog__row">
-                    <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
-                    <datalist id="branch-list"></datalist>
-                    <button class="dialog__next" id="new-session-branch-next" disabled>Next</button>
+                <!-- Post-prepare fields: color, branch, agent -->
+                <div id="post-prepare-fields" class="dialog__field--hidden">
+                    <!-- Theme color (optional) -->
+                    <div class="dialog__field">
+                        <label class="dialog__label">Theme Color (optional)</label>
+                        <div class="color-picker__custom" style="margin-top: 8px;">
+                            <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
+                            <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
+                            <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+                        </div>
+                    </div>
+                    <!-- Branch field (no Next button) -->
+                    <div class="dialog__field" id="branch-field">
+                        <label class="dialog__label">Branch (optional)</label>
+                        <div class="dialog__row">
+                            <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
+                            <datalist id="branch-list"></datalist>
+                        </div>
+                    </div>
+                    <!-- Agent selector -->
+                    <div class="dialog__field">
+                        <label class="dialog__label">Agent</label>
+                        <div class="dialog__agents" id="new-session-agents">
+                            {{range .Agents}}
+                            <label class="dialog__agent dialog__agent--disabled" data-agent="{{.Assistant.Binary}}">
+                                <input type="radio" name="new-session-agent" value="{{.Assistant.Binary}}" disabled>
+                                <span class="dialog__agent-icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
+                                <span class="dialog__agent-name">{{.Assistant.Name}}</span>
+                            </label>
+                            {{end}}
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="dialog__field">
-                <label class="dialog__label">Agent</label>
-                <div class="dialog__agents" id="new-session-agents">
-                    {{range .Agents}}
-                    <label class="dialog__agent dialog__agent--disabled" data-agent="{{.Assistant.Binary}}">
-                        <input type="radio" name="new-session-agent" value="{{.Assistant.Binary}}" disabled>
-                        <span class="dialog__agent-icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
-                        <span class="dialog__agent-name">{{.Assistant.Name}}</span>
-                    </label>
-                    {{end}}
+                <!-- Footer: error, loading, start -->
+                <div class="dialog__footer">
+                    <div class="dialog__error" id="new-session-error"></div>
+                    <div class="dialog__loading" id="new-session-loading">
+                        <div class="dialog__spinner"></div>
+                        <span id="new-session-loading-text">Loading...</span>
+                    </div>
+                    <button class="dialog__start" id="new-session-start" disabled>Start Session</button>
                 </div>
-            </div>
-            <div class="dialog__footer">
-                <div class="dialog__error" id="new-session-error"></div>
-                <div class="dialog__loading" id="new-session-loading">
-                    <div class="dialog__spinner"></div>
-                    <span id="new-session-loading-text">Loading...</span>
-                </div>
-                <button class="dialog__start" id="new-session-start" disabled>Start Session</button>
             </div>
         </div>
     </div>

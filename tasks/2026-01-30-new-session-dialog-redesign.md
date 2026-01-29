@@ -44,7 +44,7 @@ A new API endpoint that scans `/repos/*/workspace/` directories, detects git rep
 
 ---
 
-## Phase 2: HTML — Restructure dialog markup
+## Phase 2: HTML — Restructure dialog markup ✅ DONE
 
 ### What will be achieved
 Update `selection.html` dialog: "Where" dropdown with placeholder, inline Next buttons, branch field without Next button, fields wrapped in hideable groups.
