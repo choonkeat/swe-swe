@@ -17,18 +17,18 @@ The worktree directory naming is inconsistent between default workspace and exte
 // Line 2330 - global variable uses plural
 var worktreeDir = "/worktrees"
 
-// Line 3286 - default workspace uses the variable (plural)
+// Line 3215 - default workspace uses the variable (plural)
 if repoPath == "/workspace" {
     return filepath.Join(worktreeDir, worktreeDirName(branchName))
 }
 
-// Line 3291 - external repo hardcodes singular
+// Line 3220 - external repo hardcodes singular
 return filepath.Join(filepath.Dir(repoPath), "worktree", worktreeDirName(branchName))
 ```
 
 ## Proposed Fix
 
-Change line 3291 to use "worktrees" (plural) for consistency:
+Change line 3220 to use "worktrees" (plural) for consistency:
 
 ```go
 return filepath.Join(filepath.Dir(repoPath), "worktrees", worktreeDirName(branchName))
@@ -37,6 +37,10 @@ return filepath.Join(filepath.Dir(repoPath), "worktrees", worktreeDirName(branch
 This would make the structure consistent:
 - `/worktrees/{branch}`
 - `/repos/{sanitized-url}/worktrees/{branch}`
+
+## Related Code
+
+The `isValidWorktreePath` function (line 3287) only validates paths under `/worktrees/`. If used for external repo worktrees in the future, it would need updating to also handle `/repos/.../worktrees/` paths.
 
 ## Priority
 
