@@ -1,0 +1,3 @@
+082614 - Starting fix for worktree-missing-file-copy bug
+082614 - Will add file copying calls to createWorktreeInRepo() in main.go:3296-3344
+082614 - Expected: After creating worktree, copyUntrackedFiles() and copySweSweDocsDir() should be called
