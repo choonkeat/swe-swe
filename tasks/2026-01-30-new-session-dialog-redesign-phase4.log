@@ -3,3 +3,10 @@
   - Inline Next buttons already work with existing flex layout
   - Hidden field groups already use dialog__field--hidden
   - Expected: make build golden-update succeeds, visual polish confirmed in Phase 5
+
+004040 RESULT: make build golden-update — SUCCESS, make test — ALL PASS
+  - Added :invalid / placeholder styling for muted color on placeholder select
+  - Added required attribute to select for :invalid pseudo-class
+  - Added compact inline Next button style (.dialog__row .dialog__next)
+  - Added disabled option styling
+  - ok github.com/choonkeat/swe-swe 1.399s

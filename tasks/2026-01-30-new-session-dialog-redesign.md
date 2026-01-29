@@ -127,7 +127,7 @@ New `new-session-dialog.js` file with all dialog logic. Old dialog IIFE removed 
 
 ---
 
-## Phase 4: CSS — Styling adjustments
+## Phase 4: CSS — Styling adjustments ✅ DONE
 
 ### What will be achieved
 CSS updates for inline Next buttons, hidden field groups, and dropdown placeholder styling.

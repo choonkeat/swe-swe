@@ -667,6 +667,11 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        .dialog__row .dialog__next {
+            width: auto;
+            padding: 8px 16px;
+            white-space: nowrap;
+        }
         .dialog__agents {
             display: flex;
             flex-wrap: wrap;
@@ -773,9 +778,16 @@
             outline: none;
             border-color: var(--accent-primary);
         }
+        .dialog__select:invalid,
+        .dialog__select.dialog__select--placeholder {
+            color: #64748b;
+        }
         .dialog__select option {
             background: #1e293b;
             color: #f8fafc;
+        }
+        .dialog__select option:disabled {
+            color: #64748b;
         }
         .dialog__warning {
             color: #f59e0b;
@@ -1014,7 +1026,7 @@
             <!-- Where selector -->
             <div class="dialog__field">
                 <label class="dialog__label">Where</label>
-                <select class="dialog__select" id="new-session-mode">
+                <select class="dialog__select" id="new-session-mode" required>
                     <option value="" disabled selected>-- choose one --</option>
                     <option value="workspace">Default workspace (/workspace)</option>
                     <!-- Dynamic repo options injected by JS here -->
