@@ -22,7 +22,7 @@ All phases use `docs/dev/swe-swe-server-workflow.md`:
 
 ---
 
-## Phase 1: Backend — Add `GET /api/repos` endpoint
+## Phase 1: Backend — Add `GET /api/repos` endpoint ✅ DONE
 
 ### What will be achieved
 A new API endpoint that scans `/repos/*/workspace/` directories, detects git repos, extracts remote URLs, and returns a JSON list. Also extend `POST /api/repo/prepare` to accept an optional `path` field for existing repos.
@@ -168,3 +168,14 @@ CSS updates for inline Next buttons, hidden field groups, and dropdown placehold
 9. **Ellipsis labels**: dropdown shows "Clone external repository..." and "Create new project..."
 10. **Console errors**: check for JS errors throughout all flows
 11. Stop dev server
+
+---
+
+## Bug: Session name shows branch only, not `{owner/repo}@{branch}`
+
+### Description
+When a session is a worktree of the default workspace, the session name displayed in the header only shows the branch/worktree name (e.g. `new-session-dialog`) instead of `{owner/repo}@new-session-dialog`. The full qualified name should include the repo identity so users can distinguish worktrees across different repos.
+
+### Status
+- [ ] Investigate where session name is derived (likely in session creation or the header template)
+- [ ] Fix to prefix with `{owner/repo}@` when the session is a worktree

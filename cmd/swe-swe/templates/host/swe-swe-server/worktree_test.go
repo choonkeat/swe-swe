@@ -1873,4 +1873,137 @@ func TestHandleRepoPrepareAPI(t *testing.T) {
 			t.Errorf("expected error 'Invalid JSON', got %q", result["error"])
 		}
 	})
+
+	t.Run("workspace mode with path validates prefix", func(t *testing.T) {
+		body := `{"mode": "workspace", "path": "/etc/passwd"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+
+		var result map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result["error"] != "Invalid repository path" {
+			t.Errorf("expected error 'Invalid repository path', got %q", result["error"])
+		}
+	})
+
+	t.Run("workspace mode with path rejects traversal", func(t *testing.T) {
+		body := `{"mode": "workspace", "path": "/repos/../../../etc/passwd"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handleRepoPrepareAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestHandleReposAPI(t *testing.T) {
+	t.Run("POST returns method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/repos", nil)
+		w := httptest.NewRecorder()
+
+		handleReposAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("missing repos dir returns empty list", func(t *testing.T) {
+		// Save and restore reposDir
+		origReposDir := reposDir
+		reposDir = "/nonexistent-repos-dir-for-test"
+		defer func() { reposDir = origReposDir }()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
+		w := httptest.NewRecorder()
+
+		handleReposAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		repos, ok := result["repos"].([]interface{})
+		if !ok {
+			t.Fatalf("expected repos to be an array, got %T", result["repos"])
+		}
+		if len(repos) != 0 {
+			t.Errorf("expected empty repos list, got %d entries", len(repos))
+		}
+	})
+
+	t.Run("returns repos with git directories", func(t *testing.T) {
+		// Create a temporary repos directory structure
+		tmpDir := t.TempDir()
+		origReposDir := reposDir
+		reposDir = tmpDir
+		defer func() { reposDir = origReposDir }()
+
+		// Create a repo with .git directory
+		repoWorkspace := filepath.Join(tmpDir, "my-repo", "workspace")
+		if err := os.MkdirAll(filepath.Join(repoWorkspace, ".git"), 0755); err != nil {
+			t.Fatalf("failed to create test repo: %v", err)
+		}
+
+		// Create a directory without .git (should be skipped)
+		nonRepo := filepath.Join(tmpDir, "not-a-repo", "workspace")
+		if err := os.MkdirAll(nonRepo, 0755); err != nil {
+			t.Fatalf("failed to create test dir: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
+		w := httptest.NewRecorder()
+
+		handleReposAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result struct {
+			Repos []RepoInfo `json:"repos"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(result.Repos) != 1 {
+			t.Fatalf("expected 1 repo, got %d", len(result.Repos))
+		}
+
+		if result.Repos[0].DirName != "my-repo" {
+			t.Errorf("expected dirName 'my-repo', got %q", result.Repos[0].DirName)
+		}
+		if result.Repos[0].Path != filepath.Join(tmpDir, "my-repo", "workspace") {
+			t.Errorf("expected path %q, got %q", filepath.Join(tmpDir, "my-repo", "workspace"), result.Repos[0].Path)
+		}
+		// RemoteURL will be empty since there's no actual git remote
+		if result.Repos[0].RemoteURL != "" {
+			t.Errorf("expected empty remoteURL for fake repo, got %q", result.Repos[0].RemoteURL)
+		}
+	})
 }
