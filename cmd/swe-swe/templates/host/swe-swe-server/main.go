@@ -3768,7 +3768,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	sessionName := r.URL.Query().Get("name")
 
 	// Get optional branch (for worktree creation, separate from display name)
-	branchParam := r.URL.Query().Get("branch")
+	// Sanitize to ensure git-safe branch name (e.g. spaces become hyphens)
+	branchParam := deriveBranchName(r.URL.Query().Get("branch"))
 
 	// Get optional pwd (base repo path for new session dialog)
 	pwd := r.URL.Query().Get("pwd")
