@@ -187,6 +187,8 @@
             display: flex;
             flex-direction: column;
             gap: 6px;
+            min-width: 0;
+            overflow: hidden;
         }
         .session-card__repo {
             display: flex;
@@ -195,15 +197,18 @@
             font-size: 16px;
             font-weight: 600;
             color: #f8fafc;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
             min-width: 0;
         }
         .session-card__repo svg {
             width: 18px;
             height: 18px;
             color: #64748b;
+            flex-shrink: 0;
+        }
+        .session-card__repo-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .session-card__branch {
             display: flex;
@@ -1164,7 +1169,7 @@
                                         <path d="M8 9H8.01M12 9H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                                         <path d="M7 13L10 16L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
                                     </svg>
-                                    {{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}
+                                    <span class="session-card__repo-text">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</span>
                                 </div>
                             </div>
                             <span class="agent-badge agent-badge--{{.Assistant}}">{{.Assistant}}</span>
