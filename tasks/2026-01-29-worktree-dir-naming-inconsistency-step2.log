@@ -1,2 +1,6 @@
 084616 - STEP 2: Running 'make test' to verify no tests break
 Expected: All tests pass
+084720 - Observed: Test FAILED
+Got: TestResolveWorkingDirectory/external_with_branch and external_with_hierarchical_branch failed
+The tests expected old 'worktree' (singular) but got new 'worktrees' (plural)
+Need to update test expectations in worktree_test.go
