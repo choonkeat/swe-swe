@@ -1,0 +1,4 @@
+004600 PLAN: Investigate where session name is derived
+  - Search for session name assignment in main.go and session page template
+  - Trace how the name query param flows into the session header
+  - Expected: find the code path that sets session name and understand why it only shows branch name
