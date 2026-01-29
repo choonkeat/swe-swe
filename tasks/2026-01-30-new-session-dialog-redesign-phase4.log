@@ -1,0 +1,5 @@
+003900 PLAN: Implementing Phase 4 — CSS: Styling adjustments
+  - Add placeholder styling for select when value is empty
+  - Inline Next buttons already work with existing flex layout
+  - Hidden field groups already use dialog__field--hidden
+  - Expected: make build golden-update succeeds, visual polish confirmed in Phase 5
