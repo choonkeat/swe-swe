@@ -542,11 +542,21 @@ func handleInit() {
 	hostGID := os.Getgid()
 	fmt.Printf("Detected host user: UID=%d GID=%d\n", hostUID, hostGID)
 
-	// Create bin, home, and certs subdirectories
+	// Create bin, home, certs, and worktrees subdirectories
 	binDir := filepath.Join(sweDir, "bin")
 	homeDir := filepath.Join(sweDir, "home")
 	certsDir := filepath.Join(sweDir, "certs")
-	for _, dir := range []string{binDir, homeDir, certsDir} {
+	worktreesDir := filepath.Join(sweDir, "worktrees")
+	dirsToCreate := []string{binDir, homeDir, certsDir, worktreesDir}
+
+	// Create repos directory only when --repos-dir is NOT specified
+	// (when user specifies --repos-dir, they are responsible for the directory)
+	if *reposDir == "" {
+		reposDirPath := filepath.Join(sweDir, "repos")
+		dirsToCreate = append(dirsToCreate, reposDirPath)
+	}
+
+	for _, dir := range dirsToCreate {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			log.Fatalf("Failed to create directory %q: %v", dir, err)
 		}
