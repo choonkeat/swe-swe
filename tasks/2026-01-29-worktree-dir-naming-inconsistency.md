@@ -48,7 +48,7 @@ Low - Cosmetic inconsistency, does not affect functionality.
 
 ## Implementation Steps
 
-- [ ] **Step 1**: Edit `cmd/swe-swe/templates/host/swe-swe-server/main.go` line 3220
+- [x] **Step 1**: Edit `cmd/swe-swe/templates/host/swe-swe-server/main.go` line 3220
   - Change `"worktree"` to `"worktrees"` in `resolveWorkingDirectory` function
 - [ ] **Step 2**: Run `make test` to verify no tests break
 - [ ] **Step 3**: Run `make build golden-update` to update golden files
