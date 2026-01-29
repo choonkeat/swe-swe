@@ -1,0 +1,2 @@
+085128 - STEP 4: Verifying golden file diff shows only expected worktree -> worktrees change
+Expected: Diff shows only 'worktree' -> 'worktrees' in external repo paths (comments and code)
