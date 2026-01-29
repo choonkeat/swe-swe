@@ -1,0 +1,6 @@
+003500 PLAN: Implementing Phase 3 — JS: Rewrite dialog logic
+  - Create static/new-session-dialog.js with all dialog logic
+  - Remove dialog IIFE (lines ~139-570) from homepage-main.js
+  - Add script tag in selection.html
+  - Implement: fetch repos on open, rewrite mode handler, inline Next, sticky color per Where
+  - Expected: make build golden-update succeeds, all tests pass
