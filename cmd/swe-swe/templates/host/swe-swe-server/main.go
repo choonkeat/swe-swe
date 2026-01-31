@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -72,6 +73,8 @@ const (
 	MinChunkSize = 512
 	// RingBufferSize is the size of the terminal scrollback ring buffer (512KB)
 	RingBufferSize = 512 * 1024
+	previewPortStart = 3000
+	previewPortEnd   = 3019
 )
 
 // ANSI escape sequence helpers for terminal formatting
@@ -302,6 +305,7 @@ type Session struct {
 	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 	// Parent session relationship
 	ParentUUID string // UUID of parent session (for shell sessions opened from agent sessions)
+	PreviewPort int   // App preview target port for this session
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte  // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -3621,6 +3625,28 @@ func deleteRecordingFiles(uuid string) {
 	}
 }
 
+func previewProxyPort(port int) int {
+	return 50000 + port
+}
+
+func findAvailablePreviewPort() (int, error) {
+	for port := previewPortStart; port <= previewPortEnd; port++ {
+		previewListener, err := net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(port)))
+		if err != nil {
+			continue
+		}
+		appListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			previewListener.Close()
+			continue
+		}
+		appListener.Close()
+		previewListener.Close()
+		return port, nil
+	}
+	return 0, fmt.Errorf("no available preview ports in range %d-%d", previewPortStart, previewPortEnd)
+}
+
 // getOrCreateSession returns an existing session or creates a new one
 // The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
 // The name parameter sets the display name (optional, can be empty)
@@ -3683,6 +3709,20 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		} else {
 			// No branch specified, use base repo directly
 			workDir = baseRepo
+		}
+	}
+
+	var previewPort int
+	if parentUUID != "" {
+		if parentSess, ok := sessions[parentUUID]; ok {
+			previewPort = parentSess.PreviewPort
+		}
+	}
+	if previewPort == 0 {
+		var err error
+		previewPort, err = findAvailablePreviewPort()
+		if err != nil {
+			return nil, false, err
 		}
 	}
 
@@ -3756,6 +3796,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
 		ParentUUID:      parentUUID,
+		PreviewPort:     previewPort,
 		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,

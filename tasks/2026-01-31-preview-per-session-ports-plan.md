@@ -21,6 +21,17 @@ Give each session a unique app PORT (3000-3019 range). The preview proxy should 
 
 ## Implementation Plan
 
+## Progress
+
+- [x] 1) Session-level port assignment
+- [ ] 2) Preview proxy server lifecycle
+- [ ] 3) Inject PORT into session process env
+- [ ] 4) UI + Preview URL
+- [ ] 4.5) CLI debug endpoint default
+- [ ] 5) Preview error page placeholder
+- [ ] 6) Docker/Traefik exposure of preview range
+- [ ] 7) Docs and test updates
+
 ### 1) Session-level port assignment
 
 Files:
