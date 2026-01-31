@@ -1511,6 +1511,45 @@ func TestLoadEndedRecordings_EndedAgoFromMetadata(t *testing.T) {
 	}
 }
 
+func TestLoadEndedRecordings_SortsByEndedAtDesc(t *testing.T) {
+	h := newTestHelper(t)
+
+	oldUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	newUUID := "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+
+	oldEndedAt := time.Now().Add(-2 * time.Hour)
+	newEndedAt := time.Now().Add(-30 * time.Minute)
+
+	h.createRecordingFiles(oldUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:    oldUUID,
+			Name:    "Old Session",
+			Agent:   "Claude",
+			EndedAt: &oldEndedAt,
+		},
+	})
+
+	h.createRecordingFiles(newUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:    newUUID,
+			Name:    "New Session",
+			Agent:   "Claude",
+			EndedAt: &newEndedAt,
+		},
+	})
+
+	recordings := loadEndedRecordings()
+	if len(recordings) != 2 {
+		t.Fatalf("expected 2 recordings, got %d", len(recordings))
+	}
+	if recordings[0].UUID != newUUID {
+		t.Errorf("expected newest recording first, got %s", recordings[0].UUID)
+	}
+	if recordings[1].UUID != oldUUID {
+		t.Errorf("expected oldest recording second, got %s", recordings[1].UUID)
+	}
+}
+
 func TestLoadEndedRecordingsByAgent_GroupsByAgent(t *testing.T) {
 	h := newTestHelper(t)
 
@@ -1534,7 +1573,8 @@ func TestLoadEndedRecordingsByAgent_GroupsByAgent(t *testing.T) {
 		},
 	})
 
-	grouped := loadEndedRecordingsByAgent()
+	recordings := loadEndedRecordings()
+	grouped := loadEndedRecordingsByAgent(recordings)
 
 	// Should have entries for both agents
 	claudeRecordings := grouped["claude"]
@@ -1562,7 +1602,8 @@ func TestLoadEndedRecordingsByAgent_MapsDisplayNamesToBinaryNames(t *testing.T) 
 		},
 	})
 
-	grouped := loadEndedRecordingsByAgent()
+	recordings := loadEndedRecordings()
+	grouped := loadEndedRecordingsByAgent(recordings)
 
 	// Should be grouped under "claude" (binary name), not "Claude"
 	if _, ok := grouped["Claude"]; ok {
