@@ -1,1 +1,2 @@
 233902 start test-container workflow with SWE_SWE_INIT_FLAGS=--preview-ports=3000-3002; expect services up and preview proxy reachable at host.docker.internal:53xxx with localhost:3000 placeholder
+234153 start mcp browser test: login at http://host.docker.internal:9770/, create OpenCode session, expect preview proxy at http://host.docker.internal:53000/ (or 53001 if PORT=3001) shows App Preview with localhost:3xxx placeholder
