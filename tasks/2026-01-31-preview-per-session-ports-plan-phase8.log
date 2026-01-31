@@ -4,3 +4,4 @@
 233432 observed http://swe-swe:53001/ renders App Preview page with text 'localhost:3001' (port 3000 in use by dev server)
 233735 continue preview render test; verify preview proxy at 5{PORT} shows localhost:{PORT} placeholder
 233756 observed http://swe-swe:53001/ App Preview placeholder shows localhost:3001
+233821 stopped dev server (go run main.go -addr :3000) after preview render test
