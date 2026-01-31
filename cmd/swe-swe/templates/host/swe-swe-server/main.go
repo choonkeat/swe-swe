@@ -1950,7 +1950,7 @@ func singleJoiningSlash(a, b string) string {
 func runDebugListen(endpoint string) {
 	// Default to the preview proxy debug endpoint
 	if endpoint == "" {
-		endpoint = "ws://localhost:9899/__swe-swe-debug__/agent"
+		endpoint = defaultDebugEndpoint()
 	}
 
 	fmt.Fprintf(os.Stderr, "[debug-listen] Connecting to %s\n", endpoint)
@@ -2005,7 +2005,7 @@ func runDebugListen(endpoint string) {
 func runDebugQuery(endpoint string, selector string) {
 	// Default to the preview proxy debug endpoint
 	if endpoint == "" {
-		endpoint = "ws://localhost:9899/__swe-swe-debug__/agent"
+		endpoint = defaultDebugEndpoint()
 	}
 
 	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
@@ -2036,12 +2036,19 @@ func runDebugQuery(endpoint string, selector string) {
 	fmt.Printf("%s\n", message)
 }
 
+func defaultDebugEndpoint() string {
+	if previewPort := os.Getenv("SWE_PREVIEW_PORT"); previewPort != "" {
+		return fmt.Sprintf("ws://localhost:5%s/__swe-swe-debug__/agent", previewPort)
+	}
+	return "ws://localhost:9899/__swe-swe-debug__/agent"
+}
+
 func main() {
 	addr := flag.String("addr", ":9898", "Listen address")
 	version := flag.Bool("version", false, "Show version and exit")
 	debugListen := flag.Bool("debug-listen", false, "Listen for debug messages from preview proxy")
 	debugQuery := flag.String("debug-query", "", "Send DOM query to preview proxy (CSS selector)")
-	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:9899/__swe-swe-debug__/agent)")
+	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:5${SWE_PREVIEW_PORT}/__swe-swe-debug__/agent if SWE_PREVIEW_PORT is set; otherwise ws://localhost:9899/__swe-swe-debug__/agent)")
 	noPreviewProxy := flag.Bool("no-preview-proxy", false, "Disable the preview proxy server (useful for dev mode)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
