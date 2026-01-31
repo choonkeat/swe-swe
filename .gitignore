@@ -12,6 +12,7 @@ tmp/
 # Generated from .txt files for local dev (make run)
 cmd/swe-swe/templates/host/swe-swe-server/go.mod
 cmd/swe-swe/templates/host/swe-swe-server/go.sum
+cmd/swe-swe/templates/host/swe-swe-server/container-templates/
 .test-repos/
 
 # Packer build artifacts

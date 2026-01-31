@@ -89,7 +89,8 @@ echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-playwright]
-command = ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 EOF
 chown -R app: /home/app/.codex
 echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"

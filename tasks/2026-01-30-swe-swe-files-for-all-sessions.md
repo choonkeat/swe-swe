@@ -34,7 +34,7 @@ When a user opens an external repo clone or creates a new project, the base dire
 
 ### Steps
 
-#### 1a. Copy container templates into server source during `swe-swe init`
+#### 1a. Copy container templates into server source during `swe-swe init` ✅
 
 In `init.go`, after extracting host files to the metadata directory, also copy the container template files into `{metadataDir}/swe-swe-server/container-templates/`. This avoids duplicating files in the source tree — the container templates exist once in `cmd/swe-swe/templates/container/`, and `init.go` places them where the Docker build can see them.
 
@@ -49,7 +49,7 @@ Files to copy:
 Source: `cmd/swe-swe/templates/container/` (embedded in swe-swe CLI binary)
 Destination: `{metadataDir}/swe-swe-server/container-templates/` (available at Docker build time)
 
-#### 1b. Embed container templates in server binary
+#### 1b. Embed container templates in server binary ✅
 
 In `main.go` (the server), add:
 ```go
@@ -64,12 +64,12 @@ Add a function `setupSweSweFiles(destDir string, agents []AssistantConfig)` that
 - Conditionally includes `swe-swe/setup` only if non-slash-command agents are configured
 - Include `.swe-swe/docs/docker.md` unconditionally (simpler; it's documentation)
 
-#### 1c. Call `setupSweSweFiles` in prepare handlers
+#### 1c. Call `setupSweSweFiles` in prepare handlers ✅
 
 - `handleRepoPrepareClone` (main.go:3019): after successful clone or fetch, call `setupSweSweFiles(repoPath, availableAssistants)`
 - `handleRepoPrepareCreate` (main.go:3080): after successful git init + commit, call `setupSweSweFiles(repoPath, availableAssistants)`
 
-#### 1d. Empty commit with git user fallback for new projects
+#### 1d. Empty commit with git user fallback for new projects ✅ (prior commit)
 
 In `handleRepoPrepareCreate`, after `git init`:
 1. Attempt `git -C {repoPath} commit --allow-empty -m "init"`
@@ -81,7 +81,7 @@ In `handleRepoPrepareCreate`, after `git init`:
    - Retry the empty commit
 3. This ensures the repo has a commit on its default branch, needed for future `git worktree add`.
 
-#### 1e. Skip worktree for new projects
+#### 1e. Skip worktree for new projects ✅ (prior commit)
 
 **Frontend** (`homepage-main.js:528-535`): For new projects (`dialogState.isNewProject`), pass the project name via a separate `sessionName` query param instead of `name`. The `name` param currently drives both display name and worktree creation.
 
@@ -104,7 +104,7 @@ if (dialogState.isNewProject) {
 
 **Server** (`terminal-ui.js:714`): Forward `sessionName` param to WebSocket URL alongside `name` and `pwd`.
 
-#### 1f. Golden file update
+#### 1f. Golden file update ✅
 
 Run `make build golden-update` and verify diffs show only the new `container-templates/` directory added to the server source extraction.
 

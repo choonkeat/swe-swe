@@ -41,6 +41,9 @@ import (
 //go:embed all:static
 var staticFS embed.FS
 
+//go:embed all:container-templates
+var containerTemplatesFS embed.FS
+
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
@@ -2367,6 +2370,51 @@ var worktreeDir = "/worktrees"
 // excludeFromCopy lists directories that should never be copied to worktrees
 var excludeFromCopy = []string{".git", ".swe-swe"}
 
+// setupSweSweFiles writes embedded container template files into destDir.
+// Used to provision swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup)
+// into cloned repos and new projects that weren't set up by swe-swe init.
+// Idempotent: skips files that already exist.
+func setupSweSweFiles(destDir string) error {
+	return fs.WalkDir(containerTemplatesFS, "container-templates", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath := strings.TrimPrefix(path, "container-templates/")
+		if relPath == "" || relPath == "." {
+			return nil // skip root
+		}
+
+		destPath := filepath.Join(destDir, relPath)
+
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		// Skip if destination already exists
+		if _, err := os.Stat(destPath); err == nil {
+			return nil
+		}
+
+		content, err := containerTemplatesFS.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read embedded %s: %w", path, err)
+		}
+
+		// Ensure parent directory exists
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", destPath, err)
+		}
+
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", destPath, err)
+		}
+
+		log.Printf("Wrote swe-swe file: %s", destPath)
+		return nil
+	})
+}
+
 // generateMOTD creates the terminal MOTD displaying available swe-swe commands
 func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
 	// Shell sessions don't need MOTD - they're not AI agents
@@ -3190,6 +3238,11 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		}
 	}
 
+	// Write swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup) into cloned repo
+	if err := setupSweSweFiles(repoPath); err != nil {
+		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"path":        repoPath,
@@ -3266,6 +3319,11 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 	if err != nil {
 		log.Printf("Warning: initial commit failed: %v, output: %s", err, string(commitOutput))
 		// Non-fatal: the repo still works, just without an initial commit
+	}
+
+	// Write swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup) into new project
+	if err := setupSweSweFiles(repoPath); err != nil {
+		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

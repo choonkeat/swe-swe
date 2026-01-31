@@ -900,6 +900,34 @@ func handleInit() {
 			fmt.Printf("Created %s\n", destPath)
 		}
 
+		// Copy ALL container templates into server source for embedding in server binary.
+		// This allows the server to write swe-swe files into cloned repos and new projects.
+		// All files are included unconditionally (extra docs cause no harm).
+		allContainerTemplates := []string{
+			"templates/container/.mcp.json",
+			"templates/container/.swe-swe/docs/AGENTS.md",
+			"templates/container/.swe-swe/docs/browser-automation.md",
+			"templates/container/.swe-swe/docs/app-preview.md",
+			"templates/container/.swe-swe/docs/docker.md",
+			"templates/container/swe-swe/setup",
+		}
+		for _, tmplFile := range allContainerTemplates {
+			content, err := assets.ReadFile(tmplFile)
+			if err != nil {
+				log.Fatalf("Failed to read embedded file %q: %v", tmplFile, err)
+			}
+			relPath := strings.TrimPrefix(tmplFile, "templates/container/")
+			destPath := filepath.Join(sweDir, "swe-swe-server", "container-templates", relPath)
+			destDir := filepath.Dir(destPath)
+			if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
+				log.Fatalf("Failed to create directory %q: %v", destDir, err)
+			}
+			if err := os.WriteFile(destPath, content, 0644); err != nil {
+				log.Fatalf("Failed to write %q: %v", destPath, err)
+			}
+			fmt.Printf("Created %s\n", destPath)
+		}
+
 	// Save init configuration for --previous-init-flags=reuse
 	initConfig := InitConfig{
 		Agents:              agents,
