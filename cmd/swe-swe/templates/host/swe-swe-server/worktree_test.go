@@ -323,17 +323,17 @@ func TestIsTrackedInGit(t *testing.T) {
 	}
 }
 
-func TestCopyUntrackedFiles(t *testing.T) {
+func TestEnsureSweSweFiles(t *testing.T) {
 	tests := []struct {
-		name            string
-		files           map[string]struct {
+		name              string
+		files             map[string]struct {
 			content string
 			tracked bool
 			mode    os.FileMode
 			symlink string
 		}
-		expectedCopied    []string
-		expectedNotCopied []string
+		expectedSymlinked []string // top-level entries that should be symlinked
+		expectedMissing   []string // top-level entries that should NOT exist
 	}{
 		{
 			name: "basic dotfiles",
@@ -346,8 +346,8 @@ func TestCopyUntrackedFiles(t *testing.T) {
 				".env":       {content: "SECRET=123", tracked: false},
 				".gitignore": {content: "*.log", tracked: true},
 			},
-			expectedCopied:    []string{".env"},
-			expectedNotCopied: []string{".gitignore"},
+			expectedSymlinked: []string{".env"},
+			expectedMissing:   []string{".gitignore"},
 		},
 		{
 			name: "CLAUDE.md untracked",
@@ -359,7 +359,7 @@ func TestCopyUntrackedFiles(t *testing.T) {
 			}{
 				"CLAUDE.md": {content: "instructions", tracked: false},
 			},
-			expectedCopied: []string{"CLAUDE.md"},
+			expectedSymlinked: []string{"CLAUDE.md"},
 		},
 		{
 			name: "CLAUDE.md tracked",
@@ -371,7 +371,7 @@ func TestCopyUntrackedFiles(t *testing.T) {
 			}{
 				"CLAUDE.md": {content: "instructions", tracked: true},
 			},
-			expectedNotCopied: []string{"CLAUDE.md"},
+			expectedMissing: []string{"CLAUDE.md"},
 		},
 		{
 			name: "AGENTS.md untracked",
@@ -383,31 +383,31 @@ func TestCopyUntrackedFiles(t *testing.T) {
 			}{
 				"AGENTS.md": {content: "agents", tracked: false},
 			},
-			expectedCopied: []string{"AGENTS.md"},
+			expectedSymlinked: []string{"AGENTS.md"},
 		},
 		{
-			name: "nested dotdir",
+			name: ".swe-swe is now symlinked (no longer excluded)",
 			files: map[string]struct {
 				content string
 				tracked bool
 				mode    os.FileMode
 				symlink string
 			}{
-				".claude/settings.json": {content: "{}", tracked: false},
+				".swe-swe/docs/AGENTS.md": {content: "# agents", tracked: false},
 			},
-			expectedCopied: []string{".claude/settings.json"},
+			expectedSymlinked: []string{".swe-swe"},
 		},
 		{
-			name: "excluded .swe-swe",
+			name: "swe-swe directory symlinked",
 			files: map[string]struct {
 				content string
 				tracked bool
 				mode    os.FileMode
 				symlink string
 			}{
-				".swe-swe/recordings/test.log": {content: "log", tracked: false},
+				"swe-swe/setup": {content: "#!/bin/bash", tracked: false},
 			},
-			expectedNotCopied: []string{".swe-swe"},
+			expectedSymlinked: []string{"swe-swe"},
 		},
 		{
 			name: "mixed scenario",
@@ -423,8 +423,8 @@ func TestCopyUntrackedFiles(t *testing.T) {
 				".gitignore":            {content: "*.log", tracked: true},
 				"README.md":             {content: "readme", tracked: true},
 			},
-			expectedCopied:    []string{".env", ".claude/settings.json", "CLAUDE.md"},
-			expectedNotCopied: []string{".gitignore", "README.md"},
+			expectedSymlinked: []string{".env", ".claude", "CLAUDE.md"},
+			expectedMissing:   []string{".gitignore", "README.md"},
 		},
 		{
 			name: "empty repo - no matching files",
@@ -436,7 +436,7 @@ func TestCopyUntrackedFiles(t *testing.T) {
 			}{
 				"README.md": {content: "readme", tracked: true},
 			},
-			expectedCopied: []string{},
+			expectedSymlinked: []string{},
 		},
 		{
 			name: "only tracked dotfiles",
@@ -449,44 +449,7 @@ func TestCopyUntrackedFiles(t *testing.T) {
 				".gitignore": {content: "*.log", tracked: true},
 				".eslintrc":  {content: "{}", tracked: true},
 			},
-			expectedNotCopied: []string{".gitignore", ".eslintrc"},
-		},
-		{
-			name: "deeply nested untracked",
-			files: map[string]struct {
-				content string
-				tracked bool
-				mode    os.FileMode
-				symlink string
-			}{
-				".claude/mcp/servers.json": {content: "{}", tracked: false},
-			},
-			expectedCopied: []string{".claude/mcp/servers.json"},
-		},
-		{
-			name: "file permissions preserved",
-			files: map[string]struct {
-				content string
-				tracked bool
-				mode    os.FileMode
-				symlink string
-			}{
-				".env": {content: "SECRET=123", tracked: false, mode: 0600},
-			},
-			expectedCopied: []string{".env"},
-		},
-		{
-			name: "symlink copied",
-			files: map[string]struct {
-				content string
-				tracked bool
-				mode    os.FileMode
-				symlink string
-			}{
-				".env.actual": {content: "SECRET=123", tracked: false},
-				".env":        {symlink: ".env.actual", tracked: false},
-			},
-			expectedCopied: []string{".env", ".env.actual"},
+			expectedMissing: []string{".gitignore", ".eslintrc"},
 		},
 	}
 
@@ -495,63 +458,47 @@ func TestCopyUntrackedFiles(t *testing.T) {
 			srcDir := setupTestGitRepo(t, tt.files)
 			destDir := t.TempDir()
 
-			err := copyUntrackedFiles(srcDir, destDir)
+			err := ensureSweSweFiles(srcDir, destDir)
 			if err != nil {
-				t.Fatalf("copyUntrackedFiles failed: %v", err)
+				t.Fatalf("ensureSweSweFiles failed: %v", err)
 			}
 
-			// Check expected copied files exist
-			for _, file := range tt.expectedCopied {
-				path := filepath.Join(destDir, file)
-				if _, err := os.Stat(path); os.IsNotExist(err) {
-					t.Errorf("expected file %s to be copied, but it doesn't exist", file)
-				}
-			}
-
-			// Check expected not copied files don't exist
-			for _, file := range tt.expectedNotCopied {
-				path := filepath.Join(destDir, file)
-				if _, err := os.Stat(path); err == nil {
-					t.Errorf("expected file %s to NOT be copied, but it exists", file)
-				}
-			}
-
-			// Additional checks for specific tests
-			if tt.name == "file permissions preserved" {
-				path := filepath.Join(destDir, ".env")
-				info, err := os.Stat(path)
-				if err != nil {
-					t.Fatalf("failed to stat .env: %v", err)
-				}
-				if info.Mode().Perm() != 0600 {
-					t.Errorf("expected .env mode 0600, got %o", info.Mode().Perm())
-				}
-			}
-
-			if tt.name == "symlink copied" {
-				path := filepath.Join(destDir, ".env")
+			// Check expected symlinked entries exist and are symlinks
+			for _, name := range tt.expectedSymlinked {
+				path := filepath.Join(destDir, name)
 				info, err := os.Lstat(path)
 				if err != nil {
-					t.Fatalf("failed to lstat .env: %v", err)
+					t.Errorf("expected %s to exist, but got error: %v", name, err)
+					continue
 				}
 				if info.Mode()&os.ModeSymlink == 0 {
-					t.Errorf("expected .env to be a symlink")
+					t.Errorf("expected %s to be a symlink, got mode %v", name, info.Mode())
 				}
+				// Verify symlink target points to srcDir
 				target, err := os.Readlink(path)
 				if err != nil {
-					t.Fatalf("failed to read symlink: %v", err)
+					t.Errorf("failed to readlink %s: %v", name, err)
+					continue
 				}
-				if target != ".env.actual" {
-					t.Errorf("expected symlink target .env.actual, got %s", target)
+				expectedTarget := filepath.Join(srcDir, name)
+				if target != expectedTarget {
+					t.Errorf("symlink %s target = %q, want %q", name, target, expectedTarget)
+				}
+			}
+
+			// Check expected missing entries don't exist
+			for _, name := range tt.expectedMissing {
+				path := filepath.Join(destDir, name)
+				if _, err := os.Lstat(path); err == nil {
+					t.Errorf("expected %s to NOT exist, but it does", name)
 				}
 			}
 		})
 	}
 }
 
-func TestCopyUntrackedFiles_SymlinkDirectoriesCopyFiles(t *testing.T) {
-	// Test that directories are symlinked (for shared agent configs)
-	// and files are copied (for potential per-worktree isolation)
+func TestEnsureSweSweFiles_Idempotent(t *testing.T) {
+	// Test that calling ensureSweSweFiles twice doesn't fail or create duplicates
 	files := map[string]struct {
 		content string
 		tracked bool
@@ -559,20 +506,102 @@ func TestCopyUntrackedFiles_SymlinkDirectoriesCopyFiles(t *testing.T) {
 		symlink string
 	}{
 		".claude/settings.json": {content: `{"theme":"dark"}`, tracked: false},
-		".claude/mcp/config.json": {content: `{}`, tracked: false},
-		".env": {content: "SECRET=123", tracked: false},
-		"README.md": {content: "readme", tracked: true}, // tracked file, should not be copied
+		".env":                  {content: "SECRET=123", tracked: false},
+		"CLAUDE.md":             {content: "instructions", tracked: false},
 	}
 
 	srcDir := setupTestGitRepo(t, files)
 	destDir := t.TempDir()
 
-	err := copyUntrackedFiles(srcDir, destDir)
-	if err != nil {
-		t.Fatalf("copyUntrackedFiles failed: %v", err)
+	// First call
+	if err := ensureSweSweFiles(srcDir, destDir); err != nil {
+		t.Fatalf("first ensureSweSweFiles failed: %v", err)
 	}
 
-	// .claude should be a symlink pointing to absolute path in srcDir
+	// Second call (should be no-op)
+	if err := ensureSweSweFiles(srcDir, destDir); err != nil {
+		t.Fatalf("second ensureSweSweFiles failed: %v", err)
+	}
+
+	// Verify symlinks still exist and point to correct targets
+	for _, name := range []string{".claude", ".env", "CLAUDE.md"} {
+		path := filepath.Join(destDir, name)
+		target, err := os.Readlink(path)
+		if err != nil {
+			t.Errorf("failed to readlink %s after idempotent call: %v", name, err)
+			continue
+		}
+		expectedTarget := filepath.Join(srcDir, name)
+		if target != expectedTarget {
+			t.Errorf("symlink %s target = %q, want %q", name, target, expectedTarget)
+		}
+	}
+}
+
+func TestEnsureSweSweFiles_SkipExisting(t *testing.T) {
+	// Test that pre-existing files at destination are not overwritten
+	files := map[string]struct {
+		content string
+		tracked bool
+		mode    os.FileMode
+		symlink string
+	}{
+		".env": {content: "SECRET=123", tracked: false},
+	}
+
+	srcDir := setupTestGitRepo(t, files)
+	destDir := t.TempDir()
+
+	// Pre-create a regular file at destination
+	preExistingPath := filepath.Join(destDir, ".env")
+	if err := os.WriteFile(preExistingPath, []byte("LOCAL=456"), 0644); err != nil {
+		t.Fatalf("failed to create pre-existing file: %v", err)
+	}
+
+	if err := ensureSweSweFiles(srcDir, destDir); err != nil {
+		t.Fatalf("ensureSweSweFiles failed: %v", err)
+	}
+
+	// Verify the pre-existing file was NOT replaced
+	info, err := os.Lstat(preExistingPath)
+	if err != nil {
+		t.Fatalf("failed to lstat .env: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Errorf("expected .env to remain a regular file, but it's a symlink")
+	}
+	content, err := os.ReadFile(preExistingPath)
+	if err != nil {
+		t.Fatalf("failed to read .env: %v", err)
+	}
+	if string(content) != "LOCAL=456" {
+		t.Errorf("expected pre-existing content 'LOCAL=456', got %q", content)
+	}
+}
+
+func TestEnsureSweSweFiles_AllSymlinks(t *testing.T) {
+	// Test that both files and directories are symlinked (not copied)
+	files := map[string]struct {
+		content string
+		tracked bool
+		mode    os.FileMode
+		symlink string
+	}{
+		".claude/settings.json":   {content: `{"theme":"dark"}`, tracked: false},
+		".claude/mcp/config.json": {content: `{}`, tracked: false},
+		".env":                    {content: "SECRET=123", tracked: false},
+		"CLAUDE.md":               {content: "instructions", tracked: false},
+		"README.md":               {content: "readme", tracked: true}, // tracked, should be skipped
+	}
+
+	srcDir := setupTestGitRepo(t, files)
+	destDir := t.TempDir()
+
+	if err := ensureSweSweFiles(srcDir, destDir); err != nil {
+		t.Fatalf("ensureSweSweFiles failed: %v", err)
+	}
+
+	// .claude directory should be a symlink
 	claudePath := filepath.Join(destDir, ".claude")
 	info, err := os.Lstat(claudePath)
 	if err != nil {
@@ -585,243 +614,25 @@ func TestCopyUntrackedFiles_SymlinkDirectoriesCopyFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to readlink .claude: %v", err)
 	}
-	expectedTarget := filepath.Join(srcDir, ".claude")
-	if target != expectedTarget {
-		t.Errorf("expected .claude symlink target %q, got %q", expectedTarget, target)
+	if target != filepath.Join(srcDir, ".claude") {
+		t.Errorf("expected .claude symlink target %q, got %q", filepath.Join(srcDir, ".claude"), target)
 	}
 
-	// .env should be a regular file (copied, not symlinked)
+	// .env file should also be a symlink (not a copy)
 	envPath := filepath.Join(destDir, ".env")
 	envInfo, err := os.Lstat(envPath)
 	if err != nil {
 		t.Fatalf("failed to lstat .env: %v", err)
 	}
-	if envInfo.Mode()&os.ModeSymlink != 0 {
-		t.Errorf("expected .env to be a regular file, but it's a symlink")
-	}
-	if !envInfo.Mode().IsRegular() {
-		t.Errorf("expected .env to be a regular file, got mode %v", envInfo.Mode())
-	}
-	// Verify content was copied
-	content, err := os.ReadFile(envPath)
-	if err != nil {
-		t.Fatalf("failed to read .env: %v", err)
-	}
-	if string(content) != "SECRET=123" {
-		t.Errorf("expected .env content 'SECRET=123', got %q", content)
+	if envInfo.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected .env to be a symlink, got mode %v", envInfo.Mode())
 	}
 
 	// README.md should not exist (tracked file)
 	readmePath := filepath.Join(destDir, "README.md")
-	if _, err := os.Stat(readmePath); !os.IsNotExist(err) {
-		t.Errorf("expected README.md to NOT be copied, but it exists")
+	if _, err := os.Lstat(readmePath); !os.IsNotExist(err) {
+		t.Errorf("expected README.md to NOT exist, but it does")
 	}
-}
-
-func TestCopySweSweDocsDir(t *testing.T) {
-	tests := []struct {
-		name            string
-		files           map[string]string // path relative to srcDir -> content
-		expectedCopied  []string          // paths relative to destDir that should exist
-		expectedMissing []string          // paths relative to destDir that should NOT exist
-	}{
-		{
-			name: "copies all files from .swe-swe/docs",
-			files: map[string]string{
-				".swe-swe/docs/AGENTS.md":             "# AGENTS",
-				".swe-swe/docs/browser-automation.md": "# Browser Automation",
-				".swe-swe/docs/docker.md":             "# Docker",
-			},
-			expectedCopied: []string{
-				".swe-swe/docs/AGENTS.md",
-				".swe-swe/docs/browser-automation.md",
-				".swe-swe/docs/docker.md",
-			},
-		},
-		{
-			name: "copies all file types from docs directory",
-			files: map[string]string{
-				".swe-swe/docs/AGENTS.md":    "# AGENTS",
-				".swe-swe/docs/notes.txt":    "some notes",
-				".swe-swe/docs/config.json":  "{}",
-			},
-			expectedCopied: []string{
-				".swe-swe/docs/AGENTS.md",
-				".swe-swe/docs/notes.txt",
-				".swe-swe/docs/config.json",
-			},
-		},
-		{
-			name: "ignores files at .swe-swe root level",
-			files: map[string]string{
-				".swe-swe/docs/AGENTS.md":    "# AGENTS",
-				".swe-swe/error.log":         "error log content",
-				".swe-swe/restart-loop.sh":   "#!/bin/bash",
-			},
-			expectedCopied:  []string{".swe-swe/docs/AGENTS.md"},
-			expectedMissing: []string{".swe-swe/error.log", ".swe-swe/restart-loop.sh"},
-		},
-		{
-			name:            "handles missing .swe-swe/docs directory gracefully",
-			files:           map[string]string{},
-			expectedCopied:  []string{},
-			expectedMissing: []string{".swe-swe/docs"},
-		},
-		{
-			name: "handles .swe-swe without docs subdirectory",
-			files: map[string]string{
-				".swe-swe/uploads/file.txt": "uploaded file",
-			},
-			expectedCopied:  []string{},
-			expectedMissing: []string{".swe-swe/docs", ".swe-swe/uploads"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srcDir := t.TempDir()
-			destDir := t.TempDir()
-
-			// Create source files
-			for path, content := range tt.files {
-				fullPath := filepath.Join(srcDir, path)
-				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-					t.Fatalf("failed to create parent dir: %v", err)
-				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-					t.Fatalf("failed to create file %s: %v", path, err)
-				}
-			}
-
-			err := copySweSweDocsDir(srcDir, destDir)
-			if err != nil {
-				t.Fatalf("copySweSweDocsDir failed: %v", err)
-			}
-
-			// Check expected copied files exist
-			for _, path := range tt.expectedCopied {
-				fullPath := filepath.Join(destDir, path)
-				if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-					t.Errorf("expected file %s to be copied, but it doesn't exist", path)
-				}
-			}
-
-			// Check expected missing files don't exist
-			for _, path := range tt.expectedMissing {
-				fullPath := filepath.Join(destDir, path)
-				if _, err := os.Stat(fullPath); err == nil {
-					t.Errorf("expected %s to NOT be copied, but it exists", path)
-				}
-			}
-		})
-	}
-}
-
-func TestCopyFileOrDir(t *testing.T) {
-	t.Run("copy regular file", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		srcFile := filepath.Join(srcDir, "test.txt")
-		dstFile := filepath.Join(dstDir, "test.txt")
-
-		if err := os.WriteFile(srcFile, []byte("hello"), 0644); err != nil {
-			t.Fatalf("failed to create source file: %v", err)
-		}
-
-		if err := copyFileOrDir(srcFile, dstFile); err != nil {
-			t.Fatalf("copyFileOrDir failed: %v", err)
-		}
-
-		content, err := os.ReadFile(dstFile)
-		if err != nil {
-			t.Fatalf("failed to read dest file: %v", err)
-		}
-		if string(content) != "hello" {
-			t.Errorf("content mismatch: got %q, want %q", content, "hello")
-		}
-	})
-
-	t.Run("copy directory recursively", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		// Create nested structure
-		srcNested := filepath.Join(srcDir, "nested")
-		if err := os.MkdirAll(srcNested, 0755); err != nil {
-			t.Fatalf("failed to create nested dir: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(srcNested, "file.txt"), []byte("nested"), 0644); err != nil {
-			t.Fatalf("failed to create nested file: %v", err)
-		}
-
-		dstNested := filepath.Join(dstDir, "nested")
-		if err := copyFileOrDir(srcNested, dstNested); err != nil {
-			t.Fatalf("copyFileOrDir failed: %v", err)
-		}
-
-		content, err := os.ReadFile(filepath.Join(dstNested, "file.txt"))
-		if err != nil {
-			t.Fatalf("failed to read nested file: %v", err)
-		}
-		if string(content) != "nested" {
-			t.Errorf("content mismatch: got %q, want %q", content, "nested")
-		}
-	})
-
-	t.Run("copy symlink", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		// Create target file and symlink
-		targetFile := filepath.Join(srcDir, "target.txt")
-		if err := os.WriteFile(targetFile, []byte("target"), 0644); err != nil {
-			t.Fatalf("failed to create target file: %v", err)
-		}
-
-		srcLink := filepath.Join(srcDir, "link.txt")
-		if err := os.Symlink("target.txt", srcLink); err != nil {
-			t.Fatalf("failed to create symlink: %v", err)
-		}
-
-		dstLink := filepath.Join(dstDir, "link.txt")
-		if err := copyFileOrDir(srcLink, dstLink); err != nil {
-			t.Fatalf("copyFileOrDir failed: %v", err)
-		}
-
-		// Verify it's a symlink pointing to same target
-		target, err := os.Readlink(dstLink)
-		if err != nil {
-			t.Fatalf("failed to read symlink: %v", err)
-		}
-		if target != "target.txt" {
-			t.Errorf("symlink target mismatch: got %q, want %q", target, "target.txt")
-		}
-	})
-
-	t.Run("preserve file mode", func(t *testing.T) {
-		srcDir := t.TempDir()
-		dstDir := t.TempDir()
-
-		srcFile := filepath.Join(srcDir, "secret.txt")
-		dstFile := filepath.Join(dstDir, "secret.txt")
-
-		if err := os.WriteFile(srcFile, []byte("secret"), 0600); err != nil {
-			t.Fatalf("failed to create source file: %v", err)
-		}
-
-		if err := copyFileOrDir(srcFile, dstFile); err != nil {
-			t.Fatalf("copyFileOrDir failed: %v", err)
-		}
-
-		info, err := os.Stat(dstFile)
-		if err != nil {
-			t.Fatalf("failed to stat dest file: %v", err)
-		}
-		if info.Mode().Perm() != 0600 {
-			t.Errorf("mode mismatch: got %o, want 0600", info.Mode().Perm())
-		}
-	})
 }
 
 func TestBuildExitMessage(t *testing.T) {

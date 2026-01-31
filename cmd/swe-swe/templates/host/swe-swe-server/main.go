@@ -2367,8 +2367,8 @@ func branchNameFromDir(dirName string) string {
 // ensure this directory exists with proper permissions for the app user.
 var worktreeDir = "/worktrees"
 
-// excludeFromCopy lists directories that should never be copied to worktrees
-var excludeFromCopy = []string{".git", ".swe-swe"}
+// excludeFromSymlink lists entries that should never be symlinked to worktrees
+var excludeFromSymlink = []string{".git"}
 
 // setupSweSweFiles writes embedded container template files into destDir.
 // Used to provision swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup)
@@ -2508,124 +2508,34 @@ func isTrackedInGit(repoDir, relativePath string) bool {
 	return cmd.Run() == nil
 }
 
-// copyFileOrDir copies a file or directory from src to dst, preserving permissions
-func copyFileOrDir(src, dst string) error {
-	info, err := os.Lstat(src)
-	if err != nil {
-		return err
-	}
-
-	// Handle symlinks
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err := os.Readlink(src)
-		if err != nil {
-			return err
-		}
-		return os.Symlink(target, dst)
-	}
-
-	// Handle directories
-	if info.IsDir() {
-		if err := os.MkdirAll(dst, info.Mode()); err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			srcPath := src + "/" + entry.Name()
-			dstPath := dst + "/" + entry.Name()
-			if err := copyFileOrDir(srcPath, dstPath); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	// Handle regular files
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
-}
-
-// copySweSweDocsDir copies .swe-swe/docs/ directory to the worktree
-// This directory contains agent documentation (AGENTS.md, browser-automation.md, docker.md, etc.)
-func copySweSweDocsDir(srcDir, destDir string) error {
-	srcDocsDir := srcDir + "/.swe-swe/docs"
-	if _, err := os.Stat(srcDocsDir); os.IsNotExist(err) {
-		return nil // No .swe-swe/docs directory, nothing to copy
-	}
-
-	destDocsDir := destDir + "/.swe-swe/docs"
-	if err := os.MkdirAll(destDocsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .swe-swe/docs directory: %w", err)
-	}
-
-	entries, err := os.ReadDir(srcDocsDir)
-	if err != nil {
-		return fmt.Errorf("failed to read .swe-swe/docs directory: %w", err)
-	}
-
-	var copied []string
-	for _, entry := range entries {
-		name := entry.Name()
-
-		srcPath := srcDocsDir + "/" + name
-		dstPath := destDocsDir + "/" + name
-		if err := copyFileOrDir(srcPath, dstPath); err != nil {
-			log.Printf("Warning: failed to copy .swe-swe/docs/%s to worktree: %v", name, err)
-			continue
-		}
-		copied = append(copied, name)
-	}
-
-	if len(copied) > 0 {
-		log.Printf("Copied .swe-swe/docs/ files to worktree: %v", copied)
-	}
-	return nil
-}
-
-// copyUntrackedFiles symlinks directories and copies files for untracked dotfiles, CLAUDE.md, and AGENTS.md
-// Directories are symlinked (absolute path) so agent configs stay in sync across worktrees
-// Files are copied for potential per-worktree isolation (e.g., .env)
-// Items in excludeFromCopy and files tracked in git are skipped
-func copyUntrackedFiles(srcDir, destDir string) error {
+// ensureSweSweFiles symlinks swe-swe files from the base repo into a worktree.
+// Processes: dotfiles (except .git), CLAUDE.md, AGENTS.md, and swe-swe/ directory.
+// Skips entries tracked in git (worktree already has them) and entries that already exist at destination.
+// All entries (files and directories) are symlinked using absolute paths.
+func ensureSweSweFiles(srcDir, destDir string) error {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
 		return fmt.Errorf("failed to read source directory: %w", err)
 	}
 
-	var symlinked, copied []string
+	var symlinked []string
 	for _, entry := range entries {
 		name := entry.Name()
 
-		// Check if this file matches our patterns: dotfiles, CLAUDE.md, AGENTS.md
+		// Check if this entry matches our patterns
 		shouldProcess := false
 		if strings.HasPrefix(name, ".") {
 			shouldProcess = true
-		} else if name == "CLAUDE.md" || name == "AGENTS.md" {
+		} else if name == "CLAUDE.md" || name == "AGENTS.md" || name == "swe-swe" {
 			shouldProcess = true
 		}
-
 		if !shouldProcess {
 			continue
 		}
 
 		// Check exclusion list
 		excluded := false
-		for _, exc := range excludeFromCopy {
+		for _, exc := range excludeFromSymlink {
 			if name == exc {
 				excluded = true
 				break
@@ -2635,36 +2545,29 @@ func copyUntrackedFiles(srcDir, destDir string) error {
 			continue
 		}
 
-		// Check if tracked in git
+		// Skip entries tracked in git (worktree already has them)
 		if isTrackedInGit(srcDir, name) {
 			continue
 		}
 
-		srcPath := srcDir + "/" + name
 		dstPath := destDir + "/" + name
 
-		if entry.IsDir() {
-			// Symlink directories using absolute path
-			if err := os.Symlink(srcPath, dstPath); err != nil {
-				log.Printf("Warning: failed to symlink %s to worktree: %v", name, err)
-				continue
-			}
-			symlinked = append(symlinked, name)
-		} else {
-			// Copy files
-			if err := copyFileOrDir(srcPath, dstPath); err != nil {
-				log.Printf("Warning: failed to copy %s to worktree: %v", name, err)
-				continue
-			}
-			copied = append(copied, name)
+		// Skip if destination already exists
+		if _, err := os.Lstat(dstPath); err == nil {
+			continue
 		}
+
+		// Create absolute symlink
+		srcPath := srcDir + "/" + name
+		if err := os.Symlink(srcPath, dstPath); err != nil {
+			log.Printf("Warning: failed to symlink %s to worktree: %v", name, err)
+			continue
+		}
+		symlinked = append(symlinked, name)
 	}
 
 	if len(symlinked) > 0 {
-		log.Printf("Symlinked directories to worktree: %v", symlinked)
-	}
-	if len(copied) > 0 {
-		log.Printf("Copied files to worktree: %v", copied)
+		log.Printf("Symlinked swe-swe files to worktree: %v", symlinked)
 	}
 	return nil
 }
@@ -3478,12 +3381,9 @@ func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 
 	log.Printf("Created worktree at %s (branch: %s)", worktreePath, branchName)
 
-	// Copy files to worktree (graceful degradation on failure)
-	if err := copyUntrackedFiles(repoPath, worktreePath); err != nil {
-		log.Printf("Warning: failed to copy untracked files to worktree: %v", err)
-	}
-	if err := copySweSweDocsDir(repoPath, worktreePath); err != nil {
-		log.Printf("Warning: failed to copy .swe-swe/docs/ to worktree: %v", err)
+	// Symlink swe-swe files from base repo into worktree (graceful degradation on failure)
+	if err := ensureSweSweFiles(repoPath, worktreePath); err != nil {
+		log.Printf("Warning: failed to symlink swe-swe files to worktree: %v", err)
 	}
 
 	return worktreePath, nil

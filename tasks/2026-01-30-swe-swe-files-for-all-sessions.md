@@ -124,7 +124,7 @@ Worktree creation uses a single `ensureSweSweFiles` function that symlinks all s
 
 ### Steps
 
-#### 2a. Write `ensureSweSweFiles(srcDir, destDir string)`
+#### 2a. Write `ensureSweSweFiles(srcDir, destDir string)` ✅
 
 ```go
 func ensureSweSweFiles(srcDir, destDir string) error
@@ -144,7 +144,7 @@ Key differences from old `copyUntrackedFiles`:
 - Skip-if-exists check at destination (current code overwrites files)
 - Also processes `swe-swe/` directory (non-dot, non-CLAUDE/AGENTS entry)
 
-#### 2b. Update `excludeFromCopy`
+#### 2b. Update `excludeFromCopy` ✅
 
 Rename to `excludeFromSymlink` (or inline). Remove `.swe-swe` from the list — only `.git` remains:
 
@@ -152,7 +152,7 @@ Rename to `excludeFromSymlink` (or inline). Remove `.swe-swe` from the list — 
 var excludeFromSymlink = []string{".git"}
 ```
 
-#### 2c. Replace calls in `createWorktreeInRepo`
+#### 2c. Replace calls in `createWorktreeInRepo` ✅
 
 At main.go:3280-3286, replace:
 ```go
@@ -164,7 +164,7 @@ with:
 ensureSweSweFiles(repoPath, worktreePath)
 ```
 
-#### 2d. Remove dead code
+#### 2d. Remove dead code ✅
 
 - Delete `copyUntrackedFiles` (main.go:2527-2593)
 - Delete `copySweSweDocsDir` (main.go:2488-2521)
