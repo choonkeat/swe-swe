@@ -1,1 +1,2 @@
 230545 run make build golden-update for debug endpoint default change; expect success and golden fixtures updated
+230608 make build golden-update succeeded; golden fixtures updated
