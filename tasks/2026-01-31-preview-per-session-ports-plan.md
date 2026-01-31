@@ -30,7 +30,7 @@ Give each session a unique app PORT (3000-3019 range). The preview proxy should 
 - [x] 4.5) CLI debug endpoint default
 - [x] 5) Preview error page placeholder
 - [x] 6) Docker/Traefik exposure of preview range
-- [ ] 7) Docs and test updates
+- [x] 7) Docs and test updates
 
 ### 1) Session-level port assignment
 

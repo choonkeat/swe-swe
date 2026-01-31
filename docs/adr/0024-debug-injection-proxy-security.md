@@ -19,12 +19,12 @@ The agent endpoint has higher privilege than read-only preview access because it
 
 External access to debug endpoints goes through Traefik with `forwardauth` middleware:
 ```
-External → Traefik:${SWE_PORT} → forwardauth → blocked without valid session cookie
+External → Traefik:5${PORT} → forwardauth → blocked without valid session cookie
 ```
 
 The agent CLI (`swe-swe-server --debug-listen`) connects internally via localhost, bypassing Traefik:
 ```
-Agent (inside container) → ws://localhost:9899/__swe-swe-debug__/agent → works
+Agent (inside container) → ws://localhost:5${PORT}/__swe-swe-debug__/agent → works
 ```
 
 This is secure because:
@@ -34,16 +34,7 @@ This is secure because:
 
 ### NO_SSL Mode (Local Development)
 
-The preview proxy port is directly mapped to the host, bypassing Traefik:
-```yaml
-# docker-compose.yml (NO_SSL mode only)
-ports:
-  - "1${SWE_PORT:-1977}:9899"
-```
-
-This means debug endpoints are accessible to anyone who can reach the host port. This is **intentional** and consistent with the existing preview exposure in NO_SSL mode.
-
-NO_SSL mode assumes a trusted local network (typically localhost or private LAN during development).
+Preview ports are still routed through Traefik and `forwardauth`, even without TLS. This keeps the preview and debug endpoints behind the same auth boundary as the main UI.
 
 ### Threat Model Comparison
 
@@ -51,7 +42,7 @@ NO_SSL mode assumes a trusted local network (typically localhost or private LAN 
 |-------|-------------------|---------------------|
 | Risk | Attacker sees user's app | Attacker can query DOM in user's browser |
 | SSL mode | Protected by forwardauth | Protected by forwardauth |
-| NO_SSL mode | Exposed (trusted network) | Exposed (trusted network) |
+| NO_SSL mode | Protected by forwardauth | Protected by forwardauth |
 
 The debug channel does not introduce new exposure patterns - it inherits the existing preview security model.
 
@@ -63,6 +54,5 @@ The debug channel does not introduce new exposure patterns - it inherits the exi
 - Consistent with existing security model
 
 **Bad:**
-- NO_SSL mode exposes debug channel to local network (same as preview)
 - DOM query capability is more powerful than read-only preview
-- If NO_SSL exposure becomes a concern, both preview and debug channel need addressing together
+- If preview exposure becomes a concern, both preview and debug channel need addressing together

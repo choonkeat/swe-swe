@@ -4,19 +4,22 @@ The terminal UI has a split-pane layout with your app preview on the right side.
 
 ## How It Works
 
-The preview panel automatically connects to port `1${SWE_PORT}` (e.g., if SWE_PORT=1977, preview connects to port 11977).
+The preview panel automatically connects to the per-session preview proxy on port `5${PORT}` (e.g., if `PORT=3007`, preview connects to `53007`).
 
-Inside the container, start your app on port 3000:
+Inside the container, start your app on the assigned `PORT`:
 
 ```bash
+# See your assigned port
+echo $PORT
+
 # Example: Start a Python HTTP server
-python3 -m http.server 3000
+python3 -m http.server "$PORT"
 
 # Example: Start a Node.js app
-npm start  # assuming it runs on port 3000
+npm start  # assuming it runs on $PORT
 ```
 
-The preview panel will show your app automatically. If no server is running on port 3000, a "Waiting for App" page will display with auto-retry.
+The preview panel will show your app automatically. If no server is running on `$PORT`, a "Waiting for App" page will display with auto-retry.
 
 ## Navigation
 
@@ -25,13 +28,10 @@ The preview panel will show your app automatically. If no server is running on p
 
 ## Port Configuration
 
-The preview port is computed as "1" + SWE_PORT:
-- SWE_PORT=1977 → Preview port 11977
-- SWE_PORT=8080 → Preview port 18080
-
-**Note**: SWE_PORT must be ≤ 9999 for valid preview port (max 19999 < 65535).
-
-Inside the container, the preview proxy forwards requests to `localhost:3000` by default. Set `SWE_PREVIEW_TARGET_PORT` to use a different port.
+Each session gets its own `PORT` (default range 3000-3019). The preview port is computed as `5${PORT}`:
+- PORT=3000 → Preview port 53000
+- PORT=3007 → Preview port 53007
+- PORT=3019 → Preview port 53019
 
 ## Debug Channel
 
@@ -41,6 +41,7 @@ The preview proxy injects a debug script into HTML responses, allowing you to re
 
 ```bash
 # Listen for all debug messages (console, errors, fetch, etc.)
+export SWE_PREVIEW_PORT="$PORT"
 swe-swe-server --debug-listen
 ```
 
@@ -57,6 +58,7 @@ Output is JSON lines:
 
 ```bash
 # Query an element by CSS selector
+export SWE_PREVIEW_PORT="$PORT"
 swe-swe-server --debug-query "h1"
 swe-swe-server --debug-query ".error-message"
 swe-swe-server --debug-query "#submit-btn"
@@ -69,6 +71,6 @@ Response:
 
 ### Limitations
 
-- Only works for web apps served through the App Preview (port 3000 by default)
+- Only works for web apps served through the App Preview (your session's `PORT`)
 - The user must have the preview open in their browser for messages to flow
 - DOM queries return the first matching element only

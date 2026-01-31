@@ -37,12 +37,12 @@ make stop
 | Channel | URL | Description |
 |---------|-----|-------------|
 | MCP Browser | `http://swe-swe:3000` | Direct access from Chrome container |
-| App Preview | External port 11977 | Via existing preview proxy |
+| App Preview | External port `5${PORT}` | Via per-session preview proxy (e.g., 53001) |
 
 Both work because:
 - The dev container and Chrome container share the same Docker network (`swe-network`)
 - Chrome can resolve `swe-swe` hostname to reach our container
-- App Preview routes through production's preview proxy (9899 → 3000)
+- App Preview routes through the per-session preview proxy (`5${PORT}` → `PORT`)
 
 ## Development Cycle
 
@@ -72,7 +72,7 @@ make stop
 - Copies `go.mod.txt` → `go.mod` and `go.sum.txt` → `go.sum`
 - Runs `go run main.go -addr :3000 -no-preview-proxy`
 - Default port is 3000, override with `DEV_PORT=3001 make run`
-- The `-no-preview-proxy` flag disables the preview proxy (production server handles it)
+- The `-no-preview-proxy` flag disables per-session preview proxies (production server handles previews)
 
 ### `make stop`
 - Finds and kills the dev server process
@@ -83,7 +83,7 @@ make stop
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-addr` | `:9898` | Listen address |
-| `-no-preview-proxy` | `false` | Disable preview proxy server |
+| `-no-preview-proxy` | `false` | Disable per-session preview proxies |
 | `-shell` | `claude` | Command to execute |
 | `-working-directory` | current dir | Working directory for shell |
 
@@ -110,13 +110,13 @@ This copies the template to `/tmp`, runs tests, and syncs `go.sum` changes back.
 │         │                                         │        │
 │         │              ┌──────────────┐          │        │
 │         └─────────────▶│ Preview Proxy│◀─────────┘        │
-│                        │    :9899     │                    │
+│                        │  :5{PORT}    │                    │
 │                        │  (→ :3000)   │                    │
 │                        └──────────────┘                    │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
-                    External: port 11977
+                    External: port 5{PORT}
                        (App Preview)
 ```
 
@@ -125,7 +125,7 @@ This copies the template to `/tmp`, runs tests, and syncs `go.sum` changes back.
 | Aspect | Dev Server | Production |
 |--------|------------|------------|
 | Port | 3000 | 9898 |
-| Preview proxy | Disabled via `-no-preview-proxy` | Runs on 9899 |
+| Preview proxy | Disabled via `-no-preview-proxy` | Per-session ports (5{PORT}) |
 | Build | `go run` (JIT compile) | Pre-compiled binary |
 | Source | Template directory | Embedded in CLI |
 
