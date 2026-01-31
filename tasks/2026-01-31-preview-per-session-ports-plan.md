@@ -141,6 +141,11 @@ Steps:
 - Use MCP browser to login, create an OpenCode session, and verify `http://host.docker.internal:53000/` shows App Preview with `localhost:3000`.
 - Run `./scripts/test-container/04-down.sh` after verification.
 
+## Manual Tests Performed
+
+- Preview render (dev server): `go run` swe-swe-server, MCP browser verified `http://swe-swe:53001/` rendered App Preview with `localhost:3001` (3000 occupied by dev server).
+- Test container workflow: MCP browser login at `http://host.docker.internal:9770/`, created OpenCode session, verified `http://host.docker.internal:53000/` App Preview placeholder shows `localhost:3000`, then ran `04-down.sh`.
+
 ## Open Questions
 
 - Final format for `--preview-ports`: only `start-end`? (e.g., `3000-3019`)
