@@ -1,3 +1,5 @@
 233208 start preview render test via swe-swe-server dev run + mcp browser; expect App Preview page at http://swe-swe:53000 showing localhost:3000
 233255 attempt failed: go run main.go missing go.mod/container-templates; preview server did not start
 233314 redoing because dev server needs go.mod/go.sum and container-templates (make run setup)
+233432 observed http://swe-swe:53001/ renders App Preview page with text 'localhost:3001' (port 3000 in use by dev server)
+233735 continue preview render test; verify preview proxy at 5{PORT} shows localhost:{PORT} placeholder
