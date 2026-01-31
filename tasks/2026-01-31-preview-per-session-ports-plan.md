@@ -24,7 +24,7 @@ Give each session a unique app PORT (3000-3019 range). The preview proxy should 
 ## Progress
 
 - [x] 1) Session-level port assignment
-- [ ] 2) Preview proxy server lifecycle
+- [x] 2) Preview proxy server lifecycle
 - [ ] 3) Inject PORT into session process env
 - [ ] 4) UI + Preview URL
 - [ ] 4.5) CLI debug endpoint default
