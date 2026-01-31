@@ -349,6 +349,7 @@ class TerminalUI extends HTMLElement {
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
                                 <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL - edit to navigate" />
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
                             <div class="terminal-ui__iframe-container">
                                 <div class="terminal-ui__iframe-placeholder">
@@ -2682,6 +2683,15 @@ class TerminalUI extends HTMLElement {
             });
         }
 
+        // Open in new window button
+        const openExternalBtn = this.querySelector('.terminal-ui__iframe-open-external');
+        if (openExternalBtn) {
+            openExternalBtn.addEventListener('click', () => {
+                const url = urlInput?.value?.trim() || this.previewBaseUrl;
+                if (url) window.open(url, '_blank');
+            });
+        }
+
         // Track iframe URL changes (limited by cross-origin policy)
         if (iframe) {
             iframe.addEventListener('load', () => this.updateIframeUrlDisplay());
@@ -2876,6 +2886,36 @@ class TerminalUI extends HTMLElement {
         let startWidth = 0;
         let fitPending = false;
 
+        // Snap configuration
+        const snapPoints = [20, 50, 80]; // left-pane percentage snap targets
+        const snapThreshold = 2; // snap within 2% of a snap point
+
+        // Create tooltip elements for left and right pane size indicators
+        const leftTooltip = document.createElement('div');
+        leftTooltip.className = 'terminal-ui__resize-tooltip terminal-ui__resize-tooltip--left';
+        const rightTooltip = document.createElement('div');
+        rightTooltip.className = 'terminal-ui__resize-tooltip terminal-ui__resize-tooltip--right';
+        resizer.appendChild(leftTooltip);
+        resizer.appendChild(rightTooltip);
+
+        const updateTooltips = (leftPct, containerWidth, resizerWidth) => {
+            const leftPx = Math.round(containerWidth * leftPct / 100);
+            const rightPx = Math.round(containerWidth - leftPx - resizerWidth);
+            const rightPct = 100 - leftPct;
+            leftTooltip.textContent = `${leftPx}px (${Math.round(leftPct)}%)`;
+            rightTooltip.textContent = `${rightPx}px (${Math.round(rightPct)}%)`;
+        };
+
+        const showTooltips = () => {
+            leftTooltip.classList.add('visible');
+            rightTooltip.classList.add('visible');
+        };
+
+        const hideTooltips = () => {
+            leftTooltip.classList.remove('visible');
+            rightTooltip.classList.remove('visible');
+        };
+
         // Throttled fit to avoid excessive reflows during drag
         const throttledFit = () => {
             if (fitPending || !this.fitAddon) return;
@@ -2896,6 +2936,12 @@ class TerminalUI extends HTMLElement {
             document.body.style.userSelect = 'none';
             // Disable iframe pointer events during drag to prevent mouse capture
             if (iframePane) iframePane.style.pointerEvents = 'none';
+            // Show tooltips
+            const containerWidth = splitPane.offsetWidth;
+            const resizerWidth = resizer.offsetWidth;
+            const leftPct = 100 - this.iframePaneWidth;
+            updateTooltips(leftPct, containerWidth, resizerWidth);
+            showTooltips();
             e.preventDefault();
         };
 
@@ -2912,9 +2958,20 @@ class TerminalUI extends HTMLElement {
             newWidth = Math.max(minWidth, newWidth);
             newWidth = Math.min(containerWidth - resizerWidth - minWidth, newWidth);
 
-            // Convert to percentage
-            this.iframePaneWidth = 100 - (newWidth / containerWidth * 100);
+            // Convert to left-pane percentage
+            let leftPct = newWidth / containerWidth * 100;
+
+            // Snap to nearby snap points
+            for (const snap of snapPoints) {
+                if (Math.abs(leftPct - snap) < snapThreshold) {
+                    leftPct = snap;
+                    break;
+                }
+            }
+
+            this.iframePaneWidth = 100 - leftPct;
             this.applyPaneWidth();
+            updateTooltips(leftPct, containerWidth, resizerWidth);
             // Live-fit terminal during drag
             throttledFit();
         };
@@ -2927,6 +2984,7 @@ class TerminalUI extends HTMLElement {
             document.body.style.userSelect = '';
             // Re-enable iframe pointer events
             if (iframePane) iframePane.style.pointerEvents = '';
+            hideTooltips();
             this.savePaneWidth();
             // Trigger terminal resize and notify backend
             setTimeout(() => this.fitAndPreserveScroll(), 50);

@@ -80,6 +80,11 @@ func ansiYellow(s string) string  { return "\033[0;33m" + s + "\033[0m" }
 // This gives users time to read the MOTD before the shell starts receiving input
 const MOTDGracePeriod = 3 * time.Second
 
+// dsrQuery is the Device Status Report escape sequence that terminals
+// use to query cursor position. Applications (like Codex CLI via crossterm)
+// send this and expect a response of the form \x1b[{row};{col}R.
+var dsrQuery = []byte("\x1b[6n")
+
 // TermSize represents terminal dimensions
 type TermSize struct {
 	Rows uint16
@@ -966,14 +971,32 @@ func (s *Session) startPTYReader() {
 				return
 			}
 
+			data := buf[:n]
+
+			// Intercept DSR (Device Status Report) cursor position queries.
+			// Applications like Codex CLI send \x1b[6n and expect a response
+			// \x1b[{row};{col}R. In a web terminal, the browser round-trip
+			// is too slow for crossterm's timeout. Respond immediately from
+			// the server using the current PTY size as the cursor position.
+			if bytes.Contains(data, dsrQuery) {
+				s.mu.RLock()
+				rows := s.ptySize.Rows
+				s.mu.RUnlock()
+				if rows == 0 {
+					rows = 24
+				}
+				response := []byte(fmt.Sprintf("\x1b[%d;1R", rows))
+				s.PTY.Write(response)
+			}
+
 			// Update virtual terminal state and ring buffer
 			s.vtMu.Lock()
-			s.vt.Write(buf[:n])
-			s.writeToRing(buf[:n])
+			s.vt.Write(data)
+			s.writeToRing(data)
 			s.vtMu.Unlock()
 
 			// Broadcast to all clients
-			s.Broadcast(buf[:n])
+			s.Broadcast(data)
 		}
 	}()
 }

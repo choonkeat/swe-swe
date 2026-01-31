@@ -1000,6 +1000,39 @@ terminal-ui.embedded-in-iframe .mobile-only {
     display: block;
 }
 
+/* Resize tooltips shown during drag */
+.terminal-ui__resize-tooltip {
+    position: absolute;
+    top: 50%;
+    padding: 3px 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+}
+
+.terminal-ui__resize-tooltip.visible {
+    opacity: 1;
+}
+
+.terminal-ui__resize-tooltip--left {
+    right: 100%;
+    transform: translateY(-50%);
+    margin-right: 8px;
+}
+
+.terminal-ui__resize-tooltip--right {
+    left: 100%;
+    transform: translateY(-50%);
+    margin-left: 8px;
+}
+
 .terminal-ui__iframe-pane {
     display: none;
     flex: 1;
@@ -1051,6 +1084,13 @@ terminal-ui.embedded-in-iframe .mobile-only {
 .terminal-ui__iframe-nav-btn:disabled:hover {
     background: none;
     color: var(--text-muted);
+}
+
+.terminal-ui__iframe-open-external {
+    margin-left: 2px;
+    border-left: 1px solid var(--border-primary) !important;
+    padding-left: 8px !important;
+    font-size: 13px;
 }
 
 .terminal-ui__iframe-url-input {
