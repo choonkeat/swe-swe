@@ -2063,8 +2063,43 @@ func main() {
 				})
 			}
 
-			// Load recordings grouped by agent
-			recordingsByAgent := loadEndedRecordingsByAgent()
+			// Load recordings (sorted by timestamp) and group by agent for per-agent sections
+			recordings := loadEndedRecordings()
+			recordingsByAgent := loadEndedRecordingsByAgent(recordings)
+
+			const defaultRecordingsPerPage = 10
+			recordingsPerPage := defaultRecordingsPerPage
+			if sizeStr := r.URL.Query().Get("recordings_page_size"); sizeStr != "" {
+				if sizeVal, err := strconv.Atoi(sizeStr); err == nil {
+					switch {
+					case sizeVal < 1:
+						recordingsPerPage = 1
+					case sizeVal > 200:
+						recordingsPerPage = 200
+					default:
+						recordingsPerPage = sizeVal
+					}
+				}
+			}
+			recordingsPage := 1
+			if pageStr := r.URL.Query().Get("recordings_page"); pageStr != "" {
+				if pageVal, err := strconv.Atoi(pageStr); err == nil && pageVal > 0 {
+					recordingsPage = pageVal
+				}
+			}
+			recordingsTotalPages := 0
+			if len(recordings) > 0 {
+				recordingsTotalPages = (len(recordings) + recordingsPerPage - 1) / recordingsPerPage
+				if recordingsPage > recordingsTotalPages {
+					recordingsPage = recordingsTotalPages
+				}
+				start := (recordingsPage - 1) * recordingsPerPage
+				end := start + recordingsPerPage
+				if end > len(recordings) {
+					end = len(recordings)
+				}
+				recordings = recordings[start:end]
+			}
 
 			// Build AgentWithSessions for all available assistants (homepage only)
 			agents := make([]AgentWithSessions, 0, len(availableAssistants))
@@ -2102,18 +2137,41 @@ func main() {
 				defaultRepoUrl = "/workspace"
 			}
 
+			prevPage := recordingsPage - 1
+			if prevPage < 1 {
+				prevPage = 1
+			}
+			nextPage := recordingsPage + 1
+			if recordingsTotalPages > 0 && nextPage > recordingsTotalPages {
+				nextPage = recordingsTotalPages
+			}
+
 			data := struct {
-				Agents        []AgentWithSessions
-				NewUUID       string
-				HasSSLCert    bool
-				Debug         bool
-				DefaultRepoUrl string
+				Agents               []AgentWithSessions
+				Recordings           []RecordingInfo
+				RecordingsPage       int
+				RecordingsTotalPages int
+				RecordingsHasPrev    bool
+				RecordingsHasNext    bool
+				RecordingsPrevPage   int
+				RecordingsNextPage   int
+				NewUUID              string
+				HasSSLCert           bool
+				Debug                bool
+				DefaultRepoUrl       string
 			}{
-				Agents:        agents,
-				NewUUID:       uuid.New().String(),
-				HasSSLCert:    hasSSLCert == nil,
-				Debug:         debugMode,
-				DefaultRepoUrl: defaultRepoUrl,
+				Agents:               agents,
+				Recordings:           recordings,
+				RecordingsPage:       recordingsPage,
+				RecordingsTotalPages: recordingsTotalPages,
+				RecordingsHasPrev:    recordingsPage > 1,
+				RecordingsHasNext:    recordingsTotalPages > 0 && recordingsPage < recordingsTotalPages,
+				RecordingsPrevPage:   prevPage,
+				RecordingsNextPage:   nextPage,
+				NewUUID:              uuid.New().String(),
+				HasSSLCert:           hasSSLCert == nil,
+				Debug:                debugMode,
+				DefaultRepoUrl:       defaultRepoUrl,
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
@@ -4209,11 +4267,24 @@ type RecordingInfo struct {
 	UUIDShort string
 	Name      string
 	Agent     string
+	AgentBadgeClass string
 	EndedAgo  string     // "15m ago", "2h ago", "yesterday"
 	EndedAt   time.Time  // actual timestamp for sorting
 	KeptAt    *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
 	IsKept    bool       // Convenience field for templates
 	ExpiresIn string     // "59m", "30m" - time until auto-deletion (only for non-kept)
+}
+
+func agentBadgeClass(agent string) string {
+	if agent == "" {
+		return "custom"
+	}
+	switch strings.ToLower(agent) {
+	case "claude", "codex", "gemini", "goose", "aider":
+		return strings.ToLower(agent)
+	default:
+		return "custom"
+	}
 }
 
 // formatTimeAgo returns a human-readable relative time string
@@ -4298,6 +4369,7 @@ func loadEndedRecordings() []RecordingInfo {
 			if json.Unmarshal(metaData, &meta) == nil {
 				info.Name = meta.Name
 				info.Agent = meta.Agent
+				info.AgentBadgeClass = agentBadgeClass(meta.Agent)
 				info.KeptAt = meta.KeptAt
 				info.IsKept = meta.KeptAt != nil
 				if meta.EndedAt != nil {
@@ -4314,6 +4386,9 @@ func loadEndedRecordings() []RecordingInfo {
 				info.EndedAt = fileInfo.ModTime()
 				info.EndedAgo = formatTimeAgo(fileInfo.ModTime())
 			}
+		}
+		if info.AgentBadgeClass == "" {
+			info.AgentBadgeClass = agentBadgeClass(info.Agent)
 		}
 
 		// Calculate ExpiresIn for non-kept recordings
@@ -4359,8 +4434,7 @@ func agentNameToBinary(name string) string {
 }
 
 // loadEndedRecordingsByAgent returns ended recordings grouped by agent binary name
-func loadEndedRecordingsByAgent() map[string][]RecordingInfo {
-	recordings := loadEndedRecordings()
+func loadEndedRecordingsByAgent(recordings []RecordingInfo) map[string][]RecordingInfo {
 	result := make(map[string][]RecordingInfo)
 	for _, rec := range recordings {
 		agent := rec.Agent

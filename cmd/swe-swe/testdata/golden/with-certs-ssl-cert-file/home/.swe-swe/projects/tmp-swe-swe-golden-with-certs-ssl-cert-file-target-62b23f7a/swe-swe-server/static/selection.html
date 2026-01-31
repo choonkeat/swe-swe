@@ -425,6 +425,38 @@
             gap: 12px;
             flex-shrink: 0;
         }
+        .recordings-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .recordings-pagination__link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            color: #e2e8f0;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            text-decoration: none;
+        }
+        .recordings-pagination__link:hover {
+            border-color: rgba(148, 163, 184, 0.6);
+            color: #f8fafc;
+        }
+        .recordings-pagination__status {
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
         .recording-card__status {
             font-size: 13px;
             font-weight: 500;
@@ -1226,9 +1258,7 @@
             </section>
 
             <!-- Session Recordings Section -->
-            {{$hasRecordings := false}}
-            {{range .Agents}}{{if .Recordings}}{{$hasRecordings = true}}{{end}}{{end}}
-            {{if $hasRecordings}}
+            {{if gt (len .Recordings) 0}}
             <section class="recordings-section">
                 <div class="section-header">
                     <div class="section-header__left">
@@ -1241,7 +1271,6 @@
                 </div>
 
                 <div class="recordings-list">
-                    {{range .Agents}}
                     {{range .Recordings}}
                     <div class="recording-card" data-uuid="{{.UUID}}">
                         <a href="/recording/{{.UUID}}" class="recording-card__play" title="Play recording">
@@ -1253,6 +1282,8 @@
                             <h3 class="recording-card__title">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</h3>
                             <div class="recording-card__meta">
                                 <span>{{.EndedAgo}}</span>
+                                <span class="recording-card__dot">•</span>
+                                <span class="agent-badge agent-badge--{{.AgentBadgeClass}}">{{if .Agent}}{{.Agent}}{{else}}Unknown{{end}}</span>
                             </div>
                         </div>
                         <div class="recording-card__right">
@@ -1300,8 +1331,18 @@
                         </div>
                     </div>
                     {{end}}
+                </div>
+                {{if gt .RecordingsTotalPages 1}}
+                <div class="recordings-pagination">
+                    {{if .RecordingsHasPrev}}
+                    <a class="recordings-pagination__link" href="/?recordings_page={{.RecordingsPrevPage}}">Prev</a>
+                    {{end}}
+                    <span class="recordings-pagination__status">Page {{.RecordingsPage}} / {{.RecordingsTotalPages}}</span>
+                    {{if .RecordingsHasNext}}
+                    <a class="recordings-pagination__link" href="/?recordings_page={{.RecordingsNextPage}}">Next</a>
                     {{end}}
                 </div>
+                {{end}}
             </section>
             {{end}}
         </main>
