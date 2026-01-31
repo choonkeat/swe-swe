@@ -1159,7 +1159,7 @@ const previewProxyErrorPage = `<!DOCTYPE html>
         <h1>App Preview</h1>
         <div class="instruction">
             <div class="instruction-label">Tell your agent:</div>
-            <div class="instruction-text">Start a hot-reload web app on port <span class="port">%s</span></div>
+            <div class="instruction-text">Start a hot-reload web app on <span class="port">localhost:%s</span></div>
         </div>
         <div class="status">
             <span class="status-dot"></span>
@@ -1830,7 +1830,7 @@ func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
 			log.Printf("Preview proxy error: %v", err)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadGateway)
-			fmt.Fprintf(w, previewProxyErrorPage, target.String())
+			fmt.Fprintf(w, previewProxyErrorPage, state.defaultPortStr)
 			return
 		}
 		defer resp.Body.Close()
