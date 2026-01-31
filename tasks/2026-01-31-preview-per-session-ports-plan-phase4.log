@@ -1,3 +1,4 @@
 230233 run make build golden-update to update golden fixtures for preview URL changes
 230249 ran make build golden-update; failed with 'go: not found' (build-cli error 127)
 230303 redoing because make build golden-update failed (go not found); need permission to install Go or use environment with Go
+230406 re-run make build golden-update with PATH updated; expect golden fixtures updated and command succeeds
