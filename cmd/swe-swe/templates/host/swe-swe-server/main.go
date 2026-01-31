@@ -344,6 +344,34 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
+func buildSessionEnv(previewPort int) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT")
+	env = append(env, "TERM=xterm-256color", fmt.Sprintf("PORT=%d", previewPort))
+	return env
+}
+
+func filterEnv(env []string, keys ...string) []string {
+	if len(keys) == 0 {
+		return env
+	}
+	keySet := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		keySet[key] = struct{}{}
+	}
+	filtered := env[:0]
+	for _, entry := range env {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) == 0 {
+			continue
+		}
+		if _, drop := keySet[parts[0]]; drop {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
 // AddClient adds a WebSocket client to the session
 func (s *Session) AddClient(conn *SafeConn) {
 	s.mu.Lock()
@@ -855,7 +883,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = buildSessionEnv(s.PreviewPort)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -3853,7 +3881,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = buildSessionEnv(previewPort)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
