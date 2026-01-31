@@ -1,1 +1,2 @@
 230233 run make build golden-update to update golden fixtures for preview URL changes
+230249 ran make build golden-update; failed with 'go: not found' (build-cli error 127)
