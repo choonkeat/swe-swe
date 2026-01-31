@@ -119,7 +119,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -175,6 +175,49 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 		}
 
 		if !skip {
+			if strings.Contains(line, "{{PREVIEW_ENTRYPOINTS}}") {
+				indent := strings.Split(line, "{{PREVIEW_ENTRYPOINTS}}")[0]
+				for _, port := range previewPorts {
+					entrypoint := fmt.Sprintf("preview%d", port)
+					previewPort := previewProxyPort(port)
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, previewPort))
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.transport.respondingTimeouts.readTimeout=60s\"", indent, entrypoint))
+				}
+				continue
+			}
+
+			if strings.Contains(line, "{{PREVIEW_PORTS}}") {
+				indent := strings.Split(line, "{{PREVIEW_PORTS}}")[0]
+				for _, port := range previewPorts {
+					previewPort := previewProxyPort(port)
+					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, previewPort, previewPort))
+				}
+				continue
+			}
+
+			if strings.Contains(line, "{{PREVIEW_ROUTERS}}") {
+				indent := strings.Split(line, "{{PREVIEW_ROUTERS}}")[0]
+				for _, port := range previewPorts {
+					entrypoint := fmt.Sprintf("preview%d", port)
+					previewPort := previewProxyPort(port)
+					routerName := fmt.Sprintf("${PROJECT_NAME}-preview-%d", port)
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, previewPort))
+					if isSSL {
+						if isLetsEncrypt {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main={{DOMAIN}}\"", indent, routerName))
+						} else if isSelfSign {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
+						}
+					}
+				}
+				continue
+			}
+
 			// Handle UID and GID placeholders
 			if strings.Contains(line, "{{UID}}") {
 				line = strings.ReplaceAll(line, "{{UID}}", fmt.Sprintf("%d", hostUID))
@@ -202,6 +245,10 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 	}
 
 	return strings.Join(result, "\n")
+}
+
+func previewProxyPort(port int) int {
+	return 50000 + port
 }
 
 // processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions

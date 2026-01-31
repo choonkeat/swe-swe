@@ -26,10 +26,9 @@ services:
 # {{IF SSL}}
       - "--entrypoints.websecure.address=:7443"
       - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
-      # Preview proxy entrypoint (separate port for app preview iframe)
-      - "--entrypoints.previewsecure.address=:17443"
-      - "--entrypoints.previewsecure.transport.respondingTimeouts.readTimeout=60s"
 # {{ENDIF}}
+      # Preview proxy entrypoints (per-session)
+      {{PREVIEW_ENTRYPOINTS}}
 # {{IF LETSENCRYPT_PRODUCTION}}
       # Let's Encrypt ACME configuration (production)
       - "--certificatesresolvers.letsencrypt.acme.email={{EMAIL}}"
@@ -53,9 +52,9 @@ services:
 # {{ENDIF}}
 # {{IF SSL}}
       - "${SWE_PORT:-1977}:7443"
-      # Preview proxy port (prepend "1" to SWE_PORT, e.g., 1977 -> 11977)
-      - "1${SWE_PORT:-1977}:17443"
 # {{ENDIF}}
+      # Preview proxy ports (per-session)
+      {{PREVIEW_PORTS}}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -137,12 +136,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-# {{IF NO_SSL}}
-    ports:
-      # App preview port for split-pane iframe (prepend "1" to SWE_PORT)
-      # Direct mapping when no SSL (traefik handles this port when SSL is enabled)
-      - "1${SWE_PORT:-1977}:9899"
-# {{ENDIF}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
@@ -163,21 +156,8 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
-# {{IF SSL}}
-      # Preview proxy routing through traefik for TLS termination
-      - "traefik.http.routers.${PROJECT_NAME}-preview.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.${PROJECT_NAME}-preview.entrypoints=previewsecure"
-      - "traefik.http.routers.${PROJECT_NAME}-preview.middlewares=forwardauth@file"
-      - "traefik.http.routers.${PROJECT_NAME}-preview.service=${PROJECT_NAME}-preview"
-      - "traefik.http.services.${PROJECT_NAME}-preview.loadbalancer.server.port=9899"
-# {{ENDIF}}
-# {{IF SELFSIGN}}
-      - "traefik.http.routers.${PROJECT_NAME}-preview.tls=true"
-# {{ENDIF}}
-# {{IF LETSENCRYPT}}
-      - "traefik.http.routers.${PROJECT_NAME}-preview.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${PROJECT_NAME}-preview.tls.domains[0].main={{DOMAIN}}"
-# {{ENDIF}}
+      # Preview proxy routing (per-session)
+      {{PREVIEW_ROUTERS}}
     depends_on:
       - chrome
     volumes:

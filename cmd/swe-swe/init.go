@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -326,6 +327,47 @@ func agentInList(agent string, list []string) bool {
 	}
 	return false
 }
+
+func parsePreviewPortsRange(rangeStr string) ([]int, error) {
+	trimmed := strings.TrimSpace(rangeStr)
+	if trimmed == "" {
+		return nil, fmt.Errorf("range is empty")
+	}
+
+	parts := strings.Split(trimmed, "-")
+	if len(parts) < 1 || len(parts) > 2 {
+		return nil, fmt.Errorf("invalid range format: %q", rangeStr)
+	}
+
+	startStr := strings.TrimSpace(parts[0])
+	endStr := startStr
+	if len(parts) == 2 {
+		endStr = strings.TrimSpace(parts[1])
+	}
+
+	start, err := strconv.Atoi(startStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start port %q", startStr)
+	}
+	end, err := strconv.Atoi(endStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end port %q", endStr)
+	}
+	if start > end {
+		return nil, fmt.Errorf("range start %d is greater than end %d", start, end)
+	}
+	if start < 3000 || end > 3999 {
+		return nil, fmt.Errorf("range must be within 3000-3999 (got %d-%d)", start, end)
+	}
+
+	ports := make([]int, 0, end-start+1)
+	for port := start; port <= end; port++ {
+		ports = append(ports, port)
+	}
+
+	return ports, nil
+}
+
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("project-directory", ".", "Project directory to initialize")
@@ -536,6 +578,12 @@ func handleInit() {
 			*statusBarFontFamily = savedConfig.StatusBarFontFamily
 		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
+	}
+
+	previewPortsRange, err := parsePreviewPortsRange(*previewPorts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: --preview-ports must be in the form start-end within 3000-3999 (e.g., 3000-3019). %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := os.MkdirAll(sweDir, 0755); err != nil {
@@ -824,12 +872,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange))
 			}
 
 			// Process entrypoint.sh template with conditional sections
