@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/tls"
+	"context"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -72,6 +74,8 @@ const (
 	MinChunkSize = 512
 	// RingBufferSize is the size of the terminal scrollback ring buffer (512KB)
 	RingBufferSize = 512 * 1024
+	previewPortStart = 3000
+	previewPortEnd   = 3019
 )
 
 // ANSI escape sequence helpers for terminal formatting
@@ -302,6 +306,7 @@ type Session struct {
 	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 	// Parent session relationship
 	ParentUUID string // UUID of parent session (for shell sessions opened from agent sessions)
+	PreviewPort int   // App preview target port for this session
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte  // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -339,10 +344,37 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
+func buildSessionEnv(previewPort int) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT")
+	env = append(env, "TERM=xterm-256color", fmt.Sprintf("PORT=%d", previewPort))
+	return env
+}
+
+func filterEnv(env []string, keys ...string) []string {
+	if len(keys) == 0 {
+		return env
+	}
+	keySet := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		keySet[key] = struct{}{}
+	}
+	filtered := env[:0]
+	for _, entry := range env {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) == 0 {
+			continue
+		}
+		if _, drop := keySet[parts[0]]; drop {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
 // AddClient adds a WebSocket client to the session
 func (s *Session) AddClient(conn *SafeConn) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.wsClients[conn] = true
 	s.lastActive = time.Now()
 	log.Printf("Client added to session %s (total: %d)", s.UUID, len(s.wsClients))
@@ -354,7 +386,6 @@ func (s *Session) AddClient(conn *SafeConn) {
 // RemoveClient removes a WebSocket client from the session
 func (s *Session) RemoveClient(conn *SafeConn) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.wsClients, conn)
 	delete(s.wsClientSizes, conn)
 	s.lastActive = time.Now()
@@ -421,7 +452,6 @@ func (s *Session) SetGracePeriod(d time.Duration) {
 // UpdateClientSize updates a client's terminal size and recalculates the PTY size
 func (s *Session) UpdateClientSize(conn *SafeConn, rows, cols uint16) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.wsClientSizes[conn] = TermSize{Rows: rows, Cols: cols}
 	s.lastActive = time.Now()
@@ -549,6 +579,7 @@ func (s *Session) BroadcastStatus() {
 		"sessionName":   s.Name,
 		"uuidShort":     uuidShort,
 		"workDir":       workDir,
+		"previewPort":   s.PreviewPort,
 		"yoloMode":      s.yoloMode,
 		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
 	}
@@ -681,7 +712,6 @@ func (s *Session) Close() {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Close all WebSocket client connections
 	for conn := range s.wsClients {
@@ -698,6 +728,12 @@ func (s *Session) Close() {
 	if s.PTY != nil {
 		s.PTY.Close()
 	}
+
+	previewPort := s.PreviewPort
+	s.mu.Unlock()
+
+	releasePreviewProxyServer(previewPort)
+	return
 }
 
 // compressSnapshot compresses data using gzip for efficient WebSocket transmission
@@ -848,7 +884,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = buildSessionEnv(s.PreviewPort)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -1202,11 +1238,6 @@ type DebugHub struct {
 	mu            sync.RWMutex
 }
 
-// Global debug hub instance for the preview proxy
-var debugHub = &DebugHub{
-	iframeClients: make(map[*websocket.Conn]bool),
-}
-
 // AddIframeClient registers an iframe debug script connection
 func (h *DebugHub) AddIframeClient(conn *websocket.Conn) {
 	h.mu.Lock()
@@ -1274,54 +1305,58 @@ func (h *DebugHub) ForwardToIframes(msg []byte) {
 }
 
 // handleDebugIframeWS handles WebSocket connections from iframe debug scripts
-func handleDebugIframeWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("[DebugHub] Iframe WS upgrade error: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	debugHub.AddIframeClient(conn)
-	defer debugHub.RemoveIframeClient(conn)
-
-	for {
-		_, msg, err := conn.ReadMessage()
+func handleDebugIframeWS(debugHub *DebugHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+			log.Printf("[DebugHub] Iframe WS upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		debugHub.AddIframeClient(conn)
+		defer debugHub.RemoveIframeClient(conn)
+
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+					break
+				}
+				log.Printf("[DebugHub] Iframe read error: %v", err)
 				break
 			}
-			log.Printf("[DebugHub] Iframe read error: %v", err)
-			break
+			// Forward message from iframe to agent
+			debugHub.ForwardToAgent(msg)
 		}
-		// Forward message from iframe to agent
-		debugHub.ForwardToAgent(msg)
 	}
 }
 
 // handleDebugAgentWS handles WebSocket connection from the agent
-func handleDebugAgentWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("[DebugHub] Agent WS upgrade error: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	debugHub.SetAgent(conn)
-	defer debugHub.RemoveAgent(conn)
-
-	for {
-		_, msg, err := conn.ReadMessage()
+func handleDebugAgentWS(debugHub *DebugHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+			log.Printf("[DebugHub] Agent WS upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		debugHub.SetAgent(conn)
+		defer debugHub.RemoveAgent(conn)
+
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+					break
+				}
+				log.Printf("[DebugHub] Agent read error: %v", err)
 				break
 			}
-			log.Printf("[DebugHub] Agent read error: %v", err)
-			break
+			// Forward message from agent to all iframes (e.g., DOM queries)
+			debugHub.ForwardToIframes(msg)
 		}
-		// Forward message from agent to all iframes (e.g., DOM queries)
-		debugHub.ForwardToIframes(msg)
 	}
 }
 
@@ -1527,25 +1562,44 @@ const debugInjectJS = `(function() {
 })();
 `
 
-// Dynamic proxy target state
+type previewProxyState struct {
+	targetMu       sync.RWMutex
+	targetURL      *url.URL // nil = use default localhost:targetPort
+	defaultTarget  *url.URL // The default localhost:targetPort
+	defaultPortStr string   // String version of default port for error pages
+}
+
+type previewProxyServer struct {
+	server   *http.Server
+	listener net.Listener
+	state    *previewProxyState
+	debugHub *DebugHub
+	refCount int
+}
+
 var (
-	proxyTargetMu       sync.RWMutex
-	proxyTargetURL      *url.URL // nil = use default localhost:targetPort
-	proxyDefaultTarget  *url.URL // The default localhost:targetPort
-	proxyDefaultPortStr string   // String version of default port for error pages
+	previewServersMu      sync.Mutex
+	previewServers        = make(map[int]*previewProxyServer)
+	previewProxyDisabled  bool
 )
 
-// startPreviewProxy starts the app preview reverse proxy server on port 9899
+// startPreviewProxy starts the app preview reverse proxy server on the provided listener.
 // It proxies requests to localhost:targetPort (or a dynamically set target URL)
 // It also injects a debug script into HTML responses for console/error/network forwarding
-func startPreviewProxy(targetPort string) {
-	var err error
-	proxyDefaultTarget, err = url.Parse("http://localhost:" + targetPort)
+func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServer, error) {
+	targetPortStr := strconv.Itoa(targetPort)
+	defaultTarget, err := url.Parse("http://localhost:" + targetPortStr)
 	if err != nil {
-		log.Printf("Preview proxy: invalid target URL: %v", err)
-		return
+		return nil, fmt.Errorf("preview proxy: invalid target URL: %w", err)
 	}
-	proxyDefaultPortStr = targetPort
+
+	state := &previewProxyState{
+		defaultTarget:  defaultTarget,
+		defaultPortStr: targetPortStr,
+	}
+	debugHub := &DebugHub{
+		iframeClients: make(map[*websocket.Conn]bool),
+	}
 
 	mux := http.NewServeMux()
 
@@ -1556,161 +1610,234 @@ func startPreviewProxy(targetPort string) {
 	})
 
 	// WebSocket endpoint for iframe debug scripts
-	mux.HandleFunc("/__swe-swe-debug__/ws", handleDebugIframeWS)
+	mux.HandleFunc("/__swe-swe-debug__/ws", handleDebugIframeWS(debugHub))
 
 	// WebSocket endpoint for agent
-	mux.HandleFunc("/__swe-swe-debug__/agent", handleDebugAgentWS)
+	mux.HandleFunc("/__swe-swe-debug__/agent", handleDebugAgentWS(debugHub))
 
 	// API endpoint to get current proxy target
-	mux.HandleFunc("GET /__swe-swe-debug__/target", handleGetProxyTarget)
+	mux.HandleFunc("GET /__swe-swe-debug__/target", handleGetProxyTarget(state))
 
 	// API endpoint to set proxy target
-	mux.HandleFunc("POST /__swe-swe-debug__/target", handleSetProxyTarget)
+	mux.HandleFunc("POST /__swe-swe-debug__/target", handleSetProxyTarget(state))
 
 	// Proxy all other requests
-	mux.HandleFunc("/", handleProxyRequest)
+	mux.HandleFunc("/", handleProxyRequest(state))
 
-	log.Printf("Starting preview proxy on :9899 -> localhost:%s", targetPort)
-	if err := http.ListenAndServe(":9899", mux); err != nil {
-		log.Printf("Preview proxy error: %v", err)
+	server := &http.Server{
+		Handler: mux,
 	}
+
+	go func() {
+		log.Printf("Starting preview proxy on %s -> localhost:%d", listener.Addr().String(), targetPort)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("Preview proxy error: %v", err)
+		}
+	}()
+
+	return &previewProxyServer{
+		server:   server,
+		listener: listener,
+		state:    state,
+		debugHub: debugHub,
+		refCount: 0,
+	}, nil
+}
+
+func acquirePreviewProxyServer(previewPort int, listener net.Listener) error {
+	previewServersMu.Lock()
+	defer previewServersMu.Unlock()
+
+	if ref, ok := previewServers[previewPort]; ok {
+		ref.refCount++
+		if listener != nil {
+			listener.Close()
+		}
+		return nil
+	}
+
+	if listener == nil {
+		var err error
+		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(previewPort)))
+		if err != nil {
+			return err
+		}
+	}
+
+	server, err := startPreviewProxy(listener, previewPort)
+	if err != nil {
+		listener.Close()
+		return err
+	}
+	server.refCount = 1
+	previewServers[previewPort] = server
+	return nil
+}
+
+func releasePreviewProxyServer(previewPort int) {
+	previewServersMu.Lock()
+	ref, ok := previewServers[previewPort]
+	if !ok {
+		previewServersMu.Unlock()
+		return
+	}
+	ref.refCount--
+	if ref.refCount > 0 {
+		previewServersMu.Unlock()
+		return
+	}
+	delete(previewServers, previewPort)
+	previewServersMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := ref.server.Shutdown(ctx); err != nil {
+		log.Printf("Preview proxy shutdown error: %v", err)
+	}
+	ref.listener.Close()
 }
 
 // handleGetProxyTarget returns the current proxy target URL
-func handleGetProxyTarget(w http.ResponseWriter, r *http.Request) {
-	proxyTargetMu.RLock()
-	target := proxyTargetURL
-	proxyTargetMu.RUnlock()
+func handleGetProxyTarget(state *previewProxyState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state.targetMu.RLock()
+		target := state.targetURL
+		state.targetMu.RUnlock()
 
-	w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/json")
 
-	var targetStr string
-	if target != nil {
-		targetStr = target.String()
-	} else {
-		targetStr = proxyDefaultTarget.String()
+		var targetStr string
+		if target != nil {
+			targetStr = target.String()
+		} else {
+			targetStr = state.defaultTarget.String()
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"url":       targetStr,
+			"isDefault": target == nil,
+		})
 	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"url":       targetStr,
-		"isDefault": target == nil,
-	})
 }
 
 // handleSetProxyTarget sets the proxy target URL from JSON body
-func handleSetProxyTarget(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		URL string `json:"url"`
-	}
+func handleSetProxyTarget(state *previewProxyState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			URL string `json:"url"`
+		}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-		return
-	}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
 
-	// Empty URL resets to default
-	if req.URL == "" {
-		proxyTargetMu.Lock()
-		proxyTargetURL = nil
-		proxyTargetMu.Unlock()
-		log.Printf("Preview proxy: reset to default target localhost:%s", proxyDefaultPortStr)
+		// Empty URL resets to default
+		if req.URL == "" {
+			state.targetMu.Lock()
+			state.targetURL = nil
+			state.targetMu.Unlock()
+			log.Printf("Preview proxy: reset to default target localhost:%s", state.defaultPortStr)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"url":       state.defaultTarget.String(),
+				"isDefault": true,
+			})
+			return
+		}
+
+		// Parse and validate the URL
+		target, err := url.Parse(req.URL)
+		if err != nil {
+			http.Error(w, "Invalid URL: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Ensure scheme is http or https
+		if target.Scheme != "http" && target.Scheme != "https" {
+			http.Error(w, "URL must be http or https", http.StatusBadRequest)
+			return
+		}
+
+		state.targetMu.Lock()
+		state.targetURL = target
+		state.targetMu.Unlock()
+
+		log.Printf("Preview proxy: target set to %s", target.String())
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"url":       proxyDefaultTarget.String(),
-			"isDefault": true,
+			"url":       target.String(),
+			"isDefault": false,
 		})
-		return
 	}
-
-	// Parse and validate the URL
-	target, err := url.Parse(req.URL)
-	if err != nil {
-		http.Error(w, "Invalid URL: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Ensure scheme is http or https
-	if target.Scheme != "http" && target.Scheme != "https" {
-		http.Error(w, "URL must be http or https", http.StatusBadRequest)
-		return
-	}
-
-	proxyTargetMu.Lock()
-	proxyTargetURL = target
-	proxyTargetMu.Unlock()
-
-	log.Printf("Preview proxy: target set to %s", target.String())
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"url":       target.String(),
-		"isDefault": false,
-	})
 }
 
 // handleProxyRequest proxies requests to the current target
-func handleProxyRequest(w http.ResponseWriter, r *http.Request) {
-	proxyTargetMu.RLock()
-	target := proxyTargetURL
-	if target == nil {
-		target = proxyDefaultTarget
-	}
-	proxyTargetMu.RUnlock()
+func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		state.targetMu.RLock()
+		target := state.targetURL
+		if target == nil {
+			target = state.defaultTarget
+		}
+		state.targetMu.RUnlock()
 
-	// Build the target URL with the request path
-	targetURL := *target
-	targetURL.Path = singleJoiningSlash(target.Path, r.URL.Path)
-	targetURL.RawQuery = r.URL.RawQuery
+		// Build the target URL with the request path
+		targetURL := *target
+		targetURL.Path = singleJoiningSlash(target.Path, r.URL.Path)
+		targetURL.RawQuery = r.URL.RawQuery
 
-	// Create HTTP client with TLS config that allows self-signed certs
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+		// Create HTTP client with TLS config that allows self-signed certs
+		client := &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
 			},
-		},
-		// Don't follow redirects automatically - let the browser handle them
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	// Create outgoing request
-	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
-	if err != nil {
-		log.Printf("Preview proxy: failed to create request: %v", err)
-		http.Error(w, "Failed to create request", http.StatusInternalServerError)
-		return
-	}
-
-	// Copy headers from incoming request
-	for key, values := range r.Header {
-		// Skip hop-by-hop headers
-		if isHopByHopHeader(key) {
-			continue
+			// Don't follow redirects automatically - let the browser handle them
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		}
-		for _, value := range values {
-			outReq.Header.Add(key, value)
+
+		// Create outgoing request
+		outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
+		if err != nil {
+			log.Printf("Preview proxy: failed to create request: %v", err)
+			http.Error(w, "Failed to create request", http.StatusInternalServerError)
+			return
 		}
+
+		// Copy headers from incoming request
+		for key, values := range r.Header {
+			// Skip hop-by-hop headers
+			if isHopByHopHeader(key) {
+				continue
+			}
+			for _, value := range values {
+				outReq.Header.Add(key, value)
+			}
+		}
+
+		// Set Host header to target host
+		outReq.Host = target.Host
+
+		// Make the request
+		resp, err := client.Do(outReq)
+		if err != nil {
+			log.Printf("Preview proxy error: %v", err)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusBadGateway)
+			fmt.Fprintf(w, previewProxyErrorPage, target.String())
+			return
+		}
+		defer resp.Body.Close()
+
+		// Process response (inject debug script for HTML, handle cookies)
+		processProxyResponse(w, resp, target)
 	}
-
-	// Set Host header to target host
-	outReq.Host = target.Host
-
-	// Make the request
-	resp, err := client.Do(outReq)
-	if err != nil {
-		log.Printf("Preview proxy error: %v", err)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprintf(w, previewProxyErrorPage, target.String())
-		return
-	}
-	defer resp.Body.Close()
-
-	// Process response (inject debug script for HTML, handle cookies)
-	processProxyResponse(w, resp, target)
 }
 
 // processProxyResponse handles the response: injects debug script for HTML, strips Domain from cookies
@@ -1920,6 +2047,7 @@ func main() {
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
 	flag.Parse()
+	previewProxyDisabled = *noPreviewProxy
 
 	// Handle --version flag
 	if *version {
@@ -2006,12 +2134,6 @@ func main() {
 
 	// Start session reaper
 	go sessionReaper()
-
-	// Start preview proxy if SWE_PREVIEW_TARGET_PORT is set (for split-pane preview)
-	// Skip if -no-preview-proxy flag is set (useful for dev mode when production proxy is running)
-	if previewTargetPort := os.Getenv("SWE_PREVIEW_TARGET_PORT"); previewTargetPort != "" && !*noPreviewProxy {
-		go startPreviewProxy(previewTargetPort)
-	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Root path: show assistant selection page
@@ -3621,6 +3743,27 @@ func deleteRecordingFiles(uuid string) {
 	}
 }
 
+func previewProxyPort(port int) int {
+	return 50000 + port
+}
+
+func findAvailablePreviewPort() (int, net.Listener, error) {
+	for port := previewPortStart; port <= previewPortEnd; port++ {
+		previewListener, err := net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(port)))
+		if err != nil {
+			continue
+		}
+		appListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			previewListener.Close()
+			continue
+		}
+		appListener.Close()
+		return port, previewListener, nil
+	}
+	return 0, nil, fmt.Errorf("no available preview ports in range %d-%d", previewPortStart, previewPortEnd)
+}
+
 // getOrCreateSession returns an existing session or creates a new one
 // The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
 // The name parameter sets the display name (optional, can be empty)
@@ -3686,6 +3829,21 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		}
 	}
 
+	var previewPort int
+	var previewListener net.Listener
+	if parentUUID != "" {
+		if parentSess, ok := sessions[parentUUID]; ok {
+			previewPort = parentSess.PreviewPort
+		}
+	}
+	if previewPort == 0 {
+		var err error
+		previewPort, previewListener, err = findAvailablePreviewPort()
+		if err != nil {
+			return nil, false, err
+		}
+	}
+
 	// Inherit name from parent session if this is a shell session with a parent
 	if name == "" && parentName != "" && assistant == "shell" {
 		name = parentName + " (Terminal)"
@@ -3724,7 +3882,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	cmd.Env = buildSessionEnv(previewPort)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -3756,6 +3914,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
 		ParentUUID:      parentUUID,
+		PreviewPort:     previewPort,
 		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
@@ -3769,6 +3928,17 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		},
 	}
 	sessions[sessionUUID] = sess
+
+	if !previewProxyDisabled {
+		if err := acquirePreviewProxyServer(previewPort, previewListener); err != nil {
+			if previewListener != nil {
+				previewListener.Close()
+			}
+			return nil, false, err
+		}
+	} else if previewListener != nil {
+		previewListener.Close()
+	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly
 	if err := sess.saveMetadata(); err != nil {

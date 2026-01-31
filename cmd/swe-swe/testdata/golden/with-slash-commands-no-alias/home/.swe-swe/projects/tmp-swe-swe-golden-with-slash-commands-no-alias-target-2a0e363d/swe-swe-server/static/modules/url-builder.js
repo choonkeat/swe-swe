@@ -41,12 +41,16 @@ export function buildShellUrl(config) {
 /**
  * Build the app preview URL.
  * @param {{protocol: string, hostname: string, port: string}} location - Location-like object
- * @returns {string} Preview URL with port prefixed by '1'
+ * @param {number|string} previewPort - Explicit preview port (optional)
+ * @returns {string} Preview URL
  */
-export function buildPreviewUrl(location) {
+export function buildPreviewUrl(location, previewPort) {
     const { protocol, hostname, port } = location;
-    const previewPort = '1' + (port || '80');
-    return `${protocol}//${hostname}:${previewPort}`;
+    if (previewPort) {
+        return `${protocol}//${hostname}:${previewPort}`;
+    }
+    const fallbackPort = '1' + (port || '80');
+    return `${protocol}//${hostname}:${fallbackPort}`;
 }
 
 /**

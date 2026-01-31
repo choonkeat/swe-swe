@@ -31,6 +31,8 @@ class TerminalUI extends HTMLElement {
         this.sessionName = '';
         this.uuidShort = '';
         this.workDir = '';
+        this.previewPort = null;
+        this.previewBaseUrl = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -524,7 +526,7 @@ class TerminalUI extends HTMLElement {
         const baseUrl = getBaseUrl(window.location);
         const services = [
             { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
-            { name: 'preview', label: 'App Preview', url: this.previewBaseUrl || buildPreviewUrl(window.location) },
+            { name: 'preview', label: 'App Preview', url: this.getPreviewBaseUrl() },
             { name: 'browser', label: 'Agent View', url: `${baseUrl}/chrome/` }
         ];
 
@@ -965,7 +967,13 @@ class TerminalUI extends HTMLElement {
                 this.uuidShort = msg.uuidShort || '';
                 const prevWorkDir = this.workDir;
                 this.workDir = msg.workDir || '';
+                const prevPreviewBaseUrl = this.previewBaseUrl;
+                this.previewPort = msg.previewPort || null;
+                this.updatePreviewBaseUrl();
                 if (this.workDir !== prevWorkDir) {
+                    this.renderServiceLinks();
+                }
+                if (this.previewBaseUrl !== prevPreviewBaseUrl && this.workDir === prevWorkDir) {
                     this.renderServiceLinks();
                 }
                 // YOLO mode state
@@ -1401,7 +1409,7 @@ class TerminalUI extends HTMLElement {
 
         switch (tab) {
             case 'preview':
-                url = this.previewBaseUrl || buildPreviewUrl(window.location);
+                url = this.getPreviewBaseUrl();
                 break;
             case 'vscode':
                 url = buildVSCodeUrl(baseUrl, this.workDir);
@@ -1497,7 +1505,7 @@ class TerminalUI extends HTMLElement {
                 const debugQS = this.debugMode ? '&debug=1' : '';
                 link.href = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
             } else if (tab === 'preview') {
-                link.href = this.previewBaseUrl || `${window.location.protocol}//${window.location.hostname}:1${window.location.port || '80'}`;
+                link.href = this.getPreviewBaseUrl();
             } else if (tab === 'browser') {
                 link.href = `${baseUrl}/chrome/`;
             }
@@ -2595,6 +2603,14 @@ class TerminalUI extends HTMLElement {
     }
 
     // === Split-Pane UI Methods ===
+    getPreviewBaseUrl() {
+        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        return buildPreviewUrl(window.location, previewPort);
+    }
+
+    updatePreviewBaseUrl() {
+        this.previewBaseUrl = this.getPreviewBaseUrl();
+    }
 
     initSplitPaneUi() {
         // Initialize split-pane UI infrastructure
@@ -2612,12 +2628,7 @@ class TerminalUI extends HTMLElement {
         // Setup resizer drag functionality
         this.setupResizer();
 
-        // Compute preview URL: prepend "1" to port (e.g., 1977 -> 11977, 8080 -> 18080)
-        // This matches docker-compose: "1${SWE_PORT:-1977}:9899"
-        // Note: SWE_PORT must be ≤ 9999 for valid preview port (max 19999 < 65535)
-        const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
-        const previewPort = '1' + currentPort;
-        this.previewBaseUrl = `${window.location.protocol}//${window.location.hostname}:${previewPort}`;
+        this.updatePreviewBaseUrl();
 
         // Setup iframe navigation buttons
         const homeBtn = this.querySelector('.terminal-ui__iframe-home');
@@ -2627,7 +2638,7 @@ class TerminalUI extends HTMLElement {
             homeBtn.addEventListener('click', async () => {
                 // Reset proxy target to default (localhost)
                 try {
-                    await fetch(this.previewBaseUrl + '/__swe-swe-debug__/target', {
+                    await fetch(this.getPreviewBaseUrl() + '/__swe-swe-debug__/target', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: '' }) // Empty URL resets to default
@@ -2638,7 +2649,7 @@ class TerminalUI extends HTMLElement {
                 } catch (err) {
                     console.warn('[TerminalUI] Failed to reset proxy target:', err);
                 }
-                this.setIframeUrl(this.previewBaseUrl + '/');
+                this.setIframeUrl(this.getPreviewBaseUrl() + '/');
             });
         }
         if (refreshBtn) {
@@ -2655,7 +2666,7 @@ class TerminalUI extends HTMLElement {
 
             try {
                 // Set proxy target via API
-                const resp = await fetch(this.previewBaseUrl + '/__swe-swe-debug__/target', {
+                const resp = await fetch(this.getPreviewBaseUrl() + '/__swe-swe-debug__/target', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: targetUrl })
@@ -2668,7 +2679,7 @@ class TerminalUI extends HTMLElement {
                 }
 
                 // Navigate iframe to proxy root (which now proxies to target)
-                this.setIframeUrl(this.previewBaseUrl + '/');
+                this.setIframeUrl(this.getPreviewBaseUrl() + '/');
             } catch (err) {
                 console.error('[TerminalUI] Error setting proxy target:', err);
             }
@@ -2687,7 +2698,7 @@ class TerminalUI extends HTMLElement {
         const openExternalBtn = this.querySelector('.terminal-ui__iframe-open-external');
         if (openExternalBtn) {
             openExternalBtn.addEventListener('click', () => {
-                const url = urlInput?.value?.trim() || this.previewBaseUrl;
+                const url = urlInput?.value?.trim() || this.getPreviewBaseUrl();
                 if (url) window.open(url, '_blank');
             });
         }
@@ -2702,7 +2713,7 @@ class TerminalUI extends HTMLElement {
         if (this.canShowSplitPane() && !this.classList.contains('embedded-in-iframe')) {
             // Use setTimeout to ensure DOM is ready and terminal has been initialized
             setTimeout(() => {
-                this.openIframePane('preview', this.previewBaseUrl + '/');
+                this.openIframePane('preview', this.getPreviewBaseUrl() + '/');
             }, 100);
         }
     }
@@ -2867,7 +2878,7 @@ class TerminalUI extends HTMLElement {
         if (view === 'workspace' && !this.activeTab) {
             // Default to preview tab
             const baseUrl = getBaseUrl(window.location);
-            const previewUrl = this.previewBaseUrl || buildPreviewUrl(window.location);
+            const previewUrl = this.getPreviewBaseUrl();
             this.activeTab = 'preview';
             this.setIframeUrl(previewUrl);
             this.updateActiveTabIndicator();

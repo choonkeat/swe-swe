@@ -122,6 +122,13 @@ test('buildShellUrl handles https base URL', () => {
 });
 
 // buildPreviewUrl tests
+test('buildPreviewUrl uses explicit preview port when provided', () => {
+    assert.strictEqual(
+        buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007),
+        'https://example.com:53007'
+    );
+});
+
 test('buildPreviewUrl prefixes port with 1', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }),

@@ -579,6 +579,7 @@ func (s *Session) BroadcastStatus() {
 		"sessionName":   s.Name,
 		"uuidShort":     uuidShort,
 		"workDir":       workDir,
+		"previewPort":   s.PreviewPort,
 		"yoloMode":      s.yoloMode,
 		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
 	}
