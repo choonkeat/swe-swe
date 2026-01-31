@@ -31,6 +31,7 @@ Give each session a unique app PORT (3000-3019 range). The preview proxy should 
 - [x] 5) Preview error page placeholder
 - [x] 6) Docker/Traefik exposure of preview range
 - [x] 7) Docs and test updates
+- [x] 8) Test container workflow verification
 
 ### 1) Session-level port assignment
 
@@ -131,6 +132,14 @@ Files:
 Steps:
 - Update docs to reference per-session PORT and preview URL derivation.
 - Update golden test fixtures after template changes.
+
+### 8) Test container workflow verification
+
+Steps:
+- Run `./scripts/test-container/01-init.sh` with `SWE_SWE_INIT_FLAGS="--preview-ports=3000-3002"`.
+- Run `./scripts/test-container/02-build.sh` and `03-run.sh`.
+- Use MCP browser to login, create an OpenCode session, and verify `http://host.docker.internal:53000/` shows App Preview with `localhost:3000`.
+- Run `./scripts/test-container/04-down.sh` after verification.
 
 ## Open Questions
 
