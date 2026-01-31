@@ -8,6 +8,7 @@
     "opencode"
   ],
   "ssl": "no",
+  "previewPorts": "3000-3019",
   "terminalFontSize": 16,
   "terminalFontFamily": "JetBrains Mono",
   "statusBarFontSize": 12,

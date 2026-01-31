@@ -1021,6 +1021,7 @@ func TestInitConfigRoundTrip(t *testing.T) {
 		AptPackages: "vim htop",
 		NpmPackages: "typescript tsx",
 		WithDocker:  true,
+		PreviewPorts: "3000-3019",
 		SlashCommands: []SlashCommandsRepo{
 			{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"},
 		},
@@ -1100,6 +1101,7 @@ func TestSaveLoadInitConfig(t *testing.T) {
 		Agents:      []string{"claude"},
 		AptPackages: "git",
 		WithDocker:  false,
+		PreviewPorts: "3000-3019",
 	}
 
 	// Save

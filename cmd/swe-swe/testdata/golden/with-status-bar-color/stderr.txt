@@ -12,6 +12,8 @@ Usage of init:
     	Comma-separated list of agents to exclude
   -npm-install string
     	Additional packages to install via npm (comma-separated)
+  -preview-ports string
+    	App preview port range (e.g., 3000-3019) (default "3000-3019")
   -previous-init-flags string
     	How to handle existing init config: 'reuse' or 'ignore'
   -project-directory string

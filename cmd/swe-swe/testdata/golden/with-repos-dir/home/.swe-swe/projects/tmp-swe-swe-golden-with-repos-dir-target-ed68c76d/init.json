@@ -8,6 +8,7 @@
     "opencode"
   ],
   "ssl": "no",
+  "previewPorts": "3000-3019",
   "reposDir": "/data/repos",
   "terminalFontSize": 14,
   "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",

@@ -69,6 +69,7 @@ Init Options:
                                          Use selfsign@<ip-or-hostname> for remote access
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
+  --preview-ports RANGE                  App preview port range (default: 3000-3019)
   --status-bar-color COLOR               Status bar background color (default: #007acc)
                                          Use 'list' to see color swatches: --status-bar-color=list
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
@@ -113,6 +114,5 @@ Environment Variables:
 Requires: Docker with Compose plugin (docker compose) or standalone docker-compose
 `)
 }
-
 
 

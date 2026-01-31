@@ -88,6 +88,7 @@ type InitConfig struct {
 	SlashCommands       []SlashCommandsRepo `json:"slashCommands,omitempty"`
 	SSL                 string              `json:"ssl,omitempty"`
 	Email               string              `json:"email,omitempty"`
+	PreviewPorts        string              `json:"previewPorts,omitempty"`
 	CopyHomePaths       []string            `json:"copyHomePaths,omitempty"`
 	ReposDir            string              `json:"reposDir,omitempty"`
 	TerminalFontSize    int                 `json:"terminalFontSize,omitempty"`
@@ -342,6 +343,7 @@ func handleInit() {
 	terminalFontFamily := fs.String("terminal-font-family", `Menlo, Monaco, "Courier New", monospace`, "Terminal font family")
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
+	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -515,6 +517,9 @@ func handleInit() {
 			*sslFlag = "no" // Default for old configs without SSL field
 		}
 		*emailFlag = savedConfig.Email
+		if savedConfig.PreviewPorts != "" {
+			*previewPorts = savedConfig.PreviewPorts
+		}
 		copyHomePaths = savedConfig.CopyHomePaths
 		*reposDir = savedConfig.ReposDir
 		// UI customization flags
@@ -937,6 +942,7 @@ func handleInit() {
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
+		PreviewPorts:        *previewPorts,
 		CopyHomePaths:       copyHomePaths,
 		ReposDir:            *reposDir,
 		TerminalFontSize:    *terminalFontSize,
