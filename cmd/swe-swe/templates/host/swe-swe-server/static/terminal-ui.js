@@ -3104,13 +3104,7 @@ class TerminalUI extends HTMLElement {
         const iframe = this.querySelector('.terminal-ui__iframe');
         const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
 
-        // 1. URL bar = logical target (empty for "home")
-        if (urlInput) {
-            urlInput.value = targetURL || '';
-            urlInput.title = targetURL || '';
-        }
-
-        // 2. iframe src = proxy URL
+        // 1. iframe src = proxy URL
         const previewPort = this.previewPort ? `5${this.previewPort}` : null;
         let proxyUrl;
         if (iframePath !== null) {
@@ -3118,6 +3112,14 @@ class TerminalUI extends HTMLElement {
             proxyUrl = base + iframePath;
         } else {
             proxyUrl = buildProxyUrl(window.location, previewPort, targetURL);
+        }
+
+        // 2. URL bar = logical target if provided, else default localhost:{PORT}
+        if (urlInput) {
+            const defaultTarget = this.previewPort ? `http://localhost:${this.previewPort}` : '';
+            const displayUrl = targetURL || defaultTarget;
+            urlInput.value = displayUrl;
+            urlInput.title = displayUrl;
         }
 
         if (iframe) {
