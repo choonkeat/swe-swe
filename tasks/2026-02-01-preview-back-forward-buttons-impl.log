@@ -1,0 +1,1 @@
+115709 | STEP: Add Back/Forward buttons to preview toolbar HTML and JS event handlers | EXPECT: Buttons appear in toolbar between Home and Refresh, clicking them calls iframe.contentWindow.history.back()/forward()
