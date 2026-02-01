@@ -1238,6 +1238,7 @@ func modifyCSPHeader(h http.Header) {
 type DebugHub struct {
 	iframeClients map[*websocket.Conn]bool // Connected iframe debug scripts
 	agentConn     *websocket.Conn          // Connected agent (only one allowed)
+	uiObservers   map[*websocket.Conn]bool // UI observers (receive iframe messages, read-only)
 	mu            sync.RWMutex
 }
 
@@ -1278,15 +1279,41 @@ func (h *DebugHub) RemoveAgent(conn *websocket.Conn) {
 	}
 }
 
-// ForwardToAgent sends a message from iframe to the connected agent
+// AddUIObserver registers a UI observer connection
+func (h *DebugHub) AddUIObserver(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.uiObservers[conn] = true
+	log.Printf("[DebugHub] UI observer connected (total: %d)", len(h.uiObservers))
+}
+
+// RemoveUIObserver unregisters a UI observer connection
+func (h *DebugHub) RemoveUIObserver(conn *websocket.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.uiObservers, conn)
+	log.Printf("[DebugHub] UI observer disconnected (total: %d)", len(h.uiObservers))
+}
+
+// ForwardToAgent sends a message from iframe to the connected agent and UI observers
 func (h *DebugHub) ForwardToAgent(msg []byte) {
 	h.mu.RLock()
 	agent := h.agentConn
+	observers := make([]*websocket.Conn, 0, len(h.uiObservers))
+	for conn := range h.uiObservers {
+		observers = append(observers, conn)
+	}
 	h.mu.RUnlock()
 
 	if agent != nil {
 		if err := agent.WriteMessage(websocket.TextMessage, msg); err != nil {
 			log.Printf("[DebugHub] Error forwarding to agent: %v", err)
+		}
+	}
+
+	for _, conn := range observers {
+		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("[DebugHub] Error forwarding to UI observer: %v", err)
 		}
 	}
 }
@@ -1331,6 +1358,31 @@ func handleDebugIframeWS(debugHub *DebugHub) http.HandlerFunc {
 			}
 			// Forward message from iframe to agent
 			debugHub.ForwardToAgent(msg)
+		}
+	}
+}
+
+// handleDebugUIObserverWS handles WebSocket connections from the terminal UI
+// UI observers receive all iframe-originated messages but don't send to iframes
+func handleDebugUIObserverWS(debugHub *DebugHub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Printf("[DebugHub] UI observer WS upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		debugHub.AddUIObserver(conn)
+		defer debugHub.RemoveUIObserver(conn)
+
+		// Read loop: forward messages from UI to iframes (e.g., navigate commands)
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			debugHub.ForwardToIframes(msg)
 		}
 	}
 }
@@ -1452,6 +1504,9 @@ const debugInjectJS = `(function() {
               visible: el ? (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) : false,
               rect: el ? el.getBoundingClientRect() : null
             });
+          } else if (cmd.t === 'navigate') {
+            if (cmd.action === 'back') { history.back(); }
+            else if (cmd.action === 'forward') { history.forward(); }
           }
         } catch (err) {
           // Ignore parse errors
@@ -1557,6 +1612,21 @@ const debugInjectJS = `(function() {
     return XHRSend.apply(this, arguments);
   };
 
+  // URL change detection for SPA navigations
+  var lastUrl = location.href;
+  function checkUrl() {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      send({ t: 'urlchange', url: location.href, ts: Date.now() });
+    }
+  }
+  window.addEventListener('popstate', function() { checkUrl(); });
+  window.addEventListener('hashchange', function() { checkUrl(); });
+  var origPush = history.pushState;
+  var origReplace = history.replaceState;
+  history.pushState = function() { origPush.apply(this, arguments); checkUrl(); };
+  history.replaceState = function() { origReplace.apply(this, arguments); checkUrl(); };
+
   // Connect to debug channel
   connect();
 
@@ -1602,6 +1672,7 @@ func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServ
 	}
 	debugHub := &DebugHub{
 		iframeClients: make(map[*websocket.Conn]bool),
+		uiObservers:   make(map[*websocket.Conn]bool),
 	}
 
 	mux := http.NewServeMux()
@@ -1617,6 +1688,9 @@ func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServ
 
 	// WebSocket endpoint for agent
 	mux.HandleFunc("/__swe-swe-debug__/agent", handleDebugAgentWS(debugHub))
+
+	// WebSocket endpoint for UI observers (terminal UI URL bar updates)
+	mux.HandleFunc("/__swe-swe-debug__/ui", handleDebugUIObserverWS(debugHub))
 
 	// API endpoint to get current proxy target
 	mux.HandleFunc("GET /__swe-swe-debug__/target", handleGetProxyTarget(state))

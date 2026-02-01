@@ -978,6 +978,10 @@ class TerminalUI extends HTMLElement {
                 if (this.previewBaseUrl !== prevPreviewBaseUrl && this.workDir === prevWorkDir) {
                     this.renderServiceLinks();
                 }
+                // Connect debug WebSocket when preview port becomes available or changes
+                if (this.previewPort && this.previewBaseUrl !== prevPreviewBaseUrl) {
+                    this.connectDebugWebSocket();
+                }
                 // Open preview for first time once we have previewPort
                 if (this._wantsPreviewOnConnect && this.previewPort) {
                     this._wantsPreviewOnConnect = false;
@@ -2667,19 +2671,22 @@ class TerminalUI extends HTMLElement {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
         }
 
-        // Setup Back/Forward buttons
+        // Setup Back/Forward buttons — send navigate commands via debug WebSocket
+        // since the iframe is on a different port (cross-origin)
         const backBtn = this.querySelector('.terminal-ui__iframe-back');
         const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
         if (backBtn) {
             backBtn.addEventListener('click', () => {
-                const iframe = this.querySelector('.terminal-ui__iframe');
-                try { iframe?.contentWindow?.history.back(); } catch (e) { /* cross-origin */ }
+                if (this._debugWs?.readyState === WebSocket.OPEN) {
+                    this._debugWs.send(JSON.stringify({ t: 'navigate', action: 'back' }));
+                }
             });
         }
         if (forwardBtn) {
             forwardBtn.addEventListener('click', () => {
-                const iframe = this.querySelector('.terminal-ui__iframe');
-                try { iframe?.contentWindow?.history.forward(); } catch (e) { /* cross-origin */ }
+                if (this._debugWs?.readyState === WebSocket.OPEN) {
+                    this._debugWs.send(JSON.stringify({ t: 'navigate', action: 'forward' }));
+                }
             });
         }
 
@@ -3169,9 +3176,6 @@ class TerminalUI extends HTMLElement {
     }
 
     updateIframeUrlDisplay() {
-        // Preview tab manages its own URL bar via setPreviewURL
-        if (this.activeTab === 'preview') return;
-
         const iframe = this.querySelector('.terminal-ui__iframe');
         const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
         if (!iframe || !urlInput) return;
@@ -3180,9 +3184,15 @@ class TerminalUI extends HTMLElement {
             // Try to read current URL (may fail due to cross-origin policy)
             const currentUrl = iframe.contentWindow?.location?.href;
             if (currentUrl && currentUrl !== 'about:blank') {
-                // Show full URL in input field
-                urlInput.value = currentUrl;
-                urlInput.title = currentUrl;
+                if (this.activeTab === 'preview') {
+                    // Reverse-map proxy URL to logical localhost URL
+                    const displayUrl = this.reverseMapProxyUrl(currentUrl);
+                    urlInput.value = displayUrl;
+                    urlInput.title = displayUrl;
+                } else {
+                    urlInput.value = currentUrl;
+                    urlInput.title = currentUrl;
+                }
             }
         } catch (e) {
             // Cross-origin: can't read iframe location, show base URL
@@ -3191,6 +3201,60 @@ class TerminalUI extends HTMLElement {
                 urlInput.title = this.previewBaseUrl;
             }
         }
+    }
+
+    /**
+     * Reverse-map a proxy URL to the logical localhost:PORT URL.
+     * e.g., https://host:53007/dashboard?tab=1#s → http://localhost:3007/dashboard?tab=1#s
+     */
+    reverseMapProxyUrl(proxyUrl) {
+        if (!this.previewPort) return proxyUrl;
+        try {
+            const parsed = new URL(proxyUrl);
+            return `http://localhost:${this.previewPort}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        } catch {
+            return proxyUrl;
+        }
+    }
+
+    /**
+     * Connect to the debug WebSocket as a UI observer to receive URL change events.
+     */
+    connectDebugWebSocket() {
+        if (this._debugWs) {
+            this._debugWs.close();
+            this._debugWs = null;
+        }
+
+        const baseUrl = this.getPreviewBaseUrl();
+        if (!baseUrl) return;
+
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        const wsUrl = `${wsProtocol}//${window.location.hostname}:${previewPort}/__swe-swe-debug__/ui`;
+
+        const ws = new WebSocket(wsUrl);
+        this._debugWs = ws;
+
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.t === 'urlchange' || msg.t === 'init') {
+                    const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
+                    if (urlInput && this.activeTab === 'preview') {
+                        const displayUrl = this.reverseMapProxyUrl(msg.url);
+                        urlInput.value = displayUrl;
+                        urlInput.title = displayUrl;
+                    }
+                }
+            } catch {
+                // Ignore parse errors
+            }
+        };
+
+        ws.onclose = () => {
+            this._debugWs = null;
+        };
     }
 }
 
