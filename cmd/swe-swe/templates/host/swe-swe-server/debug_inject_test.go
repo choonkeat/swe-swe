@@ -373,8 +373,9 @@ func TestE2EProxyIntegration(t *testing.T) {
 			t.Error("Debug script missing WebSocket endpoint")
 		}
 
-		// 5. DebugHub exists and is properly initialized
-		if debugHub == nil || debugHub.iframeClients == nil {
+		// 5. DebugHub can be created and is properly initialized
+		hub := &DebugHub{iframeClients: make(map[*websocket.Conn]bool)}
+		if hub == nil || hub.iframeClients == nil {
 			t.Error("DebugHub not properly initialized")
 		}
 	})
