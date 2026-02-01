@@ -348,13 +348,11 @@ class TerminalUI extends HTMLElement {
                             </div>
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
-                                <!-- Hidden: Back/Forward/Reload need double-iframe shell page rewrite. See research/2026-02-02-preview-tab-navigation-spec.md -->
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back" style="display:none">◀</button>
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-forward" title="Forward" style="display:none">▶</button>
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh" style="display:none">↻</button>
-                                <!-- Read-only: Go/URL editing needs double-iframe shell page rewrite. See research/2026-02-02-preview-tab-navigation-spec.md -->
-                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL" readonly />
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go" style="display:none">→</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back" disabled>◀</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-forward" title="Forward" disabled>▶</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
+                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL" />
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
                             <div class="terminal-ui__iframe-container">
@@ -2654,9 +2652,13 @@ class TerminalUI extends HTMLElement {
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
 
         if (homeBtn) {
-            // Navigate to root. TODO: rewrite to send WebSocket command to shell page.
-            // See research/2026-02-02-preview-tab-navigation-spec.md
-            homeBtn.addEventListener('click', () => this.setPreviewURL(null));
+            homeBtn.addEventListener('click', () => {
+                if (this._debugWs?.readyState === WebSocket.OPEN) {
+                    this._debugWs.send(JSON.stringify({ t: 'navigate', url: '/' }));
+                } else {
+                    this.setPreviewURL(null);
+                }
+            });
         }
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
@@ -2685,38 +2687,30 @@ class TerminalUI extends HTMLElement {
         const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
         const goBtn = this.querySelector('.terminal-ui__iframe-go');
 
-        const navigateToExternalUrl = async () => {
+        const navigateToUrl = () => {
             const targetUrl = urlInput.value.trim();
             if (!targetUrl) return;
 
+            // Extract path from URL (could be full URL like http://localhost:3000/foo or just /foo)
+            let path;
             try {
-                // Set proxy target via API
-                const resp = await fetch(this.getPreviewBaseUrl() + '/__swe-swe-debug__/target', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: targetUrl })
-                });
+                const parsed = new URL(targetUrl);
+                path = parsed.pathname + parsed.search + parsed.hash;
+            } catch {
+                path = targetUrl.startsWith('/') ? targetUrl : '/' + targetUrl;
+            }
 
-                if (!resp.ok) {
-                    const errorText = await resp.text();
-                    console.error('[TerminalUI] Failed to set proxy target:', errorText);
-                    return;
-                }
-
-                // Navigate iframe to proxy root (which now proxies to target)
-                this.setPreviewURL(targetUrl, '/');
-            } catch (err) {
-                console.error('[TerminalUI] Error setting proxy target:', err);
+            if (this._debugWs?.readyState === WebSocket.OPEN) {
+                this._debugWs.send(JSON.stringify({ t: 'navigate', url: path }));
             }
         };
 
         if (goBtn) {
-            goBtn.addEventListener('click', navigateToExternalUrl);
+            goBtn.addEventListener('click', navigateToUrl);
         }
         if (urlInput) {
             urlInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') navigateToExternalUrl();
+                if (e.key === 'Enter') navigateToUrl();
             });
         }
 
@@ -2724,14 +2718,9 @@ class TerminalUI extends HTMLElement {
         const openExternalBtn = this.querySelector('.terminal-ui__iframe-open-external');
         if (openExternalBtn) {
             openExternalBtn.addEventListener('click', () => {
-                const url = this._lastProxyUrl || this.getPreviewBaseUrl() + '/';
+                const url = this._lastUrlChangeUrl || this.getPreviewBaseUrl() + '/';
                 if (url) window.open(url, '_blank');
             });
-        }
-
-        // Track iframe URL changes (limited by cross-origin policy)
-        if (iframe) {
-            iframe.addEventListener('load', () => this.updateIframeUrlDisplay());
         }
 
         // Open preview tab by default on desktop (if wide enough for split view)
@@ -3122,15 +3111,23 @@ class TerminalUI extends HTMLElement {
         const iframe = this.querySelector('.terminal-ui__iframe');
         const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
 
-        // 1. iframe src = proxy URL
+        // 1. iframe src = shell page URL (double-iframe architecture)
         const previewPort = this.previewPort ? `5${this.previewPort}` : null;
-        let proxyUrl;
+        const base = buildPreviewUrl(window.location, previewPort);
+        let path;
         if (iframePath !== null) {
-            const base = buildPreviewUrl(window.location, previewPort);
-            proxyUrl = base + iframePath;
+            path = iframePath;
+        } else if (targetURL) {
+            try {
+                const parsed = new URL(targetURL);
+                path = parsed.pathname + parsed.search + parsed.hash;
+            } catch {
+                path = targetURL.startsWith('/') ? targetURL : '/' + targetURL;
+            }
         } else {
-            proxyUrl = buildProxyUrl(window.location, previewPort, targetURL);
+            path = '/';
         }
+        const proxyUrl = base + '/__swe-swe-shell__?path=' + encodeURIComponent(path);
 
         // 2. URL bar = logical target if provided, else default localhost:{PORT}
         if (urlInput) {
@@ -3149,48 +3146,17 @@ class TerminalUI extends HTMLElement {
             iframe.src = proxyUrl;
         }
 
-        // 3. Store proxy URL for "open in new window"
-        this._lastProxyUrl = proxyUrl;
+        // 3. Store base proxy URL for "open in new window" (will be updated by urlchange WS messages)
+        this._lastUrlChangeUrl = base + path;
     }
 
     refreshIframe() {
-        const iframe = this.querySelector('.terminal-ui__iframe');
-        if (iframe && iframe.src) {
-            const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
-            if (placeholder) {
-                placeholder.textContent = 'Loading...';
-                placeholder.classList.remove('hidden');
-            }
-            // Force reload by setting src again
-            iframe.src = iframe.src;
-        }
-    }
-
-    updateIframeUrlDisplay() {
-        const iframe = this.querySelector('.terminal-ui__iframe');
-        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
-        if (!iframe || !urlInput) return;
-
-        try {
-            // Try to read current URL (may fail due to cross-origin policy)
-            const currentUrl = iframe.contentWindow?.location?.href;
-            if (currentUrl && currentUrl !== 'about:blank') {
-                if (this.activeTab === 'preview') {
-                    // Reverse-map proxy URL to logical localhost URL
-                    const displayUrl = this.reverseMapProxyUrl(currentUrl);
-                    urlInput.value = displayUrl;
-                    urlInput.title = displayUrl;
-                } else {
-                    urlInput.value = currentUrl;
-                    urlInput.title = currentUrl;
-                }
-            }
-        } catch (e) {
-            // Cross-origin: can't read iframe location, show base URL
-            if (this.previewBaseUrl) {
-                urlInput.value = this.previewBaseUrl;
-                urlInput.title = this.previewBaseUrl;
-            }
+        if (this._debugWs?.readyState === WebSocket.OPEN) {
+            this._debugWs.send(JSON.stringify({ t: 'reload' }));
+        } else {
+            // Fallback: force reload by resetting src
+            const iframe = this.querySelector('.terminal-ui__iframe');
+            if (iframe && iframe.src) iframe.src = iframe.src;
         }
     }
 
@@ -3237,6 +3203,14 @@ class TerminalUI extends HTMLElement {
                         urlInput.value = displayUrl;
                         urlInput.title = displayUrl;
                     }
+                    // Store for "open in new window"
+                    if (msg.url) this._lastUrlChangeUrl = msg.url;
+                }
+                if (msg.t === 'navstate') {
+                    const backBtn = this.querySelector('.terminal-ui__iframe-back');
+                    const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
+                    if (backBtn) backBtn.disabled = !msg.canGoBack;
+                    if (forwardBtn) forwardBtn.disabled = !msg.canGoForward;
                 }
             } catch {
                 // Ignore parse errors
@@ -3245,6 +3219,11 @@ class TerminalUI extends HTMLElement {
 
         ws.onclose = () => {
             this._debugWs = null;
+            // Disable nav buttons when WS disconnects
+            const backBtn = this.querySelector('.terminal-ui__iframe-back');
+            const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
+            if (backBtn) backBtn.disabled = true;
+            if (forwardBtn) forwardBtn.disabled = true;
         };
     }
 }

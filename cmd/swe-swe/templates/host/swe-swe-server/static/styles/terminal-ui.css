@@ -1077,13 +1077,13 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .terminal-ui__iframe-nav-btn:disabled {
-    color: var(--text-muted);
-    cursor: default;
+    opacity: 0.3;
+    cursor: not-allowed;
 }
 
 .terminal-ui__iframe-nav-btn:disabled:hover {
     background: none;
-    color: var(--text-muted);
+    opacity: 0.3;
 }
 
 .terminal-ui__iframe-open-external {

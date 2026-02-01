@@ -1188,6 +1188,112 @@ const previewProxyErrorPage = `<!DOCTYPE html>
 </body>
 </html>`
 
+// shellPageHTML is the double-iframe shell page that wraps user content.
+// It manages navigation (back/forward/reload) via WebSocket commands from the parent UI.
+// The inner iframe loads the actual user app content. The shell page connects to the
+// debug WebSocket as an iframe client and relays navigation state to the parent.
+const shellPageHTML = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Shell</title>
+<style>*{margin:0;padding:0}html,body{width:100%%;height:100%%;overflow:hidden}
+#inner{width:100%%;height:100%%;border:none}</style>
+</head>
+<body>
+<iframe id="inner" src=""></iframe>
+<script>
+(function(){
+  'use strict';
+  var inner = document.getElementById('inner');
+  var params = new URLSearchParams(location.search);
+  var initialPath = params.get('path') || '/';
+  inner.src = initialPath;
+
+  // Shell-level navigation tracking for full-page (non-SPA) navigations
+  var _shellNavIdx = 0;
+  var _shellNavMax = 0;
+  var _shellInitialLoad = true;
+  var _shellPendingBack = false;
+  var _shellPendingForward = false;
+
+  // Connect to debug WS as iframe client
+  var wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/__swe-swe-debug__/ws';
+  var ws = null;
+  var reconnectAttempts = 0;
+
+  function send(msg) {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+  }
+
+  function connect() {
+    if (reconnectAttempts >= 5) return;
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = function() { reconnectAttempts = 0; };
+      ws.onclose = function() {
+        reconnectAttempts++;
+        setTimeout(connect, Math.min(1000 * reconnectAttempts, 5000));
+      };
+      ws.onmessage = function(e) {
+        try {
+          var cmd = JSON.parse(e.data);
+          if (cmd.t === 'navigate') {
+            if (cmd.action === 'back') {
+              if (_shellNavIdx > 0) {
+                _shellNavIdx--;
+                _shellPendingBack = true;
+              }
+              inner.contentWindow.history.back();
+            } else if (cmd.action === 'forward') {
+              if (_shellNavIdx < _shellNavMax) {
+                _shellNavIdx++;
+                _shellPendingForward = true;
+              }
+              inner.contentWindow.history.forward();
+            } else if (cmd.url) {
+              inner.src = cmd.url;
+            }
+          } else if (cmd.t === 'reload') {
+            inner.contentWindow.location.reload();
+          }
+        } catch(err) {}
+      };
+    } catch(e) {}
+  }
+
+  // On inner iframe load, send urlchange + shell-level navstate
+  inner.onload = function() {
+    try {
+      var url = inner.contentWindow.location.href;
+      send({ t: 'urlchange', url: url, ts: Date.now() });
+    } catch(e) {
+      // Cross-origin: can't read inner URL
+      send({ t: 'urlchange', url: inner.src, ts: Date.now() });
+    }
+    // Track full-page navigations at shell level.
+    // _shellPendingBack/Forward are set when we trigger back/forward via WS command.
+    // On initial load, do nothing. On subsequent loads, increment unless it was a back/forward.
+    if (_shellInitialLoad) {
+      _shellInitialLoad = false;
+    } else if (_shellPendingBack) {
+      _shellPendingBack = false;
+    } else if (_shellPendingForward) {
+      _shellPendingForward = false;
+    } else {
+      // New forward navigation (link click, form submit, navigate command)
+      _shellNavIdx++;
+      _shellNavMax = _shellNavIdx;
+    }
+    send({ t: 'navstate', canGoBack: _shellNavIdx > 0, canGoForward: _shellNavIdx < _shellNavMax });
+  };
+
+  connect();
+})();
+</script>
+</body>
+</html>`
+
 // debugScriptTag is injected into HTML responses to enable debug channel
 const debugScriptTag = `<script src="/__swe-swe-debug__/inject.js"></script>`
 
@@ -1504,9 +1610,6 @@ const debugInjectJS = `(function() {
               visible: el ? (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) : false,
               rect: el ? el.getBoundingClientRect() : null
             });
-          } else if (cmd.t === 'navigate') {
-            if (cmd.action === 'back') { history.back(); }
-            else if (cmd.action === 'forward') { history.forward(); }
           }
         } catch (err) {
           // Ignore parse errors
@@ -1612,6 +1715,23 @@ const debugInjectJS = `(function() {
     return XHRSend.apply(this, arguments);
   };
 
+  // Navigation index tracking for back/forward button state
+  var _navIdx = 0;
+  var _navMax = 0;
+
+  function stampState(idx) {
+    try {
+      var state = history.state;
+      var merged = (state && typeof state === 'object') ? Object.assign({}, state) : {};
+      merged.__sweSweNavIdx = idx;
+      origReplace.call(history, merged, '', location.href);
+    } catch(e) {}
+  }
+
+  function sendNavState() {
+    send({ t: 'navstate', canGoBack: _navIdx > 0, canGoForward: _navIdx < _navMax });
+  }
+
   // URL change detection for SPA navigations
   var lastUrl = location.href;
   function checkUrl() {
@@ -1620,17 +1740,57 @@ const debugInjectJS = `(function() {
       send({ t: 'urlchange', url: location.href, ts: Date.now() });
     }
   }
-  window.addEventListener('popstate', function() { checkUrl(); });
-  window.addEventListener('hashchange', function() { checkUrl(); });
+
   var origPush = history.pushState;
   var origReplace = history.replaceState;
-  history.pushState = function() { origPush.apply(this, arguments); checkUrl(); };
-  history.replaceState = function() { origReplace.apply(this, arguments); checkUrl(); };
+
+  history.pushState = function() {
+    _navIdx++;
+    _navMax = _navIdx;
+    origPush.apply(this, arguments);
+    stampState(_navIdx);
+    checkUrl();
+    sendNavState();
+  };
+
+  history.replaceState = function() {
+    origReplace.apply(this, arguments);
+    stampState(_navIdx);
+    checkUrl();
+  };
+
+  window.addEventListener('popstate', function(e) {
+    var state = e.state;
+    if (state && typeof state.__sweSweNavIdx === 'number') {
+      _navIdx = state.__sweSweNavIdx;
+    }
+    checkUrl();
+    sendNavState();
+  });
+
+  window.addEventListener('hashchange', function() {
+    checkUrl();
+    sendNavState();
+  });
+
+  // Initialize: read existing navIdx from history.state or assume end-of-stack
+  (function() {
+    var state = history.state;
+    if (state && typeof state.__sweSweNavIdx === 'number') {
+      _navIdx = state.__sweSweNavIdx;
+      _navMax = _navIdx;
+    } else {
+      // First visit: stamp index 0
+      _navIdx = 0;
+      _navMax = 0;
+      stampState(0);
+    }
+  })();
 
   // Connect to debug channel
   connect();
 
-  // Send initial page load message
+  // Send initial page load message (navstate sent by shell page on onload)
   send({ t: 'init', url: location.href, ts: Date.now() });
 })();
 `
@@ -1692,14 +1852,11 @@ func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServ
 	// WebSocket endpoint for UI observers (terminal UI URL bar updates)
 	mux.HandleFunc("/__swe-swe-debug__/ui", handleDebugUIObserverWS(debugHub))
 
-	// API endpoint to get current proxy target
-	mux.HandleFunc("GET /__swe-swe-debug__/target", handleGetProxyTarget(state))
-
-	// API endpoint to set proxy target
-	mux.HandleFunc("POST /__swe-swe-debug__/target", handleSetProxyTarget(state))
-
-	// Preflight for proxy target API
-	mux.HandleFunc("OPTIONS /__swe-swe-debug__/target", handleOptionsProxyTarget())
+	// Shell page for double-iframe navigation
+	mux.HandleFunc("/__swe-swe-shell__", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, shellPageHTML)
+	})
 
 	// Proxy all other requests
 	mux.HandleFunc("/", handleProxyRequest(state))
@@ -1775,102 +1932,6 @@ func releasePreviewProxyServer(previewPort int) {
 		log.Printf("Preview proxy shutdown error: %v", err)
 	}
 	ref.listener.Close()
-}
-
-func setPreviewProxyCORS(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Vary", "Origin")
-	}
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-}
-
-func handleOptionsProxyTarget() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setPreviewProxyCORS(w, r)
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
-// handleGetProxyTarget returns the current proxy target URL
-func handleGetProxyTarget(state *previewProxyState) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setPreviewProxyCORS(w, r)
-		state.targetMu.RLock()
-		target := state.targetURL
-		state.targetMu.RUnlock()
-
-		w.Header().Set("Content-Type", "application/json")
-
-		var targetStr string
-		if target != nil {
-			targetStr = target.String()
-		} else {
-			targetStr = state.defaultTarget.String()
-		}
-
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"url":       targetStr,
-			"isDefault": target == nil,
-		})
-	}
-}
-
-// handleSetProxyTarget sets the proxy target URL from JSON body
-func handleSetProxyTarget(state *previewProxyState) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setPreviewProxyCORS(w, r)
-		var req struct {
-			URL string `json:"url"`
-		}
-
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-			return
-		}
-
-		// Empty URL resets to default
-		if req.URL == "" {
-			state.targetMu.Lock()
-			state.targetURL = nil
-			state.targetMu.Unlock()
-			log.Printf("Preview proxy: reset to default target localhost:%s", state.defaultPortStr)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"url":       state.defaultTarget.String(),
-				"isDefault": true,
-			})
-			return
-		}
-
-		// Parse and validate the URL
-		target, err := url.Parse(req.URL)
-		if err != nil {
-			http.Error(w, "Invalid URL: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Ensure scheme is http or https
-		if target.Scheme != "http" && target.Scheme != "https" {
-			http.Error(w, "URL must be http or https", http.StatusBadRequest)
-			return
-		}
-
-		state.targetMu.Lock()
-		state.targetURL = target
-		state.targetMu.Unlock()
-
-		log.Printf("Preview proxy: target set to %s", target.String())
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"url":       target.String(),
-			"isDefault": false,
-		})
-	}
 }
 
 // handleProxyRequest proxies requests to the current target
