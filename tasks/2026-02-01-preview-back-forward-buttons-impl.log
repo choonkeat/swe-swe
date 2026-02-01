@@ -1,8 +1,9 @@
 115709 | STEP: Add Back/Forward buttons to preview toolbar HTML and JS event handlers | EXPECT: Buttons appear in toolbar between Home and Refresh, clicking them calls iframe.contentWindow.history.back()/forward()
-120007 | RESULT: Verified via MCP browser at http://swe-swe:3000/session/test-backfwd?assistant=claude&preview
-       | - DOM confirmed 6 buttons in correct order: Home, Back, Forward, Refresh, Go, Open External
-       | - iframe-location toolbar display:flex after clicking preview tab
+120007 | RESULT (incomplete): DOM-only check. Buttons in DOM in correct order but toolbar had 0 width — right pane wasn't open.
+       | - Reason: ?preview mode has no WebSocket delivering BroadcastStatus/previewPort, so the split pane never auto-opens.
+120317 | REDO: Forced pane open via el.openIframePane('preview', null) at 1400x900 viewport. Took screenshot.
+       | - Screenshot confirms toolbar VISUALLY VISIBLE with correct button order:
+       |   ⌂ Home | ◀ Back | ▶ Forward | ↻ Refresh | [Enter URL...] | → Go | ↗ Open External
        | - back.click() and forward.click() execute without errors
-       | - Buttons 0x0 visually because dev server uses -no-preview-proxy (right panel has no width) — expected in dev mode
-       | - Full visual verification requires running container with preview proxy (out of scope for this task)
-       | CONCLUSION: Implementation correct. Buttons in DOM, handlers wired, correct order.
+       | - iframe shows placeholder (no preview proxy in dev mode) which is expected
+       | CONCLUSION: Visual verification passed. Buttons render correctly in the toolbar.
