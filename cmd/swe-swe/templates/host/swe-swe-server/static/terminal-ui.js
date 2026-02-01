@@ -2651,6 +2651,7 @@ class TerminalUI extends HTMLElement {
                 try {
                     await fetch(this.getPreviewBaseUrl() + '/__swe-swe-debug__/target', {
                         method: 'POST',
+                        credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: '' }) // Empty URL resets to default
                     });
@@ -2676,6 +2677,7 @@ class TerminalUI extends HTMLElement {
                 // Set proxy target via API
                 const resp = await fetch(this.getPreviewBaseUrl() + '/__swe-swe-debug__/target', {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: targetUrl })
                 });

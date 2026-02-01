@@ -1624,6 +1624,9 @@ func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServ
 	// API endpoint to set proxy target
 	mux.HandleFunc("POST /__swe-swe-debug__/target", handleSetProxyTarget(state))
 
+	// Preflight for proxy target API
+	mux.HandleFunc("OPTIONS /__swe-swe-debug__/target", handleOptionsProxyTarget())
+
 	// Proxy all other requests
 	mux.HandleFunc("/", handleProxyRequest(state))
 
@@ -1700,9 +1703,28 @@ func releasePreviewProxyServer(previewPort int) {
 	ref.listener.Close()
 }
 
+func setPreviewProxyCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Vary", "Origin")
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+func handleOptionsProxyTarget() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		setPreviewProxyCORS(w, r)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 // handleGetProxyTarget returns the current proxy target URL
 func handleGetProxyTarget(state *previewProxyState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setPreviewProxyCORS(w, r)
 		state.targetMu.RLock()
 		target := state.targetURL
 		state.targetMu.RUnlock()
@@ -1726,6 +1748,7 @@ func handleGetProxyTarget(state *previewProxyState) http.HandlerFunc {
 // handleSetProxyTarget sets the proxy target URL from JSON body
 func handleSetProxyTarget(state *previewProxyState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setPreviewProxyCORS(w, r)
 		var req struct {
 			URL string `json:"url"`
 		}
