@@ -50,3 +50,4 @@ Bad: ...
 | [022](0022-simplified-worktree-exit.md) | Simplified worktree exit | Accepted |
 | [023](0023-unique-mcp-server-name.md) | Unique MCP server name | Accepted |
 | [024](0024-debug-injection-proxy-security.md) | Debug injection proxy security | Accepted |
+| [025](0025-per-session-preview-ports.md) | Per-session preview ports | Accepted |
