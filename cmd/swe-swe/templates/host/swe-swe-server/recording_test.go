@@ -77,6 +77,11 @@ func (h *testHelper) createRecordingFiles(uuid string, opts recordingOpts) {
 	if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
 		h.t.Fatalf("failed to create log file: %v", err)
 	}
+	if opts.logMtime != nil {
+		if err := os.Chtimes(logPath, *opts.logMtime, *opts.logMtime); err != nil {
+			h.t.Fatalf("failed to set log file mtime: %v", err)
+		}
+	}
 
 	// Create .timing file (optional)
 	if opts.withTiming {
@@ -106,6 +111,7 @@ func (h *testHelper) createRecordingFiles(uuid string, opts recordingOpts) {
 // recordingOpts specifies options for creating test recording files
 type recordingOpts struct {
 	logContent    string
+	logMtime      *time.Time // if set, the log file's mtime is adjusted after creation
 	withTiming    bool
 	timingContent string
 	metadata      *RecordingMetadata
@@ -1739,12 +1745,14 @@ func TestKeepRecording_AlreadyKept(t *testing.T) {
 func TestCleanupRecentRecordings_DeletesOldUnkept(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create a recording older than 1 hour
+	// Create a recording with log file mtime older than 48 hours
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	startedAt := time.Now().Add(-2 * time.Hour)
-	endedAt := time.Now().Add(-90 * time.Minute) // 90 minutes ago
+	startedAt := time.Now().Add(-50 * time.Hour)
+	endedAt := time.Now().Add(-49 * time.Hour)
+	logMtime := time.Now().Add(-49 * time.Hour) // 49 hours ago
 
 	h.createRecordingFiles(testUUID, recordingOpts{
+		logMtime: &logMtime,
 		metadata: &RecordingMetadata{
 			UUID:      testUUID,
 			Name:      "Old Session",
@@ -1770,13 +1778,15 @@ func TestCleanupRecentRecordings_DeletesOldUnkept(t *testing.T) {
 func TestCleanupRecentRecordings_KeepsKeptRecordings(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create a kept recording older than 1 hour
+	// Create a kept recording with log mtime older than 48 hours
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	startedAt := time.Now().Add(-2 * time.Hour)
-	endedAt := time.Now().Add(-90 * time.Minute)
-	keptAt := time.Now().Add(-60 * time.Minute)
+	startedAt := time.Now().Add(-50 * time.Hour)
+	endedAt := time.Now().Add(-49 * time.Hour)
+	keptAt := time.Now().Add(-48 * time.Hour)
+	logMtime := time.Now().Add(-49 * time.Hour)
 
 	h.createRecordingFiles(testUUID, recordingOpts{
+		logMtime: &logMtime,
 		metadata: &RecordingMetadata{
 			UUID:      testUUID,
 			Name:      "Kept Session",
@@ -1798,12 +1808,14 @@ func TestCleanupRecentRecordings_KeepsKeptRecordings(t *testing.T) {
 func TestCleanupRecentRecordings_KeepsRecentUnkept(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create a recent recording (less than 1 hour old)
+	// Create a recent recording (log mtime less than 48 hours old)
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	startedAt := time.Now().Add(-30 * time.Minute)
-	endedAt := time.Now().Add(-15 * time.Minute)
+	startedAt := time.Now().Add(-2 * time.Hour)
+	endedAt := time.Now().Add(-1 * time.Hour)
+	logMtime := time.Now().Add(-1 * time.Hour)
 
 	h.createRecordingFiles(testUUID, recordingOpts{
+		logMtime: &logMtime,
 		metadata: &RecordingMetadata{
 			UUID:      testUUID,
 			Name:      "Recent Session",
@@ -1825,7 +1837,7 @@ func TestCleanupRecentRecordings_DeletesBeyondLimit(t *testing.T) {
 	h := newTestHelper(t)
 
 	// Create 7 recent recordings for the same agent
-	// All are recent (< 1 hour), but we exceed the limit of 5
+	// All are recent (< 48 hours), but we exceed the limit of 5
 	uuids := []string{
 		"aaaaaaaa-0001-0000-0000-000000000001",
 		"aaaaaaaa-0002-0000-0000-000000000002",
@@ -1837,9 +1849,11 @@ func TestCleanupRecentRecordings_DeletesBeyondLimit(t *testing.T) {
 	}
 
 	for i, uuid := range uuids {
-		// Create recordings with different ages (all recent)
+		// Create recordings with different ages (all recent, within 48h)
 		endedAt := time.Now().Add(-time.Duration(i+1) * time.Minute)
+		logMtime := endedAt // log mtime matches ended time
 		h.createRecordingFiles(uuid, recordingOpts{
+			logMtime: &logMtime,
 			metadata: &RecordingMetadata{
 				UUID:      uuid,
 				Name:      "Session " + string(rune('A'+i)),
@@ -1896,7 +1910,9 @@ func TestCleanupRecentRecordings_LimitPerAgent(t *testing.T) {
 
 	for i, uuid := range claudeUUIDs {
 		endedAt := time.Now().Add(-time.Duration(i+1) * time.Minute)
+		logMtime := endedAt
 		h.createRecordingFiles(uuid, recordingOpts{
+			logMtime: &logMtime,
 			metadata: &RecordingMetadata{
 				UUID:      uuid,
 				Name:      "Claude Session",
@@ -1909,7 +1925,9 @@ func TestCleanupRecentRecordings_LimitPerAgent(t *testing.T) {
 
 	for i, uuid := range aiderUUIDs {
 		endedAt := time.Now().Add(-time.Duration(i+1) * time.Minute)
+		logMtime := endedAt
 		h.createRecordingFiles(uuid, recordingOpts{
+			logMtime: &logMtime,
 			metadata: &RecordingMetadata{
 				UUID:      uuid,
 				Name:      "Aider Session",
