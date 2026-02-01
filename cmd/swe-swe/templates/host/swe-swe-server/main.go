@@ -375,6 +375,7 @@ func filterEnv(env []string, keys ...string) []string {
 // AddClient adds a WebSocket client to the session
 func (s *Session) AddClient(conn *SafeConn) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.wsClients[conn] = true
 	s.lastActive = time.Now()
 	log.Printf("Client added to session %s (total: %d)", s.UUID, len(s.wsClients))
@@ -386,6 +387,7 @@ func (s *Session) AddClient(conn *SafeConn) {
 // RemoveClient removes a WebSocket client from the session
 func (s *Session) RemoveClient(conn *SafeConn) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.wsClients, conn)
 	delete(s.wsClientSizes, conn)
 	s.lastActive = time.Now()
@@ -452,6 +454,7 @@ func (s *Session) SetGracePeriod(d time.Duration) {
 // UpdateClientSize updates a client's terminal size and recalculates the PTY size
 func (s *Session) UpdateClientSize(conn *SafeConn, rows, cols uint16) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.wsClientSizes[conn] = TermSize{Rows: rows, Cols: cols}
 	s.lastActive = time.Now()
