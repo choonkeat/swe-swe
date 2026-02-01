@@ -1,0 +1,9 @@
+122256 Starting implementation phase for preview live URL bar
+- Step 1 (main.go): Added URL change detection (pushState/replaceState/popstate/hashchange) to debugInjectJS
+- Step 2 (main.go): Added UI observer WebSocket support to DebugHub (new client type, endpoint /__swe-swe-debug__/ui)
+- Step 3 (terminal-ui.js): Added connectDebugWebSocket() to connect as UI observer on preview proxy
+- Step 4 (terminal-ui.js): Handle urlchange/init messages, reverse-map proxy URL to localhost:PORT
+- Step 5 (terminal-ui.js): Fixed updateIframeUrlDisplay() to handle preview tab with reverse-mapping
+- Build: PASS
+- Tests: PASS
+- Golden update: PASS (66 files updated consistently)
