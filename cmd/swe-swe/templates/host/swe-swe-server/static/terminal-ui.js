@@ -348,11 +348,13 @@ class TerminalUI extends HTMLElement {
                             </div>
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back">◀</button>
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-forward" title="Forward">▶</button>
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
-                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL - edit to navigate" />
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
+                                <!-- Hidden: Back/Forward/Reload need double-iframe shell page rewrite. See research/2026-02-02-preview-tab-navigation-spec.md -->
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back" style="display:none">◀</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-forward" title="Forward" style="display:none">▶</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh" style="display:none">↻</button>
+                                <!-- Read-only: Go/URL editing needs double-iframe shell page rewrite. See research/2026-02-02-preview-tab-navigation-spec.md -->
+                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL" readonly />
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go" style="display:none">→</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
                             <div class="terminal-ui__iframe-container">
@@ -2652,20 +2654,9 @@ class TerminalUI extends HTMLElement {
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
 
         if (homeBtn) {
-            homeBtn.addEventListener('click', async () => {
-                // Reset proxy target to default (localhost)
-                try {
-                    await fetch(this.getPreviewBaseUrl() + '/__swe-swe-debug__/target', {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: '' }) // Empty URL resets to default
-                    });
-                } catch (err) {
-                    console.warn('[TerminalUI] Failed to reset proxy target:', err);
-                }
-                this.setPreviewURL(null);
-            });
+            // Navigate to root. TODO: rewrite to send WebSocket command to shell page.
+            // See research/2026-02-02-preview-tab-navigation-spec.md
+            homeBtn.addEventListener('click', () => this.setPreviewURL(null));
         }
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
