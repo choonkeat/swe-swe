@@ -209,7 +209,7 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 					if isSSL {
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main={{DOMAIN}}\"", indent, routerName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
