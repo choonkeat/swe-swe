@@ -720,8 +720,10 @@
             cursor: pointer;
             transition: all 0.2s ease;
         }
-        .dialog__agent:hover:not(.dialog__agent--disabled) {
+        .dialog__agent:hover:not(.dialog__agent--disabled),
+        .dialog__agent:focus:not(.dialog__agent--disabled) {
             border-color: var(--accent-primary);
+            outline: none;
         }
         .dialog__agent--selected {
             border-color: var(--accent-primary);
@@ -1111,7 +1113,7 @@
                         <label class="dialog__label">Agent</label>
                         <div class="dialog__agents" id="new-session-agents">
                             {{range .Agents}}
-                            <label class="dialog__agent dialog__agent--disabled" data-agent="{{.Assistant.Binary}}">
+                            <label class="dialog__agent dialog__agent--disabled" data-agent="{{.Assistant.Binary}}" tabindex="0">
                                 <input type="radio" name="new-session-agent" value="{{.Assistant.Binary}}" disabled>
                                 <span class="dialog__agent-icon">{{if eq .Assistant.Binary "claude"}}🧠{{else if eq .Assistant.Binary "gemini"}}✨{{else if eq .Assistant.Binary "codex"}}🤖{{else if eq .Assistant.Binary "goose"}}🪿{{else if eq .Assistant.Binary "aider"}}🛠{{else}}⚙️{{end}}</span>
                                 <span class="dialog__agent-name">{{.Assistant.Name}}</span>

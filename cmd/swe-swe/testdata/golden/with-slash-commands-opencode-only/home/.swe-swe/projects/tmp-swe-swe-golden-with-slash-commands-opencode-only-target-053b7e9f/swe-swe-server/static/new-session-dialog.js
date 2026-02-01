@@ -372,23 +372,31 @@
     });
 
     // Clone inline Next button
-    cloneNextBtn.addEventListener('click', function() {
+    function handleCloneNext() {
         var url = urlInput.value.trim();
         if (!url) {
             showError('Please enter a repository URL');
             return;
         }
         prepareRepo({ mode: 'clone', url: url });
+    }
+    cloneNextBtn.addEventListener('click', handleCloneNext);
+    urlInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); handleCloneNext(); }
     });
 
     // Create inline Next button
-    createNextBtn.addEventListener('click', function() {
+    function handleCreateNext() {
         var name = nameInput.value.trim();
         if (!name) {
             showError('Please enter a project name');
             return;
         }
         prepareRepo({ mode: 'create', name: name });
+    }
+    createNextBtn.addEventListener('click', handleCreateNext);
+    nameInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); handleCreateNext(); }
     });
 
     // Color picker handlers
@@ -425,8 +433,7 @@
     });
 
     // Agent selection
-    agentsContainer.addEventListener('click', function(e) {
-        var label = e.target.closest('.dialog__agent');
+    function selectAgent(label) {
         if (!label || label.classList.contains('dialog__agent--disabled')) {
             return;
         }
@@ -442,6 +449,19 @@
             radio.checked = true;
             dialogState.selectedAgent = radio.value;
             startBtn.disabled = false;
+        }
+    }
+
+    agentsContainer.addEventListener('click', function(e) {
+        selectAgent(e.target.closest('.dialog__agent'));
+    });
+
+    agentsContainer.addEventListener('keydown', function(e) {
+        var label = e.target.closest('.dialog__agent');
+        if (!label) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectAgent(label);
         }
     });
 
