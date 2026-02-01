@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -976,6 +976,16 @@ class TerminalUI extends HTMLElement {
                 if (this.previewBaseUrl !== prevPreviewBaseUrl && this.workDir === prevWorkDir) {
                     this.renderServiceLinks();
                 }
+                // Open preview for first time once we have previewPort
+                if (this._wantsPreviewOnConnect && this.previewPort) {
+                    this._wantsPreviewOnConnect = false;
+                    setTimeout(() => this.openIframePane('preview', null), 100);
+                }
+                // Refresh iframe if port changed while preview is active
+                else if (this.previewBaseUrl !== prevPreviewBaseUrl && this.activeTab === 'preview') {
+                    const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
+                    this.setPreviewURL(currentTarget);
+                }
                 // YOLO mode state
                 this.yoloMode = msg.yoloMode || false;
                 this.yoloSupported = msg.yoloSupported || false;
@@ -1404,27 +1414,6 @@ class TerminalUI extends HTMLElement {
     switchPanelTab(tab) {
         if (tab === this.activeTab) return;
 
-        const baseUrl = getBaseUrl(window.location);
-        let url;
-
-        switch (tab) {
-            case 'preview':
-                url = this.getPreviewBaseUrl();
-                break;
-            case 'vscode':
-                url = buildVSCodeUrl(baseUrl, this.workDir);
-                break;
-            case 'shell':
-                const shellUUID = deriveShellUUID(this.uuid);
-                url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
-                break;
-            case 'browser':
-                url = `${baseUrl}/chrome/`;
-                break;
-            default:
-                return;
-        }
-
         // Show/hide toolbar based on tab
         const iframePane = this.querySelector('.terminal-ui__iframe-pane');
         if (iframePane) {
@@ -1436,7 +1425,29 @@ class TerminalUI extends HTMLElement {
         }
 
         this.activeTab = tab;
-        this.setIframeUrl(url);
+
+        if (tab === 'preview') {
+            this.setPreviewURL(null);
+        } else {
+            const baseUrl = getBaseUrl(window.location);
+            let url;
+            switch (tab) {
+                case 'vscode':
+                    url = buildVSCodeUrl(baseUrl, this.workDir);
+                    break;
+                case 'shell':
+                    const shellUUID = deriveShellUUID(this.uuid);
+                    url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
+                    break;
+                case 'browser':
+                    url = `${baseUrl}/chrome/`;
+                    break;
+                default:
+                    return;
+            }
+            this.setIframeUrl(url);
+        }
+
         this.updateActiveTabIndicator();
 
         // Update mobile dropdown to match
@@ -2643,13 +2654,10 @@ class TerminalUI extends HTMLElement {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ url: '' }) // Empty URL resets to default
                     });
-                    // Clear the URL input
-                    const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
-                    if (urlInput) urlInput.value = '';
                 } catch (err) {
                     console.warn('[TerminalUI] Failed to reset proxy target:', err);
                 }
-                this.setIframeUrl(this.getPreviewBaseUrl() + '/');
+                this.setPreviewURL(null);
             });
         }
         if (refreshBtn) {
@@ -2679,7 +2687,7 @@ class TerminalUI extends HTMLElement {
                 }
 
                 // Navigate iframe to proxy root (which now proxies to target)
-                this.setIframeUrl(this.getPreviewBaseUrl() + '/');
+                this.setPreviewURL(targetUrl, '/');
             } catch (err) {
                 console.error('[TerminalUI] Error setting proxy target:', err);
             }
@@ -2698,7 +2706,7 @@ class TerminalUI extends HTMLElement {
         const openExternalBtn = this.querySelector('.terminal-ui__iframe-open-external');
         if (openExternalBtn) {
             openExternalBtn.addEventListener('click', () => {
-                const url = urlInput?.value?.trim() || this.getPreviewBaseUrl();
+                const url = this._lastProxyUrl || this.getPreviewBaseUrl() + '/';
                 if (url) window.open(url, '_blank');
             });
         }
@@ -2711,10 +2719,8 @@ class TerminalUI extends HTMLElement {
         // Open preview tab by default on desktop (if wide enough for split view)
         // Skip when embedded in iframe (right panel) - avoid nested iframes
         if (this.canShowSplitPane() && !this.classList.contains('embedded-in-iframe')) {
-            // Use setTimeout to ensure DOM is ready and terminal has been initialized
-            setTimeout(() => {
-                this.openIframePane('preview', this.getPreviewBaseUrl() + '/');
-            }, 100);
+            // Defer until first BroadcastStatus delivers previewPort
+            this._wantsPreviewOnConnect = true;
         }
     }
 
@@ -2774,10 +2780,12 @@ class TerminalUI extends HTMLElement {
         this.applyPaneWidth();
 
         // Update iframe src
-        this.setIframeUrl(url);
-
-        // Update active tab state
         this.activeTab = tab;
+        if (tab === 'preview') {
+            this.setPreviewURL(url); // url is targetURL or null
+        } else {
+            this.setIframeUrl(url);
+        }
         this.updateActiveTabIndicator();
 
         // Re-fit terminal after layout change
@@ -2877,10 +2885,8 @@ class TerminalUI extends HTMLElement {
         // If switching to workspace, ensure iframe pane is initialized
         if (view === 'workspace' && !this.activeTab) {
             // Default to preview tab
-            const baseUrl = getBaseUrl(window.location);
-            const previewUrl = this.getPreviewBaseUrl();
             this.activeTab = 'preview';
-            this.setIframeUrl(previewUrl);
+            this.setPreviewURL(null);
             this.updateActiveTabIndicator();
         }
     }
@@ -3088,6 +3094,45 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    /**
+     * Set the preview URL bar and iframe src separately.
+     * @param {string|null} targetURL - Logical target URL shown in bar (null = home)
+     * @param {string|null} iframePath - Override iframe path instead of extracting from targetURL
+     */
+    setPreviewURL(targetURL, iframePath = null) {
+        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+
+        // 1. URL bar = logical target (empty for "home")
+        if (urlInput) {
+            urlInput.value = targetURL || '';
+            urlInput.title = targetURL || '';
+        }
+
+        // 2. iframe src = proxy URL
+        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        let proxyUrl;
+        if (iframePath !== null) {
+            const base = buildPreviewUrl(window.location, previewPort);
+            proxyUrl = base + iframePath;
+        } else {
+            proxyUrl = buildProxyUrl(window.location, previewPort, targetURL);
+        }
+
+        if (iframe) {
+            if (placeholder) placeholder.classList.remove('hidden');
+            iframe.onload = () => { if (placeholder) placeholder.classList.add('hidden'); };
+            iframe.onerror = () => {
+                if (placeholder) { placeholder.textContent = 'Failed to load'; placeholder.classList.remove('hidden'); }
+            };
+            iframe.src = proxyUrl;
+        }
+
+        // 3. Store proxy URL for "open in new window"
+        this._lastProxyUrl = proxyUrl;
+    }
+
     refreshIframe() {
         const iframe = this.querySelector('.terminal-ui__iframe');
         if (iframe && iframe.src) {
@@ -3102,6 +3147,9 @@ class TerminalUI extends HTMLElement {
     }
 
     updateIframeUrlDisplay() {
+        // Preview tab manages its own URL bar via setPreviewURL
+        if (this.activeTab === 'preview') return;
+
         const iframe = this.querySelector('.terminal-ui__iframe');
         const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
         if (!iframe || !urlInput) return;

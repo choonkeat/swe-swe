@@ -49,8 +49,26 @@ export function buildPreviewUrl(location, previewPort) {
     if (previewPort) {
         return `${protocol}//${hostname}:${previewPort}`;
     }
-    const fallbackPort = '1' + (port || '80');
+    const fallbackPort = '5' + (port || '80');
     return `${protocol}//${hostname}:${fallbackPort}`;
+}
+
+/**
+ * Build a proxy URL by combining the preview base with the path from a target URL.
+ * @param {{protocol: string, hostname: string, port: string}} location - Location-like object
+ * @param {number|string} previewPort - Explicit preview port (optional)
+ * @param {string} targetURL - The logical target URL (optional)
+ * @returns {string} Proxy URL for use as iframe src
+ */
+export function buildProxyUrl(location, previewPort, targetURL) {
+    const base = buildPreviewUrl(location, previewPort);
+    if (!targetURL) return base + '/';
+    try {
+        const parsed = new URL(targetURL);
+        return base + parsed.pathname + parsed.search + parsed.hash;
+    } catch {
+        return base + (targetURL.startsWith('/') ? targetURL : '/' + targetURL);
+    }
 }
 
 /**

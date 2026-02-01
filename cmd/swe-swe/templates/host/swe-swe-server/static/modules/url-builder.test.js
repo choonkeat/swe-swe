@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -129,31 +129,81 @@ test('buildPreviewUrl uses explicit preview port when provided', () => {
     );
 });
 
-test('buildPreviewUrl prefixes port with 1', () => {
+test('buildPreviewUrl prefixes port with 5', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }),
-        'https://example.com:18080'
+        'https://example.com:58080'
     );
 });
 
 test('buildPreviewUrl defaults to port 80 when empty', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '' }),
-        'http://localhost:180'
+        'http://localhost:580'
     );
 });
 
 test('buildPreviewUrl handles 443 port', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'secure.com', port: '443' }),
-        'https://secure.com:1443'
+        'https://secure.com:5443'
     );
 });
 
 test('buildPreviewUrl handles localhost with custom port', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '9770' }),
-        'http://localhost:19770'
+        'http://localhost:59770'
+    );
+});
+
+// buildProxyUrl tests
+test('buildProxyUrl with no targetURL returns base with slash', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, null),
+        'https://example.com:53007/'
+    );
+});
+
+test('buildProxyUrl with empty targetURL returns base with slash', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, ''),
+        'https://example.com:53007/'
+    );
+});
+
+test('buildProxyUrl extracts path from full URL', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, 'http://localhost:3000/api/health'),
+        'https://example.com:53007/api/health'
+    );
+});
+
+test('buildProxyUrl preserves query string and hash from target', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'host.com', port: '8080' }, 53007, 'http://localhost:3000/page?q=1#section'),
+        'https://host.com:53007/page?q=1#section'
+    );
+});
+
+test('buildProxyUrl handles bare path starting with slash', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, '/some/path'),
+        'https://example.com:53007/some/path'
+    );
+});
+
+test('buildProxyUrl handles bare path without leading slash', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, 'some/path'),
+        'https://example.com:53007/some/path'
+    );
+});
+
+test('buildProxyUrl uses fallback port when previewPort is null', () => {
+    assert.strictEqual(
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, null, 'http://localhost:3000/'),
+        'https://example.com:58080/'
     );
 });
 
