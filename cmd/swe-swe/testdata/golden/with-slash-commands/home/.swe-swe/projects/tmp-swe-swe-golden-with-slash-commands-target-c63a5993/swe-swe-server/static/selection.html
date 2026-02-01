@@ -647,6 +647,7 @@
         }
         .dialog__field {
             margin-bottom: 20px;
+            min-width: 0;
         }
         .dialog__label {
             display: block;
@@ -794,6 +795,9 @@
         }
         .dialog__select {
             flex: 1;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
             padding: 12px 14px;
             font-size: 14px;
             background: #0f172a;
@@ -807,6 +811,9 @@
             background-repeat: no-repeat;
             background-position: right 12px center;
             padding-right: 36px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .dialog__select:focus {
             outline: none;
