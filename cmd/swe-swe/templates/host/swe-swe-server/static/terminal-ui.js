@@ -348,6 +348,8 @@ class TerminalUI extends HTMLElement {
                             </div>
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back">◀</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-forward" title="Forward">▶</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
                                 <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL - edit to navigate" />
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
@@ -2663,6 +2665,22 @@ class TerminalUI extends HTMLElement {
         }
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
+        }
+
+        // Setup Back/Forward buttons
+        const backBtn = this.querySelector('.terminal-ui__iframe-back');
+        const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                const iframe = this.querySelector('.terminal-ui__iframe');
+                try { iframe?.contentWindow?.history.back(); } catch (e) { /* cross-origin */ }
+            });
+        }
+        if (forwardBtn) {
+            forwardBtn.addEventListener('click', () => {
+                const iframe = this.querySelector('.terminal-ui__iframe');
+                try { iframe?.contentWindow?.history.forward(); } catch (e) { /* cross-origin */ }
+            });
         }
 
         // Setup URL input for external URL debugging
