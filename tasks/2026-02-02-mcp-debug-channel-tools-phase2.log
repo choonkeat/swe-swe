@@ -1,3 +1,8 @@
 153600 START Phase 2: Manual CLI verification
 153600 PLAN: Build binary, pipe JSON-RPC sequences, verify output
 153600 EXPECT: (1) initialize+tools/list returns correct JSON, (2) tools/call preview_query returns isError, (3) malformed JSON returns parse error, (4) process exits on EOF
+153711 VERIFY(1): Piped initialize+notifications/initialized+tools/list — got correct protocolVersion "2025-11-25", serverInfo name "swe-swe-preview", both tools with inputSchemas. PASS
+153711 VERIFY(2): Piped tools/call preview_query with --debug-endpoint ws://localhost:19999/nonexistent — got isError:true with "Connection error: dial tcp ...connection refused". PASS
+153711 VERIFY(3): Piped {bad json} — got JSON-RPC error code -32700 "Parse error". PASS
+153711 VERIFY(4): Piped empty stdin (EOF) — process exited cleanly (exit code 0). PASS
+153711 CONCLUSION: All 5 Phase 2 verification steps pass.

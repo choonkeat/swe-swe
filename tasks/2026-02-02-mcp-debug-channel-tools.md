@@ -1,7 +1,7 @@
 # MCP Debug Channel Tools
 
 **Date**: 2026-02-02
-**Status**: In Progress (Phase 1 complete)
+**Status**: In Progress (Phase 2 complete)
 **Research**: `research/2026-02-02-agent-debug-channel-discoverability.md`
 
 ## Goal
@@ -92,7 +92,7 @@ preview_listen:
 
 ---
 
-## Phase 2: Manual CLI verification
+## Phase 2: Manual CLI verification ✅
 
 ### What will be achieved
 
