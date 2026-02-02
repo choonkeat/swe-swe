@@ -2520,6 +2520,7 @@ func main() {
 	debugQuery := flag.String("debug-query", "", "Send DOM query to preview proxy (CSS selector)")
 	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:5${SWE_PREVIEW_PORT}/__swe-swe-debug__/agent if SWE_PREVIEW_PORT is set; otherwise ws://localhost:9899/__swe-swe-debug__/agent)")
 	mcpMode := flag.Bool("mcp", false, "Run as MCP stdio server exposing preview debug tools")
+	dumpTemplates := flag.String("dump-container-templates", "", "Dump all container templates to directory and exit")
 	noPreviewProxy := flag.Bool("no-preview-proxy", false, "Disable the preview proxy server (useful for dev mode)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
@@ -2542,6 +2543,14 @@ func main() {
 	// Handle --version flag
 	if *version {
 		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
+		os.Exit(0)
+	}
+
+	// Handle --dump-container-templates flag
+	if *dumpTemplates != "" {
+		if err := dumpContainerTemplates(*dumpTemplates); err != nil {
+			log.Fatalf("Failed to dump container templates: %v", err)
+		}
 		os.Exit(0)
 	}
 
@@ -3046,6 +3055,44 @@ var worktreeDir = "/worktrees"
 // excludeFromSymlink lists entries that should never be symlinked to worktrees
 var excludeFromSymlink = []string{".git"}
 
+// dumpContainerTemplates writes all embedded container templates to destDir,
+// always overwriting existing files. Used by the update-swe-swe slash command
+// to extract latest templates for three-way merge.
+func dumpContainerTemplates(destDir string) error {
+	return fs.WalkDir(containerTemplatesFS, "container-templates", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath := strings.TrimPrefix(path, "container-templates/")
+		if relPath == "" || relPath == "." {
+			return nil // skip root
+		}
+
+		destPath := filepath.Join(destDir, relPath)
+
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		content, err := containerTemplatesFS.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read embedded %s: %w", path, err)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", destPath, err)
+		}
+
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", destPath, err)
+		}
+
+		fmt.Printf("Dumped %s\n", destPath)
+		return nil
+	})
+}
+
 // setupSweSweFiles writes embedded container template files into destDir.
 // Used to provision swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup)
 // into cloned repos and new projects that weren't set up by swe-swe init.
@@ -3087,6 +3134,16 @@ func setupSweSweFiles(destDir string) error {
 		}
 
 		log.Printf("Wrote swe-swe file: %s", destPath)
+
+		// Also write baseline snapshot for three-way merge during updates
+		baselinePath := filepath.Join(destDir, ".swe-swe", "baseline", relPath)
+		if err := os.MkdirAll(filepath.Dir(baselinePath), 0755); err != nil {
+			return fmt.Errorf("failed to create baseline directory for %s: %w", relPath, err)
+		}
+		if err := os.WriteFile(baselinePath, content, 0644); err != nil {
+			return fmt.Errorf("failed to write baseline %s: %w", baselinePath, err)
+		}
+
 		return nil
 	})
 }

@@ -6,6 +6,7 @@
 |---------|-------------|
 | `setup` | Configure git, SSH, testing, credentials |
 | `debug-with-app-preview` | Debug web apps using the App Preview debug channel |
+| `update-swe-swe` | Update workspace swe-swe files after a version upgrade |
 
 ## Current Setup
 

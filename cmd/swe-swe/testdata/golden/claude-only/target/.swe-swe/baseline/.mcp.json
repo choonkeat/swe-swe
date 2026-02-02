@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "swe-swe-playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    },
+    "swe-swe-preview": {
+      "command": "swe-swe-server",
+      "args": ["--mcp"]
+    }
+  }
+}

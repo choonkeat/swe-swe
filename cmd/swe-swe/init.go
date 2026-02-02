@@ -961,6 +961,16 @@ func handleInit() {
 				log.Fatalf("Failed to write %q: %v", destPath, err)
 			}
 			fmt.Printf("Created %s\n", destPath)
+
+			// Also write baseline snapshot for three-way merge during updates
+			baselinePath := filepath.Join(absPath, ".swe-swe", "baseline", relPath)
+			baselineDir := filepath.Dir(baselinePath)
+			if err := os.MkdirAll(baselineDir, os.FileMode(0755)); err != nil {
+				log.Fatalf("Failed to create baseline directory %q: %v", baselineDir, err)
+			}
+			if err := os.WriteFile(baselinePath, content, 0644); err != nil {
+				log.Fatalf("Failed to write baseline %q: %v", baselinePath, err)
+			}
 		}
 
 		// Copy ALL container templates into server source for embedding in server binary.
