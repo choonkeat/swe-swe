@@ -1,5 +1,5 @@
 ---
-description: Debug web apps using the App Preview debug channel
+description: Inspect App Preview page content — use instead of browser tools for preview
 ---
 
 # Debug with App Preview

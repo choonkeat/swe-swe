@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"crypto/tls"
@@ -2109,6 +2110,309 @@ func singleJoiningSlash(a, b string) string {
 	return a + b
 }
 
+// --- MCP stdio server ---
+
+// mcpRequest represents a JSON-RPC 2.0 request
+type mcpRequest struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"` // may be number, string, or null
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// mcpResponse represents a JSON-RPC 2.0 response
+type mcpResponse struct {
+	JSONRPC string      `json:"jsonrpc"`
+	ID      interface{} `json:"id"`
+	Result  interface{} `json:"result,omitempty"`
+	Error   *mcpError   `json:"error,omitempty"`
+}
+
+type mcpError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type mcpToolDef struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	InputSchema interface{} `json:"inputSchema"`
+}
+
+type mcpToolResult struct {
+	Content []mcpToolContent `json:"content"`
+	IsError bool             `json:"isError,omitempty"`
+}
+
+type mcpToolContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+var mcpTools = []mcpToolDef{
+	{
+		Name: "preview_query",
+		Description: "Query DOM elements in the App Preview panel by CSS selector. " +
+			"Returns text, HTML, and visibility of the first matching element. " +
+			"Use this to inspect what the user sees in their preview — more " +
+			"reliable than browser_snapshot for preview content.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"selector": map[string]interface{}{
+					"type":        "string",
+					"description": "CSS selector (e.g. 'h1', '.error-message', '#app')",
+				},
+			},
+			"required": []string{"selector"},
+		},
+	},
+	{
+		Name: "preview_listen",
+		Description: "Collect console logs, errors, and network requests from the " +
+			"App Preview panel. Returns messages gathered over the specified " +
+			"duration. Use this to debug runtime errors and failed API calls " +
+			"in the preview.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"duration_seconds": map[string]interface{}{
+					"type":        "number",
+					"description": "How long to listen (default: 5, max: 30)",
+				},
+			},
+		},
+	},
+}
+
+// runMCP runs an MCP stdio server, reading JSON-RPC from in and writing to out.
+func runMCP(in io.Reader, out io.Writer, endpoint string) {
+	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
+
+	writeResponse := func(resp mcpResponse) {
+		data, err := json.Marshal(resp)
+		if err != nil {
+			log.Printf("[mcp] marshal error: %v", err)
+			return
+		}
+		fmt.Fprintf(out, "%s\n", data)
+	}
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+
+		var req mcpRequest
+		if err := json.Unmarshal(line, &req); err != nil {
+			writeResponse(mcpResponse{
+				JSONRPC: "2.0",
+				ID:      nil,
+				Error:   &mcpError{Code: -32700, Message: "Parse error"},
+			})
+			continue
+		}
+
+		// Parse request ID
+		var reqID interface{}
+		if req.ID != nil {
+			json.Unmarshal(req.ID, &reqID)
+		}
+
+		// Notifications (no id) — just acknowledge silently
+		if req.ID == nil {
+			log.Printf("[mcp] notification: %s", req.Method)
+			continue
+		}
+
+		switch req.Method {
+		case "initialize":
+			writeResponse(mcpResponse{
+				JSONRPC: "2.0",
+				ID:      reqID,
+				Result: map[string]interface{}{
+					"protocolVersion": "2025-11-25",
+					"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
+					"serverInfo": map[string]interface{}{
+						"name":    "swe-swe-preview",
+						"version": Version,
+					},
+				},
+			})
+
+		case "ping":
+			writeResponse(mcpResponse{
+				JSONRPC: "2.0",
+				ID:      reqID,
+				Result:  map[string]interface{}{},
+			})
+
+		case "tools/list":
+			writeResponse(mcpResponse{
+				JSONRPC: "2.0",
+				ID:      reqID,
+				Result:  map[string]interface{}{"tools": mcpTools},
+			})
+
+		case "tools/call":
+			var params struct {
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+				writeResponse(mcpResponse{
+					JSONRPC: "2.0",
+					ID:      reqID,
+					Error:   &mcpError{Code: -32602, Message: "Invalid params"},
+				})
+				continue
+			}
+
+			switch params.Name {
+			case "preview_query":
+				var args struct {
+					Selector string `json:"selector"`
+				}
+				if err := json.Unmarshal(params.Arguments, &args); err != nil || args.Selector == "" {
+					writeResponse(mcpResponse{
+						JSONRPC: "2.0",
+						ID:      reqID,
+						Error:   &mcpError{Code: -32602, Message: "Invalid params: selector is required"},
+					})
+					continue
+				}
+				result := mcpPreviewQuery(endpoint, args.Selector)
+				writeResponse(mcpResponse{
+					JSONRPC: "2.0",
+					ID:      reqID,
+					Result:  result,
+				})
+
+			case "preview_listen":
+				var args struct {
+					DurationSeconds float64 `json:"duration_seconds"`
+				}
+				json.Unmarshal(params.Arguments, &args)
+				if args.DurationSeconds <= 0 {
+					args.DurationSeconds = 5
+				}
+				if args.DurationSeconds > 30 {
+					args.DurationSeconds = 30
+				}
+				result := mcpPreviewListen(endpoint, time.Duration(args.DurationSeconds*float64(time.Second)))
+				writeResponse(mcpResponse{
+					JSONRPC: "2.0",
+					ID:      reqID,
+					Result:  result,
+				})
+
+			default:
+				writeResponse(mcpResponse{
+					JSONRPC: "2.0",
+					ID:      reqID,
+					Error:   &mcpError{Code: -32602, Message: fmt.Sprintf("Unknown tool: %s", params.Name)},
+				})
+			}
+
+		default:
+			writeResponse(mcpResponse{
+				JSONRPC: "2.0",
+				ID:      reqID,
+				Error:   &mcpError{Code: -32601, Message: "Method not found"},
+			})
+		}
+	}
+}
+
+// mcpPreviewQuery connects to the debug WebSocket, sends a DOM query, and returns the result.
+func mcpPreviewQuery(endpoint string, selector string) mcpToolResult {
+	if endpoint == "" {
+		endpoint = defaultDebugEndpoint()
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		return mcpToolResult{
+			Content: []mcpToolContent{{Type: "text", Text: fmt.Sprintf("Connection error: %v", err)}},
+			IsError: true,
+		}
+	}
+	defer conn.Close()
+
+	queryID := fmt.Sprintf("q%d", time.Now().UnixNano())
+	query := fmt.Sprintf(`{"t":"query","id":"%s","selector":"%s"}`, queryID, selector)
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(query)); err != nil {
+		return mcpToolResult{
+			Content: []mcpToolContent{{Type: "text", Text: fmt.Sprintf("Send error: %v", err)}},
+			IsError: true,
+		}
+	}
+
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		return mcpToolResult{
+			Content: []mcpToolContent{{Type: "text", Text: fmt.Sprintf("Read error: %v", err)}},
+			IsError: true,
+		}
+	}
+
+	return mcpToolResult{
+		Content: []mcpToolContent{{Type: "text", Text: string(message)}},
+	}
+}
+
+// mcpPreviewListen connects to the debug WebSocket and collects messages for the specified duration.
+func mcpPreviewListen(endpoint string, duration time.Duration) mcpToolResult {
+	if endpoint == "" {
+		endpoint = defaultDebugEndpoint()
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		return mcpToolResult{
+			Content: []mcpToolContent{{Type: "text", Text: fmt.Sprintf("Connection error: %v", err)}},
+			IsError: true,
+		}
+	}
+	defer conn.Close()
+
+	var messages []string
+	deadline := time.After(duration)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			messages = append(messages, string(message))
+		}
+	}()
+
+	select {
+	case <-deadline:
+		conn.Close() // will cause ReadMessage to error and goroutine to exit
+		<-done
+	case <-done:
+	}
+
+	if len(messages) == 0 {
+		return mcpToolResult{
+			Content: []mcpToolContent{{Type: "text", Text: "No messages received during listen period"}},
+		}
+	}
+
+	result := strings.Join(messages, "\n")
+	return mcpToolResult{
+		Content: []mcpToolContent{{Type: "text", Text: result}},
+	}
+}
+
 // runDebugListen connects to the debug channel and prints messages to stdout
 // This allows agents to receive debug messages from the user's app
 func runDebugListen(endpoint string) {
@@ -2217,6 +2521,7 @@ func main() {
 	debugListen := flag.Bool("debug-listen", false, "Listen for debug messages from preview proxy")
 	debugQuery := flag.String("debug-query", "", "Send DOM query to preview proxy (CSS selector)")
 	debugEndpoint := flag.String("debug-endpoint", "", "Debug WebSocket endpoint (default: ws://localhost:5${SWE_PREVIEW_PORT}/__swe-swe-debug__/agent if SWE_PREVIEW_PORT is set; otherwise ws://localhost:9899/__swe-swe-debug__/agent)")
+	mcpMode := flag.Bool("mcp", false, "Run as MCP stdio server exposing preview debug tools")
 	noPreviewProxy := flag.Bool("no-preview-proxy", false, "Disable the preview proxy server (useful for dev mode)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
@@ -2240,6 +2545,12 @@ func main() {
 	if *version {
 		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
 		os.Exit(0)
+	}
+
+	// Handle --mcp flag
+	if *mcpMode {
+		runMCP(os.Stdin, os.Stdout, *debugEndpoint)
+		return
 	}
 
 	// Handle --debug-listen flag

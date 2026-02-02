@@ -47,6 +47,11 @@ extensions:
       - "@playwright/mcp@latest"
       - "--cdp-endpoint"
       - "http://chrome:9223"
+  swe-swe-preview:
+    type: stdio
+    cmd: swe-swe-server
+    args:
+      - "--mcp"
 EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"

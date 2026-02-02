@@ -41,6 +41,10 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     "swe-swe-playwright": {
       "type": "local",
       "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    },
+    "swe-swe-preview": {
+      "type": "local",
+      "command": ["swe-swe-server", "--mcp"]
     }
   }
 }
@@ -54,6 +58,10 @@ cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-playwright]
 command = "npx"
 args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+
+[mcp_servers.swe-swe-preview]
+command = "swe-swe-server"
+args = ["--mcp"]
 EOF
 chown -R app: /home/app/.codex
 echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
@@ -66,6 +74,10 @@ cat > /home/app/.gemini/settings.json << 'EOF'
     "swe-swe-playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    },
+    "swe-swe-preview": {
+      "command": "swe-swe-server",
+      "args": ["--mcp"]
     }
   }
 }
@@ -85,6 +97,11 @@ extensions:
       - "@playwright/mcp@latest"
       - "--cdp-endpoint"
       - "http://chrome:9223"
+  swe-swe-preview:
+    type: stdio
+    cmd: swe-swe-server
+    args:
+      - "--mcp"
 EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"

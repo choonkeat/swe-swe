@@ -66,6 +66,10 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     "swe-swe-playwright": {
       "type": "local",
       "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+    },
+    "swe-swe-preview": {
+      "type": "local",
+      "command": ["swe-swe-server", "--mcp"]
     }
   }
 }

@@ -112,7 +112,7 @@ Manual spot-check. Phase 1's `make test` is the automated safety net.
 
 ---
 
-## Phase 3: Config plumbing + golden-update + test container e2e
+## Phase 3: Config plumbing + golden-update + test container e2e (config+goldens ✅, e2e pending)
 
 ### What will be achieved
 
