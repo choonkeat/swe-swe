@@ -1,3 +1,7 @@
 224246 Starting Phase 1: WebSocket upgrade relay + unit tests (TDD)
 224246 Step 1: Write WebSocket proxy test (red). Expect: test fails because handleProxyRequest strips Upgrade/Connection hop-by-hop headers, breaking WebSocket upgrade.
 224338 Step 1 result: TestWebSocketProxyRelay FAIL as expected — "'upgrade' token not found in 'Connection' header". TestNormalHTTPThroughProxy PASS (regression test green). TDD red confirmed.
+224355 Steps 2-4: Step 2 done (TestNormalHTTPThroughProxy already written). Now implementing WebSocket upgrade detection + relay in handleProxyRequest. Expect: TestWebSocketProxyRelay passes, TestNormalHTTPThroughProxy still passes.
+224452 Steps 3-5 result: TestWebSocketProxyRelay PASS, TestNormalHTTPThroughProxy PASS, make test all green. TDD green confirmed.
+224452 Step 6: Write edge case test — WebSocket upgrade to backend that isn't listening. Expect: proxy returns HTTP error (502) instead of hanging/panicking.
+224531 Step 6-7 result: TestWebSocketProxyBackendDown PASS (returns 502). make test all green. Phase 1 complete.

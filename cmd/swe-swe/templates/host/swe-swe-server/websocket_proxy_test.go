@@ -100,3 +100,29 @@ func TestNormalHTTPThroughProxy(t *testing.T) {
 		t.Errorf("Expected 200, got %d", resp.StatusCode)
 	}
 }
+
+// TestWebSocketProxyBackendDown verifies that the proxy returns an HTTP error
+// when the backend is not listening (instead of hanging or panicking).
+func TestWebSocketProxyBackendDown(t *testing.T) {
+	// Point proxy at a port that nothing is listening on
+	backendURL, _ := url.Parse("http://127.0.0.1:1") // port 1 should be closed
+	state := &previewProxyState{
+		defaultTarget:  backendURL,
+		defaultPortStr: "1",
+	}
+	proxyMux := http.NewServeMux()
+	proxyMux.HandleFunc("/", handleProxyRequest(state))
+	proxy := httptest.NewServer(proxyMux)
+	defer proxy.Close()
+
+	// Attempt WebSocket dial — should get an error, not hang
+	wsURL := "ws" + strings.TrimPrefix(proxy.URL, "http") + "/"
+	dialer := websocket.Dialer{}
+	_, resp, err := dialer.Dial(wsURL, nil)
+	if err == nil {
+		t.Fatal("Expected WebSocket dial to fail when backend is down")
+	}
+	if resp != nil && resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("Expected 502 Bad Gateway, got %d", resp.StatusCode)
+	}
+}

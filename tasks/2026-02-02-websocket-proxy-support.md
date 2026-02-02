@@ -23,7 +23,7 @@ TDD with Go unit tests (`httptest.NewServer` + gorilla/websocket, already a depe
 
 ## Progress
 
-- [ ] Phase 1: WebSocket upgrade relay + unit tests (TDD)
+- [x] Phase 1: WebSocket upgrade relay + unit tests (TDD)
 - [ ] Phase 2: Manual smoke test + golden update
 
 ---
