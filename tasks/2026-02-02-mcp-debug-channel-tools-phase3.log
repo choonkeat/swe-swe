@@ -6,3 +6,14 @@
 154004 VERIFY: golden diffs show only expected changes: swe-swe-preview MCP server entries, updated skill descriptions, main.go MCP code
 154004 RAN: make test — both test suites pass (ok cmd/swe-swe 43.498s, ok swe-swe 2.344s), no FAILs
 154004 REMAINING: Test container e2e (steps 7-14) — requires user involvement for manual browser testing
+154100 START: Test container e2e (steps 7-14)
+154100 PLAN: init → build → run → browser test → verify agent discovers preview_query
+154100 EXPECT: Agent calls preview_query (not browser_snapshot) when asked about preview content
+154843 RAN: Test container init → build → run — all succeeded, container at http://host.docker.internal:9770/
+154843 RAN: Created OpenCode session, typed "run a python web server on localhost:3100 that serves an index.html saying Hello from Preview"
+154843 RESULT: Agent created server.py, started it, preview shows "Hello from Preview" — PASS
+154843 RAN: Typed "what's showing on my preview page?"
+154843 RESULT: Agent used swe-swe-playwright_browser_navigate (NOT preview_query) — FAIL
+154843 OBSERVED: Agent called browser_navigate twice, then browser_install. Did not discover or use preview_query.
+154843 NOTE: Status bar shows "2 MCP" confirming both MCP servers are connected. Agent chose Playwright over preview_query despite both being available.
+154843 NEXT: Per task plan step 13, need to iterate on tool description string to improve discoverability. Stopping for user consultation.
