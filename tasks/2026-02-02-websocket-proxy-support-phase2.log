@@ -1,0 +1,16 @@
+224549 Starting Phase 2: Manual smoke test + golden update
+224549 Step 1: Create minimal WebSocket test app in scratchpad (not committed).
+224626 Approach: Use test container workflow (scripts/test-container/) for full integration test with preview proxy. Creating WebSocket echo server + HTML page.
+224844 Test container running. WebSocket echo server on port 3100 inside container. Preview proxy on 53100 forwards to 3100. HTML page loads through proxy with debug script injected. Now testing WebSocket via MCP browser.
+224844 Step 4: MCP browser test. Expect: HTML page loads, WebSocket connects (status shows CONNECTED), send/echo works.
+225300 Note: Python stdlib WS server caused "Incorrect Sec-WebSocket-Accept" — switched to Go/gorilla WS echo server (same lib used in unit tests). Issue was Python's WS protocol implementation, not the proxy.
+225738 Step 4 result: ALL PASS via MCP browser at http://172.20.0.6:53100/
+  - HTML page loads through proxy: YES (with debug script injected)
+  - WebSocket connection establishes: YES (status shows "CONNECTED", green background)
+  - Send/echo works: YES ("Sent: hello websocket" → "Echo: hello websocket")
+  - Connection stays alive: YES (second message also echoed successfully)
+225738 Step 5: Tearing down test container and test app.
+225800 Step 5 done. Test container and slot released.
+225830 Step 6: make build golden-update. Golden diffs show only swe-swe-server/main.go changes (83 lines in each of 33 golden variants) — WebSocket relay code only.
+225900 Step 7: Golden diff inspected. Only expected changes: handleWebSocketRelay function + upgrade detection in handleProxyRequest. No HTML/CSS/JS changes.
+225930 Step 8: make test — all green. Phase 2 complete.
