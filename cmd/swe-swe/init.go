@@ -713,6 +713,16 @@ func handleInit() {
 	// This allows the certificate detection to inform the Dockerfile template
 	hasCerts := handleCertificatesAndEnv(sweDir, certsDir, projectName)
 
+	// Append preview port range to .env so swe-swe-server uses the correct range
+	if len(previewPortsRange) > 0 {
+		envFilePath := filepath.Join(sweDir, ".env")
+		f, err := os.OpenFile(envFilePath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err == nil {
+			fmt.Fprintf(f, "SWE_PREVIEW_PORTS=%d-%d\n", previewPortsRange[0], previewPortsRange[len(previewPortsRange)-1])
+			f.Close()
+		}
+	}
+
 	// Generate self-signed certificate if SSL mode is selfsign
 	// Certs are stored in shared location ~/.swe-swe/tls/ so users only need to trust once
 	if sslMode == "selfsign" {

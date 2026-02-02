@@ -5,6 +5,7 @@
 | Command | Description |
 |---------|-------------|
 | `setup` | Configure git, SSH, testing, credentials |
+| `debug-with-app-preview` | Debug web apps using the App Preview debug channel |
 
 ## Current Setup
 
@@ -15,6 +16,6 @@
 
 ## Documentation
 
-- `app-preview.md` - App preview panel and debug channel
+- `app-preview.md` - App preview panel, navigation, and debug channel
 - `browser-automation.md` - MCP browser at /chrome/
 - `docker.md` - Docker access from container

@@ -198,6 +198,8 @@ services:
       - BROWSER_WS_ENDPOINT=ws://chrome:9223
       # App preview proxy target port (for split-pane iframe)
       - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
+      # App preview session port range (must match traefik entrypoints)
+      - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
       # Add other credentials as needed:
       # - GEMINI_API_KEY=${GEMINI_API_KEY}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}

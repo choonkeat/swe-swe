@@ -74,6 +74,9 @@ const (
 	MinChunkSize = 512
 	// RingBufferSize is the size of the terminal scrollback ring buffer (512KB)
 	RingBufferSize = 512 * 1024
+)
+
+var (
 	previewPortStart = 3000
 	previewPortEnd   = 3019
 )
@@ -2201,6 +2204,10 @@ func defaultDebugEndpoint() string {
 	if previewPort := os.Getenv("SWE_PREVIEW_PORT"); previewPort != "" {
 		return fmt.Sprintf("ws://localhost:5%s/__swe-swe-debug__/agent", previewPort)
 	}
+	// In session context, PORT is set to the session's preview port
+	if port := os.Getenv("PORT"); port != "" {
+		return fmt.Sprintf("ws://localhost:5%s/__swe-swe-debug__/agent", port)
+	}
 	return "ws://localhost:9899/__swe-swe-debug__/agent"
 }
 
@@ -2216,6 +2223,18 @@ func main() {
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
 	flag.Parse()
 	previewProxyDisabled = *noPreviewProxy
+
+	// Override preview port range from environment (set by docker-compose)
+	if portRange := os.Getenv("SWE_PREVIEW_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					previewPortStart = start
+					previewPortEnd = end
+				}
+			}
+		}
+	}
 
 	// Handle --version flag
 	if *version {

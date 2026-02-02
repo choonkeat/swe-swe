@@ -9,7 +9,7 @@ Use swe-swe's debug channel to receive console logs, errors, and network request
 ## Prerequisites
 
 - User must have the App Preview panel open (right side of terminal UI)
-- App must be running on port 3000 (or `SWE_PREVIEW_TARGET_PORT`)
+- App must be running on `$PORT` (check with `echo $PORT`)
 
 ## Commands
 
@@ -30,6 +30,12 @@ Output is JSON lines:
 {"t":"error","msg":"Uncaught TypeError: ...","stack":"...","ts":...}
 {"t":"fetch","url":"/api/users","method":"GET","status":200,"ms":45,"ts":...}
 {"t":"xhr","url":"/api/data","method":"POST","status":500,"ms":120,"ts":...}
+```
+
+You will also see navigation events:
+```json
+{"t":"urlchange","url":"http://localhost:3000/about","ts":...}
+{"t":"navstate","canGoBack":true,"canGoForward":false}
 ```
 
 Press Ctrl+C to stop listening.
@@ -57,17 +63,19 @@ If not found:
 
 ## Workflow
 
-1. **Start your app** on port 3000
+1. **Start your app** on `$PORT` (e.g., `python3 -m http.server "$PORT"`)
 2. **Ask the user** to open the Preview tab in the right panel
-3. **Run `--debug-listen`** in one terminal to monitor
-4. **Use `--debug-query`** to inspect specific elements
-5. **Fix issues** based on what you observe
+3. **Run `--debug-listen`** to monitor console output, errors, and network requests
+4. **Use `--debug-query`** to inspect specific DOM elements
+5. **Fix issues** based on what you observe, then ask the user to reload
 
 ## Message Types
 
 | Type | Field `t` | Description |
 |------|-----------|-------------|
 | Page load | `init` | Sent when page loads, includes URL |
+| URL change | `urlchange` | SPA navigation (pushState, replaceState, popstate, hashchange) |
+| Nav state | `navstate` | Back/forward availability (`canGoBack`, `canGoForward`) |
 | Console | `console` | Console.log/warn/error/info/debug output |
 | Error | `error` | Uncaught exceptions with stack trace |
 | Promise rejection | `rejection` | Unhandled promise rejections |
@@ -81,11 +89,12 @@ If not found:
 - Network requests show timing (`ms` field) - useful for performance debugging
 - DOM queries return the FIRST matching element only
 - The `visible` field in query results indicates if element is in viewport
+- `urlchange` events fire on SPA navigations, so you can track which page the user is on
 - Stack traces in errors may be minified - check source maps if needed
 
 ## Limitations
 
-- Only works for the App Preview (port 3000 by default)
+- Only works for the App Preview (your session's `$PORT`)
 - User must have Preview panel open for messages to flow
 - No request/response body capture (only metadata)
 - Source maps not automatically resolved
@@ -94,14 +103,18 @@ If not found:
 
 ```bash
 # Terminal 1: Start your app
-npm run dev
+python3 -m http.server "$PORT"
 
 # Terminal 2: Listen for debug messages
 swe-swe-server --debug-listen
 
 # User opens Preview panel, you see:
-# {"t":"init","url":"http://localhost:11977/","ts":1706012345678}
-# {"t":"console","m":"log","args":["App mounted"],"ts":1706012345700}
+# {"t":"init","url":"http://localhost:3000/","ts":1706012345678}
+# {"t":"navstate","canGoBack":false,"canGoForward":false}
+
+# User clicks a link, you see:
+# {"t":"urlchange","url":"http://localhost:3000/about","ts":1706012345800}
+# {"t":"navstate","canGoBack":true,"canGoForward":false}
 
 # Query for an error message element
 swe-swe-server --debug-query ".error-toast"
