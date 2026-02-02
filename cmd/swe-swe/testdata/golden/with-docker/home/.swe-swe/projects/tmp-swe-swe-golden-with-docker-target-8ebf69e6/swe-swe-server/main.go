@@ -2151,11 +2151,10 @@ type mcpToolContent struct {
 
 var mcpTools = []mcpToolDef{
 	{
-		Name: "preview_query",
-		Description: "Query DOM elements in the App Preview panel by CSS selector. " +
-			"Returns text, HTML, and visibility of the first matching element. " +
-			"Use this to inspect what the user sees in their preview — more " +
-			"reliable than browser_snapshot for preview content.",
+		Name: "browser_debug_preview",
+		Description: "Capture a snapshot of the Preview content by CSS selector. " +
+			"Returns the text, HTML, and visibility of matching elements in the Preview. " +
+			"This is the correct tool for inspecting the Preview — browser_snapshot cannot see Preview content.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -2168,11 +2167,10 @@ var mcpTools = []mcpToolDef{
 		},
 	},
 	{
-		Name: "preview_listen",
-		Description: "Collect console logs, errors, and network requests from the " +
-			"App Preview panel. Returns messages gathered over the specified " +
-			"duration. Use this to debug runtime errors and failed API calls " +
-			"in the preview.",
+		Name: "browser_debug_preview_listen",
+		Description: "Returns console logs, errors, and network requests from the Preview. " +
+			"Listens for the specified duration and returns all messages. " +
+			"This is the correct tool for debugging the Preview — browser_console_messages cannot see Preview output.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -2271,7 +2269,7 @@ func runMCP(in io.Reader, out io.Writer, endpoint string) {
 			}
 
 			switch params.Name {
-			case "preview_query":
+			case "browser_debug_preview":
 				var args struct {
 					Selector string `json:"selector"`
 				}
@@ -2290,7 +2288,7 @@ func runMCP(in io.Reader, out io.Writer, endpoint string) {
 					Result:  result,
 				})
 
-			case "preview_listen":
+			case "browser_debug_preview_listen":
 				var args struct {
 					DurationSeconds float64 `json:"duration_seconds"`
 				}

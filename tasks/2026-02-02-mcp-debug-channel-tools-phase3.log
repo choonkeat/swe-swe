@@ -29,3 +29,18 @@
 232204 RAN: New session, started server on :3100, preview shows "Hello from Preview". Asked "what's showing on my preview page?"
 232204 RESULT: Agent used swe-swe-playwright_browser_navigate again (NOT browser_debug_preview) — FAIL
 232204 ANALYSIS: Neither description changes nor browser_* namespace renaming affects tool selection. OpenCode's underlying model treats "preview page" as a browser navigation task and reaches for Playwright. The issue is not discoverability of tool names/descriptions but rather the model's ingrained association between "page inspection" and browser_navigate/browser_snapshot.
+232500 ITERATION 3: Switched to Claude agent (--agents=claude) with same tool names/descriptions as iteration 2
+232500 RAN: Teardown → 01-init (SWE_SWE_INIT_FLAGS="--agents=claude") → 02-build → 03-run. Claude requires OAuth login.
+232500 RAN: User authenticated via platform.claude.com OAuth flow. Claude Code v2.1.29 (Opus 4.5) ready.
+232500 RAN: Asked agent to create python web server on :3100 with form + text input. Agent created index.html, started server. Preview shows "My Form" with input field.
+232500 RAN: Typed "purple elephant dancing" into preview's text input field (only visible in preview, not in source HTML).
+232500 RAN: Asked "what text did I type into the input field on my preview page?"
+232500 RESULT: Agent used swe-swe-preview - browser_debug_preview (MCP)(selector: "input") — PASS! Correct tool selected.
+232500 NOTE: Claude correctly chose browser_debug_preview over Playwright tools. However, the debug channel returned the input as "empty" — the DOM query doesn't capture live .value property of form inputs. This is a separate implementation issue, not a tool selection issue.
+232500 CONCLUSION: Tool discoverability works with Claude (Opus 4.5). OpenCode's model does not discover the tool across 3 iterations. The browser_debug_preview naming + description is sufficient for Claude.
+233000 ITERATION 4: OpenCode with better test scenario (user-typed input in preview, not static page content)
+233000 RAN: Teardown → 01-init (default OpenCode) → 02-build → 03-run. Created session, server on :3100 with form + text input.
+233000 RAN: Typed "purple elephant dancing" into preview's text input field. Asked "what text did I type into the input field on my preview page?"
+233000 RESULT: Agent used NO tools at all. Responded: "I can't see what text you typed into the input field on your preview page." — FAIL (different failure mode)
+233000 NOTE: OpenCode didn't try Playwright OR browser_debug_preview. It gave up entirely, saying it doesn't have access to monitor browser preview content. The bash timeout on the python server may have confused the model context.
+233000 FINAL SUMMARY: Claude discovers and uses browser_debug_preview correctly. OpenCode does not, regardless of scenario or tool naming. This appears to be a model-level difference in tool discovery behavior.

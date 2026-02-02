@@ -105,10 +105,10 @@ func TestMCPToolsList(t *testing.T) {
 			t.Errorf("tool %q missing description", name)
 		}
 	}
-	if !names["preview_query"] {
+	if !names["browser_debug_preview"] {
 		t.Error("missing tool preview_query")
 	}
-	if !names["preview_listen"] {
+	if !names["browser_debug_preview_listen"] {
 		t.Error("missing tool preview_listen")
 	}
 }
@@ -131,7 +131,7 @@ func TestMCPToolsCallUnknown(t *testing.T) {
 
 func TestMCPToolsCallPreviewQueryNoConnection(t *testing.T) {
 	responses := mcpExchange(t,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preview_query","arguments":{"selector":"h1"}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_debug_preview","arguments":{"selector":"h1"}}}`,
 	)
 	if len(responses) != 1 {
 		t.Fatalf("expected 1 response, got %d", len(responses))
@@ -152,7 +152,7 @@ func TestMCPToolsCallPreviewQueryNoConnection(t *testing.T) {
 
 func TestMCPToolsCallPreviewListenNoConnection(t *testing.T) {
 	responses := mcpExchange(t,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preview_listen","arguments":{"duration_seconds":1}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_debug_preview_listen","arguments":{"duration_seconds":1}}}`,
 	)
 	if len(responses) != 1 {
 		t.Fatalf("expected 1 response, got %d", len(responses))
@@ -256,7 +256,7 @@ func TestMCPToolsCallPreviewQueryIntegration(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
-	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preview_query","arguments":{"selector":"h1"}}}`)
+	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_debug_preview","arguments":{"selector":"h1"}}}`)
 	var out bytes.Buffer
 	runMCP(strings.NewReader(input+"\n"), &out, wsURL)
 
@@ -330,7 +330,7 @@ func TestMCPToolsCallPreviewListenIntegration(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
 	// Use short duration so test completes quickly
-	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"preview_listen","arguments":{"duration_seconds":1}}}`)
+	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_debug_preview_listen","arguments":{"duration_seconds":1}}}`)
 	var out bytes.Buffer
 	runMCP(strings.NewReader(input+"\n"), &out, wsURL)
 

@@ -50,10 +50,9 @@ A new `--mcp` flag on `swe-swe-server` that runs a stdio MCP server exposing two
 
 ```
 preview_query:
-  description: "Query DOM elements in the App Preview panel by CSS selector.
-               Returns text, HTML, and visibility of the first matching element.
-               Use this to inspect what the user sees in their preview — more
-               reliable than browser_snapshot for preview content."
+  description: "Capture a snapshot of the Preview tab content by CSS selector.
+               Returns the text, HTML, and visibility of matching elements in the user's Preview tab.
+               This is the correct tool for inspecting the Preview tab — browser_snapshot cannot see Preview tab content."
   inputSchema:
     type: object
     properties:
@@ -63,10 +62,9 @@ preview_query:
     required: [selector]
 
 preview_listen:
-  description: "Collect console logs, errors, and network requests from the
-               App Preview panel. Returns messages gathered over the specified
-               duration. Use this to debug runtime errors and failed API calls
-               in the preview."
+  description: "Returns console logs, errors, and network requests from the Preview tab.
+               Listens for the specified duration and returns all messages.
+               This is the correct tool for debugging the Preview tab — browser_console_messages cannot see Preview tab output."
   inputSchema:
     type: object
     properties:
