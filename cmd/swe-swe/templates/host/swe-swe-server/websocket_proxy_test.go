@@ -13,7 +13,9 @@ import (
 // TestWebSocketProxyRelay tests that the proxy correctly relays WebSocket
 // upgrade requests to the backend and bidirectional messages work.
 func TestWebSocketProxyRelay(t *testing.T) {
-	// 1. Start a backend server that upgrades WebSocket connections and echoes messages
+	// 1. Start a backend server that upgrades WebSocket connections and echoes with a prefix
+	// The prefix proves the message actually round-tripped through the backend
+	const backendPrefix = "echo:"
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
@@ -29,7 +31,7 @@ func TestWebSocketProxyRelay(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if err := conn.WriteMessage(mt, msg); err != nil {
+			if err := conn.WriteMessage(mt, append([]byte(backendPrefix), msg...)); err != nil {
 				return
 			}
 		}
@@ -56,7 +58,7 @@ func TestWebSocketProxyRelay(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// 4. Send a message and expect an echo back
+	// 4. Send a message and expect the backend's prefixed echo back
 	testMsg := "hello websocket"
 	if err := conn.WriteMessage(websocket.TextMessage, []byte(testMsg)); err != nil {
 		t.Fatalf("Failed to write message: %v", err)
@@ -66,8 +68,9 @@ func TestWebSocketProxyRelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read echo message: %v", err)
 	}
-	if string(msg) != testMsg {
-		t.Errorf("Expected echo %q, got %q", testMsg, string(msg))
+	expected := backendPrefix + testMsg
+	if string(msg) != expected {
+		t.Errorf("Expected %q, got %q", expected, string(msg))
 	}
 }
 
