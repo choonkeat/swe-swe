@@ -1,0 +1,3 @@
+224246 Starting Phase 1: WebSocket upgrade relay + unit tests (TDD)
+224246 Step 1: Write WebSocket proxy test (red). Expect: test fails because handleProxyRequest strips Upgrade/Connection hop-by-hop headers, breaking WebSocket upgrade.
+224338 Step 1 result: TestWebSocketProxyRelay FAIL as expected — "'upgrade' token not found in 'Connection' header". TestNormalHTTPThroughProxy PASS (regression test green). TDD red confirmed.
