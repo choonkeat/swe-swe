@@ -1,7 +1,7 @@
 # MCP Debug Channel Tools
 
 **Date**: 2026-02-02
-**Status**: Plan
+**Status**: In Progress (Phase 1 complete)
 **Research**: `research/2026-02-02-agent-debug-channel-discoverability.md`
 
 ## Goal
@@ -10,7 +10,7 @@ Expose the preview debug channel as MCP tools (`preview_query`, `preview_listen`
 
 ---
 
-## Phase 1: Implement `--mcp` in main.go with tests
+## Phase 1: Implement `--mcp` in main.go with tests ✅
 
 ### What will be achieved
 
