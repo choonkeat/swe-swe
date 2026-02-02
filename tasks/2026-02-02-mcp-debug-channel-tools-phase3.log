@@ -24,3 +24,8 @@
 155723 RAN: New session, started server on :3101, preview shows "Hello from Preview". Asked "what's showing on my preview page?"
 155723 RESULT: Agent used swe-swe-playwright_browser_navigate again (NOT preview_query) — FAIL
 155723 ANALYSIS: Description change alone insufficient. Agent gravitates to Playwright's browser_navigate/browser_snapshot because it has many familiar browser_* tools. The preview_query tool exists in a separate MCP server with only 2 tools — likely gets overshadowed.
+232000 ITERATION 2: Renamed tools to browser_debug_preview and browser_debug_preview_listen, changed "Preview tab" to "Preview" in descriptions
+232000 RAN: Teardown → make build → 01-init → 02-build → 03-run. Verified new names in container: browser_debug_preview, browser_debug_preview_listen. 2 MCP confirmed.
+232204 RAN: New session, started server on :3100, preview shows "Hello from Preview". Asked "what's showing on my preview page?"
+232204 RESULT: Agent used swe-swe-playwright_browser_navigate again (NOT browser_debug_preview) — FAIL
+232204 ANALYSIS: Neither description changes nor browser_* namespace renaming affects tool selection. OpenCode's underlying model treats "preview page" as a browser navigation task and reaches for Playwright. The issue is not discoverability of tool names/descriptions but rather the model's ingrained association between "page inspection" and browser_navigate/browser_snapshot.
