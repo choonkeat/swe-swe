@@ -17,3 +17,10 @@
 154843 OBSERVED: Agent called browser_navigate twice, then browser_install. Did not discover or use preview_query.
 154843 NOTE: Status bar shows "2 MCP" confirming both MCP servers are connected. Agent chose Playwright over preview_query despite both being available.
 154843 NEXT: Per task plan step 13, need to iterate on tool description string to improve discoverability. Stopping for user consultation.
+155300 ITERATION 1: Updated descriptions to mirror Playwright style with "Preview tab" specificity
+155300 preview_query: "Capture a snapshot of the Preview tab content by CSS selector... browser_snapshot cannot see Preview tab content."
+155300 preview_listen: "Returns console logs, errors, and network requests from the Preview tab... browser_console_messages cannot see Preview tab output."
+155300 RAN: Teardown → make build → 01-init → 02-build → 03-run. Verified new descriptions in running container.
+155723 RAN: New session, started server on :3101, preview shows "Hello from Preview". Asked "what's showing on my preview page?"
+155723 RESULT: Agent used swe-swe-playwright_browser_navigate again (NOT preview_query) — FAIL
+155723 ANALYSIS: Description change alone insufficient. Agent gravitates to Playwright's browser_navigate/browser_snapshot because it has many familiar browser_* tools. The preview_query tool exists in a separate MCP server with only 2 tools — likely gets overshadowed.
