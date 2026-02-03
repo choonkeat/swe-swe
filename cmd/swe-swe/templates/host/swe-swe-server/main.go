@@ -4992,13 +4992,15 @@ func wrapWithScript(cmdName string, cmdArgs []string, recordingUUID string) (str
 
 	logPath := fmt.Sprintf("%s/session-%s.log", recordingsDir, recordingUUID)
 	timingPath := fmt.Sprintf("%s/session-%s.timing", recordingsDir, recordingUUID)
+	inputPath := fmt.Sprintf("%s/session-%s.input", recordingsDir, recordingUUID)
 
-	// script -q (quiet) -f (flush) --log-timing=file -c "command" logfile
+	// script -q (quiet) -f (flush) -T timing -I input -O output -c "command"
 	return "script", []string{
 		"-q", "-f",
-		"--log-timing=" + timingPath,
+		"-T", timingPath,
+		"-I", inputPath,
+		"-O", logPath,
 		"-c", fullCmd,
-		logPath,
 	}
 }
 
@@ -5453,6 +5455,20 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		Cols:    cols,
 		MaxRows: maxRows,
 	}
+
+	// Build TOC from timing + input files if available
+	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
+	inputPath := recordingsDir + "/session-" + recordingUUID + ".input"
+	timingFile, err := os.Open(timingPath)
+	if err == nil {
+		defer timingFile.Close()
+		inputBytes, err := os.ReadFile(inputPath)
+		if err == nil {
+			sessionBytes, _ := os.ReadFile(logPath)
+			opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionBytes)
+		}
+	}
+
 	html, err := recordtui.RenderStreamingHTML(opts)
 	if err != nil {
 		http.Error(w, "Failed to render playback", http.StatusInternalServerError)

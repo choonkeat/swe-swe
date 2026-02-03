@@ -9,7 +9,7 @@ require github.com/gorilla/websocket v1.5.3
 require github.com/creack/pty v1.1.24
 
 require (
-	github.com/choonkeat/record-tui v0.0.0-20260201043239-e29e8b771882 // indirect
+	github.com/choonkeat/record-tui v0.0.0-20260203102200-70350aff9046 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02 // indirect
 	golang.org/x/sys v0.13.0 // indirect
