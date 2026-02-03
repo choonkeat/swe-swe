@@ -23,6 +23,8 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     ca-certificates \
     jq \
+    less \
+    lsof \
     unzip \
     vim \
     && rm -rf /var/lib/apt/lists/*
