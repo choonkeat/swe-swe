@@ -700,7 +700,7 @@ Response:
 - User must have the Preview tab open in the split-pane UI
 - App must be running on port 3000 (or `SWE_PREVIEW_TARGET_PORT`)
 
-For detailed usage, see the `/debug-with-app-preview` slash command.
+For detailed usage, see the `/debug-preview-page` slash command.
 
 ### Authentication
 

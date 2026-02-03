@@ -18,7 +18,7 @@ Tool selection happens by matching intent to available tools. "What's on the pag
 | Layer | Claude Code | OpenCode | Codex | Gemini | Aider/Goose |
 |-------|------------|----------|-------|--------|-------------|
 | **Always loaded** | CLAUDE.md (if exists) | — | — | — | — |
-| **Skill list** | system-reminder lists `/debug-with-app-preview` | — | slash commands | slash commands | — |
+| **Skill list** | system-reminder lists `/debug-preview-page` | — | slash commands | slash commands | — |
 | **MCP tools** | `swe-swe-playwright` browser tools | `swe-swe-playwright` browser tools | `swe-swe-playwright` browser tools | `swe-swe-playwright` browser tools | no MCP |
 | **On-demand docs** | `.swe-swe/docs/` | `.swe-swe/docs/` | `.swe-swe/docs/` | `.swe-swe/docs/` | `@`-mentionable |
 
@@ -42,7 +42,7 @@ Inspect App Preview page content — use instead of browser tools for preview
 
 ### OpenCode / Codex / Gemini (slash-command agents)
 
-These have slash commands but no equivalent of Claude's always-visible skill list. They see `debug-with-app-preview` only if they search for commands or the user invokes it.
+These have slash commands but no equivalent of Claude's always-visible skill list. They see `debug-preview-page` only if they search for commands or the user invokes it.
 
 These agents need the signal in their project instructions file or system prompt — the equivalent of CLAUDE.md. But each platform uses a different file (OpenCode: `instructions.md`, Codex: `AGENTS.md`, Gemini: `GEMINI.md`), making per-platform injection fragile.
 
@@ -54,7 +54,7 @@ No MCP tools, no slash commands. They run bash commands and `@`-mention files. S
 
 ### 1. Sharpen skill description (Claude only)
 
-Change the `/debug-with-app-preview` description to explicitly compete with browser tools:
+Change the `/debug-preview-page` description to explicitly compete with browser tools:
 
 ```
 Inspect App Preview page content — use instead of browser tools for preview

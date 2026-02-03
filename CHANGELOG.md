@@ -34,7 +34,7 @@
 
 ### Slash Commands
 
-- **`/debug-with-app-preview`**: New slash command teaching agents how to use the debug channel for real-time console logs, errors, network requests, and DOM queries from the user's browser
+- **`/debug-preview-page`**: New slash command teaching agents how to use the debug channel for real-time console logs, errors, network requests, and DOM queries from the user's browser
 
 ### Documentation
 
