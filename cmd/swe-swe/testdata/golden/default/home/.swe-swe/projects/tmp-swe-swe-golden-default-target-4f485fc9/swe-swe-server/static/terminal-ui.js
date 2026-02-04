@@ -845,7 +845,16 @@ class TerminalUI extends HTMLElement {
                     combined.set(arr, offset);
                     offset += arr.length;
                 }
+                // Capture scroll position before write - clear screen sequences
+                // (\x1b[2J, \x1b[H) can reset the viewport to the top
+                const buffer = this.term.buffer.active;
+                const maxLine = buffer.length - this.term.rows;
+                const scrolledUp = maxLine - buffer.viewportY;
+                const wasNearBottom = scrolledUp < this.term.rows / 2;
                 this.term.write(combined);
+                if (wasNearBottom) {
+                    this.term.scrollToBottom();
+                }
                 this.pendingWrites = null;
             });
         }
