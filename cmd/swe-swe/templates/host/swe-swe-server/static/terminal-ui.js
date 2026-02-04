@@ -362,7 +362,7 @@ class TerminalUI extends HTMLElement {
                                         If you have issues, check the URL or try refreshing.
                                     </div>
                                 </div>
-                                <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"></iframe>
+                                <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                             </div>
                         </div>
                     </div>
