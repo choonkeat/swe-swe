@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## v2.10.0 - MCP Debug Tools, Per-Session Ports & WebSocket Proxy
+
+### Major Features
+
+- **MCP debug channel server**: New `--mcp` stdio server with `browser_debug_preview` and `browser_debug_preview_listen` tools enabling agents to query DOM and capture console output from the Preview tab without Playwright overhead
+- **Agent Whiteboard MCP server**: Add visual whiteboard capability for agent deployments to explain concepts with diagrams
+- **Per-session preview ports**: Each terminal session now gets its own preview port (default range 3000-3019) with individual proxy servers, eliminating cross-session conflicts. New `--preview-ports` flag for customization
+- **WebSocket proxy relay**: Preview proxy now supports WebSocket connections, enabling real-time apps (e.g., chat, live updates) in the preview tab
+- **Preview navigation controls**: Back/forward buttons and read-only URL bar in preview tab toolbar, routed through debug WebSocket channel
+
+### Slash Commands
+
+- **`/swe-swe:update-swe-swe`**: Three-way merge support for updating workspace swe-swe files after version upgrades
+- **`/swe-swe:extract-skills`**: Extract skills from task runners (Makefile, package.json, etc.)
+
+### Terminal Recording
+
+- **Input capture & TOC**: Record user input events for table-of-contents navigation during playback
+- **Recording pagination**: Homepage now paginates recordings with agent badges
+- **Extended TTL**: Auto-delete TTL extended to 48h, based on log file mtime
+
+### Bug Fixes
+
+- **Scroll preservation**: Fix viewport reset on clear-screen sequences using xterm.js write callback
+- **iframe sandbox**: Add `allow-downloads` to app preview iframe sandbox policy
+- **Mutex deadlock**: Add missing `defer mu.Unlock()` in `AddClient`, `RemoveClient`, `UpdateClientSize`
+- **Codex CLI compatibility**: Intercept DSR queries and use correct TOML config format
+- **Session naming**: Extract only last 2 segments from SSH URLs with nested paths
+- **Worktree consistency**: Use consistent 'worktrees' plural for external repos
+- **Enterprise certs**: Install certificates in builder stage for `go mod download`
+
+### Infrastructure
+
+- **Base dependencies**: Added `lsof` and `less` to container image
+- **Dependency sync**: New `check-gomod-sync` Makefile target to detect template/main go.mod drift
+
 ## v2.9.0 - Split-Pane UI, UID:GID Mapping & Streaming Playback
 
 ### Major Features

@@ -51,3 +51,8 @@ Bad: ...
 | [023](0023-unique-mcp-server-name.md) | Unique MCP server name | Accepted |
 | [024](0024-debug-injection-proxy-security.md) | Debug injection proxy security | Accepted |
 | [025](0025-per-session-preview-ports.md) | Per-session preview ports | Accepted |
+| [026](0026-mcp-debug-channel-tools.md) | MCP debug channel tools | Accepted |
+| [027](0027-websocket-proxy-relay.md) | WebSocket proxy relay | Accepted |
+| [028](0028-preview-shell-page.md) | Preview shell page architecture | Accepted |
+| [029](0029-embedded-container-templates.md) | Embedded container templates | Accepted |
+| [030](0030-three-way-merge-update.md) | Three-way merge for swe-swe file updates | Accepted |
