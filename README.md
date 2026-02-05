@@ -4,8 +4,6 @@ Your agent: containerized with its own browser for manual testing. Your terminal
 
 Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us know](https://github.com/choonkeat/swe-swe/issues)!
 
-https://github.com/user-attachments/assets/2a01ed4a-fa5d-4f86-a999-7439611096a0
-
 ## Quick Start
 
 1. **Download the swe-swe binary** for your platform:
