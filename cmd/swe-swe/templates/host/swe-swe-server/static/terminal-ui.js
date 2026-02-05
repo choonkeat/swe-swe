@@ -2381,17 +2381,38 @@ class TerminalUI extends HTMLElement {
     }
 
     setupClipboardCopy() {
+        // Helper: clean terminal selection (trim fixed-width padding) and copy.
+        const copySelection = (selection) => {
+            const cleaned = selection.split('\n').map(line => line.trimEnd()).join('\n');
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(cleaned).catch(err => {
+                    console.warn('Failed to copy selection:', err);
+                });
+            }
+            return cleaned;
+        };
+
         // Intercept copy events to trim trailing whitespace from each line.
         // Terminal lines are fixed-width, so selections include padding spaces.
         document.addEventListener('copy', (e) => {
             if (!this.term) return;
             const selection = this.term.getSelection();
             if (selection) {
-                const cleaned = selection.split('\n').map(line => line.trimEnd()).join('\n');
-                e.clipboardData.setData('text/plain', cleaned);
+                e.clipboardData.setData('text/plain', copySelection(selection));
                 e.preventDefault();
             }
         });
+
+        // Copy-on-select: automatically copy to clipboard when mouse selection ends.
+        const termEl = this.querySelector('.terminal-ui__terminal');
+        if (termEl) {
+            termEl.addEventListener('mouseup', (e) => {
+                if (e.button !== 0) return; // left-click only
+                if (!this.term || !this.term.hasSelection()) return;
+                copySelection(this.term.getSelection());
+                this.showStatusNotification('Copied to clipboard', 1500);
+            });
+        }
     }
 
     setupClipboardPaste() {

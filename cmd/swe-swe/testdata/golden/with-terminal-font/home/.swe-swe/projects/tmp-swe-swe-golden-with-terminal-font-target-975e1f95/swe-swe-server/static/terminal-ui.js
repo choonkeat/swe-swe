@@ -845,20 +845,16 @@ class TerminalUI extends HTMLElement {
                     combined.set(arr, offset);
                     offset += arr.length;
                 }
-                // Capture scroll position before write - clear screen sequences
-                // (\x1b[2J, \x1b[3J, \x1b[H) can reset the viewport to the top
+                // xterm.js 5.5.0 handles clear-screen sequences without
+                // viewport jumping — no scroll correction needed.
                 const buffer = this.term.buffer.active;
                 const maxLine = buffer.length - this.term.rows;
                 const scrolledUp = maxLine - buffer.viewportY;
                 const wasNearBottom = scrolledUp < this.term.rows / 2;
-                // Use write callback - term.write() is async and escape sequences
-                // are processed after this function returns. scrollToBottom() must
-                // run after xterm has parsed the data, not before.
-                this.term.write(combined, () => {
-                    if (wasNearBottom) {
-                        this.term.scrollToBottom();
-                    }
-                });
+                this.term.write(combined);
+                if (wasNearBottom) {
+                    console.log(`[scroll-debug] would have called scrollToBottom (scrolledUp=${scrolledUp}, rows=${this.term.rows})`);
+                }
                 this.pendingWrites = null;
             });
         }
@@ -907,11 +903,8 @@ class TerminalUI extends HTMLElement {
             const decompressed = await this.decompressSnapshot(compressed);
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
             this.showStatusNotification(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
-            // Write snapshot directly with callback to ensure scroll happens
-            // after xterm has parsed all escape sequences (term.write is async)
-            this.term.write(decompressed, () => {
-                this.term.scrollToBottom();
-            });
+            this.term.write(decompressed);
+            console.log(`[scroll-debug] snapshot: would have called scrollToBottom`);
         } catch (e) {
             console.error('Failed to decompress snapshot:', e);
             this.showStatusNotification(`Decompress failed: ${e.message}`, 5000);
@@ -2388,17 +2381,38 @@ class TerminalUI extends HTMLElement {
     }
 
     setupClipboardCopy() {
+        // Helper: clean terminal selection (trim fixed-width padding) and copy.
+        const copySelection = (selection) => {
+            const cleaned = selection.split('\n').map(line => line.trimEnd()).join('\n');
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(cleaned).catch(err => {
+                    console.warn('Failed to copy selection:', err);
+                });
+            }
+            return cleaned;
+        };
+
         // Intercept copy events to trim trailing whitespace from each line.
         // Terminal lines are fixed-width, so selections include padding spaces.
         document.addEventListener('copy', (e) => {
             if (!this.term) return;
             const selection = this.term.getSelection();
             if (selection) {
-                const cleaned = selection.split('\n').map(line => line.trimEnd()).join('\n');
-                e.clipboardData.setData('text/plain', cleaned);
+                e.clipboardData.setData('text/plain', copySelection(selection));
                 e.preventDefault();
             }
         });
+
+        // Copy-on-select: automatically copy to clipboard when mouse selection ends.
+        const termEl = this.querySelector('.terminal-ui__terminal');
+        if (termEl) {
+            termEl.addEventListener('mouseup', (e) => {
+                if (e.button !== 0) return; // left-click only
+                if (!this.term || !this.term.hasSelection()) return;
+                copySelection(this.term.getSelection());
+                this.showStatusNotification('Copied to clipboard', 1500);
+            });
+        }
     }
 
     setupClipboardPaste() {
