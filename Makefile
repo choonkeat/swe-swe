@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean
+.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync
 
 build: build-cli
 
@@ -19,7 +19,7 @@ stop:
 	if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "Stopped dev server (pid $$pid)"; \
 	else echo "No dev server running on :$(DEV_PORT)"; fi
 
-test: test-cli test-server
+test: check-gomod-sync test-cli test-server
 
 test-cli:
 	go test -v ./cmd/swe-swe
@@ -41,6 +41,32 @@ test-server:
 	cd /tmp/swe-swe-server-test && go mod tidy && go test -v $(TEST_SERVER_ARGS) ./...
 	@cp /tmp/swe-swe-server-test/go.sum $(SERVER_TEMPLATE)/go.sum.txt
 	@rm -rf /tmp/swe-swe-server-test
+
+# Check that common dependencies between go.mod and template go.mod.txt have matching versions
+TEMPLATE_GOMOD := cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt
+check-gomod-sync:
+	@# Extract "module version" pairs, stripping comments and whitespace
+	@grep -E '^\s*[a-z][a-z0-9.-]*\.[a-z]+/[^ ]+\s+v' go.mod | \
+		sed 's|//.*||; s/^[[:space:]]*//' | awk '{print $$1, $$2}' | sort > /tmp/gomod-main.txt
+	@grep -E '^\s*[a-z][a-z0-9.-]*\.[a-z]+/[^ ]+\s+v' $(TEMPLATE_GOMOD) | \
+		sed 's|//.*||; s/^[[:space:]]*//' | awk '{print $$1, $$2}' | sort > /tmp/gomod-template.txt
+	@# Find mismatches in common modules (go.mod is source of truth)
+	@failed=0; \
+	while IFS=' ' read -r mod ver; do \
+		template_ver=$$(awk -v m="$$mod" '$$1 == m {print $$2}' /tmp/gomod-template.txt); \
+		if [ -n "$$template_ver" ] && [ "$$ver" != "$$template_ver" ]; then \
+			if [ $$failed -eq 0 ]; then \
+				echo "ERROR: go.mod.txt has version mismatches with go.mod:"; \
+				failed=1; \
+			fi; \
+			echo "  $$mod"; \
+			echo "    go.mod:     $$ver"; \
+			echo "    go.mod.txt: $$template_ver"; \
+		fi; \
+	done < /tmp/gomod-main.txt; \
+	rm -f /tmp/gomod-main.txt /tmp/gomod-template.txt; \
+	if [ $$failed -ne 0 ]; then exit 1; fi
+	@echo "go.mod.txt in sync with go.mod"
 
 clean:
 	rm -rf ./dist
