@@ -2720,17 +2720,19 @@ class TerminalUI extends HTMLElement {
             const targetUrl = urlInput.value.trim();
             if (!targetUrl) return;
 
-            // Localhost URLs: extract path to navigate through the proxy.
-            // External URLs: pass through as-is so the iframe loads them directly.
+            // Check if this is an external URL
             let navUrl;
             try {
                 const parsed = new URL(targetUrl);
                 const host = parsed.hostname;
-                if (host === 'localhost' || host === '127.0.0.1') {
-                    navUrl = parsed.pathname + parsed.search + parsed.hash;
-                } else {
-                    navUrl = targetUrl;
+                if (host !== 'localhost' && host !== '127.0.0.1') {
+                    // External URLs can't load in iframe — open in new tab
+                    if (confirm('Open in new tab?\n\n' + targetUrl)) {
+                        window.open(targetUrl, '_blank');
+                    }
+                    return;
                 }
+                navUrl = parsed.pathname + parsed.search + parsed.hash;
             } catch {
                 // Bare path like "/foo" — treat as localhost path
                 navUrl = targetUrl.startsWith('/') ? targetUrl : '/' + targetUrl;
@@ -3159,30 +3161,43 @@ class TerminalUI extends HTMLElement {
             }
         }
 
-        let iframeSrc;
         if (isExternal) {
-            // External URLs: load directly in the iframe
-            iframeSrc = targetURL;
-        } else {
-            // Localhost URLs: route through the proxy shell page
-            const previewPort = this.previewPort ? `5${this.previewPort}` : null;
-            const base = buildPreviewUrl(window.location, previewPort);
-            let path;
-            if (iframePath !== null) {
-                path = iframePath;
-            } else if (targetURL) {
-                try {
-                    const parsed = new URL(targetURL);
-                    path = parsed.pathname + parsed.search + parsed.hash;
-                } catch {
-                    path = targetURL.startsWith('/') ? targetURL : '/' + targetURL;
-                }
-            } else {
-                path = '/';
+            // External URLs can't load in iframe (mixed content, X-Frame-Options)
+            // Open in new browser tab with confirmation
+            if (confirm('Open in new tab?\n\n' + targetURL)) {
+                window.open(targetURL, '_blank');
             }
-            iframeSrc = base + '/__swe-swe-shell__?path=' + encodeURIComponent(path);
-            this._lastUrlChangeUrl = base + path;
+            // Show URL in placeholder instead of loading spinner
+            if (urlInput) {
+                urlInput.value = targetURL;
+                urlInput.title = targetURL;
+            }
+            if (placeholder) {
+                placeholder.innerHTML = '';
+                placeholder.classList.remove('hidden');
+            }
+            if (iframe) iframe.removeAttribute('src');
+            return;
         }
+
+        // Localhost URLs: route through the proxy shell page
+        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        const base = buildPreviewUrl(window.location, previewPort);
+        let path;
+        if (iframePath !== null) {
+            path = iframePath;
+        } else if (targetURL) {
+            try {
+                const parsed = new URL(targetURL);
+                path = parsed.pathname + parsed.search + parsed.hash;
+            } catch {
+                path = targetURL.startsWith('/') ? targetURL : '/' + targetURL;
+            }
+        } else {
+            path = '/';
+        }
+        const iframeSrc = base + '/__swe-swe-shell__?path=' + encodeURIComponent(path);
+        this._lastUrlChangeUrl = base + path;
 
         // URL bar = logical target if provided, else default localhost:{PORT}
         if (urlInput) {
@@ -3199,10 +3214,6 @@ class TerminalUI extends HTMLElement {
                 if (placeholder) { placeholder.textContent = 'Failed to load'; placeholder.classList.remove('hidden'); }
             };
             iframe.src = iframeSrc;
-        }
-
-        if (isExternal) {
-            this._lastUrlChangeUrl = targetURL;
         }
     }
 
