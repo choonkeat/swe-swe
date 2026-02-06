@@ -522,21 +522,21 @@ func TestParseAgentList(t *testing.T) {
 // TestResolveAgents verifies agent resolution with include/exclude
 func TestResolveAgents(t *testing.T) {
 	tests := []struct {
-		agents   string
-		exclude  string
-		wantLen  int
-		wantErr  bool
+		agents  string
+		exclude string
+		wantLen int
+		wantErr bool
 	}{
-		{"", "", 6, false},                       // default: all agents
-		{"all", "", 6, false},                    // explicit all
-		{"claude", "", 1, false},                 // single agent
-		{"claude,gemini", "", 2, false},          // multiple agents
-		{"", "aider", 5, false},                  // exclude one
-		{"", "aider,goose", 4, false},            // exclude multiple
-		{"all", "aider", 5, false},               // all minus exclude
+		{"", "", 6, false},                         // default: all agents
+		{"all", "", 6, false},                      // explicit all
+		{"claude", "", 1, false},                   // single agent
+		{"claude,gemini", "", 2, false},            // multiple agents
+		{"", "aider", 5, false},                    // exclude one
+		{"", "aider,goose", 4, false},              // exclude multiple
+		{"all", "aider", 5, false},                 // all minus exclude
 		{"claude,gemini,aider", "aider", 2, false}, // include then exclude
-		{"invalid", "", 0, true},                 // invalid agent
-		{"", "invalid", 0, true},                 // invalid exclude
+		{"invalid", "", 0, true},                   // invalid agent
+		{"", "invalid", 0, true},                   // invalid exclude
 	}
 
 	for _, tt := range tests {
@@ -569,31 +569,31 @@ RUN apt-get install {{APT_PACKAGES}}
 CMD done`
 
 	tests := []struct {
-		name     string
-		agents   []string
-		apt      string
-		contains []string
+		name        string
+		agents      []string
+		apt         string
+		contains    []string
 		notContains []string
 	}{
 		{
-			name:     "claude only",
-			agents:   []string{"claude"},
-			apt:      "",
-			contains: []string{"install nodejs", "install claude"},
+			name:        "claude only",
+			agents:      []string{"claude"},
+			apt:         "",
+			contains:    []string{"install nodejs", "install claude"},
 			notContains: []string{"install python", "apt-get install"},
 		},
 		{
-			name:     "aider only",
-			agents:   []string{"aider"},
-			apt:      "",
-			contains: []string{"install python"},
+			name:        "aider only",
+			agents:      []string{"aider"},
+			apt:         "",
+			contains:    []string{"install python"},
 			notContains: []string{"install nodejs", "install claude"},
 		},
 		{
-			name:     "with apt packages",
-			agents:   []string{"claude"},
-			apt:      "vim htop",
-			contains: []string{"apt-get install vim htop"},
+			name:        "with apt packages",
+			agents:      []string{"claude"},
+			apt:         "vim htop",
+			contains:    []string{"apt-get install vim htop"},
 			notContains: []string{"{{APT_PACKAGES}}"},
 		},
 	}
@@ -1017,10 +1017,10 @@ func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
 // TestInitConfigRoundTrip verifies that InitConfig can be marshaled and unmarshaled
 func TestInitConfigRoundTrip(t *testing.T) {
 	original := InitConfig{
-		Agents:      []string{"claude", "aider"},
-		AptPackages: "vim htop",
-		NpmPackages: "typescript tsx",
-		WithDocker:  true,
+		Agents:       []string{"claude", "aider"},
+		AptPackages:  "vim htop",
+		NpmPackages:  "typescript tsx",
+		WithDocker:   true,
 		PreviewPorts: "3000-3019",
 		SlashCommands: []SlashCommandsRepo{
 			{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"},
@@ -1098,9 +1098,9 @@ func TestSaveLoadInitConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	original := InitConfig{
-		Agents:      []string{"claude"},
-		AptPackages: "git",
-		WithDocker:  false,
+		Agents:       []string{"claude"},
+		AptPackages:  "git",
+		WithDocker:   false,
 		PreviewPorts: "3000-3019",
 	}
 
@@ -1124,5 +1124,44 @@ func TestSaveLoadInitConfig(t *testing.T) {
 	// Verify
 	if !reflect.DeepEqual(original, loaded) {
 		t.Errorf("Save/Load mismatch:\noriginal: %+v\nloaded: %+v", original, loaded)
+	}
+}
+
+// TestMCPJsonFilesInSync verifies that the two .mcp.json template files are identical
+// These files must stay in sync:
+// 1. templates/container/.mcp.json - Used during `swe-swe init`
+// 2. templates/host/swe-swe-server/container-templates/.mcp.json - Embedded in server binary
+func TestMCPJsonFilesInSync(t *testing.T) {
+	// Read the source template (used during swe-swe init)
+	sourceFile := "templates/container/.mcp.json"
+	sourceContent, err := assets.ReadFile(sourceFile)
+	if err != nil {
+		t.Fatalf("Failed to read %s: %v", sourceFile, err)
+	}
+
+	// Read the embedded template (used by server for provisioning)
+	embeddedFile := "templates/host/swe-swe-server/container-templates/.mcp.json"
+	embeddedContent, err := assets.ReadFile(embeddedFile)
+	if err != nil {
+		t.Fatalf("Failed to read %s: %v", embeddedFile, err)
+	}
+
+	// Parse both as JSON to compare content (ignoring whitespace differences)
+	var sourceJSON, embeddedJSON map[string]interface{}
+	if err := json.Unmarshal(sourceContent, &sourceJSON); err != nil {
+		t.Fatalf("Failed to parse %s as JSON: %v", sourceFile, err)
+	}
+	if err := json.Unmarshal(embeddedContent, &embeddedJSON); err != nil {
+		t.Fatalf("Failed to parse %s as JSON: %v", embeddedFile, err)
+	}
+
+	// Compare the parsed JSON structures
+	if !reflect.DeepEqual(sourceJSON, embeddedJSON) {
+		t.Errorf(".mcp.json files are out of sync!\n\n"+
+			"Source: %s\n%s\n\n"+
+			"Embedded: %s\n%s\n\n"+
+			"These files must be kept identical. After updating one, copy it to the other location.",
+			sourceFile, string(sourceContent),
+			embeddedFile, string(embeddedContent))
 	}
 }
