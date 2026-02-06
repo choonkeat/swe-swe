@@ -63,6 +63,10 @@ cat > /home/app/.gemini/settings.json << 'EOF'
     "swe-swe-preview": {
       "command": "swe-swe-server",
       "args": ["--mcp"]
+    },
+    "whiteboard": {
+      "command": "npx",
+      "args": ["-y", "@choonkeat/agent-whiteboard"]
     }
   }
 }

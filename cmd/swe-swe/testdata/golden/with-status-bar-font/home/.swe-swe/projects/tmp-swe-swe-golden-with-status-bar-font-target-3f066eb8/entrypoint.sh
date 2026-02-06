@@ -45,6 +45,10 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     "swe-swe-preview": {
       "type": "local",
       "command": ["swe-swe-server", "--mcp"]
+    },
+    "whiteboard": {
+      "type": "local",
+      "command": ["npx", "-y", "@choonkeat/agent-whiteboard"]
     }
   }
 }
@@ -82,6 +86,10 @@ cat > /home/app/.gemini/settings.json << 'EOF'
     "swe-swe-preview": {
       "command": "swe-swe-server",
       "args": ["--mcp"]
+    },
+    "whiteboard": {
+      "command": "npx",
+      "args": ["-y", "@choonkeat/agent-whiteboard"]
     }
   }
 }
@@ -106,6 +114,12 @@ extensions:
     cmd: swe-swe-server
     args:
       - "--mcp"
+  whiteboard:
+    type: stdio
+    cmd: npx
+    args:
+      - "-y"
+      - "@choonkeat/agent-whiteboard"
 EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"

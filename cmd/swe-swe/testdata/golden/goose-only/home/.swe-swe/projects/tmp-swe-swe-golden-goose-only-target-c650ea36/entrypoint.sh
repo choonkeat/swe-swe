@@ -52,6 +52,12 @@ extensions:
     cmd: swe-swe-server
     args:
       - "--mcp"
+  whiteboard:
+    type: stdio
+    cmd: npx
+    args:
+      - "-y"
+      - "@choonkeat/agent-whiteboard"
 EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"
