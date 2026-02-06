@@ -135,6 +135,10 @@ args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 [mcp_servers.swe-swe-preview]
 command = "swe-swe-server"
 args = ["--mcp"]
+
+[mcp_servers.whiteboard]
+command = "npx"
+args = ["-y", "@choonkeat/agent-whiteboard"]
 EOF
 chown -R app: /home/app/.codex
 echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
@@ -180,8 +184,8 @@ chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"
 
 # Create open/xdg-open shims that route URLs to the Preview pane
-mkdir -p /workspace/.swe-swe/bin
-cat > /workspace/.swe-swe/bin/swe-swe-open << 'SHIM'
+mkdir -p /home/app/.swe-swe/bin
+cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 #!/bin/sh
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
@@ -189,11 +193,11 @@ PREVIEW_PORT="5${PORT:-3000}"
 curl -sf "http://localhost:${PREVIEW_PORT}/__swe-swe-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
 echo "→ Preview: $URL" >&2
 SHIM
-chmod +x /workspace/.swe-swe/bin/swe-swe-open
+chmod +x /home/app/.swe-swe/bin/swe-swe-open
 for name in xdg-open open x-www-browser www-browser sensible-browser; do
-    ln -sf swe-swe-open /workspace/.swe-swe/bin/$name
+    ln -sf swe-swe-open /home/app/.swe-swe/bin/$name
 done
-chown -R app: /workspace/.swe-swe/bin
+chown -R app: /home/app/.swe-swe/bin
 echo -e "${GREEN}✓ Created open/xdg-open shims in .swe-swe/bin${NC}"
 
 # Switch to app user and execute the original command

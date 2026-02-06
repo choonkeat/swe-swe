@@ -5,6 +5,7 @@ tmp/
 /swe-swe/
 /.claude/
 .playwright-mcp/
+.cache/
 !cmd/swe-swe/templates/container/.swe-swe/
 !cmd/swe-swe/testdata/golden/**/.swe-swe/
 !cmd/swe-swe/testdata/golden/**/.claude/

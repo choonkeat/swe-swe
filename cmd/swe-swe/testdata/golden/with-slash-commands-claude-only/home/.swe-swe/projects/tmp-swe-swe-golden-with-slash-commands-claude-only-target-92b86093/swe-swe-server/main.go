@@ -5,8 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"crypto/tls"
 	"context"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -83,9 +83,9 @@ var (
 )
 
 // ANSI escape sequence helpers for terminal formatting
-func ansiCyan(s string) string    { return "\033[0;36m" + s + "\033[0m" }
-func ansiDim(s string) string     { return "\033[2m" + s + "\033[0m" }
-func ansiYellow(s string) string  { return "\033[0;33m" + s + "\033[0m" }
+func ansiCyan(s string) string   { return "\033[0;36m" + s + "\033[0m" }
+func ansiDim(s string) string    { return "\033[2m" + s + "\033[0m" }
+func ansiYellow(s string) string { return "\033[0;33m" + s + "\033[0m" }
 
 // MOTDGracePeriod is how long to buffer input after displaying MOTD
 // This gives users time to read the MOTD before the shell starts receiving input
@@ -309,10 +309,10 @@ type Session struct {
 	RecordingUUID string             // UUID for recording files (separate from session UUID for restarts)
 	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 	// Parent session relationship
-	ParentUUID string // UUID of parent session (for shell sessions opened from agent sessions)
-	PreviewPort int   // App preview target port for this session
+	ParentUUID  string // UUID of parent session (for shell sessions opened from agent sessions)
+	PreviewPort int    // App preview target port for this session
 	// Input buffering during MOTD grace period
-	inputBuffer   [][]byte  // buffered input during grace period
+	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
 	graceUntil    time.Time // buffer input until this time
 	// YOLO mode state
@@ -353,8 +353,8 @@ func buildSessionEnv(previewPort int) []string {
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
-		"BROWSER=/workspace/.swe-swe/bin/swe-swe-open",
-		"PATH=/workspace/.swe-swe/bin:"+os.Getenv("PATH"),
+		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
+		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
 	return env
 }
@@ -1055,9 +1055,9 @@ func (s *Session) startPTYReader() {
 var (
 	sessions            = make(map[string]*Session)
 	sessionsMu          sync.RWMutex
-	shellCmd        string
-	shellRestartCmd string
-	workingDir      string
+	shellCmd            string
+	shellRestartCmd     string
+	workingDir          string
 	availableAssistants []AssistantConfig // Populated at startup by detectAvailableAssistants
 
 	// SSL certificate download endpoint
@@ -1820,9 +1820,9 @@ type previewProxyServer struct {
 }
 
 var (
-	previewServersMu      sync.Mutex
-	previewServers        = make(map[int]*previewProxyServer)
-	previewProxyDisabled  bool
+	previewServersMu     sync.Mutex
+	previewServers       = make(map[int]*previewProxyServer)
+	previewProxyDisabled bool
 )
 
 // startPreviewProxy starts the app preview reverse proxy server on the provided listener.
@@ -2963,7 +2963,6 @@ func main() {
 			return
 		}
 
-
 		// Recording playback page and raw session data
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
 			path := strings.TrimPrefix(r.URL.Path, "/recording/")
@@ -3818,6 +3817,7 @@ func isWorkspaceRepo(repoURL string) bool {
 //   - workspace: use /workspace, fetch (soft fail with warning)
 //   - clone: clone external URL to /repos/{sanitized-url}/workspace (hard fail)
 //   - create: create new project at /repos/{name}/workspace with git init
+//
 // Returns: { "path": "/repos/...", "isWorkspace": bool, "warning": "..." }
 func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -5094,16 +5094,16 @@ type RecordingListItem struct {
 
 // RecordingInfo holds recording data for template rendering
 type RecordingInfo struct {
-	UUID      string
-	UUIDShort string
-	Name      string
-	Agent     string
+	UUID            string
+	UUIDShort       string
+	Name            string
+	Agent           string
 	AgentBadgeClass string
-	EndedAgo  string     // "15m ago", "2h ago", "yesterday"
-	EndedAt   time.Time  // actual timestamp for sorting
-	KeptAt    *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
-	IsKept    bool       // Convenience field for templates
-	ExpiresIn string     // "59m", "30m" - time until auto-deletion (only for non-kept)
+	EndedAgo        string     // "15m ago", "2h ago", "yesterday"
+	EndedAt         time.Time  // actual timestamp for sorting
+	KeptAt          *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
+	IsKept          bool       // Convenience field for templates
+	ExpiresIn       string     // "59m", "30m" - time until auto-deletion (only for non-kept)
 }
 
 func agentBadgeClass(agent string) string {
@@ -5769,8 +5769,8 @@ func handleKeepRecording(w http.ResponseWriter, r *http.Request, uuid string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"kept_at":        meta.KeptAt,
-			"already_kept":   true,
+			"kept_at":      meta.KeptAt,
+			"already_kept": true,
 		})
 		return
 	}
