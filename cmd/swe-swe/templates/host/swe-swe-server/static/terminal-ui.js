@@ -2720,17 +2720,24 @@ class TerminalUI extends HTMLElement {
             const targetUrl = urlInput.value.trim();
             if (!targetUrl) return;
 
-            // Extract path from URL (could be full URL like http://localhost:3000/foo or just /foo)
-            let path;
+            // Localhost URLs: extract path to navigate through the proxy.
+            // External URLs: pass through as-is so the iframe loads them directly.
+            let navUrl;
             try {
                 const parsed = new URL(targetUrl);
-                path = parsed.pathname + parsed.search + parsed.hash;
+                const host = parsed.hostname;
+                if (host === 'localhost' || host === '127.0.0.1') {
+                    navUrl = parsed.pathname + parsed.search + parsed.hash;
+                } else {
+                    navUrl = targetUrl;
+                }
             } catch {
-                path = targetUrl.startsWith('/') ? targetUrl : '/' + targetUrl;
+                // Bare path like "/foo" — treat as localhost path
+                navUrl = targetUrl.startsWith('/') ? targetUrl : '/' + targetUrl;
             }
 
             if (this._debugWs?.readyState === WebSocket.OPEN) {
-                this._debugWs.send(JSON.stringify({ t: 'navigate', url: path }));
+                this._debugWs.send(JSON.stringify({ t: 'navigate', url: navUrl }));
             }
         };
 
@@ -3140,25 +3147,44 @@ class TerminalUI extends HTMLElement {
         const iframe = this.querySelector('.terminal-ui__iframe');
         const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
 
-        // 1. iframe src = shell page URL (double-iframe architecture)
-        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
-        const base = buildPreviewUrl(window.location, previewPort);
-        let path;
-        if (iframePath !== null) {
-            path = iframePath;
-        } else if (targetURL) {
+        // Determine if targetURL is external (non-localhost)
+        let isExternal = false;
+        if (targetURL) {
             try {
                 const parsed = new URL(targetURL);
-                path = parsed.pathname + parsed.search + parsed.hash;
+                const host = parsed.hostname;
+                isExternal = host !== 'localhost' && host !== '127.0.0.1';
             } catch {
-                path = targetURL.startsWith('/') ? targetURL : '/' + targetURL;
+                // Bare path like "/foo" — not external
             }
-        } else {
-            path = '/';
         }
-        const proxyUrl = base + '/__swe-swe-shell__?path=' + encodeURIComponent(path);
 
-        // 2. URL bar = logical target if provided, else default localhost:{PORT}
+        let iframeSrc;
+        if (isExternal) {
+            // External URLs: load directly in the iframe
+            iframeSrc = targetURL;
+        } else {
+            // Localhost URLs: route through the proxy shell page
+            const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+            const base = buildPreviewUrl(window.location, previewPort);
+            let path;
+            if (iframePath !== null) {
+                path = iframePath;
+            } else if (targetURL) {
+                try {
+                    const parsed = new URL(targetURL);
+                    path = parsed.pathname + parsed.search + parsed.hash;
+                } catch {
+                    path = targetURL.startsWith('/') ? targetURL : '/' + targetURL;
+                }
+            } else {
+                path = '/';
+            }
+            iframeSrc = base + '/__swe-swe-shell__?path=' + encodeURIComponent(path);
+            this._lastUrlChangeUrl = base + path;
+        }
+
+        // URL bar = logical target if provided, else default localhost:{PORT}
         if (urlInput) {
             const defaultTarget = this.previewPort ? `http://localhost:${this.previewPort}` : '';
             const displayUrl = targetURL || defaultTarget;
@@ -3172,11 +3198,12 @@ class TerminalUI extends HTMLElement {
             iframe.onerror = () => {
                 if (placeholder) { placeholder.textContent = 'Failed to load'; placeholder.classList.remove('hidden'); }
             };
-            iframe.src = proxyUrl;
+            iframe.src = iframeSrc;
         }
 
-        // 3. Store base proxy URL for "open in new window" (will be updated by urlchange WS messages)
-        this._lastUrlChangeUrl = base + path;
+        if (isExternal) {
+            this._lastUrlChangeUrl = targetURL;
+        }
     }
 
     refreshIframe() {
@@ -3234,6 +3261,10 @@ class TerminalUI extends HTMLElement {
                     }
                     // Store for "open in new window"
                     if (msg.url) this._lastUrlChangeUrl = msg.url;
+                }
+                if (msg.t === 'open' && msg.url) {
+                    // xdg-open shim: activate preview tab and navigate via URL bar
+                    this.openIframePane('preview', msg.url);
                 }
                 if (msg.t === 'navstate') {
                     const backBtn = this.querySelector('.terminal-ui__iframe-back');

@@ -1433,6 +1433,22 @@ func (h *DebugHub) ForwardToAgent(msg []byte) {
 	}
 }
 
+// SendToUIObservers sends a message to all connected UI observers only
+func (h *DebugHub) SendToUIObservers(msg []byte) {
+	h.mu.RLock()
+	observers := make([]*websocket.Conn, 0, len(h.uiObservers))
+	for conn := range h.uiObservers {
+		observers = append(observers, conn)
+	}
+	h.mu.RUnlock()
+
+	for _, conn := range observers {
+		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			log.Printf("[DebugHub] Error sending to UI observer: %v", err)
+		}
+	}
+}
+
 // ForwardToIframes sends a message from agent to all connected iframes
 func (h *DebugHub) ForwardToIframes(msg []byte) {
 	h.mu.RLock()
@@ -1868,8 +1884,8 @@ func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServ
 			http.Error(w, "missing url parameter", http.StatusBadRequest)
 			return
 		}
-		msg, _ := json.Marshal(map[string]string{"t": "navigate", "url": rawURL})
-		debugHub.ForwardToIframes(msg)
+		msg, _ := json.Marshal(map[string]string{"t": "open", "url": rawURL})
+		debugHub.SendToUIObservers(msg)
 		log.Printf("[DebugHub] open → %s", rawURL)
 		w.WriteHeader(http.StatusOK)
 	})
