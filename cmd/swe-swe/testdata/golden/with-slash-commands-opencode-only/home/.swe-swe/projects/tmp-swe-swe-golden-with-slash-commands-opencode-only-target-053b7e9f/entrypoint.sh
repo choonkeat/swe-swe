@@ -83,6 +83,10 @@ for name in xdg-open open x-www-browser www-browser sensible-browser; do
     ln -sf swe-swe-open /home/app/.swe-swe/bin/$name
 done
 chown -R app: /home/app/.swe-swe/bin
+# Prepend .swe-swe/bin to PATH so shims override system commands.
+# Uses /etc/profile.d/ so login shells (terminal, codex) pick it up
+# after /etc/profile resets PATH.
+echo 'export PATH="/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
 echo -e "${GREEN}✓ Created open/xdg-open shims in .swe-swe/bin${NC}"
 
 # Switch to app user and execute the original command
