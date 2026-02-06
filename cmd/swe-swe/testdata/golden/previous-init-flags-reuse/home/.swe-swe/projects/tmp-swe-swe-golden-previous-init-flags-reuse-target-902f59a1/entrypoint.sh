@@ -46,6 +46,23 @@ fi
 
 
 
+# Create open/xdg-open shims that route URLs to the Preview pane
+mkdir -p /workspace/.swe-swe/bin
+cat > /workspace/.swe-swe/bin/swe-swe-open << 'SHIM'
+#!/bin/sh
+URL="${1:-}"
+[ -z "$URL" ] && exit 0
+PREVIEW_PORT="5${PORT:-3000}"
+curl -sf "http://localhost:${PREVIEW_PORT}/__swe-swe-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+echo "→ Preview: $URL" >&2
+SHIM
+chmod +x /workspace/.swe-swe/bin/swe-swe-open
+for name in xdg-open open x-www-browser www-browser sensible-browser; do
+    ln -sf swe-swe-open /workspace/.swe-swe/bin/$name
+done
+chown -R app: /workspace/.swe-swe/bin
+echo -e "${GREEN}✓ Created open/xdg-open shims in .swe-swe/bin${NC}"
+
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling
 exec su -s /bin/bash app -c "cd /workspace && exec $*"

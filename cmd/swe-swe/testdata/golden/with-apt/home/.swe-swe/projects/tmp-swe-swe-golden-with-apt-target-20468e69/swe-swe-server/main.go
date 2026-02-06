@@ -349,8 +349,13 @@ func detectYoloMode(cmd string) bool {
 }
 
 func buildSessionEnv(previewPort int) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT")
-	env = append(env, "TERM=xterm-256color", fmt.Sprintf("PORT=%d", previewPort))
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH")
+	env = append(env,
+		"TERM=xterm-256color",
+		fmt.Sprintf("PORT=%d", previewPort),
+		"BROWSER=/workspace/.swe-swe/bin/swe-swe-open",
+		"PATH=/workspace/.swe-swe/bin:"+os.Getenv("PATH"),
+	)
 	return env
 }
 
@@ -1855,6 +1860,19 @@ func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServ
 
 	// WebSocket endpoint for UI observers (terminal UI URL bar updates)
 	mux.HandleFunc("/__swe-swe-debug__/ui", handleDebugUIObserverWS(debugHub))
+
+	// HTTP endpoint: open a URL in the Preview pane (used by xdg-open shim)
+	mux.HandleFunc("/__swe-swe-debug__/open", func(w http.ResponseWriter, r *http.Request) {
+		rawURL := r.URL.Query().Get("url")
+		if rawURL == "" {
+			http.Error(w, "missing url parameter", http.StatusBadRequest)
+			return
+		}
+		msg, _ := json.Marshal(map[string]string{"t": "navigate", "url": rawURL})
+		debugHub.ForwardToIframes(msg)
+		log.Printf("[DebugHub] open → %s", rawURL)
+		w.WriteHeader(http.StatusOK)
+	})
 
 	// Shell page for double-iframe navigation
 	mux.HandleFunc("/__swe-swe-shell__", func(w http.ResponseWriter, r *http.Request) {
