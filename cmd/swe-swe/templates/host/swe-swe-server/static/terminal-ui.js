@@ -251,17 +251,6 @@ class TerminalUI extends HTMLElement {
                         </div>
                     </div>
                 </div>
-                <div class="terminal-ui__drop-overlay">
-                    <div class="terminal-ui__drop-icon">+</div>
-                    <div>Drop file to paste contents</div>
-                </div>
-                <div class="terminal-ui__upload-overlay">
-                    <div class="terminal-ui__upload-spinner"></div>
-                    <div class="terminal-ui__upload-text">
-                        <div class="terminal-ui__upload-filename"></div>
-                        <div class="terminal-ui__upload-queue"></div>
-                    </div>
-                </div>
                 <div class="terminal-ui__chat-overlay"></div>
                 <div class="terminal-ui__chat-input-overlay">
                     <input
@@ -331,6 +320,17 @@ class TerminalUI extends HTMLElement {
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
                             </div>
                             <div class="terminal-ui__terminal"></div>
+                            <div class="terminal-ui__drop-overlay">
+                                <div class="terminal-ui__drop-icon">+</div>
+                                <div>Drop file to paste contents</div>
+                            </div>
+                            <div class="terminal-ui__upload-overlay">
+                                <div class="terminal-ui__upload-spinner"></div>
+                                <div class="terminal-ui__upload-text">
+                                    <div class="terminal-ui__upload-filename"></div>
+                                    <div class="terminal-ui__upload-queue"></div>
+                                </div>
+                            </div>
                             <div class="touch-scroll-proxy">
                                 <div class="scroll-spacer"></div>
                             </div>
@@ -2447,7 +2447,7 @@ class TerminalUI extends HTMLElement {
     }
 
     setupFileDrop() {
-        const container = this.querySelector('.terminal-ui');
+        const container = this.querySelector('.terminal-ui__terminal-wrapper');
         const overlay = this.querySelector('.terminal-ui__drop-overlay');
         let dragCounter = 0;
 
