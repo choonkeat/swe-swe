@@ -2730,6 +2730,9 @@ class TerminalUI extends HTMLElement {
                     if (confirm('Open in new tab?\n\n' + targetUrl)) {
                         window.open(targetUrl, '_blank');
                     }
+                    // Restore URL bar to previous value
+                    const defaultTarget = this.previewPort ? `http://localhost:${this.previewPort}` : '';
+                    urlInput.value = this._lastUrlChangeUrl ? this.reverseMapProxyUrl(this._lastUrlChangeUrl) : defaultTarget;
                     return;
                 }
                 navUrl = parsed.pathname + parsed.search + parsed.hash;
@@ -3167,16 +3170,6 @@ class TerminalUI extends HTMLElement {
             if (confirm('Open in new tab?\n\n' + targetURL)) {
                 window.open(targetURL, '_blank');
             }
-            // Show URL in placeholder instead of loading spinner
-            if (urlInput) {
-                urlInput.value = targetURL;
-                urlInput.title = targetURL;
-            }
-            if (placeholder) {
-                placeholder.innerHTML = '';
-                placeholder.classList.remove('hidden');
-            }
-            if (iframe) iframe.removeAttribute('src');
             return;
         }
 
