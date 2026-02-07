@@ -2451,6 +2451,11 @@ class TerminalUI extends HTMLElement {
         const overlay = this.querySelector('.terminal-ui__drop-overlay');
         let dragCounter = 0;
 
+        const hideOverlay = () => {
+            dragCounter = 0;
+            overlay.classList.remove('visible');
+        };
+
         container.addEventListener('dragenter', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -2464,8 +2469,8 @@ class TerminalUI extends HTMLElement {
             e.preventDefault();
             e.stopPropagation();
             dragCounter--;
-            if (dragCounter === 0) {
-                overlay.classList.remove('visible');
+            if (dragCounter <= 0) {
+                hideOverlay();
             }
         });
 
@@ -2477,8 +2482,7 @@ class TerminalUI extends HTMLElement {
         container.addEventListener('drop', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            dragCounter = 0;
-            overlay.classList.remove('visible');
+            hideOverlay();
 
             const files = e.dataTransfer.files;
             const wasEmpty = isQueueEmpty(this.uploadQueueState);
@@ -2494,6 +2498,20 @@ class TerminalUI extends HTMLElement {
             }
 
             this.term.focus();
+        });
+
+        // Safety valve: click overlay to dismiss if drag gets stuck
+        overlay.addEventListener('click', () => {
+            hideOverlay();
+            this.term.focus();
+        });
+
+        // Safety valve: Escape key dismisses the overlay
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.classList.contains('visible')) {
+                hideOverlay();
+                this.term.focus();
+            }
         });
     }
 

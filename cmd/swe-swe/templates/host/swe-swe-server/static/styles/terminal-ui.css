@@ -306,7 +306,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
     flex-direction: column;
     gap: 12px;
     z-index: 100;
-    pointer-events: none;
+    cursor: pointer;
 }
 
 .terminal-ui__drop-overlay.visible {
