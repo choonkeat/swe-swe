@@ -1,0 +1,4 @@
+084526 Phase 1: Go-side env loading
+084526 PLAN: Add loadEnvFile() function, modify buildSessionEnv to accept workDir, update both call sites
+084526 EXPECT: make test passes with no regression after code changes
+084526 EXPECT: Dev server loads swe-swe/env vars into session environment
