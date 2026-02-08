@@ -1,3 +1,11 @@
 031400 [PRE] Running `make build golden-update`. Expect: golden diff shows changes to index.html (script + background), session-theme.js (init), terminal-ui.js (toggle HTML + JS), terminal-ui.css (toggle styles + --bg-terminal). `make test` passes.
 031800 [POST] golden diff: 4 files changed per variant (index.html +3/-1, session-theme.js +10/-1, terminal-ui.css +37, terminal-ui.js +58). `make test` PASS (ok 2.295s). Both expectations met.
 031800 [PRE] MCP browser verification on session page. Expect: dark mode baseline values match, theme toggle visible in settings, light mode changes backgrounds to white.
+032200 [POST] MCP browser verification results:
+  - Dark mode: body=#1e1e1e(rgb(30,30,30)) ✓, .terminal-ui=#0f172a(rgb(15,23,42)) ✓, .settings-panel__content=#1e293b(rgb(30,41,59)) ✓
+  - Theme toggle visible: Appearance field with Light/Dark/System buttons ✓
+  - Dark button correctly shows selected class when in dark mode ✓
+  - Light mode: body=rgb(255,255,255) ✓, .terminal-ui=rgb(255,255,255) ✓, text-primary=#0f172a ✓
+  - Switching back to dark restores all baseline values ✓
+  - Accent color picker works independently (tested blue #2563eb) ✓
+  All expectations met.

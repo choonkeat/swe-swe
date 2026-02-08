@@ -213,6 +213,14 @@ class TerminalUI extends HTMLElement {
                                     <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
                                 </div>
                                 <div class="settings-panel__field">
+                                    <label class="settings-panel__label">Appearance</label>
+                                    <div class="settings-panel__theme-toggle" id="settings-theme-toggle">
+                                        <button class="settings-panel__theme-btn" data-mode="light">Light</button>
+                                        <button class="settings-panel__theme-btn" data-mode="dark">Dark</button>
+                                        <button class="settings-panel__theme-btn selected" data-mode="system">System</button>
+                                    </div>
+                                </div>
+                                <div class="settings-panel__field">
                                     <label class="settings-panel__label">Theme Color</label>
                                     <div class="settings-panel__color-picker">
                                         <div class="settings-panel__color-presets" id="settings-color-presets">
@@ -1362,6 +1370,9 @@ class TerminalUI extends HTMLElement {
             });
         }
 
+        // Theme mode toggle (light/dark/system)
+        this.setupThemeToggle();
+
         // Theme color picker
         this.setupColorPicker();
 
@@ -1505,6 +1516,9 @@ class TerminalUI extends HTMLElement {
             sessionInput.value = this.sessionName || '';
         }
 
+        // Theme mode toggle
+        this.populateThemeToggle();
+
         // Theme color picker
         this.populateColorPicker();
 
@@ -1544,6 +1558,50 @@ class TerminalUI extends HTMLElement {
             });
         });
 
+    }
+
+    // Populate theme toggle with current mode
+    populateThemeToggle() {
+        const toggle = this.querySelector('#settings-theme-toggle');
+        if (!toggle) return;
+        const currentMode = window.sweSweTheme?.getStoredMode?.() || 'system';
+        toggle.querySelectorAll('.settings-panel__theme-btn').forEach(btn => {
+            btn.classList.toggle('selected', btn.dataset.mode === currentMode);
+        });
+    }
+
+    // Setup theme toggle click handler
+    setupThemeToggle() {
+        const toggle = this.querySelector('#settings-theme-toggle');
+        if (!toggle) return;
+
+        toggle.addEventListener('click', (e) => {
+            const btn = e.target.closest('.settings-panel__theme-btn');
+            if (!btn || !btn.dataset.mode) return;
+            const mode = btn.dataset.mode;
+
+            // Update selection UI
+            toggle.querySelectorAll('.settings-panel__theme-btn').forEach(b => {
+                b.classList.toggle('selected', b === btn);
+            });
+
+            // Apply mode
+            if (window.sweSweTheme?.setThemeMode) {
+                window.sweSweTheme.setThemeMode(mode);
+            }
+        });
+
+        // Listen for theme mode changes to update xterm
+        window.addEventListener('theme-mode-changed', (e) => {
+            if (this.term) {
+                const resolved = e.detail?.resolved;
+                if (resolved === 'light') {
+                    this.term.options.theme = { background: '#ffffff', foreground: '#1e293b' };
+                } else {
+                    this.term.options.theme = { background: '#1e1e1e', foreground: '#d4d4d4' };
+                }
+            }
+        });
     }
 
     // Color picker preset colors

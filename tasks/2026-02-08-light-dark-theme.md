@@ -112,7 +112,7 @@ None. New file only, not imported by any page yet.
 
 ---
 
-## Phase 2: Session page
+## Phase 2: Session page [DONE]
 
 ### What
 Wire theme mode into the session page. Add mode toggle to settings panel. Update xterm.js to react. Make `index.html` theme-aware.
