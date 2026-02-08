@@ -1580,6 +1580,48 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: var(--accent-text);
 }
 
+/* === Left Panel Tabs (terminal / chat toggle) === */
+.terminal-ui__left-panel-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.terminal-ui__left-panel-tabs button {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.terminal-ui__left-panel-tabs button:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.terminal-ui__left-panel-tabs button.active {
+    background: var(--accent-primary);
+    color: var(--accent-text);
+}
+
+/* === Agent Chat Container === */
+.terminal-ui__agent-chat {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+
+.terminal-ui__agent-chat-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
 /* === Responsive: Desktop-only / Mobile-only === */
 .desktop-only {
     display: inline-flex;
@@ -1650,6 +1692,10 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
     /* Hide panel tabs on mobile - navigation handled by mobile-nav-select */
     .terminal-ui__panel-tabs {
+        display: none;
+    }
+
+    .terminal-ui__left-panel-tabs {
         display: none;
     }
 }

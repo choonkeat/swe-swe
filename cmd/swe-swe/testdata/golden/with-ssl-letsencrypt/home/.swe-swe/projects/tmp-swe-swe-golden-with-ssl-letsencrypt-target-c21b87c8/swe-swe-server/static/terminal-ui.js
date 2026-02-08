@@ -56,6 +56,8 @@ class TerminalUI extends HTMLElement {
         // Split-pane UI state
         this.iframePaneWidth = 50; // percentage
         this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
+        // Left panel tab state
+        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat'
         // Split-pane constants for desktop detection
         this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
         this.RESIZER_WIDTH = 8;     // width of the resizer handle
@@ -288,6 +290,7 @@ class TerminalUI extends HTMLElement {
                 <div class="terminal-ui__terminal-bar mobile-only">
                     <select class="terminal-ui__mobile-nav-select">
                         <option value="agent-terminal">Agent Terminal</option>
+                        <option value="agent-chat">Agent Chat</option>
                         <option value="preview">App Preview</option>
                         <option value="vscode">Code</option>
                         <option value="shell">Terminal</option>
@@ -302,11 +305,23 @@ class TerminalUI extends HTMLElement {
                         <div class="terminal-ui__terminal-wrapper">
                             <!-- Left Panel Header (desktop) -->
                             <div class="terminal-ui__panel-header desktop-only">
-                                <span class="terminal-ui__terminal-icon">>_</span>
-                                <span>Agent Terminal</span>
+                                <div class="terminal-ui__left-panel-tabs">
+                                    <button data-left-tab="terminal" class="active">
+                                        <span class="terminal-ui__terminal-icon">>_</span> Agent Terminal
+                                    </button>
+                                    <button data-left-tab="chat">
+                                        <span class="terminal-ui__chat-tab-icon">◯</span> Agent Chat
+                                    </button>
+                                </div>
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
                             </div>
                             <div class="terminal-ui__terminal"></div>
+                            <div class="terminal-ui__agent-chat" style="display: none;">
+                                <iframe class="terminal-ui__agent-chat-iframe"
+                                        src="about:blank"
+                                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals">
+                                </iframe>
+                            </div>
                             <div class="terminal-ui__drop-overlay">
                                 <div class="terminal-ui__drop-icon">+</div>
                                 <div>Drop file to paste contents</div>
@@ -1402,6 +1417,14 @@ class TerminalUI extends HTMLElement {
             });
         });
 
+        // Left panel tabs (terminal / chat toggle)
+        const leftPanelTabs = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
+        leftPanelTabs.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.switchLeftPanelTab(btn.dataset.leftTab);
+            });
+        });
+
         // Mobile navigation dropdown (unified view switcher)
         const mobileNavSelect = this.querySelector('.terminal-ui__mobile-nav-select');
         if (mobileNavSelect) {
@@ -1455,6 +1478,42 @@ class TerminalUI extends HTMLElement {
         const panelDropdown = this.querySelector('.terminal-ui__panel-select');
         if (panelDropdown) {
             panelDropdown.value = tab;
+        }
+    }
+
+    // Switch left panel between terminal and chat
+    switchLeftPanelTab(tab) {
+        if (tab === this.leftPanelTab) return;
+        this.leftPanelTab = tab;
+
+        const terminalEl = this.querySelector('.terminal-ui__terminal');
+        const chatEl = this.querySelector('.terminal-ui__agent-chat');
+        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
+        if (!terminalEl || !chatEl) return;
+
+        // Update left panel tab buttons
+        const buttons = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
+        buttons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.leftTab === tab);
+        });
+
+        if (tab === 'chat') {
+            terminalEl.style.display = 'none';
+            chatEl.style.display = 'flex';
+            // Lazy-load: set src on first switch
+            if (chatIframe && chatIframe.src === 'about:blank') {
+                chatIframe.src = '/chat'; // placeholder URL
+            }
+        } else {
+            chatEl.style.display = 'none';
+            terminalEl.style.display = '';
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        }
+
+        // Sync mobile dropdown
+        const mobileSelect = this.querySelector('.terminal-ui__mobile-nav-select');
+        if (mobileSelect) {
+            mobileSelect.value = tab === 'chat' ? 'agent-chat' : 'agent-terminal';
         }
     }
 
@@ -2902,11 +2961,20 @@ class TerminalUI extends HTMLElement {
     switchMobileNav(value) {
         const terminalUi = this.querySelector('.terminal-ui');
 
+        if (value === 'agent-chat') {
+            // Show left pane (chat), hide iframe
+            terminalUi.classList.remove('mobile-view-workspace');
+            terminalUi.classList.add('mobile-view-terminal');
+            this.mobileActiveView = 'terminal';
+            this.switchLeftPanelTab('chat');
+            return;
+        }
         if (value === 'agent-terminal') {
             // Show terminal, hide iframe
             terminalUi.classList.remove('mobile-view-workspace');
             terminalUi.classList.add('mobile-view-terminal');
             this.mobileActiveView = 'terminal';
+            this.switchLeftPanelTab('terminal');
             setTimeout(() => this.fitAndPreserveScroll(), 50);
         } else {
             // Show iframe, hide terminal
