@@ -318,6 +318,8 @@ type Session struct {
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
+	// UI theme at session creation (for COLORFGBG env var)
+	Theme string // "light" or "dark"
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -348,14 +350,20 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort int) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH")
+func buildSessionEnv(previewPort int, theme string) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
+	// Set COLORFGBG so CLI tools (vim, bat, ls --color, etc.) adapt to background
+	if theme == "light" {
+		env = append(env, "COLORFGBG=0;15") // dark-on-light
+	} else {
+		env = append(env, "COLORFGBG=15;0") // light-on-dark
+	}
 	return env
 }
 
@@ -896,7 +904,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort)
+	cmd.Env = buildSessionEnv(s.PreviewPort, s.Theme)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -4445,7 +4453,7 @@ func findAvailablePreviewPort() (int, net.Listener, error) {
 // The branch parameter is used for worktree creation (optional, separate from display name)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
 // The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
-func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string) (*Session, bool, error) {
+func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string, theme string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -4557,7 +4565,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(previewPort)
+	cmd.Env = buildSessionEnv(previewPort, theme)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -4590,6 +4598,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		RecordingUUID:   recordingUUID,
 		ParentUUID:      parentUUID,
 		PreviewPort:     previewPort,
+		Theme:           theme,
 		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
@@ -4672,7 +4681,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionsMu.RUnlock()
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName)
+	// Get theme hint from client for COLORFGBG env var
+	theme := r.URL.Query().Get("theme")
+
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName, theme)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))

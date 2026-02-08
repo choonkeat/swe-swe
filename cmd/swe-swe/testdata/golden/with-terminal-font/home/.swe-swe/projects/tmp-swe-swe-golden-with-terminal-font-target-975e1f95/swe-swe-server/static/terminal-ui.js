@@ -7,6 +7,7 @@ import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCount
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
+import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
 class TerminalUI extends HTMLElement {
     constructor() {
@@ -433,15 +434,15 @@ class TerminalUI extends HTMLElement {
     initTerminal() {
         const terminalEl = this.querySelector('.terminal-ui__terminal');
 
+        const resolvedTheme = document.documentElement.getAttribute('data-theme');
+        const xtermTheme = resolvedTheme === 'light' ? LIGHT_XTERM_THEME : DARK_XTERM_THEME;
+
         this.term = new Terminal({
             cursorBlink: true,
             fontSize: 16,
             fontFamily: 'JetBrains Mono',
             scrollback: 5000,
-            theme: {
-                background: '#1e1e1e',
-                foreground: '#d4d4d4'
-            }
+            theme: xtermTheme
         });
 
         this.fitAddon = new FitAddon.FitAddon();
@@ -743,6 +744,9 @@ class TerminalUI extends HTMLElement {
         if (parentParam) {
             url += '&parent=' + encodeURIComponent(parentParam);
         }
+        // Forward current theme to server so shell env (COLORFGBG) matches
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        url += '&theme=' + encodeURIComponent(currentTheme);
 
         this.debugLog('Creating WebSocket to: ' + url);
         console.log('[WS] Connecting to', url);
@@ -1595,11 +1599,7 @@ class TerminalUI extends HTMLElement {
         window.addEventListener('theme-mode-changed', (e) => {
             if (this.term) {
                 const resolved = e.detail?.resolved;
-                if (resolved === 'light') {
-                    this.term.options.theme = { background: '#ffffff', foreground: '#1e293b' };
-                } else {
-                    this.term.options.theme = { background: '#1e1e1e', foreground: '#d4d4d4' };
-                }
+                this.term.options.theme = resolved === 'light' ? LIGHT_XTERM_THEME : DARK_XTERM_THEME;
             }
         });
     }
