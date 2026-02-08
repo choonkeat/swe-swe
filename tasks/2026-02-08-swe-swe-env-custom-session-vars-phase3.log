@@ -1,0 +1,5 @@
+085417 Phase 3: Setup wizard integration
+085417 PLAN: Add env vars step to swe-swe/setup template + slash commands, run make build golden-update
+085417 EXPECT: make build golden-update — golden diff shows only the new setup step
+085417 EXPECT: make test — no regression
+085417 EXPECT: MCP browser — run /setup in session, new env vars step appears at correct position
