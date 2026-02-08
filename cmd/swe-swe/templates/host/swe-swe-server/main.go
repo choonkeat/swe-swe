@@ -3960,6 +3960,11 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 		"isWorkspace": isWorkspace,
 	}
 
+	// Check if swe-swe/env exists
+	if _, err := os.Stat(filepath.Join(workDir, "swe-swe", "env")); err == nil {
+		response["hasEnvFile"] = true
+	}
+
 	// Check if it's a git repository
 	if _, err := os.Stat(filepath.Join(workDir, ".git")); os.IsNotExist(err) {
 		log.Printf("%s is not a git repository, skipping git operations", workDir)
@@ -4050,11 +4055,15 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"path":        repoPath,
 		"isWorkspace": false,
-	})
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "swe-swe", "env")); err == nil {
+		resp["hasEnvFile"] = true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // sanitizeProjectDirName converts a display name to a safe directory name.
@@ -4133,12 +4142,16 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"path":        repoPath,
 		"isWorkspace": false,
 		"isNew":       true,
-	})
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "swe-swe", "env")); err == nil {
+		resp["hasEnvFile"] = true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // handleRepoBranchesAPI handles GET /api/repo/branches?path=/workspace

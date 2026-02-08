@@ -38,7 +38,7 @@ Allow users to set custom environment variables for their agent sessions via a `
   - Confirm `FOO=bar` is in the session environment
   - Remove the file, confirm no error on session start
 
-## Phase 2: New Session dialog hint
+## Phase 2: New Session dialog hint ✅
 
 **What will be achieved:** The New Session dialog shows a contextual hint about `swe-swe/env`. When the file exists: "Loading environment from `swe-swe/env`". When missing: "Tip: set custom env vars in `swe-swe/env`".
 

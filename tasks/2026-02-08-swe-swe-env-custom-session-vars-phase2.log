@@ -4,3 +4,8 @@
 084928 EXPECT: MCP browser — dialog shows "Tip: set custom env vars in swe-swe/env" when file missing
 084928 EXPECT: MCP browser — dialog shows "Loading environment from swe-swe/env" when file present
 084928 EXPECT: MCP browser — hint reverts to tip when file removed
+085417 RESULT: make test — all tests pass (PASS ok github.com/choonkeat/swe-swe 2.397s)
+085417 RESULT: MCP browser — no env file: shows "Tip: set custom env vars in swe-swe/env" — PASS
+085417 RESULT: MCP browser — with env file (FOO=bar): shows "Loading environment from swe-swe/env" — PASS
+085417 RESULT: MCP browser — removed env file, reopened dialog: reverted to "Tip: set custom env vars in swe-swe/env" — PASS
+085417 CONCLUSION: Phase 2 verified — all expected outcomes matched
