@@ -75,7 +75,7 @@ Fix 6 dark/light mode issues in the swe-swe web UI to ensure consistent, flicker
 
 ---
 
-## Phase 4: "Connected, waiting for frames..." page theming
+## Phase 4: "Connected, waiting for frames..." page theming ✅
 
 **Goal:** Agent View overlay (spinner + status) respects dark/light mode.
 
