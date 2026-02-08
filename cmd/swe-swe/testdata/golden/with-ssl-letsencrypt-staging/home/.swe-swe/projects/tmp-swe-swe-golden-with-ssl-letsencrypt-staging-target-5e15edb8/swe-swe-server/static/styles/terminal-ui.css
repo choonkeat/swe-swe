@@ -11,6 +11,7 @@
     --text-primary: #e2e8f0;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+    --bg-terminal: #1e1e1e;
 
     /* Accent colors - can be overridden by theme */
     --accent-primary: #7c3aed;
@@ -950,6 +951,42 @@ terminal-ui.embedded-in-iframe .mobile-only {
 .settings-panel__color-reset:hover {
     background: var(--bg-elevated);
     color: var(--text-primary);
+}
+
+/* Theme mode toggle (Light / Dark / System) */
+.settings-panel__theme-toggle {
+    display: flex;
+    gap: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.settings-panel__theme-btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.settings-panel__theme-btn:not(:last-child) {
+    border-right: 1px solid var(--border-primary);
+}
+
+.settings-panel__theme-btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.settings-panel__theme-btn.selected {
+    background: var(--accent-primary);
+    color: var(--accent-text);
 }
 
 /* === Basic UI Split-Pane Layout === */

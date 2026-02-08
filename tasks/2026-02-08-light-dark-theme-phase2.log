@@ -1,1 +1,3 @@
 031400 [PRE] Running `make build golden-update`. Expect: golden diff shows changes to index.html (script + background), session-theme.js (init), terminal-ui.js (toggle HTML + JS), terminal-ui.css (toggle styles + --bg-terminal). `make test` passes.
+031800 [POST] golden diff: 4 files changed per variant (index.html +3/-1, session-theme.js +10/-1, terminal-ui.css +37, terminal-ui.js +58). `make test` PASS (ok 2.295s). Both expectations met.
+031800 [PRE] MCP browser verification on session page. Expect: dark mode baseline values match, theme toggle visible in settings, light mode changes backgrounds to white.
