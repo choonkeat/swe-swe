@@ -1,0 +1,4 @@
+073304 Phase 1: Cookie-based theme persistence (eliminate FOUC)
+073304 Step 1a: Will modify theme-mode.js to set cookie 'swe-swe-theme' with resolved value on applyMode() and setThemeMode()
+073304 Step 1b: Will add inline <script> to index.html and selection.html that reads cookie and sets data-theme before CSS loads
+073304 Expected: No FOUC on page reload in any theme mode
