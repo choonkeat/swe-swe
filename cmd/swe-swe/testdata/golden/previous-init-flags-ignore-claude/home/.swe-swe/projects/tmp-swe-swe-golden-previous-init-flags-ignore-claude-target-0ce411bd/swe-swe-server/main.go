@@ -2129,23 +2129,6 @@ func releaseAgentChatProxyServer(acPort int) {
 	ref.listener.Close()
 }
 
-func findAvailableAgentChatPort(previewPort int) (int, net.Listener, error) {
-	acPort := agentChatPortFromPreview(previewPort)
-	if acPort < agentChatPortStart || acPort > agentChatPortEnd {
-		return 0, nil, fmt.Errorf("derived agent chat port %d outside range %d-%d", acPort, agentChatPortStart, agentChatPortEnd)
-	}
-	proxyListener, err := net.Listen("tcp", fmt.Sprintf(":%d", agentChatProxyPort(acPort)))
-	if err != nil {
-		return 0, nil, fmt.Errorf("agent chat proxy port %d unavailable: %w", agentChatProxyPort(acPort), err)
-	}
-	appListener, err := net.Listen("tcp", fmt.Sprintf(":%d", acPort))
-	if err != nil {
-		proxyListener.Close()
-		return 0, nil, fmt.Errorf("agent chat app port %d unavailable: %w", acPort, err)
-	}
-	appListener.Close()
-	return acPort, proxyListener, nil
-}
 
 // handleProxyRequest proxies requests to the current target
 func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
@@ -4630,7 +4613,10 @@ func agentChatPortFromPreview(previewPort int) int {
 	return previewPort + 1000
 }
 
-func findAvailablePreviewPort() (int, net.Listener, error) {
+// findAvailablePortPair finds a preview port and its derived agent chat port where all 4 addresses
+// (preview proxy, preview app, agent chat proxy, agent chat app) are available.
+// Returns preview port, preview proxy listener, agent chat port, agent chat proxy listener.
+func findAvailablePortPair() (int, net.Listener, int, net.Listener, error) {
 	for port := previewPortStart; port <= previewPortEnd; port++ {
 		previewListener, err := net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(port)))
 		if err != nil {
@@ -4642,9 +4628,24 @@ func findAvailablePreviewPort() (int, net.Listener, error) {
 			continue
 		}
 		appListener.Close()
-		return port, previewListener, nil
+
+		acPort := agentChatPortFromPreview(port)
+		acProxyListener, err := net.Listen("tcp", fmt.Sprintf(":%d", agentChatProxyPort(acPort)))
+		if err != nil {
+			previewListener.Close()
+			continue
+		}
+		acAppListener, err := net.Listen("tcp", fmt.Sprintf(":%d", acPort))
+		if err != nil {
+			previewListener.Close()
+			acProxyListener.Close()
+			continue
+		}
+		acAppListener.Close()
+
+		return port, previewListener, acPort, acProxyListener, nil
 	}
-	return 0, nil, fmt.Errorf("no available preview ports in range %d-%d", previewPortStart, previewPortEnd)
+	return 0, nil, 0, nil, fmt.Errorf("no available port pair in preview range %d-%d", previewPortStart, previewPortEnd)
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -4724,17 +4725,9 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 	if previewPort == 0 {
 		var err error
-		previewPort, previewListener, err = findAvailablePreviewPort()
+		previewPort, previewListener, acPort, acListener, err = findAvailablePortPair()
 		if err != nil {
 			return nil, false, err
-		}
-	}
-	if acPort == 0 {
-		var err error
-		acPort, acListener, err = findAvailableAgentChatPort(previewPort)
-		if err != nil {
-			log.Printf("Warning: could not allocate agent chat port: %v", err)
-			// Non-fatal: agent chat is optional
 		}
 	}
 
@@ -4832,14 +4825,11 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			}
 			return nil, false, err
 		}
-		if acPort > 0 {
-			if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
-				if acListener != nil {
-					acListener.Close()
-				}
-				log.Printf("Warning: could not start agent chat proxy: %v", err)
-				// Non-fatal: agent chat is optional
+		if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
+			if acListener != nil {
+				acListener.Close()
 			}
+			return nil, false, err
 		}
 	} else {
 		if previewListener != nil {
