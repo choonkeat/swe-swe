@@ -24,10 +24,16 @@ export function getResolvedMode(mode) {
     return mode;
 }
 
+/** Set the theme cookie so inline scripts on other pages can avoid FOUC. */
+function setThemeCookie(resolved) {
+    document.cookie = `swe-swe-theme=${resolved};path=/;max-age=31536000;SameSite=Lax`;
+}
+
 /** Apply resolved mode: set data-theme attribute (CSS handles variable overrides). */
 export function applyMode(mode) {
     const resolved = getResolvedMode(mode);
     document.documentElement.setAttribute('data-theme', resolved);
+    setThemeCookie(resolved);
 
     window.dispatchEvent(new CustomEvent('theme-mode-changed', {
         detail: { mode, resolved }
