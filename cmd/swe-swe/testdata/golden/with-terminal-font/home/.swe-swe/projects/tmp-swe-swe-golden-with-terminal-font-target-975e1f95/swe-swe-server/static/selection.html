@@ -841,6 +841,15 @@
             margin-top: 8px;
             display: none;
         }
+        .dialog__env-hint {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 8px;
+            font-style: italic;
+        }
+        .dialog__env-hint code {
+            font-style: normal;
+        }
         .dialog__field--hidden {
             display: none;
         }
@@ -1172,6 +1181,8 @@
                             {{end}}
                         </div>
                     </div>
+                    <!-- Env file hint -->
+                    <div class="dialog__env-hint" id="new-session-env-hint" style="display: none;"></div>
                 </div>
                 <!-- Footer: error, loading, start -->
                 <div class="dialog__footer">

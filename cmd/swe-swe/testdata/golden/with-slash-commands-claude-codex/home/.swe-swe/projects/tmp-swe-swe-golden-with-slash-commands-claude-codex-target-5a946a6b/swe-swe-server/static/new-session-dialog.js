@@ -25,6 +25,7 @@
     var newSessionColorInput = document.getElementById('new-session-color-input');
     var newSessionColorHex = document.getElementById('new-session-color-hex');
     var newSessionColorClear = document.getElementById('new-session-color-clear');
+    var envHint = document.getElementById('new-session-env-hint');
 
     var dialogState = {
         sessionUUID: '',
@@ -299,6 +300,14 @@
             } else {
                 whereKey = dialogState.mode;
             }
+
+            // Show env file hint
+            if (data.hasEnvFile) {
+                envHint.innerHTML = 'Loading environment from <code>swe-swe/env</code>';
+            } else {
+                envHint.innerHTML = 'Tip: set custom env vars in <code>swe-swe/env</code>';
+            }
+            envHint.style.display = 'block';
 
             // Show post-prepare fields
             postPrepareFields.classList.remove('dialog__field--hidden');

@@ -64,7 +64,7 @@ Allow users to set custom environment variables for their agent sessions via a `
   - Create `swe-swe/env`, reopen dialog, confirm hint changes to active message
   - Remove file, confirm it reverts to tip
 
-## Phase 3: Setup wizard integration
+## Phase 3: Setup wizard integration ✅
 
 **What will be achieved:** The `swe-swe/setup` script includes a new step that asks users if they want to set custom environment variables and writes them to `swe-swe/env`.
 

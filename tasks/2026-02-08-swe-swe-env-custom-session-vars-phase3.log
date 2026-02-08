@@ -3,3 +3,7 @@
 085417 EXPECT: make build golden-update — golden diff shows only the new setup step
 085417 EXPECT: make test — no regression
 085417 EXPECT: MCP browser — run /setup in session, new env vars step appears at correct position
+085820 RESULT: make build golden-update — golden diff shows setup.md/setup.toml/setup changes (new step 5 + renumber to 6) plus Phase 1+2 Go/JS/HTML changes — all expected — PASS
+085820 RESULT: make test — all tests pass (PASS ok github.com/choonkeat/swe-swe 2.282s) — PASS
+085820 RESULT: MCP browser — verified container has setup.md with step 5 "Custom environment variables" at correct position (checked /home/app/.config/opencode/command/swe-swe/setup.md) — PASS
+085820 CONCLUSION: Phase 3 verified — all expected outcomes matched

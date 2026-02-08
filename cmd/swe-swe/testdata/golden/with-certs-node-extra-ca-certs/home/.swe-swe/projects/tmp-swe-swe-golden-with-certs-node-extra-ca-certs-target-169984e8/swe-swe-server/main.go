@@ -350,7 +350,7 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort int, theme string) []string {
+func buildSessionEnv(previewPort int, theme, workDir string) []string {
 	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG")
 	env = append(env,
 		"TERM=xterm-256color",
@@ -364,7 +364,29 @@ func buildSessionEnv(previewPort int, theme string) []string {
 	} else {
 		env = append(env, "COLORFGBG=15;0") // light-on-dark
 	}
+	// Append user-defined vars from swe-swe/env (last so they take precedence)
+	if workDir != "" {
+		env = append(env, loadEnvFile(filepath.Join(workDir, "swe-swe", "env"))...)
+	}
 	return env
+}
+
+func loadEnvFile(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var entries []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if _, _, ok := strings.Cut(line, "="); ok {
+			entries = append(entries, line)
+		}
+	}
+	return entries
 }
 
 func filterEnv(env []string, keys ...string) []string {
@@ -904,7 +926,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort, s.Theme)
+	cmd.Env = buildSessionEnv(s.PreviewPort, s.Theme, s.WorkDir)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -3938,6 +3960,11 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 		"isWorkspace": isWorkspace,
 	}
 
+	// Check if swe-swe/env exists
+	if _, err := os.Stat(filepath.Join(workDir, "swe-swe", "env")); err == nil {
+		response["hasEnvFile"] = true
+	}
+
 	// Check if it's a git repository
 	if _, err := os.Stat(filepath.Join(workDir, ".git")); os.IsNotExist(err) {
 		log.Printf("%s is not a git repository, skipping git operations", workDir)
@@ -4028,11 +4055,15 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"path":        repoPath,
 		"isWorkspace": false,
-	})
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "swe-swe", "env")); err == nil {
+		resp["hasEnvFile"] = true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // sanitizeProjectDirName converts a display name to a safe directory name.
@@ -4111,12 +4142,16 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"path":        repoPath,
 		"isWorkspace": false,
 		"isNew":       true,
-	})
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "swe-swe", "env")); err == nil {
+		resp["hasEnvFile"] = true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 // handleRepoBranchesAPI handles GET /api/repo/branches?path=/workspace
@@ -4589,7 +4624,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(previewPort, theme)
+	cmd.Env = buildSessionEnv(previewPort, theme, workDir)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
