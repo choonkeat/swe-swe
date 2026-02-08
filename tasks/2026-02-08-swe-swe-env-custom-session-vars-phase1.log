@@ -2,3 +2,7 @@
 084526 PLAN: Add loadEnvFile() function, modify buildSessionEnv to accept workDir, update both call sites
 084526 EXPECT: make test passes with no regression after code changes
 084526 EXPECT: Dev server loads swe-swe/env vars into session environment
+084928 RESULT: make test — all tests pass (PASS ok github.com/choonkeat/swe-swe 2.336s)
+084928 RESULT: MCP browser test — created swe-swe/env with FOO=bar, started session, shell shows FOO=bar in env output
+084928 RESULT: MCP browser test — removed swe-swe/env, started new session, no error on start, FOO not in env (exit=1)
+084928 CONCLUSION: Phase 1 verified — all expected outcomes matched
