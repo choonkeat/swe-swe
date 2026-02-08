@@ -1267,12 +1267,6 @@ class TerminalUI extends HTMLElement {
         panel.removeAttribute('hidden');
         statusBar.setAttribute('aria-expanded', 'true');
 
-        // Focus first input
-        const firstInput = panel.querySelector('input');
-        if (firstInput) {
-            firstInput.focus();
-        }
-
         // Store the element that opened the panel to restore focus on close
         this._settingsPanelOpener = document.activeElement;
     }
