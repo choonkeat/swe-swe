@@ -1,0 +1,6 @@
+084928 Phase 2: New Session dialog hint
+084928 PLAN: Add hasEnvFile to /api/repo/prepare response, show hint in New Session dialog
+084928 EXPECT: make test passes with no regression
+084928 EXPECT: MCP browser — dialog shows "Tip: set custom env vars in swe-swe/env" when file missing
+084928 EXPECT: MCP browser — dialog shows "Loading environment from swe-swe/env" when file present
+084928 EXPECT: MCP browser — hint reverts to tip when file removed
