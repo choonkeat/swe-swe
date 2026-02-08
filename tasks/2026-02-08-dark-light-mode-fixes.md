@@ -97,7 +97,7 @@ Fix 6 dark/light mode issues in the swe-swe web UI to ensure consistent, flicker
 
 ---
 
-## Phase 5: CLAUDE badge contrast in light mode
+## Phase 5: CLAUDE badge contrast in light mode ✅
 
 **Goal:** "CLAUDE" agent label is readable in light mode.
 

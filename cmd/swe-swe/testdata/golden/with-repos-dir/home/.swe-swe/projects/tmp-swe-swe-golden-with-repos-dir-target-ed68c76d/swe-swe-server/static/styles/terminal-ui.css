@@ -1519,7 +1519,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
     font-size: 10px;
     font-weight: 600;
     padding: 3px 0;
-    color: #e0e0e0;
+    color: var(--text-secondary);
     letter-spacing: 0.5px;
 }
 
