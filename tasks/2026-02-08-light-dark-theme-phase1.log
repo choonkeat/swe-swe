@@ -1,1 +1,2 @@
 030606 [PRE] Running `make build golden-update`. Expect: golden diff shows new theme-mode.js in every variant. `make test` passes.
+030900 [POST] golden diff: 33 files changed (theme-mode.js in every variant, +81 lines each). `make test` PASS (ok 2.245s). Both expectations met.

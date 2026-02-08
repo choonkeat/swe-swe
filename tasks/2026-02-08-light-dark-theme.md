@@ -71,7 +71,7 @@ Committed stale golden files from commits `c88c697` and `e8c59e8`.
 
 ---
 
-## Phase 1: Theme infrastructure
+## Phase 1: Theme infrastructure [DONE]
 
 ### What
 Create `theme-mode.js` — the shared ES6 module that manages light/dark/system switching, localStorage persistence, and OS media query listening. Register it in `init.go`.
