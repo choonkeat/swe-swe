@@ -235,28 +235,6 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                 </div>
                             </section>
-                            <nav class="settings-panel__nav">
-                                <a href="/" target="swe-swe-home" class="settings-panel__nav-btn">
-                                    <span class="settings-panel__nav-icon">🏠</span>
-                                    <span>Home</span>
-                                </a>
-                                <a href="" target="_blank" class="settings-panel__nav-btn settings-panel__nav-shell settings-panel__nav-tab" data-tab="shell">
-                                    <span class="settings-panel__nav-icon">💻</span>
-                                    <span>Shell</span>
-                                </a>
-                                <a href="/vscode/" target="swe-swe-vscode" class="settings-panel__nav-btn settings-panel__nav-vscode settings-panel__nav-tab" data-tab="vscode">
-                                    <span class="settings-panel__nav-icon">📝</span>
-                                    <span>VSCode</span>
-                                </a>
-                                <a href="" target="_blank" class="settings-panel__nav-btn settings-panel__nav-tab" data-tab="preview">
-                                    <span class="settings-panel__nav-icon">📡</span>
-                                    <span>App Preview</span>
-                                </a>
-                                <a href="/chrome/" target="swe-swe-browser" class="settings-panel__nav-btn settings-panel__nav-tab" data-tab="browser">
-                                    <span class="settings-panel__nav-icon">🌐</span>
-                                    <span>Agent View</span>
-                                </a>
-                            </nav>
                         </div>
                     </div>
                 </div>
@@ -1525,42 +1503,6 @@ class TerminalUI extends HTMLElement {
 
         // Theme color picker
         this.populateColorPicker();
-
-        // Update navigation links with dynamic URLs and add click handlers
-        const baseUrl = getBaseUrl(window.location);
-        const vscodeLink = panel.querySelector('.settings-panel__nav-vscode');
-        if (vscodeLink) {
-            vscodeLink.href = buildVSCodeUrl(baseUrl, this.workDir);
-        }
-
-        // Update nav tab links with dynamic URLs and add click handlers for iframe toggle
-        const navTabs = panel.querySelectorAll('.settings-panel__nav-tab');
-        navTabs.forEach(link => {
-            const tab = link.dataset.tab;
-            // Set dynamic hrefs
-            if (tab === 'shell') {
-                // Hide shell link if already in a shell session
-                if (this.assistant === 'shell') {
-                    link.style.display = 'none';
-                    return;
-                }
-                const shellUUID = deriveShellUUID(this.uuid);
-                const debugQS = this.debugMode ? '&debug=1' : '';
-                link.href = `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(this.uuid)}${debugQS}`;
-            } else if (tab === 'preview') {
-                link.href = this.getPreviewBaseUrl();
-            } else if (tab === 'browser') {
-                link.href = `${baseUrl}/chrome/`;
-            }
-            // Add click handler for iframe toggle behavior
-            link.addEventListener('click', (e) => {
-                this.handleTabClick(e, tab, link.href);
-                // Close settings panel after clicking a tab
-                if (this.canShowSplitPane() && this.isRegularClick(e)) {
-                    this.closeSettingsPanel();
-                }
-            });
-        });
 
     }
 
@@ -2960,15 +2902,6 @@ class TerminalUI extends HTMLElement {
             }
         });
 
-        // Update settings panel nav tabs
-        const settingsTabs = this.querySelectorAll('.settings-panel__nav-tab');
-        settingsTabs.forEach(tab => {
-            if (tab.dataset.tab === this.activeTab) {
-                tab.classList.add('active');
-            } else {
-                tab.classList.remove('active');
-            }
-        });
     }
 
     // Switch mobile navigation (unified dropdown: agent-terminal + workspace panels)

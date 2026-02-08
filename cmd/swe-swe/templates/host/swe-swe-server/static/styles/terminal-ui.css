@@ -796,48 +796,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     display: block;
 }
 
-.settings-panel__nav {
-    display: flex;
-    gap: 8px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border-primary);
-}
-
-.settings-panel__nav-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 12px 8px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-secondary);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 12px;
-    font-family: {{STATUS_BAR_FONT_FAMILY}};
-    cursor: pointer;
-    text-decoration: none;
-    min-height: 44px;
-    transition: background 0.2s;
-}
-
-.settings-panel__nav-btn:hover {
-    background: #4a4a4a;
-}
-
-.settings-panel__nav-btn:active {
-    background: var(--border-secondary);
-}
-
-.settings-panel__nav-btn.active {
-    background: var(--border-secondary);
-    border-bottom: 2px solid var(--accent-primary);
-}
-
-.settings-panel__nav-icon {
-    font-size: 20px;
-}
 
 /* Desktop: centered modal */
 @media (min-width: 640px) {
@@ -1707,9 +1665,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     background: rgba(0, 0, 0, 0.3);
 }
 
-[data-theme="light"] .settings-panel__nav-btn:hover {
-    background: var(--bg-elevated);
-}
 
 [data-theme="light"] .settings-panel__color-preset.selected {
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);

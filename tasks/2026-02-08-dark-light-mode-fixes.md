@@ -116,7 +116,7 @@ Fix 6 dark/light mode issues in the swe-swe web UI to ensure consistent, flicker
 
 ---
 
-## Phase 6: Remove settings nav buttons
+## Phase 6: Remove settings nav buttons ✅
 
 **Goal:** Remove Home/Shell/VSCode/App Preview/Agent View navigation from session settings panel.
 
