@@ -1,0 +1,1 @@
+030606 [PRE] Running `make build golden-update`. Expect: golden diff shows new theme-mode.js in every variant. `make test` passes.
