@@ -29,6 +29,8 @@ services:
 # {{ENDIF}}
       # Preview proxy entrypoints (per-session)
       {{PREVIEW_ENTRYPOINTS}}
+      # Agent chat proxy entrypoints (per-session)
+      {{AGENT_CHAT_ENTRYPOINTS}}
 # {{IF LETSENCRYPT_PRODUCTION}}
       # Let's Encrypt ACME configuration (production)
       - "--certificatesresolvers.letsencrypt.acme.email={{EMAIL}}"
@@ -55,6 +57,8 @@ services:
 # {{ENDIF}}
       # Preview proxy ports (per-session)
       {{PREVIEW_PORTS}}
+      # Agent chat proxy ports (per-session)
+      {{AGENT_CHAT_PORTS}}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -158,6 +162,8 @@ services:
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
       # Preview proxy routing (per-session)
       {{PREVIEW_ROUTERS}}
+      # Agent chat proxy routing (per-session)
+      {{AGENT_CHAT_ROUTERS}}
     depends_on:
       - chrome
     volumes:
@@ -200,6 +206,8 @@ services:
       - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
       # App preview session port range (must match traefik entrypoints)
       - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
+      # Agent chat session port range (derived from preview ports + 1000)
+      - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
       # Add other credentials as needed:
       # - GEMINI_API_KEY=${GEMINI_API_KEY}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}

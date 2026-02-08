@@ -586,6 +586,12 @@ func handleInit() {
 		os.Exit(1)
 	}
 
+	// Derive agent chat port range from preview ports (+1000)
+	agentChatPortsRange := make([]int, len(previewPortsRange))
+	for i, p := range previewPortsRange {
+		agentChatPortsRange[i] = agentChatPort(p)
+	}
+
 	if err := os.MkdirAll(sweDir, 0755); err != nil {
 		log.Fatalf("Failed to create metadata directory: %v", err)
 	}
@@ -713,12 +719,13 @@ func handleInit() {
 	// This allows the certificate detection to inform the Dockerfile template
 	hasCerts := handleCertificatesAndEnv(sweDir, certsDir, projectName)
 
-	// Append preview port range to .env so swe-swe-server uses the correct range
+	// Append preview and agent chat port ranges to .env so swe-swe-server uses the correct ranges
 	if len(previewPortsRange) > 0 {
 		envFilePath := filepath.Join(sweDir, ".env")
 		f, err := os.OpenFile(envFilePath, os.O_APPEND|os.O_WRONLY, 0644)
 		if err == nil {
 			fmt.Fprintf(f, "SWE_PREVIEW_PORTS=%d-%d\n", previewPortsRange[0], previewPortsRange[len(previewPortsRange)-1])
+			fmt.Fprintf(f, "SWE_AGENT_CHAT_PORTS=%d-%d\n", agentChatPortsRange[0], agentChatPortsRange[len(agentChatPortsRange)-1])
 			f.Close()
 		}
 	}

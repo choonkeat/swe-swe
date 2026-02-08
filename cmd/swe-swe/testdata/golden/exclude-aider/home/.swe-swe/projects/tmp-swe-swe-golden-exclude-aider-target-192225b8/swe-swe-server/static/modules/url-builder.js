@@ -72,6 +72,20 @@ export function buildProxyUrl(location, previewPort, targetURL) {
 }
 
 /**
+ * Build the agent chat URL.
+ * @param {{protocol: string, hostname: string}} location - Location-like object
+ * @param {number|string} agentChatPort - Agent chat app port
+ * @returns {string|null} Agent chat proxy URL, or null if no port
+ */
+export function buildAgentChatUrl(location, agentChatPort) {
+    const { protocol, hostname } = location;
+    if (agentChatPort) {
+        return `${protocol}//${hostname}:${'4' + agentChatPort}`;
+    }
+    return null;
+}
+
+/**
  * Get the debug query string.
  * @param {boolean} debugMode - Whether debug mode is enabled
  * @returns {string} Query string ("?debug=1" or "")

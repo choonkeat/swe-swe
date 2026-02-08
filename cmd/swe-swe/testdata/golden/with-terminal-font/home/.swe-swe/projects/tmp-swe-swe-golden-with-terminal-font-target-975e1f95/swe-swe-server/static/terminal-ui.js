@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -34,6 +34,7 @@ class TerminalUI extends HTMLElement {
         this.workDir = '';
         this.previewPort = null;
         this.previewBaseUrl = null;
+        this.agentChatPort = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -984,6 +985,7 @@ class TerminalUI extends HTMLElement {
                 this.workDir = msg.workDir || '';
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 this.previewPort = msg.previewPort || null;
+                this.agentChatPort = msg.agentChatPort || null;
                 this.updatePreviewBaseUrl();
                 if (this.workDir !== prevWorkDir) {
                     this.renderServiceLinks();
@@ -1500,9 +1502,9 @@ class TerminalUI extends HTMLElement {
         if (tab === 'chat') {
             terminalEl.style.display = 'none';
             chatEl.style.display = 'flex';
-            // Lazy-load: set src on first switch
-            if (chatIframe && chatIframe.src === 'about:blank') {
-                chatIframe.src = '/chat'; // placeholder URL
+            // Lazy-load: set src on first switch using agent chat proxy URL
+            if (chatIframe && chatIframe.src === 'about:blank' && this.agentChatPort) {
+                chatIframe.src = buildAgentChatUrl(window.location, this.agentChatPort) + '/';
             }
         } else {
             chatEl.style.display = 'none';

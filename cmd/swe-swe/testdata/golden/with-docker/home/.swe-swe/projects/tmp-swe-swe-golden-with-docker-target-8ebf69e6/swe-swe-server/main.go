@@ -78,8 +78,10 @@ const (
 )
 
 var (
-	previewPortStart = 3000
-	previewPortEnd   = 3019
+	previewPortStart   = 3000
+	previewPortEnd     = 3019
+	agentChatPortStart = 4000
+	agentChatPortEnd   = 4019
 )
 
 // ANSI escape sequence helpers for terminal formatting
@@ -310,7 +312,8 @@ type Session struct {
 	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 	// Parent session relationship
 	ParentUUID  string // UUID of parent session (for shell sessions opened from agent sessions)
-	PreviewPort int    // App preview target port for this session
+	PreviewPort   int // App preview target port for this session
+	AgentChatPort int // Agent chat MCP server port for this session
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -350,11 +353,12 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort int, theme, workDir string) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG")
+func buildSessionEnv(previewPort, agentChatPort int, theme, workDir string) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
+		fmt.Sprintf("AGENT_CHAT_PORT=%d", agentChatPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
@@ -621,8 +625,9 @@ func (s *Session) BroadcastStatus() {
 		"sessionName":   s.Name,
 		"uuidShort":     uuidShort,
 		"workDir":       workDir,
-		"previewPort":   s.PreviewPort,
-		"yoloMode":      s.yoloMode,
+		"previewPort":    s.PreviewPort,
+		"agentChatPort":  s.AgentChatPort,
+		"yoloMode":       s.yoloMode,
 		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
 	}
 
@@ -772,9 +777,11 @@ func (s *Session) Close() {
 	}
 
 	previewPort := s.PreviewPort
+	acPort := s.AgentChatPort
 	s.mu.Unlock()
 
 	releasePreviewProxyServer(previewPort)
+	releaseAgentChatProxyServer(acPort)
 	return
 }
 
@@ -926,7 +933,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort, s.Theme, s.WorkDir)
+	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.Theme, s.WorkDir)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -1895,6 +1902,13 @@ var (
 	previewProxyDisabled bool
 )
 
+// agentChatProxyServer is a simple reverse proxy for the agent chat MCP server.
+// It reuses the same previewProxyServer struct for ref-counting and lifecycle.
+var (
+	agentChatServersMu sync.Mutex
+	agentChatServers   = make(map[int]*previewProxyServer)
+)
+
 // startPreviewProxy starts the app preview reverse proxy server on the provided listener.
 // It proxies requests to localhost:targetPort (or a dynamically set target URL)
 // It also injects a debug script into HTML responses for console/error/network forwarding
@@ -2024,6 +2038,113 @@ func releasePreviewProxyServer(previewPort int) {
 		log.Printf("Preview proxy shutdown error: %v", err)
 	}
 	ref.listener.Close()
+}
+
+// startAgentChatProxy starts a simple reverse proxy for the agent chat MCP server.
+// Unlike the preview proxy, it does NOT inject debug scripts.
+func startAgentChatProxy(listener net.Listener, targetPort int) (*previewProxyServer, error) {
+	targetPortStr := strconv.Itoa(targetPort)
+	defaultTarget, err := url.Parse("http://localhost:" + targetPortStr)
+	if err != nil {
+		return nil, fmt.Errorf("agent chat proxy: invalid target URL: %w", err)
+	}
+
+	state := &previewProxyState{
+		defaultTarget:  defaultTarget,
+		defaultPortStr: targetPortStr,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handleProxyRequest(state))
+
+	server := &http.Server{
+		Handler: mux,
+	}
+
+	go func() {
+		log.Printf("Starting agent chat proxy on %s -> localhost:%d", listener.Addr().String(), targetPort)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("Agent chat proxy error: %v", err)
+		}
+	}()
+
+	return &previewProxyServer{
+		server:   server,
+		listener: listener,
+		state:    state,
+		refCount: 0,
+	}, nil
+}
+
+func acquireAgentChatProxyServer(acPort int, listener net.Listener) error {
+	agentChatServersMu.Lock()
+	defer agentChatServersMu.Unlock()
+
+	if ref, ok := agentChatServers[acPort]; ok {
+		ref.refCount++
+		if listener != nil {
+			listener.Close()
+		}
+		return nil
+	}
+
+	if listener == nil {
+		var err error
+		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", agentChatProxyPort(acPort)))
+		if err != nil {
+			return err
+		}
+	}
+
+	server, err := startAgentChatProxy(listener, acPort)
+	if err != nil {
+		listener.Close()
+		return err
+	}
+	server.refCount = 1
+	agentChatServers[acPort] = server
+	return nil
+}
+
+func releaseAgentChatProxyServer(acPort int) {
+	agentChatServersMu.Lock()
+	ref, ok := agentChatServers[acPort]
+	if !ok {
+		agentChatServersMu.Unlock()
+		return
+	}
+	ref.refCount--
+	if ref.refCount > 0 {
+		agentChatServersMu.Unlock()
+		return
+	}
+	delete(agentChatServers, acPort)
+	agentChatServersMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := ref.server.Shutdown(ctx); err != nil {
+		log.Printf("Agent chat proxy shutdown error: %v", err)
+	}
+	ref.listener.Close()
+}
+
+func findAvailableAgentChatPort(previewPort int) (int, net.Listener, error) {
+	acPort := agentChatPortFromPreview(previewPort)
+	if acPort < agentChatPortStart || acPort > agentChatPortEnd {
+		return 0, nil, fmt.Errorf("derived agent chat port %d outside range %d-%d", acPort, agentChatPortStart, agentChatPortEnd)
+	}
+	proxyListener, err := net.Listen("tcp", fmt.Sprintf(":%d", agentChatProxyPort(acPort)))
+	if err != nil {
+		return 0, nil, fmt.Errorf("agent chat proxy port %d unavailable: %w", agentChatProxyPort(acPort), err)
+	}
+	appListener, err := net.Listen("tcp", fmt.Sprintf(":%d", acPort))
+	if err != nil {
+		proxyListener.Close()
+		return 0, nil, fmt.Errorf("agent chat app port %d unavailable: %w", acPort, err)
+	}
+	appListener.Close()
+	return acPort, proxyListener, nil
 }
 
 // handleProxyRequest proxies requests to the current target
@@ -2706,6 +2827,18 @@ func main() {
 				if end, err := strconv.Atoi(parts[1]); err == nil {
 					previewPortStart = start
 					previewPortEnd = end
+				}
+			}
+		}
+	}
+
+	// Override agent chat port range from environment (set by docker-compose)
+	if portRange := os.Getenv("SWE_AGENT_CHAT_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					agentChatPortStart = start
+					agentChatPortEnd = end
 				}
 			}
 		}
@@ -4489,6 +4622,14 @@ func previewProxyPort(port int) int {
 	return 50000 + port
 }
 
+func agentChatProxyPort(port int) int {
+	return 40000 + port
+}
+
+func agentChatPortFromPreview(previewPort int) int {
+	return previewPort + 1000
+}
+
 func findAvailablePreviewPort() (int, net.Listener, error) {
 	for port := previewPortStart; port <= previewPortEnd; port++ {
 		previewListener, err := net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(port)))
@@ -4573,9 +4714,12 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	var previewPort int
 	var previewListener net.Listener
+	var acPort int
+	var acListener net.Listener
 	if parentUUID != "" {
 		if parentSess, ok := sessions[parentUUID]; ok {
 			previewPort = parentSess.PreviewPort
+			acPort = parentSess.AgentChatPort
 		}
 	}
 	if previewPort == 0 {
@@ -4583,6 +4727,14 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		previewPort, previewListener, err = findAvailablePreviewPort()
 		if err != nil {
 			return nil, false, err
+		}
+	}
+	if acPort == 0 {
+		var err error
+		acPort, acListener, err = findAvailableAgentChatPort(previewPort)
+		if err != nil {
+			log.Printf("Warning: could not allocate agent chat port: %v", err)
+			// Non-fatal: agent chat is optional
 		}
 	}
 
@@ -4624,7 +4776,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(previewPort, theme, workDir)
+	cmd.Env = buildSessionEnv(previewPort, acPort, theme, workDir)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -4657,6 +4809,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		RecordingUUID:   recordingUUID,
 		ParentUUID:      parentUUID,
 		PreviewPort:     previewPort,
+		AgentChatPort:   acPort,
 		Theme:           theme,
 		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
 		Metadata: &RecordingMetadata{
@@ -4679,8 +4832,22 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			}
 			return nil, false, err
 		}
-	} else if previewListener != nil {
-		previewListener.Close()
+		if acPort > 0 {
+			if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
+				if acListener != nil {
+					acListener.Close()
+				}
+				log.Printf("Warning: could not start agent chat proxy: %v", err)
+				// Non-fatal: agent chat is optional
+			}
+		}
+	} else {
+		if previewListener != nil {
+			previewListener.Close()
+		}
+		if acListener != nil {
+			acListener.Close()
+		}
 	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly
