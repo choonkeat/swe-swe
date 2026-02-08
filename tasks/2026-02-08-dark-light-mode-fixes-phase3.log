@@ -1,0 +1,4 @@
+074159 Phase 3: Listening for app page theming
+074159 Step 3a: Will add cookie-reading inline script to previewProxyErrorPage in main.go
+074159 Step 3b: Will add CSS variables for light mode overrides
+074159 Expected: Dark mode same as before. Light mode: white bg, dark text, good contrast
