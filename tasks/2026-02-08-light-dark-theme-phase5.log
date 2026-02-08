@@ -1,0 +1,23 @@
+035500 [PRE] Extract shared theme CSS: create styles/theme.css, deduplicate structural vars from terminal-ui.css and selection.html, remove JS-based CSS var setting from theme-mode.js, register in init.go. Expect: `make build golden-update` shows new file + smaller diffs in existing files. `make test` passes. Dev server smoke: dark identical, light identical.
+040000 [POST] Implementation complete with one fix:
+  - Created styles/theme.css with :root (dark) and [data-theme="light"] overrides
+  - Removed structural vars from terminal-ui.css :root (kept accent vars)
+  - Removed structural vars from selection.html :root (kept accent vars)
+  - Added <link> to theme.css in both index.html and selection.html
+  - Removed LIGHT_VARS object and JS-based CSS var setting from theme-mode.js (applyMode now just sets data-theme attribute)
+  - Registered styles/theme.css in init.go
+
+  BUG FIX: selection.html link used `?v={{.Version}}` but the selection page template data struct has no Version field. This caused a Go template execution error (blank page). Removed the version query param.
+
+  Golden diff: 165 files, +1122/-1782 (net reduction). 5 files per variant: new theme.css (+30), selection.html (-13), terminal-ui.css (-12), theme-mode.js (-32), index.html (+1).
+  `make test` PASS (ok 2.324s).
+
+  Dev server smoke test:
+    Homepage dark: body=rgb(15,23,42) ✓, color=rgb(248,250,252) ✓, header border=rgb(51,65,85) ✓, section title=rgb(248,250,252) ✓, footer link=rgb(148,163,184) ✓
+    Homepage light: body=rgb(255,255,255), color=rgb(15,23,42) ✓
+    Session dark: body=rgb(30,30,30) ✓, terminal-ui=rgb(15,23,42) ✓, settings=rgb(30,41,59) ✓
+    Session light: body=rgb(255,255,255), terminal-ui=rgb(255,255,255) ✓
+    Persistence: light mode survived homepage→session navigation ✓
+    Console errors: 0 ✓
+
+  All expectations met.

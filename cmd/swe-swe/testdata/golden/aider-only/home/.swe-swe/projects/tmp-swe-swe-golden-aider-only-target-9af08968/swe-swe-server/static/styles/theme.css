@@ -1,0 +1,30 @@
+/* Shared structural theme variables for swe-swe.
+   Dark mode values live in :root; light overrides in [data-theme="light"]. */
+
+:root {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #1a2332;
+    --bg-elevated: #374151;
+    --bg-terminal: #1e1e1e;
+    --border-primary: #334155;
+    --border-secondary: #475569;
+    --text-bright: #f8fafc;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+}
+
+[data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f1f5f9;
+    --bg-tertiary: #f8fafc;
+    --bg-elevated: #e2e8f0;
+    --bg-terminal: #ffffff;
+    --border-primary: #cbd5e1;
+    --border-secondary: #94a3b8;
+    --text-bright: #0f172a;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+}

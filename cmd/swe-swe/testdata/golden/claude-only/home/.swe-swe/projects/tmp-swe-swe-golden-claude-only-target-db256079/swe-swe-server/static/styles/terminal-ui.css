@@ -1,18 +1,6 @@
 /* Terminal UI Styles - extracted from terminal-ui.js */
 
 :root {
-    /* Theme colors - navy blue matching homepage */
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-tertiary: #1a2332;
-    --bg-elevated: #374151;
-    --border-primary: #334155;
-    --border-secondary: #475569;
-    --text-primary: #e2e8f0;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --bg-terminal: #1e1e1e;
-
     /* Accent colors - can be overridden by theme */
     --accent-primary: #7c3aed;
     --accent-hover: #8b5cf6;

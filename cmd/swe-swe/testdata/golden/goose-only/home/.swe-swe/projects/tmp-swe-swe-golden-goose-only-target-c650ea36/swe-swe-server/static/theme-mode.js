@@ -6,21 +6,6 @@ export const THEME_STORAGE_KEY = 'swe-swe-theme-mode';
 
 const DARK_MEDIA = window.matchMedia('(prefers-color-scheme: dark)');
 
-// --- Light structural palette (overrides `:root` dark defaults) ---
-const LIGHT_VARS = {
-    '--bg-primary':      '#ffffff',
-    '--bg-secondary':    '#f1f5f9',
-    '--bg-tertiary':     '#f8fafc',
-    '--bg-elevated':     '#e2e8f0',
-    '--bg-terminal':     '#ffffff',
-    '--border-primary':  '#cbd5e1',
-    '--border-secondary':'#94a3b8',
-    '--text-primary':    '#0f172a',
-    '--text-secondary':  '#475569',
-    '--text-muted':      '#94a3b8',
-    '--text-bright':     '#0f172a',
-};
-
 // --- xterm theme objects ---
 export const DARK_XTERM_THEME  = { background: '#1e1e1e', foreground: '#d4d4d4' };
 export const LIGHT_XTERM_THEME = { background: '#ffffff', foreground: '#1e293b' };
@@ -39,23 +24,10 @@ export function getResolvedMode(mode) {
     return mode;
 }
 
-/** Apply resolved mode: set data-theme attribute and structural CSS vars. */
+/** Apply resolved mode: set data-theme attribute (CSS handles variable overrides). */
 export function applyMode(mode) {
     const resolved = getResolvedMode(mode);
-    const root = document.documentElement;
-
-    root.setAttribute('data-theme', resolved);
-
-    if (resolved === THEME_MODES.LIGHT) {
-        for (const [prop, val] of Object.entries(LIGHT_VARS)) {
-            root.style.setProperty(prop, val);
-        }
-    } else {
-        // Dark mode: remove overrides so :root defaults take effect
-        for (const prop of Object.keys(LIGHT_VARS)) {
-            root.style.removeProperty(prop);
-        }
-    }
+    document.documentElement.setAttribute('data-theme', resolved);
 
     window.dispatchEvent(new CustomEvent('theme-mode-changed', {
         detail: { mode, resolved }

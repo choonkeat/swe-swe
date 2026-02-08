@@ -809,6 +809,7 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/xterm-addon-fit.js",
 			"templates/host/swe-swe-server/static/xterm.css",
 			"templates/host/swe-swe-server/static/xterm.js",
+			"templates/host/swe-swe-server/static/styles/theme.css",
 			"templates/host/swe-swe-server/static/styles/terminal-ui.css",
 			"templates/host/swe-swe-server/static/modules/util.js",
 			"templates/host/swe-swe-server/static/modules/validation.js",

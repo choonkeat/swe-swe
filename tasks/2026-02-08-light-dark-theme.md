@@ -241,7 +241,7 @@ Full end-to-end visual check of all three modes on both pages using MCP playwrig
 
 ---
 
-## Phase 5: Extract shared theme CSS
+## Phase 5: Extract shared theme CSS [DONE]
 
 ### What
 Deduplicate structural CSS variables into `styles/theme.css`.
