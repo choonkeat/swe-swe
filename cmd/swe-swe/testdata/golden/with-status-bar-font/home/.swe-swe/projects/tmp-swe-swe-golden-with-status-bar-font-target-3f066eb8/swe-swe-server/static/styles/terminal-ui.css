@@ -1695,3 +1695,34 @@ terminal-ui.embedded-in-iframe .mobile-only {
         display: none;
     }
 }
+
+/* === Light mode overrides for hardcoded dark backgrounds === */
+[data-theme="light"] .terminal-ui__header {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border-primary);
+}
+
+[data-theme="light"] .settings-panel__backdrop {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] .settings-panel__nav-btn:hover {
+    background: var(--bg-elevated);
+}
+
+[data-theme="light"] .settings-panel__color-preset.selected {
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] .terminal-ui__viewer-avatar {
+    border-color: #ffffff;
+}
+
+[data-theme="light"] .terminal-ui__assistant-badge .badge-toggle {
+    background: #94a3b8;
+}
+
+[data-theme="light"] .terminal-ui__resize-tooltip {
+    background: rgba(0, 0, 0, 0.7);
+}

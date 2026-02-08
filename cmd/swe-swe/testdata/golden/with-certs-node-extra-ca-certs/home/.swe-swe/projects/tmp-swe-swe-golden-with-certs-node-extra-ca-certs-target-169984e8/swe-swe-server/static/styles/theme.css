@@ -17,14 +17,14 @@
 
 [data-theme="light"] {
     --bg-primary: #ffffff;
-    --bg-secondary: #f1f5f9;
-    --bg-tertiary: #f8fafc;
-    --bg-elevated: #e2e8f0;
+    --bg-secondary: #f8f9fb;
+    --bg-tertiary: #fafbfc;
+    --bg-elevated: #f1f5f9;
     --bg-terminal: #ffffff;
-    --border-primary: #cbd5e1;
-    --border-secondary: #94a3b8;
+    --border-primary: #e2e8f0;
+    --border-secondary: #cbd5e1;
     --text-bright: #0f172a;
-    --text-primary: #0f172a;
+    --text-primary: #1e293b;
     --text-secondary: #475569;
     --text-muted: #94a3b8;
 }

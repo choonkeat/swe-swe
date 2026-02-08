@@ -1062,6 +1062,38 @@
             background: rgba(100, 116, 139, 0.1);
             color: var(--text-bright);
         }
+
+        /* Light mode overrides for hardcoded dark rgba backgrounds */
+        [data-theme="light"] .header {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(8px);
+        }
+        [data-theme="light"] .session-card {
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        [data-theme="light"] .session-card:hover {
+            background: #f8f9fb;
+        }
+        [data-theme="light"] .recording-card {
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        [data-theme="light"] .recording-card:hover {
+            background: #f8f9fb;
+        }
+        [data-theme="light"] .footer-link {
+            background: rgba(241, 245, 249, 0.8);
+        }
+        [data-theme="light"] .btn-view:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        [data-theme="light"] .color-picker__preset.selected {
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+        }
+        [data-theme="light"] .dialog-overlay {
+            background: rgba(0, 0, 0, 0.4);
+        }
     </style>
 </head>
 <body>
