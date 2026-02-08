@@ -955,7 +955,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
 .terminal-ui__resizer {
     display: none;
     width: 6px;
-    background: var(--bg-elevated);
+    background: var(--accent-10);
     cursor: col-resize;
     flex-shrink: 0;
     position: relative;
@@ -964,7 +964,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .terminal-ui__resizer:hover,
 .terminal-ui__resizer.dragging {
-    background: var(--border-secondary);
+    background: var(--accent-20);
 }
 
 .terminal-ui__resizer::after {
@@ -975,7 +975,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
     transform: translate(-50%, -50%);
     width: 2px;
     height: 30px;
-    background: var(--border-secondary);
+    background: var(--accent-30);
     border-radius: 1px;
 }
 
@@ -1453,11 +1453,11 @@ terminal-ui.embedded-in-iframe .mobile-only {
 /* === Panel Headers (desktop - inside each panel) === */
 .terminal-ui__panel-header {
     display: flex;
-    align-items: center;
+    align-items: end;
     height: 40px;
-    padding: 0 16px;
+    padding: 0 12px;
     background: var(--bg-tertiary);
-    border-bottom: 1px solid var(--border-primary);
+    border-bottom: 2px solid var(--accent-primary);
     flex-shrink: 0;
     gap: 8px;
     font-size: 13px;
@@ -1477,6 +1477,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
     font-size: 10px;
     font-weight: 600;
     padding: 3px 0;
+    margin-bottom: 6px;
+    margin-left: auto;
     color: var(--text-secondary);
     letter-spacing: 0.5px;
 }
@@ -1554,20 +1556,23 @@ terminal-ui.embedded-in-iframe .mobile-only {
 /* === Panel Tabs (inside right panel header) === */
 .terminal-ui__panel-tabs {
     display: flex;
-    align-items: center;
-    gap: 2px;
+    align-items: end;
+    gap: 0;
 }
 
 .terminal-ui__panel-tabs button {
-    padding: 6px 12px;
+    padding: 8px 14px;
     font-size: 12px;
     font-family: inherit;
     background: transparent;
     color: var(--text-muted);
-    border: none;
-    border-radius: 4px;
+    border: 2px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
     cursor: pointer;
-    transition: background 0.2s, color 0.2s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    margin-bottom: -2px;
+    position: relative;
 }
 
 .terminal-ui__panel-tabs button:hover {
@@ -1576,27 +1581,32 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .terminal-ui__panel-tabs button.active {
-    background: var(--accent-primary);
-    color: var(--accent-text);
+    background: var(--bg-primary);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    font-weight: 600;
 }
 
 /* === Left Panel Tabs (terminal / chat toggle) === */
 .terminal-ui__left-panel-tabs {
     display: flex;
-    align-items: center;
-    gap: 2px;
+    align-items: end;
+    gap: 0;
 }
 
 .terminal-ui__left-panel-tabs button {
-    padding: 6px 12px;
+    padding: 8px 14px;
     font-size: 12px;
     font-family: inherit;
     background: transparent;
     color: var(--text-muted);
-    border: none;
-    border-radius: 4px;
+    border: 2px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
     cursor: pointer;
-    transition: background 0.2s, color 0.2s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    margin-bottom: -2px;
+    position: relative;
 }
 
 .terminal-ui__left-panel-tabs button:hover {
@@ -1605,8 +1615,10 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .terminal-ui__left-panel-tabs button.active {
-    background: var(--accent-primary);
-    color: var(--accent-text);
+    background: var(--bg-primary);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    font-weight: 600;
 }
 
 /* === Agent Chat Container === */
