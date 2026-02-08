@@ -1,0 +1,1 @@
+033000 [PRE] Running `make build golden-update`. Expect: diff shows selection.html (vars + toggle + script), homepage-theme.js (init + toggle). `make test` passes.
