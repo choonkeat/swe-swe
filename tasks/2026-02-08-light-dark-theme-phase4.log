@@ -1,1 +1,33 @@
 034500 [PRE] Full visual verification: homepage dark baseline, light screenshot, system mode; session page dark baseline, light mode, xterm change, accent color, persistence.
+035500 [POST] Full visual verification complete. Results:
+
+  Homepage dark mode baseline (after light→dark round-trip):
+    body.backgroundColor = rgb(15, 23, 42) ✓ (expected #0f172a)
+    body.color = rgb(248, 250, 252) ✓ (expected #f8fafc)
+    .header borderBottomColor = rgb(51, 65, 85) ✓ (expected #334155)
+    .section-header__title color = rgb(248, 250, 252) ✓ (expected #f8fafc)
+    .footer-link color = rgb(148, 163, 184) ✓ (expected #94a3b8)
+
+  Session page dark mode baseline:
+    body.backgroundColor = rgb(30, 30, 30) ✓ (expected #1e1e1e)
+    .terminal-ui background = rgb(15, 23, 42) ✓ (expected #0f172a)
+    .settings-panel__content background = rgb(30, 41, 59) ✓ (expected #1e293b)
+
+  Light mode (both pages):
+    Homepage: body bg = rgb(255, 255, 255), text = rgb(15, 23, 42) ✓
+    Session: body bg = rgb(255, 255, 255) ✓
+    Screenshots taken: homepage-dark.png, homepage-light.png, session-dark.png, session-light.png
+
+  System mode:
+    Stored = "system", resolved = "light" (browser prefers-color-scheme: light) ✓
+    data-theme correctly set to "light" when system preference is light ✓
+
+  Console errors: 0 errors ✓ (only expected iframe sandbox warning + preview mode log)
+
+  Persistence:
+    Set light on session page → reloaded session page: data-theme=light, storedMode=light ✓
+    Navigated to homepage: data-theme=light, storedMode=light, bodyBg=rgb(255,255,255) ✓
+    Switched to dark on homepage: all baselines match ✓
+    Switched to system: stored=system, resolved=light (correct for browser pref) ✓
+
+  All expectations met.

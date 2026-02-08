@@ -214,7 +214,7 @@ Medium — largest change. The hex-to-variable conversion must be exact. Verify 
 
 ---
 
-## Phase 4: Visual verification
+## Phase 4: Visual verification [DONE]
 
 ### What
 Full end-to-end visual check of all three modes on both pages using MCP playwright.
