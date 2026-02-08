@@ -52,7 +52,7 @@ Fix 6 dark/light mode issues in the swe-swe web UI to ensure consistent, flicker
 
 ---
 
-## Phase 3: "Listening for app..." page theming
+## Phase 3: "Listening for app..." page theming ✅
 
 **Goal:** Preview waiting page respects dark/light mode.
 

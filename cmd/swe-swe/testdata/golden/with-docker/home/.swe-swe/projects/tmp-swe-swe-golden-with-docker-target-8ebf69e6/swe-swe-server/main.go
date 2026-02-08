@@ -1118,7 +1118,31 @@ const previewProxyErrorPage = `<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <title>App Preview</title>
+    <script>
+        (function(){var m=document.cookie.match(/(?:^|;\s*)swe-swe-theme=([^;]+)/);
+        if(m)document.documentElement.setAttribute('data-theme',m[1]);})();
+    </script>
     <style>
+        :root {
+            --pp-bg: #1e1e1e;
+            --pp-text: #9ca3af;
+            --pp-heading: #e5e7eb;
+            --pp-instr-bg: #262626;
+            --pp-instr-label: #6b7280;
+            --pp-instr-text: #d1d5db;
+            --pp-port: #60a5fa;
+            --pp-status: #6b7280;
+        }
+        [data-theme="light"] {
+            --pp-bg: #ffffff;
+            --pp-text: #64748b;
+            --pp-heading: #1e293b;
+            --pp-instr-bg: #f1f5f9;
+            --pp-instr-label: #94a3b8;
+            --pp-instr-text: #334155;
+            --pp-port: #2563eb;
+            --pp-status: #94a3b8;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             display: flex;
@@ -1126,17 +1150,17 @@ const previewProxyErrorPage = `<!DOCTYPE html>
             justify-content: center;
             min-height: 100vh;
             margin: 0;
-            background: #1e1e1e;
-            color: #9ca3af;
+            background: var(--pp-bg);
+            color: var(--pp-text);
         }
         .container {
             text-align: center;
             padding: 2rem;
             max-width: 400px;
         }
-        h1 { color: #e5e7eb; font-size: 1.25rem; font-weight: 500; margin-bottom: 1.5rem; }
+        h1 { color: var(--pp-heading); font-size: 1.25rem; font-weight: 500; margin-bottom: 1.5rem; }
         .instruction {
-            background: #262626;
+            background: var(--pp-instr-bg);
             border-radius: 8px;
             padding: 1rem 1.25rem;
             margin: 1rem 0;
@@ -1144,26 +1168,26 @@ const previewProxyErrorPage = `<!DOCTYPE html>
         }
         .instruction-label {
             font-size: 0.8rem;
-            color: #6b7280;
+            color: var(--pp-instr-label);
             margin-bottom: 0.5rem;
         }
         .instruction-text {
-            color: #d1d5db;
+            color: var(--pp-instr-text);
             font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
             font-size: 0.9rem;
             line-height: 1.5;
         }
-        .port { color: #60a5fa; }
+        .port { color: var(--pp-port); }
         .status {
             font-size: 0.8rem;
-            color: #6b7280;
+            color: var(--pp-status);
             margin-top: 1.5rem;
         }
         .status-dot {
             display: inline-block;
             width: 6px;
             height: 6px;
-            background: #6b7280;
+            background: var(--pp-status);
             border-radius: 50%%;
             margin-right: 6px;
             animation: pulse 2s ease-in-out infinite;
