@@ -291,7 +291,7 @@ class TerminalUI extends HTMLElement {
                 <div class="terminal-ui__terminal-bar mobile-only">
                     <select class="terminal-ui__mobile-nav-select">
                         <option value="agent-terminal">Agent Terminal</option>
-                        <option value="agent-chat">Agent Chat</option>
+                        <option value="agent-chat" style="display: none;">Agent Chat</option>
                         <option value="preview">App Preview</option>
                         <option value="vscode">Code</option>
                         <option value="shell">Terminal</option>
@@ -310,7 +310,7 @@ class TerminalUI extends HTMLElement {
                                     <button data-left-tab="terminal" class="active">
                                         <span class="terminal-ui__terminal-icon">>_</span> Agent Terminal
                                     </button>
-                                    <button data-left-tab="chat">
+                                    <button data-left-tab="chat" style="display: none;">
                                         <span class="terminal-ui__chat-tab-icon">◯</span> Agent Chat
                                     </button>
                                 </div>
@@ -986,6 +986,35 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 this.previewPort = msg.previewPort || null;
                 this.agentChatPort = msg.agentChatPort || null;
+                // Probe agent chat — show tab only if something is listening
+                // Retries with backoff (2s, 4s, 8s, 16s, 30s, 30s, ...) up to 10 attempts
+                if (this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
+                    this._agentChatProbing = true;
+                    const acUrl = buildAgentChatUrl(window.location, this.agentChatPort);
+                    if (acUrl) {
+                        const self = this;
+                        let attempt = 0;
+                        const probe = () => {
+                            fetch(acUrl + '/', { mode: 'no-cors' }).then(() => {
+                                self._agentChatAvailable = true;
+                                self._agentChatProbing = false;
+                                const desktopBtn = self.querySelector('button[data-left-tab="chat"]');
+                                if (desktopBtn) desktopBtn.style.display = '';
+                                const mobileOpt = self.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+                                if (mobileOpt) mobileOpt.style.display = '';
+                            }).catch(() => {
+                                attempt++;
+                                if (attempt < 10) {
+                                    const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
+                                    setTimeout(probe, delay);
+                                } else {
+                                    self._agentChatProbing = false;
+                                }
+                            });
+                        };
+                        probe();
+                    }
+                }
                 this.updatePreviewBaseUrl();
                 if (this.workDir !== prevWorkDir) {
                     this.renderServiceLinks();
