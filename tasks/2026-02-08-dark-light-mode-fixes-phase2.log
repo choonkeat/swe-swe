@@ -1,0 +1,4 @@
+073752 Phase 2: Preview URL bar contrast
+073752 Step 2a: Will add cookie-reading inline script to chrome-screencast/static/index.html
+073752 Step 2b: Will replace hardcoded URL bar colors with CSS variables and light mode overrides
+073752 Expected: Dark mode looks same as before. Light mode: #f1f5f9 bg, #ffffff input, #cbd5e1 border, #1e293b text
