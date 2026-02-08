@@ -9,6 +9,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
+            /* Structural colors - overridden by theme-mode.js in light mode */
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #1a2332;
+            --bg-elevated: #374151;
+            --border-primary: #334155;
+            --border-secondary: #475569;
+            --text-bright: #f8fafc;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+
             /* Accent colors - can be overridden by theme */
             --accent-primary: #7c3aed;
             --accent-hover: #8b5cf6;
@@ -28,8 +40,8 @@
         }
         html, body {
             height: 100%;
-            background: #0f1729;
-            color: #f8fafc;
+            background: var(--bg-primary);
+            color: var(--text-bright);
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.5;
         }
@@ -44,7 +56,7 @@
         /* Header */
         .header {
             background: rgba(30, 41, 59, 0.8);
-            border-bottom: 1px solid #334155;
+            border-bottom: 1px solid var(--border-primary);
         }
         .header__inner {
             display: flex;
@@ -72,13 +84,13 @@
             font-size: 18px;
             font-weight: 700;
             letter-spacing: -0.45px;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .header__text p {
             font-size: 10px;
             font-weight: 400;
             font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-            color: #94a3b8;
+            color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 1px;
         }
@@ -107,12 +119,12 @@
         .section-header__icon {
             width: 24px;
             height: 24px;
-            color: #64748b;
+            color: var(--text-muted);
         }
         .section-header__title {
             font-size: 20px;
             font-weight: 600;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .section-header__count {
             display: inline-flex;
@@ -167,13 +179,13 @@
         /* Session card */
         .session-card {
             background: rgba(30, 41, 59, 0.5);
-            border: 1px solid #1e293b;
+            border: 1px solid var(--bg-secondary);
             border-radius: 12px;
             padding: 20px;
             transition: all 0.2s ease;
         }
         .session-card:hover {
-            border-color: #334155;
+            border-color: var(--border-primary);
             background: rgba(30, 41, 59, 0.7);
         }
 
@@ -196,13 +208,13 @@
             gap: 8px;
             font-size: 16px;
             font-weight: 600;
-            color: #f8fafc;
+            color: var(--text-bright);
             min-width: 0;
         }
         .session-card__repo svg {
             width: 18px;
             height: 18px;
-            color: #64748b;
+            color: var(--text-muted);
             flex-shrink: 0;
         }
         .session-card__repo-text {
@@ -280,12 +292,12 @@
             align-items: center;
             gap: 6px;
             font-size: 13px;
-            color: #94a3b8;
+            color: var(--text-secondary);
         }
         .session-card__meta-item svg {
             width: 14px;
             height: 14px;
-            color: #64748b;
+            color: var(--text-muted);
         }
 
         /* Session actions */
@@ -322,7 +334,7 @@
         .btn-end {
             padding: 10px 16px;
             background: transparent;
-            color: #94a3b8;
+            color: var(--text-secondary);
             font-size: 14px;
             font-weight: 500;
             border: none;
@@ -349,14 +361,14 @@
             align-items: center;
             gap: 16px;
             background: rgba(30, 41, 59, 0.5);
-            border: 1px solid #1e293b;
+            border: 1px solid var(--bg-secondary);
             border-radius: 12px;
             padding: 16px 20px;
             margin-bottom: 12px;
             transition: all 0.2s ease;
         }
         .recording-card:hover {
-            border-color: #334155;
+            border-color: var(--border-primary);
             background: rgba(30, 41, 59, 0.7);
         }
 
@@ -391,7 +403,7 @@
         .recording-card__title {
             font-size: 15px;
             font-weight: 600;
-            color: #f8fafc;
+            color: var(--text-bright);
             margin-bottom: 4px;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -402,7 +414,7 @@
             align-items: center;
             gap: 8px;
             font-size: 13px;
-            color: #94a3b8;
+            color: var(--text-secondary);
             flex-wrap: wrap;
         }
         .recording-card__branch {
@@ -416,7 +428,7 @@
             border-radius: 4px;
         }
         .recording-card__dot {
-            color: #475569;
+            color: var(--border-secondary);
         }
 
         .recording-card__right {
@@ -439,7 +451,7 @@
             padding: 6px 12px;
             border-radius: 8px;
             border: 1px solid rgba(148, 163, 184, 0.35);
-            color: #e2e8f0;
+            color: var(--text-primary);
             font-size: 12px;
             font-weight: 600;
             text-transform: uppercase;
@@ -448,10 +460,10 @@
         }
         .recordings-pagination__link:hover {
             border-color: rgba(148, 163, 184, 0.6);
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .recordings-pagination__status {
-            color: #94a3b8;
+            color: var(--text-secondary);
             font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.3px;
@@ -487,13 +499,13 @@
             background: transparent;
             border: none;
             border-radius: 6px;
-            color: #64748b;
+            color: var(--text-muted);
             cursor: pointer;
             transition: all 0.2s ease;
         }
         .btn-icon:hover {
             background: rgba(100, 116, 139, 0.1);
-            color: #94a3b8;
+            color: var(--text-secondary);
         }
         .btn-icon--keep:hover {
             color: #22c55e;
@@ -511,10 +523,10 @@
         .btn-view {
             padding: 8px 16px;
             background: transparent;
-            color: #f8fafc;
+            color: var(--text-bright);
             font-size: 12px;
             font-weight: 500;
-            border: 1px solid #f8fafc;
+            border: 1px solid var(--text-bright);
             border-radius: 6px;
             cursor: pointer;
             text-decoration: none;
@@ -528,13 +540,13 @@
         .empty-state {
             text-align: center;
             padding: 40px 20px;
-            color: #64748b;
+            color: var(--text-muted);
         }
         .empty-state__icon {
             width: 48px;
             height: 48px;
             margin: 0 auto 16px;
-            color: #475569;
+            color: var(--border-secondary);
         }
         .empty-state__text {
             font-size: 14px;
@@ -575,16 +587,16 @@
             gap: 8px;
             padding: 10px 16px;
             background: rgba(30, 41, 59, 0.5);
-            border: 1px solid #1e293b;
+            border: 1px solid var(--bg-secondary);
             border-radius: 8px;
-            color: #94a3b8;
+            color: var(--text-secondary);
             font-size: 13px;
             text-decoration: none;
             transition: all 0.2s ease;
         }
         .footer-link:hover {
-            border-color: #334155;
-            color: #f8fafc;
+            border-color: var(--border-primary);
+            color: var(--text-bright);
         }
         .footer-link svg {
             width: 16px;
@@ -607,8 +619,8 @@
             padding: 20px;
         }
         .dialog {
-            background: #1e293b;
-            border: 1px solid #334155;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
             border-radius: 16px;
             padding: 24px;
             max-width: 500px;
@@ -625,7 +637,7 @@
         .dialog__title {
             font-size: 20px;
             font-weight: 600;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .dialog__close {
             width: 32px;
@@ -636,14 +648,14 @@
             background: transparent;
             border: none;
             border-radius: 8px;
-            color: #64748b;
+            color: var(--text-muted);
             font-size: 24px;
             cursor: pointer;
             transition: all 0.2s ease;
         }
         .dialog__close:hover {
             background: rgba(100, 116, 139, 0.1);
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .dialog__field {
             margin-bottom: 20px;
@@ -653,7 +665,7 @@
             display: block;
             font-size: 14px;
             font-weight: 500;
-            color: #94a3b8;
+            color: var(--text-secondary);
             margin-bottom: 8px;
         }
         .dialog__row {
@@ -664,10 +676,10 @@
             flex: 1;
             padding: 12px 14px;
             font-size: 14px;
-            background: #0f172a;
-            border: 1px solid #334155;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 8px;
-            color: #f8fafc;
+            color: var(--text-bright);
             font-family: inherit;
         }
         .dialog__input:focus {
@@ -679,22 +691,22 @@
             cursor: not-allowed;
         }
         .dialog__input::placeholder {
-            color: #64748b;
+            color: var(--text-muted);
         }
         .dialog__next {
             padding: 12px 16px;
             font-size: 14px;
             font-weight: 500;
-            background: #334155;
-            border: 1px solid #475569;
+            background: var(--border-primary);
+            border: 1px solid var(--border-secondary);
             border-radius: 8px;
-            color: #f8fafc;
+            color: var(--text-bright);
             cursor: pointer;
             transition: all 0.2s ease;
             font-family: inherit;
         }
         .dialog__next:hover:not(:disabled) {
-            background: #475569;
+            background: var(--border-secondary);
         }
         .dialog__next:disabled {
             opacity: 0.5;
@@ -715,8 +727,8 @@
             align-items: center;
             gap: 8px;
             padding: 10px 14px;
-            background: #0f172a;
-            border: 1px solid #334155;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -739,7 +751,7 @@
         }
         .dialog__agent-name {
             font-size: 14px;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .dialog__agent input[type="radio"] {
             display: none;
@@ -761,12 +773,12 @@
             align-items: center;
             gap: 8px;
             font-size: 13px;
-            color: #94a3b8;
+            color: var(--text-secondary);
         }
         .dialog__spinner {
             width: 16px;
             height: 16px;
-            border: 2px solid #334155;
+            border: 2px solid var(--border-primary);
             border-top-color: var(--accent-primary);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
@@ -800,10 +812,10 @@
             box-sizing: border-box;
             padding: 12px 14px;
             font-size: 14px;
-            background: #0f172a;
-            border: 1px solid #334155;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 8px;
-            color: #f8fafc;
+            color: var(--text-bright);
             font-family: inherit;
             cursor: pointer;
             appearance: none;
@@ -821,14 +833,14 @@
         }
         .dialog__select:invalid,
         .dialog__select.dialog__select--placeholder {
-            color: #64748b;
+            color: var(--text-muted);
         }
         .dialog__select option {
-            background: #1e293b;
-            color: #f8fafc;
+            background: var(--bg-secondary);
+            color: var(--text-bright);
         }
         .dialog__select option:disabled {
-            color: #64748b;
+            color: var(--text-muted);
         }
         .dialog__warning {
             color: #f59e0b;
@@ -980,13 +992,13 @@
             background: transparent;
             border: none;
             border-radius: 8px;
-            color: #94a3b8;
+            color: var(--text-secondary);
             cursor: pointer;
             transition: all 0.2s ease;
         }
         .header__settings:hover {
             background: rgba(100, 116, 139, 0.2);
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .header__settings svg {
             width: 20px;
@@ -1016,7 +1028,7 @@
             transform: scale(1.1);
         }
         .color-picker__preset.selected {
-            border-color: #f8fafc;
+            border-color: var(--text-bright);
             box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.3);
         }
         .color-picker__custom {
@@ -1038,10 +1050,10 @@
             padding: 8px 12px;
             font-size: 14px;
             font-family: monospace;
-            background: #0f172a;
-            border: 1px solid #334155;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 6px;
-            color: #f8fafc;
+            color: var(--text-bright);
         }
         .color-picker__hex:focus {
             outline: none;
@@ -1051,15 +1063,15 @@
             padding: 8px 16px;
             font-size: 13px;
             background: transparent;
-            border: 1px solid #334155;
+            border: 1px solid var(--border-primary);
             border-radius: 6px;
-            color: #94a3b8;
+            color: var(--text-secondary);
             cursor: pointer;
             transition: all 0.2s ease;
         }
         .color-picker__reset:hover {
             background: rgba(100, 116, 139, 0.1);
-            color: #f8fafc;
+            color: var(--text-bright);
         }
     </style>
 </head>
@@ -1157,8 +1169,16 @@
                 <button class="dialog__close" id="settings-close">&times;</button>
             </div>
             <div class="dialog__field">
+                <label class="dialog__label">Appearance</label>
+                <div class="settings-panel__theme-toggle" id="settings-theme-toggle" style="display:flex; gap:0; background:var(--bg-primary); border:1px solid var(--border-primary); border-radius:8px; overflow:hidden;">
+                    <button class="settings-panel__theme-btn" data-mode="light" style="flex:1; padding:8px 12px; font-size:13px; font-family:inherit; background:transparent; color:var(--text-secondary); border:none; cursor:pointer; transition:background 0.2s, color 0.2s;">Light</button>
+                    <button class="settings-panel__theme-btn" data-mode="dark" style="flex:1; padding:8px 12px; font-size:13px; font-family:inherit; background:transparent; color:var(--text-secondary); border:none; border-left:1px solid var(--border-primary); border-right:1px solid var(--border-primary); cursor:pointer; transition:background 0.2s, color 0.2s;">Dark</button>
+                    <button class="settings-panel__theme-btn" data-mode="system" style="flex:1; padding:8px 12px; font-size:13px; font-family:inherit; background:transparent; color:var(--text-secondary); border:none; cursor:pointer; transition:background 0.2s, color 0.2s;">System</button>
+                </div>
+            </div>
+            <div class="dialog__field">
                 <label class="dialog__label">Server Theme Color</label>
-                <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
                     Choose a primary color for this server to help distinguish it from others.
                 </p>
                 <div class="color-picker">
@@ -1384,6 +1404,7 @@
 
     <script src="/homepage-main.js"></script>
     <script src="/new-session-dialog.js"></script>
+    <script type="module" src="/theme-mode.js"></script>
     <script type="module" src="/homepage-theme.js"></script>
 </body>
 </html>

@@ -1,1 +1,10 @@
 033000 [PRE] Running `make build golden-update`. Expect: diff shows selection.html (vars + toggle + script), homepage-theme.js (init + toggle). `make test` passes.
+033500 [POST] golden diff: 2 files per variant (selection.html 157 +/-, homepage-theme.js +41). `make test` PASS (ok 2.222s). Both expectations met.
+033500 [PRE] MCP browser verification on homepage. Expect: dark mode baseline values match table, light mode white backgrounds/dark text, mode persists across pages.
+034000 [POST] MCP browser verification results (needed server restart to pick up new templates):
+  - Dark mode baseline: body=rgb(15,23,42) ✓, color=rgb(248,250,252) ✓, header border=rgb(51,65,85) ✓, section title=rgb(248,250,252) ✓, dialog bg=rgb(30,41,59) ✓, dialog input bg=rgb(15,23,42) ✓, footer link=rgb(148,163,184) ✓
+  - Settings dialog: Appearance toggle with Light/Dark/System ✓
+  - Light mode: body=rgb(255,255,255), text=rgb(15,23,42), dialog=rgb(241,245,249) ✓
+  - Dark mode restored after switching back ✓
+  - Persistence: set light on homepage, navigated to session page, data-theme=light preserved ✓
+  All expectations met.

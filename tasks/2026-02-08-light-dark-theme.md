@@ -164,7 +164,7 @@ Low. Dark mode = existing `:root` values unchanged. `--bg-terminal` defaults to 
 
 ---
 
-## Phase 3: Homepage
+## Phase 3: Homepage [DONE]
 
 ### What
 Wire theme mode into homepage. Convert ~68 hardcoded dark hex values in `selection.html` to CSS variables.

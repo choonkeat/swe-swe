@@ -1,5 +1,9 @@
 // Homepage theme initialization
 import { applyTheme, getEffectivePrimaryColor, COLOR_STORAGE_KEYS, saveColorPreference } from './color-utils.js';
+import { initThemeMode, setThemeMode, getStoredMode, THEME_MODES } from './theme-mode.js';
+
+// Apply theme mode (light/dark/system) first
+initThemeMode();
 
 const DEFAULT_COLOR = '#7c3aed';
 const PRESET_COLORS = [
@@ -97,6 +101,37 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Theme mode toggle in settings dialog
+const themeToggle = document.getElementById('settings-theme-toggle');
+if (themeToggle) {
+    // Populate selection on dialog open
+    const populateThemeToggle = () => {
+        const mode = getStoredMode();
+        themeToggle.querySelectorAll('.settings-panel__theme-btn').forEach(btn => {
+            const isSelected = btn.dataset.mode === mode;
+            btn.classList.toggle('selected', isSelected);
+            btn.style.background = isSelected ? 'var(--accent-primary)' : 'transparent';
+            btn.style.color = isSelected ? 'var(--accent-text)' : 'var(--text-secondary)';
+        });
+    };
+    populateThemeToggle();
+
+    themeToggle.addEventListener('click', (e) => {
+        const btn = e.target.closest('.settings-panel__theme-btn');
+        if (!btn || !btn.dataset.mode) return;
+        setThemeMode(btn.dataset.mode);
+        populateThemeToggle();
+    });
+
+    // Re-populate when settings open
+    const origOpen = openSettings;
+    openSettings = function() {
+        origOpen();
+        populateThemeToggle();
+    };
+    settingsBtn.onclick = openSettings;
+}
+
 // Expose for other scripts
 window.sweSweTheme = {
     applyTheme,
@@ -105,5 +140,9 @@ window.sweSweTheme = {
     saveColorPreference,
     getCurrentColor: () => getEffectivePrimaryColor({ fallback: DEFAULT_COLOR }),
     DEFAULT_COLOR,
-    PRESET_COLORS
+    PRESET_COLORS,
+    initThemeMode,
+    setThemeMode,
+    getStoredMode,
+    THEME_MODES
 };
