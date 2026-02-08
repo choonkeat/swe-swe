@@ -4,7 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Browser - swe-swe</title>
+  <script>
+    (function(){var m=document.cookie.match(/(?:^|;\s*)swe-swe-theme=([^;]+)/);
+    if(m)document.documentElement.setAttribute('data-theme',m[1]);})();
+  </script>
   <style>
+    :root {
+      --cs-bg: #1e1e1e;
+      --cs-overlay-bg: rgba(30, 30, 30, 0.9);
+      --cs-text: #ccc;
+      --cs-spinner-border: #333;
+      --cs-spinner-top: #007acc;
+      --cs-urlbar-bg: #2d2d2d;
+      --cs-urlbar-input-bg: #1e1e1e;
+      --cs-urlbar-border: #404040;
+      --cs-urlbar-text: #ccc;
+      --cs-urlbar-focus: #007acc;
+      --cs-urlbar-btn: #007acc;
+      --cs-urlbar-btn-hover: #0066b3;
+    }
+
+    [data-theme="light"] {
+      --cs-bg: #f8f9fb;
+      --cs-overlay-bg: rgba(255, 255, 255, 0.9);
+      --cs-text: #334155;
+      --cs-spinner-border: #e2e8f0;
+      --cs-spinner-top: #2563eb;
+      --cs-urlbar-bg: #f1f5f9;
+      --cs-urlbar-input-bg: #ffffff;
+      --cs-urlbar-border: #cbd5e1;
+      --cs-urlbar-text: #1e293b;
+      --cs-urlbar-focus: #2563eb;
+      --cs-urlbar-btn: #2563eb;
+      --cs-urlbar-btn-hover: #1d4ed8;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -15,7 +49,7 @@
       width: 100%;
       height: 100%;
       overflow: auto;
-      background: #1e1e1e;
+      background: var(--cs-bg);
     }
 
     #screen {
@@ -28,12 +62,12 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(30, 30, 30, 0.9);
+      background: var(--cs-overlay-bg);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      color: #ccc;
+      color: var(--cs-text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       z-index: 100;
     }
@@ -45,8 +79,8 @@
     .spinner {
       width: 40px;
       height: 40px;
-      border: 3px solid #333;
-      border-top-color: #007acc;
+      border: 3px solid var(--cs-spinner-border);
+      border-top-color: var(--cs-spinner-top);
       border-radius: 50%;
       animation: spin 1s linear infinite;
       margin-bottom: 16px;
@@ -67,7 +101,7 @@
       left: 0;
       right: 0;
       height: 32px;
-      background: #2d2d2d;
+      background: var(--cs-urlbar-bg);
       display: flex;
       align-items: center;
       padding: 0 8px;
@@ -84,23 +118,23 @@
     #urlbar input {
       flex: 1;
       height: 24px;
-      background: #1e1e1e;
-      border: 1px solid #404040;
+      background: var(--cs-urlbar-input-bg);
+      border: 1px solid var(--cs-urlbar-border);
       border-radius: 4px;
-      color: #ccc;
+      color: var(--cs-urlbar-text);
       padding: 0 8px;
       font-size: 13px;
       outline: none;
     }
 
     #urlbar input:focus {
-      border-color: #007acc;
+      border-color: var(--cs-urlbar-focus);
     }
 
     #urlbar button {
       height: 24px;
       padding: 0 12px;
-      background: #007acc;
+      background: var(--cs-urlbar-btn);
       border: none;
       border-radius: 4px;
       color: white;
@@ -109,7 +143,7 @@
     }
 
     #urlbar button:hover {
-      background: #0066b3;
+      background: var(--cs-urlbar-btn-hover);
     }
   </style>
 </head>

@@ -29,7 +29,7 @@ Fix 6 dark/light mode issues in the swe-swe web UI to ensure consistent, flicker
 
 ---
 
-## Phase 2: Preview URL bar contrast
+## Phase 2: Preview URL bar contrast ✅
 
 **Goal:** The URL bar in Agent View has good contrast in both dark and light modes.
 
