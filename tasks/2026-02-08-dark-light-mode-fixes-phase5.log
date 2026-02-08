@@ -1,0 +1,3 @@
+074754 Phase 5: CLAUDE badge contrast in light mode
+074754 Step 5a: Will change .terminal-ui__assistant-badge color from #e0e0e0 to var(--text-secondary)
+074754 Expected: Badge visible in dark (#94a3b8) and light (#475569) modes
