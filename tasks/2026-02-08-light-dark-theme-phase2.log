@@ -1,0 +1,1 @@
+031400 [PRE] Running `make build golden-update`. Expect: golden diff shows changes to index.html (script + background), session-theme.js (init), terminal-ui.js (toggle HTML + JS), terminal-ui.css (toggle styles + --bg-terminal). `make test` passes.
