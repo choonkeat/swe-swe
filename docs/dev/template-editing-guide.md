@@ -76,14 +76,14 @@ git diff --cached -- cmd/swe-swe/testdata/golden
 
 ### For runtime debugging (quick iteration):
 
-You can temporarily edit generated files for debugging:
+You can temporarily edit generated files for debugging. The `.swe-test-project` file contains the path to the generated project metadata directory:
 
 ```bash
-# Find generated project path
-cat /workspace/.test-repos/swe-swe-test-0/.swe-test-project
+# Find generated project path (the .swe-test-project file is an indirection — it contains the actual metadata path)
+cat /workspace/.test-repos/swe-swe-test-${SWE_TEST_SLOT:-0}/.swe-test-project
 
 # Edit generated file (temporary - will be overwritten by next init)
-vim $(cat /workspace/.test-repos/swe-swe-test-0/.swe-test-project)/docker-compose.yml
+vim $(cat /workspace/.test-repos/swe-swe-test-${SWE_TEST_SLOT:-0}/.swe-test-project)/docker-compose.yml
 
 # Rebuild just containers (faster than full re-init)
 ./scripts/test-container/02-build.sh
@@ -208,5 +208,5 @@ make test-server  # Runs go mod tidy, keeps only required versions
 ## Testing Tips
 
 - Use `NO_CACHE=1 ./scripts/test-container/02-build.sh` to force full rebuild
-- Check container logs: `docker compose -f $(cat /workspace/.test-repos/swe-swe-test-0/.swe-test-project)/docker-compose.yml logs -f`
+- Check container logs: `docker compose -f $(cat /workspace/.test-repos/swe-swe-test-${SWE_TEST_SLOT:-0}/.swe-test-project)/docker-compose.yml logs -f`
 - The test container uses `--agents=opencode` by default for simpler auth (uses `ANTHROPIC_API_KEY`)

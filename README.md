@@ -25,7 +25,7 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
 4. **Access the services** (use `https://` if initialized with `--ssl=selfsign`)
    - **swe-swe terminal**: http://0.0.0.0:1977
    - **VSCode**: http://0.0.0.0:1977/vscode
-   - **Chrome VNC**: http://0.0.0.0:1977/chrome (browser automation viewer)
+   - **Chrome Browser**: http://0.0.0.0:1977/chrome (browser screencast viewer)
    - **Traefik dashboard**: http://0.0.0.0:1977/dashboard/
 
 5. **View all initialized projects**
@@ -51,15 +51,7 @@ swe-swe has three native commands (`init`, `list`, and `proxy`). All other comma
 
 #### `swe-swe init [options]`
 
-Initializes a new swe-swe project at the specified path. Creates metadata directory at `$HOME/.swe-swe/projects/{sanitized-path}/` with:
-
-- **Dockerfile**: Container image definition with Node.js, Go, and optional tools
-- **docker-compose.yml**: Multi-container orchestration
-- **traefik-dynamic.yml**: Routing configuration
-- **swe-swe-server/**: Source code for the AI terminal server (built at docker-compose time)
-- **home/**: Persistent storage for VSCode settings and shell history
-- **certs/**: Enterprise certificates (if detected)
-- **.path**: Records original project path (used for project discovery)
+Initializes a new swe-swe project at the specified path. Creates metadata directory at `$HOME/.swe-swe/projects/{sanitized-path}/` (see [Directory Structure](#directory-structure) for full layout).
 
 **Options**:
 - `--project-directory PATH`: Project directory (defaults to current directory)
@@ -71,9 +63,10 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--npm-install PACKAGES`: Additional npm packages to install globally
 - `--with-docker`: Mount Docker socket to allow container to run Docker commands on host
 - `--with-slash-commands REPOS`: Git repos to clone as slash commands for Claude, Codex, and OpenCode (space-separated, format: `[alias@]<git-url>`)
-- `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP), `selfsign` (HTTPS with self-signed certificate), `letsencrypt@domain` (HTTPS with Let's Encrypt), or `letsencrypt-staging@domain` (internal testing)
+- `--ssl MODE`: SSL/TLS mode - `no` (default, HTTP), `selfsign` (HTTPS with self-signed certificate), `selfsign@<hostname>` (includes hostname/IP in cert for remote access), `letsencrypt@domain` (HTTPS with Let's Encrypt), or `letsencrypt-staging@domain` (internal testing)
 - `--email EMAIL`: Email for Let's Encrypt certificate expiry notifications (required with letsencrypt)
 - `--copy-home-paths PATHS`: Comma-separated paths relative to `$HOME` to copy into the container's home directory (e.g., `.gitconfig,.ssh/config`)
+- `--preview-ports RANGE`: App preview port range (default: `3000-3019`). Each session gets its own preview port from this range.
 - `--status-bar-color COLOR`: Status bar background color (default: `#007acc`). Use `--status-bar-color=list` to see available preset colors.
 - `--terminal-font-size SIZE`: Terminal font size in pixels (default: `14`)
 - `--terminal-font-family FONT`: Terminal font family (default: `Menlo, Monaco, "Courier New", monospace`)
@@ -281,7 +274,7 @@ swe-swe logs -f --project-directory ~/my-project
 Starts the swe-swe environment using `docker compose up`. The environment includes:
 
 1. **swe-swe**: WebSocket-based AI terminal with session management
-2. **chrome**: Headless Chromium with VNC for browser automation (used by MCP Playwright)
+2. **chrome**: Headless Chromium with CDP screencast for browser automation (used by MCP Playwright)
 3. **code-server**: VS Code IDE running in a container
 4. **vscode-proxy**: Nginx proxy for VSCode path routing
 5. **traefik**: HTTP reverse proxy with path-based routing rules
@@ -353,7 +346,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 │   ├── main.go
 │   └── static/
 ├── auth/                   # ForwardAuth service source code
-├── chrome/                 # Chrome/noVNC service (Dockerfile, configs)
+├── chrome-screencast/       # Chrome screencast service (Dockerfile, configs)
 ├── home/                   # Persistent VSCode/shell home (volume)
 ├── certs/                  # Enterprise certificates (if detected)
 ├── tls/                    # Self-signed TLS certificates (if --ssl=selfsign)
@@ -364,7 +357,8 @@ $HOME/.swe-swe/projects/{sanitized-path}/
 - Prevents container access to infrastructure configuration
 - Allows metadata cleanup via `swe-swe list` command
 - Centralizes all metadata in one location
-- Your project directory remains clean (no `.swe-swe/`)
+
+**Note**: A `.swe-swe/` directory is created inside your project for runtime data (worktrees, repos, proxy, uploads). This is separate from the metadata directory above.
 
 ### Services
 
@@ -375,8 +369,8 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - Real-time terminal with PTY support
   - Session management (sessions persist until process exits)
   - Multiple AI assistant detection (claude, gemini, codex, goose, aider, opencode)
-  - Automatic process restart on error exit (non-zero exit code); clean exit (code 0) ends session
-  - File upload via drag-and-drop (saved to `.swe-swe/uploads/`)
+  - All process exits end the session (process replacement only via YOLO toggle)
+  - File upload via drag-and-drop (saved to `.swe-swe/uploads/` on tmpfs — files do not persist across container restarts)
   - In-session chat for collaboration
   - YOLO mode toggle for supported agents (auto-approve actions)
   - **Split-pane UI**: Side panel with Preview, Browser, and Shell tabs for app preview and debugging
@@ -384,11 +378,11 @@ $HOME/.swe-swe/projects/{sanitized-path}/
   - **Debug channel**: Agents can receive console logs, errors, and network requests from the App Preview via `swe-swe-server --debug-listen`
 
 #### chrome
-- **Ports**: 9223 (CDP), 6080 (VNC/noVNC)
+- **Ports**: 9223 (CDP), 6080 (screencast)
 - **Purpose**: Headless Chromium browser for AI-driven browser automation
 - **Features**:
   - Chrome DevTools Protocol (CDP) access via nginx proxy
-  - VNC server for visual observation at `/chrome` path (e.g., http://0.0.0.0:1977/chrome)
+  - CDP screencast viewer at `/chrome` path (e.g., http://0.0.0.0:1977/chrome)
   - Used by MCP Playwright for browser automation tasks
   - Enterprise SSL certificate support via NSS database
 - **Documentation**: See `docs/browser-automation.md`
@@ -639,7 +633,7 @@ CMD ["/usr/local/bin/swe-swe-server", "-shell", "zsh", "-working-directory", "/w
 
 ### Session Persistence
 
-Sessions persist until the shell process exits. When a shell exits with code 0 (success), the session ends cleanly. When a shell crashes or exits with a non-zero code, it automatically restarts after 500ms.
+Sessions persist until the shell process exits. All exits (zero or non-zero) end the session. Process replacement only occurs via explicit user action (YOLO toggle).
 
 To customize the shell command, modify the Dockerfile CMD:
 
@@ -699,6 +693,18 @@ Response:
 - App must be running on port 3000 (or `SWE_PREVIEW_TARGET_PORT`)
 
 For detailed usage, see the `/debug-preview-page` slash command.
+
+### Custom Session Environment Variables
+
+Create a `swe-swe/env` file in your project root to set custom environment variables for all sessions:
+
+```bash
+# swe-swe/env
+MY_API_KEY=abc123
+DATABASE_URL=postgres://localhost/mydb
+```
+
+These variables are loaded at session start and take precedence over defaults. Lines starting with `#` are comments. The `swe-swe/env` file is `@`-mentionable by agents.
 
 ### Authentication
 

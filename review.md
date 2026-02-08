@@ -1,3 +1,5 @@
+> **Note**: This is a historical design document. The recommended solution (Option A: tmpfs mount) has been implemented in docker-compose.yml.
+
 The Problem
 
 The file upload feature saves files to .swe-swe/uploads/ inside /workspace:

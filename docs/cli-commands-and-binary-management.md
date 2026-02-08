@@ -43,7 +43,7 @@ Services are defined in docker-compose.yml:
 | Service | Description |
 |---------|-------------|
 | `swe-swe` | AI terminal container (runs swe-swe-server) |
-| `chrome` | Chrome browser with VNC for browser automation |
+| `chrome` | Chrome browser with CDP screencast for browser automation |
 | `code-server` | VSCode IDE (code-server) |
 | `vscode-proxy` | Nginx proxy for VSCode path routing |
 | `traefik` | Reverse proxy (path-based routing) |
@@ -87,7 +87,7 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 └── server.key                   # Private key
 ```
 
-**Note**: Metadata is stored outside your project directory for security. Your project directory remains clean (no `.swe-swe/` folder).
+**Note**: Metadata is stored outside your project directory for security. A `.swe-swe/` directory is created inside your project for runtime data (worktrees, repos, proxy, uploads).
 
 ## Command Reference
 
@@ -117,8 +117,10 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 | `--npm-install PACKAGES` | Additional npm packages to install globally (comma or space separated) |
 | `--with-docker` | Mount Docker socket to allow container to run Docker commands on host |
 | `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
-| `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), or `selfsign@<host>` (for remote access) |
+| `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), `selfsign@<host>` (for remote access), `letsencrypt@domain`, or `letsencrypt-staging@domain` |
+| `--email EMAIL` | Email for Let's Encrypt certificate expiry notifications (required with letsencrypt) |
 | `--copy-home-paths PATHS` | Comma-separated paths relative to `$HOME` to copy into container home (e.g., `.gitconfig,.ssh/config`) |
+| `--preview-ports RANGE` | App preview port range (default: `3000-3019`). Each session gets its own preview port. |
 | `--status-bar-color COLOR` | Status bar background color (default: `#007acc`). Use `list` to see preset colors. |
 | `--terminal-font-size SIZE` | Terminal font size in pixels (default: `14`) |
 | `--terminal-font-family FONT` | Terminal font family (default: `Menlo, Monaco, "Courier New", monospace`) |

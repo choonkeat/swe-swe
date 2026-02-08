@@ -83,7 +83,6 @@
 
 ### Major Features
 
-- **Shell assistant**: Direct terminal access without an AI agent. Launch with `--with-agents=shell` to access a dedicated terminal session with parent workDir inheritance for seamless file navigation
 - **Heartbeat-based container cleanup**: Automated detection and graceful shutdown of stale containers via host-side heartbeat watcher with configurable timeout and signal escalation (SIGTERM→SIGKILL)
 - **Container-host proxy**: New lightweight proxy bridging container and host communication for lifecycle management and health monitoring
 - **DigitalOcean 1-click deployment**: Automated Packer-based image building with optional git repository cloning, hardening, MOTD health checks, and interactive init flags support

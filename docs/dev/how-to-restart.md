@@ -20,10 +20,11 @@ bash .swe-swe/pre-restart.sh
 docker compose -p swe-swe-test down -t 10 2>/dev/null || true
 
 # 3. Stop the chrome container (it doesn't always respond to compose down)
-docker stop -t 10 home-app-workspace-swe-swe-6f7a1ba3-chrome-1
+# Replace <project-name> with your actual compose project name (visible in `docker ps`)
+docker stop -t 10 <project-name>-chrome-1
 
 # 4. Bring down the rest of the stack (we're all going offline here, including agent)
-docker compose -p home-app-workspace-swe-swe-6f7a1ba3 down -t 20
+docker compose -p <project-name> down -t 20
 ```
 
 This will cause the host's restart loop (`.swe-swe/restart-loop.sh`) to re-init and bring everything back up with the latest changes.

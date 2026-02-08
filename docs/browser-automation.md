@@ -8,7 +8,7 @@ swe-swe includes a dedicated Chrome container that provides:
 
 - **Headless Chromium** browser for automated web interactions
 - **Chrome DevTools Protocol (CDP)** access for programmatic control
-- **VNC/noVNC** for visual observation of browser activity
+- **CDP Screencast** for visual observation of browser activity (lightweight, no VNC/Xvfb needed)
 - **MCP Playwright** integration for AI-driven browser automation
 
 ## Architecture
@@ -23,12 +23,12 @@ swe-swe includes a dedicated Chrome container that provides:
 │  │  container   │─────▶│  container   │◀─────│    proxy     │  │
 │  │              │ CDP  │              │ HTTP │              │  │
 │  │ MCP Playwright      │  Chromium    │      │              │  │
-│  └──────────────┘      │  + VNC       │      └──────────────┘  │
+│  └──────────────┘      │  + screencast│      └──────────────┘  │
 │                        └──────────────┘                         │
 │                              │                                   │
 │                              ▼                                   │
 │                     localhost:1977/chrome                       │
-│                     (VNC web viewer)                            │
+│                     (screencast viewer)                         │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -41,17 +41,15 @@ The Chrome container runs multiple services via supervisord:
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| Xvfb | :99 | Virtual X11 display (1920x1080) |
-| Chromium | 9222 (localhost) | Browser with remote debugging |
+| Chromium | 9222 (localhost) | Headless browser with remote debugging |
 | nginx | 9223 | CDP reverse proxy (fixes Host header) |
-| x11vnc | 5900 | VNC server for X11 |
-| websockify | 6080 | noVNC web interface |
+| Node.js screencast | 6080 | CDP screencast web UI (Page.startScreencast) |
 
 ### Ports
 
 | External | Internal | Description |
 |----------|----------|-------------|
-| `localhost:1977/chrome` | 6080 | noVNC web interface (via Traefik path-based routing) |
+| `localhost:1977/chrome` | 6080 | Screencast web viewer (via Traefik path-based routing) |
 | - | 9223 | CDP WebSocket (internal network only) |
 
 ### Environment Variables
@@ -70,7 +68,7 @@ This allows MCP Playwright to automatically connect to the Chrome container.
 
 Watch the browser in real-time at: **http://localhost:1977/chrome** (or **https://localhost:1977/chrome** if using `--ssl=selfsign`)
 
-The noVNC interface shows exactly what the AI assistant sees when automating the browser.
+The screencast viewer shows exactly what the AI assistant sees when automating the browser, using CDP's `Page.startScreencast` API for efficient frame streaming.
 
 ### MCP Playwright Integration
 
@@ -202,11 +200,11 @@ If empty, check:
 2. Files have `.pem` extension
 3. Rebuild container: `swe-swe build chrome`
 
-### VNC Not Loading
+### Screencast Not Loading
 
-**Error**: Directory listing instead of VNC interface
+**Error**: Blank page or connection error at `/chrome`
 
-**Solution**: The Chrome container should have `index.html` symlinked to `vnc.html`. Rebuild:
+**Solution**: The screencast server may not have started. Rebuild:
 ```bash
 swe-swe build chrome
 swe-swe down chrome && swe-swe up chrome -- -d
@@ -237,7 +235,9 @@ deploy:
 
 | File | Purpose |
 |------|---------|
-| `chrome/Dockerfile` | Chrome container image definition |
-| `chrome/supervisord.conf` | Process manager configuration |
-| `chrome/entrypoint.sh` | Certificate installation script |
-| `chrome/nginx-cdp.conf` | CDP reverse proxy (Host header fix) |
+| `chrome-screencast/Dockerfile` | Chrome container image definition |
+| `chrome-screencast/supervisord.conf` | Process manager (chromium, nginx, screencast) |
+| `chrome-screencast/entrypoint.sh` | Certificate installation script |
+| `chrome-screencast/nginx-cdp.conf` | CDP reverse proxy (Host header fix) |
+| `chrome-screencast/server.js` | Screencast WebSocket server |
+| `chrome-screencast/package.json` | Node.js dependencies for screencast |

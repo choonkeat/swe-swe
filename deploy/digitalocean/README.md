@@ -101,8 +101,8 @@ ssh root@{Droplet-IP}
 sudo systemctl stop swe-swe
 
 # Generate new password (update both env file and credentials file)
-sudo bash -c 'cat /etc/swe-swe/env | grep -v SWEBSESSION_PASSWORD > /tmp/env && echo "SWEBSESSION_PASSWORD=$(openssl rand -base64 16)" >> /tmp/env && mv /tmp/env /etc/swe-swe/env'
-sudo bash -c 'echo "URL: http://$(hostname -I | awk "{print $1}"):1977" > /etc/swe-swe/credentials && echo "Password: $(grep SWEBSESSION_PASSWORD /etc/swe-swe/env | cut -d= -f2)" >> /etc/swe-swe/credentials'
+sudo bash -c 'cat /etc/swe-swe/env | grep -v SWE_SWE_PASSWORD > /tmp/env && echo "SWE_SWE_PASSWORD=$(openssl rand -base64 16)" >> /tmp/env && mv /tmp/env /etc/swe-swe/env'
+sudo bash -c 'echo "URL: http://$(hostname -I | awk "{print $1}"):1977" > /etc/swe-swe/credentials && echo "Password: $(grep SWE_SWE_PASSWORD /etc/swe-swe/env | cut -d= -f2)" >> /etc/swe-swe/credentials'
 
 # Restart service
 sudo systemctl start swe-swe
@@ -123,7 +123,7 @@ Enter the password from the MOTD or credentials file.
 **Available interfaces**:
 - **Dashboard**: Main swe-swe interface
 - **VS Code**: `http://{Droplet-IP}:1977/vscode` — Browser-based code editor
-- **Chrome VNC**: `http://{Droplet-IP}:1977/chrome` — Graphical browser environment
+- **Chrome Browser**: `http://{Droplet-IP}:1977/chrome` — Browser screencast viewer
 
 ### SSH Access
 
@@ -141,7 +141,7 @@ The droplet includes:
 - **Services**:
   - swe-swe AI development environment
   - VS Code server
-  - Chrome VNC server
+  - Chrome browser screencast
   - Systemd service for auto-start
 
 ## Troubleshooting
