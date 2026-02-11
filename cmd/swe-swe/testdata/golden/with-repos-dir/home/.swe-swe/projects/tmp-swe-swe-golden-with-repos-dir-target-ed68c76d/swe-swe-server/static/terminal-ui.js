@@ -1529,7 +1529,9 @@ class TerminalUI extends HTMLElement {
         });
 
         if (tab === 'chat') {
-            terminalEl.style.display = 'none';
+            // Use visibility instead of display to preserve xterm scroll position
+            terminalEl.style.visibility = 'hidden';
+            terminalEl.style.position = 'absolute';
             chatEl.style.display = 'flex';
             // Lazy-load: set src on first switch using agent chat proxy URL
             if (chatIframe && chatIframe.src === 'about:blank' && this.agentChatPort) {
@@ -1537,7 +1539,8 @@ class TerminalUI extends HTMLElement {
             }
         } else {
             chatEl.style.display = 'none';
-            terminalEl.style.display = '';
+            terminalEl.style.visibility = '';
+            terminalEl.style.position = '';
             setTimeout(() => this.fitAndPreserveScroll(), 50);
         }
 
@@ -1936,7 +1939,8 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
-            this.term.scrollToBottom();
+            const buf = this.term.buffer.active;
+            if (buf.viewportY >= buf.baseY - this.term.rows) this.term.scrollToBottom();
         });
     }
 
@@ -1950,7 +1954,8 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
-            this.term.scrollToBottom();
+            const buf = this.term.buffer.active;
+            if (buf.viewportY >= buf.baseY - this.term.rows) this.term.scrollToBottom();
         });
     }
 
@@ -2145,7 +2150,8 @@ class TerminalUI extends HTMLElement {
         requestAnimationFrame(() => {
             this.fitAddon.fit();
             this.sendResize();
-            this.term.scrollToBottom();
+            const buf = this.term.buffer.active;
+            if (buf.viewportY >= buf.baseY - this.term.rows) this.term.scrollToBottom();
             this.updateSpacerHeight();
         });
     }

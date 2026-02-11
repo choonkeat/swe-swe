@@ -11,6 +11,9 @@
     "whiteboard": {
       "command": "npx",
       "args": ["-y", "@choonkeat/agent-whiteboard"]
+    },
+    "agent-chat": {
+      "command": "/repos/agent-chat/workspace/dist/agent-chat"
     }
   }
 }
