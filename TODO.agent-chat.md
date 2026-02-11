@@ -5,13 +5,15 @@
 Agent Chat is currently disjointed from the swe-swe workflow:
 
 1. **Not embedded** — agent-chat binary isn't part of the container template; manually configured
-2. **Tab always visible** — no way to hide Agent Chat tab per session while keeping MCP running
+2. ~~**Tab always visible**~~ — ✅ Done. Agent Chat tab is opt-in with probe-based discovery
 3. **Agent unaware** — when user types in agent-chat web UI, agent doesn't know unless user separately types "use agent chat" in TUI
 4. **Permissions** — when user operates via Agent Chat (not TUI), they can't approve/deny tool permissions; agent needs yolo mode
 
 ---
 
 ## 1. Embed agent-chat in swe-swe containers
+
+**Status**: Partially done — agent-chat runs in containers, but npm publishing not yet complete.
 
 **Approach**: Publish as npm package (matches whiteboard pattern).
 
@@ -26,30 +28,38 @@ Agent Chat is currently disjointed from the swe-swe workflow:
 - Zero Dockerfile changes
 - `AGENT_CHAT_PORT` env var is already injected by swe-swe-server into the session env, so agent-chat picks it up automatically
 
-**Files to change**:
-- `cmd/swe-swe/templates/container/.mcp.json` — add agent-chat entry
+**Remaining**:
 - npm publish workflow for agent-chat repo
+- Add agent-chat entry to `.mcp.json` container template
 
 ---
 
-## 2. Agent Chat tab toggle
+## 2. Agent Chat tab & proxy ✅
 
-**Current**: Agent Chat tab is always visible in the right panel. MCP always runs.
+**Status**: Done.
 
-**Approach**: Keep MCP always running. Add UI visibility toggle.
+**What was built**:
+- Agent Chat port proxy mirroring Preview architecture (`feat(proxy)`)
+- Atomic port allocation — agent chat port allocated alongside preview port (`fix(proxy)`)
+- Opt-in tab with probe-based discovery — tab only appears when agent-chat MCP is running (`feat(ui)`)
+- Toggle in left pane to show/hide Agent Chat tab (`feat(ui)`)
+- Scroll position preserved on tab switch with smart auto-scroll (`fix(ui)`)
+- Bootstrap iframe to fix SameSite=Lax cookie issue (`fix(ui)`)
+- Classic connected tab style with accent-tinted resizer (`style(ui)`)
 
-- Toggle icon in right panel header (near tab bar)
-- State persisted in localStorage per session
-- When "disabled", only Preview tab shows
-- MCP server keeps running — toggle is purely visual
-
-**Files to change**:
-- `cmd/swe-swe/templates/host/swe-swe-server/static/terminal-ui.js` — add toggle logic
-- `cmd/swe-swe/templates/host/swe-swe-server/static/styles/terminal-ui.css` — toggle styling
+**Key commits**:
+- `b54fe066f` feat(ui): add Agent Chat tab toggle in left pane
+- `44144f90e` feat(proxy): add Agent Chat port proxy mirroring Preview architecture
+- `084027467` fix(proxy): make agent chat port allocation atomic with preview port
+- `bda2249ad` feat(ui): make Agent Chat tab opt-in with probe-based discovery
+- `af67cb013` fix(ui): preserve scroll position on tab switch and smart auto-scroll
+- `0246a4701` fix(ui): bootstrap Agent Chat iframe to fix SameSite=Lax cookie issue
 
 ---
 
 ## 3. Agent awareness (message relay)
+
+**Status**: Not started.
 
 **Problem**: MCP is request-response. Agent-chat server can't push notifications to the agent. The `check_messages` tool exists but agent doesn't call it reliably.
 
@@ -91,40 +101,41 @@ HTTP callback is simplest for now since both servers run in the same container.
 
 ---
 
-## 4. Yolo mode for Agent Chat
+## 4. Permission management for Agent Chat
+
+**Status**: Research complete (see `research/2026-02-10-agent-chat-integration.md`).
 
 **Problem**: When user operates via Agent Chat, they can't approve/deny tool permissions in the TUI.
 
-**Approach**: When Agent Chat is the active input channel, agent should run in autonomous (yolo) mode.
+**Research findings**: Claude Code writes session JSONL transcripts. Permission prompts manifest as a gap between `tool_use` (assistant entry) and `tool_result` (user entry). By tailing the JSONL file, we can detect pending prompts and surface them in the Chat UI with Allow/Deny buttons.
 
-### Options
+### Approach (from research)
 
-- **A. Start in yolo mode by default** — if agent-chat is enabled, launch `claude --dangerously-skip-permissions`
-- **B. UI toggle** — "Enable autonomous mode" button in session UI that switches the agent to yolo mode
-- **C. Auto-detect** — when first chat message arrives via relay, switch to yolo mode
+1. Tail the active session's JSONL file (`~/.claude/projects/-workspace/{session-id}.jsonl`)
+2. Track pending `tool_use` IDs — if no `tool_result` arrives within ~1s, it's a permission prompt
+3. Show in Agent Chat UI: "Claude wants to run {tool_name}: {description} — Allow / Deny?"
+4. On user response, write keystroke (`y\n` or `n\n`) to PTY stdin via swe-swe-server
 
-Option B gives the user explicit control. Could be a toggle in the Agent Chat tab header.
+### Fallback options
 
-### Implementation considerations
-
-- Claude Code's `--dangerously-skip-permissions` is set at launch time
-- Switching mid-session may require restarting the agent process
-- Alternative: use Claude Code's permission allowlist to pre-approve common tools
-- Or: agent-chat relay could include a "please approve in terminal" fallback message when permissions are needed
+- **A. JSONL-based permission relay** (above) — most seamless
+- **B. Start in yolo mode by default** — if agent-chat is enabled, launch `claude --dangerously-skip-permissions`
+- **C. UI toggle** — "Enable autonomous mode" button that restarts agent in yolo mode
+- **D. Permission allowlist** — pre-approve common tools via Claude Code config
 
 **Files to change**:
-- `cmd/swe-swe/templates/host/swe-swe-server/main.go` — session launch flags
-- `cmd/swe-swe/templates/host/swe-swe-server/static/terminal-ui.js` — yolo toggle UI
-- Agent launch command construction in session management
+- `cmd/swe-swe/templates/host/swe-swe-server/main.go` — JSONL watcher + PTY input endpoint
+- `cmd/swe-swe/templates/host/swe-swe-server/static/terminal-ui.js` — permission prompt UI
+- Agent Chat frontend — permission card rendering
 
 ---
 
 ## Implementation Order
 
-1. **Embed agent-chat** (npm publish + .mcp.json template) — standalone, no dependencies
-2. **Tab toggle** — pure UI change, can be done independently
+1. ~~**Embed agent-chat**~~ (partially done — npm publish remaining)
+2. ~~**Tab toggle & proxy**~~ ✅ Done
 3. **Message relay** — requires changes to both agent-chat and swe-swe-server
-4. **Yolo mode** — depends on relay working; needs careful UX design
+4. **Permission management** — depends on relay working; research complete
 
 ---
 
