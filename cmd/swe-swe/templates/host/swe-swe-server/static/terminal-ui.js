@@ -992,10 +992,18 @@ class TerminalUI extends HTMLElement {
                     this._agentChatProbing = true;
                     const acUrl = buildAgentChatUrl(window.location, this.agentChatPort);
                     if (acUrl) {
+                        // Bootstrap agent chat iframe with preview proxy URL to establish
+                        // cross-origin cookie context. SameSite=Lax cookies aren't sent
+                        // when an iframe navigates from about:blank to a cross-origin URL,
+                        // but they are sent once the iframe has an established cross-origin context.
+                        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
+                        if (chatIframe && chatIframe.src === 'about:blank' && this.previewPort) {
+                            chatIframe.src = buildPreviewUrl(window.location, '5' + this.previewPort) + '/';
+                        }
                         const self = this;
                         let attempt = 0;
                         const probe = () => {
-                            fetch(acUrl + '/', { mode: 'no-cors' }).then(() => {
+                            fetch(acUrl + '/', { mode: 'no-cors', credentials: 'include' }).then(() => {
                                 self._agentChatAvailable = true;
                                 self._agentChatProbing = false;
                                 const desktopBtn = self.querySelector('button[data-left-tab="chat"]');
@@ -1534,7 +1542,8 @@ class TerminalUI extends HTMLElement {
             terminalEl.style.position = 'absolute';
             chatEl.style.display = 'flex';
             // Lazy-load: set src on first switch using agent chat proxy URL
-            if (chatIframe && chatIframe.src === 'about:blank' && this.agentChatPort) {
+            if (chatIframe && !this._agentChatLoaded && this.agentChatPort) {
+                this._agentChatLoaded = true;
                 chatIframe.src = buildAgentChatUrl(window.location, this.agentChatPort) + '/';
             }
         } else {
