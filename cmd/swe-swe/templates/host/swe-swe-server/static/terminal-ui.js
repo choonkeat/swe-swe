@@ -2332,8 +2332,10 @@ class TerminalUI extends HTMLElement {
             if (e.data && e.data.type === 'agent-chat-first-user-message') {
                 if (!this._chatBootstrapped && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     this._chatBootstrapped = true;
-                    const encoder = new TextEncoder();
-                    this.ws.send(encoder.encode('check_messages; i sent u a chat message\n'));
+                    // Send text first, then Enter after delay to ensure text is processed
+                    // (same pattern as mobile keyboard sendKey)
+                    this.sendKey('check_messages; i sent u a chat message');
+                    setTimeout(() => this.sendKey('\r'), 300);
                 }
             }
         });
