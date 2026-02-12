@@ -5168,8 +5168,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				continue
 			}
 
-			// Create uploads directory if it doesn't exist
-			uploadsDir := ".swe-swe/uploads"
+			// Resolve uploads directory relative to session's working directory
+			baseDir := sess.WorkDir
+			if baseDir == "" {
+				baseDir, _ = os.Getwd()
+			}
+			uploadsDir := filepath.Join(baseDir, ".swe-swe", "uploads")
 			if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 				log.Printf("Failed to create uploads directory: %v", err)
 				sendFileUploadResponse(conn, false, filename, "Failed to create uploads directory")
@@ -5177,7 +5181,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			}
 
 			// Save the file to the uploads directory
-			filePath := uploadsDir + "/" + filename
+			filePath := filepath.Join(uploadsDir, filename)
 			if err := os.WriteFile(filePath, fileData, 0644); err != nil {
 				log.Printf("File upload error: %v", err)
 				sendFileUploadResponse(conn, false, filename, err.Error())
@@ -5188,11 +5192,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			sendFileUploadResponse(conn, true, filename, "")
 
 			// Send the file path to PTY - Claude Code will detect it and read from disk
-			absPath, err := os.Getwd()
-			if err != nil {
-				absPath = "."
-			}
-			absFilePath := absPath + "/" + filePath
+			absFilePath := filePath
 			if err := sess.WriteInputOrBuffer([]byte(absFilePath)); err != nil {
 				log.Printf("PTY write error for uploaded file path: %v", err)
 			}
