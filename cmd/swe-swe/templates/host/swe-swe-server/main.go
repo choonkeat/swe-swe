@@ -2055,28 +2055,25 @@ func startAgentChatProxy(listener net.Listener, targetPort int) (*previewProxySe
 	}
 
 	mux := http.NewServeMux()
-	// Health check endpoint: verifies the Agent Chat backend is actually reachable.
-	// Returns 200 if the backend responds, 502 otherwise.
-	// Includes CORS headers so the frontend probe can read the response status.
-	mux.HandleFunc("/__health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		conn, err := net.DialTimeout("tcp", "localhost:"+targetPortStr, 2*time.Second)
-		if err != nil {
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
-		conn.Close()
-		w.WriteHeader(http.StatusOK)
-	})
 	mux.HandleFunc("/", handleProxyRequest(state))
 
+	// Wrap with CORS so the cross-origin probe from the main UI can read
+	// the response status (distinguishes 200 from 502).
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
+
 	server := &http.Server{
-		Handler: mux,
+		Handler: handler,
 	}
 
 	go func() {

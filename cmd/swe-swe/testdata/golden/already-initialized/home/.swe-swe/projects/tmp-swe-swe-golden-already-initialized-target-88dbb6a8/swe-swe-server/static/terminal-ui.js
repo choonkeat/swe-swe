@@ -1003,7 +1003,7 @@ class TerminalUI extends HTMLElement {
                         const self = this;
                         let attempt = 0;
                         const probe = () => {
-                            fetch(acUrl + '/__health', { method: 'HEAD' }).then(resp => {
+                            fetch(acUrl + '/', { method: 'HEAD', credentials: 'include' }).then(resp => {
                                 if (resp.ok) {
                                     self._agentChatAvailable = true;
                                     self._agentChatProbing = false;
