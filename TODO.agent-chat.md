@@ -57,47 +57,28 @@ Agent Chat is currently disjointed from the swe-swe workflow:
 
 ---
 
-## 3. Agent awareness (message relay)
+## 3. Agent awareness (first-message bootstrap)
 
-**Status**: Not started.
+**Status**: In progress — swe-swe listener done, agent-chat postMessage pending.
 
-**Problem**: MCP is request-response. Agent-chat server can't push notifications to the agent. The `check_messages` tool exists but agent doesn't call it reliably.
-
-**Approach**: Hybrid relay — when user sends a chat message, relay it to the agent's PTY stdin.
+**Approach**: Browser-side bootstrap. When user sends first message in Agent Chat, the chat iframe sends a `postMessage` to the parent (terminal-ui.js), which injects `check_messages; i sent u a chat message\n` into the PTY. The agent then calls `check_messages`, gets the message, and starts using chat MCP tools.
 
 ### Flow
 
-1. User types message in agent-chat web UI
-2. agent-chat server receives it via WebSocket, queues it in EventBus
-3. agent-chat server notifies swe-swe-server (HTTP callback or shared mechanism)
-4. swe-swe-server writes to the active agent's PTY stdin with a wrapper:
-   ```
-   [from Agent Chat] check the API docs
-   ```
-5. Agent sees it as normal user input
-6. CLAUDE.md instructs: "When you see `[from Agent Chat]`, respond using agent-chat MCP tools (`send_message`/`draw`)"
-7. Agent responds in the rich chat UI
+1. User types message in Agent Chat web UI → `handleSend()`
+2. Agent Chat frontend sends `postMessage({ type: 'agent-chat-first-user-message' })` to parent
+3. terminal-ui.js receives it, writes bootstrap text to PTY via WebSocket (first time only)
+4. Agent sees it as TUI input, calls `check_messages`, gets the actual message
+5. Agent responds via `send_message` / `draw` — subsequent messages flow through MCP
 
-### Notification mechanism options
+### Done
 
-- **HTTP callback**: agent-chat POSTs to `http://localhost:9898/api/chat-relay?session=X` when a user message arrives
-- **File watcher**: agent-chat writes to a known path, swe-swe-server watches it
-- **Shared EventBus**: if agent-chat is compiled into swe-swe-server (future option)
+- **terminal-ui.js**: postMessage listener for `agent-chat-first-user-message` with `_chatBootstrapped` dedup flag
 
-HTTP callback is simplest for now since both servers run in the same container.
+### Remaining (in agent-chat repo)
 
-### What swe-swe-server needs
-
-- New HTTP endpoint: `POST /api/chat-relay` accepting `{ "sessionID": "...", "message": "..." }`
-- Logic to find the active PTY for the session
-- Write the wrapped message to PTY stdin
-- Handle edge cases: agent busy (queue it), agent idle (send immediately)
-
-**Files to change**:
-- `cmd/swe-swe/templates/host/swe-swe-server/main.go` — add relay endpoint
-- agent-chat `tools.go` or `eventbus.go` — add HTTP callback on user message
-- agent-chat `main.go` — accept relay target URL (env var or flag)
-- Container template CLAUDE.md / system prompt — add `[from Agent Chat]` instructions
+- **`client-dist/app.js`**: Add `window.parent.postMessage({ type: 'agent-chat-first-user-message' }, '*')` in `handleSend()`
+- See `.swe-swe/repos/agent-chat/workspace/TODO.md` for details
 
 ---
 

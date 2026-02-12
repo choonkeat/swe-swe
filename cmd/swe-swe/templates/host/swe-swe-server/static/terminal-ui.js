@@ -2321,11 +2321,20 @@ class TerminalUI extends HTMLElement {
         // Header and navigation event handlers
         this.setupHeaderEventListeners();
 
-        // Listen for session-ended messages from iframe to switch to Preview tab
-        // (When shell in right panel exits, show Preview instead of closing the panel)
+        // Listen for messages from iframes
         window.addEventListener('message', (e) => {
+            // When shell in right panel exits, show Preview instead of closing the panel
             if (e.data && e.data.type === 'swe-swe-session-ended') {
                 this.switchPanelTab('preview');
+            }
+            // When user sends first message in Agent Chat, bootstrap the agent
+            // by injecting a prompt into the PTY so the agent knows to check_messages
+            if (e.data && e.data.type === 'agent-chat-first-user-message') {
+                if (!this._chatBootstrapped && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this._chatBootstrapped = true;
+                    const encoder = new TextEncoder();
+                    this.ws.send(encoder.encode('check_messages; i sent u a chat message\n'));
+                }
             }
         });
 
