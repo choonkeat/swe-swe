@@ -156,6 +156,7 @@ type AssistantConfig struct {
 	Name            string             // Display name
 	ShellCmd        string             // Command to start the assistant
 	ShellRestartCmd string             // Command to restart (resume) the assistant
+	YoloShellCmd    string             // Command to start in YOLO mode (empty = not supported)
 	YoloRestartCmd  string             // Command to restart in YOLO mode (empty = not supported)
 	Binary          string             // Binary name to check with exec.LookPath
 	Homepage        bool               // Whether to show on homepage (false = hidden, e.g., shell)
@@ -228,6 +229,7 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Claude",
 		ShellCmd:        "claude",
 		ShellRestartCmd: "claude --continue",
+		YoloShellCmd:    "claude --dangerously-skip-permissions",
 		YoloRestartCmd:  "claude --dangerously-skip-permissions --continue",
 		Binary:          "claude",
 		Homepage:        true,
@@ -237,6 +239,7 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Gemini",
 		ShellCmd:        "gemini",
 		ShellRestartCmd: "gemini --resume",
+		YoloShellCmd:    "gemini --approval-mode=yolo",
 		YoloRestartCmd:  "gemini --resume --approval-mode=yolo",
 		Binary:          "gemini",
 		Homepage:        true,
@@ -246,6 +249,7 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Codex",
 		ShellCmd:        "codex",
 		ShellRestartCmd: "codex resume --last",
+		YoloShellCmd:    "codex --yolo",
 		YoloRestartCmd:  "codex --yolo resume --last",
 		Binary:          "codex",
 		Homepage:        true,
@@ -255,6 +259,7 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Goose",
 		ShellCmd:        "goose session",
 		ShellRestartCmd: "goose session -r",
+		YoloShellCmd:    "GOOSE_MODE=auto goose session",
 		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 		Homepage:        true,
@@ -264,6 +269,7 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "Aider",
 		ShellCmd:        "aider",
 		ShellRestartCmd: "aider --restore-chat-history",
+		YoloShellCmd:    "aider --yes-always",
 		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 		Homepage:        true,
@@ -273,6 +279,7 @@ var assistantConfigs = []AssistantConfig{
 		Name:            "OpenCode",
 		ShellCmd:        "opencode",
 		ShellRestartCmd: "opencode --continue",
+		YoloShellCmd:    "", // YOLO mode not supported
 		YoloRestartCmd:  "", // YOLO mode not supported
 		Binary:          "opencode",
 		Homepage:        true,
@@ -323,6 +330,10 @@ type Session struct {
 	pendingReplacement string // If set, replace process with this command instead of ending session
 	// UI theme at session creation (for COLORFGBG env var)
 	Theme string // "light" or "dark"
+	// Agent Chat sidecar (nil for terminal-only sessions)
+	AgentChatCmd    *exec.Cmd
+	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
+	SessionMode     string             // "terminal" or "chat"
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -760,6 +771,26 @@ func (s *Session) Close() {
 
 	s.mu.Lock()
 
+	// Cancel session context (signals agentChatCmd watcher to stop)
+	if s.agentChatCancel != nil {
+		s.agentChatCancel()
+	}
+
+	// Kill agent-chat sidecar
+	if s.AgentChatCmd != nil && s.AgentChatCmd.Process != nil {
+		s.AgentChatCmd.Process.Signal(syscall.SIGTERM)
+		// Give it 3s to exit gracefully, then kill
+		acCmd := s.AgentChatCmd
+		done := make(chan struct{})
+		go func() { acCmd.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			acCmd.Process.Kill()
+			acCmd.Wait()
+		}
+	}
+
 	// Close all WebSocket client connections
 	for conn := range s.wsClients {
 		conn.Close()
@@ -1099,6 +1130,10 @@ var (
 
 	// SSL certificate download endpoint
 	tlsCertPath string // Path to TLS certificate file
+
+	// serverCtx is cancelled on SIGINT/SIGTERM for graceful shutdown.
+	// Session contexts derive from this so all processes are cleaned up.
+	serverCtx context.Context
 )
 
 // detectAvailableAssistants checks which AI assistants are installed and populates availableAssistants.
@@ -3265,7 +3300,30 @@ func main() {
 	if workingDir != "" {
 		log.Printf("  working-directory: %s", workingDir)
 	}
-	if err := http.ListenAndServe(*addr, nil); err != nil {
+
+	// Signal-aware shutdown: cancel serverCtx on SIGINT/SIGTERM
+	var serverCancel context.CancelFunc
+	serverCtx, serverCancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer serverCancel()
+
+	srv := &http.Server{Addr: *addr}
+	go func() {
+		<-serverCtx.Done()
+		log.Println("Shutting down server...")
+		// Close all sessions (kills processes)
+		sessionsMu.Lock()
+		for uuid, sess := range sessions {
+			log.Printf("Closing session %s on shutdown", uuid)
+			sess.Close()
+			delete(sessions, uuid)
+		}
+		sessionsMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+	}()
+
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }
@@ -4669,7 +4727,7 @@ func findAvailablePortPair() (int, net.Listener, int, net.Listener, error) {
 // The branch parameter is used for worktree creation (optional, separate from display name)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
 // The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
-func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string, theme string) (*Session, bool, error) {
+func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string, theme string, sessionMode string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -4767,6 +4825,9 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	// For shell assistant, resolve $SHELL at runtime
 	shellCmdToUse := cfg.ShellCmd
+	if sessionMode == "chat" && cfg.YoloShellCmd != "" {
+		shellCmdToUse = cfg.YoloShellCmd
+	}
 	if assistant == "shell" {
 		userShell := os.Getenv("SHELL")
 		if userShell == "" {
@@ -4783,14 +4844,71 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recordingUUID)
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
+	env := buildSessionEnv(previewPort, acPort, theme, workDir)
+
+	// Start agent-chat sidecar for chat sessions
+	var agentChatCmd *exec.Cmd
+	var sessionCancel context.CancelFunc
+	if sessionMode == "chat" {
+		var sessionCtx context.Context
+		sessionCtx, sessionCancel = context.WithCancel(serverCtx)
+
+		agentChatBin := "/repos/agent-chat/workspace/dist/agent-chat"
+		agentChatCmd = exec.Command(agentChatBin, "-no-stdio-mcp")
+		agentChatCmd.Env = env
+		agentChatCmd.Dir = workDir
+		agentChatCmd.Stdout = os.Stdout
+		agentChatCmd.Stderr = os.Stderr
+		if err := agentChatCmd.Start(); err != nil {
+			sessionCancel()
+			return nil, false, fmt.Errorf("failed to start agent-chat: %w", err)
+		}
+		log.Printf("Started agent-chat sidecar (pid=%d) for session %s", agentChatCmd.Process.Pid, sessionUUID)
+
+		// Watcher goroutine: auto-restart sidecar on unexpected exit
+		go func(sessUUID string, sCtx context.Context) {
+			currentCmd := agentChatCmd
+			for {
+				err := currentCmd.Wait()
+				select {
+				case <-sCtx.Done():
+					return // session ended, don't restart
+				default:
+					log.Printf("agent-chat died unexpectedly: %v, restarting...", err)
+					newCmd := exec.Command(agentChatBin, "-no-stdio-mcp")
+					newCmd.Env = env
+					newCmd.Dir = workDir
+					newCmd.Stdout = os.Stdout
+					newCmd.Stderr = os.Stderr
+					if err := newCmd.Start(); err != nil {
+						log.Printf("failed to restart agent-chat: %v", err)
+						return
+					}
+					log.Printf("Restarted agent-chat sidecar (pid=%d) for session %s", newCmd.Process.Pid, sessUUID)
+					sessionsMu.RLock()
+					if sess, ok := sessions[sessUUID]; ok {
+						sess.mu.Lock()
+						sess.AgentChatCmd = newCmd
+						sess.mu.Unlock()
+					}
+					sessionsMu.RUnlock()
+					currentCmd = newCmd
+				}
+			}
+		}(sessionUUID, sessionCtx)
+	}
+
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(previewPort, acPort, theme, workDir)
+	cmd.Env = env
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
+		if sessionCancel != nil {
+			sessionCancel()
+		}
 		return nil, false, err
 	}
 
@@ -4819,7 +4937,10 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		PreviewPort:     previewPort,
 		AgentChatPort:   acPort,
 		Theme:           theme,
-		yoloMode:        detectYoloMode(cfg.ShellCmd), // Detect initial YOLO mode from startup command
+		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
+		AgentChatCmd:    agentChatCmd,
+		agentChatCancel: sessionCancel,
+		SessionMode:     sessionMode,
 		Metadata: &RecordingMetadata{
 			UUID:      recordingUUID,
 			Name:      name,
@@ -4915,7 +5036,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Get theme hint from client for COLORFGBG env var
 	theme := r.URL.Query().Get("theme")
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName, theme)
+	// Get session mode (chat or terminal)
+	sessionMode := r.URL.Query().Get("session")
+	if sessionMode == "" {
+		sessionMode = "terminal" // default
+	}
+
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName, theme, sessionMode)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))

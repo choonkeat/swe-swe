@@ -16,7 +16,8 @@
     var branchField = document.getElementById('branch-field');
     var branchInput = document.getElementById('new-session-branch');
     var agentsContainer = document.getElementById('new-session-agents');
-    var startBtn = document.getElementById('new-session-start');
+    var startTerminalBtn = document.getElementById('new-session-start-terminal');
+    var startChatBtn = document.getElementById('new-session-start-chat');
     var errorDiv = document.getElementById('new-session-error');
     var loadingDiv = document.getElementById('new-session-loading');
     var loadingText = document.getElementById('new-session-loading-text');
@@ -86,7 +87,7 @@
         // Reset error/loading
         errorDiv.textContent = '';
         loadingDiv.style.display = 'none';
-        startBtn.disabled = true;
+        startTerminalBtn.disabled = true; startChatBtn.disabled = true;
 
         // Reset agents
         var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
@@ -169,7 +170,7 @@
                     radio.checked = true;
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
-                    startBtn.disabled = false;
+                    startTerminalBtn.disabled = false; startChatBtn.disabled = false;
                 }
             }
         }
@@ -196,7 +197,7 @@
                     radio.checked = true;
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
-                    startBtn.disabled = false;
+                    startTerminalBtn.disabled = false; startChatBtn.disabled = false;
                 }
             }
         }
@@ -457,7 +458,7 @@
         if (radio) {
             radio.checked = true;
             dialogState.selectedAgent = radio.value;
-            startBtn.disabled = false;
+            startTerminalBtn.disabled = false; startChatBtn.disabled = false;
         }
     }
 
@@ -474,13 +475,8 @@
         }
     });
 
-    // Start session
-    startBtn.addEventListener('click', function() {
-        if (!dialogState.selectedAgent) {
-            showError('Please select an agent');
-            return;
-        }
-
+    // Build session URL (shared by both start buttons)
+    function buildSessionUrl() {
         var url = '/session/' + dialogState.sessionUUID + '?assistant=' + encodeURIComponent(dialogState.selectedAgent);
         if (dialogState.debug) {
             url += '&debug=1';
@@ -508,7 +504,19 @@
             }
         }
 
-        window.location.href = url;
+        return url;
+    }
+
+    // Start Agent Terminal session
+    startTerminalBtn.addEventListener('click', function() {
+        if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        window.location.href = buildSessionUrl() + '&session=terminal';
+    });
+
+    // Start Agent Chat session
+    startChatBtn.addEventListener('click', function() {
+        if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        window.location.href = buildSessionUrl() + '&session=chat';
     });
 
     // Dialog open

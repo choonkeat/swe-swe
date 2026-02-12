@@ -798,6 +798,14 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        .dialog__start--chat {
+            background: var(--bg-primary);
+            color: var(--text-bright);
+            border: 1px solid var(--border-primary);
+        }
+        .dialog__start--chat:hover:not(:disabled) {
+            background: var(--bg-secondary);
+        }
         .dialog__select {
             flex: 1;
             width: 100%;
@@ -1191,7 +1199,8 @@
                         <div class="dialog__spinner"></div>
                         <span id="new-session-loading-text">Loading...</span>
                     </div>
-                    <button class="dialog__start" id="new-session-start" disabled>Start Session</button>
+                    <button class="dialog__start dialog__start--terminal" id="new-session-start-terminal" disabled>Start Agent Terminal</button>
+                    <button class="dialog__start dialog__start--chat" id="new-session-start-chat" disabled>Start Agent Chat</button>
                 </div>
             </div>
         </div>
