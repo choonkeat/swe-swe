@@ -320,7 +320,7 @@ class TerminalUI extends HTMLElement {
                             <div class="terminal-ui__agent-chat" style="display: none;">
                                 <iframe class="terminal-ui__agent-chat-iframe"
                                         src="about:blank"
-                                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals">
+                                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads">
                                 </iframe>
                             </div>
                             <div class="terminal-ui__drop-overlay">
@@ -2341,7 +2341,7 @@ class TerminalUI extends HTMLElement {
                     this._chatBootstrapped = true;
                     // Send text first, then Enter after delay to ensure text is processed
                     // (same pattern as mobile keyboard sendKey)
-                    this.sendKey('check_messages; i sent u a chat message');
+                    this.sendKey(e.data.text || 'check_messages; i sent u a chat message');
                     setTimeout(() => this.sendKey('\r'), 300);
                 }
             }
