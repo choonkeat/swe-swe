@@ -57,7 +57,7 @@ args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 command = "swe-swe-server"
 args = ["--mcp"]
 
-[mcp_servers.whiteboard]
+[mcp_servers.swe-swe-whiteboard]
 command = "npx"
 args = ["-y", "@choonkeat/agent-whiteboard"]
 EOF

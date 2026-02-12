@@ -1,16 +1,26 @@
 {
   "mcpServers": {
     "swe-swe-playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--cdp-endpoint",
+        "http://chrome:9223"
+      ],
+      "command": "npx"
     },
     "swe-swe-preview": {
-      "command": "swe-swe-server",
-      "args": ["--mcp"]
+      "args": [
+        "--mcp"
+      ],
+      "command": "swe-swe-server"
     },
-    "whiteboard": {
-      "command": "npx",
-      "args": ["-y", "@choonkeat/agent-whiteboard"]
+    "swe-swe-whiteboard": {
+      "args": [
+        "-y",
+        "@choonkeat/agent-whiteboard"
+      ],
+      "command": "npx"
     }
   }
 }

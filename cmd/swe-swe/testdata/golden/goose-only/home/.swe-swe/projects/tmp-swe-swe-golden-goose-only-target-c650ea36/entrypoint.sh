@@ -52,7 +52,7 @@ extensions:
     cmd: swe-swe-server
     args:
       - "--mcp"
-  whiteboard:
+  swe-swe-whiteboard:
     type: stdio
     cmd: npx
     args:

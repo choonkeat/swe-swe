@@ -368,6 +368,50 @@ func parsePreviewPortsRange(rangeStr string) ([]int, error) {
 	return ports, nil
 }
 
+// upsertMcpServers merges swe-swe MCP server definitions into an existing
+// .mcp.json file. swe-swe servers are always upserted; user-defined servers
+// are preserved. Returns the merged JSON.
+//
+// SYNC: This logic is duplicated in swe-swe-server's setupSweSweFiles().
+// If you change this function, update the copy in
+// cmd/swe-swe/templates/host/swe-swe-server/main.go as well.
+func upsertMcpServers(existing, template []byte) ([]byte, error) {
+	var tmplDoc map[string]any
+	if err := json.Unmarshal(template, &tmplDoc); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal template .mcp.json: %w", err)
+	}
+
+	var existingDoc map[string]any
+	if len(existing) == 0 || json.Unmarshal(existing, &existingDoc) != nil {
+		// No existing file or invalid JSON — use template as-is
+		merged, err := json.MarshalIndent(tmplDoc, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append(merged, '\n'), nil
+	}
+
+	// Ensure existingDoc has mcpServers map
+	existingServers, _ := existingDoc["mcpServers"].(map[string]any)
+	if existingServers == nil {
+		existingServers = make(map[string]any)
+		existingDoc["mcpServers"] = existingServers
+	}
+
+	// Upsert template servers into existing
+	if tmplServers, ok := tmplDoc["mcpServers"].(map[string]any); ok {
+		for name, cfg := range tmplServers {
+			existingServers[name] = cfg
+		}
+	}
+
+	merged, err := json.MarshalIndent(existingDoc, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(merged, '\n'), nil
+}
+
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("project-directory", ".", "Project directory to initialize")
@@ -966,12 +1010,24 @@ func handleInit() {
 				log.Fatalf("Failed to create directory %q: %v", destDir, err)
 			}
 
-			if err := os.WriteFile(destPath, content, 0644); err != nil {
+			// For .mcp.json, upsert swe-swe servers into any existing config
+			writeContent := content
+			if relPath == ".mcp.json" {
+				existingContent, _ := os.ReadFile(destPath) // ignore error (file may not exist)
+				merged, err := upsertMcpServers(existingContent, content)
+				if err != nil {
+					log.Fatalf("Failed to merge .mcp.json: %v", err)
+				}
+				writeContent = merged
+			}
+
+			if err := os.WriteFile(destPath, writeContent, 0644); err != nil {
 				log.Fatalf("Failed to write %q: %v", destPath, err)
 			}
 			fmt.Printf("Created %s\n", destPath)
 
 			// Also write baseline snapshot for three-way merge during updates
+			// Baseline always uses the template content (not merged)
 			baselinePath := filepath.Join(absPath, ".swe-swe", "baseline", relPath)
 			baselineDir := filepath.Dir(baselinePath)
 			if err := os.MkdirAll(baselineDir, os.FileMode(0755)); err != nil {

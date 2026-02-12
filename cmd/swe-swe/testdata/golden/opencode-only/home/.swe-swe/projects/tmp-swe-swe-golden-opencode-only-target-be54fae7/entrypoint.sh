@@ -46,7 +46,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
       "type": "local",
       "command": ["swe-swe-server", "--mcp"]
     },
-    "whiteboard": {
+    "swe-swe-whiteboard": {
       "type": "local",
       "command": ["npx", "-y", "@choonkeat/agent-whiteboard"]
     }

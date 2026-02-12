@@ -63,7 +63,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
       "type": "local",
       "command": ["swe-swe-server", "--mcp"]
     },
-    "whiteboard": {
+    "swe-swe-whiteboard": {
       "type": "local",
       "command": ["npx", "-y", "@choonkeat/agent-whiteboard"]
     }
@@ -86,7 +86,7 @@ args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 command = "swe-swe-server"
 args = ["--mcp"]
 
-[mcp_servers.whiteboard]
+[mcp_servers.swe-swe-whiteboard]
 command = "npx"
 args = ["-y", "@choonkeat/agent-whiteboard"]
 EOF
@@ -108,7 +108,7 @@ cat > /home/app/.gemini/settings.json << 'EOF'
       "command": "swe-swe-server",
       "args": ["--mcp"]
     },
-    "whiteboard": {
+    "swe-swe-whiteboard": {
       "command": "npx",
       "args": ["-y", "@choonkeat/agent-whiteboard"]
     }
@@ -137,7 +137,7 @@ extensions:
     cmd: swe-swe-server
     args:
       - "--mcp"
-  whiteboard:
+  swe-swe-whiteboard:
     type: stdio
     cmd: npx
     args:

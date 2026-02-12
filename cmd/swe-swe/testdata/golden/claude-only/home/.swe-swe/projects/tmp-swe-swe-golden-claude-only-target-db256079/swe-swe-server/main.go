@@ -3452,10 +3452,54 @@ func dumpContainerTemplates(destDir string) error {
 	})
 }
 
+// upsertMcpServers merges swe-swe MCP server definitions into an existing
+// .mcp.json file. swe-swe servers are always upserted; user-defined servers
+// are preserved. Returns the merged JSON.
+//
+// SYNC: This logic is duplicated from swe-swe init (cmd/swe-swe/init.go).
+// If you change this function, update the copy there as well.
+func upsertMcpServers(existing, template []byte) ([]byte, error) {
+	var tmplDoc map[string]any
+	if err := json.Unmarshal(template, &tmplDoc); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal template .mcp.json: %w", err)
+	}
+
+	var existingDoc map[string]any
+	if len(existing) == 0 || json.Unmarshal(existing, &existingDoc) != nil {
+		// No existing file or invalid JSON — use template as-is
+		merged, err := json.MarshalIndent(tmplDoc, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append(merged, '\n'), nil
+	}
+
+	// Ensure existingDoc has mcpServers map
+	existingServers, _ := existingDoc["mcpServers"].(map[string]any)
+	if existingServers == nil {
+		existingServers = make(map[string]any)
+		existingDoc["mcpServers"] = existingServers
+	}
+
+	// Upsert template servers into existing
+	if tmplServers, ok := tmplDoc["mcpServers"].(map[string]any); ok {
+		for name, cfg := range tmplServers {
+			existingServers[name] = cfg
+		}
+	}
+
+	merged, err := json.MarshalIndent(existingDoc, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(merged, '\n'), nil
+}
+
 // setupSweSweFiles writes embedded container template files into destDir.
 // Used to provision swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup)
 // into cloned repos and new projects that weren't set up by swe-swe init.
-// Idempotent: skips files that already exist.
+// Idempotent: skips non-.mcp.json files that already exist. For .mcp.json,
+// always upserts swe-swe servers while preserving user-defined ones.
 func setupSweSweFiles(destDir string) error {
 	return fs.WalkDir(containerTemplatesFS, "container-templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -3473,14 +3517,40 @@ func setupSweSweFiles(destDir string) error {
 			return os.MkdirAll(destPath, 0755)
 		}
 
-		// Skip if destination already exists
-		if _, err := os.Stat(destPath); err == nil {
-			return nil
-		}
-
 		content, err := containerTemplatesFS.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("failed to read embedded %s: %w", path, err)
+		}
+
+		// For .mcp.json, upsert swe-swe servers into any existing config
+		if relPath == ".mcp.json" {
+			existingContent, readErr := os.ReadFile(destPath)
+			if readErr == nil {
+				merged, err := upsertMcpServers(existingContent, content)
+				if err != nil {
+					return fmt.Errorf("failed to merge .mcp.json: %w", err)
+				}
+				if err := os.WriteFile(destPath, merged, 0644); err != nil {
+					return fmt.Errorf("failed to write %s: %w", destPath, err)
+				}
+				log.Printf("Upserted swe-swe servers into: %s", destPath)
+
+				// Baseline always uses the template content (not merged)
+				baselinePath := filepath.Join(destDir, ".swe-swe", "baseline", relPath)
+				if err := os.MkdirAll(filepath.Dir(baselinePath), 0755); err != nil {
+					return fmt.Errorf("failed to create baseline directory for %s: %w", relPath, err)
+				}
+				if err := os.WriteFile(baselinePath, content, 0644); err != nil {
+					return fmt.Errorf("failed to write baseline %s: %w", baselinePath, err)
+				}
+				return nil
+			}
+			// File doesn't exist — fall through to normal write
+		} else {
+			// Skip non-.mcp.json files if destination already exists
+			if _, err := os.Stat(destPath); err == nil {
+				return nil
+			}
 		}
 
 		// Ensure parent directory exists
