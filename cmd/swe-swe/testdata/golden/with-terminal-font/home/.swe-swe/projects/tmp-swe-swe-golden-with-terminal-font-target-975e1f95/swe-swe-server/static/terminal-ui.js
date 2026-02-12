@@ -1003,22 +1003,29 @@ class TerminalUI extends HTMLElement {
                         const self = this;
                         let attempt = 0;
                         const probe = () => {
-                            fetch(acUrl + '/', { mode: 'no-cors', credentials: 'include' }).then(() => {
-                                self._agentChatAvailable = true;
-                                self._agentChatProbing = false;
-                                const desktopBtn = self.querySelector('button[data-left-tab="chat"]');
-                                if (desktopBtn) desktopBtn.style.display = '';
-                                const mobileOpt = self.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
-                                if (mobileOpt) mobileOpt.style.display = '';
-                            }).catch(() => {
-                                attempt++;
-                                if (attempt < 10) {
-                                    const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
-                                    setTimeout(probe, delay);
-                                } else {
+                            fetch(acUrl + '/__health', { method: 'HEAD' }).then(resp => {
+                                if (resp.ok) {
+                                    self._agentChatAvailable = true;
                                     self._agentChatProbing = false;
+                                    const desktopBtn = self.querySelector('button[data-left-tab="chat"]');
+                                    if (desktopBtn) desktopBtn.style.display = '';
+                                    const mobileOpt = self.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+                                    if (mobileOpt) mobileOpt.style.display = '';
+                                } else {
+                                    retry();
                                 }
+                            }).catch(() => {
+                                retry();
                             });
+                        };
+                        const retry = () => {
+                            attempt++;
+                            if (attempt < 10) {
+                                const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
+                                setTimeout(probe, delay);
+                            } else {
+                                self._agentChatProbing = false;
+                            }
                         };
                         probe();
                     }

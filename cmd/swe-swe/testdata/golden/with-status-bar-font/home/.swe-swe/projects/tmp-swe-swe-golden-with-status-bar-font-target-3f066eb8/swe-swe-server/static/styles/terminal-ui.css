@@ -1582,7 +1582,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .terminal-ui__panel-tabs button.active {
     background: var(--bg-primary);
-    color: var(--accent-primary);
+    color: var(--text-primary);
     border-color: var(--accent-primary);
     font-weight: 600;
 }
@@ -1616,7 +1616,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .terminal-ui__left-panel-tabs button.active {
     background: var(--bg-primary);
-    color: var(--accent-primary);
+    color: var(--text-primary);
     border-color: var(--accent-primary);
     font-weight: 600;
 }
