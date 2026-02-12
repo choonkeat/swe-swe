@@ -2345,6 +2345,11 @@ class TerminalUI extends HTMLElement {
                     setTimeout(() => this.sendKey('\r'), 300);
                 }
             }
+            // When user clicks Allow/Deny in Agent Chat, forward keystroke to PTY
+            if (e.data && e.data.type === 'agent-chat-permission-response') {
+                this.sendKey(e.data.keystroke);
+                this.sendKey('\r');
+            }
         });
 
         // Status bar click: reconnect when disconnected, open settings when connected
