@@ -3,7 +3,7 @@
 build: build-cli
 
 RUN_ARGS ?=
-DEV_PORT ?= 3000
+PORT ?= 3000
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 run:
 	@cp cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt cmd/swe-swe/templates/host/swe-swe-server/go.mod
@@ -12,12 +12,12 @@ run:
 	@cp $(CONTAINER_TEMPLATES)/.mcp.json $(SERVER_TEMPLATE)/container-templates/
 	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs/
 	@cp $(CONTAINER_TEMPLATES)/swe-swe/setup $(SERVER_TEMPLATE)/container-templates/swe-swe/
-	cd cmd/swe-swe/templates/host/swe-swe-server && go run main.go -addr :$(DEV_PORT) -no-preview-proxy $(RUN_ARGS)
+	cd cmd/swe-swe/templates/host/swe-swe-server && go run main.go -addr :$(PORT) -no-preview-proxy $(RUN_ARGS)
 
 stop:
-	@pid=$$(ps aux | grep '[e]xe/main.*-addr :$(DEV_PORT)' | awk '{print $$2}' | head -1); \
+	@pid=$$(ps aux | grep '[e]xe/main.*-addr :$(PORT)' | awk '{print $$2}' | head -1); \
 	if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "Stopped dev server (pid $$pid)"; \
-	else echo "No dev server running on :$(DEV_PORT)"; fi
+	else echo "No dev server running on :$(PORT)"; fi
 
 test: check-gomod-sync test-cli test-server
 

@@ -70,8 +70,8 @@ make stop
 
 ### `make run`
 - Copies `go.mod.txt` → `go.mod` and `go.sum.txt` → `go.sum`
-- Runs `go run main.go -addr :3000 -no-preview-proxy`
-- Default port is 3000, override with `DEV_PORT=3001 make run`
+- Runs `go run main.go -addr :$PORT -no-preview-proxy`
+- Uses the `PORT` env var (set by the container); falls back to 3000 if unset
 - The `-no-preview-proxy` flag disables per-session preview proxies (production server handles previews)
 
 ### `make stop`

@@ -493,7 +493,6 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        this.term.write('Session: ' + this.uuid + '\r\n');
     }
 
     renderLinks() {
