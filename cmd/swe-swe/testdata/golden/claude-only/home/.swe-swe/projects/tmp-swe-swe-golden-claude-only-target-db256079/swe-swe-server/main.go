@@ -771,24 +771,9 @@ func (s *Session) Close() {
 
 	s.mu.Lock()
 
-	// Cancel session context (signals agentChatCmd watcher to stop)
+	// Cancel session context (used for coordinating shutdown of chat sessions)
 	if s.agentChatCancel != nil {
 		s.agentChatCancel()
-	}
-
-	// Kill agent-chat sidecar
-	if s.AgentChatCmd != nil && s.AgentChatCmd.Process != nil {
-		s.AgentChatCmd.Process.Signal(syscall.SIGTERM)
-		// Give it 3s to exit gracefully, then kill
-		acCmd := s.AgentChatCmd
-		done := make(chan struct{})
-		go func() { acCmd.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(3 * time.Second):
-			acCmd.Process.Kill()
-			acCmd.Wait()
-		}
 	}
 
 	// Close all WebSocket client connections
@@ -4916,56 +4901,13 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	env := buildSessionEnv(previewPort, acPort, theme, workDir)
 
-	// Start agent-chat sidecar for chat sessions
+	// Agent-chat sidecar context for chat sessions.
+	// The sidecar process itself is managed externally (e.g. baked into the container image),
+	// but we keep the context/cancel infrastructure for graceful shutdown coordination.
 	var agentChatCmd *exec.Cmd
 	var sessionCancel context.CancelFunc
 	if sessionMode == "chat" {
-		var sessionCtx context.Context
-		sessionCtx, sessionCancel = context.WithCancel(serverCtx)
-
-		agentChatBin := "/repos/agent-chat/workspace/dist/agent-chat"
-		agentChatCmd = exec.Command(agentChatBin, "-no-stdio-mcp")
-		agentChatCmd.Env = env
-		agentChatCmd.Dir = workDir
-		agentChatCmd.Stdout = os.Stdout
-		agentChatCmd.Stderr = os.Stderr
-		if err := agentChatCmd.Start(); err != nil {
-			sessionCancel()
-			return nil, false, fmt.Errorf("failed to start agent-chat: %w", err)
-		}
-		log.Printf("Started agent-chat sidecar (pid=%d) for session %s", agentChatCmd.Process.Pid, sessionUUID)
-
-		// Watcher goroutine: auto-restart sidecar on unexpected exit
-		go func(sessUUID string, sCtx context.Context) {
-			currentCmd := agentChatCmd
-			for {
-				err := currentCmd.Wait()
-				select {
-				case <-sCtx.Done():
-					return // session ended, don't restart
-				default:
-					log.Printf("agent-chat died unexpectedly: %v, restarting...", err)
-					newCmd := exec.Command(agentChatBin, "-no-stdio-mcp")
-					newCmd.Env = env
-					newCmd.Dir = workDir
-					newCmd.Stdout = os.Stdout
-					newCmd.Stderr = os.Stderr
-					if err := newCmd.Start(); err != nil {
-						log.Printf("failed to restart agent-chat: %v", err)
-						return
-					}
-					log.Printf("Restarted agent-chat sidecar (pid=%d) for session %s", newCmd.Process.Pid, sessUUID)
-					sessionsMu.RLock()
-					if sess, ok := sessions[sessUUID]; ok {
-						sess.mu.Lock()
-						sess.AgentChatCmd = newCmd
-						sess.mu.Unlock()
-					}
-					sessionsMu.RUnlock()
-					currentCmd = newCmd
-				}
-			}
-		}(sessionUUID, sessionCtx)
+		_, sessionCancel = context.WithCancel(serverCtx)
 	}
 
 	cmd := exec.Command(cmdName, cmdArgs...)

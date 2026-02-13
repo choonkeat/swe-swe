@@ -1016,6 +1016,10 @@ class TerminalUI extends HTMLElement {
                                     if (desktopBtn) desktopBtn.style.display = '';
                                     const mobileOpt = self.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
                                     if (mobileOpt) mobileOpt.style.display = '';
+                                    // Auto-activate chat tab in chat session mode
+                                    if (new URLSearchParams(location.search).get('session') === 'chat') {
+                                        self.switchLeftPanelTab('chat');
+                                    }
                                 } else {
                                     retry();
                                 }
