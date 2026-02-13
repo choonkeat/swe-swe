@@ -738,6 +738,11 @@ class TerminalUI extends HTMLElement {
         if (parentParam) {
             url += '&parent=' + encodeURIComponent(parentParam);
         }
+        // Forward session mode param from page URL to WebSocket URL (chat vs terminal)
+        const sessionParam = new URLSearchParams(location.search).get('session');
+        if (sessionParam) {
+            url += '&session=' + encodeURIComponent(sessionParam);
+        }
         // Forward current theme to server so shell env (COLORFGBG) matches
         const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
         url += '&theme=' + encodeURIComponent(currentTheme);
