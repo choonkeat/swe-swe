@@ -82,19 +82,19 @@
     pointer-events: none;
 }
 
-/* Touch devices: enable proxy, disable xterm touch */
+/* Touch devices: enable proxy, disable xterm touch — only when xterm is focused */
 @media (pointer: coarse) {
-    .touch-scroll-proxy {
+    .xterm-focused .touch-scroll-proxy {
         display: block;
         pointer-events: auto !important;
     }
-    .terminal-ui__terminal,
-    .terminal-ui__terminal *,
-    .xterm,
-    .xterm *,
-    .xterm-viewport,
-    .xterm-screen,
-    .xterm-helper-textarea {
+    .xterm-focused .terminal-ui__terminal,
+    .xterm-focused .terminal-ui__terminal *,
+    .xterm-focused .xterm,
+    .xterm-focused .xterm *,
+    .xterm-focused .xterm-viewport,
+    .xterm-focused .xterm-screen,
+    .xterm-focused .xterm-helper-textarea {
         pointer-events: none !important;
     }
 }
@@ -119,7 +119,8 @@
     pointer-events: auto;
 }
 
-.mobile-keyboard.visible {
+/* Only show mobile keyboard when xterm is the active panel */
+.xterm-focused .mobile-keyboard.visible {
     display: flex;
 }
 
@@ -1692,10 +1693,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     .terminal-ui.mobile-view-workspace .terminal-ui__iframe-pane {
         display: flex !important;
         flex: 1;
-    }
-
-    .terminal-ui.mobile-view-workspace .mobile-keyboard {
-        display: none !important;
     }
 
     .terminal-ui.mobile-view-terminal .terminal-ui__iframe-pane {

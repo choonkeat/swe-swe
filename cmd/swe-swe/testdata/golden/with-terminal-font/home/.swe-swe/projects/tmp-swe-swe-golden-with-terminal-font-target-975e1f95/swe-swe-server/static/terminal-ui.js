@@ -198,7 +198,7 @@ class TerminalUI extends HTMLElement {
 
     render() {
         this.innerHTML = `
-            <div class="terminal-ui">
+            <div class="terminal-ui xterm-focused">
                 <div class="settings-panel" hidden aria-modal="true" role="dialog" aria-labelledby="settings-panel-title">
                     <div class="settings-panel__backdrop"></div>
                     <div class="settings-panel__content">
@@ -1540,10 +1540,18 @@ class TerminalUI extends HTMLElement {
         if (tab === this.leftPanelTab) return;
         this.leftPanelTab = tab;
 
+        const terminalUi = this.querySelector('.terminal-ui');
         const terminalEl = this.querySelector('.terminal-ui__terminal');
         const chatEl = this.querySelector('.terminal-ui__agent-chat');
         const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
         if (!terminalEl || !chatEl) return;
+
+        // xterm-focused: gate mobile keyboard + touch-scroll-proxy (desktop tab switch)
+        if (tab === 'terminal') {
+            terminalUi.classList.add('xterm-focused');
+        } else {
+            terminalUi.classList.remove('xterm-focused');
+        }
 
         // Update left panel tab buttons
         const buttons = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
@@ -3037,6 +3045,14 @@ class TerminalUI extends HTMLElement {
     // Switch mobile navigation (unified dropdown: agent-terminal + workspace panels)
     switchMobileNav(value) {
         const terminalUi = this.querySelector('.terminal-ui');
+
+        // xterm-focused: only when agent-terminal is the active panel
+        // Gates mobile keyboard and touch-scroll-proxy to avoid blocking other panels
+        if (value === 'agent-terminal') {
+            terminalUi.classList.add('xterm-focused');
+        } else {
+            terminalUi.classList.remove('xterm-focused');
+        }
 
         if (value === 'agent-chat') {
             // Show left pane (chat), hide iframe
