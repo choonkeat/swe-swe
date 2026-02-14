@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "swe-swe-agent-chat": {
+      "command": "npx",
+      "args": ["-y", "@choonkeat/agent-chat"]
+    },
     "swe-swe-playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]

@@ -1,5 +1,12 @@
 {
   "mcpServers": {
+    "swe-swe-agent-chat": {
+      "args": [
+        "-y",
+        "@choonkeat/agent-chat"
+      ],
+      "command": "npx"
+    },
     "swe-swe-playwright": {
       "args": [
         "-y",
