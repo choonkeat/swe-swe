@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync
+.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump
 
 build: build-cli
 
@@ -137,6 +137,7 @@ build-cli:
 	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.darwin-amd64 ./cmd/swe-swe
 	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.darwin-arm64 ./cmd/swe-swe
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.windows-amd64.exe ./cmd/swe-swe
+	GOOS=windows GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.windows-arm64.exe ./cmd/swe-swe
 
 # Golden file generation for testing
 GOLDEN_TESTDATA := ./cmd/swe-swe/testdata/golden
@@ -255,3 +256,18 @@ _golden-certs-ssl-cert-file:
 	SSL_CERT_FILE=/tmp/swe-swe-test-certs/test.pem \
 	HOME=/tmp/swe-swe-golden/with-certs-ssl-cert-file/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/with-certs-ssl-cert-file/target \
 		2> $(GOLDEN_TESTDATA)/with-certs-ssl-cert-file/stderr.txt || true
+
+# npm distribution targets
+build-platforms:
+	bash scripts/build-platforms.sh
+
+publish-dry: build-platforms
+	DRY_RUN=true bash scripts/publish.sh
+
+publish: build-platforms
+	DRY_RUN=false bash scripts/publish.sh
+
+bump:
+	@if [ -z "$(NEW_VERSION)" ]; then echo "Usage: make bump NEW_VERSION=x.y.z"; exit 1; fi
+	@node -e 'var fs=require("fs"),p=JSON.parse(fs.readFileSync("package.json","utf8"));p.version="$(NEW_VERSION)";Object.keys(p.optionalDependencies||{}).forEach(function(d){p.optionalDependencies[d]="$(NEW_VERSION)"});fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
+	@echo "Updated package.json to $(NEW_VERSION)"

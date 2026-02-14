@@ -1,0 +1,25 @@
+{
+  "name": "swe-swe",
+  "version": "0.1.0",
+  "description": "Your agent: containerized with browser, terminal, and parallel sessions",
+  "type": "module",
+  "bin": {
+    "swe-swe": "bin/swe-swe.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/choonkeat/swe-swe.git"
+  },
+  "license": "MIT",
+  "optionalDependencies": {
+    "@choonkeat/swe-swe-linux-x64": "0.1.0",
+    "@choonkeat/swe-swe-linux-arm64": "0.1.0",
+    "@choonkeat/swe-swe-darwin-x64": "0.1.0",
+    "@choonkeat/swe-swe-darwin-arm64": "0.1.0",
+    "@choonkeat/swe-swe-win32-x64": "0.1.0",
+    "@choonkeat/swe-swe-win32-arm64": "0.1.0"
+  }
+}

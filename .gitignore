@@ -1,4 +1,6 @@
 dist/
+npm-platforms/
+node_modules/
 cmd/swe-swe/bin
 tmp/
 /.swe-swe/

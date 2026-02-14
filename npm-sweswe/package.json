@@ -1,0 +1,12 @@
+{
+  "name": "sweswe",
+  "version": "0.1.0",
+  "description": "Did you mean swe-swe? Install with: npx swe-swe",
+  "bin": {
+    "sweswe": "index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "license": "MIT"
+}
