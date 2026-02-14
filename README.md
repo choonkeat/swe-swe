@@ -15,7 +15,7 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
 
    Option B: run via npx (no install needed)
    ```bash
-   npx swe-swe init
+   npx -y swe-swe init
    alias swe-swe='npx -y swe-swe'  # so the rest of the commands below work
    ```
 
