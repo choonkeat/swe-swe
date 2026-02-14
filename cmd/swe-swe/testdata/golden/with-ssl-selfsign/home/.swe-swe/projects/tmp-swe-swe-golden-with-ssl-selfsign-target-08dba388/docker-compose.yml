@@ -580,8 +580,10 @@ services:
     networks:
       - swe-network
     environment:
-      # Pass through API keys (edit or set as environment variables)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Pass through API keys from host environment (set as env vars or in .env file)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Enterprise certificates (if configured during swe-swe init)
       - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
       - SSL_CERT_FILE=${SSL_CERT_FILE:-}
@@ -593,9 +595,6 @@ services:
       - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
       # Agent chat session port range (derived from preview ports + 1000)
       - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
-      # Add other credentials as needed:
-      # - GEMINI_API_KEY=${GEMINI_API_KEY}
-      # - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
   vscode-proxy:
