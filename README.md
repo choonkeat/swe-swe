@@ -6,10 +6,13 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
 
 ## Quick Start
 
-1. **Download the swe-swe binary** for your platform:
+1. **Install swe-swe**
    ```bash
-   # Build or download swe-swe binary
-   # Available binaries are in ./dist/swe-swe after building
+   # Option A: run directly via npx (no install needed)
+   npx swe-swe init
+
+   # Option B: install via curl
+   curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
    ```
 
 2. **Initialize a project**
