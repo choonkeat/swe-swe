@@ -22,12 +22,12 @@ export const LIGHT_XTERM_THEME = {
     white:          '#555555',
     brightBlack:    '#666666',
     brightRed:      '#cd3131',
-    brightGreen:    '#14CE14',
+    brightGreen:    '#107C10',
     brightYellow:   '#866b00',
     brightBlue:     '#0451a5',
     brightMagenta:  '#bc05bc',
     brightCyan:     '#0b7285',
-    brightWhite:    '#a5a5a5',
+    brightWhite:    '#717171',
     selectionBackground: '#add6ff',
 };
 
