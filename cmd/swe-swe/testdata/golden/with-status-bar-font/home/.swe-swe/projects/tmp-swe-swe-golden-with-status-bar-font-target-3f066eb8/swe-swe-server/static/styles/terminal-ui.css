@@ -1627,6 +1627,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
     flex: 1;
     min-height: 0;
     display: flex;
+    position: relative;
+    z-index: 11; /* above touch-scroll-proxy (z-index: 10) */
 }
 
 .terminal-ui__agent-chat-iframe {
