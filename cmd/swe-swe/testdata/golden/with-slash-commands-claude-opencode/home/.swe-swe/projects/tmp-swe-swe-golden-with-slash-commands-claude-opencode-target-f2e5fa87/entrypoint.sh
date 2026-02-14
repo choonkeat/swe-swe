@@ -63,6 +63,10 @@ mkdir -p /home/app/.config/opencode
 cat > /home/app/.config/opencode/opencode.json << 'EOF'
 {
   "mcp": {
+    "swe-swe-agent-chat": {
+      "type": "local",
+      "command": ["npx", "-y", "@choonkeat/agent-chat"]
+    },
     "swe-swe-playwright": {
       "type": "local",
       "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]

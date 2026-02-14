@@ -39,6 +39,12 @@ fi
 mkdir -p /home/app/.config/goose
 cat > /home/app/.config/goose/config.yaml << 'EOF'
 extensions:
+  swe-swe-agent-chat:
+    type: stdio
+    cmd: npx
+    args:
+      - "-y"
+      - "@choonkeat/agent-chat"
   swe-swe-playwright:
     type: stdio
     cmd: npx

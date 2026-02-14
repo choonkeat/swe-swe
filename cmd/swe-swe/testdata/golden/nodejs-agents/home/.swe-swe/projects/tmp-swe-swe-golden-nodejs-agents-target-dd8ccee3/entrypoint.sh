@@ -36,6 +36,10 @@ fi
 # Create Codex MCP configuration (TOML format)
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
+[mcp_servers.swe-swe-agent-chat]
+command = "npx"
+args = ["-y", "@choonkeat/agent-chat"]
+
 [mcp_servers.swe-swe-playwright]
 command = "npx"
 args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
@@ -56,6 +60,10 @@ mkdir -p /home/app/.gemini
 cat > /home/app/.gemini/settings.json << 'EOF'
 {
   "mcpServers": {
+    "swe-swe-agent-chat": {
+      "command": "npx",
+      "args": ["-y", "@choonkeat/agent-chat"]
+    },
     "swe-swe-playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]

@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "swe-swe-agent-chat": {
+      "command": "npx",
+      "args": ["-y", "@choonkeat/agent-chat"]
+    },
     "swe-swe-playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
@@ -8,12 +12,9 @@
       "command": "swe-swe-server",
       "args": ["--mcp"]
     },
-    "whiteboard": {
+    "swe-swe-whiteboard": {
       "command": "npx",
       "args": ["-y", "@choonkeat/agent-whiteboard"]
-    },
-    "agent-chat": {
-      "command": "/repos/agent-chat/workspace/dist/agent-chat"
     }
   }
 }
