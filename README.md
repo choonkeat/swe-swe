@@ -7,11 +7,14 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
 ## Quick Start
 
 1. **Install swe-swe**
-   ```bash
-   # Option A: install via curl (recommended)
-   curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
 
-   # Option B: run via npx (no install needed)
+   Option A: install via curl (recommended)
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+   ```
+
+   Option B: run via npx (no install needed)
+   ```bash
    npx swe-swe init
    alias swe-swe='npx -y swe-swe'  # so the rest of the commands below work
    ```
