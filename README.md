@@ -73,7 +73,6 @@ Initializes a new swe-swe project at the specified path. Creates metadata direct
 - `--email EMAIL`: Email for Let's Encrypt certificate expiry notifications (required with letsencrypt)
 - `--copy-home-paths PATHS`: Comma-separated paths relative to `$HOME` to copy into the container's home directory (e.g., `.gitconfig,.ssh/config`)
 - `--preview-ports RANGE`: App preview port range (default: `3000-3019`). Each session gets its own preview port from this range.
-- `--status-bar-color COLOR`: Status bar background color (default: `#007acc`). Use `--status-bar-color=list` to see available preset colors.
 - `--terminal-font-size SIZE`: Terminal font size in pixels (default: `14`)
 - `--terminal-font-family FONT`: Terminal font family (default: `Menlo, Monaco, "Courier New", monospace`)
 - `--status-bar-font-size SIZE`: Status bar font size in pixels (default: `12`)
