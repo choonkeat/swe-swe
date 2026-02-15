@@ -19,7 +19,9 @@
     "swe-swe-preview": {
       "args": [
         "--tool-prefix",
-        "preview"
+        "preview",
+        "--theme-cookie",
+        "swe-swe-theme"
       ],
       "command": "/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy"
     },

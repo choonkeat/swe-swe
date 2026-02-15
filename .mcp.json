@@ -1,20 +1,31 @@
 {
   "mcpServers": {
     "swe-swe-agent-chat": {
-      "command": "npx",
-      "args": ["-y", "@choonkeat/agent-chat"]
+      "args": [
+        "-y",
+        "@choonkeat/agent-chat"
+      ],
+      "command": "npx"
     },
     "swe-swe-playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--cdp-endpoint",
+        "http://chrome:9223"
+      ],
+      "command": "npx"
     },
     "swe-swe-preview": {
-      "command": "swe-swe-server",
-      "args": ["--mcp"]
+      "command": "/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy",
+      "args": ["--tool-prefix", "preview", "--theme-cookie", "swe-swe-theme"]
     },
     "swe-swe-whiteboard": {
-      "command": "npx",
-      "args": ["-y", "@choonkeat/agent-whiteboard"]
+      "args": [
+        "-y",
+        "@choonkeat/agent-whiteboard"
+      ],
+      "command": "npx"
     }
   }
 }
