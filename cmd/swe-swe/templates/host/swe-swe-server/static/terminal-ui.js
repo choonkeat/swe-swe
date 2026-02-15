@@ -360,9 +360,9 @@ class TerminalUI extends HTMLElement {
                             </div>
                             <div class="terminal-ui__iframe-container">
                                 <div class="terminal-ui__iframe-placeholder">
-                                    Loading...
-                                    <div class="terminal-ui__iframe-placeholder-hint">
-                                        If you have issues, check the URL or try refreshing.
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to preview...</span>
                                     </div>
                                 </div>
                                 <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
@@ -3264,6 +3264,23 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    /**
+     * Hide the preview placeholder (called when debug WS confirms the page loaded).
+     */
+    _onPreviewReady() {
+        this._previewWaiting = false;
+        const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+        if (placeholder) placeholder.classList.add('hidden');
+    }
+
+    /**
+     * Reload the preview iframe (used when proxy comes up after being down).
+     */
+    _reloadPreviewIframe() {
+        const iframe = this.querySelector('.terminal-ui__iframe');
+        if (iframe && iframe.src) iframe.src = iframe.src;
+    }
+
     setIframeUrl(url) {
         // Validate URL
         try {
@@ -3290,16 +3307,7 @@ class TerminalUI extends HTMLElement {
             }
 
             iframe.onload = () => {
-                if (placeholder) {
-                    placeholder.classList.add('hidden');
-                }
-            };
-
-            iframe.onerror = () => {
-                if (placeholder) {
-                    placeholder.textContent = 'Failed to load: ' + url;
-                    placeholder.classList.remove('hidden');
-                }
+                if (placeholder) placeholder.classList.add('hidden');
             };
 
             iframe.src = url;
@@ -3365,11 +3373,10 @@ class TerminalUI extends HTMLElement {
         }
 
         if (iframe) {
+            // Show placeholder — it stays visible until the debug WebSocket
+            // confirms the proxy and shell page are alive (via init/urlchange).
             if (placeholder) placeholder.classList.remove('hidden');
-            iframe.onload = () => { if (placeholder) placeholder.classList.add('hidden'); };
-            iframe.onerror = () => {
-                if (placeholder) { placeholder.textContent = 'Failed to load'; placeholder.classList.remove('hidden'); }
-            };
+            this._previewWaiting = true;
             iframe.src = iframeSrc;
         }
     }
@@ -3406,6 +3413,10 @@ class TerminalUI extends HTMLElement {
             this._debugWs.close();
             this._debugWs = null;
         }
+        if (this._debugWsReconnectTimer) {
+            clearTimeout(this._debugWsReconnectTimer);
+            this._debugWsReconnectTimer = null;
+        }
 
         const baseUrl = this.getPreviewBaseUrl();
         if (!baseUrl) return;
@@ -3414,13 +3425,32 @@ class TerminalUI extends HTMLElement {
         const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
         const wsUrl = `${wsProtocol}//${window.location.hostname}:${previewPort}/__swe-swe-debug__/ui`;
 
-        const ws = new WebSocket(wsUrl);
+        let ws;
+        try {
+            ws = new WebSocket(wsUrl);
+        } catch {
+            this._scheduleDebugWsReconnect();
+            return;
+        }
         this._debugWs = ws;
+
+        ws.onopen = () => {
+            this._debugWsAttempts = 0;
+            // Proxy is up — if we were waiting, reload the iframe
+            // (it may still show a stale 502 page)
+            if (this._previewWaiting) {
+                this._reloadPreviewIframe();
+            }
+        };
 
         ws.onmessage = (e) => {
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.t === 'urlchange' || msg.t === 'init') {
+                    // Proxy and shell page confirmed alive — hide placeholder
+                    if (this._previewWaiting) {
+                        this._onPreviewReady();
+                    }
                     const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
                     if (urlInput && this.activeTab === 'preview') {
                         const displayUrl = this.reverseMapProxyUrl(msg.url);
@@ -3452,7 +3482,20 @@ class TerminalUI extends HTMLElement {
             const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
             if (backBtn) backBtn.disabled = true;
             if (forwardBtn) forwardBtn.disabled = true;
+            // Auto-reconnect — the proxy may not be up yet or may have restarted
+            this._scheduleDebugWsReconnect();
         };
+    }
+
+    _scheduleDebugWsReconnect() {
+        if (!this.previewPort) return;
+        this._debugWsAttempts = (this._debugWsAttempts || 0) + 1;
+        // Backoff: 1s, 2s, 4s, ... up to 10s
+        const delay = Math.min(1000 * Math.pow(2, this._debugWsAttempts - 1), 10000);
+        this._debugWsReconnectTimer = setTimeout(() => {
+            this._debugWsReconnectTimer = null;
+            this.connectDebugWebSocket();
+        }, delay);
     }
 }
 

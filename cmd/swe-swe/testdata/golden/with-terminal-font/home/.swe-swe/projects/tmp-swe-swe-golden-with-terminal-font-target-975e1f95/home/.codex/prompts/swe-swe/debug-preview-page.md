@@ -4,51 +4,24 @@ description: Inspect App Preview page content — use instead of browser tools f
 
 # Debug with App Preview
 
-Use swe-swe's debug channel to receive console logs, errors, and network requests from the user's browser in real-time. This is more effective than the CDP browser because you see exactly what the user sees.
+Use the `swe-swe-preview` MCP tools to inspect the App Preview panel and receive console logs, errors, and network requests from the user's browser. This is more effective than the CDP browser because you see exactly what the user sees.
 
 ## Prerequisites
 
 - User must have the App Preview panel open (right side of terminal UI)
 - App must be running on `$PORT` (check with `echo $PORT`)
 
-## Commands
-
-### Listen for Debug Messages
-
-Run this to receive real-time debug output:
-
-```bash
-swe-swe-server --debug-listen
-```
-
-Output is JSON lines:
-```json
-{"t":"init","url":"http://...","ts":...}
-{"t":"console","m":"log","args":["Hello!",{"data":123}],"ts":...}
-{"t":"console","m":"warn","args":["Warning message"],"ts":...}
-{"t":"console","m":"error","args":["Error occurred"],"ts":...}
-{"t":"error","msg":"Uncaught TypeError: ...","stack":"...","ts":...}
-{"t":"fetch","url":"/api/users","method":"GET","status":200,"ms":45,"ts":...}
-{"t":"xhr","url":"/api/data","method":"POST","status":500,"ms":120,"ts":...}
-```
-
-You will also see navigation events:
-```json
-{"t":"urlchange","url":"http://localhost:3000/about","ts":...}
-{"t":"navstate","canGoBack":true,"canGoForward":false}
-```
-
-Press Ctrl+C to stop listening.
+## MCP Tools
 
 ### Query DOM Elements
 
-Query a specific element by CSS selector:
+Use `browser_debug_preview` to query a specific element by CSS selector:
 
-```bash
-swe-swe-server --debug-query "h1"
-swe-swe-server --debug-query ".error-message"
-swe-swe-server --debug-query "#submit-btn"
-swe-swe-server --debug-query "[data-testid='login-form']"
+```
+mcp__swe-swe-preview__browser_debug_preview(selector: "h1")
+mcp__swe-swe-preview__browser_debug_preview(selector: ".error-message")
+mcp__swe-swe-preview__browser_debug_preview(selector: "#submit-btn")
+mcp__swe-swe-preview__browser_debug_preview(selector: "[data-testid='login-form']")
 ```
 
 Response:
@@ -61,12 +34,36 @@ If not found:
 {"t":"queryResult","found":false}
 ```
 
+### Listen for Console & Network Activity
+
+Use `browser_debug_preview_listen` to capture console logs, errors, and network requests for a specified duration:
+
+```
+mcp__swe-swe-preview__browser_debug_preview_listen(duration_seconds: 5)
+```
+
+Returns JSON messages collected during the listening period:
+```json
+{"t":"console","m":"log","args":["Hello!",{"data":123}],"ts":...}
+{"t":"console","m":"warn","args":["Warning message"],"ts":...}
+{"t":"console","m":"error","args":["Error occurred"],"ts":...}
+{"t":"error","msg":"Uncaught TypeError: ...","stack":"...","ts":...}
+{"t":"fetch","url":"/api/users","method":"GET","status":200,"ms":45,"ts":...}
+{"t":"xhr","url":"/api/data","method":"POST","status":500,"ms":120,"ts":...}
+```
+
+Navigation events:
+```json
+{"t":"urlchange","url":"http://localhost:3000/about","ts":...}
+{"t":"navstate","canGoBack":true,"canGoForward":false}
+```
+
 ## Workflow
 
 1. **Start your app** on `$PORT` (e.g., `python3 -m http.server "$PORT"`)
 2. **Ask the user** to open the Preview tab in the right panel
-3. **Run `--debug-listen`** to monitor console output, errors, and network requests
-4. **Use `--debug-query`** to inspect specific DOM elements
+3. **Use `browser_debug_preview`** to query DOM elements and see what's on the page
+4. **Use `browser_debug_preview_listen`** to monitor console output, errors, and network requests
 5. **Fix issues** based on what you observe, then ask the user to reload
 
 ## Message Types
@@ -85,41 +82,12 @@ If not found:
 
 ## Tips
 
-- The debug channel captures ALL console output, including from third-party libraries
-- Network requests show timing (`ms` field) - useful for performance debugging
+- Prefer `browser_debug_preview` (DOM query) for quick page inspection — it returns immediately
+- Use `browser_debug_preview_listen` when you need to capture activity over time (e.g., trigger an action then see what happens)
+- Start with short durations (2-5 seconds) for `browser_debug_preview_listen`
 - DOM queries return the FIRST matching element only
 - The `visible` field in query results indicates if element is in viewport
-- `urlchange` events fire on SPA navigations, so you can track which page the user is on
-- Stack traces in errors may be minified - check source maps if needed
-
-## Limitations
-
-- Only works for the App Preview (your session's `$PORT`)
-- User must have Preview panel open for messages to flow
-- No request/response body capture (only metadata)
-- Source maps not automatically resolved
-
-## Example Session
-
-```bash
-# Terminal 1: Start your app
-python3 -m http.server "$PORT"
-
-# Terminal 2: Listen for debug messages
-swe-swe-server --debug-listen
-
-# User opens Preview panel, you see:
-# {"t":"init","url":"http://localhost:3000/","ts":1706012345678}
-# {"t":"navstate","canGoBack":false,"canGoForward":false}
-
-# User clicks a link, you see:
-# {"t":"urlchange","url":"http://localhost:3000/about","ts":1706012345800}
-# {"t":"navstate","canGoBack":true,"canGoForward":false}
-
-# Query for an error message element
-swe-swe-server --debug-query ".error-toast"
-# {"t":"queryResult","found":true,"text":"Invalid email address","visible":true,...}
-```
+- Network requests show timing (`ms` field) — useful for performance debugging
 
 ## See Also
 

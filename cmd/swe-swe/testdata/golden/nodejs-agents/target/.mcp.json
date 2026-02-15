@@ -17,6 +17,10 @@
       "command": "npx"
     },
     "swe-swe-preview": {
+      "args": [
+        "--tool-prefix",
+        "preview"
+      ],
       "command": "/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy"
     },
     "swe-swe-whiteboard": {

@@ -359,6 +359,11 @@ terminal-ui.embedded-in-iframe .mobile-only {
     to { transform: rotate(360deg); }
 }
 
+@keyframes terminal-ui-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
 .terminal-ui__upload-text {
     text-align: center;
 }
@@ -1126,17 +1131,31 @@ terminal-ui.embedded-in-iframe .mobile-only {
     font-size: 14px;
     text-align: center;
     padding: 20px;
+    z-index: 1;
 }
 
 .terminal-ui__iframe-placeholder.hidden {
     display: none;
 }
 
-.terminal-ui__iframe-placeholder-hint {
-    margin-top: 12px;
-    font-size: 12px;
-    color: #666;
-    max-width: 300px;
+.terminal-ui__iframe-placeholder-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.terminal-ui__iframe-placeholder-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f5a623;
+    animation: terminal-ui-pulse 1s infinite;
+}
+
+.terminal-ui__iframe-placeholder-text {
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
 /* Responsive: on narrow screens, hide iframe pane when it's open */
