@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -391,6 +392,10 @@ func upsertMcpServers(existing, template []byte) ([]byte, error) {
 		return append(merged, '\n'), nil
 	}
 
+	// Snapshot before merge for comparison
+	var beforeDoc map[string]any
+	json.Unmarshal(existing, &beforeDoc) // already validated above
+
 	// Ensure existingDoc has mcpServers map
 	existingServers, _ := existingDoc["mcpServers"].(map[string]any)
 	if existingServers == nil {
@@ -403,6 +408,11 @@ func upsertMcpServers(existing, template []byte) ([]byte, error) {
 		for name, cfg := range tmplServers {
 			existingServers[name] = cfg
 		}
+	}
+
+	// If nothing changed, return original bytes to preserve formatting
+	if reflect.DeepEqual(existingDoc, beforeDoc) {
+		return existing, nil
 	}
 
 	merged, err := json.MarshalIndent(existingDoc, "", "  ")
