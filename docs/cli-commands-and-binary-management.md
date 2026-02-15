@@ -1,6 +1,6 @@
 # CLI Commands and Build Architecture
 
-> **Note**: This document provides detailed technical information about the CLI and build system. For a quick overview of commands and options, see the [README](../README.md). This document expands on those basics with architecture details and troubleshooting guidance.
+> **Note**: For a quick-start overview, see the [README](../README.md). For configuration options (flags, environment variables, config files), see [configuration.md](configuration.md).
 
 This document describes the swe-swe CLI commands and how the swe-swe-server is built and deployed.
 
@@ -105,27 +105,7 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 5. Extracts swe-swe-server and auth service source code from embedded assets
 6. Handles enterprise certificates if `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, or `NODE_EXTRA_CA_CERTS_BUNDLE` environment variables are set
 
-**Options:**
-| Flag | Description |
-|------|-------------|
-| `--project-directory PATH` | Project directory (defaults to current directory) |
-| `--previous-init-flags=reuse` | Reapply saved configuration from previous init (cannot be combined with other flags) |
-| `--previous-init-flags=ignore` | Ignore saved configuration, use provided flags for fresh init |
-| `--agents AGENTS` | Comma-separated list of agents to include (default: all) |
-| `--exclude-agents AGENTS` | Comma-separated list of agents to exclude |
-| `--apt-get-install PACKAGES` | Additional apt packages to install (comma or space separated) |
-| `--npm-install PACKAGES` | Additional npm packages to install globally (comma or space separated) |
-| `--with-docker` | Mount Docker socket to allow container to run Docker commands on host |
-| `--with-slash-commands REPOS` | Git repos to clone as slash commands (space-separated, format: `[alias@]<git-url>`) |
-| `--ssl MODE` | SSL/TLS mode: `no` (default), `selfsign` (HTTPS with self-signed cert), `selfsign@<host>` (for remote access), `letsencrypt@domain`, or `letsencrypt-staging@domain` |
-| `--email EMAIL` | Email for Let's Encrypt certificate expiry notifications (required with letsencrypt) |
-| `--copy-home-paths PATHS` | Comma-separated paths relative to `$HOME` to copy into container home (e.g., `.gitconfig,.ssh/config`) |
-| `--preview-ports RANGE` | App preview port range (default: `3000-3019`). Each session gets its own preview port. |
-| `--status-bar-color COLOR` | Status bar background color (default: `#007acc`). Use `list` to see preset colors. |
-| `--terminal-font-size SIZE` | Terminal font size in pixels (default: `14`) |
-| `--terminal-font-family FONT` | Terminal font family (default: `Menlo, Monaco, "Courier New", monospace`) |
-| `--status-bar-font-size SIZE` | Status bar font size in pixels (default: `12`) |
-| `--status-bar-font-family FONT` | Status bar font family (default: system sans-serif) |
+**Options:** See [configuration.md](configuration.md) for the full list of `--flags` and environment variables.
 
 **Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
 

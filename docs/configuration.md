@@ -1,5 +1,7 @@
 # Configuration Reference
 
+> For full command reference, examples, and build architecture, see [cli-commands-and-binary-management.md](cli-commands-and-binary-management.md).
+
 ## CLI Flags (`swe-swe init`)
 
 ```
@@ -14,11 +16,14 @@ Init Options:
   --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands for Claude/Codex/OpenCode
                                          Format: [alias@]<git-url> (space-separated)
-  --ssl MODE                             SSL mode: 'no' (default), 'selfsign', or 'selfsign@<host>'
-                                         Use selfsign@<ip-or-hostname> for remote access
+  --ssl MODE                             SSL mode: 'no' (default), 'selfsign', 'selfsign@<host>',
+                                         'letsencrypt@<domain>', or 'letsencrypt-staging@<domain>'
+  --email EMAIL                          Email for Let's Encrypt certificate notifications (required with letsencrypt)
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
   --preview-ports RANGE                  App preview port range (default: 3000-3019)
+  --repos-dir DIR                        Host directory to mount at /repos for external repo clones
+                                         (default: .swe-swe/repos in project)
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
   --terminal-font-family FONT            Terminal font family (default: Menlo, Monaco, "Courier New", monospace)
   --status-bar-font-size SIZE            Status bar font size in pixels (default: 12)
@@ -38,6 +43,7 @@ Init Options:
 | `GEMINI_API_KEY` | Google Gemini API key (uncomment in docker-compose.yml) | — |
 | `NODE_EXTRA_CA_CERTS` | Enterprise CA certificate path (auto-copied during init) | — |
 | `SSL_CERT_FILE` | SSL certificate file path (auto-copied during init) | — |
+| `NODE_EXTRA_CA_CERTS_BUNDLE` | Bundle of CA certificates (auto-copied during init) | — |
 
 ### Proxy command
 
@@ -51,12 +57,17 @@ These environment variables tune `swe-swe proxy` behavior:
 
 ## Config Files
 
-After `swe-swe init`, the following files are generated in your project directory:
+After `swe-swe init`, editable files are generated in `$HOME/.swe-swe/projects/{sanitized-path}/`:
 
 | File | Purpose |
 |------|---------|
 | `docker-compose.yml` | Service definitions — edit to uncomment API keys, add volumes, etc. |
 | `Dockerfile` | Container image — edit to add custom build steps |
+
+And in your project directory:
+
+| File | Purpose |
+|------|---------|
 | `.swe-swe/` | Internal directory for certs, proxy scripts, and uploads |
 | `swe-swe/env` | Environment file sourced inside the container |
 
