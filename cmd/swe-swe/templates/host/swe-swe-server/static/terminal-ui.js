@@ -3004,6 +3004,7 @@ class TerminalUI extends HTMLElement {
 
         // Stop iframe content to save memory
         if (iframe) {
+            iframe.onload = null;
             iframe.src = 'about:blank';
         }
 
@@ -3377,6 +3378,9 @@ class TerminalUI extends HTMLElement {
             // confirms the proxy and shell page are alive (via init/urlchange).
             if (placeholder) placeholder.classList.remove('hidden');
             this._previewWaiting = true;
+            // Clear any stale onload handler from setIframeUrl() — we rely on
+            // the debug WebSocket (not iframe load) to dismiss the placeholder.
+            iframe.onload = null;
             iframe.src = iframeSrc;
         }
     }
@@ -3436,9 +3440,10 @@ class TerminalUI extends HTMLElement {
 
         ws.onopen = () => {
             this._debugWsAttempts = 0;
-            // Proxy is up — if we were waiting, reload the iframe
-            // (it may still show a stale 502 page)
-            if (this._previewWaiting) {
+            // Proxy is up — if we were waiting on the preview tab, reload the iframe
+            // (it may still show a stale 502 page).
+            // Guard on activeTab to avoid reloading a Terminal/Code iframe.
+            if (this._previewWaiting && this.activeTab === 'preview') {
                 this._reloadPreviewIframe();
             }
         };
@@ -3448,7 +3453,7 @@ class TerminalUI extends HTMLElement {
                 const msg = JSON.parse(e.data);
                 if (msg.t === 'urlchange' || msg.t === 'init') {
                     // Proxy and shell page confirmed alive — hide placeholder
-                    if (this._previewWaiting) {
+                    if (this._previewWaiting && this.activeTab === 'preview') {
                         this._onPreviewReady();
                     }
                     const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
