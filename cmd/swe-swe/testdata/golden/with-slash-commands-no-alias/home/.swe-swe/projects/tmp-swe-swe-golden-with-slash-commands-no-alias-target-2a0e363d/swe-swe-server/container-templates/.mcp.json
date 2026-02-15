@@ -9,8 +9,7 @@
       "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
     },
     "swe-swe-preview": {
-      "command": "swe-swe-server",
-      "args": ["--mcp"]
+      "command": "/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy"
     },
     "swe-swe-whiteboard": {
       "command": "npx",

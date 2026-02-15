@@ -17,10 +17,7 @@
       "command": "npx"
     },
     "swe-swe-preview": {
-      "args": [
-        "--mcp"
-      ],
-      "command": "swe-swe-server"
+      "command": "/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy"
     },
     "swe-swe-whiteboard": {
       "args": [

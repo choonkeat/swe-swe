@@ -366,11 +366,12 @@ func detectYoloMode(cmd string) bool {
 }
 
 func buildSessionEnv(previewPort, agentChatPort int, theme, workDir string) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT")
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "PROXY_PORT")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
 		fmt.Sprintf("AGENT_CHAT_PORT=%d", agentChatPort),
+		fmt.Sprintf("PROXY_PORT=%d", previewProxyPort(previewPort)),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
@@ -793,11 +794,9 @@ func (s *Session) Close() {
 		s.PTY.Close()
 	}
 
-	previewPort := s.PreviewPort
 	acPort := s.AgentChatPort
 	s.mu.Unlock()
 
-	releasePreviewProxyServer(previewPort)
 	releaseAgentChatProxyServer(acPort)
 	return
 }
@@ -4976,13 +4975,11 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 	sessions[sessionUUID] = sess
 
+	// Preview proxy now runs inside the container via agent-reverse-proxy
+	if previewListener != nil {
+		previewListener.Close()
+	}
 	if !previewProxyDisabled {
-		if err := acquirePreviewProxyServer(previewPort, previewListener); err != nil {
-			if previewListener != nil {
-				previewListener.Close()
-			}
-			return nil, false, err
-		}
 		if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
 			if acListener != nil {
 				acListener.Close()
@@ -4990,9 +4987,6 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			return nil, false, err
 		}
 	} else {
-		if previewListener != nil {
-			previewListener.Close()
-		}
 		if acListener != nil {
 			acListener.Close()
 		}
