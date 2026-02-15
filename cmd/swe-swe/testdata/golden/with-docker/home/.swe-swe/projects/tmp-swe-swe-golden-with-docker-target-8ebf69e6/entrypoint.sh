@@ -151,6 +151,14 @@ extensions:
 EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"
+# Wrapper: auto-run 'goose configure' if no provider is configured
+cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
+#!/bin/bash
+GOOSE=/usr/local/bin/goose
+$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
+GOOSE_WRAPPER
+chmod +x /home/app/.swe-swe/bin/goose
+echo -e "${GREEN}✓ Created Goose wrapper script${NC}"
 
 # Create open/xdg-open shims that route URLs to the Preview pane
 mkdir -p /home/app/.swe-swe/bin

@@ -55,6 +55,7 @@ RUN npm install -g @playwright/mcp
 
 
 # Install Goose (AI pair programmer from Block)
+RUN apt-get update && apt-get install -y libxcb1 && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | GOOSE_BIN_DIR=/usr/local/bin CONFIGURE=false bash
 
 # Install OpenCode CLI (https://github.com/anomalyco/opencode)
