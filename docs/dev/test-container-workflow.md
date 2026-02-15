@@ -36,7 +36,7 @@ It uses:
 
 Scripts automatically acquire the first available slot. If all slots are busy, the script waits.
 
-**Preview ports:** Test containers use `--preview-ports=3100-3119` (external ports 53100-53119) to avoid conflicts with the production stack's default 53000-53019 range.
+**Preview ports:** Test containers use `--preview-ports=3100-3119` (external ports 23100-23119) to avoid conflicts with the production stack's default 23000-23019 range.
 
 ## Docker-in-Docker Path Translation
 

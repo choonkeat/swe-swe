@@ -4,7 +4,7 @@ The terminal UI has a split-pane layout with your app preview on the right side.
 
 ## How It Works
 
-The preview panel automatically connects to the per-session preview proxy on port `5${PORT}` (e.g., if `PORT=3007`, preview connects to `53007`).
+The preview panel automatically connects to the per-session preview proxy on port `20000+PORT` (e.g., if `PORT=3007`, preview connects to `23007`).
 
 Inside the container, start your app on the assigned `PORT`:
 
@@ -37,10 +37,10 @@ The URL bar updates live as the user navigates (including SPA pushState/replaceS
 
 ## Port Configuration
 
-Each session gets its own `PORT` (default range 3000-3019). The preview port is computed as `5${PORT}`:
-- PORT=3000 → Preview port 53000
-- PORT=3007 → Preview port 53007
-- PORT=3019 → Preview port 53019
+Each session gets its own `PORT` (default range 3000-3019). The preview port is computed as `20000+PORT`:
+- PORT=3000 → Preview port 23000
+- PORT=3007 → Preview port 23007
+- PORT=3019 → Preview port 23019
 
 ## Debug Channel
 

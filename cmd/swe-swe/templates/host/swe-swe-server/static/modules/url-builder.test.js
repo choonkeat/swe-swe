@@ -124,8 +124,8 @@ test('buildShellUrl handles https base URL', () => {
 // buildPreviewUrl tests
 test('buildPreviewUrl uses explicit preview port when provided', () => {
     assert.strictEqual(
-        buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007),
-        'https://example.com:53007'
+        buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007),
+        'https://example.com:23007'
     );
 });
 
@@ -160,43 +160,43 @@ test('buildPreviewUrl handles localhost with custom port', () => {
 // buildProxyUrl tests
 test('buildProxyUrl with no targetURL returns base with slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, null),
-        'https://example.com:53007/'
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, null),
+        'https://example.com:23007/'
     );
 });
 
 test('buildProxyUrl with empty targetURL returns base with slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, ''),
-        'https://example.com:53007/'
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, ''),
+        'https://example.com:23007/'
     );
 });
 
 test('buildProxyUrl extracts path from full URL', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, 'http://localhost:3000/api/health'),
-        'https://example.com:53007/api/health'
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, 'http://localhost:3000/api/health'),
+        'https://example.com:23007/api/health'
     );
 });
 
 test('buildProxyUrl preserves query string and hash from target', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'host.com', port: '8080' }, 53007, 'http://localhost:3000/page?q=1#section'),
-        'https://host.com:53007/page?q=1#section'
+        buildProxyUrl({ protocol: 'https:', hostname: 'host.com', port: '8080' }, 23007, 'http://localhost:3000/page?q=1#section'),
+        'https://host.com:23007/page?q=1#section'
     );
 });
 
 test('buildProxyUrl handles bare path starting with slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, '/some/path'),
-        'https://example.com:53007/some/path'
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, '/some/path'),
+        'https://example.com:23007/some/path'
     );
 });
 
 test('buildProxyUrl handles bare path without leading slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 53007, 'some/path'),
-        'https://example.com:53007/some/path'
+        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, 'some/path'),
+        'https://example.com:23007/some/path'
     );
 });
 

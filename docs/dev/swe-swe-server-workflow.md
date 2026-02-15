@@ -37,12 +37,12 @@ make stop
 | Channel | URL | Description |
 |---------|-----|-------------|
 | MCP Browser | `http://swe-swe:3000` | Direct access from Chrome container |
-| App Preview | External port `5${PORT}` | Via per-session preview proxy (e.g., 53001) |
+| App Preview | External port `20000+PORT` | Via per-session preview proxy (e.g., 23001) |
 
 Both work because:
 - The dev container and Chrome container share the same Docker network (`swe-network`)
 - Chrome can resolve `swe-swe` hostname to reach our container
-- App Preview routes through the per-session preview proxy (`5${PORT}` → `PORT`)
+- App Preview routes through the per-session preview proxy (`20000+PORT` → `PORT`)
 
 ## Development Cycle
 

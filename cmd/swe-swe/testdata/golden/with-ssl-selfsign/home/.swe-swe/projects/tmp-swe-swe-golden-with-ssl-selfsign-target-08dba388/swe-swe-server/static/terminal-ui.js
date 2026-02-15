@@ -2806,7 +2806,7 @@ class TerminalUI extends HTMLElement {
 
     // === Split-Pane UI Methods ===
     getPreviewBaseUrl() {
-        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
         return buildPreviewUrl(window.location, previewPort);
     }
 
@@ -3338,7 +3338,7 @@ class TerminalUI extends HTMLElement {
         }
 
         // Localhost URLs: route through the proxy shell page
-        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
         const base = buildPreviewUrl(window.location, previewPort);
         let path;
         if (iframePath !== null) {
@@ -3386,7 +3386,7 @@ class TerminalUI extends HTMLElement {
 
     /**
      * Reverse-map a proxy URL to the logical localhost:PORT URL.
-     * e.g., https://host:53007/dashboard?tab=1#s → http://localhost:3007/dashboard?tab=1#s
+     * e.g., https://host:23007/dashboard?tab=1#s → http://localhost:3007/dashboard?tab=1#s
      */
     reverseMapProxyUrl(proxyUrl) {
         if (!this.previewPort) return proxyUrl;
@@ -3411,7 +3411,7 @@ class TerminalUI extends HTMLElement {
         if (!baseUrl) return;
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const previewPort = this.previewPort ? `5${this.previewPort}` : null;
+        const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
         const wsUrl = `${wsProtocol}//${window.location.hostname}:${previewPort}/__swe-swe-debug__/ui`;
 
         const ws = new WebSocket(wsUrl);
