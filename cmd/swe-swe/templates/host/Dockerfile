@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y \
     git \
     build-essential \
     ca-certificates \
+    file \
     jq \
     less \
     lsof \

@@ -5,6 +5,12 @@
  */
 
 /**
+ * Offset added to container ports to derive their host-side proxy ports.
+ * Must match the Go constant in main.go (previewProxyPort / agentChatProxyPort).
+ */
+export const PROXY_PORT_OFFSET = 20000;
+
+/**
  * Get the base URL from location object.
  * @param {{protocol: string, hostname: string, port: string}} location - Location-like object
  * @returns {string} Base URL (e.g., "https://example.com" or "http://localhost:8080")
@@ -49,7 +55,7 @@ export function buildPreviewUrl(location, previewPort) {
     if (previewPort) {
         return `${protocol}//${hostname}:${previewPort}`;
     }
-    const fallbackPort = '2' + (port || '80');
+    const fallbackPort = PROXY_PORT_OFFSET + Number(port || 80);
     return `${protocol}//${hostname}:${fallbackPort}`;
 }
 
@@ -80,7 +86,7 @@ export function buildProxyUrl(location, previewPort, targetURL) {
 export function buildAgentChatUrl(location, agentChatPort) {
     const { protocol, hostname } = location;
     if (agentChatPort) {
-        return `${protocol}//${hostname}:${'2' + agentChatPort}`;
+        return `${protocol}//${hostname}:${PROXY_PORT_OFFSET + Number(agentChatPort)}`;
     }
     return null;
 }

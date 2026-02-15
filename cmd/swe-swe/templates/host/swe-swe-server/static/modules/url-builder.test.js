@@ -129,7 +129,7 @@ test('buildPreviewUrl uses explicit preview port when provided', () => {
     );
 });
 
-test('buildPreviewUrl prefixes port with 2', () => {
+test('buildPreviewUrl adds PROXY_PORT_OFFSET to location port', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }),
         'https://example.com:28080'
@@ -139,14 +139,14 @@ test('buildPreviewUrl prefixes port with 2', () => {
 test('buildPreviewUrl defaults to port 80 when empty', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '' }),
-        'http://localhost:280'
+        'http://localhost:20080'
     );
 });
 
 test('buildPreviewUrl handles 443 port', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'secure.com', port: '443' }),
-        'https://secure.com:2443'
+        'https://secure.com:20443'
     );
 });
 

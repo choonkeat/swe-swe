@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString, PROXY_PORT_OFFSET } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -1002,7 +1002,7 @@ class TerminalUI extends HTMLElement {
                         // but they are sent once the iframe has an established cross-origin context.
                         const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                         if (chatIframe && chatIframe.src === 'about:blank' && this.previewPort) {
-                            chatIframe.src = buildPreviewUrl(window.location, '5' + this.previewPort) + '/';
+                            chatIframe.src = buildPreviewUrl(window.location, PROXY_PORT_OFFSET + Number(this.previewPort)) + '/';
                         }
                         const self = this;
                         let attempt = 0;
