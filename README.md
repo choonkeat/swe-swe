@@ -8,14 +8,14 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
 
 1. **Install swe-swe**
 
-   Option A: install via curl (recommended)
+   Option A: run via npx (recommended, no install needed)
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+   alias swe-swe='npx --prefer-online --yes swe-swe'
    ```
 
-   Option B: run via npx (no install needed)
+   Option B: install via curl
    ```bash
-   alias swe-swe='npx -y swe-swe'
+   curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
    ```
 
 2. **Initialize a project**
