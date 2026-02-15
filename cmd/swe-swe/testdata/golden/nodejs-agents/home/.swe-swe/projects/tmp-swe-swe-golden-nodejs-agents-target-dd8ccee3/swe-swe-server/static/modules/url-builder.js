@@ -49,7 +49,7 @@ export function buildPreviewUrl(location, previewPort) {
     if (previewPort) {
         return `${protocol}//${hostname}:${previewPort}`;
     }
-    const fallbackPort = '5' + (port || '80');
+    const fallbackPort = '2' + (port || '80');
     return `${protocol}//${hostname}:${fallbackPort}`;
 }
 
@@ -80,7 +80,7 @@ export function buildProxyUrl(location, previewPort, targetURL) {
 export function buildAgentChatUrl(location, agentChatPort) {
     const { protocol, hostname } = location;
     if (agentChatPort) {
-        return `${protocol}//${hostname}:${'4' + agentChatPort}`;
+        return `${protocol}//${hostname}:${'2' + agentChatPort}`;
     }
     return null;
 }

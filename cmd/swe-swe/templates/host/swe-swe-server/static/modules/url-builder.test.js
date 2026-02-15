@@ -129,31 +129,31 @@ test('buildPreviewUrl uses explicit preview port when provided', () => {
     );
 });
 
-test('buildPreviewUrl prefixes port with 5', () => {
+test('buildPreviewUrl prefixes port with 2', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }),
-        'https://example.com:58080'
+        'https://example.com:28080'
     );
 });
 
 test('buildPreviewUrl defaults to port 80 when empty', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '' }),
-        'http://localhost:580'
+        'http://localhost:280'
     );
 });
 
 test('buildPreviewUrl handles 443 port', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'https:', hostname: 'secure.com', port: '443' }),
-        'https://secure.com:5443'
+        'https://secure.com:2443'
     );
 });
 
 test('buildPreviewUrl handles localhost with custom port', () => {
     assert.strictEqual(
         buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '9770' }),
-        'http://localhost:59770'
+        'http://localhost:29770'
     );
 });
 
@@ -203,7 +203,7 @@ test('buildProxyUrl handles bare path without leading slash', () => {
 test('buildProxyUrl uses fallback port when previewPort is null', () => {
     assert.strictEqual(
         buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, null, 'http://localhost:3000/'),
-        'https://example.com:58080/'
+        'https://example.com:28080/'
     );
 });
 
