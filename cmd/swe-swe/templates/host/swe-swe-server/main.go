@@ -4730,11 +4730,11 @@ func deleteRecordingFiles(uuid string) {
 }
 
 func previewProxyPort(port int) int {
-	return 50000 + port
+	return 20000 + port
 }
 
 func agentChatProxyPort(port int) int {
-	return 40000 + port
+	return 20000 + port
 }
 
 func agentChatPortFromPreview(previewPort int) int {

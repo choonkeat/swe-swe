@@ -302,7 +302,7 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 }
 
 func previewProxyPort(port int) int {
-	return 50000 + port
+	return 20000 + port
 }
 
 func agentChatPort(previewPort int) int {
@@ -310,7 +310,7 @@ func agentChatPort(previewPort int) int {
 }
 
 func agentChatProxyPort(port int) int {
-	return 40000 + port
+	return 20000 + port
 }
 
 // processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions
