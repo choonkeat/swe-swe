@@ -298,6 +298,66 @@ test('probeUntilReady rejects after maxAttempts exhausted', async () => {
     }
 });
 
+test('probeUntilReady resolves when custom isReady returns true on 502', async () => {
+    const headers = new Map([['X-Agent-Reverse-Proxy', '0.1.0']]);
+    const mock = mockFetch([{ ok: false, status: 502, headers }]);
+    try {
+        await probeUntilReady('http://test/health', {
+            maxAttempts: 3, baseDelay: 10, maxDelay: 100,
+            isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
+        });
+        assert.strictEqual(mock.calls.length, 1);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady retries when isReady returns false', async () => {
+    const noHeader = new Map();
+    const withHeader = new Map([['X-Agent-Reverse-Proxy', '0.1.0']]);
+    const mock = mockFetch([
+        { ok: false, status: 502, headers: noHeader },
+        { ok: false, status: 502, headers: withHeader },
+    ]);
+    try {
+        await probeUntilReady('http://test/health', {
+            maxAttempts: 5, baseDelay: 10, maxDelay: 100,
+            isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
+        });
+        assert.strictEqual(mock.calls.length, 2);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady retries fetch errors even with custom isReady', async () => {
+    const headers = new Map([['X-Agent-Reverse-Proxy', '0.1.0']]);
+    const mock = mockFetch([
+        new TypeError('fetch failed'),
+        { ok: false, status: 502, headers }
+    ]);
+    try {
+        await probeUntilReady('http://test/health', {
+            maxAttempts: 5, baseDelay: 10, maxDelay: 100,
+            isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
+        });
+        assert.strictEqual(mock.calls.length, 2);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady passes mode option to fetch', async () => {
+    const mock = mockFetch([{ ok: true }]);
+    try {
+        await probeUntilReady('http://test/health', { maxAttempts: 3, baseDelay: 10, maxDelay: 100, mode: 'no-cors' });
+        assert.strictEqual(mock.calls.length, 1);
+        assert.strictEqual(mock.calls[0].opts.mode, 'no-cors');
+    } finally {
+        mock.restore();
+    }
+});
+
 test('probeUntilReady rejects on AbortSignal (pre-aborted)', async () => {
     const mock = mockFetch([]);
     const ac = new AbortController();

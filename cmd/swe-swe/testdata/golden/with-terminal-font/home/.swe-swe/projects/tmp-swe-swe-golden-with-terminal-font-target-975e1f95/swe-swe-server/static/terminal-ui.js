@@ -3348,7 +3348,7 @@ class TerminalUI extends HTMLElement {
         } else {
             path = '/';
         }
-        const iframeSrc = base + '/__swe-swe-shell__?path=' + encodeURIComponent(path);
+        const iframeSrc = base + '/__agent-reverse-proxy-debug__/shell?path=' + encodeURIComponent(path);
         this._lastUrlChangeUrl = base + path;
 
         // URL bar = logical target if provided, else default localhost:{PORT}
@@ -3369,17 +3369,28 @@ class TerminalUI extends HTMLElement {
             // Show placeholder while we probe the proxy
             if (placeholder) placeholder.classList.remove('hidden');
             this._previewWaiting = true;
-            // Clear any stale onload handler from setIframeUrl() — we rely on
-            // the debug WebSocket (not iframe load) to dismiss the placeholder.
-            iframe.onload = null;
 
-            // Probe the proxy until it's ready, then set iframe.src
+            // Probe the reverse proxy until it responds with its identity
+            // header. The agent-reverse-proxy sets X-Agent-Reverse-Proxy on
+            // every response (even 502 when the upstream app isn't ready).
+            // Traefik's own 502 (proxy container not started) won't have it,
+            // so the probe retries until our proxy is actually serving.
             this._previewProbeController = new AbortController();
-            probeUntilReady(base + '/__swe-swe-shell__', {
+            probeUntilReady(base + '/', {
                 maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
+                isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
             }).then(() => {
                 iframe.src = iframeSrc;
+                // Fallback: dismiss placeholder on iframe load in case the
+                // debug WebSocket hasn't connected yet (race condition where
+                // the shell page sends urlchange before the UI observer WS
+                // joins the hub).
+                iframe.onload = () => {
+                    if (this._previewWaiting) {
+                        this._onPreviewReady();
+                    }
+                };
             }).catch(() => {
                 // Exhausted or aborted — leave placeholder visible
             });
@@ -3428,7 +3439,7 @@ class TerminalUI extends HTMLElement {
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
-        const wsUrl = `${wsProtocol}//${window.location.hostname}:${previewPort}/__swe-swe-debug__/ui`;
+        const wsUrl = `${wsProtocol}//${window.location.hostname}:${previewPort}/__agent-reverse-proxy-debug__/ui`;
 
         let ws;
         try {
@@ -3441,11 +3452,9 @@ class TerminalUI extends HTMLElement {
 
         ws.onopen = () => {
             this._debugWsAttempts = 0;
-            // On *reconnect* (not first connect), reload the iframe if we were
-            // waiting — it may still show a stale 502 page. The initial load is
-            // handled by probeUntilReady in setPreviewURL, so skip the first connect
-            // to avoid a redundant reload race.
             if (this._debugWsEverConnected) {
+                // Reconnect: reload the iframe if we were waiting (may still
+                // show a stale page).
                 if (this._previewWaiting && this.activeTab === 'preview') {
                     this._reloadPreviewIframe();
                 }

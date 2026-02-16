@@ -80,8 +80,10 @@ export function formatCountdown(delayMs) {
  * @param {number} opts.maxDelay - Max delay in ms (default: 30000)
  * @param {string} opts.method - HTTP method (default: 'HEAD')
  * @param {string} opts.credentials - Fetch credentials mode (default: 'include')
+ * @param {function} opts.isReady - Predicate receiving Response, returns true to resolve (default: resp => resp.ok)
+ * @param {string} opts.mode - Fetch mode (default: undefined, i.e. browser default)
  * @param {AbortSignal} opts.signal - AbortSignal for cancellation
- * @returns {Promise<void>} Resolves when resp.ok, rejects on exhaustion or abort
+ * @returns {Promise<void>} Resolves when isReady returns true, rejects on exhaustion or abort
  */
 export function probeUntilReady(url, opts = {}) {
     const {
@@ -90,6 +92,8 @@ export function probeUntilReady(url, opts = {}) {
         maxDelay = 30000,
         method = 'HEAD',
         credentials = 'include',
+        isReady = (resp) => resp.ok,
+        mode,
         signal,
     } = opts;
 
@@ -115,9 +119,10 @@ export function probeUntilReady(url, opts = {}) {
             if (signal?.aborted) return; // already rejected via onAbort
             attempt++;
             const fetchOpts = { method, credentials };
+            if (mode) fetchOpts.mode = mode;
             if (signal) fetchOpts.signal = signal;
             fetch(url, fetchOpts).then(resp => {
-                if (resp.ok) {
+                if (isReady(resp)) {
                     cleanup();
                     resolve();
                 } else {
