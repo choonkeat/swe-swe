@@ -3,7 +3,7 @@ import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString, PROXY_PORT_OFFSET } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
-import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown } from './modules/reconnect.js';
+import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
@@ -1004,38 +1004,24 @@ class TerminalUI extends HTMLElement {
                         if (chatIframe && chatIframe.src === 'about:blank' && this.previewPort) {
                             chatIframe.src = buildPreviewUrl(window.location, PROXY_PORT_OFFSET + Number(this.previewPort)) + '/';
                         }
-                        const self = this;
-                        let attempt = 0;
-                        const probe = () => {
-                            fetch(acUrl + '/', { method: 'HEAD', credentials: 'include' }).then(resp => {
-                                if (resp.ok) {
-                                    self._agentChatAvailable = true;
-                                    self._agentChatProbing = false;
-                                    const desktopBtn = self.querySelector('button[data-left-tab="chat"]');
-                                    if (desktopBtn) desktopBtn.style.display = '';
-                                    const mobileOpt = self.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
-                                    if (mobileOpt) mobileOpt.style.display = '';
-                                    // Auto-activate chat tab in chat session mode
-                                    if (new URLSearchParams(location.search).get('session') === 'chat') {
-                                        self.switchLeftPanelTab('chat');
-                                    }
-                                } else {
-                                    retry();
-                                }
-                            }).catch(() => {
-                                retry();
-                            });
-                        };
-                        const retry = () => {
-                            attempt++;
-                            if (attempt < 10) {
-                                const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
-                                setTimeout(probe, delay);
-                            } else {
-                                self._agentChatProbing = false;
+                        this._agentChatProbeController = new AbortController();
+                        probeUntilReady(acUrl + '/', {
+                            maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
+                            signal: this._agentChatProbeController.signal,
+                        }).then(() => {
+                            this._agentChatAvailable = true;
+                            this._agentChatProbing = false;
+                            const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
+                            if (desktopBtn) desktopBtn.style.display = '';
+                            const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+                            if (mobileOpt) mobileOpt.style.display = '';
+                            // Auto-activate chat tab in chat session mode
+                            if (new URLSearchParams(location.search).get('session') === 'chat') {
+                                this.switchLeftPanelTab('chat');
                             }
-                        };
-                        probe();
+                        }).catch(() => {
+                            this._agentChatProbing = false;
+                        });
                     }
                 }
                 this.updatePreviewBaseUrl();
@@ -3374,14 +3360,29 @@ class TerminalUI extends HTMLElement {
         }
 
         if (iframe) {
-            // Show placeholder — it stays visible until the debug WebSocket
-            // confirms the proxy and shell page are alive (via init/urlchange).
+            // Cancel any in-progress preview probe
+            if (this._previewProbeController) {
+                this._previewProbeController.abort();
+                this._previewProbeController = null;
+            }
+
+            // Show placeholder while we probe the proxy
             if (placeholder) placeholder.classList.remove('hidden');
             this._previewWaiting = true;
             // Clear any stale onload handler from setIframeUrl() — we rely on
             // the debug WebSocket (not iframe load) to dismiss the placeholder.
             iframe.onload = null;
-            iframe.src = iframeSrc;
+
+            // Probe the proxy until it's ready, then set iframe.src
+            this._previewProbeController = new AbortController();
+            probeUntilReady(base + '/__swe-swe-shell__', {
+                maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
+                signal: this._previewProbeController.signal,
+            }).then(() => {
+                iframe.src = iframeSrc;
+            }).catch(() => {
+                // Exhausted or aborted — leave placeholder visible
+            });
         }
     }
 
@@ -3440,12 +3441,16 @@ class TerminalUI extends HTMLElement {
 
         ws.onopen = () => {
             this._debugWsAttempts = 0;
-            // Proxy is up — if we were waiting on the preview tab, reload the iframe
-            // (it may still show a stale 502 page).
-            // Guard on activeTab to avoid reloading a Terminal/Code iframe.
-            if (this._previewWaiting && this.activeTab === 'preview') {
-                this._reloadPreviewIframe();
+            // On *reconnect* (not first connect), reload the iframe if we were
+            // waiting — it may still show a stale 502 page. The initial load is
+            // handled by probeUntilReady in setPreviewURL, so skip the first connect
+            // to avoid a redundant reload race.
+            if (this._debugWsEverConnected) {
+                if (this._previewWaiting && this.activeTab === 'preview') {
+                    this._reloadPreviewIframe();
+                }
             }
+            this._debugWsEverConnected = true;
         };
 
         ws.onmessage = (e) => {

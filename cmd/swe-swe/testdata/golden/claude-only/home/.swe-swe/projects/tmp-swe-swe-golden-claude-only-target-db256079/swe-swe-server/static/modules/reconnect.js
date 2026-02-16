@@ -68,3 +68,79 @@ export function resetAttempts(state) {
 export function formatCountdown(delayMs) {
     return Math.ceil(delayMs / 1000);
 }
+
+/**
+ * Poll a URL until it returns a successful response.
+ * Uses exponential backoff via createReconnectState/getDelay/nextAttempt.
+ * First attempt is immediate (no delay).
+ * @param {string} url - URL to probe
+ * @param {object} opts - Options
+ * @param {number} opts.maxAttempts - Max probe attempts (default: 10)
+ * @param {number} opts.baseDelay - Base delay in ms (default: 2000)
+ * @param {number} opts.maxDelay - Max delay in ms (default: 30000)
+ * @param {string} opts.method - HTTP method (default: 'HEAD')
+ * @param {string} opts.credentials - Fetch credentials mode (default: 'include')
+ * @param {AbortSignal} opts.signal - AbortSignal for cancellation
+ * @returns {Promise<void>} Resolves when resp.ok, rejects on exhaustion or abort
+ */
+export function probeUntilReady(url, opts = {}) {
+    const {
+        maxAttempts = 10,
+        baseDelay = 2000,
+        maxDelay = 30000,
+        method = 'HEAD',
+        credentials = 'include',
+        signal,
+    } = opts;
+
+    let state = createReconnectState({ baseDelay, maxDelay });
+    let attempt = 0;
+
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+            return;
+        }
+
+        const onAbort = () => {
+            reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+
+        const cleanup = () => {
+            signal?.removeEventListener('abort', onAbort);
+        };
+
+        const probe = () => {
+            if (signal?.aborted) return; // already rejected via onAbort
+            attempt++;
+            const fetchOpts = { method, credentials };
+            if (signal) fetchOpts.signal = signal;
+            fetch(url, fetchOpts).then(resp => {
+                if (resp.ok) {
+                    cleanup();
+                    resolve();
+                } else {
+                    scheduleRetry();
+                }
+            }).catch(err => {
+                if (err?.name === 'AbortError') return; // already rejected via onAbort
+                scheduleRetry();
+            });
+        };
+
+        const scheduleRetry = () => {
+            if (attempt >= maxAttempts) {
+                cleanup();
+                reject(new Error(`probeUntilReady: ${maxAttempts} attempts exhausted`));
+                return;
+            }
+            const delay = getDelay(state);
+            state = nextAttempt(state);
+            setTimeout(probe, delay);
+        };
+
+        // First attempt is immediate
+        probe();
+    });
+}

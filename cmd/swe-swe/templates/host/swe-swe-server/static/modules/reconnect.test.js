@@ -12,7 +12,8 @@ import {
     getDelay,
     nextAttempt,
     resetAttempts,
-    formatCountdown
+    formatCountdown,
+    probeUntilReady
 } from './reconnect.js';
 
 // Constants tests
@@ -219,4 +220,117 @@ test('integration: reconnect state workflow', () => {
     state = resetAttempts(state);
     assert.strictEqual(state.attempts, 0);
     assert.strictEqual(getDelay(state), 1000);
+});
+
+// probeUntilReady tests
+// Helper: mock globalThis.fetch for probeUntilReady tests
+function mockFetch(responses) {
+    let callIndex = 0;
+    const calls = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => {
+        calls.push({ url, opts });
+        const response = responses[callIndex++];
+        if (response instanceof Error) throw response;
+        return response;
+    };
+    return {
+        calls,
+        restore() { globalThis.fetch = originalFetch; }
+    };
+}
+
+test('probeUntilReady resolves on first success', async () => {
+    const mock = mockFetch([{ ok: true }]);
+    try {
+        await probeUntilReady('http://test/health', { maxAttempts: 3, baseDelay: 10, maxDelay: 100 });
+        assert.strictEqual(mock.calls.length, 1);
+        assert.strictEqual(mock.calls[0].url, 'http://test/health');
+        assert.strictEqual(mock.calls[0].opts.method, 'HEAD');
+        assert.strictEqual(mock.calls[0].opts.credentials, 'include');
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady retries non-ok then resolves', async () => {
+    const mock = mockFetch([
+        { ok: false, status: 502 },
+        { ok: false, status: 502 },
+        { ok: true }
+    ]);
+    try {
+        await probeUntilReady('http://test/health', { maxAttempts: 5, baseDelay: 10, maxDelay: 100 });
+        assert.strictEqual(mock.calls.length, 3);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady retries fetch errors then resolves', async () => {
+    const mock = mockFetch([
+        new TypeError('fetch failed'),
+        new TypeError('fetch failed'),
+        { ok: true }
+    ]);
+    try {
+        await probeUntilReady('http://test/health', { maxAttempts: 5, baseDelay: 10, maxDelay: 100 });
+        assert.strictEqual(mock.calls.length, 3);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady rejects after maxAttempts exhausted', async () => {
+    const mock = mockFetch([
+        { ok: false, status: 502 },
+        { ok: false, status: 502 },
+        { ok: false, status: 502 },
+    ]);
+    try {
+        await assert.rejects(
+            probeUntilReady('http://test/health', { maxAttempts: 3, baseDelay: 10, maxDelay: 100 }),
+            { message: 'probeUntilReady: 3 attempts exhausted' }
+        );
+        assert.strictEqual(mock.calls.length, 3);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady rejects on AbortSignal (pre-aborted)', async () => {
+    const mock = mockFetch([]);
+    const ac = new AbortController();
+    ac.abort();
+    try {
+        await assert.rejects(
+            probeUntilReady('http://test/health', { maxAttempts: 3, baseDelay: 10, maxDelay: 100, signal: ac.signal }),
+            (err) => err instanceof DOMException && err.name === 'AbortError'
+        );
+        assert.strictEqual(mock.calls.length, 0);
+    } finally {
+        mock.restore();
+    }
+});
+
+test('probeUntilReady rejects on AbortSignal (mid-probe)', async () => {
+    const ac = new AbortController();
+    // First call returns non-ok, then we abort during the delay before second attempt
+    const originalFetch = globalThis.fetch;
+    let fetchCount = 0;
+    globalThis.fetch = async () => {
+        fetchCount++;
+        // After first fetch, abort during the retry delay
+        setTimeout(() => ac.abort(), 5);
+        return { ok: false, status: 502 };
+    };
+    try {
+        await assert.rejects(
+            probeUntilReady('http://test/health', { maxAttempts: 10, baseDelay: 500, maxDelay: 5000, signal: ac.signal }),
+            (err) => err instanceof DOMException && err.name === 'AbortError'
+        );
+        assert.strictEqual(fetchCount, 1);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });
