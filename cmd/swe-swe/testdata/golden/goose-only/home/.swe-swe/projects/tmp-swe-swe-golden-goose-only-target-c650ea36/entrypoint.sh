@@ -76,6 +76,7 @@ GOOSE_WRAPPER
 chmod +x /home/app/.swe-swe/bin/goose
 echo -e "${GREEN}✓ Created Goose wrapper script${NC}"
 
+
 # Create open/xdg-open shims that route URLs to the Preview pane
 mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'

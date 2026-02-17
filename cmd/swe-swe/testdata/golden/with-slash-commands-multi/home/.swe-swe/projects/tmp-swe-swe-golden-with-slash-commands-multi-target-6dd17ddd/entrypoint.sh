@@ -223,6 +223,20 @@ GOOSE_WRAPPER
 chmod +x /home/app/.swe-swe/bin/goose
 echo -e "${GREEN}✓ Created Goose wrapper script${NC}"
 
+# Create Claude MCP configuration (user scope = cross-project)
+# Uses claude mcp add which writes to ~/.claude.json
+# Skip if already configured (idempotent on container restart)
+if ! (unset CLAUDECODE; claude mcp get --scope user swe-swe-agent-chat >/dev/null 2>&1); then
+  (
+    unset CLAUDECODE
+    claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
+    claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
+    claude mcp add-json --scope user swe-swe-preview '{"command":"/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy","args":["--tool-prefix","preview","--theme-cookie","swe-swe-theme"]}'
+    claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
+  )
+  echo -e "${GREEN}✓ Created Claude MCP configuration${NC}"
+fi
+
 # Create open/xdg-open shims that route URLs to the Preview pane
 mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'

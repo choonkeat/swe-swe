@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 )
@@ -367,59 +366,6 @@ func parsePreviewPortsRange(rangeStr string) ([]int, error) {
 	}
 
 	return ports, nil
-}
-
-// upsertMcpServers merges swe-swe MCP server definitions into an existing
-// .mcp.json file. swe-swe servers are always upserted; user-defined servers
-// are preserved. Returns the merged JSON.
-//
-// SYNC: This logic is duplicated in swe-swe-server's setupSweSweFiles().
-// If you change this function, update the copy in
-// cmd/swe-swe/templates/host/swe-swe-server/main.go as well.
-func upsertMcpServers(existing, template []byte) ([]byte, error) {
-	var tmplDoc map[string]any
-	if err := json.Unmarshal(template, &tmplDoc); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal template .mcp.json: %w", err)
-	}
-
-	var existingDoc map[string]any
-	if len(existing) == 0 || json.Unmarshal(existing, &existingDoc) != nil {
-		// No existing file or invalid JSON — use template as-is
-		merged, err := json.MarshalIndent(tmplDoc, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return append(merged, '\n'), nil
-	}
-
-	// Snapshot before merge for comparison
-	var beforeDoc map[string]any
-	json.Unmarshal(existing, &beforeDoc) // already validated above
-
-	// Ensure existingDoc has mcpServers map
-	existingServers, _ := existingDoc["mcpServers"].(map[string]any)
-	if existingServers == nil {
-		existingServers = make(map[string]any)
-		existingDoc["mcpServers"] = existingServers
-	}
-
-	// Upsert template servers into existing
-	if tmplServers, ok := tmplDoc["mcpServers"].(map[string]any); ok {
-		for name, cfg := range tmplServers {
-			existingServers[name] = cfg
-		}
-	}
-
-	// If nothing changed, return original bytes to preserve formatting
-	if reflect.DeepEqual(existingDoc, beforeDoc) {
-		return existing, nil
-	}
-
-	merged, err := json.MarshalIndent(existingDoc, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(merged, '\n'), nil
 }
 
 func handleInit() {
@@ -890,9 +836,7 @@ func handleInit() {
 		}
 
 		// Files that go to project directory (accessible by Claude in container)
-		// Note: .mcp.json must be at project root, not .claude/mcp.json
 		containerFiles := []string{
-			"templates/container/.mcp.json",
 			"templates/container/.swe-swe/docs/AGENTS.md",
 			"templates/container/.swe-swe/docs/browser-automation.md",
 		}
@@ -1020,18 +964,7 @@ func handleInit() {
 				log.Fatalf("Failed to create directory %q: %v", destDir, err)
 			}
 
-			// For .mcp.json, upsert swe-swe servers into any existing config
-			writeContent := content
-			if relPath == ".mcp.json" {
-				existingContent, _ := os.ReadFile(destPath) // ignore error (file may not exist)
-				merged, err := upsertMcpServers(existingContent, content)
-				if err != nil {
-					log.Fatalf("Failed to merge .mcp.json: %v", err)
-				}
-				writeContent = merged
-			}
-
-			if err := os.WriteFile(destPath, writeContent, 0644); err != nil {
+			if err := os.WriteFile(destPath, content, 0644); err != nil {
 				log.Fatalf("Failed to write %q: %v", destPath, err)
 			}
 			fmt.Printf("Created %s\n", destPath)
@@ -1052,7 +985,6 @@ func handleInit() {
 		// This allows the server to write swe-swe files into cloned repos and new projects.
 		// All files are included unconditionally (extra docs cause no harm).
 		allContainerTemplates := []string{
-			"templates/container/.mcp.json",
 			"templates/container/.swe-swe/docs/AGENTS.md",
 			"templates/container/.swe-swe/docs/browser-automation.md",
 			"templates/container/.swe-swe/docs/app-preview.md",

@@ -409,6 +409,10 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 			skip = !hasAgent("goose")
 			continue
 		}
+		if strings.Contains(trimmed, "{{IF CLAUDE}}") {
+			skip = !hasAgent("claude")
+			continue
+		}
 		if strings.Contains(trimmed, "{{ENDIF}}") {
 			skip = false
 			continue

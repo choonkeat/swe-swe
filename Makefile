@@ -9,7 +9,6 @@ run:
 	@cp cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt cmd/swe-swe/templates/host/swe-swe-server/go.mod
 	@cp cmd/swe-swe/templates/host/swe-swe-server/go.sum.txt cmd/swe-swe/templates/host/swe-swe-server/go.sum
 	@mkdir -p $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs $(SERVER_TEMPLATE)/container-templates/swe-swe
-	@cp $(CONTAINER_TEMPLATES)/.mcp.json $(SERVER_TEMPLATE)/container-templates/
 	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs/
 	@cp $(CONTAINER_TEMPLATES)/swe-swe/setup $(SERVER_TEMPLATE)/container-templates/swe-swe/
 	cd cmd/swe-swe/templates/host/swe-swe-server && go run main.go -addr :$(PORT) -no-preview-proxy $(RUN_ARGS)
@@ -33,7 +32,6 @@ test-server:
 	@mkdir -p /tmp/swe-swe-server-test
 	@cp -r $(SERVER_TEMPLATE)/* /tmp/swe-swe-server-test/
 	@mkdir -p /tmp/swe-swe-server-test/container-templates/.swe-swe/docs /tmp/swe-swe-server-test/container-templates/swe-swe
-	@cp $(CONTAINER_TEMPLATES)/.mcp.json /tmp/swe-swe-server-test/container-templates/
 	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* /tmp/swe-swe-server-test/container-templates/.swe-swe/docs/
 	@cp $(CONTAINER_TEMPLATES)/swe-swe/setup /tmp/swe-swe-server-test/container-templates/swe-swe/
 	@mv /tmp/swe-swe-server-test/go.mod.txt /tmp/swe-swe-server-test/go.mod

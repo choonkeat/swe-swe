@@ -779,7 +779,6 @@ func TestGoldenFiles(t *testing.T) {
 
 			// Verify target files exist
 			targetFiles := []string{
-				filepath.Join(goldenDir, "target", ".mcp.json"),
 				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "AGENTS.md"),
 				filepath.Join(goldenDir, "target", ".swe-swe", "docs", "browser-automation.md"),
 			}
@@ -1127,41 +1126,3 @@ func TestSaveLoadInitConfig(t *testing.T) {
 	}
 }
 
-// TestMCPJsonFilesInSync verifies that the two .mcp.json template files are identical
-// These files must stay in sync:
-// 1. templates/container/.mcp.json - Used during `swe-swe init`
-// 2. templates/host/swe-swe-server/container-templates/.mcp.json - Embedded in server binary
-func TestMCPJsonFilesInSync(t *testing.T) {
-	// Read the source template (used during swe-swe init)
-	sourceFile := "templates/container/.mcp.json"
-	sourceContent, err := assets.ReadFile(sourceFile)
-	if err != nil {
-		t.Fatalf("Failed to read %s: %v", sourceFile, err)
-	}
-
-	// Read the embedded template (used by server for provisioning)
-	embeddedFile := "templates/host/swe-swe-server/container-templates/.mcp.json"
-	embeddedContent, err := assets.ReadFile(embeddedFile)
-	if err != nil {
-		t.Fatalf("Failed to read %s: %v", embeddedFile, err)
-	}
-
-	// Parse both as JSON to compare content (ignoring whitespace differences)
-	var sourceJSON, embeddedJSON map[string]interface{}
-	if err := json.Unmarshal(sourceContent, &sourceJSON); err != nil {
-		t.Fatalf("Failed to parse %s as JSON: %v", sourceFile, err)
-	}
-	if err := json.Unmarshal(embeddedContent, &embeddedJSON); err != nil {
-		t.Fatalf("Failed to parse %s as JSON: %v", embeddedFile, err)
-	}
-
-	// Compare the parsed JSON structures
-	if !reflect.DeepEqual(sourceJSON, embeddedJSON) {
-		t.Errorf(".mcp.json files are out of sync!\n\n"+
-			"Source: %s\n%s\n\n"+
-			"Embedded: %s\n%s\n\n"+
-			"These files must be kept identical. After updating one, copy it to the other location.",
-			sourceFile, string(sourceContent),
-			embeddedFile, string(embeddedContent))
-	}
-}

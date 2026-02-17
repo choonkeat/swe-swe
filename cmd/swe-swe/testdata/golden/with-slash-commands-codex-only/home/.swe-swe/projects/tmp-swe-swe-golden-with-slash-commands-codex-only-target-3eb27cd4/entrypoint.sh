@@ -70,6 +70,7 @@ echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
 
 
 
+
 # Create open/xdg-open shims that route URLs to the Preview pane
 mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
