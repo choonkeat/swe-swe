@@ -291,7 +291,7 @@ class TerminalUI extends HTMLElement {
                 <div class="terminal-ui__terminal-bar mobile-only">
                     <select class="terminal-ui__mobile-nav-select">
                         <option value="agent-terminal">Agent Terminal</option>
-                        <option value="agent-chat" style="display: none;">Agent Chat</option>
+                        <option value="agent-chat" hidden disabled>Agent Chat</option>
                         <option value="preview">App Preview</option>
                         <option value="vscode">Code</option>
                         <option value="shell">Terminal</option>
@@ -1590,8 +1590,13 @@ class TerminalUI extends HTMLElement {
         const display = visible ? '' : 'none';
         const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
         if (desktopBtn) desktopBtn.style.display = display;
+        // iOS Safari ignores display:none on <option> in native pickers;
+        // use hidden+disabled attributes which Safari does respect.
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
-        if (mobileOpt) mobileOpt.style.display = display;
+        if (mobileOpt) {
+            mobileOpt.hidden = !visible;
+            mobileOpt.disabled = !visible;
+        }
     }
 
     // Set username helper
