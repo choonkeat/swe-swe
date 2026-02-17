@@ -631,6 +631,12 @@ func (s *Session) BroadcastStatus() {
 	if workDir == "" {
 		workDir, _ = os.Getwd()
 	}
+	// Only expose agentChatPort for chat sessions; terminal sessions
+	// should never probe or show the Agent Chat tab.
+	var agentChatPort int
+	if s.SessionMode == "chat" {
+		agentChatPort = s.AgentChatPort
+	}
 	status := map[string]interface{}{
 		"type":          "status",
 		"viewers":       len(s.wsClients),
@@ -641,7 +647,7 @@ func (s *Session) BroadcastStatus() {
 		"uuidShort":     uuidShort,
 		"workDir":       workDir,
 		"previewPort":    s.PreviewPort,
-		"agentChatPort":  s.AgentChatPort,
+		"agentChatPort":  agentChatPort,
 		"yoloMode":       s.yoloMode,
 		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
 	}

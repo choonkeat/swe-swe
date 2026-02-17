@@ -318,6 +318,12 @@ class TerminalUI extends HTMLElement {
                             </div>
                             <div class="terminal-ui__terminal"></div>
                             <div class="terminal-ui__agent-chat" style="display: none;">
+                                <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting...</span>
+                                    </div>
+                                </div>
                                 <iframe class="terminal-ui__agent-chat-iframe"
                                         src="about:blank"
                                         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads">
@@ -990,20 +996,12 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 this.previewPort = msg.previewPort || null;
                 this.agentChatPort = msg.agentChatPort || null;
-                // Probe agent chat — show tab only if something is listening
-                // Retries with backoff (2s, 4s, 8s, 16s, 30s, 30s, ...) up to 10 attempts
+                // Probe agent chat proxy — wait for our proxy to be up, then load iframe.
+                // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
                     this._agentChatProbing = true;
                     const acUrl = buildAgentChatUrl(window.location, this.agentChatPort);
                     if (acUrl) {
-                        // Bootstrap agent chat iframe with preview proxy URL to establish
-                        // cross-origin cookie context. SameSite=Lax cookies aren't sent
-                        // when an iframe navigates from about:blank to a cross-origin URL,
-                        // but they are sent once the iframe has an established cross-origin context.
-                        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
-                        if (chatIframe && chatIframe.src === 'about:blank' && this.previewPort) {
-                            chatIframe.src = buildPreviewUrl(window.location, PROXY_PORT_OFFSET + Number(this.previewPort)) + '/';
-                        }
                         this._agentChatProbeController = new AbortController();
                         probeUntilReady(acUrl + '/', {
                             maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
@@ -1012,10 +1010,20 @@ class TerminalUI extends HTMLElement {
                         }).then(() => {
                             this._agentChatAvailable = true;
                             this._agentChatProbing = false;
+                            // Reveal tab controls
                             const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
                             if (desktopBtn) desktopBtn.style.display = '';
                             const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
                             if (mobileOpt) mobileOpt.style.display = '';
+                            // Load agent chat into iframe and dismiss placeholder on load
+                            const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
+                            if (chatIframe) {
+                                chatIframe.src = acUrl + '/';
+                                chatIframe.onload = () => {
+                                    const ph = this.querySelector('.terminal-ui__agent-chat-placeholder');
+                                    if (ph) ph.classList.add('hidden');
+                                };
+                            }
                             // Auto-activate chat tab in chat session mode
                             if (new URLSearchParams(location.search).get('session') === 'chat') {
                                 this.switchLeftPanelTab('chat');
@@ -1565,11 +1573,7 @@ class TerminalUI extends HTMLElement {
             terminalEl.style.visibility = 'hidden';
             terminalEl.style.position = 'absolute';
             chatEl.style.display = 'flex';
-            // Lazy-load: set src on first switch using agent chat proxy URL
-            if (chatIframe && !this._agentChatLoaded && this.agentChatPort) {
-                this._agentChatLoaded = true;
-                chatIframe.src = buildAgentChatUrl(window.location, this.agentChatPort) + '/';
-            }
+            // iframe src is set by the agent chat probe callback, not here
         } else {
             chatEl.style.display = 'none';
             terminalEl.style.visibility = '';
