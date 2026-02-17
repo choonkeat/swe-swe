@@ -1004,6 +1004,7 @@ class TerminalUI extends HTMLElement {
                     if (acUrl) {
                         this._agentChatProbeController = new AbortController();
                         probeUntilReady(acUrl + '/', {
+                            method: 'GET', // GET avoids iOS Safari preflight bug with HEAD
                             maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
                             isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                             signal: this._agentChatProbeController.signal,
@@ -3414,6 +3415,7 @@ class TerminalUI extends HTMLElement {
             // so the probe retries until our proxy is actually serving.
             this._previewProbeController = new AbortController();
             probeUntilReady(base + '/', {
+                method: 'GET', // GET avoids iOS Safari preflight bug with HEAD
                 maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
                 isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
