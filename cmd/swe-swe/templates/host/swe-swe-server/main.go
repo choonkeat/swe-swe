@@ -364,8 +364,8 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort, agentChatPort int, theme, workDir string) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "PROXY_PORT")
+func buildSessionEnv(previewPort, agentChatPort int, theme, workDir, sessionMode string) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PROXY_PORT")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
@@ -374,6 +374,10 @@ func buildSessionEnv(previewPort, agentChatPort int, theme, workDir string) []st
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
+	// Disable agent chat sidecar for non-chat sessions
+	if sessionMode != "chat" {
+		env = append(env, "AGENT_CHAT_DISABLE=1")
+	}
 	// Set COLORFGBG so CLI tools (vim, bat, ls --color, etc.) adapt to background
 	if theme == "light" {
 		env = append(env, "COLORFGBG=0;15") // dark-on-light
@@ -948,7 +952,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.Theme, s.WorkDir)
+	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.Theme, s.WorkDir, s.SessionMode)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -4859,7 +4863,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recordingUUID)
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
-	env := buildSessionEnv(previewPort, acPort, theme, workDir)
+	env := buildSessionEnv(previewPort, acPort, theme, workDir, sessionMode)
 
 	// Agent-chat sidecar context for chat sessions.
 	// The sidecar process itself is managed externally (e.g. baked into the container image),
