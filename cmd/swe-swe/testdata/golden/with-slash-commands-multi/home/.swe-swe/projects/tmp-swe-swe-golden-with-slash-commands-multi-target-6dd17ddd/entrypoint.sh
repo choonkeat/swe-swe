@@ -225,15 +225,16 @@ echo -e "${GREEN}✓ Created Goose wrapper script${NC}"
 
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
+# Must run as app user so config goes to /home/app/.claude.json (not /root/)
 # Skip if already configured (idempotent on container restart)
-if ! (unset CLAUDECODE; claude mcp get --scope user swe-swe-agent-chat >/dev/null 2>&1); then
-  (
+if ! grep -q '"swe-swe-agent-chat"' /home/app/.claude.json 2>/dev/null; then
+  su -s /bin/bash app -c '
     unset CLAUDECODE
     claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
     claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
-    claude mcp add-json --scope user swe-swe-preview '{"command":"/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy","args":["--tool-prefix","preview","--theme-cookie","swe-swe-theme"]}'
+    claude mcp add-json --scope user swe-swe-preview '"'"'{"command":"/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy","args":["--tool-prefix","preview","--theme-cookie","swe-swe-theme"]}'"'"'
     claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
-  )
+  '
   echo -e "${GREEN}✓ Created Claude MCP configuration${NC}"
 fi
 
