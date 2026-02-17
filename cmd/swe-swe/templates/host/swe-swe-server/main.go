@@ -2087,6 +2087,7 @@ func startAgentChatProxy(listener net.Listener, targetPort int) (*previewProxySe
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+			w.Header().Set("Access-Control-Expose-Headers", "X-Agent-Reverse-Proxy")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -2171,6 +2172,10 @@ func releaseAgentChatProxyServer(acPort int) {
 // handleProxyRequest proxies requests to the current target
 func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Mark responses as coming from our reverse proxy so probes can
+		// distinguish our 502 from Traefik's 502.
+		w.Header().Set("X-Agent-Reverse-Proxy", "1")
+
 		state.targetMu.RLock()
 		target := state.targetURL
 		if target == nil {

@@ -1007,6 +1007,7 @@ class TerminalUI extends HTMLElement {
                         this._agentChatProbeController = new AbortController();
                         probeUntilReady(acUrl + '/', {
                             maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
+                            isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                             signal: this._agentChatProbeController.signal,
                         }).then(() => {
                             this._agentChatAvailable = true;
@@ -1018,6 +1019,7 @@ class TerminalUI extends HTMLElement {
                             // Auto-activate chat tab in chat session mode
                             if (new URLSearchParams(location.search).get('session') === 'chat') {
                                 this.switchLeftPanelTab('chat');
+                                this.switchMobileNav('agent-chat');
                             }
                         }).catch(() => {
                             this._agentChatProbing = false;
@@ -1491,7 +1493,20 @@ class TerminalUI extends HTMLElement {
         this.activeTab = tab;
 
         if (tab === 'preview') {
-            this.setPreviewURL(null);
+            if (this._pendingPreviewIframeSrc) {
+                // Preview probe already succeeded while on another tab — apply stashed URL
+                const pendingSrc = this._pendingPreviewIframeSrc;
+                this._pendingPreviewIframeSrc = null;
+                const iframe = this.querySelector('.terminal-ui__iframe');
+                if (iframe) {
+                    iframe.src = pendingSrc;
+                    iframe.onload = () => {
+                        if (this._previewWaiting) this._onPreviewReady();
+                    };
+                }
+            } else {
+                this.setPreviewURL(null);
+            }
         } else {
             const baseUrl = getBaseUrl(window.location);
             let url;
@@ -2912,6 +2927,16 @@ class TerminalUI extends HTMLElement {
             // Defer until first BroadcastStatus delivers previewPort
             this._wantsPreviewOnConnect = true;
         }
+
+        // session=chat: show Agent Chat tab immediately (before probe succeeds)
+        if (new URLSearchParams(location.search).get('session') === 'chat') {
+            const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
+            if (desktopBtn) desktopBtn.style.display = '';
+            const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+            if (mobileOpt) mobileOpt.style.display = '';
+            this.switchLeftPanelTab('chat');
+            this.switchMobileNav('agent-chat');
+        }
     }
 
     // Check if viewport is wide enough for split-pane layout
@@ -3381,7 +3406,13 @@ class TerminalUI extends HTMLElement {
                 isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
             }).then(() => {
-                iframe.src = iframeSrc;
+                if (this.activeTab === 'preview') {
+                    iframe.src = iframeSrc;
+                } else {
+                    // Defer: only load when user switches to Preview tab
+                    this._pendingPreviewIframeSrc = iframeSrc;
+                    return; // skip onload handler — will be set when user switches to Preview
+                }
                 // Fallback: dismiss placeholder on iframe load in case the
                 // debug WebSocket hasn't connected yet (race condition where
                 // the shell page sends urlchange before the UI observer WS
