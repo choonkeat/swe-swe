@@ -321,7 +321,7 @@ class TerminalUI extends HTMLElement {
                                 <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
                                     <div class="terminal-ui__iframe-placeholder-status">
                                         <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                        <span class="terminal-ui__iframe-placeholder-text">Connecting...</span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to chat...</span>
                                     </div>
                                 </div>
                                 <iframe class="terminal-ui__agent-chat-iframe"
@@ -1010,11 +1010,7 @@ class TerminalUI extends HTMLElement {
                         }).then(() => {
                             this._agentChatAvailable = true;
                             this._agentChatProbing = false;
-                            // Reveal tab controls
-                            const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
-                            if (desktopBtn) desktopBtn.style.display = '';
-                            const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
-                            if (mobileOpt) mobileOpt.style.display = '';
+                            this.setAgentChatTabVisible(true);
                             // Load agent chat into iframe and dismiss placeholder on load
                             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                             if (chatIframe) {
@@ -1586,6 +1582,16 @@ class TerminalUI extends HTMLElement {
         if (mobileSelect) {
             mobileSelect.value = tab === 'chat' ? 'agent-chat' : 'agent-terminal';
         }
+    }
+
+    // Single source of truth for showing/hiding the Agent Chat tab in both
+    // desktop button and mobile dropdown — prevents them from desyncing.
+    setAgentChatTabVisible(visible) {
+        const display = visible ? '' : 'none';
+        const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
+        if (desktopBtn) desktopBtn.style.display = display;
+        const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+        if (mobileOpt) mobileOpt.style.display = display;
     }
 
     // Set username helper
@@ -2934,10 +2940,7 @@ class TerminalUI extends HTMLElement {
 
         // session=chat: show Agent Chat tab immediately (before probe succeeds)
         if (new URLSearchParams(location.search).get('session') === 'chat') {
-            const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
-            if (desktopBtn) desktopBtn.style.display = '';
-            const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
-            if (mobileOpt) mobileOpt.style.display = '';
+            this.setAgentChatTabVisible(true);
             this.switchLeftPanelTab('chat');
             this.switchMobileNav('agent-chat');
         }
