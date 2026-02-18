@@ -1,6 +1,6 @@
 # swe-swe
 
-Your agent: containerized with its own browser for manual testing. Your terminal: pair live or share recordings with teammates. Your sessions: run multiple in parallel, each on its own git worktree.
+Your agent: containerized with its own browser for agentic testing. Your terminal: pair live or share recordings with teammates. Your sessions: run multiple in parallel, each on its own git worktree.
 
 Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us know](https://github.com/choonkeat/swe-swe/issues)!
 
@@ -8,9 +8,9 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
 
 1. **Install swe-swe**
 
-   Option A: run via npx (recommended, no install needed)
+   Option A: run via npx (requires Node.js)
    ```bash
-   alias swe-swe='npx --prefer-online --yes swe-swe'
+   alias swe-swe='npx -y swe-swe'
    ```
 
    Option B: install via curl
@@ -18,27 +18,18 @@ Works with Claude, Aider, Goose, Gemini, Codex, OpenCode. Not listed? [Let us kn
    curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
    ```
 
-2. **Initialize a project**
+2. **Go to your project**
    ```bash
-   swe-swe init --project-directory /path/to/your/project
+   cd /path/to/your/project
    ```
 
-3. **Start the environment**
+3. **Initialize and start**
    ```bash
-   swe-swe up --project-directory /path/to/your/project
+   swe-swe init
+   swe-swe up
    ```
 
-4. **Access the services** at http://localhost:1977 (or `https://<hostname>:1977` if initialized with `--ssl`)
-
-5. **View all initialized projects**
-   ```bash
-   swe-swe list
-   ```
-
-6. **Stop the environment**
-   ```bash
-   swe-swe down --project-directory /path/to/your/project
-   ```
+4. **Open** http://localhost:1977
 
 ### Requirements
 

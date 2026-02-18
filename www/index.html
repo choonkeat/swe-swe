@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>swe-swe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+// FOUC prevention — resolve system preference before first paint
+(function() {
+  var resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', resolved);
+})();
+</script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --border-primary: #334155;
+  --accent: #7c3aed;
+  --accent-hover: #8b5cf6;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fb;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --border-primary: #e2e8f0;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+/* Header */
+.header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 560px;
+  margin: 0 auto 1.5rem;
+}
+
+.links {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+/* Theme toggle */
+.theme-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+}
+
+.theme-toggle button {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.theme-toggle button:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* Tabs */
+.section {
+  margin-bottom: 2.5rem;
+}
+
+.section h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px 8px 0 0;
+  padding: 3px 3px 0 3px;
+}
+
+.tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: var(--font-family);
+  border-radius: 6px 6px 0 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tabs button:hover {
+  color: var(--text-primary);
+}
+
+.tabs button.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: none;
+  border: 1px solid var(--border-primary);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 1.25rem;
+  background: var(--bg-primary);
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.tab-panel p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.code-block {
+  position: relative;
+}
+
+.code-block .copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-family: var(--font-family);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.code-block .copy-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+  color: var(--text-primary);
+}
+
+/* Requirements & steps */
+.requirements {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.requirements h2 {
+  margin-bottom: 0.5rem;
+}
+
+.requirements ul {
+  list-style: none;
+  padding: 0;
+}
+
+.requirements li {
+  padding: 0.3rem 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.requirements li::before {
+  content: "\2713  ";
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.steps {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.steps h2 {
+  margin-bottom: 0.75rem;
+}
+
+.steps ol {
+  padding-left: 1.25rem;
+}
+
+.steps li {
+  padding: 0.35rem 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.steps code {
+  font-size: 0.82rem;
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.steps .comment code {
+  background: none;
+  color: var(--text-secondary);
+  padding: 0;
+}
+
+.footer {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-primary);
+}
+
+@media (max-width: 480px) {
+  .container { padding: 2rem 1rem; }
+  .header h1 { font-size: 2rem; }
+  .tabs button { padding: 8px 10px; font-size: 0.8rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="theme-toggle">
+  <button type="button" id="theme-btn" aria-label="Toggle theme"></button>
+</div>
+
+<div class="container">
+
+  <header class="header">
+    <h1>swe-swe</h1>
+    <p class="tagline"><b>Your agent:</b> containerized with its own browser for agentic testing.<br><b>Your terminal:</b> pair live or share recordings with teammates.<br><b>Your sessions:</b> run multiple in parallel, each on its own git worktree.</p>
+    <div class="links">
+      <a href="https://github.com/choonkeat/swe-swe">GitHub</a>
+      <a href="https://github.com/choonkeat/swe-swe/tree/main/docs">Docs</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <h2>Quick Start</h2>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" aria-controls="panel-npx" id="tab-npx" class="active">npx</button>
+      <button role="tab" aria-selected="false" aria-controls="panel-install" id="tab-install">install</button>
+    </div>
+    <div id="panel-npx" role="tabpanel" aria-labelledby="tab-npx" class="tab-panel active">
+      <p>Requires Node.js.</p>
+      <div class="code-block"><button class="copy-btn" aria-label="Copy">Copy</button><pre><code>alias swe-swe='npx -y swe-swe'</code></pre></div>
+    </div>
+    <div id="panel-install" role="tabpanel" aria-labelledby="tab-install" class="tab-panel">
+      <p>Installs to <code>/usr/local/bin</code> (writable) or <code>~/.local/bin</code> (fallback).</p>
+      <div class="code-block"><button class="copy-btn" aria-label="Copy">Copy</button><pre><code>curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh</code></pre></div>
+    </div>
+  </section>
+
+  <section class="section steps">
+    <h2>Then</h2>
+    <ol>
+      <li><code>cd /path/to/project</code></li>
+      <li><code>swe-swe init</code> <a class="comment" href="https://github.com/choonkeat/swe-swe/blob/main/docs/cli-commands-and-binary-management.md" target="_blank" rel="noopener"><code># see docs for more options</code></a></li>
+      <li><code>swe-swe up</code></li>
+      <li>Open <a href="http://localhost:1977" target="_blank" rel="noopener"><code>http://localhost:1977</code></a></li>
+    </ol>
+  </section>
+
+  <section class="section requirements">
+    <h2>Requirements</h2>
+    <ul>
+      <li>Docker &amp; Docker Compose</li>
+      <li>Terminal access (macOS, Linux, Windows with WSL)</li>
+    </ul>
+  </section>
+
+  <footer class="footer">
+    Works with Claude, Aider, Goose, Gemini, Codex, OpenCode
+  </footer>
+
+</div>
+
+<script>
+(function() {
+  // --- Theme toggle (not persisted — follows system, click to flip) ---
+  var btn = document.getElementById('theme-btn');
+  var sunIcon = '\u2600\uFE0F';   // sun
+  var moonIcon = '\uD83C\uDF19';  // crescent moon
+
+  function current() {
+    return document.documentElement.getAttribute('data-theme');
+  }
+
+  function updateIcon() {
+    btn.textContent = current() === 'dark' ? sunIcon : moonIcon;
+  }
+
+  btn.addEventListener('click', function() {
+    var next = current() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    updateIcon();
+  });
+
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+    document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+    updateIcon();
+  });
+
+  updateIcon();
+
+  // --- Copy buttons ---
+  function copyText(text, btn) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() { showCopied(btn); }, function() { fallbackCopy(text, btn); });
+    } else {
+      fallbackCopy(text, btn);
+    }
+  }
+  function fallbackCopy(text, btn) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopied(btn);
+  }
+  function showCopied(btn) {
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+  }
+  document.querySelectorAll('.copy-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var text = btn.closest('.code-block').querySelector('code').textContent;
+      copyText(text, btn);
+    });
+  });
+
+  // --- Tabs ---
+  var tabs = document.querySelectorAll('.tabs [role="tab"]');
+  var panels = document.querySelectorAll('.tab-panel');
+
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      tabs.forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      panels.forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      document.getElementById(tab.getAttribute('aria-controls')).classList.add('active');
+    });
+  });
+})();
+</script>
+</body>
+</html>
