@@ -3294,7 +3294,7 @@ class TerminalUI extends HTMLElement {
      */
     _onPreviewReady() {
         this._previewWaiting = false;
-        const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
         if (placeholder) placeholder.classList.add('hidden');
     }
 
@@ -3317,7 +3317,7 @@ class TerminalUI extends HTMLElement {
 
         const iframe = this.querySelector('.terminal-ui__iframe');
         const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
-        const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
 
         if (urlInput) {
             // Show full URL in input field
@@ -3347,7 +3347,7 @@ class TerminalUI extends HTMLElement {
     setPreviewURL(targetURL, iframePath = null) {
         const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
         const iframe = this.querySelector('.terminal-ui__iframe');
-        const placeholder = this.querySelector('.terminal-ui__iframe-placeholder');
+        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
 
         // Determine if targetURL is external (non-localhost)
         let isExternal = false;
