@@ -64,17 +64,29 @@ The Preview tab uses a **placeholder → probe → iframe load** pattern. The pr
 
 ### HTML structure
 
+Both the agent chat (left panel) and preview (right panel) have placeholder divs with the shared base class `terminal-ui__iframe-placeholder`:
+
 ```html
-<div class="terminal-ui__iframe-placeholder">
-    <div class="terminal-ui__iframe-placeholder-status">
-        <span class="terminal-ui__iframe-placeholder-dot"></span>
-        <span class="terminal-ui__iframe-placeholder-text">Connecting to preview...</span>
+<!-- Left panel: agent chat -->
+<div class="terminal-ui__agent-chat">
+    <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
+        ...Connecting to chat...
     </div>
+    <iframe class="terminal-ui__agent-chat-iframe" ...></iframe>
 </div>
-<iframe class="terminal-ui__iframe" src="" ...></iframe>
+
+<!-- Right panel: preview -->
+<div class="terminal-ui__iframe-container">
+    <div class="terminal-ui__iframe-placeholder">
+        ...Connecting to preview...
+    </div>
+    <iframe class="terminal-ui__iframe" ...></iframe>
+</div>
 ```
 
-The placeholder overlays the iframe. It stays visible until dismissed.
+Because both placeholders share the base class, **preview selectors must be scoped** to `.terminal-ui__iframe-container .terminal-ui__iframe-placeholder` to avoid matching the agent chat placeholder (which appears first in DOM order). Agent chat code uses the specific class `.terminal-ui__agent-chat-placeholder`.
+
+Each placeholder overlays its iframe and stays visible until dismissed.
 
 ### Sequence
 
