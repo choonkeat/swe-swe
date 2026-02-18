@@ -1167,14 +1167,14 @@ func detectAvailableAssistants() error {
 	return nil
 }
 
-// previewProxyErrorPage returns an HTML error page for when the app is not running
-// Uses fetch-based polling to avoid white flash on reload
-// Note: %% is used to escape % characters in CSS (e.g., 50%%, 100vh) for fmt.Fprintf
-const previewProxyErrorPage = `<!DOCTYPE html>
+// agentChatWaitingPage is shown by the agent chat proxy when the MCP sidecar
+// hasn't started yet. It auto-polls and reloads once the backend is up.
+// Note: %% is used to escape % characters in CSS for fmt.Fprintf
+const agentChatWaitingPage = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>App Preview</title>
+    <title>Agent Chat</title>
     <script>
         (function(){var m=document.cookie.match(/(?:^|;\s*)swe-swe-theme=([^;]+)/);
         if(m)document.documentElement.setAttribute('data-theme',m[1]);})();
@@ -1183,21 +1183,11 @@ const previewProxyErrorPage = `<!DOCTYPE html>
         :root {
             --pp-bg: #1e1e1e;
             --pp-text: #9ca3af;
-            --pp-heading: #e5e7eb;
-            --pp-instr-bg: #262626;
-            --pp-instr-label: #6b7280;
-            --pp-instr-text: #d1d5db;
-            --pp-port: #60a5fa;
             --pp-status: #6b7280;
         }
         [data-theme="light"] {
             --pp-bg: #ffffff;
             --pp-text: #64748b;
-            --pp-heading: #1e293b;
-            --pp-instr-bg: #f1f5f9;
-            --pp-instr-label: #94a3b8;
-            --pp-instr-text: #334155;
-            --pp-port: #2563eb;
             --pp-status: #94a3b8;
         }
         body {
@@ -1210,35 +1200,9 @@ const previewProxyErrorPage = `<!DOCTYPE html>
             background: var(--pp-bg);
             color: var(--pp-text);
         }
-        .container {
-            text-align: center;
-            padding: 2rem;
-            max-width: 400px;
-        }
-        h1 { color: var(--pp-heading); font-size: 1.25rem; font-weight: 500; margin-bottom: 1.5rem; }
-        .instruction {
-            background: var(--pp-instr-bg);
-            border-radius: 8px;
-            padding: 1rem 1.25rem;
-            margin: 1rem 0;
-            text-align: left;
-        }
-        .instruction-label {
-            font-size: 0.8rem;
-            color: var(--pp-instr-label);
-            margin-bottom: 0.5rem;
-        }
-        .instruction-text {
-            color: var(--pp-instr-text);
-            font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-        .port { color: var(--pp-port); }
         .status {
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             color: var(--pp-status);
-            margin-top: 1.5rem;
         }
         .status-dot {
             display: inline-block;
@@ -1256,41 +1220,28 @@ const previewProxyErrorPage = `<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>App Preview</h1>
-        <div class="instruction">
-            <div class="instruction-label">Tell your agent:</div>
-            <div class="instruction-text">Start a hot-reload web app on <span class="port">localhost:%s</span></div>
-        </div>
-        <div class="status">
-            <span class="status-dot"></span>
-            <span id="status-text">Listening for app...</span>
-        </div>
+    <div class="status">
+        <span class="status-dot"></span>
+        <span>Waiting for Agent Chat…</span>
     </div>
     <script>
-        // Poll for app availability without page reload (no white flash)
         async function checkApp() {
             try {
                 const response = await fetch(window.location.href, { method: 'HEAD' });
-                // 502 = proxy error (this page), 200 = app is running
                 if (response.ok) {
                     window.location.reload();
                 }
-            } catch (e) {
-                // Network error, keep polling
-            }
+            } catch (e) {}
         }
-        // Check every 3 seconds
         setInterval(checkApp, 3000);
     </script>
 </body>
 </html>`
 
 type previewProxyState struct {
-	targetMu       sync.RWMutex
-	targetURL      *url.URL // nil = use default localhost:targetPort
-	defaultTarget  *url.URL // The default localhost:targetPort
-	defaultPortStr string   // String version of default port for error pages
+	targetMu      sync.RWMutex
+	targetURL     *url.URL // nil = use default localhost:targetPort
+	defaultTarget *url.URL // The default localhost:targetPort
 }
 
 type previewProxyServer struct {
@@ -1301,109 +1252,11 @@ type previewProxyServer struct {
 }
 
 var (
-	previewServersMu     sync.Mutex
-	previewServers       = make(map[int]*previewProxyServer)
-	previewProxyDisabled bool
-)
-
-// agentChatProxyServer is a simple reverse proxy for the agent chat MCP server.
-// It reuses the same previewProxyServer struct for ref-counting and lifecycle.
-var (
 	agentChatServersMu sync.Mutex
 	agentChatServers   = make(map[int]*previewProxyServer)
 )
 
-// startPreviewProxy starts the app preview reverse proxy server on the provided listener.
-// It proxies requests to localhost:targetPort (or a dynamically set target URL).
-func startPreviewProxy(listener net.Listener, targetPort int) (*previewProxyServer, error) {
-	targetPortStr := strconv.Itoa(targetPort)
-	defaultTarget, err := url.Parse("http://localhost:" + targetPortStr)
-	if err != nil {
-		return nil, fmt.Errorf("preview proxy: invalid target URL: %w", err)
-	}
-
-	state := &previewProxyState{
-		defaultTarget:  defaultTarget,
-		defaultPortStr: targetPortStr,
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleProxyRequest(state))
-
-	server := &http.Server{
-		Handler: mux,
-	}
-
-	go func() {
-		log.Printf("Starting preview proxy on %s -> localhost:%d", listener.Addr().String(), targetPort)
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("Preview proxy error: %v", err)
-		}
-	}()
-
-	return &previewProxyServer{
-		server:   server,
-		listener: listener,
-		state:    state,
-		refCount: 0,
-	}, nil
-}
-
-func acquirePreviewProxyServer(previewPort int, listener net.Listener) error {
-	previewServersMu.Lock()
-	defer previewServersMu.Unlock()
-
-	if ref, ok := previewServers[previewPort]; ok {
-		ref.refCount++
-		if listener != nil {
-			listener.Close()
-		}
-		return nil
-	}
-
-	if listener == nil {
-		var err error
-		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(previewPort)))
-		if err != nil {
-			return err
-		}
-	}
-
-	server, err := startPreviewProxy(listener, previewPort)
-	if err != nil {
-		listener.Close()
-		return err
-	}
-	server.refCount = 1
-	previewServers[previewPort] = server
-	return nil
-}
-
-func releasePreviewProxyServer(previewPort int) {
-	previewServersMu.Lock()
-	ref, ok := previewServers[previewPort]
-	if !ok {
-		previewServersMu.Unlock()
-		return
-	}
-	ref.refCount--
-	if ref.refCount > 0 {
-		previewServersMu.Unlock()
-		return
-	}
-	delete(previewServers, previewPort)
-	previewServersMu.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := ref.server.Shutdown(ctx); err != nil {
-		log.Printf("Preview proxy shutdown error: %v", err)
-	}
-	ref.listener.Close()
-}
-
-// startAgentChatProxy starts a simple reverse proxy for the agent chat MCP server.
-// Unlike the preview proxy, it does NOT inject debug scripts.
+// startAgentChatProxy starts a reverse proxy for the agent chat MCP server.
 func startAgentChatProxy(listener net.Listener, targetPort int) (*previewProxyServer, error) {
 	targetPortStr := strconv.Itoa(targetPort)
 	defaultTarget, err := url.Parse("http://localhost:" + targetPortStr)
@@ -1413,14 +1266,13 @@ func startAgentChatProxy(listener net.Listener, targetPort int) (*previewProxySe
 
 	state := &previewProxyState{
 		defaultTarget:  defaultTarget,
-		defaultPortStr: targetPortStr,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleProxyRequest(state))
 
 	// Wrap with CORS so the cross-origin probe from the main UI can read
-	// the response status (distinguishes 200 from 502).
+	// the X-Agent-Reverse-Proxy header (distinguishes our 502 from Traefik's).
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -1572,15 +1424,15 @@ func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
 		// Make the request
 		resp, err := client.Do(outReq)
 		if err != nil {
-			log.Printf("Preview proxy error: %v", err)
+			log.Printf("Agent chat proxy error: %v", err)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadGateway)
-			fmt.Fprintf(w, previewProxyErrorPage, state.defaultPortStr)
+			fmt.Fprint(w, agentChatWaitingPage)
 			return
 		}
 		defer resp.Body.Close()
 
-		// Process response (inject debug script for HTML, handle cookies)
+		// Process response (copy headers, strip cookie Domain/Secure, stream body)
 		processProxyResponse(w, resp, target)
 	}
 }
@@ -1721,12 +1573,10 @@ func main() {
 	addr := flag.String("addr", ":9898", "Listen address")
 	version := flag.Bool("version", false, "Show version and exit")
 	dumpTemplates := flag.String("dump-container-templates", "", "Dump all container templates to directory and exit")
-	noPreviewProxy := flag.Bool("no-preview-proxy", false, "Disable the preview proxy server (useful for dev mode)")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
 	flag.Parse()
-	previewProxyDisabled = *noPreviewProxy
 
 	// Override preview port range from environment (set by docker-compose)
 	if portRange := os.Getenv("SWE_PREVIEW_PORTS"); portRange != "" {
@@ -3803,17 +3653,11 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	if previewListener != nil {
 		previewListener.Close()
 	}
-	if !previewProxyDisabled {
-		if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
-			if acListener != nil {
-				acListener.Close()
-			}
-			return nil, false, err
-		}
-	} else {
+	if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
 		if acListener != nil {
 			acListener.Close()
 		}
+		return nil, false, err
 	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly

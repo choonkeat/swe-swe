@@ -42,7 +42,7 @@ func TestWebSocketProxyRelay(t *testing.T) {
 	backendURL, _ := url.Parse(backend.URL)
 	state := &previewProxyState{
 		defaultTarget:  backendURL,
-		defaultPortStr: backendURL.Port(),
+
 	}
 	proxyMux := http.NewServeMux()
 	proxyMux.HandleFunc("/", handleProxyRequest(state))
@@ -86,7 +86,7 @@ func TestNormalHTTPThroughProxy(t *testing.T) {
 	backendURL, _ := url.Parse(backend.URL)
 	state := &previewProxyState{
 		defaultTarget:  backendURL,
-		defaultPortStr: backendURL.Port(),
+
 	}
 	proxyMux := http.NewServeMux()
 	proxyMux.HandleFunc("/", handleProxyRequest(state))
@@ -111,7 +111,6 @@ func TestWebSocketProxyBackendDown(t *testing.T) {
 	backendURL, _ := url.Parse("http://127.0.0.1:1") // port 1 should be closed
 	state := &previewProxyState{
 		defaultTarget:  backendURL,
-		defaultPortStr: "1",
 	}
 	proxyMux := http.NewServeMux()
 	proxyMux.HandleFunc("/", handleProxyRequest(state))

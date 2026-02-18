@@ -70,9 +70,8 @@ make stop
 
 ### `make run`
 - Copies `go.mod.txt` → `go.mod` and `go.sum.txt` → `go.sum`
-- Runs `go run main.go -addr :$PORT -no-preview-proxy`
+- Runs `go run main.go -addr :$PORT`
 - Uses the `PORT` env var (set by the container); falls back to 3000 if unset
-- The `-no-preview-proxy` flag disables per-session preview proxies (production server handles previews)
 
 ### `make stop`
 - Finds and kills the dev server process
@@ -83,7 +82,6 @@ make stop
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-addr` | `:9898` | Listen address |
-| `-no-preview-proxy` | `false` | Disable per-session preview proxies |
 | `-shell` | `claude` | Command to execute |
 | `-working-directory` | current dir | Working directory for shell |
 
@@ -125,7 +123,7 @@ This copies the template to `/tmp`, runs tests, and syncs `go.sum` changes back.
 | Aspect | Dev Server | Production |
 |--------|------------|------------|
 | Port | 3000 | 9898 |
-| Preview proxy | Disabled via `-no-preview-proxy` | Per-session ports (5{PORT}) |
+| Preview proxy | Runs via agent-reverse-proxy in container | Same |
 | Build | `go run` (JIT compile) | Pre-compiled binary |
 | Source | Template directory | Embedded in CLI |
 

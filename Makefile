@@ -11,7 +11,7 @@ run:
 	@mkdir -p $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs $(SERVER_TEMPLATE)/container-templates/swe-swe
 	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs/
 	@cp $(CONTAINER_TEMPLATES)/swe-swe/setup $(SERVER_TEMPLATE)/container-templates/swe-swe/
-	cd cmd/swe-swe/templates/host/swe-swe-server && go run main.go -addr :$(PORT) -no-preview-proxy $(RUN_ARGS)
+	cd cmd/swe-swe/templates/host/swe-swe-server && go run main.go -addr :$(PORT) $(RUN_ARGS)
 
 stop:
 	@pid=$$(ps aux | grep '[e]xe/main.*-addr :$(PORT)' | awk '{print $$2}' | head -1); \
