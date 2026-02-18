@@ -55,7 +55,7 @@ if ! grep -q '"swe-swe-agent-chat"' /home/app/.claude.json 2>/dev/null; then
     unset CLAUDECODE
     claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
     claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
-    claude mcp add-json --scope user swe-swe-preview '"'"'{"command":"/repos/agent-reverse-proxy/workspace/dist/agent-reverse-proxy","args":["--tool-prefix","preview","--theme-cookie","swe-swe-theme"]}'"'"'
+    claude mcp add --scope user --transport stdio swe-swe-preview -- npx -y @choonkeat/agent-reverse-proxy --tool-prefix preview --theme-cookie swe-swe-theme
     claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
   '
   echo -e "${GREEN}✓ Created Claude MCP configuration${NC}"
