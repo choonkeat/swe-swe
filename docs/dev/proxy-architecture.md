@@ -17,9 +17,18 @@ Agent Chat:  MCP sidecar ←  swe-swe-server proxy                ←  Traefik  
                :4000          :24000                                :24000
 ```
 
-- `previewProxyPort(port) = 20000 + port` (used by agent-reverse-proxy, not swe-swe-server)
+- `previewProxyPort(port) = 20000 + port`
 - `agentChatProxyPort(port) = 20000 + port`
 - `agentChatPortFromPreview(previewPort) = previewPort + 1000`
+
+swe-swe-server passes these ports to the container environment so in-container processes know where to listen:
+- `PORT={previewPort}` — tells the user's app which port to bind (e.g., 3000)
+- `PROXY_PORT={previewProxyPort}` — tells agent-reverse-proxy which port to listen on (e.g., 23000)
+- `AGENT_CHAT_PORT={agentChatPort}` — tells the MCP sidecar which port to bind (e.g., 4000)
+
+### Port reservation
+
+`findAvailablePortPair()` reserves all four ports (preview proxy, preview app, agent chat proxy, agent chat app) by binding and then releasing them. The preview proxy listener is immediately closed (agent-reverse-proxy will bind it later inside the container). The agent chat proxy listener is passed to `acquireAgentChatProxyServer` which keeps it.
 
 Traefik routes each port to the corresponding proxy via per-port entrypoints and routers (generated in `templates.go`). All routers go through `forwardauth` middleware for session cookie validation.
 
@@ -71,7 +80,7 @@ The placeholder overlays the iframe. It stays visible until dismissed.
 
 1. **User opens Preview** → `openIframePane('preview')` → calls `setPreviewURL()`
 2. **Placeholder shown** → `placeholder.classList.remove('hidden')`, `_previewWaiting = true`
-3. **Probe starts** → `probeUntilReady(base + '/', { isReady: resp => resp.headers.has('X-Agent-Reverse-Proxy') })` — retries up to 10 times with exponential backoff (2s → 30s)
+3. **Probe starts** → `probeUntilReady(base + '/', { method: 'GET', isReady: resp => resp.headers.has('X-Agent-Reverse-Proxy') })` — retries up to 10 times with exponential backoff (2s → 30s). Uses GET instead of the default HEAD to avoid an iOS Safari preflight bug.
 4. **Probe succeeds** (proxy is up) → `iframe.src = base + '/__agent-reverse-proxy-debug__/shell?path=...'`
 5. **Placeholder dismissed** when either:
    - `iframe.onload` fires while `_previewWaiting` is true (fallback)
@@ -92,8 +101,8 @@ The `swe-swe-preview` MCP tool (agent-reverse-proxy) serves a shell page at `/__
 ### Sequence
 
 1. **`session=chat`**: Tab shown immediately. Placeholder ("Connecting to chat...") shown over iframe area.
-2. **`session=terminal`**: Skip probe entirely — don't send `agentChatPort` to client.
-3. **Probe** waits for `X-Agent-Reverse-Proxy` header (proxy is up).
+2. **`session=terminal`**: Server-side `SessionMode` controls this — when `SessionMode != "chat"`, the server sends `agentChatPort: 0` in status messages, so the client never probes and never shows the tab.
+3. **Probe** uses `probeUntilReady(acUrl + '/', { method: 'GET', isReady: resp => resp.headers.has('X-Agent-Reverse-Proxy') })` — same pattern as preview (GET to avoid iOS Safari preflight bug).
 4. **On probe success**: set `chatIframe.src` to the agent chat URL. On iframe load, dismiss placeholder.
 
 ### What the user sees
