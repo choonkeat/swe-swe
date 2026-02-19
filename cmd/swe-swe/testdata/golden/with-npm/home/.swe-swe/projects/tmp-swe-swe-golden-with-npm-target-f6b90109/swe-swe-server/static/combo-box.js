@@ -365,21 +365,40 @@ class ComboBox extends HTMLElement {
   _fuzzyMatch(haystack, needle) {
     const hLower = haystack.toLowerCase();
     const nLower = needle.toLowerCase();
-    const positions = [];
-    let hi = 0;
 
-    for (let ni = 0; ni < nLower.length; ni++) {
-      const idx = hLower.indexOf(nLower[ni], hi);
-      if (idx === -1) return null;
-      positions.push(idx);
-      hi = idx + 1;
+    // Try starting from every occurrence of the first character
+    // and pick the match path with the tightest score.
+    let best = null;
+    let startFrom = 0;
+
+    while (true) {
+      const firstIdx = hLower.indexOf(nLower[0], startFrom);
+      if (firstIdx === -1) break;
+
+      const positions = [firstIdx];
+      let hi = firstIdx + 1;
+      let valid = true;
+
+      for (let ni = 1; ni < nLower.length; ni++) {
+        const idx = hLower.indexOf(nLower[ni], hi);
+        if (idx === -1) { valid = false; break; }
+        positions.push(idx);
+        hi = idx + 1;
+      }
+
+      if (valid) {
+        const span = positions[positions.length - 1] - positions[0];
+        const startPenalty = positions[0] * 0.1;
+        const score = span + startPenalty;
+        if (!best || score < best.score) {
+          best = { positions, score };
+        }
+      }
+
+      startFrom = firstIdx + 1;
     }
 
-    // Score: span of the match (last pos - first pos), plus a small penalty
-    // for starting later in the string. Exact contiguous substring gets 0 span.
-    const span = positions[positions.length - 1] - positions[0];
-    const startPenalty = positions[0] * 0.1;
-    return { positions, score: span + startPenalty };
+    return best;
   }
 
   _renderOptions(filter = "") {

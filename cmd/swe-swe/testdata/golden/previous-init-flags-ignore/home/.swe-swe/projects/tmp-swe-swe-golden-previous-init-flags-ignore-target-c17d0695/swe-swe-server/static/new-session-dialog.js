@@ -560,8 +560,11 @@
         fetchAndPopulateRepos();
         overlay.style.display = 'flex';
 
-        // Don't auto-focus the combo-box input (it would open the dropdown).
-        // The combo-box is the first interactive element and will get focus on Tab.
+        // Focus the Where combo-box so the user can start typing immediately.
+        const whereCombo = document.getElementById('where-combo');
+        if (whereCombo && whereCombo._input) {
+            whereCombo._input.focus();
+        }
     };
 
     // Dialog close
