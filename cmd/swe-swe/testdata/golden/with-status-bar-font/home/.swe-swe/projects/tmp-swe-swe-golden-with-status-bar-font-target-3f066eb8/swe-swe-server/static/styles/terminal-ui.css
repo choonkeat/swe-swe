@@ -1260,6 +1260,10 @@ terminal-ui.embedded-in-iframe .mobile-only {
     text-decoration: underline;
 }
 
+[data-theme="light"] .terminal-ui__session-name:hover {
+    color: #1a1a2e;
+}
+
 .terminal-ui__session-name:hover::after {
     opacity: 0.7;
 }
