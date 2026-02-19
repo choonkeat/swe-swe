@@ -827,6 +827,7 @@ func handleInit() {
 			"templates/host/swe-swe-server/static/modules/upload-queue.js",
 			"templates/host/swe-swe-server/static/modules/chunk-assembler.js",
 			"templates/host/swe-swe-server/static/modules/status-renderer.js",
+			"templates/host/swe-swe-server/static/combo-box.js",
 			"templates/host/swe-swe-server/static/color-utils.js",
 			"templates/host/swe-swe-server/static/homepage-main.js",
 			"templates/host/swe-swe-server/static/new-session-dialog.js",
