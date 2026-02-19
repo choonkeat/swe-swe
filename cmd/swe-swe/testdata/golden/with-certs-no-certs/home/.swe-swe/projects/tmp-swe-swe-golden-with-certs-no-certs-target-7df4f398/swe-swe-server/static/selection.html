@@ -751,10 +751,11 @@
         }
         .dialog__footer {
             display: flex;
-            justify-content: space-between;
+            flex-wrap: wrap;
+            justify-content: flex-end;
             align-items: center;
             margin-top: 24px;
-            gap: 16px;
+            gap: 12px;
         }
         .dialog__error {
             color: #ef4444;
@@ -860,6 +861,49 @@
         }
         .dialog__field--hidden {
             display: none;
+        }
+
+        /* Hide original elements upgraded by combo-box */
+        .dialog select[aria-hidden="true"],
+        .dialog input[aria-hidden="true"],
+        .dialog datalist[hidden] {
+            display: none !important;
+        }
+        /* combo-box theme */
+        .dialog combo-box {
+            display: block;
+            width: 100%;
+            font-size: 14px;
+            --combo-bg: var(--bg-primary);
+            --combo-border: var(--border-primary);
+            --combo-text: var(--text-bright);
+            --combo-placeholder: var(--text-muted);
+            --combo-focus-border: var(--accent-primary);
+            --combo-focus-shadow: transparent;
+            --combo-arrow: var(--text-secondary);
+            --combo-radius: 8px;
+            --combo-input-padding: 12px 14px;
+            --combo-listbox-bg: var(--bg-secondary);
+            --combo-listbox-shadow: rgba(0,0,0,0.4);
+            --combo-hover-bg: rgba(255,255,255,0.06);
+            --combo-selected-bg: var(--accent-primary);
+            --combo-selected-text: #fff;
+            --combo-highlight: rgba(255,255,255,0.15);
+        }
+        .dialog combo-box.combo--in-row {
+            flex: 1;
+            min-width: 0;
+        }
+        .dialog__chat-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .dialog__experimental {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            letter-spacing: 0.03em;
         }
 
         /* Mobile responsiveness */
@@ -1135,6 +1179,7 @@
                     <option value="clone">Clone external repository...</option>
                     <option value="create">Create new project...</option>
                 </select>
+                <combo-box id="where-combo" upgrade="#new-session-mode"></combo-box>
             </div>
             <!-- All fields below dropdown, hidden until user picks something -->
             <div id="new-session-fields" class="dialog__field--hidden">
@@ -1171,10 +1216,9 @@
                     <!-- Branch field (no Next button) -->
                     <div class="dialog__field" id="branch-field">
                         <label class="dialog__label">Branch (optional)</label>
-                        <div class="dialog__row">
-                            <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
-                            <datalist id="branch-list"></datalist>
-                        </div>
+                        <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" disabled>
+                        <datalist id="branch-list"></datalist>
+                        <combo-box id="branch-combo" upgrade="#new-session-branch" disabled></combo-box>
                     </div>
                     <!-- Agent selector -->
                     <div class="dialog__field">
@@ -1199,8 +1243,14 @@
                         <div class="dialog__spinner"></div>
                         <span id="new-session-loading-text">Loading...</span>
                     </div>
-                    <button class="dialog__start dialog__start--terminal" id="new-session-start-terminal" disabled>Start Agent Terminal</button>
-                    <button class="dialog__start dialog__start--chat" id="new-session-start-chat" disabled>Start Agent Chat</button>
+                    <div class="dialog__chat-group">
+                        <button class="dialog__start dialog__start--chat" id="new-session-start-chat" disabled>Start Agent Chat</button>
+                        <div class="dialog__experimental">Experimental</div>
+                    </div>
+                    <div class="dialog__chat-group">
+                        <button class="dialog__start dialog__start--terminal" id="new-session-start-terminal" disabled>Start Agent Terminal</button>
+                        <div class="dialog__experimental" style="visibility:hidden">&nbsp;</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1447,6 +1497,7 @@
         </footer>
     </div>
 
+    <script src="/combo-box.js"></script>
     <script src="/homepage-main.js"></script>
     <script src="/new-session-dialog.js"></script>
     <script type="module" src="/theme-mode.js"></script>

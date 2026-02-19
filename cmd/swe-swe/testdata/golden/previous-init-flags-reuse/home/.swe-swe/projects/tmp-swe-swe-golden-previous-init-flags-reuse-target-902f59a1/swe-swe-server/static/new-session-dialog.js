@@ -27,6 +27,8 @@
     var newSessionColorHex = document.getElementById('new-session-color-hex');
     var newSessionColorClear = document.getElementById('new-session-color-clear');
     var envHint = document.getElementById('new-session-env-hint');
+    var whereCombo = document.getElementById('where-combo');
+    var branchCombo = document.getElementById('branch-combo');
 
     var dialogState = {
         sessionUUID: '',
@@ -70,6 +72,18 @@
         }
     }
 
+    // Sync current <select> options to the where combo-box (excluding disabled placeholder)
+    function syncWhereComboOptions() {
+        if (!whereCombo) return;
+        var opts = [];
+        for (var i = 0; i < modeSelect.options.length; i++) {
+            var opt = modeSelect.options[i];
+            if (opt.disabled || opt.value === '') continue;
+            opts.push({ value: opt.value, label: opt.textContent });
+        }
+        whereCombo.setOptions(opts);
+    }
+
     function resetDownstream() {
         // Hide post-prepare fields
         postPrepareFields.classList.add('dialog__field--hidden');
@@ -83,6 +97,11 @@
         branchInput.value = '';
         branchInput.disabled = true;
         branchList.innerHTML = '';
+        if (branchCombo) {
+            branchCombo.value = '';
+            branchCombo.setOptions([]);
+            branchCombo.setAttribute('disabled', '');
+        }
 
         // Reset error/loading
         errorDiv.textContent = '';
@@ -121,6 +140,7 @@
     function resetDialog() {
         modeSelect.value = '';
         dialogState.mode = '';
+        if (whereCombo) whereCombo.value = '';
 
         // Hide everything below dropdown
         newSessionFields.classList.add('dialog__field--hidden');
@@ -150,6 +170,7 @@
     function enableBranchAndAgent() {
         // Enable branch input
         branchInput.disabled = false;
+        if (branchCombo) branchCombo.removeAttribute('disabled');
 
         // Enable agent selection
         var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
@@ -246,9 +267,14 @@
                     option.textContent = repo.remoteURL || repo.dirName;
                     modeSelect.insertBefore(option, cloneOption);
                 });
+
+                syncWhereComboOptions();
             })
             .catch(function(err) {
                 console.error('Failed to fetch repos:', err);
+            })
+            .finally(function() {
+                syncWhereComboOptions();
             });
     }
 
@@ -256,6 +282,7 @@
     function prepareRepo(body) {
         showLoading('Preparing repository...');
         modeSelect.disabled = true;
+        if (whereCombo) whereCombo.setAttribute('disabled', '');
 
         fetch('/api/repo/prepare', {
             method: 'POST',
@@ -328,12 +355,14 @@
                     })
                     .then(function(branchData) {
                         hideLoading();
+                        var branches = branchData.branches || [];
                         branchList.innerHTML = '';
-                        (branchData.branches || []).forEach(function(branch) {
+                        branches.forEach(function(branch) {
                             var option = document.createElement('option');
                             option.value = branch;
                             branchList.appendChild(option);
                         });
+                        if (branchCombo) branchCombo.setOptions(branches);
                         enableBranchAndAgent();
                     });
             }
@@ -344,6 +373,7 @@
         })
         .finally(function() {
             modeSelect.disabled = false;
+            if (whereCombo) whereCombo.removeAttribute('disabled');
         });
     }
 
@@ -530,7 +560,8 @@
         fetchAndPopulateRepos();
         overlay.style.display = 'flex';
 
-        setTimeout(function() { modeSelect.focus(); }, 100);
+        // Don't auto-focus the combo-box input (it would open the dropdown).
+        // The combo-box is the first interactive element and will get focus on Tab.
     };
 
     // Dialog close
