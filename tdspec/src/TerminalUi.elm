@@ -32,6 +32,12 @@ type alias State =
     , previewUrl : Maybe Url
     , canGoBack : Bool
     , canGoForward : Bool
+    , workDir : String
+    , assistant : String
+    , sessionName : String
+    , viewers : Int
+    , yoloMode : Bool
+    , yoloSupported : Bool
     }
 
 
@@ -71,17 +77,25 @@ onPtyMessage msg state =
             ( state, [] )
 
         PtyProtocol.Status payload ->
-            ( { state | previewPort = Just payload.previewPort }
+            ( { state
+                | previewPort = Just payload.previewPort
+                , workDir = payload.workDir
+                , assistant = payload.assistant
+                , sessionName = payload.sessionName
+                , viewers = payload.viewers
+                , yoloMode = payload.yoloMode
+                , yoloSupported = payload.yoloSupported
+              }
             , [ ConnectDebugWebSocket payload.previewPort ]
             )
 
-        PtyProtocol.ChatResponse _ ->
+        PtyProtocol.ChatMsg _ ->
             ( state, [] )
 
-        PtyProtocol.FileUploadAck _ ->
+        PtyProtocol.FileUploadResult _ ->
             ( state, [] )
 
-        PtyProtocol.Exit ->
+        PtyProtocol.Exit _ ->
             ( state, [] )
 
 

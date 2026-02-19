@@ -24,8 +24,8 @@ instances + Preview tab are active.
     | |server| | |       DebugHub            | |  |
     | |:3000 | | | UI obs    <-- WS3, WS4   | |  |
     | |      | | | iframe    <-- WS5, WS6   | |  |
-    | +------+ | | POST/open <-- 7 HTTP     | |  |
-    |          | +---------------------------+ |  |
+    | |      | | | GET/open  <-- 7 HTTP      | |  |
+    | +------+ | +---------------------------+ |  |
     |          +-------------------------------+  |
     |                                             |
     |          +--------------+                   |
@@ -33,6 +33,10 @@ instances + Preview tab are active.
     |          | (CLI shim)   |                   |
     |          +--------------+         Container |
     +==============================================+
+
+Note: agent-reverse-proxy also exposes a vestigial
+`/__agent-reverse-proxy-debug__/agent` WS endpoint.
+It is unused — swe-swe-server uses in-process subscribers instead.
 
 @docs Process, WebSocketConnection, HttpEndpoint, fullTopology
 
@@ -97,7 +101,7 @@ type HttpEndpoint
 
 
 {-| Full topology with 2 terminals + preview active.
-6 WebSockets + 1 HTTP endpoint.
+4 WebSockets + 1 HTTP endpoint (+ 2 more WebSockets when Preview iframe active).
 -}
 fullTopology : { websockets : List WebSocketConnection, http : List HttpEndpoint }
 fullTopology =
@@ -167,11 +171,11 @@ fullTopology =
             }
         ]
     , http =
-        [ -- 7: Open shim HTTP POST
+        [ -- 7: Open shim HTTP GET
           OpenEndpoint
             { from = ContainerOpenShim
             , to = ContainerAgentReverseProxy
-            , method = "POST"
+            , method = "GET"
             , path = "/__agent-reverse-proxy-debug__/open"
             }
         ]

@@ -34,7 +34,7 @@ Both register with DebugHub as iframe clients.
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (Url(..))
+import Domain exposing (Timestamp(..), Url(..))
 
 
 -- ── Shell page (WS 5) ──────────────────────────────────────────
@@ -48,16 +48,16 @@ type ShellPageEffect
 
 {-| On page load, the shell page sends an `Init` message with the current URL.
 -}
-onPageLoad : Url -> ShellPageEffect
-onPageLoad url =
-    ShellSend (Init { url = url })
+onPageLoad : Url -> Timestamp -> ShellPageEffect
+onPageLoad url ts =
+    ShellSend (Init { url = url, ts = ts })
 
 
 {-| On URL change (pushState/popstate/hashchange), sends `UrlChange`.
 -}
-onUrlChange : Url -> ShellPageEffect
-onUrlChange url =
-    ShellSend (UrlChange { url = url })
+onUrlChange : Url -> Timestamp -> ShellPageEffect
+onUrlChange url ts =
+    ShellSend (UrlChange { url = url, ts = ts })
 
 
 {-| On navigation state change, sends `NavState` with back/forward availability.
@@ -72,6 +72,7 @@ onNavStateChange payload =
 type ShellPageAction
     = NavigateIframe NavigateAction
     | ReloadIframe
+    | IgnoredShellCommand {- shell page silently drops commands it doesn't handle (e.g. Query) -}
 
 
 {-| Handle a command from the hub on WS 5.
@@ -86,8 +87,8 @@ onShellCommand cmd =
         IframeReload ->
             ReloadIframe
 
-        Query _ ->
-            ReloadIframe
+        IframeQuery _ ->
+            IgnoredShellCommand
 
 
 -- ── inject.js (WS 6) ───────────────────────────────────────────
@@ -101,42 +102,42 @@ type InjectEffect
 
 {-| Captured console output (log/warn/error/info/debug).
 -}
-onConsole : ConsolePayload -> InjectEffect
+onConsole : { m : String, args : List String, ts : Timestamp } -> InjectEffect
 onConsole payload =
     InjectSend (Console payload)
 
 
 {-| Uncaught error.
 -}
-onError : { message : String, source : String, lineno : Int } -> InjectEffect
+onError : { msg : String, file : String, line : Int, col : Int, stack : Maybe String, ts : Timestamp } -> InjectEffect
 onError payload =
     InjectSend (Error payload)
 
 
 {-| Unhandled promise rejection.
 -}
-onRejection : { reason : String } -> InjectEffect
+onRejection : { reason : String, ts : Timestamp } -> InjectEffect
 onRejection payload =
     InjectSend (Rejection payload)
 
 
 {-| Fetch request/response info.
 -}
-onFetch : { url : Url, method : String, status : Int } -> InjectEffect
-onFetch payload =
-    InjectSend (Fetch payload)
+onFetch : FetchResult -> InjectEffect
+onFetch result =
+    InjectSend (Fetch result)
 
 
 {-| XMLHttpRequest info.
 -}
-onXhr : { url : Url, method : String, status : Int } -> InjectEffect
-onXhr payload =
-    InjectSend (Xhr payload)
+onXhr : XhrResult -> InjectEffect
+onXhr result =
+    InjectSend (Xhr result)
 
 
 {-| Notification that a `ws://` URL was auto-upgraded to `wss://`.
 -}
-onWsUpgrade : { originalUrl : Url, upgradedUrl : Url } -> InjectEffect
+onWsUpgrade : { from : Url, to : Url, ts : Timestamp } -> InjectEffect
 onWsUpgrade payload =
     InjectSend (WsUpgrade payload)
 
@@ -144,7 +145,7 @@ onWsUpgrade payload =
 {-| Actions inject.js takes when it receives a command from the hub.
 -}
 type InjectAction
-    = RunQuery { selector : String }
+    = RunQuery { id : String, selector : String }
     | IgnoredCommand
 
 
@@ -154,7 +155,7 @@ inject.js handles DOM queries; ignores navigation/reload.
 onInjectCommand : IframeCommand -> InjectAction
 onInjectCommand cmd =
     case cmd of
-        Query payload ->
+        IframeQuery payload ->
             RunQuery payload
 
         IframeNavigate _ ->

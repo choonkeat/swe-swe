@@ -1,4 +1,10 @@
-module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload)
+module PtyProtocol exposing
+    ( ClientMsg(..)
+    , ServerMsg(..)
+    , StatusPayload
+    , ExitPayload(..)
+    , FileUploadResult(..)
+    )
 
 {-| WS 1,2 — PTY WebSocket protocol.
 
@@ -10,7 +16,7 @@ One connection per terminal-ui instance, unique UUID.
 
 Carries: binary PTY data (xterm I/O) + JSON control messages.
 
-@docs ClientMsg, ServerMsg, StatusPayload
+@docs ClientMsg, ServerMsg, StatusPayload, ExitPayload, FileUploadResult
 
 -}
 
@@ -24,9 +30,9 @@ type ClientMsg
     = PtyInput Bytes
     | Resize { cols : Int, rows : Int }
     | FileUpload { filename : String, data : Bytes }
-    | Ping
+    | Ping {- client sends { type: "ping", data?: {...} }; data is optional opaque pass-through (terminal-ui puts { ts } in it) -}
     | RenameSession { name : String }
-    | ToggleYolo { enabled : Bool }
+    | ToggleYolo {- client sends { type: "toggleYolo" }; no payload — server toggles current state -}
     | Chat { text : String }
 
 
@@ -37,11 +43,11 @@ The `Status` message is critical — its `previewPort` triggers
 type ServerMsg
     = PtyOutput Bytes
     | FileDownloadChunk Bytes
-    | Pong
+    | Pong {- server echoes { type: "pong", data?: {...} }; data mirrors what client sent in Ping -}
     | Status StatusPayload
-    | ChatResponse { text : String }
-    | FileUploadAck { filename : String }
-    | Exit
+    | ChatMsg { userName : String, text : String, timestamp : String }
+    | FileUploadResult FileUploadResult
+    | Exit ExitPayload
 
 
 {-| Payload of the `status` JSON message.
@@ -52,6 +58,26 @@ type alias StatusPayload =
     { previewPort : PreviewPort
     , workDir : String
     , viewers : Int
+    , cols : Int
+    , rows : Int
+    , assistant : String
     , sessionName : String
+    , uuidShort : String
+    , agentChatPort : Maybe Int
     , yoloMode : Bool
+    , yoloSupported : Bool
     }
+
+
+{-| Exit message payload — simple exit or worktree exit with branch info.
+-}
+type ExitPayload
+    = ExitSimple { exitCode : Int }
+    | ExitWorktree { exitCode : Int, path : String, branch : String, targetBranch : String }
+
+
+{-| Result of a file upload — success with filename or failure with error.
+-}
+type FileUploadResult
+    = FileUploadOk { filename : String }
+    | FileUploadFailed { error : String }

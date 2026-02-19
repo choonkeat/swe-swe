@@ -6,13 +6,13 @@ Manages three subscriber pools:
 
   - **UI observers:** terminal-ui instances connected via `/ui` (WS 3,4)
   - **Iframe clients:** shell page + inject.js connected via `/ws` (WS 5,6)
-  - **Agent client:** swe-swe-server MCP tools via `/agent` (backward compat)
+  - **Agent client:** vestigial `/agent` WS endpoint (usually nil, unused by swe-swe-server)
 
 Routing rules:
 
     Source               -> Destination
-    Iframe sends msg     -> ForwardToAgent + fan-out to UI observers
-    HTTP POST /open      -> SendToUIObservers only
+    Iframe sends msg     -> BroadcastFromIframe (agent + UI observers + in-proc subscribers)
+    HTTP GET /open       -> SendToUiObserversOnly
     UI observer sends    -> ForwardToIframes
 
 @docs Effect, onIframeMessage, onOpenRequest, onUiCommand
@@ -26,29 +26,33 @@ import Domain exposing (Url(..))
 {-| Side effects produced by the DebugHub routing logic.
 -}
 type Effect
-    = ForwardToAgent DebugMsg
-    | FanOutToUiObservers DebugMsg
+    = BroadcastFromIframe DebugMsg
+      {- Go's ForwardToAgent sends to three destinations:
+         1. The agent WS conn (vestigial, usually nil)
+         2. All UI observers
+         3. All in-process subscribers (MCP tools in swe-swe-server)
+      -}
+    | SendToUiObserversOnly DebugMsg
     | ForwardToIframes IframeCommand
 
 
 {-| When an iframe client (WS 5,6) sends a message, the hub
-forwards it to the agent AND fans it out to all UI observers.
+broadcasts it to agent + UI observers + in-process subscribers
+via a single Go function call (ForwardToAgent).
 -}
 onIframeMessage : DebugMsg -> List Effect
 onIframeMessage msg =
-    [ ForwardToAgent msg
-    , FanOutToUiObservers msg
-    ]
+    [ BroadcastFromIframe msg ]
 
 
-{-| When the swe-swe-open CLI shim hits `HTTP POST /open?url=...`,
+{-| When the swe-swe-open CLI shim hits `HTTP GET /open?url=...`,
 the hub broadcasts an `Open` message to all UI observers.
 This is the source of the duplicate-prompt bug — all terminal-ui
 instances receive and handle it.
 -}
 onOpenRequest : { url : Url } -> List Effect
 onOpenRequest payload =
-    [ FanOutToUiObservers (Open { url = payload.url }) ]
+    [ SendToUiObserversOnly (Open { url = payload.url }) ]
 
 
 {-| When a UI observer (WS 3,4) sends a command, the hub
@@ -62,3 +66,6 @@ onUiCommand cmd =
 
         Reload ->
             [ ForwardToIframes IframeReload ]
+
+        Query payload ->
+            [ ForwardToIframes (IframeQuery payload) ]

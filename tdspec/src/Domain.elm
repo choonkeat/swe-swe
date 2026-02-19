@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), Bytes(..))
+module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), Bytes(..), Timestamp(..))
 
 {-| Shared primitive types used across the WebSocket architecture.
 
@@ -6,9 +6,9 @@ System overview:
 
   - Browser page hosts 2x terminal-ui web components + 1x Preview iframe
   - Container runs swe-swe-server (PTY) + agent-reverse-proxy (debug/preview)
-  - 6 WebSockets + 1 HTTP endpoint connect them
+  - 4 WebSockets + 1 HTTP endpoint connect them (+ 2 more when Preview iframe active)
 
-@docs Url, SessionUuid, PreviewPort, Bytes
+@docs Url, SessionUuid, PreviewPort, Bytes, Timestamp
 
 -}
 
@@ -37,3 +37,10 @@ Not JSON-encoded; sent as WebSocket binary frames.
 -}
 type Bytes
     = Bytes
+
+
+{-| Millisecond timestamp from `Date.now()`.
+Used by inject.js and terminal-ui for telemetry timing.
+-}
+type Timestamp
+    = Timestamp Int
