@@ -873,12 +873,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange, *proxyPortOffset))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange, *proxyPortOffset))
 			}
 
 			// Process entrypoint.sh template with conditional sections
@@ -891,6 +891,14 @@ func handleInit() {
 				contentStr := string(content)
 				contentStr = strings.Replace(contentStr, `Version   = "dev"`, fmt.Sprintf(`Version   = "%s"`, Version), 1)
 				contentStr = strings.Replace(contentStr, `GitCommit = "unknown"`, fmt.Sprintf(`GitCommit = "%s"`, GitCommit), 1)
+				contentStr = strings.Replace(contentStr, "proxyPortOffset = 20000", fmt.Sprintf("proxyPortOffset = %d", *proxyPortOffset), 1)
+				content = []byte(contentStr)
+			}
+
+			// Process url-builder.js template with proxy port offset
+			if hostFile == "templates/host/swe-swe-server/static/modules/url-builder.js" {
+				contentStr := string(content)
+				contentStr = strings.ReplaceAll(contentStr, "{{PROXY_PORT_OFFSET}}", strconv.Itoa(*proxyPortOffset))
 				content = []byte(contentStr)
 			}
 

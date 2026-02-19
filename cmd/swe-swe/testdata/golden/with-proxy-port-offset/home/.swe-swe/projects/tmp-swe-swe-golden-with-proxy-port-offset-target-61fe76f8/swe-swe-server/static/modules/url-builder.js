@@ -6,9 +6,10 @@
 
 /**
  * Offset added to container ports to derive their host-side proxy ports.
- * Must match the Go constant in main.go (previewProxyPort / agentChatProxyPort).
+ * Must match the Go constant in main.go (proxyPortOffset).
+ * Value is substituted during `swe-swe init`; dev mode replaces the placeholder with 20000.
  */
-export const PROXY_PORT_OFFSET = 20000;
+export const PROXY_PORT_OFFSET = 50000;
 
 /**
  * Get the base URL from location object.

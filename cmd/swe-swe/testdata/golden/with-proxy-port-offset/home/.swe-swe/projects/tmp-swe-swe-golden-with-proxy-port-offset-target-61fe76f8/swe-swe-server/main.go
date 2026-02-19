@@ -1667,6 +1667,18 @@ func main() {
 	}
 	staticHandler := http.FileServer(http.FS(staticContent))
 
+	// Handler for url-builder.js with template substitution (dev mode compatibility)
+	http.HandleFunc("/modules/url-builder.js", func(w http.ResponseWriter, r *http.Request) {
+		content, err := staticFS.ReadFile("static/modules/url-builder.js")
+		if err != nil {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		result := strings.ReplaceAll(string(content), "{{PROXY_PORT_OFFSET}}", strconv.Itoa(proxyPortOffset))
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Write([]byte(result))
+	})
+
 	// Handler for terminal-ui.js with template substitution (dev mode compatibility)
 	http.HandleFunc("/terminal-ui.js", func(w http.ResponseWriter, r *http.Request) {
 		content, err := staticFS.ReadFile("static/terminal-ui.js")
@@ -3412,12 +3424,14 @@ func deleteRecordingFiles(uuid string) {
 	}
 }
 
+const proxyPortOffset = 50000
+
 func previewProxyPort(port int) int {
-	return 20000 + port
+	return proxyPortOffset + port
 }
 
 func agentChatProxyPort(port int) int {
-	return 20000 + port
+	return proxyPortOffset + port
 }
 
 func agentChatPortFromPreview(previewPort int) int {

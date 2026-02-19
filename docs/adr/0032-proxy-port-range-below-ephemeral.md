@@ -35,3 +35,4 @@ The two ranges don't overlap because preview app ports (3000-3019) and agent cha
 - Existing users must re-run `swe-swe init` (or manually update their generated `docker-compose.yml`) to pick up the new ports.
 - The `5{PORT}` and `4{PORT}` conventions documented in ADR-025 are superseded by a uniform `20000 + port`.
 - One fewer thing to debug: ephemeral port collisions were transient and hard to reproduce, so eliminating them removes a class of "works on my machine" failures.
+- The offset is configurable via `--proxy-port-offset` (default 20000) for environments where the 20000-24019 range conflicts with other services.

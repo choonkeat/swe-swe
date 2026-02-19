@@ -17,9 +17,10 @@ Agent Chat:  MCP sidecar ←  swe-swe-server proxy                ←  Traefik  
                :4000          :24000                                :24000
 ```
 
-- `previewProxyPort(port) = 20000 + port`
-- `agentChatProxyPort(port) = 20000 + port`
+- `previewProxyPort(port) = proxyPortOffset + port` (default offset: 20000)
+- `agentChatProxyPort(port) = proxyPortOffset + port` (default offset: 20000)
 - `agentChatPortFromPreview(previewPort) = previewPort + 1000`
+- The offset is configurable via `swe-swe init --proxy-port-offset <N>`
 
 swe-swe-server passes these ports to the container environment so in-container processes know where to listen:
 - `PORT={previewPort}` — tells the user's app which port to bind (e.g., 3000)
