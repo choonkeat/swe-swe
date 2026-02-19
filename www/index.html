@@ -126,16 +126,13 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .tabs {
   display: flex;
   gap: 2px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: 8px 8px 0 0;
-  padding: 3px 3px 0 3px;
 }
 
 .tabs button {
   flex: 1;
   background: none;
   border: none;
+  border-bottom: 1px solid var(--border-primary);
   padding: 10px 16px;
   cursor: pointer;
   color: var(--text-secondary);
@@ -151,9 +148,11 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 .tabs button.active {
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font-weight: 600;
+  border: 1px solid var(--border-primary);
+  border-bottom: none;
 }
 
 .tab-panel {
@@ -167,6 +166,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 
 .tab-panel.active {
   display: block;
+  background: var(--bg-secondary);
 }
 
 .tab-panel p {
@@ -200,7 +200,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 pre {
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
   padding: 1rem;
@@ -305,8 +305,9 @@ code {
     <h1>swe-swe</h1>
     <p class="tagline"><b>Your agent:</b> containerized with its own browser for agentic testing.<br><b>Your terminal:</b> pair live or share recordings with teammates.<br><b>Your sessions:</b> run multiple in parallel, each on its own git worktree.</p>
     <div class="links">
-      <a href="https://github.com/choonkeat/swe-swe">GitHub</a>
-      <a href="https://github.com/choonkeat/swe-swe/tree/main/docs">Docs</a>
+      <a href="https://github.com/choonkeat/swe-swe">github</a>
+      <a href="https://www.npmjs.com/package/swe-swe">npm</a>
+      <a href="https://github.com/choonkeat/swe-swe/tree/main/docs">docs</a>
     </div>
   </header>
 
@@ -345,7 +346,7 @@ code {
   </section>
 
   <footer class="footer">
-    Works with Claude, Aider, Goose, Gemini, Codex, OpenCode
+    Works with Claude, Codex, OpenCode, Gemini, Aider, Goose
   </footer>
 
 </div>
