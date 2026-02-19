@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/fs"
+	iofs "io/fs"
 	"log"
 	"net"
 	"os"
@@ -23,7 +23,7 @@ var slashCommandsFS embed.FS
 // writeBundledSlashCommands extracts bundled slash commands to the destination directory.
 // If ext is non-empty, only files with that extension are copied.
 func writeBundledSlashCommands(destDir string, ext string) error {
-	return fs.WalkDir(slashCommandsFS, "slash-commands", func(path string, d fs.DirEntry, err error) error {
+	return iofs.WalkDir(slashCommandsFS, "slash-commands", func(path string, d iofs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -784,56 +784,24 @@ func handleInit() {
 
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
-	//
-	// IMPORTANT: When adding new files to templates/host/, you MUST add them to this list.
-	// Otherwise they won't be copied during `swe-swe init` and will 404 at runtime.
-	// After adding, run: make build golden-update
-	hostFiles := []string{
-			"templates/host/.dockerignore",
-			"templates/host/Dockerfile",
-			"templates/host/docker-compose.yml",
-			"templates/host/traefik-dynamic.yml",
-			"templates/host/entrypoint.sh",
-			"templates/host/nginx-vscode.conf",
-			"templates/host/chrome-screencast/Dockerfile",
-			"templates/host/chrome-screencast/supervisord.conf",
-			"templates/host/chrome-screencast/entrypoint.sh",
-			"templates/host/chrome-screencast/nginx-cdp.conf",
-			"templates/host/chrome-screencast/package.json",
-			"templates/host/chrome-screencast/server.js",
-			"templates/host/chrome-screencast/static/index.html",
-			"templates/host/code-server/Dockerfile",
-			"templates/host/auth/Dockerfile",
-			"templates/host/auth/go.mod.txt",
-			"templates/host/auth/main.go",
-			"templates/host/swe-swe-server/go.mod.txt",
-			"templates/host/swe-swe-server/go.sum.txt",
-			"templates/host/swe-swe-server/main.go",
-			"templates/host/swe-swe-server/static/index.html",
-			"templates/host/swe-swe-server/static/selection.html",
-			"templates/host/swe-swe-server/static/terminal-ui.js",
-			"templates/host/swe-swe-server/static/link-provider.js",
-			"templates/host/swe-swe-server/static/xterm-addon-fit.js",
-			"templates/host/swe-swe-server/static/xterm.css",
-			"templates/host/swe-swe-server/static/xterm.js",
-			"templates/host/swe-swe-server/static/styles/theme.css",
-			"templates/host/swe-swe-server/static/styles/terminal-ui.css",
-			"templates/host/swe-swe-server/static/modules/util.js",
-			"templates/host/swe-swe-server/static/modules/validation.js",
-			"templates/host/swe-swe-server/static/modules/uuid.js",
-			"templates/host/swe-swe-server/static/modules/url-builder.js",
-			"templates/host/swe-swe-server/static/modules/messages.js",
-			"templates/host/swe-swe-server/static/modules/reconnect.js",
-			"templates/host/swe-swe-server/static/modules/upload-queue.js",
-			"templates/host/swe-swe-server/static/modules/chunk-assembler.js",
-			"templates/host/swe-swe-server/static/modules/status-renderer.js",
-			"templates/host/swe-swe-server/static/combo-box.js",
-			"templates/host/swe-swe-server/static/color-utils.js",
-			"templates/host/swe-swe-server/static/homepage-main.js",
-			"templates/host/swe-swe-server/static/new-session-dialog.js",
-			"templates/host/swe-swe-server/static/theme-mode.js",
-			"templates/host/swe-swe-server/static/homepage-theme.js",
-			"templates/host/swe-swe-server/static/session-theme.js",
+	// Walk embedded templates/host/ to discover all files automatically.
+	// New files are included by default — no whitelist to maintain.
+		var hostFiles []string
+		if err := iofs.WalkDir(assets, "templates/host", func(path string, d iofs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			// Skip test files — not needed in production builds
+			if strings.HasSuffix(d.Name(), "_test.go") {
+				return nil
+			}
+			hostFiles = append(hostFiles, path)
+			return nil
+		}); err != nil {
+			log.Fatalf("Failed to walk templates/host: %v", err)
 		}
 
 		// Files that go to project directory (accessible by Claude in container)
