@@ -104,7 +104,7 @@ cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
 PREVIEW_PORT=$(( 20000 + ${PORT:-3000} ))
-curl -sf "http://localhost:${PREVIEW_PORT}/__swe-swe-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+curl -sf "http://localhost:${PREVIEW_PORT}/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
 echo "→ Preview: $URL" >&2
 SHIM
 chmod +x /home/app/.swe-swe/bin/swe-swe-open
