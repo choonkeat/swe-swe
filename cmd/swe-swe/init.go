@@ -98,6 +98,7 @@ type InitConfig struct {
 	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
+	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -386,12 +387,23 @@ func handleInit() {
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
+	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 → 23000 with offset 20000)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
 	// Validate --previous-init-flags
 	if *previousInitFlags != "" && *previousInitFlags != "reuse" && *previousInitFlags != "ignore" {
 		fmt.Fprintf(os.Stderr, "Error: --previous-init-flags must be 'reuse' or 'ignore', got %q\n", *previousInitFlags)
+		os.Exit(1)
+	}
+
+	// Validate --proxy-port-offset
+	if *proxyPortOffset < 1024 {
+		fmt.Fprintf(os.Stderr, "Error: --proxy-port-offset must be >= 1024, got %d\n", *proxyPortOffset)
+		os.Exit(1)
+	}
+	if *proxyPortOffset+5019 >= 65536 {
+		fmt.Fprintf(os.Stderr, "Error: --proxy-port-offset %d is too large (offset + max port must be < 65536)\n", *proxyPortOffset)
 		os.Exit(1)
 	}
 
@@ -576,6 +588,9 @@ func handleInit() {
 		}
 		if savedConfig.StatusBarFontFamily != "" {
 			*statusBarFontFamily = savedConfig.StatusBarFontFamily
+		}
+		if savedConfig.ProxyPortOffset != 0 {
+			*proxyPortOffset = savedConfig.ProxyPortOffset
 		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
@@ -995,6 +1010,7 @@ func handleInit() {
 		StatusBarFontFamily: *statusBarFontFamily,
 		HostUID:             hostUID,
 		HostGID:             hostGID,
+		ProxyPortOffset:     *proxyPortOffset,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)

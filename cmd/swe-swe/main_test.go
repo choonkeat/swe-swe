@@ -699,6 +699,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-terminal-font", []string{"--terminal-font-size", "16", "--terminal-font-family", "JetBrains Mono"}},
 		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
+		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
 	}
 
 	for _, v := range variants {
@@ -811,7 +812,8 @@ func TestGoldenFiles(t *testing.T) {
 				v.name == "with-slash-commands-multi" ||
 				v.name == "with-slash-commands-no-alias" ||
 				v.name == "with-docker" ||
-				v.name == "with-repos-dir"
+				v.name == "with-repos-dir" ||
+				v.name == "with-proxy-port-offset"
 			if hasNonSlashAgents {
 				if _, err := os.Stat(sweSweSetup); err != nil {
 					t.Errorf("Target file missing (expected for variant with non-slash agents): %s", sweSweSetup)

@@ -1,0 +1,53 @@
+---
+description: Configure git, SSH, testing, credentials
+---
+
+# Setup swe-swe Environment
+
+Help the user configure their development environment conversationally.
+
+## Tasks
+
+1. **Inject swe-swe pointer** (if not present)
+   - Check if /workspace/CLAUDE.md or /workspace/AGENTS.md exists
+   - If exists and doesn't mention .swe-swe/docs/AGENTS.md, append:
+     ```
+     ## swe-swe
+     See `.swe-swe/docs/AGENTS.md` for commands and setup.
+     ```
+   - If neither exists, create /workspace/CLAUDE.md or /workspace/AGENT.md
+     (whichever is applicable to the current agent) with the pointer
+
+2. **Git identity**
+   - Check `git config user.name` and `git config user.email`
+   - If not set, ask user and configure
+   - Ask about GPG signing preference
+
+3. **SSH keys**
+   - Check if ~/.ssh/id_* exists
+   - If not, offer to generate
+   - Help add to ssh-agent
+   - Provide public key for GitHub/GitLab
+
+4. **Testing setup**
+   - Ask: what command starts your dev server?
+   - Ask: what port does it run on?
+   - Document how to access via host.docker.internal
+   - See `.swe-swe/docs/browser-automation.md` for MCP browser details
+
+5. **Custom environment variables**
+   - Check if `swe-swe/env` already exists
+   - If yes: show current contents, ask if user wants to modify
+   - If no: ask "Do you need any custom environment variables for your sessions?"
+   - Show example: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
+   - If yes: collect KEY=value pairs (one per line), write to `swe-swe/env`
+   - If no: skip
+
+6. **Update .swe-swe/docs/AGENTS.md**
+   - Update the "Current Setup" section with configured values
+
+## Style
+
+Be conversational. Ask one thing at a time. Skip what's already configured.
+
+Note: If your agent doesn't support slash commands, use `@swe-swe/setup` instead.
