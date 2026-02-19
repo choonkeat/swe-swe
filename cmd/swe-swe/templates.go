@@ -223,25 +223,17 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 					entrypoint := fmt.Sprintf("preview%d", port)
 					previewPort := previewProxyPort(port)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-preview-%d", port)
-					preflightRouterName := fmt.Sprintf("${PROJECT_NAME}-preview-%d-preflight", port)
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, previewPort))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/__swe-swe-debug__/target`) && Method(`OPTIONS`)\"", indent, preflightRouterName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, preflightRouterName, entrypoint))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, preflightRouterName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, preflightRouterName, routerName))
 					if isSSL {
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, preflightRouterName))
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, preflightRouterName, domain))
 						} else if isSelfSign {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, preflightRouterName))
 						}
 					}
 				}
