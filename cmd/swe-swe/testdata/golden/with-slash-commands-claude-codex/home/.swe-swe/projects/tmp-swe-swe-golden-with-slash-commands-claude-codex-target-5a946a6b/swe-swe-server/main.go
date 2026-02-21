@@ -1324,6 +1324,10 @@ func processProxyResponse(w http.ResponseWriter, resp *http.Response, target *ur
 		if isHopByHopHeader(key) {
 			continue
 		}
+		// Strip X-Frame-Options — agent chat content is displayed in an iframe
+		if strings.EqualFold(key, "X-Frame-Options") {
+			continue
+		}
 		// Handle Set-Cookie specially to strip Domain attribute
 		if strings.EqualFold(key, "Set-Cookie") {
 			for _, cookie := range resp.Cookies() {
