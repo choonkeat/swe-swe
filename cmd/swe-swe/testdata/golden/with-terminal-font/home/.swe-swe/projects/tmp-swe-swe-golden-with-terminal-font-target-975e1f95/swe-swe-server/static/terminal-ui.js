@@ -3455,13 +3455,19 @@ class TerminalUI extends HTMLElement {
 
     /**
      * Reverse-map a proxy URL to the logical localhost:PORT URL.
-     * e.g., https://host:23007/dashboard?tab=1#s → http://localhost:3007/dashboard?tab=1#s
+     * e.g., https://host/proxy/{uuid}/preview/dashboard?tab=1#s → http://localhost:3000/dashboard?tab=1#s
      */
     reverseMapProxyUrl(proxyUrl) {
         if (!this.previewPort) return proxyUrl;
         try {
             const parsed = new URL(proxyUrl);
-            return `http://localhost:${this.previewPort}${parsed.pathname}${parsed.search}${parsed.hash}`;
+            // Strip the /proxy/{sessionUUID}/preview prefix from path-based routing
+            const prefix = this.sessionUUID ? `/proxy/${this.sessionUUID}/preview` : '';
+            let path = parsed.pathname;
+            if (prefix && path.startsWith(prefix)) {
+                path = path.slice(prefix.length) || '/';
+            }
+            return `http://localhost:${this.previewPort}${path}${parsed.search}${parsed.hash}`;
         } catch {
             return proxyUrl;
         }
