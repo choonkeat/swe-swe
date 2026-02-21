@@ -1,4 +1,7 @@
-module TerminalUi exposing (State, Connection(..), Effect(..), onPtyMessage, onDebugMessage)
+module TerminalUi exposing
+    ( State, Connection(..), Effect(..)
+    , onPtyMessage, onDebugMessage
+    )
 
 {-| terminal-ui — custom web component mounted in the browser.
 

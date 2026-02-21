@@ -1,9 +1,11 @@
-module Topology exposing (Process(..), WebSocketConnection(..), HttpEndpoint(..), fullTopology)
+module Topology exposing (Process(..), WebSocketConnection(..), HttpEndpoint(..), HttpProxyChain(..), fullTopology)
 
 {-| System topology — all processes, connections, and message flows.
 
 Enumerates every WebSocket and HTTP endpoint when 2 terminal-ui
 instances + Preview tab are active.
+
+    WebSocket Topology
 
     Browser
     +==============================================+
@@ -34,17 +36,28 @@ instances + Preview tab are active.
     |          +--------------+         Container |
     +==============================================+
 
+    HTTP Proxy Chains (port-based, via Traefik)
+
+    Browser           Traefik              Container proxy            Container backend
+                    (forwardauth)
+    terminal-ui  →  :23000  ──────→  agent-reverse-proxy :23000  →  User app :3000
+    terminal-ui  →  :24000  ──────→  swe-swe-server      :24000  →  MCP sidecar :4000
+
+    Traefik creates per-port entrypoints (20 preview + 20 agent chat = 40 ports).
+    Each router applies forwardauth middleware for session cookie validation.
+
 Note: agent-reverse-proxy also exposes a vestigial
 `/__agent-reverse-proxy-debug__/agent` WS endpoint.
 It is unused — swe-swe-server uses in-process subscribers instead.
 
-@docs Process, WebSocketConnection, HttpEndpoint, fullTopology
+@docs Process, WebSocketConnection, HttpEndpoint, HttpProxyChain, fullTopology
 
 -}
 
 import DebugHub
 import DebugProtocol exposing (..)
-import Domain exposing (PreviewPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), PreviewPort(..), ProxyPort(..), SessionUuid(..), Url(..))
+import HttpProxy exposing (PortOffset(..))
 import PreviewIframe
 import PtyProtocol
 import TerminalUi
@@ -59,6 +72,9 @@ type Process
     | ContainerSweServer
     | ContainerAgentReverseProxy
     | ContainerOpenShim
+    | HostTraefik
+    | ContainerUserApp
+    | ContainerMcpSidecar
 
 
 {-| A WebSocket connection between two processes.
@@ -100,10 +116,48 @@ type HttpEndpoint
         }
 
 
-{-| Full topology with 2 terminals + preview active.
-4 WebSockets + 1 HTTP endpoint (+ 2 more WebSockets when Preview iframe active).
+{-| An HTTP reverse proxy chain from browser to backend.
+
+Each chain passes through Traefik (forwardauth) and a container-side
+reverse proxy before reaching the backend app.
+
+Preview proxy: separate process (`npx @choonkeat/agent-reverse-proxy`).
+Injects debug scripts, provides DebugHub, serves shell page.
+
+Agent Chat proxy: built into swe-swe-server (`handleProxyRequest`).
+Cookie stripping + CORS headers, no HTML injection.
+
 -}
-fullTopology : { websockets : List WebSocketConnection, http : List HttpEndpoint }
+type HttpProxyChain
+    = PreviewProxy
+        { from : Process
+        , traefik : Process
+        , proxy : Process
+        , backend : Process
+        , proxyPort : ProxyPort
+        , appPort : PreviewPort
+        }
+    | AgentChatProxy
+        { from : Process
+        , traefik : Process
+        , proxy : Process
+        , backend : Process
+        , proxyPort : ProxyPort
+        , appPort : AgentChatPort
+        }
+
+
+{-| Full topology with 2 terminals + preview active.
+4 WebSockets + 1 HTTP endpoint (+ 2 more WebSockets when Preview iframe active)
+
+  - 2 HTTP reverse proxy chains through Traefik.
+
+-}
+fullTopology :
+    { websockets : List WebSocketConnection
+    , http : List HttpEndpoint
+    , httpProxies : List HttpProxyChain
+    }
 fullTopology =
     let
         agentTerminal =
@@ -114,6 +168,22 @@ fullTopology =
 
         sink _ =
             ()
+
+        -- Port derivation example with default offset
+        offset =
+            PortOffset 20000
+
+        previewPort =
+            PreviewPort 3000
+
+        acPort =
+            HttpProxy.agentChatPort previewPort
+
+        previewProxy =
+            HttpProxy.previewProxyPort offset previewPort
+
+        acProxy =
+            HttpProxy.agentChatProxyPort offset acPort
     in
     { websockets =
         [ -- WS 1: PTY for Agent Terminal
@@ -177,6 +247,27 @@ fullTopology =
             , to = ContainerAgentReverseProxy
             , method = "GET"
             , path = "/__agent-reverse-proxy-debug__/open"
+            }
+        ]
+    , httpProxies =
+        [ -- Preview: agent-reverse-proxy (separate npx process, MCP tool)
+          PreviewProxy
+            { from = agentTerminal
+            , traefik = HostTraefik
+            , proxy = ContainerAgentReverseProxy
+            , backend = ContainerUserApp
+            , proxyPort = previewProxy
+            , appPort = previewPort
+            }
+
+        -- Agent Chat: swe-swe-server built-in proxy (handleProxyRequest)
+        , AgentChatProxy
+            { from = agentTerminal
+            , traefik = HostTraefik
+            , proxy = ContainerSweServer
+            , backend = ContainerMcpSidecar
+            , proxyPort = acProxy
+            , appPort = acPort
             }
         ]
     }

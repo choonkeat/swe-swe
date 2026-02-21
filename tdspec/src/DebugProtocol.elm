@@ -1,10 +1,6 @@
 module DebugProtocol exposing
-    ( DebugMsg(..)
-    , FetchResult(..)
-    , XhrResult(..)
-    , UiCommand(..)
-    , IframeCommand(..)
-    , NavigateAction(..)
+    ( DebugMsg(..), FetchResult(..), XhrResult(..)
+    , UiCommand(..), IframeCommand(..), NavigateAction(..)
     )
 
 {-| Debug channel protocol — shared across WS 3,4 (`/ui`) and WS 5,6 (`/ws`).
@@ -39,15 +35,25 @@ type DebugMsg
     | NavState { canGoBack : Bool, canGoForward : Bool }
     | Open { url : Url }
     | Console
-        { m : String {- JSON: "m" is the console method name: "log"|"warn"|"error"|"info"|"debug" -}
+        { m : String
+
+        {- JSON: "m" is the console method name: "log"|"warn"|"error"|"info"|"debug" -}
         , args : List String
         , ts : Timestamp
         }
     | Error
-        { msg : String {- JSON: "msg" (error message) -}
-        , file : String {- JSON: "file" (source filename) -}
-        , line : Int {- JSON: "line" (line number) -}
-        , col : Int {- JSON: "col" (column number) -}
+        { msg : String
+
+        {- JSON: "msg" (error message) -}
+        , file : String
+
+        {- JSON: "file" (source filename) -}
+        , line : Int
+
+        {- JSON: "line" (line number) -}
+        , col : Int
+
+        {- JSON: "col" (column number) -}
         , stack : Maybe String
         , ts : Timestamp
         }
@@ -63,8 +69,12 @@ type DebugMsg
         , rect : Maybe { x : Float, y : Float, width : Float, height : Float }
         }
     | WsUpgrade
-        { from : Url {- JSON: "from" (original ws:// URL) -}
-        , to : Url {- JSON: "to" (upgraded wss:// URL) -}
+        { from : Url
+
+        {- JSON: "from" (original ws:// URL) -}
+        , to : Url
+
+        {- JSON: "to" (upgraded wss:// URL) -}
         , ts : Timestamp
         }
 

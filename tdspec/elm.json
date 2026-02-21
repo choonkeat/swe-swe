@@ -1,7 +1,7 @@
 {
     "type": "package",
     "name": "tdspec/websocket-architecture",
-    "summary": "Type-domain spec of swe-swe WebSocket architecture",
+    "summary": "Type-domain spec of swe-swe WebSocket and proxy architecture",
     "license": "BSD-3-Clause",
     "version": "1.0.0",
     "exposed-modules": [
@@ -11,6 +11,7 @@
         "DebugHub",
         "TerminalUi",
         "PreviewIframe",
+        "HttpProxy",
         "Topology"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",

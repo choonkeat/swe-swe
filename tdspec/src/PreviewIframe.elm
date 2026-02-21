@@ -1,19 +1,8 @@
 module PreviewIframe exposing
-    ( ShellPageEffect(..)
-    , ShellPageAction(..)
-    , InjectEffect(..)
-    , InjectAction(..)
-    , onPageLoad
-    , onUrlChange
-    , onNavStateChange
-    , onShellCommand
-    , onConsole
-    , onError
-    , onRejection
-    , onFetch
-    , onXhr
-    , onWsUpgrade
-    , onInjectCommand
+    ( ShellPageEffect(..), onPageLoad, onUrlChange, onNavStateChange
+    , ShellPageAction(..), onShellCommand
+    , InjectEffect(..), onConsole, onError, onRejection, onFetch, onXhr, onWsUpgrade
+    , InjectAction(..), onInjectCommand
     )
 
 {-| Preview iframe — the shell page and inject.js inside the Preview tab.
@@ -35,6 +24,7 @@ Both register with DebugHub as iframe clients.
 
 import DebugProtocol exposing (..)
 import Domain exposing (Timestamp(..), Url(..))
+
 
 
 -- ── Shell page (WS 5) ──────────────────────────────────────────
@@ -72,7 +62,11 @@ onNavStateChange payload =
 type ShellPageAction
     = NavigateIframe NavigateAction
     | ReloadIframe
-    | IgnoredShellCommand {- shell page silently drops commands it doesn't handle (e.g. Query) -}
+    | IgnoredShellCommand
+
+
+
+{- shell page silently drops commands it doesn't handle (e.g. Query) -}
 
 
 {-| Handle a command from the hub on WS 5.
@@ -89,6 +83,7 @@ onShellCommand cmd =
 
         IframeQuery _ ->
             IgnoredShellCommand
+
 
 
 -- ── inject.js (WS 6) ───────────────────────────────────────────

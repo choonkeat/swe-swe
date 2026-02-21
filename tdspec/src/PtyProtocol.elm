@@ -1,10 +1,4 @@
-module PtyProtocol exposing
-    ( ClientMsg(..)
-    , ServerMsg(..)
-    , StatusPayload
-    , ExitPayload(..)
-    , FileUploadResult(..)
-    )
+module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload, ExitPayload(..), FileUploadResult(..))
 
 {-| WS 1,2 — PTY WebSocket protocol.
 

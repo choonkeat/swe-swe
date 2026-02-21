@@ -2,9 +2,9 @@
 
 PORT ?= 8000
 
-# Type-check all spec modules
+# Format and type-check all spec modules
 build:
-	cd $(CURDIR) && elm make --docs=docs.json && rm -f docs.json
+	cd $(CURDIR) && npx elm-format src/ --yes && elm make --docs=docs.json && rm -f docs.json
 
 # Serve browsable docs with clickable type cross-references
 preview:
