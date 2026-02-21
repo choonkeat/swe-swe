@@ -111,16 +111,16 @@ onRejection payload =
     InjectSend (Rejection payload)
 
 
-{-| Fetch request/response info.
+{-| Fetch request/response — success (status + ok) or failure (error string).
 -}
-onFetch : HttpResult -> InjectEffect
+onFetch : FetchResult -> InjectEffect
 onFetch result =
     InjectSend (Fetch result)
 
 
-{-| XMLHttpRequest info.
+{-| XMLHttpRequest — always completes with status + ok (no error branch).
 -}
-onXhr : HttpResult -> InjectEffect
+onXhr : XhrResult -> InjectEffect
 onXhr result =
     InjectSend (Xhr result)
 

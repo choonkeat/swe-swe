@@ -27,7 +27,7 @@ type ClientMsg
     | Ping {- client sends { type: "ping", data?: {...} }; data is optional opaque pass-through (terminal-ui puts { ts } in it) -}
     | RenameSession { name : String }
     | ToggleYolo {- client sends { type: "toggleYolo" }; no payload — server toggles current state -}
-    | Chat { text : String }
+    | Chat { userName : String, text : String }
 
 
 {-| Messages received by terminal-ui from swe-swe-server.

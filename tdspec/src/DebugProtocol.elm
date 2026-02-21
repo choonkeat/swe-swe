@@ -1,6 +1,6 @@
 module DebugProtocol exposing
     ( ShellPageDebugMsg(..), ShellPageCommand(..)
-    , InjectJsDebugMsg(..), InjectCommand(..), HttpResult(..)
+    , InjectJsDebugMsg(..), InjectCommand(..), FetchResult(..), XhrResult(..)
     , AllDebugMsg(..), UiCommand(..), NavigateAction(..)
     )
 
@@ -18,7 +18,7 @@ Endpoints (on agent-reverse-proxy at `:PROXY_PORT_OFFSET+port`):
 All messages use JSON with a `t` (type) discriminator field.
 
 @docs ShellPageDebugMsg, ShellPageCommand
-@docs InjectJsDebugMsg, InjectCommand, HttpResult
+@docs InjectJsDebugMsg, InjectCommand, FetchResult, XhrResult
 @docs AllDebugMsg, UiCommand, NavigateAction
 
 -}
@@ -78,8 +78,8 @@ type InjectJsDebugMsg
         , ts : Timestamp
         }
     | Rejection { reason : String, ts : Timestamp }
-    | Fetch HttpResult
-    | Xhr HttpResult
+    | Fetch FetchResult
+    | Xhr XhrResult
     | QueryResult
         { id : String
         , found : Bool
@@ -99,10 +99,11 @@ type InjectJsDebugMsg
         }
 
 
-{-| Result of an HTTP request (Fetch API or XMLHttpRequest).
+{-| Result of a Fetch API call.
+Success carries status + ok; failure (network error, abort) carries error string.
 -}
-type HttpResult
-    = HttpResult
+type FetchResult
+    = FetchResult
         { request :
             { url : Url
             , method : String
@@ -112,7 +113,24 @@ type HttpResult
         , response :
             Result
                 { error : String }
-                { httpStatus : Int }
+                { status : Int, ok : Bool }
+        }
+
+
+{-| Result of an XMLHttpRequest.
+XHR `loadend` always fires — even network failures report status 0.
+There is no error branch; ok = status >= 200 && status < 300.
+-}
+type XhrResult
+    = XhrResult
+        { request :
+            { url : Url
+            , method : String
+            , ms : Int
+            , ts : Timestamp
+            }
+        , status : Int
+        , ok : Bool
         }
 
 
