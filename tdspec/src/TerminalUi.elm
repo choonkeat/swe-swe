@@ -30,17 +30,23 @@ import PtyProtocol
 {-| Per-instance state of a terminal-ui component.
 -}
 type alias State =
-    { sessionUuid : SessionUuid
-    , previewPort : Maybe PreviewPort
-    , previewUrl : Maybe Url
-    , canGoBack : Bool
-    , canGoForward : Bool
-    , workDir : String
-    , assistant : String
-    , sessionName : String
-    , viewers : Int
-    , yoloMode : Bool
-    , yoloSupported : Bool
+    { session :
+        { uuid : SessionUuid
+        , name : String
+        , workDir : String
+        , assistant : String
+        , viewers : Int
+        }
+    , preview :
+        { port_ : Maybe PreviewPort
+        , url : Maybe Url
+        , canGoBack : Bool
+        , canGoForward : Bool
+        }
+    , features :
+        { yoloMode : Bool
+        , yoloSupported : Bool
+        }
     }
 
 
@@ -81,21 +87,17 @@ onPtyMessage { msg, state } =
 
         PtyProtocol.Status payload ->
             ( { state
-                | previewPort = Just payload.previewPort
-                , workDir = payload.workDir
-                , assistant = payload.assistant
-                , sessionName = payload.sessionName
-                , viewers = payload.viewers
-                , yoloMode = payload.yoloMode
-                , yoloSupported = payload.yoloSupported
+                | preview = { port_ = Just payload.ports.preview, url = state.preview.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward }
+                , session = { uuid = state.session.uuid, name = payload.session.name, workDir = payload.session.workDir, assistant = payload.session.assistant, viewers = payload.session.viewers }
+                , features = payload.features
               }
-            , [ ConnectDebugWebSocket payload.previewPort ]
+            , [ ConnectDebugWebSocket payload.ports.preview ]
             )
 
         PtyProtocol.ChatMsg _ ->
             ( state, [] )
 
-        PtyProtocol.FileUploadResult _ ->
+        PtyProtocol.FileUploaded _ ->
             ( state, [] )
 
         PtyProtocol.Exit _ ->
@@ -121,17 +123,17 @@ onDebugMessage { msg, state } =
         FromShellPage shellMsg ->
             case shellMsg of
                 Init payload ->
-                    ( { state | previewUrl = Just payload.url }
+                    ( { state | preview = { port_ = state.preview.port_, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
                     , [ UpdateUrlBar payload.url ]
                     )
 
                 UrlChange payload ->
-                    ( { state | previewUrl = Just payload.url }
+                    ( { state | preview = { port_ = state.preview.port_, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
                     , [ UpdateUrlBar payload.url ]
                     )
 
                 NavState payload ->
-                    ( { state | canGoBack = payload.canGoBack, canGoForward = payload.canGoForward }
+                    ( { state | preview = { port_ = state.preview.port_, url = state.preview.url, canGoBack = payload.canGoBack, canGoForward = payload.canGoForward } }
                     , [ EnableBackButton payload.canGoBack
                       , EnableForwardButton payload.canGoForward
                       ]

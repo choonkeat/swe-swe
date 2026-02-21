@@ -1,4 +1,4 @@
-module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload, ExitPayload(..), FileUploadResult(..))
+module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload, ExitPayload, FileUploadResult)
 
 {-| WS 1,2 — PTY WebSocket protocol.
 
@@ -14,7 +14,7 @@ Carries: binary PTY data (xterm I/O) + JSON control messages.
 
 -}
 
-import Domain exposing (Bytes(..), PreviewPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), Bytes(..), PreviewPort(..), SessionUuid(..), Url(..))
 
 
 {-| Messages sent by terminal-ui to swe-swe-server.
@@ -40,38 +40,53 @@ type ServerMsg
     | Pong {- server echoes { type: "pong", data?: {...} }; data mirrors what client sent in Ping -}
     | Status StatusPayload
     | ChatMsg { userName : String, text : String, timestamp : String }
-    | FileUploadResult FileUploadResult
+    | FileUploaded FileUploadResult
     | Exit ExitPayload
 
 
 {-| Payload of the `status` JSON message.
 Delivered periodically by swe-swe-server.
-`previewPort` triggers the debug WebSocket connection to agent-reverse-proxy.
+`ports.preview` triggers the debug WebSocket connection to agent-reverse-proxy.
 -}
 type alias StatusPayload =
-    { previewPort : PreviewPort
-    , workDir : String
-    , viewers : Int
-    , cols : Int
-    , rows : Int
-    , assistant : String
-    , sessionName : String
-    , uuidShort : String
-    , agentChatPort : Maybe Int
-    , yoloMode : Bool
-    , yoloSupported : Bool
+    { ports :
+        { preview : PreviewPort
+        , agentChat : Maybe AgentChatPort
+        }
+    , terminal :
+        { cols : Int
+        , rows : Int
+        }
+    , session :
+        { name : String
+        , uuidShort : String
+        , workDir : String
+        , assistant : String
+        , viewers : Int
+        }
+    , features :
+        { yoloMode : Bool
+        , yoloSupported : Bool
+        }
     }
 
 
-{-| Exit message payload — simple exit or worktree exit with branch info.
+{-| Exit message payload — exit code plus optional worktree info.
 -}
-type ExitPayload
-    = ExitSimple { exitCode : Int }
-    | ExitWorktree { exitCode : Int, path : String, branch : String, targetBranch : String }
+type alias ExitPayload =
+    { exitCode : Int
+    , worktree :
+        Maybe
+            { path : String
+            , branch : String
+            , targetBranch : String
+            }
+    }
 
 
 {-| Result of a file upload — success with filename or failure with error.
 -}
-type FileUploadResult
-    = FileUploadOk { filename : String }
-    | FileUploadFailed { error : String }
+type alias FileUploadResult =
+    { filename : String
+    , result : Result { error : String } {}
+    }
