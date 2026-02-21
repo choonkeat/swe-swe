@@ -1,0 +1,90 @@
+/* Mobile responsive overrides for elm-doc-preview */
+@media (max-width: 960px) {
+  html, body {
+    overflow-x: hidden;
+  }
+
+  /* Disable sticky footer (body is flex column + .center flex:1 in base CSS) */
+  body {
+    display: block;
+  }
+
+  .center {
+    width: auto;
+    max-width: 100%;
+    padding: 0 16px !important; /* override calc(100vw - 100%) left padding */
+    overflow-x: hidden;
+  }
+
+  .block-list {
+    width: auto;
+    max-width: 100%;
+    display: block;
+    overflow-x: hidden;
+  }
+
+  .pkg-nav {
+    width: auto;
+    display: block;
+    position: static;
+    margin: 20px 0;
+    padding: 16px;
+    border-left: none;
+    border-top: 1px solid #eee;
+  }
+
+  .pkg-nav input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .pkg-nav pre {
+    min-width: 0;
+  }
+
+  .catalog {
+    width: 100%;
+    display: block;
+  }
+
+  .catalog input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .docs-header {
+    font-size: 0.85em;
+    overflow-x: auto;
+  }
+
+  .docs-comment {
+    padding-left: 16px;
+    padding-right: 8px;
+  }
+
+  .docs-comment img {
+    max-width: 100%;
+  }
+
+  .docs-block {
+    overflow-x: auto;
+  }
+
+  pre {
+    font-size: 0.8em;
+    max-width: calc(100vw - 32px);
+  }
+
+  .header {
+    font-size: 16px;
+    flex-wrap: wrap;
+    min-height: auto;
+    padding: 8px 0;
+  }
+
+  .footer {
+    margin-top: 0.5em;
+    padding: 4px 0;
+    font-size: 0.7rem;
+  }
+}
