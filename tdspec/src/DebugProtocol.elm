@@ -1,40 +1,60 @@
 module DebugProtocol exposing
-    ( DebugMsg(..), FetchResult(..), XhrResult(..)
-    , UiCommand(..), IframeCommand(..), NavigateAction(..)
+    ( ShellPageMsg(..), ShellPageCommand(..)
+    , InjectMsg(..), InjectCommand(..), FetchResult(..), XhrResult(..)
+    , DebugMsg(..), UiCommand(..), NavigateAction(..)
     )
 
-{-| Debug channel protocol — shared across WS 3,4 (`/ui`) and WS 5,6 (`/ws`).
+{-| Debug channel protocol types, split by client.
 
-All messages use JSON with a `t` (type) discriminator field.
-The agent-reverse-proxy DebugHub passes messages through without
-transforming them — same JSON shape on both endpoints.
+Shell page (WS 5) handles navigation: page loads, URL changes, back/forward.
+inject.js (WS 6) handles telemetry: console, errors, network, DOM queries.
+DebugMsg is the aggregate that UI observers (terminal-ui on WS 3,4) receive.
 
 Endpoints (on agent-reverse-proxy at `:PROXY_PORT_OFFSET+port`):
 
     /__agent-reverse-proxy-debug__/ui   -- terminal-ui connects here  (WS 3,4)
     /__agent-reverse-proxy-debug__/ws   -- shell page & inject.js     (WS 5,6)
 
-@docs DebugMsg, FetchResult, XhrResult
-@docs UiCommand, IframeCommand, NavigateAction
+All messages use JSON with a `t` (type) discriminator field.
+
+@docs ShellPageMsg, ShellPageCommand
+@docs InjectMsg, InjectCommand, FetchResult, XhrResult
+@docs DebugMsg, UiCommand, NavigateAction
 
 -}
 
 import Domain exposing (Timestamp(..), Url(..))
 
 
-{-| Messages flowing through the debug channel.
 
-Iframe clients (WS 5,6) produce all variants EXCEPT `Open`.
-UI observers (WS 3,4) receive all variants.
-`Open` is injected by the HTTP `/open` endpoint only.
+-- ── Shell page protocol (WS 5) ───────────────────────────────
 
+
+{-| Messages sent by the shell page to the hub.
+Navigation-related: page loads, URL changes, back/forward state.
 -}
-type DebugMsg
-    = UrlChange { url : Url, ts : Timestamp }
-    | Init { url : Url, ts : Timestamp }
+type ShellPageMsg
+    = Init { url : Url, ts : Timestamp }
+    | UrlChange { url : Url, ts : Timestamp }
     | NavState { canGoBack : Bool, canGoForward : Bool }
-    | Open { url : Url }
-    | Console
+
+
+{-| Commands sent by the hub to the shell page.
+-}
+type ShellPageCommand
+    = ShellNavigate NavigateAction
+    | ShellReload
+
+
+
+-- ── inject.js protocol (WS 6) ────────────────────────────────
+
+
+{-| Messages sent by inject.js to the hub.
+Telemetry: console output, errors, network activity, DOM query results.
+-}
+type InjectMsg
+    = Console
         { m : String
 
         {- JSON: "m" is the console method name: "log"|"warn"|"error"|"info"|"debug" -}
@@ -93,7 +113,27 @@ type XhrResult
     | XhrFailed { url : Url, method : String, error : String, ms : Int, ts : Timestamp }
 
 
-{-| Commands sent by terminal-ui to DebugHub (on WS 3,4).
+{-| Commands sent by the hub to inject.js.
+-}
+type InjectCommand
+    = DomQuery { id : String, selector : String }
+
+
+
+-- ── UI observer protocol (WS 3,4) ────────────────────────────
+
+
+{-| Messages received by UI observers (terminal-ui) from the hub.
+Aggregate of all sources: shell page, inject.js, and HTTP /open.
+-}
+type DebugMsg
+    = FromShellPage ShellPageMsg
+    | FromInject InjectMsg
+    | Open { url : Url }
+
+
+{-| Commands sent by terminal-ui to the hub (on WS 3,4).
+The hub routes Navigate/Reload to the shell page, Query to inject.js.
 -}
 type UiCommand
     = Navigate NavigateAction
@@ -101,15 +141,7 @@ type UiCommand
     | Query { id : String, selector : String }
 
 
-{-| Commands sent by DebugHub to iframe clients (on WS 5,6).
--}
-type IframeCommand
-    = IframeNavigate NavigateAction
-    | IframeReload
-    | IframeQuery { id : String, selector : String }
-
-
-{-| Navigation sub-action shared between UI commands and iframe commands.
+{-| Navigation direction.
 -}
 type NavigateAction
     = ToUrl Url

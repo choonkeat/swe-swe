@@ -241,7 +241,37 @@ onPageLoad : Url -> Timestamp -> ShellPageEffect
 
 This spec is not runtime code — clarity for unfamiliar readers matters more than partial application convenience.
 
-### 3.9 "Effects" represent server calls, storage operations, notifications, etc.
+### 3.9 Exact types per client
+
+When two clients use the same channel but handle different message subsets, give each client its own types. A shared union that each client partially ignores hides the real protocol:
+
+```elm
+-- Avoid: both channels look identical, but shell page and inject.js
+-- handle completely different messages
+type IframeCommand = IframeNavigate | IframeReload | IframeQuery
+type DebugMsg = Init | UrlChange | Console | Error | ...
+
+debugIframeShellPage : WebSocketChannel AgentReverseProxy IframeCommand ShellPage DebugMsg
+debugIframeInjectJs  : WebSocketChannel AgentReverseProxy IframeCommand InjectJs  DebugMsg
+```
+
+```elm
+-- Good: each channel shows exactly what it carries
+type ShellPageCommand = ShellNavigate NavigateAction | ShellReload
+type ShellPageMsg = Init ... | UrlChange ... | NavState ...
+
+type InjectCommand = DomQuery { id : String, selector : String }
+type InjectMsg = Console ... | Error ... | Fetch ... | ...
+
+debugIframeShellPage : WebSocketChannel AgentReverseProxy ShellPageCommand ShellPage ShellPageMsg
+debugIframeInjectJs  : WebSocketChannel AgentReverseProxy InjectCommand   InjectJs  InjectMsg
+```
+
+The rule: if a function ignores variants with catch-all branches (`_ ->` or no-op cases), the type is too broad. Split it so each client's type contains only the variants it actually sends or receives.
+
+Exception: a handler that genuinely receives all variants over a single connection (e.g., terminal-ui receives every `DebugMsg` on WS 3/4) is correctly typed even if it only acts on a subset — the no-op branches document what it *chooses not to act on*, not what it *cannot receive*.
+
+### 3.10 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
 

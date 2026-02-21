@@ -1,5 +1,5 @@
 module Topology exposing
-    ( Process(..), TerminalUi(..), PreviewUi(..), SweServer(..), AgentReverseProxy(..)
+    ( Process(..), TerminalUi(..), ShellPage(..), InjectJs(..), SweServer(..), AgentReverseProxy(..)
     , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
     , fullTopology
     )
@@ -54,7 +54,7 @@ Note: agent-reverse-proxy also exposes a vestigial
 `/__agent-reverse-proxy-debug__/agent` WS endpoint.
 It is unused — swe-swe-server uses in-process subscribers instead.
 
-@docs Process, TerminalUi, PreviewUi, SweServer, AgentReverseProxy
+@docs Process, TerminalUi, ShellPage, InjectJs, SweServer, AgentReverseProxy
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
 @docs fullTopology
 
@@ -76,11 +76,16 @@ type TerminalUi
     = TerminalUi { label : String, sessionUuid : SessionUuid }
 
 
-{-| Preview tab iframe — two scripts that connect as debug clients.
+{-| Shell page — outer wrapper in Preview iframe, manages navigation (WS 5).
 -}
-type PreviewUi
+type ShellPage
     = ShellPage
-    | InjectJs
+
+
+{-| inject.js — injected into every proxied HTML page, captures telemetry (WS 6).
+-}
+type InjectJs
+    = InjectJs
 
 
 {-| The swe-swe-server process (PTY host, port 3000).
@@ -101,7 +106,8 @@ Used in the ASCII diagram to enumerate every participant.
 -}
 type Process
     = BrowserTerminalUi TerminalUi
-    | BrowserPreviewUi PreviewUi
+    | BrowserShellPage
+    | BrowserInjectJs
     | ContainerSweServer
     | ContainerAgentReverseProxy
     | ContainerOpenShim
@@ -192,15 +198,15 @@ fullTopology :
     , debugIframeShellPage :
         WebSocketChannel
             AgentReverseProxy         -- server
-            IframeCommand             -- serverMsg
-            PreviewUi              -- client
-            DebugMsg                  -- clientMsg
+            ShellPageCommand          -- serverMsg
+            ShellPage                 -- client
+            ShellPageMsg              -- clientMsg
     , debugIframeInjectJs :
         WebSocketChannel
             AgentReverseProxy         -- server
-            IframeCommand             -- serverMsg
-            PreviewUi              -- client
-            DebugMsg                  -- clientMsg
+            InjectCommand             -- serverMsg
+            InjectJs                  -- client
+            InjectMsg                 -- clientMsg
     , openEndpoint : OpenEndpointHttp
     , previewProxy : PreviewProxyChain
     , agentChatProxy : AgentChatProxyChain

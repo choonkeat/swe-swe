@@ -118,45 +118,29 @@ Result: 2x "Open in new tab?" dialogs for external URLs.
 onDebugMessage : { msg : DebugMsg, state : State } -> ( State, List Effect )
 onDebugMessage { msg, state } =
     case msg of
-        UrlChange payload ->
-            ( { state | previewUrl = Just payload.url }
-            , [ UpdateUrlBar payload.url ]
-            )
+        FromShellPage shellMsg ->
+            case shellMsg of
+                Init payload ->
+                    ( { state | previewUrl = Just payload.url }
+                    , [ UpdateUrlBar payload.url ]
+                    )
 
-        Init payload ->
-            ( { state | previewUrl = Just payload.url }
-            , [ UpdateUrlBar payload.url ]
-            )
+                UrlChange payload ->
+                    ( { state | previewUrl = Just payload.url }
+                    , [ UpdateUrlBar payload.url ]
+                    )
 
-        NavState payload ->
-            ( { state | canGoBack = payload.canGoBack, canGoForward = payload.canGoForward }
-            , [ EnableBackButton payload.canGoBack
-              , EnableForwardButton payload.canGoForward
-              ]
-            )
+                NavState payload ->
+                    ( { state | canGoBack = payload.canGoBack, canGoForward = payload.canGoForward }
+                    , [ EnableBackButton payload.canGoBack
+                      , EnableForwardButton payload.canGoForward
+                      ]
+                    )
+
+        FromInject _ ->
+            ( state, [] )
 
         Open payload ->
             ( state
             , [ OpenIframePane { pane = "preview", url = payload.url } ]
             )
-
-        Console _ ->
-            ( state, [] )
-
-        Error _ ->
-            ( state, [] )
-
-        Rejection _ ->
-            ( state, [] )
-
-        Fetch _ ->
-            ( state, [] )
-
-        Xhr _ ->
-            ( state, [] )
-
-        QueryResult _ ->
-            ( state, [] )
-
-        WsUpgrade _ ->
-            ( state, [] )

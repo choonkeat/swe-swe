@@ -7,13 +7,17 @@ module PreviewIframe exposing
 
 {-| Preview iframe — the shell page and inject.js inside the Preview tab.
 
-Two processes connect as "iframe clients" via WS 5,6:
+Two processes connect via WS 5,6:
 
   - **shell page** (`shellPageHTML`) — outer wrapper managing back/forward nav
   - **inject.js** (`debugInjectJS`) — injected into every proxied HTML page
 
 Endpoint: `/__agent-reverse-proxy-debug__/ws` on agent-reverse-proxy.
-Both register with DebugHub as iframe clients.
+
+Each client sends and receives only its own message types:
+
+  - Shell page sends `ShellPageMsg`, receives `ShellPageCommand`
+  - inject.js sends `InjectMsg`, receives `InjectCommand`
 
 @docs ShellPageEffect, onPageLoad, onUrlChange, onNavStateChange
 @docs ShellPageAction, onShellCommand
@@ -30,10 +34,10 @@ import Domain exposing (Timestamp(..), Url(..))
 -- ── Shell page (WS 5) ──────────────────────────────────────────
 
 
-{-| Effects produced by the shell page — sends debug messages to the hub.
+{-| Effects produced by the shell page — sends navigation messages to the hub.
 -}
 type ShellPageEffect
-    = ShellSend DebugMsg
+    = ShellSend ShellPageMsg
 
 
 {-| On page load, the shell page sends an `Init` message with the current URL.
@@ -62,27 +66,18 @@ onNavStateChange payload =
 type ShellPageAction
     = NavigateIframe NavigateAction
     | ReloadIframe
-    | IgnoredShellCommand
-
-
-
-{- shell page silently drops commands it doesn't handle (e.g. Query) -}
 
 
 {-| Handle a command from the hub on WS 5.
-Shell page handles navigation and reload; ignores queries.
 -}
-onShellCommand : IframeCommand -> ShellPageAction
+onShellCommand : ShellPageCommand -> ShellPageAction
 onShellCommand cmd =
     case cmd of
-        IframeNavigate action ->
+        ShellNavigate action ->
             NavigateIframe action
 
-        IframeReload ->
+        ShellReload ->
             ReloadIframe
-
-        IframeQuery _ ->
-            IgnoredShellCommand
 
 
 
@@ -92,7 +87,7 @@ onShellCommand cmd =
 {-| Effects produced by inject.js — sends telemetry messages to the hub.
 -}
 type InjectEffect
-    = InjectSend DebugMsg
+    = InjectSend InjectMsg
 
 
 {-| Captured console output (log/warn/error/info/debug).
@@ -141,20 +136,12 @@ onWsUpgrade payload =
 -}
 type InjectAction
     = RunQuery { id : String, selector : String }
-    | IgnoredCommand
 
 
 {-| Handle a command from the hub on WS 6.
-inject.js handles DOM queries; ignores navigation/reload.
 -}
-onInjectCommand : IframeCommand -> InjectAction
+onInjectCommand : InjectCommand -> InjectAction
 onInjectCommand cmd =
     case cmd of
-        IframeQuery payload ->
+        DomQuery payload ->
             RunQuery payload
-
-        IframeNavigate _ ->
-            IgnoredCommand
-
-        IframeReload ->
-            IgnoredCommand

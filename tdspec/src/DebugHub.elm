@@ -1,21 +1,23 @@
-module DebugHub exposing (Effect(..), onIframeMessage, onOpenRequest, onUiCommand)
+module DebugHub exposing (Effect(..), onShellPageMessage, onInjectMessage, onOpenRequest, onUiCommand)
 
 {-| DebugHub — the message router inside agent-reverse-proxy.
 
 Manages three subscriber pools:
 
   - **UI observers:** terminal-ui instances connected via `/ui` (WS 3,4)
-  - **Iframe clients:** shell page + inject.js connected via `/ws` (WS 5,6)
-  - **Agent client:** vestigial `/agent` WS endpoint (usually nil, unused by swe-swe-server)
+  - **Shell page:** connected via `/ws` (WS 5)
+  - **inject.js:** connected via `/ws` (WS 6)
 
 Routing rules:
 
     Source               -> Destination
-    Iframe sends msg     -> BroadcastFromIframe (agent + UI observers + in-proc subscribers)
-    HTTP GET /open       -> SendToUiObserversOnly
-    UI observer sends    -> ForwardToIframes
+    Shell page sends     -> BroadcastToUiObservers (FromShellPage msg)
+    inject.js sends      -> BroadcastToUiObservers (FromInject msg)
+    HTTP GET /open       -> SendToUiObserversOnly (Open)
+    UI Navigate/Reload   -> ForwardToShellPage
+    UI Query             -> ForwardToInject
 
-@docs Effect, onIframeMessage, onOpenRequest, onUiCommand
+@docs Effect, onShellPageMessage, onInjectMessage, onOpenRequest, onUiCommand
 
 -}
 
@@ -26,23 +28,31 @@ import Domain exposing (Url(..))
 {-| Side effects produced by the DebugHub routing logic.
 -}
 type Effect
-    = BroadcastFromIframe DebugMsg
+    = BroadcastToUiObservers DebugMsg
       {- Go's ForwardToAgent sends to three destinations:
          1. The agent WS conn (vestigial, usually nil)
          2. All UI observers
          3. All in-process subscribers (MCP tools in swe-swe-server)
       -}
     | SendToUiObserversOnly DebugMsg
-    | ForwardToIframes IframeCommand
+    | ForwardToShellPage ShellPageCommand
+    | ForwardToInject InjectCommand
 
 
-{-| When an iframe client (WS 5,6) sends a message, the hub
-broadcasts it to agent + UI observers + in-process subscribers
-via a single Go function call (ForwardToAgent).
+{-| When the shell page (WS 5) sends a message, the hub
+broadcasts it to all UI observers as a DebugMsg.
 -}
-onIframeMessage : DebugMsg -> List Effect
-onIframeMessage msg =
-    [ BroadcastFromIframe msg ]
+onShellPageMessage : ShellPageMsg -> List Effect
+onShellPageMessage msg =
+    [ BroadcastToUiObservers (FromShellPage msg) ]
+
+
+{-| When inject.js (WS 6) sends a message, the hub
+broadcasts it to all UI observers as a DebugMsg.
+-}
+onInjectMessage : InjectMsg -> List Effect
+onInjectMessage msg =
+    [ BroadcastToUiObservers (FromInject msg) ]
 
 
 {-| When the swe-swe-open CLI shim hits `HTTP GET /open?url=...`,
@@ -56,16 +66,17 @@ onOpenRequest payload =
 
 
 {-| When a UI observer (WS 3,4) sends a command, the hub
-forwards it to all iframe clients.
+routes it to the appropriate iframe client:
+Navigate/Reload → shell page, Query → inject.js.
 -}
 onUiCommand : UiCommand -> List Effect
 onUiCommand cmd =
     case cmd of
         Navigate action ->
-            [ ForwardToIframes (IframeNavigate action) ]
+            [ ForwardToShellPage (ShellNavigate action) ]
 
         Reload ->
-            [ ForwardToIframes IframeReload ]
+            [ ForwardToShellPage ShellReload ]
 
         Query payload ->
-            [ ForwardToIframes (IframeQuery payload) ]
+            [ ForwardToInject (DomQuery payload) ]
