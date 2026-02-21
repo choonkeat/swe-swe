@@ -8,6 +8,8 @@ require github.com/gorilla/websocket v1.5.3
 
 require github.com/creack/pty v1.1.24
 
+require github.com/choonkeat/agent-reverse-proxy v0.2.1
+
 require (
 	github.com/choonkeat/record-tui v0.0.0-20260205110033-eb39b14056e8 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

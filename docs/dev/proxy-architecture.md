@@ -1,37 +1,37 @@
 # Proxy Architecture: Preview & Agent Chat
 
-How the Preview tab and Agent Chat tab work end-to-end, from Traefik through to the iframe.
+How the Preview tab and Agent Chat tab work end-to-end.
 
 ## Port Layout
 
 Each session gets a **preview port** (e.g., 3000) and a derived **agent chat port** (+1000, e.g., 4000).
 
-- Preview is proxied by agent-reverse-proxy (MCP tool) running inside the container
-- Agent Chat is proxied by swe-swe-server on `20000 + port`
+- Preview is proxied by swe-swe-server via path-based routing (`/proxy/{uuid}/preview/...`)
+- Agent Chat is proxied by swe-swe-server on `20000 + port` (port-based, via Traefik)
 
 ```
-Preview:     User's app  ←  agent-reverse-proxy (in-container)  ←  Traefik  ←  Browser
-               :3000          :23000                                :23000
+Preview:     User's app  ←  swe-swe-server /proxy/{uuid}/preview/  ←  Browser
+               :3000          :9898
 
-Agent Chat:  MCP sidecar ←  swe-swe-server proxy                ←  Traefik  ←  Browser
-               :4000          :24000                                :24000
+Agent Chat:  MCP sidecar ←  swe-swe-server proxy                   ←  Traefik  ←  Browser
+               :4000          :24000                                    :24000
 ```
 
-- `previewProxyPort(port) = proxyPortOffset + port` (default offset: 20000)
 - `agentChatProxyPort(port) = proxyPortOffset + port` (default offset: 20000)
 - `agentChatPortFromPreview(previewPort) = previewPort + 1000`
 - The offset is configurable via `swe-swe init --proxy-port-offset <N>`
 
-swe-swe-server passes these ports to the container environment so in-container processes know where to listen:
+swe-swe-server passes these to the container environment:
 - `PORT={previewPort}` — tells the user's app which port to bind (e.g., 3000)
-- `PROXY_PORT={previewProxyPort}` — tells agent-reverse-proxy which port to listen on (e.g., 23000)
+- `PROXY_PORT={previewProxyPort}` — retained for backwards compat (e.g., 23000)
 - `AGENT_CHAT_PORT={agentChatPort}` — tells the MCP sidecar which port to bind (e.g., 4000)
+- `SESSION_UUID={uuid}` — used by the stdio bridge and open shim to address the correct proxy instance
 
 ### Port reservation
 
-`findAvailablePortPair()` reserves all four ports (preview proxy, preview app, agent chat proxy, agent chat app) by binding and then releasing them. The preview proxy listener is immediately closed (agent-reverse-proxy will bind it later inside the container). The agent chat proxy listener is passed to `acquireAgentChatProxyServer` which keeps it.
+`findAvailablePortPair()` reserves all four ports (preview proxy, preview app, agent chat proxy, agent chat app) by binding and then releasing them. The preview proxy listener is immediately closed (preview traffic goes through the main server port). The agent chat proxy listener is passed to `acquireAgentChatProxyServer` which keeps it.
 
-Traefik routes each port to the corresponding proxy via per-port entrypoints and routers (generated in `templates.go`). All routers go through `forwardauth` middleware for session cookie validation.
+Traefik routes agent chat ports via per-port entrypoints and routers (generated in `templates.go`). All routers go through `forwardauth` middleware for session cookie validation.
 
 ## Agent Chat Proxy (swe-swe-server)
 
@@ -55,13 +55,15 @@ This header serves one purpose: **let the browser-side probe distinguish "our pr
 
 - swe-swe-server agent chat proxy sets it to `"1"` on every response (including 502 error pages)
 - Traefik's own 502 does NOT have this header
-- The `swe-swe-preview` MCP tool (agent-reverse-proxy) also sets this header (with its version string) on the preview proxy port
+- The preview proxy (hosted in swe-swe-server) also sets this header (with its version string) on every response
 
 The probe uses `resp.headers.has('X-Agent-Reverse-Proxy')` — it doesn't care about the status code. A 502 *with* the header means "our proxy is running but the backend app isn't up yet." A 502 *without* the header means "Traefik can't reach our proxy."
 
 ## Preview Tab Flow
 
-The Preview tab uses a **placeholder → probe → iframe load** pattern. The preview proxy runs inside the container via agent-reverse-proxy (MCP tool), not swe-swe-server.
+The Preview tab uses a **placeholder → probe → iframe load** pattern. The preview proxy is hosted inside swe-swe-server as an embedded Go library (`github.com/choonkeat/agent-reverse-proxy`), with each session getting a proxy instance at `/proxy/{session-uuid}/preview/...`.
+
+AI agents communicate with the preview proxy via a lightweight stdio bridge process (`npx @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp`).
 
 ### HTML structure
 
@@ -97,9 +99,9 @@ Each placeholder overlays its iframe and stays visible until dismissed.
 4. **Probe succeeds** (proxy is up) → `iframe.src = base + '/__agent-reverse-proxy-debug__/shell?path=...'`
 5. **Placeholder dismissed** when either:
    - `iframe.onload` fires while `_previewWaiting` is true (fallback)
-   - Debug WebSocket receives `urlchange` or `init` message from agent-reverse-proxy (primary)
+   - Debug WebSocket receives `urlchange` or `init` message from the preview proxy (primary)
 
-The `swe-swe-preview` MCP tool (agent-reverse-proxy) serves a shell page at `/__agent-reverse-proxy-debug__/shell` and provides a UI observer WebSocket at `/__agent-reverse-proxy-debug__/ui` for URL bar updates and navigation state.
+The preview proxy serves a shell page at `/__agent-reverse-proxy-debug__/shell` and provides a UI observer WebSocket at `/__agent-reverse-proxy-debug__/ui` for URL bar updates and navigation state.
 
 ### What the user sees
 

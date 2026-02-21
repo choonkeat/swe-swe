@@ -30,11 +30,13 @@ import (
 	"time"
 	"unicode"
 
+	agentproxy "github.com/choonkeat/agent-reverse-proxy"
 	recordtui "github.com/choonkeat/record-tui/playback"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hinshun/vt10x"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -333,6 +335,9 @@ type Session struct {
 	AgentChatCmd    *exec.Cmd
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
 	SessionMode     string             // "terminal" or "chat"
+	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
+	PreviewProxy  *agentproxy.Proxy // Per-session preview proxy instance
+	PreviewMCPMux http.Handler      // MCP + proxy handler for this session
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -1868,6 +1873,12 @@ func main() {
 				log.Printf("Selection template error: %v", err)
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
+			return
+		}
+
+		// Preview proxy: /proxy/{uuid}/preview/...
+		if strings.HasPrefix(r.URL.Path, "/proxy/") {
+			handleProxyRoute(w, r)
 			return
 		}
 
@@ -3605,6 +3616,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
 
 	env := buildSessionEnv(previewPort, acPort, theme, workDir, sessionMode)
+	env = append(env, fmt.Sprintf("SESSION_UUID=%s", sessionUUID))
 
 	// Agent-chat sidecar context for chat sessions.
 	// The sidecar process itself is managed externally (e.g. baked into the container image),
@@ -3671,7 +3683,31 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 	sessions[sessionUUID] = sess
 
-	// Preview proxy now runs inside the container via agent-reverse-proxy
+	// Create per-session preview proxy hosted inside swe-swe-server
+	previewProxy, err := agentproxy.New(agentproxy.Config{
+		BasePath:    "/proxy/" + sessionUUID + "/preview",
+		Target:      &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", previewPort)},
+		ToolPrefix:  "preview",
+		ThemeCookie: "swe-swe-theme",
+	})
+	if err != nil {
+		log.Printf("Warning: failed to create preview proxy for session %s: %v", sessionUUID, err)
+	} else {
+		mcpSrv := mcp.NewServer(&mcp.Implementation{
+			Name:    "swe-swe-preview",
+			Version: agentproxy.ProxyVersion,
+		}, nil)
+		previewProxy.RegisterTools(mcpSrv)
+		previewProxy.RegisterResources(mcpSrv)
+
+		sessMux := http.NewServeMux()
+		sessMux.Handle("/proxy/"+sessionUUID+"/preview/mcp", previewProxy.MCPHandler(mcpSrv))
+		sessMux.Handle("/proxy/"+sessionUUID+"/preview/", previewProxy)
+		sess.PreviewProxy = previewProxy
+		sess.PreviewMCPMux = sessMux
+	}
+
+	// Preview proxy now runs inside swe-swe-server; release the reserved listener
 	if previewListener != nil {
 		previewListener.Close()
 	}
@@ -3689,6 +3725,25 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sessionUUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
+}
+
+func handleProxyRoute(w http.ResponseWriter, r *http.Request) {
+	// Extract session UUID from /proxy/{uuid}/preview/...
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/proxy/"), "/", 2)
+	if len(parts) < 2 {
+		http.NotFound(w, r)
+		return
+	}
+	sessionUUID := parts[0]
+
+	sessionsMu.RLock()
+	sess, ok := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !ok || sess.PreviewMCPMux == nil {
+		http.NotFound(w, r)
+		return
+	}
+	sess.PreviewMCPMux.ServeHTTP(w, r)
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string) {

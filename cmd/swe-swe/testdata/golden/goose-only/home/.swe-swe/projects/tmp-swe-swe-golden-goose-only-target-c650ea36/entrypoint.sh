@@ -55,9 +55,10 @@ extensions:
       - "http://chrome:9223"
   swe-swe-preview:
     type: stdio
-    cmd: swe-swe-server
+    cmd: sh
     args:
-      - "--mcp"
+      - "-c"
+      - "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"
   swe-swe-whiteboard:
     type: stdio
     cmd: npx
@@ -83,8 +84,7 @@ cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 #!/bin/sh
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
-PREVIEW_PORT=$(( 20000 + ${PORT:-3000} ))
-curl -sf "http://localhost:${PREVIEW_PORT}/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+curl -sf "http://swe-swe:3000/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
 echo "→ Preview: $URL" >&2
 SHIM
 chmod +x /home/app/.swe-swe/bin/swe-swe-open

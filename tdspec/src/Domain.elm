@@ -5,9 +5,10 @@ module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort
 System overview:
 
   - Browser page hosts 2x terminal-ui web components + 1x Preview iframe
-  - Container runs swe-swe-server (PTY) + agent-reverse-proxy (debug/preview)
+  - Container runs swe-swe-server (PTY + embedded preview proxy)
   - 4 WebSockets + 1 HTTP endpoint connect them (+ 2 more when Preview iframe active)
-  - 2 HTTP reverse proxy chains route through Traefik to container backends
+  - Preview proxy is path-based (/proxy/{uuid}/preview/) on the main server port
+  - Agent Chat proxy chain routes through Traefik to container backend
 
 @docs Url, SessionUuid, PreviewPort, AgentChatPort, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp
 
@@ -40,8 +41,10 @@ type AgentChatPort
     = AgentChatPort Int
 
 
-{-| Port where the preview reverse proxy listens (e.g., 23000).
+{-| Port where the preview reverse proxy used to listen (e.g., 23000).
 Derived from preview port + offset (default 20000).
+Retained for port reservation in `findAvailablePortPair`, but preview
+traffic now goes through the main server port via path-based routing.
 -}
 type PreviewProxyPort
     = PreviewProxyPort Int

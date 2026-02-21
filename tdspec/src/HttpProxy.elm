@@ -7,12 +7,16 @@ module HttpProxy exposing
 
 Two reverse proxy chains sit between browser and backend apps:
 
-    Preview:     Browser → Traefik :23000 → agent-reverse-proxy :23000 → User app :3000
-    Agent Chat:  Browser → Traefik :24000 → swe-swe-server      :24000 → MCP sidecar :4000
+    Preview:     Browser → swe-swe-server :9898 /proxy/{uuid}/preview/ → User app :3000
+    Agent Chat:  Browser → Traefik :24000 → swe-swe-server :24000 → MCP sidecar :4000
 
-Preview proxy: `npx @choonkeat/agent-reverse-proxy`, launched as an MCP tool
-by the AI agent. Injects debug scripts into HTML, provides DebugHub
-WebSocket endpoints, serves the shell page.
+Preview proxy: hosted inside swe-swe-server as an embedded Go library
+(`github.com/choonkeat/agent-reverse-proxy`). Each session gets a proxy
+instance at `/proxy/{session-uuid}/preview/...`. Path-based routing on the
+main server port — no separate process or dedicated port needed.
+
+AI agents communicate with the preview proxy via a lightweight stdio bridge
+process (`npx @choonkeat/agent-reverse-proxy --bridge`).
 
 Agent Chat proxy: built into swe-swe-server (`handleProxyRequest`).
 Simple HTTP forwarding with cookie Domain/Secure stripping and CORS
@@ -23,9 +27,13 @@ so browser probes can distinguish "proxy up" from "Traefik 502."
 
 Port derivation (default offset = 20000):
 
-    previewProxyPort   = offset + previewPort          (e.g., 23000)
+    previewProxyPort   = offset + previewPort          (e.g., 23000) — retained for port reservation
     agentChatPort      = previewPort + 1000            (e.g., 4000)
     agentChatProxyPort = offset + agentChatPort        (e.g., 24000)
+
+Note: `previewProxyPort` is still used for port reservation
+(`findAvailablePortPair`) but preview traffic now goes through the main
+server port via path-based routing.
 
 @docs PortOffset, previewProxyPort, agentChatPort, agentChatProxyPort
 @docs ProbeResult, classifyProbe, PlaceholderDismiss

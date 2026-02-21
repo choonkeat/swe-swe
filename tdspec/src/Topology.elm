@@ -1,6 +1,6 @@
 module Topology exposing
-    ( Process(..), TerminalUi(..), ShellPage(..), InjectJs(..), SweServer(..), AgentReverseProxy(..)
-    , Traefik(..), OpenShim(..), UserApp(..), McpSidecar(..)
+    ( Process(..), TerminalUi(..), ShellPage(..), InjectJs(..), SweServer(..)
+    , Traefik(..), OpenShim(..), UserApp(..), McpSidecar(..), StdioBridge(..)
     , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
     , fullTopology
     )
@@ -25,45 +25,52 @@ instances + Preview tab are active.
         |       |         |       |         |       |
     +===|=======|=========|=======|=========|=======|==========+
     |   v       v         v       v         v       v          |
-    |  +--------+   +---------------------------------------+  |
-    |  | swe-   |   |       agent-reverse-proxy             |  |
-    |  | swe-   |   |  +---------------------------------+  |  |
-    |  | server |   |  |           DebugHub              |  |  |
-    |  | :3000  |   |  |  UI obs    <-- WS3, WS4         |  |  |
-    |  |        |   |  |  iframe    <-- WS5, WS6         |  |  |
-    |  |        |   |  |  GET/open  <-- HTTP             |  |  |
-    |  +--------+   |  +---------------------------------+  |  |
-    |               +---------------------------------------+  |
+    |  +----------------------------------------------------+  |
+    |  |              swe-swe-server :9898                   |  |
+    |  |  PTY host (WS1, WS2)                               |  |
+    |  |  +----------------------------------------------+  |  |
+    |  |  |  Preview proxy (/proxy/{uuid}/preview/...)   |  |  |
+    |  |  |  DebugHub (UI obs WS3,WS4 / iframe WS5,WS6) |  |  |
+    |  |  |  GET/open <-- HTTP                           |  |  |
+    |  |  +----------------------------------------------+  |  |
+    |  +----------------------------------------------------+  |
     |                                                          |
-    |               +----------------+                         |
-    |               | swe-swe-open   |--- HTTP /open --->      |
-    |               | (CLI shim)     |                         |
-    |               +----------------+               Container |
+    |  +------------------+    +----------------------------+  |
+    |  | swe-swe-open     |    | stdio bridge               |  |
+    |  | (CLI shim)       |    | (agent-reverse-proxy       |  |
+    |  | HTTP → server    |    |  --bridge → server /mcp)   |  |
+    |  +------------------+    +----------------------------+  |
+    |                                                Container |
     +==========================================================+
 
-    HTTP Proxy Chains (port-based, via Traefik)
+    HTTP Proxy Chains
 
-    Browser           Traefik              Container proxy            Container backend
-                    (forwardauth)
-    terminal-ui  →  :23000  ──────→  agent-reverse-proxy :23000  →  User app :3000
-    terminal-ui  →  :24000  ──────→  swe-swe-server      :24000  →  MCP sidecar :4000
+    Preview (path-based, single port):
+    Browser → swe-swe-server :9898 /proxy/{uuid}/preview/ → User app :3000
 
-    Traefik creates per-port entrypoints (20 preview + 20 agent chat = 40 ports).
-    Each router applies forwardauth middleware for session cookie validation.
+    Agent Chat (port-based, via Traefik):
+    Browser → Traefik :24000 → swe-swe-server :24000 → MCP sidecar :4000
+
+    Preview proxy is hosted inside swe-swe-server as a Go library
+    (github.com/choonkeat/agent-reverse-proxy). Each session gets a
+    proxy instance at /proxy/{session-uuid}/preview/...
+
+    AI agents communicate with the preview proxy via a lightweight
+    stdio bridge process (npx @choonkeat/agent-reverse-proxy --bridge).
 
 Note: agent-reverse-proxy also exposes a vestigial
 `/__agent-reverse-proxy-debug__/agent` WS endpoint.
 It is unused — swe-swe-server uses in-process subscribers instead.
 
-@docs Process, TerminalUi, ShellPage, InjectJs, SweServer, AgentReverseProxy
-@docs Traefik, OpenShim, UserApp, McpSidecar
+@docs Process, TerminalUi, ShellPage, InjectJs, SweServer
+@docs Traefik, OpenShim, UserApp, McpSidecar, StdioBridge
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
 @docs fullTopology
 
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), SessionUuid(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), SessionUuid(..))
 import HttpProxy exposing (PortOffset(..))
 import PtyProtocol
 
@@ -90,16 +97,13 @@ type InjectJs
     = InjectJs
 
 
-{-| The swe-swe-server process (PTY host, port 3000).
+{-| The swe-swe-server process (PTY host + preview proxy, port 9898).
+
+Hosts the preview proxy as an embedded Go library — each session gets
+a proxy instance at `/proxy/{session-uuid}/preview/...`.
 -}
 type SweServer
     = SweServer
-
-
-{-| The agent-reverse-proxy process (debug/preview proxy).
--}
-type AgentReverseProxy
-    = AgentReverseProxy
 
 
 {-| Traefik — host-level reverse proxy providing port-based routing and forwardauth.
@@ -108,7 +112,8 @@ type Traefik
     = Traefik
 
 
-{-| swe-swe-open — CLI shim that sends `HTTP GET /open?url=...` to agent-reverse-proxy.
+{-| swe-swe-open — CLI shim that sends `HTTP GET /open?url=...` to the preview proxy
+endpoint on swe-swe-server (`/proxy/{uuid}/preview/__agent-reverse-proxy-debug__/open`).
 -}
 type OpenShim
     = OpenShim
@@ -126,6 +131,15 @@ type McpSidecar
     = McpSidecar
 
 
+{-| Stdio bridge — lightweight relay between AI agent (stdio MCP) and
+swe-swe-server's preview proxy HTTP MCP endpoint.
+
+Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp`
+-}
+type StdioBridge
+    = StdioBridge
+
+
 {-| A process in the system — wraps all specific process types.
 Location prefix (Browser/Container/Host) mirrors fullTopology nesting.
 -}
@@ -134,10 +148,10 @@ type Process
     | BrowserShellPage ShellPage
     | BrowserInjectJs InjectJs
     | ContainerSweServer SweServer
-    | ContainerAgentReverseProxy AgentReverseProxy
     | ContainerOpenShim OpenShim
     | ContainerUserApp UserApp
     | ContainerMcpSidecar McpSidecar
+    | ContainerStdioBridge StdioBridge
     | HostTraefik Traefik
 
 
@@ -174,14 +188,15 @@ type alias OpenEndpointHttp =
     { method : String, path : String }
 
 
-{-| Preview proxy chain: Browser → Traefik → agent-reverse-proxy → User app.
+{-| Preview proxy chain: Browser → swe-swe-server /proxy/{uuid}/preview/ → User app.
 
-Separate process (`npx @choonkeat/agent-reverse-proxy`).
+Hosted inside swe-swe-server as an embedded Go library (no separate process).
 Injects debug scripts, provides DebugHub, serves shell page.
+Path-based routing on the main server port (:9898).
 
 -}
 type alias PreviewProxyChain =
-    { listenPort : PreviewProxyPort, appPort : PreviewPort }
+    { basePath : String, appPort : PreviewPort }
 
 
 {-| Agent Chat proxy chain: Browser → Traefik → swe-swe-server → MCP sidecar.
@@ -210,10 +225,10 @@ fullTopology :
         }
     , container :
         { sweServer : SweServer
-        , agentReverseProxy : AgentReverseProxy
         , openShim : OpenShim
         , userApp : UserApp
         , mcpSidecar : McpSidecar
+        , stdioBridge : StdioBridge
         }
     , host :
         { traefik : Traefik
@@ -243,8 +258,8 @@ fullTopology :
         -- clientMsg
         , debugUiAgentTerminal :
             WebSocketChannel
-                AgentReverseProxy
-                -- server
+                SweServer
+                -- server (preview proxy hosted in swe-swe-server)
                 AllDebugMsg
                 -- serverMsg
                 TerminalUi
@@ -254,8 +269,8 @@ fullTopology :
         -- clientMsg
         , debugUiTerminal :
             WebSocketChannel
-                AgentReverseProxy
-                -- server
+                SweServer
+                -- server (preview proxy hosted in swe-swe-server)
                 AllDebugMsg
                 -- serverMsg
                 TerminalUi
@@ -265,8 +280,8 @@ fullTopology :
         -- clientMsg
         , debugIframeShellPage :
             WebSocketChannel
-                AgentReverseProxy
-                -- server
+                SweServer
+                -- server (preview proxy hosted in swe-swe-server)
                 ShellPageCommand
                 -- serverMsg
                 ShellPage
@@ -276,8 +291,8 @@ fullTopology :
         -- clientMsg
         , debugIframeInjectJs :
             WebSocketChannel
-                AgentReverseProxy
-                -- server
+                SweServer
+                -- server (preview proxy hosted in swe-swe-server)
                 InjectCommand
                 -- serverMsg
                 InjectJs
@@ -302,9 +317,6 @@ fullTopology =
         acPort =
             HttpProxy.agentChatPort previewPort
 
-        previewProxyPort =
-            HttpProxy.previewProxyPort { offset = offset, appPort = previewPort }
-
         acProxyPort =
             HttpProxy.agentChatProxyPort { offset = offset, appPort = acPort }
     in
@@ -316,10 +328,10 @@ fullTopology =
         }
     , container =
         { sweServer = SweServer
-        , agentReverseProxy = AgentReverseProxy
         , openShim = OpenShim
         , userApp = UserApp
         , mcpSidecar = McpSidecar
+        , stdioBridge = StdioBridge
         }
     , host =
         { traefik = Traefik
@@ -334,10 +346,10 @@ fullTopology =
         }
     , openEndpoint =
         { method = "GET"
-        , path = "/__agent-reverse-proxy-debug__/open"
+        , path = "/proxy/{uuid}/preview/__agent-reverse-proxy-debug__/open"
         }
     , previewProxy =
-        { listenPort = previewProxyPort
+        { basePath = "/proxy/{uuid}/preview"
         , appPort = previewPort
         }
     , agentChatProxy =

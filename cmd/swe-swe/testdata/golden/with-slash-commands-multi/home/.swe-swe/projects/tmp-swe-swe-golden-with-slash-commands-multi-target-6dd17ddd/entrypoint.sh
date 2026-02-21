@@ -121,7 +121,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     },
     "swe-swe-preview": {
       "type": "local",
-      "command": ["swe-swe-server", "--mcp"]
+      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"]
     },
     "swe-swe-whiteboard": {
       "type": "local",
@@ -145,8 +145,8 @@ command = "npx"
 args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 
 [mcp_servers.swe-swe-preview]
-command = "swe-swe-server"
-args = ["--mcp"]
+command = "sh"
+args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"]
 
 [mcp_servers.swe-swe-whiteboard]
 command = "npx"
@@ -169,8 +169,8 @@ cat > /home/app/.gemini/settings.json << 'EOF'
       "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
     },
     "swe-swe-preview": {
-      "command": "swe-swe-server",
-      "args": ["--mcp"]
+      "command": "sh",
+      "args": ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"]
     },
     "swe-swe-whiteboard": {
       "command": "npx",
@@ -202,9 +202,10 @@ extensions:
       - "http://chrome:9223"
   swe-swe-preview:
     type: stdio
-    cmd: swe-swe-server
+    cmd: sh
     args:
-      - "--mcp"
+      - "-c"
+      - "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"
   swe-swe-whiteboard:
     type: stdio
     cmd: npx
@@ -232,7 +233,7 @@ if ! grep -q '"swe-swe-agent-chat"' /home/app/.claude.json 2>/dev/null; then
     unset CLAUDECODE
     claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
     claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
-    claude mcp add --scope user --transport stdio swe-swe-preview -- npx -y @choonkeat/agent-reverse-proxy --tool-prefix preview --theme-cookie swe-swe-theme
+    claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp'"'"'
     claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
   '
   echo -e "${GREEN}✓ Created Claude MCP configuration${NC}"
@@ -244,8 +245,7 @@ cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 #!/bin/sh
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
-PREVIEW_PORT=$(( 20000 + ${PORT:-3000} ))
-curl -sf "http://localhost:${PREVIEW_PORT}/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+curl -sf "http://swe-swe:3000/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
 echo "→ Preview: $URL" >&2
 SHIM
 chmod +x /home/app/.swe-swe/bin/swe-swe-open
