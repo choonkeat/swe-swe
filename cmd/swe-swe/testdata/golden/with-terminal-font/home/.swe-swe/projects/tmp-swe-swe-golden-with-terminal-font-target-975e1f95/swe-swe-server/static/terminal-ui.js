@@ -533,13 +533,13 @@ class TerminalUI extends HTMLElement {
             existingContainer.remove();
         }
 
-        // Build services list
+        // Build services list (filter out entries with null URLs — e.g. preview before sessionUUID arrives)
         const baseUrl = getBaseUrl(window.location);
         const services = [
             { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
             { name: 'preview', label: 'App Preview', url: this.getPreviewBaseUrl() },
             { name: 'browser', label: 'Agent View', url: `${baseUrl}/chrome/` }
-        ];
+        ].filter(s => s.url != null);
 
         // Add shell link if not already in a shell session
         if (this.assistant !== 'shell') {

@@ -39,6 +39,7 @@ export function formatFileSize(bytes) {
  * @returns {string} HTML-escaped text
  */
 export function escapeHtml(text) {
+    if (text == null) return '';
     return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')

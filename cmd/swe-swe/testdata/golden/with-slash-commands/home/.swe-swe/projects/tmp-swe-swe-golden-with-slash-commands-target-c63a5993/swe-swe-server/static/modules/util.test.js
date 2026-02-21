@@ -71,6 +71,11 @@ test('escapeHtml passes through normal text unchanged', () => {
     assert.strictEqual(escapeHtml(''), '');
 });
 
+test('escapeHtml returns empty string for null and undefined', () => {
+    assert.strictEqual(escapeHtml(null), '');
+    assert.strictEqual(escapeHtml(undefined), '');
+});
+
 // escapeFilename tests
 test('escapeFilename escapes spaces', () => {
     assert.strictEqual(escapeFilename('foo bar'), 'foo\\ bar');
