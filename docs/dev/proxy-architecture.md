@@ -4,60 +4,53 @@ How the Preview tab and Agent Chat tab work end-to-end.
 
 ## Port Layout
 
-Each session gets a **preview port** (e.g., 3000) and a derived **agent chat port** (+1000, e.g., 4000).
+Each session gets a **preview port** (e.g., 3000) and a derived **agent chat port** (+1000, e.g., 4000). Both are container-internal only — no host port bindings needed.
 
-- Preview is proxied by swe-swe-server via path-based routing (`/proxy/{uuid}/preview/...`)
-- Agent Chat is proxied by swe-swe-server on `20000 + port` (port-based, via Traefik)
+Both proxies are path-based, hosted inside swe-swe-server on the main port (:9898):
 
 ```
-Preview:     User's app  ←  swe-swe-server /proxy/{uuid}/preview/  ←  Browser
+Preview:     User's app  ←  swe-swe-server /proxy/{uuid}/preview/    ←  Traefik :1977  ←  Browser
                :3000          :9898
 
-Agent Chat:  MCP sidecar ←  swe-swe-server proxy                   ←  Traefik  ←  Browser
-               :4000          :24000                                    :24000
+Agent Chat:  MCP sidecar ←  swe-swe-server /proxy/{uuid}/agentchat/  ←  Traefik :1977  ←  Browser
+               :4000          :9898
 ```
 
-- `agentChatProxyPort(port) = proxyPortOffset + port` (default offset: 20000)
 - `agentChatPortFromPreview(previewPort) = previewPort + 1000`
-- The offset is configurable via `swe-swe init --proxy-port-offset <N>`
+- Only **1 port** goes through Traefik (the main server port)
+- No per-session Traefik entrypoints, ports, or routers
 
 swe-swe-server passes these to the container environment:
 - `PORT={previewPort}` — tells the user's app which port to bind (e.g., 3000)
-- `PROXY_PORT={previewProxyPort}` — retained for backwards compat (e.g., 23000)
 - `AGENT_CHAT_PORT={agentChatPort}` — tells the MCP sidecar which port to bind (e.g., 4000)
 - `SESSION_UUID={uuid}` — used by the stdio bridge and open shim to address the correct proxy instance
 
 ### Port reservation
 
-`findAvailablePortPair()` reserves all four ports (preview proxy, preview app, agent chat proxy, agent chat app) by binding and then releasing them. The preview proxy listener is immediately closed (preview traffic goes through the main server port). The agent chat proxy listener is passed to `acquireAgentChatProxyServer` which keeps it.
-
-Traefik routes agent chat ports via per-port entrypoints and routers (generated in `templates.go`). All routers go through `forwardauth` middleware for session cookie validation.
+`findAvailablePortPair()` reserves two ports (preview app, agent chat app) by binding and then releasing them. No proxy port listeners are needed — both proxies are handled as path-based routes inside swe-swe-server's main HTTP handler.
 
 ## Agent Chat Proxy (swe-swe-server)
 
-The agent chat proxy uses `handleProxyRequest()` which:
+The agent chat proxy uses `agentChatProxyHandler()` which:
 
 1. Sets `X-Agent-Reverse-Proxy: 1` header on **every response** (before any body writing)
-2. Reads the target URL from `previewProxyState` (dynamically updatable)
-3. Detects WebSocket upgrades → raw byte relay via `handleWebSocketRelay()`
-4. For HTTP: forwards the request to `http://localhost:{targetPort}`, copies response via `processProxyResponse()`
-5. On connection error: returns 502 with `agentChatWaitingPage` ("Waiting for Agent Chat…" with auto-poll)
+2. Detects WebSocket upgrades → raw byte relay via `handleWebSocketRelay()`
+3. For HTTP: forwards the request to `http://localhost:{targetPort}`, copies response via `processProxyResponse()`
+4. On connection error: returns 502 with `agentChatWaitingPage` ("Waiting for Agent Chat…" with auto-poll)
 
 `processProxyResponse()` copies headers (stripping cookie Domain/Secure attributes) then streams the body. No modification of response content.
 
-The agent chat proxy wraps with CORS (`Access-Control-Allow-Origin`, `Allow-Credentials`, `Allow-Methods`, `Expose-Headers: X-Agent-Reverse-Proxy`) because the probe `fetch()` from the main UI (on port 1977) to the agent chat port (e.g., 24000) is cross-origin. Without `Access-Control-Expose-Headers`, the browser hides the `X-Agent-Reverse-Proxy` header from JS.
-
-Lifecycle is ref-counted via `acquireAgentChatProxyServer` / `releaseAgentChatProxyServer`.
+Since both proxies are same-origin (path-based on the main server port), no CORS headers are needed. The browser can always read the `X-Agent-Reverse-Proxy` header from JavaScript.
 
 ## The `X-Agent-Reverse-Proxy` Header
 
-This header serves one purpose: **let the browser-side probe distinguish "our proxy is up" from "Traefik returned 502 because our proxy container hasn't started."**
+This header serves one purpose: **let the browser-side probe detect that our proxy handler is active**.
 
 - swe-swe-server agent chat proxy sets it to `"1"` on every response (including 502 error pages)
-- Traefik's own 502 does NOT have this header
 - The preview proxy (hosted in swe-swe-server) also sets this header (with its version string) on every response
+- If the session doesn't exist, swe-swe-server returns 404 (no header)
 
-The probe uses `resp.headers.has('X-Agent-Reverse-Proxy')` — it doesn't care about the status code. A 502 *with* the header means "our proxy is running but the backend app isn't up yet." A 502 *without* the header means "Traefik can't reach our proxy."
+The probe uses `resp.headers.has('X-Agent-Reverse-Proxy')` — it doesn't care about the status code. A 502 *with* the header means "our proxy is running but the backend app isn't up yet."
 
 ## Preview Tab Flow
 
@@ -106,7 +99,7 @@ The preview proxy serves a shell page at `/__agent-reverse-proxy-debug__/shell` 
 ### What the user sees
 
 ```
-[Traefik not ready]     → "Connecting to preview..." (placeholder)
+[Session not ready]     → "Connecting to preview..." (placeholder)
 [Proxy up, app not up]  → agent-reverse-proxy waiting page (shown inside iframe after probe succeeds)
 [App up]                → Actual app content
 ```
@@ -123,7 +116,7 @@ The preview proxy serves a shell page at `/__agent-reverse-proxy-debug__/shell` 
 ### What the user sees
 
 ```
-[Traefik not ready]     → "Connecting to chat..." (placeholder)
+[Session not ready]     → "Connecting to chat..." (placeholder)
 [Proxy up, app not up]  → "Waiting for Agent Chat…" (swe-swe-server's 502 page with auto-poll)
 [App up]                → Agent chat UI
 ```

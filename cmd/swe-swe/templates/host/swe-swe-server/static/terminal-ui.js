@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString, PROXY_PORT_OFFSET } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -35,6 +35,7 @@ class TerminalUI extends HTMLElement {
         this.previewPort = null;
         this.previewBaseUrl = null;
         this.agentChatPort = null;
+        this.sessionUUID = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -996,11 +997,12 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 this.previewPort = msg.previewPort || null;
                 this.agentChatPort = msg.agentChatPort || null;
+                this.sessionUUID = msg.sessionUUID || null;
                 // Probe agent chat proxy — wait for our proxy to be up, then load iframe.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
-                if (this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
+                if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
                     this._agentChatProbing = true;
-                    const acUrl = buildAgentChatUrl(window.location, this.agentChatPort);
+                    const acUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
                     if (acUrl) {
                         this._agentChatProbeController = new AbortController();
                         probeUntilReady(acUrl + '/', {
@@ -2823,8 +2825,7 @@ class TerminalUI extends HTMLElement {
 
     // === Split-Pane UI Methods ===
     getPreviewBaseUrl() {
-        const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
-        return buildPreviewUrl(window.location, previewPort);
+        return buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
     }
 
     updatePreviewBaseUrl() {
@@ -3371,8 +3372,8 @@ class TerminalUI extends HTMLElement {
         }
 
         // Localhost URLs: route through the proxy shell page
-        const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
-        const base = buildPreviewUrl(window.location, previewPort);
+        const base = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
+        if (!base) return;
         let path;
         if (iframePath !== null) {
             path = iframePath;
@@ -3479,12 +3480,10 @@ class TerminalUI extends HTMLElement {
             this._debugWsReconnectTimer = null;
         }
 
-        const baseUrl = this.getPreviewBaseUrl();
-        if (!baseUrl) return;
+        const previewBase = this.getPreviewBaseUrl();
+        if (!previewBase) return;
 
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const previewPort = this.previewPort ? PROXY_PORT_OFFSET + Number(this.previewPort) : null;
-        const wsUrl = `${wsProtocol}//${window.location.hostname}:${previewPort}/__agent-reverse-proxy-debug__/ui`;
+        const wsUrl = previewBase.replace(/^http/, 'ws') + '/__agent-reverse-proxy-debug__/ui';
 
         let ws;
         try {

@@ -14,6 +14,5 @@
   "statusBarFontSize": 14,
   "statusBarFontFamily": "monospace",
   "hostUID": 1000,
-  "hostGID": 1000,
-  "proxyPortOffset": 20000
+  "hostGID": 1000
 }

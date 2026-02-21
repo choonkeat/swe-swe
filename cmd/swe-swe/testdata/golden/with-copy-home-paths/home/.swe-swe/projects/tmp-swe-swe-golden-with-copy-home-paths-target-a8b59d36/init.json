@@ -18,6 +18,5 @@
   "statusBarFontSize": 12,
   "statusBarFontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   "hostUID": 1000,
-  "hostGID": 1000,
-  "proxyPortOffset": 20000
+  "hostGID": 1000
 }

@@ -30,6 +30,7 @@ instances + Preview tab are active.
     |  |  PTY host (WS1, WS2)                               |  |
     |  |  +----------------------------------------------+  |  |
     |  |  |  Preview proxy (/proxy/{uuid}/preview/...)   |  |  |
+    |  |  |  Agent chat proxy (/proxy/{uuid}/agentchat/) |  |  |
     |  |  |  DebugHub (UI obs WS3,WS4 / iframe WS5,WS6) |  |  |
     |  |  |  GET/open <-- HTTP                           |  |  |
     |  |  +----------------------------------------------+  |  |
@@ -43,17 +44,17 @@ instances + Preview tab are active.
     |                                                Container |
     +==========================================================+
 
-    HTTP Proxy Chains
+    HTTP Proxy Chains (all path-based, single port through Traefik)
 
-    Preview (path-based, single port):
-    Browser → swe-swe-server :9898 /proxy/{uuid}/preview/ → User app :3000
+    Preview:
+    Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/preview/ → User app :3000
 
-    Agent Chat (port-based, via Traefik):
-    Browser → Traefik :24000 → swe-swe-server :24000 → MCP sidecar :4000
+    Agent Chat:
+    Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/agentchat/ → MCP sidecar :4000
 
-    Preview proxy is hosted inside swe-swe-server as a Go library
-    (github.com/choonkeat/agent-reverse-proxy). Each session gets a
-    proxy instance at /proxy/{session-uuid}/preview/...
+    Both proxies are hosted inside swe-swe-server. Preview uses the
+    agent-reverse-proxy Go library; agent chat uses a lightweight
+    reverse proxy handler. Only 1 port goes through Traefik.
 
     AI agents communicate with the preview proxy via a lightweight
     stdio bridge process (npx @choonkeat/agent-reverse-proxy --bridge).
@@ -70,8 +71,8 @@ It is unused — swe-swe-server uses in-process subscribers instead.
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), SessionUuid(..))
-import HttpProxy exposing (PortOffset(..))
+import Domain exposing (AgentChatPort(..), PreviewPort(..), SessionUuid(..))
+import HttpProxy
 import PtyProtocol
 
 
@@ -97,16 +98,19 @@ type InjectJs
     = InjectJs
 
 
-{-| The swe-swe-server process (PTY host + preview proxy, port 9898).
+{-| The swe-swe-server process (PTY host + preview/agentchat proxy, port 9898).
 
-Hosts the preview proxy as an embedded Go library — each session gets
-a proxy instance at `/proxy/{session-uuid}/preview/...`.
+Hosts both proxies as path-based handlers — each session gets:
+- Preview proxy at `/proxy/{session-uuid}/preview/...`
+- Agent chat proxy at `/proxy/{session-uuid}/agentchat/...`
 -}
 type SweServer
     = SweServer
 
 
-{-| Traefik — host-level reverse proxy providing port-based routing and forwardauth.
+{-| Traefik — host-level reverse proxy providing forwardauth.
+
+Only routes the main server port (:9898). No per-session ports needed.
 -}
 type Traefik
     = Traefik
@@ -199,14 +203,14 @@ type alias PreviewProxyChain =
     { basePath : String, appPort : PreviewPort }
 
 
-{-| Agent Chat proxy chain: Browser → Traefik → swe-swe-server → MCP sidecar.
+{-| Agent Chat proxy chain: Browser → swe-swe-server /proxy/{uuid}/agentchat/ → MCP sidecar.
 
-Built into swe-swe-server (`handleProxyRequest`).
-Cookie stripping + CORS headers, no HTML injection.
+Hosted inside swe-swe-server as a path-based handler (no separate port or process).
+Cookie stripping, no HTML injection. Same-origin with the main UI.
 
 -}
 type alias AgentChatProxyChain =
-    { listenPort : AgentChatProxyPort, appPort : AgentChatPort }
+    { basePath : String, appPort : AgentChatPort }
 
 
 
@@ -307,18 +311,11 @@ fullTopology :
     }
 fullTopology =
     let
-        -- Port derivation example with default offset
-        offset =
-            PortOffset 20000
-
         previewPort =
             PreviewPort 3000
 
         acPort =
             HttpProxy.agentChatPort previewPort
-
-        acProxyPort =
-            HttpProxy.agentChatProxyPort { offset = offset, appPort = acPort }
     in
     { browser =
         { agentTerminal = TerminalUi { label = "Agent Terminal", sessionUuid = SessionUuid "uuid1" }
@@ -353,7 +350,7 @@ fullTopology =
         , appPort = previewPort
         }
     , agentChatProxy =
-        { listenPort = acProxyPort
+        { basePath = "/proxy/{uuid}/agentchat"
         , appPort = acPort
         }
     }

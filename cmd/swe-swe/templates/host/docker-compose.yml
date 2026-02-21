@@ -27,10 +27,6 @@ services:
       - "--entrypoints.websecure.address=:7443"
       - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
 # {{ENDIF}}
-      # Preview proxy entrypoints (per-session)
-      {{PREVIEW_ENTRYPOINTS}}
-      # Agent chat proxy entrypoints (per-session)
-      {{AGENT_CHAT_ENTRYPOINTS}}
 # {{IF LETSENCRYPT_PRODUCTION}}
       # Let's Encrypt ACME configuration (production)
       - "--certificatesresolvers.letsencrypt.acme.email={{EMAIL}}"
@@ -55,10 +51,6 @@ services:
 # {{IF SSL}}
       - "${SWE_PORT:-1977}:7443"
 # {{ENDIF}}
-      # Preview proxy ports (per-session)
-      {{PREVIEW_PORTS}}
-      # Agent chat proxy ports (per-session)
-      {{AGENT_CHAT_PORTS}}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -160,10 +152,6 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
-      # Preview proxy routing (per-session)
-      {{PREVIEW_ROUTERS}}
-      # Agent chat proxy routing (per-session)
-      {{AGENT_CHAT_ROUTERS}}
     depends_on:
       - chrome
     volumes:
@@ -206,9 +194,9 @@ services:
       - BROWSER_WS_ENDPOINT=ws://chrome:9223
       # App preview proxy target port (for split-pane iframe)
       - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
-      # App preview session port range (must match traefik entrypoints)
+      # Container-internal app port range for preview sessions
       - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
-      # Agent chat session port range (derived from preview ports + 1000)
+      # Container-internal app port range for agent chat sessions
       - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
     restart: unless-stopped
 

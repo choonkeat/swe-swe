@@ -119,7 +119,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, proxyPortOffset int) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -175,95 +175,6 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 		}
 
 		if !skip {
-			if strings.Contains(line, "{{PREVIEW_ENTRYPOINTS}}") {
-				indent := strings.Split(line, "{{PREVIEW_ENTRYPOINTS}}")[0]
-				for _, port := range previewPorts {
-					entrypoint := fmt.Sprintf("preview%d", port)
-					previewPort := previewProxyPort(port, proxyPortOffset)
-					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, previewPort))
-					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.transport.respondingTimeouts.readTimeout=60s\"", indent, entrypoint))
-				}
-				continue
-			}
-
-			if strings.Contains(line, "{{AGENT_CHAT_ENTRYPOINTS}}") {
-				indent := strings.Split(line, "{{AGENT_CHAT_ENTRYPOINTS}}")[0]
-				for _, port := range previewPorts {
-					acPort := agentChatPort(port)
-					entrypoint := fmt.Sprintf("agentchat%d", acPort)
-					proxyPort := agentChatProxyPort(acPort, proxyPortOffset)
-					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, proxyPort))
-					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.transport.respondingTimeouts.readTimeout=60s\"", indent, entrypoint))
-				}
-				continue
-			}
-
-			if strings.Contains(line, "{{PREVIEW_PORTS}}") {
-				indent := strings.Split(line, "{{PREVIEW_PORTS}}")[0]
-				for _, port := range previewPorts {
-					previewPort := previewProxyPort(port, proxyPortOffset)
-					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, previewPort, previewPort))
-				}
-				continue
-			}
-
-			if strings.Contains(line, "{{AGENT_CHAT_PORTS}}") {
-				indent := strings.Split(line, "{{AGENT_CHAT_PORTS}}")[0]
-				for _, port := range previewPorts {
-					acPort := agentChatPort(port)
-					proxyPort := agentChatProxyPort(acPort, proxyPortOffset)
-					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, proxyPort, proxyPort))
-				}
-				continue
-			}
-
-			if strings.Contains(line, "{{PREVIEW_ROUTERS}}") {
-				indent := strings.Split(line, "{{PREVIEW_ROUTERS}}")[0]
-				for _, port := range previewPorts {
-					entrypoint := fmt.Sprintf("preview%d", port)
-					previewPort := previewProxyPort(port, proxyPortOffset)
-					routerName := fmt.Sprintf("${PROJECT_NAME}-preview-%d", port)
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, previewPort))
-					if isSSL {
-						if isLetsEncrypt {
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
-						} else if isSelfSign {
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
-						}
-					}
-				}
-				continue
-			}
-
-			if strings.Contains(line, "{{AGENT_CHAT_ROUTERS}}") {
-				indent := strings.Split(line, "{{AGENT_CHAT_ROUTERS}}")[0]
-				for _, port := range previewPorts {
-					acPort := agentChatPort(port)
-					entrypoint := fmt.Sprintf("agentchat%d", acPort)
-					proxyPort := agentChatProxyPort(acPort, proxyPortOffset)
-					routerName := fmt.Sprintf("${PROJECT_NAME}-agentchat-%d", acPort)
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, proxyPort))
-					if isSSL {
-						if isLetsEncrypt {
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
-						} else if isSelfSign {
-							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
-						}
-					}
-				}
-				continue
-			}
-
 			// Handle UID and GID placeholders
 			if strings.Contains(line, "{{UID}}") {
 				line = strings.ReplaceAll(line, "{{UID}}", fmt.Sprintf("%d", hostUID))
@@ -293,16 +204,8 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 	return strings.Join(result, "\n")
 }
 
-func previewProxyPort(port, offset int) int {
-	return offset + port
-}
-
 func agentChatPort(previewPort int) int {
 	return previewPort + 1000
-}
-
-func agentChatProxyPort(port, offset int) int {
-	return offset + port
 }
 
 // processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions

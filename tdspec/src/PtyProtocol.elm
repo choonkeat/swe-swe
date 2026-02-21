@@ -45,10 +45,12 @@ type ServerMsg
 
 {-| Payload of the `status` JSON message.
 Delivered periodically by swe-swe-server.
+`sessionUUID` is used by the browser to build path-based proxy URLs.
 `ports.preview` triggers the debug WebSocket connection to agent-reverse-proxy.
 -}
 type alias StatusPayload =
-    { ports :
+    { sessionUUID : SessionUuid
+    , ports :
         { preview : PreviewPort
         , agentChat : Maybe AgentChatPort
         }

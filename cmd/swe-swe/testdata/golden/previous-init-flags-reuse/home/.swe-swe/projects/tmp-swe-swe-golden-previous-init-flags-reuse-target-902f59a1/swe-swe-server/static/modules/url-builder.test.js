@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -122,88 +122,110 @@ test('buildShellUrl handles https base URL', () => {
 });
 
 // buildPreviewUrl tests
-test('buildPreviewUrl uses explicit preview port when provided', () => {
+test('buildPreviewUrl returns path-based URL with sessionUUID', () => {
     assert.strictEqual(
-        buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007),
-        'https://example.com:23007'
+        buildPreviewUrl('http://localhost:9898', 'abc-123'),
+        'http://localhost:9898/proxy/abc-123/preview'
     );
 });
 
-test('buildPreviewUrl adds PROXY_PORT_OFFSET to location port', () => {
+test('buildPreviewUrl returns null when sessionUUID is null', () => {
     assert.strictEqual(
-        buildPreviewUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }),
-        'https://example.com:28080'
+        buildPreviewUrl('http://localhost:9898', null),
+        null
     );
 });
 
-test('buildPreviewUrl defaults to port 80 when empty', () => {
+test('buildPreviewUrl returns null when sessionUUID is empty', () => {
     assert.strictEqual(
-        buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '' }),
-        'http://localhost:20080'
+        buildPreviewUrl('http://localhost:9898', ''),
+        null
     );
 });
 
-test('buildPreviewUrl handles 443 port', () => {
+test('buildPreviewUrl handles https base URL', () => {
     assert.strictEqual(
-        buildPreviewUrl({ protocol: 'https:', hostname: 'secure.com', port: '443' }),
-        'https://secure.com:20443'
-    );
-});
-
-test('buildPreviewUrl handles localhost with custom port', () => {
-    assert.strictEqual(
-        buildPreviewUrl({ protocol: 'http:', hostname: 'localhost', port: '9770' }),
-        'http://localhost:29770'
+        buildPreviewUrl('https://example.com', 'uuid-456'),
+        'https://example.com/proxy/uuid-456/preview'
     );
 });
 
 // buildProxyUrl tests
 test('buildProxyUrl with no targetURL returns base with slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, null),
-        'https://example.com:23007/'
+        buildProxyUrl('http://localhost:9898', 'abc-123', null),
+        'http://localhost:9898/proxy/abc-123/preview/'
     );
 });
 
 test('buildProxyUrl with empty targetURL returns base with slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, ''),
-        'https://example.com:23007/'
+        buildProxyUrl('http://localhost:9898', 'abc-123', ''),
+        'http://localhost:9898/proxy/abc-123/preview/'
     );
 });
 
 test('buildProxyUrl extracts path from full URL', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, 'http://localhost:3000/api/health'),
-        'https://example.com:23007/api/health'
+        buildProxyUrl('http://localhost:9898', 'abc-123', 'http://localhost:3000/api/health'),
+        'http://localhost:9898/proxy/abc-123/preview/api/health'
     );
 });
 
 test('buildProxyUrl preserves query string and hash from target', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'host.com', port: '8080' }, 23007, 'http://localhost:3000/page?q=1#section'),
-        'https://host.com:23007/page?q=1#section'
+        buildProxyUrl('http://localhost:9898', 'abc-123', 'http://localhost:3000/page?q=1#section'),
+        'http://localhost:9898/proxy/abc-123/preview/page?q=1#section'
     );
 });
 
 test('buildProxyUrl handles bare path starting with slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, '/some/path'),
-        'https://example.com:23007/some/path'
+        buildProxyUrl('http://localhost:9898', 'abc-123', '/some/path'),
+        'http://localhost:9898/proxy/abc-123/preview/some/path'
     );
 });
 
 test('buildProxyUrl handles bare path without leading slash', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, 23007, 'some/path'),
-        'https://example.com:23007/some/path'
+        buildProxyUrl('http://localhost:9898', 'abc-123', 'some/path'),
+        'http://localhost:9898/proxy/abc-123/preview/some/path'
     );
 });
 
-test('buildProxyUrl uses fallback port when previewPort is null', () => {
+test('buildProxyUrl returns null when sessionUUID is null', () => {
     assert.strictEqual(
-        buildProxyUrl({ protocol: 'https:', hostname: 'example.com', port: '8080' }, null, 'http://localhost:3000/'),
-        'https://example.com:28080/'
+        buildProxyUrl('http://localhost:9898', null, 'http://localhost:3000/'),
+        null
+    );
+});
+
+// buildAgentChatUrl tests
+test('buildAgentChatUrl returns path-based URL with sessionUUID', () => {
+    assert.strictEqual(
+        buildAgentChatUrl('http://localhost:9898', 'abc-123'),
+        'http://localhost:9898/proxy/abc-123/agentchat'
+    );
+});
+
+test('buildAgentChatUrl returns null when sessionUUID is null', () => {
+    assert.strictEqual(
+        buildAgentChatUrl('http://localhost:9898', null),
+        null
+    );
+});
+
+test('buildAgentChatUrl returns null when sessionUUID is empty', () => {
+    assert.strictEqual(
+        buildAgentChatUrl('http://localhost:9898', ''),
+        null
+    );
+});
+
+test('buildAgentChatUrl handles https base URL', () => {
+    assert.strictEqual(
+        buildAgentChatUrl('https://example.com', 'uuid-456'),
+        'https://example.com/proxy/uuid-456/agentchat'
     );
 });
 

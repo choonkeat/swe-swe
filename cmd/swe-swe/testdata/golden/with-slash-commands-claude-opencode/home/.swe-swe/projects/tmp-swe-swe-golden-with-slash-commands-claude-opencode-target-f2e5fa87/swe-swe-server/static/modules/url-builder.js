@@ -5,13 +5,6 @@
  */
 
 /**
- * Offset added to container ports to derive their host-side proxy ports.
- * Must match the Go constant in main.go (proxyPortOffset).
- * Value is substituted during `swe-swe init`; dev mode replaces the placeholder with 20000.
- */
-export const PROXY_PORT_OFFSET = 20000;
-
-/**
  * Get the base URL from location object.
  * @param {{protocol: string, hostname: string, port: string}} location - Location-like object
  * @returns {string} Base URL (e.g., "https://example.com" or "http://localhost:8080")
@@ -46,29 +39,26 @@ export function buildShellUrl(config) {
 }
 
 /**
- * Build the app preview URL.
- * @param {{protocol: string, hostname: string, port: string}} location - Location-like object
- * @param {number|string} previewPort - Explicit preview port (optional)
- * @returns {string} Preview URL
+ * Build the app preview base URL (path-based, same origin).
+ * @param {string} baseUrl - The base URL of swe-swe-server
+ * @param {string} sessionUUID - Session UUID
+ * @returns {string|null} Preview proxy base URL, or null if no sessionUUID
  */
-export function buildPreviewUrl(location, previewPort) {
-    const { protocol, hostname, port } = location;
-    if (previewPort) {
-        return `${protocol}//${hostname}:${previewPort}`;
-    }
-    const fallbackPort = PROXY_PORT_OFFSET + Number(port || 80);
-    return `${protocol}//${hostname}:${fallbackPort}`;
+export function buildPreviewUrl(baseUrl, sessionUUID) {
+    if (!sessionUUID) return null;
+    return `${baseUrl}/proxy/${sessionUUID}/preview`;
 }
 
 /**
- * Build a proxy URL by combining the preview base with the path from a target URL.
- * @param {{protocol: string, hostname: string, port: string}} location - Location-like object
- * @param {number|string} previewPort - Explicit preview port (optional)
+ * Build a proxy URL by combining the preview base with a target path.
+ * @param {string} baseUrl - The base URL of swe-swe-server
+ * @param {string} sessionUUID - Session UUID
  * @param {string} targetURL - The logical target URL (optional)
- * @returns {string} Proxy URL for use as iframe src
+ * @returns {string|null} Proxy URL for use as iframe src, or null if no sessionUUID
  */
-export function buildProxyUrl(location, previewPort, targetURL) {
-    const base = buildPreviewUrl(location, previewPort);
+export function buildProxyUrl(baseUrl, sessionUUID, targetURL) {
+    const base = buildPreviewUrl(baseUrl, sessionUUID);
+    if (!base) return null;
     if (!targetURL) return base + '/';
     try {
         const parsed = new URL(targetURL);
@@ -79,17 +69,14 @@ export function buildProxyUrl(location, previewPort, targetURL) {
 }
 
 /**
- * Build the agent chat URL.
- * @param {{protocol: string, hostname: string}} location - Location-like object
- * @param {number|string} agentChatPort - Agent chat app port
- * @returns {string|null} Agent chat proxy URL, or null if no port
+ * Build the agent chat URL (path-based, same origin).
+ * @param {string} baseUrl - The base URL of swe-swe-server
+ * @param {string} sessionUUID - Session UUID
+ * @returns {string|null} Agent chat proxy URL, or null if no sessionUUID
  */
-export function buildAgentChatUrl(location, agentChatPort) {
-    const { protocol, hostname } = location;
-    if (agentChatPort) {
-        return `${protocol}//${hostname}:${PROXY_PORT_OFFSET + Number(agentChatPort)}`;
-    }
-    return null;
+export function buildAgentChatUrl(baseUrl, sessionUUID) {
+    if (!sessionUUID) return null;
+    return `${baseUrl}/proxy/${sessionUUID}/agentchat`;
 }
 
 /**

@@ -40,12 +40,8 @@ func TestWebSocketProxyRelay(t *testing.T) {
 
 	// 2. Start the proxy server pointing at the backend
 	backendURL, _ := url.Parse(backend.URL)
-	state := &previewProxyState{
-		defaultTarget:  backendURL,
-
-	}
 	proxyMux := http.NewServeMux()
-	proxyMux.HandleFunc("/", handleProxyRequest(state))
+	proxyMux.Handle("/", agentChatProxyHandler(backendURL))
 	proxy := httptest.NewServer(proxyMux)
 	defer proxy.Close()
 
@@ -84,12 +80,8 @@ func TestNormalHTTPThroughProxy(t *testing.T) {
 	defer backend.Close()
 
 	backendURL, _ := url.Parse(backend.URL)
-	state := &previewProxyState{
-		defaultTarget:  backendURL,
-
-	}
 	proxyMux := http.NewServeMux()
-	proxyMux.HandleFunc("/", handleProxyRequest(state))
+	proxyMux.Handle("/", agentChatProxyHandler(backendURL))
 	proxy := httptest.NewServer(proxyMux)
 	defer proxy.Close()
 
@@ -109,11 +101,8 @@ func TestNormalHTTPThroughProxy(t *testing.T) {
 func TestWebSocketProxyBackendDown(t *testing.T) {
 	// Point proxy at a port that nothing is listening on
 	backendURL, _ := url.Parse("http://127.0.0.1:1") // port 1 should be closed
-	state := &previewProxyState{
-		defaultTarget:  backendURL,
-	}
 	proxyMux := http.NewServeMux()
-	proxyMux.HandleFunc("/", handleProxyRequest(state))
+	proxyMux.Handle("/", agentChatProxyHandler(backendURL))
 	proxy := httptest.NewServer(proxyMux)
 	defer proxy.Close()
 

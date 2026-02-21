@@ -336,8 +336,8 @@ type Session struct {
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
 	SessionMode     string             // "terminal" or "chat"
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
-	PreviewProxy  *agentproxy.Proxy // Per-session preview proxy instance
-	PreviewMCPMux http.Handler      // MCP + proxy handler for this session
+	PreviewProxy *agentproxy.Proxy // Per-session preview proxy instance
+	SessionMux   http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -369,12 +369,11 @@ func detectYoloMode(cmd string) bool {
 }
 
 func buildSessionEnv(previewPort, agentChatPort int, theme, workDir, sessionMode string) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PROXY_PORT")
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
 		fmt.Sprintf("AGENT_CHAT_PORT=%d", agentChatPort),
-		fmt.Sprintf("PROXY_PORT=%d", previewProxyPort(previewPort)),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
@@ -652,6 +651,7 @@ func (s *Session) BroadcastStatus() {
 	}
 	status := map[string]interface{}{
 		"type":          "status",
+		"sessionUUID":   s.UUID,
 		"viewers":       len(s.wsClients),
 		"cols":          cols,
 		"rows":          rows,
@@ -815,10 +815,7 @@ func (s *Session) Close() {
 		s.PTY.Close()
 	}
 
-	acPort := s.AgentChatPort
 	s.mu.Unlock()
-
-	releaseAgentChatProxyServer(acPort)
 	return
 }
 
@@ -1251,141 +1248,12 @@ const agentChatWaitingPage = `<!DOCTYPE html>
 </body>
 </html>`
 
-type previewProxyState struct {
-	targetMu      sync.RWMutex
-	targetURL     *url.URL // nil = use default localhost:targetPort
-	defaultTarget *url.URL // The default localhost:targetPort
-}
-
-type previewProxyServer struct {
-	server   *http.Server
-	listener net.Listener
-	state    *previewProxyState
-	refCount int
-}
-
-var (
-	agentChatServersMu sync.Mutex
-	agentChatServers   = make(map[int]*previewProxyServer)
-)
-
-// startAgentChatProxy starts a reverse proxy for the agent chat MCP server.
-func startAgentChatProxy(listener net.Listener, targetPort int) (*previewProxyServer, error) {
-	targetPortStr := strconv.Itoa(targetPort)
-	defaultTarget, err := url.Parse("http://localhost:" + targetPortStr)
-	if err != nil {
-		return nil, fmt.Errorf("agent chat proxy: invalid target URL: %w", err)
-	}
-
-	state := &previewProxyState{
-		defaultTarget:  defaultTarget,
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleProxyRequest(state))
-
-	// Wrap with CORS so the cross-origin probe from the main UI can read
-	// the X-Agent-Reverse-Proxy header (distinguishes our 502 from Traefik's).
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-			w.Header().Set("Access-Control-Expose-Headers", "X-Agent-Reverse-Proxy")
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-		}
-		mux.ServeHTTP(w, r)
-	})
-
-	server := &http.Server{
-		Handler: handler,
-	}
-
-	go func() {
-		log.Printf("Starting agent chat proxy on %s -> localhost:%d", listener.Addr().String(), targetPort)
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("Agent chat proxy error: %v", err)
-		}
-	}()
-
-	return &previewProxyServer{
-		server:   server,
-		listener: listener,
-		state:    state,
-		refCount: 0,
-	}, nil
-}
-
-func acquireAgentChatProxyServer(acPort int, listener net.Listener) error {
-	agentChatServersMu.Lock()
-	defer agentChatServersMu.Unlock()
-
-	if ref, ok := agentChatServers[acPort]; ok {
-		ref.refCount++
-		if listener != nil {
-			listener.Close()
-		}
-		return nil
-	}
-
-	if listener == nil {
-		var err error
-		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", agentChatProxyPort(acPort)))
-		if err != nil {
-			return err
-		}
-	}
-
-	server, err := startAgentChatProxy(listener, acPort)
-	if err != nil {
-		listener.Close()
-		return err
-	}
-	server.refCount = 1
-	agentChatServers[acPort] = server
-	return nil
-}
-
-func releaseAgentChatProxyServer(acPort int) {
-	agentChatServersMu.Lock()
-	ref, ok := agentChatServers[acPort]
-	if !ok {
-		agentChatServersMu.Unlock()
-		return
-	}
-	ref.refCount--
-	if ref.refCount > 0 {
-		agentChatServersMu.Unlock()
-		return
-	}
-	delete(agentChatServers, acPort)
-	agentChatServersMu.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := ref.server.Shutdown(ctx); err != nil {
-		log.Printf("Agent chat proxy shutdown error: %v", err)
-	}
-	ref.listener.Close()
-}
-
-
-// handleProxyRequest proxies requests to the current target
-func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Mark responses as coming from our reverse proxy so probes can
-		// distinguish our 502 from Traefik's 502.
+// agentChatProxyHandler returns an HTTP handler that reverse-proxies requests
+// to the agent chat app running on the given target URL.
+func agentChatProxyHandler(target *url.URL) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mark responses so browser probes can detect our proxy.
 		w.Header().Set("X-Agent-Reverse-Proxy", "1")
-
-		state.targetMu.RLock()
-		target := state.targetURL
-		if target == nil {
-			target = state.defaultTarget
-		}
-		state.targetMu.RUnlock()
 
 		// WebSocket upgrade detection: relay raw bytes instead of HTTP proxy
 		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
@@ -1415,14 +1283,13 @@ func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
 		// Create outgoing request
 		outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
 		if err != nil {
-			log.Printf("Preview proxy: failed to create request: %v", err)
+			log.Printf("Agent chat proxy: failed to create request: %v", err)
 			http.Error(w, "Failed to create request", http.StatusInternalServerError)
 			return
 		}
 
 		// Copy headers from incoming request
 		for key, values := range r.Header {
-			// Skip hop-by-hop headers
 			if isHopByHopHeader(key) {
 				continue
 			}
@@ -1447,7 +1314,7 @@ func handleProxyRequest(state *previewProxyState) http.HandlerFunc {
 
 		// Process response (copy headers, strip cookie Domain/Secure, stream body)
 		processProxyResponse(w, resp, target)
-	}
+	})
 }
 
 // processProxyResponse copies headers (stripping Domain from cookies), status, and body.
@@ -1680,18 +1547,6 @@ func main() {
 	}
 	staticHandler := http.FileServer(http.FS(staticContent))
 
-	// Handler for url-builder.js with template substitution (dev mode compatibility)
-	http.HandleFunc("/modules/url-builder.js", func(w http.ResponseWriter, r *http.Request) {
-		content, err := staticFS.ReadFile("static/modules/url-builder.js")
-		if err != nil {
-			http.Error(w, "File not found", http.StatusNotFound)
-			return
-		}
-		result := strings.ReplaceAll(string(content), "{{PROXY_PORT_OFFSET}}", strconv.Itoa(proxyPortOffset))
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		w.Write([]byte(result))
-	})
-
 	// Handler for terminal-ui.js with template substitution (dev mode compatibility)
 	http.HandleFunc("/terminal-ui.js", func(w http.ResponseWriter, r *http.Request) {
 		content, err := staticFS.ReadFile("static/terminal-ui.js")
@@ -1876,7 +1731,7 @@ func main() {
 			return
 		}
 
-		// Preview proxy: /proxy/{uuid}/preview/...
+		// Session proxy: /proxy/{uuid}/{preview|agentchat}/...
 		if strings.HasPrefix(r.URL.Path, "/proxy/") {
 			handleProxyRoute(w, r)
 			return
@@ -3443,53 +3298,31 @@ func deleteRecordingFiles(uuid string) {
 	}
 }
 
-const proxyPortOffset = 20000
-
-func previewProxyPort(port int) int {
-	return proxyPortOffset + port
-}
-
-func agentChatProxyPort(port int) int {
-	return proxyPortOffset + port
-}
-
 func agentChatPortFromPreview(previewPort int) int {
 	return previewPort + 1000
 }
 
-// findAvailablePortPair finds a preview port and its derived agent chat port where all 4 addresses
-// (preview proxy, preview app, agent chat proxy, agent chat app) are available.
-// Returns preview port, preview proxy listener, agent chat port, agent chat proxy listener.
-func findAvailablePortPair() (int, net.Listener, int, net.Listener, error) {
+// findAvailablePortPair finds a preview port and its derived agent chat port
+// where both app addresses are available.
+// Returns (previewPort, agentChatPort, error).
+func findAvailablePortPair() (int, int, error) {
 	for port := previewPortStart; port <= previewPortEnd; port++ {
-		previewListener, err := net.Listen("tcp", fmt.Sprintf(":%d", previewProxyPort(port)))
-		if err != nil {
-			continue
-		}
 		appListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err != nil {
-			previewListener.Close()
 			continue
 		}
 		appListener.Close()
 
 		acPort := agentChatPortFromPreview(port)
-		acProxyListener, err := net.Listen("tcp", fmt.Sprintf(":%d", agentChatProxyPort(acPort)))
-		if err != nil {
-			previewListener.Close()
-			continue
-		}
 		acAppListener, err := net.Listen("tcp", fmt.Sprintf(":%d", acPort))
 		if err != nil {
-			previewListener.Close()
-			acProxyListener.Close()
 			continue
 		}
 		acAppListener.Close()
 
-		return port, previewListener, acPort, acProxyListener, nil
+		return port, acPort, nil
 	}
-	return 0, nil, 0, nil, fmt.Errorf("no available port pair in preview range %d-%d", previewPortStart, previewPortEnd)
+	return 0, 0, fmt.Errorf("no available port pair in preview range %d-%d", previewPortStart, previewPortEnd)
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -3558,9 +3391,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 
 	var previewPort int
-	var previewListener net.Listener
 	var acPort int
-	var acListener net.Listener
 	if parentUUID != "" {
 		if parentSess, ok := sessions[parentUUID]; ok {
 			previewPort = parentSess.PreviewPort
@@ -3569,7 +3400,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 	if previewPort == 0 {
 		var err error
-		previewPort, previewListener, acPort, acListener, err = findAvailablePortPair()
+		previewPort, acPort, err = findAvailablePortPair()
 		if err != nil {
 			return nil, false, err
 		}
@@ -3703,19 +3534,14 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		sessMux := http.NewServeMux()
 		sessMux.Handle("/proxy/"+sessionUUID+"/preview/mcp", previewProxy.MCPHandler(mcpSrv))
 		sessMux.Handle("/proxy/"+sessionUUID+"/preview/", previewProxy)
+		// Agent chat proxy route (same-origin, path-based)
+		acTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", acPort))
+		sessMux.Handle("/proxy/"+sessionUUID+"/agentchat/", http.StripPrefix(
+			"/proxy/"+sessionUUID+"/agentchat",
+			agentChatProxyHandler(acTarget),
+		))
 		sess.PreviewProxy = previewProxy
-		sess.PreviewMCPMux = sessMux
-	}
-
-	// Preview proxy now runs inside swe-swe-server; release the reserved listener
-	if previewListener != nil {
-		previewListener.Close()
-	}
-	if err := acquireAgentChatProxyServer(acPort, acListener); err != nil {
-		if acListener != nil {
-			acListener.Close()
-		}
-		return nil, false, err
+		sess.SessionMux = sessMux
 	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly
@@ -3728,7 +3554,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 }
 
 func handleProxyRoute(w http.ResponseWriter, r *http.Request) {
-	// Extract session UUID from /proxy/{uuid}/preview/...
+	// Extract session UUID from /proxy/{uuid}/{preview|agentchat}/...
 	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/proxy/"), "/", 2)
 	if len(parts) < 2 {
 		http.NotFound(w, r)
@@ -3739,11 +3565,11 @@ func handleProxyRoute(w http.ResponseWriter, r *http.Request) {
 	sessionsMu.RLock()
 	sess, ok := sessions[sessionUUID]
 	sessionsMu.RUnlock()
-	if !ok || sess.PreviewMCPMux == nil {
+	if !ok || sess.SessionMux == nil {
 		http.NotFound(w, r)
 		return
 	}
-	sess.PreviewMCPMux.ServeHTTP(w, r)
+	sess.SessionMux.ServeHTTP(w, r)
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string) {

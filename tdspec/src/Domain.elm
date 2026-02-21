@@ -1,16 +1,17 @@
-module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), PreviewProxyPort(..), AgentChatProxyPort(..), Bytes(..), Timestamp(..))
+module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), Bytes(..), Timestamp(..))
 
 {-| Shared primitive types used across the architecture.
 
 System overview:
 
   - Browser page hosts 2x terminal-ui web components + 1x Preview iframe
-  - Container runs swe-swe-server (PTY + embedded preview proxy)
+  - Container runs swe-swe-server (PTY + embedded preview/agentchat proxy)
   - 4 WebSockets + 1 HTTP endpoint connect them (+ 2 more when Preview iframe active)
   - Preview proxy is path-based (/proxy/{uuid}/preview/) on the main server port
-  - Agent Chat proxy chain routes through Traefik to container backend
+  - Agent Chat proxy is path-based (/proxy/{uuid}/agentchat/) on the main server port
+  - Only 1 port goes through Traefik — no per-session proxy ports needed
 
-@docs Url, SessionUuid, PreviewPort, AgentChatPort, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp
+@docs Url, SessionUuid, PreviewPort, AgentChatPort, Bytes, Timestamp
 
 -}
 
@@ -39,22 +40,6 @@ Derived from preview port: `previewPort + 1000`.
 -}
 type AgentChatPort
     = AgentChatPort Int
-
-
-{-| Port where the preview reverse proxy used to listen (e.g., 23000).
-Derived from preview port + offset (default 20000).
-Retained for port reservation in `findAvailablePortPair`, but preview
-traffic now goes through the main server port via path-based routing.
--}
-type PreviewProxyPort
-    = PreviewProxyPort Int
-
-
-{-| Port where the agent chat reverse proxy listens (e.g., 24000).
-Derived from agent chat port + offset (default 20000).
--}
-type AgentChatProxyPort
-    = AgentChatProxyPort Int
 
 
 {-| Opaque binary data — PTY I/O, file upload/download chunks.
