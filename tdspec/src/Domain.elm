@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), ProxyPort(..), Bytes(..), Timestamp(..))
+module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), PreviewProxyPort(..), AgentChatProxyPort(..), Bytes(..), Timestamp(..))
 
 {-| Shared primitive types used across the architecture.
 
@@ -9,7 +9,7 @@ System overview:
   - 4 WebSockets + 1 HTTP endpoint connect them (+ 2 more when Preview iframe active)
   - 2 HTTP reverse proxy chains route through Traefik to container backends
 
-@docs Url, SessionUuid, PreviewPort, AgentChatPort, ProxyPort, Bytes, Timestamp
+@docs Url, SessionUuid, PreviewPort, AgentChatPort, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp
 
 -}
 
@@ -40,12 +40,18 @@ type AgentChatPort
     = AgentChatPort Int
 
 
-{-| Port where a reverse proxy listens (e.g., 23000 for preview, 24000 for agent chat).
-Derived from app port + offset (default 20000).
-Distinct from app ports to prevent accidental mix-ups in port arithmetic.
+{-| Port where the preview reverse proxy listens (e.g., 23000).
+Derived from preview port + offset (default 20000).
 -}
-type ProxyPort
-    = ProxyPort Int
+type PreviewProxyPort
+    = PreviewProxyPort Int
+
+
+{-| Port where the agent chat reverse proxy listens (e.g., 24000).
+Derived from agent chat port + offset (default 20000).
+-}
+type AgentChatProxyPort
+    = AgentChatProxyPort Int
 
 
 {-| Opaque binary data — PTY I/O, file upload/download chunks.

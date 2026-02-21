@@ -38,16 +38,16 @@ type ShellPageEffect
 
 {-| On page load, the shell page sends an `Init` message with the current URL.
 -}
-onPageLoad : Url -> Timestamp -> ShellPageEffect
-onPageLoad url ts =
-    ShellSend (Init { url = url, ts = ts })
+onPageLoad : { url : Url, now : Timestamp } -> ShellPageEffect
+onPageLoad payload =
+    ShellSend (Init { url = payload.url, ts = payload.now })
 
 
 {-| On URL change (pushState/popstate/hashchange), sends `UrlChange`.
 -}
-onUrlChange : Url -> Timestamp -> ShellPageEffect
-onUrlChange url ts =
-    ShellSend (UrlChange { url = url, ts = ts })
+onUrlChange : { url : Url, now : Timestamp } -> ShellPageEffect
+onUrlChange payload =
+    ShellSend (UrlChange { url = payload.url, ts = payload.now })
 
 
 {-| On navigation state change, sends `NavState` with back/forward availability.

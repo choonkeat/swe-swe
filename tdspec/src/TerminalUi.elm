@@ -67,8 +67,8 @@ type Effect
 {-| Handle a message from the PTY WebSocket (WS 1/2).
 The `Status` message delivers `previewPort`, triggering the debug WS connection.
 -}
-onPtyMessage : PtyProtocol.ServerMsg -> State -> ( State, List Effect )
-onPtyMessage msg state =
+onPtyMessage : { msg : PtyProtocol.ServerMsg, state : State } -> ( State, List Effect )
+onPtyMessage { msg, state } =
     case msg of
         PtyProtocol.PtyOutput _ ->
             ( state, [] )
@@ -115,8 +115,8 @@ both call `openIframePane -> setPreviewURL -> confirm()`.
 Result: 2x "Open in new tab?" dialogs for external URLs.
 
 -}
-onDebugMessage : DebugMsg -> State -> ( State, List Effect )
-onDebugMessage msg state =
+onDebugMessage : { msg : DebugMsg, state : State } -> ( State, List Effect )
+onDebugMessage { msg, state } =
     case msg of
         UrlChange payload ->
             ( { state | previewUrl = Just payload.url }

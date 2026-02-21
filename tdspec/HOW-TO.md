@@ -166,63 +166,82 @@ It describes:
 - what actions are available
 - what data must flow to the next page
 
-### 3.6 Named type variables via record
+### 3.6 Named type variables with comments
 
-When a type has multiple type parameters, prefer wrapping them in a record so each role is named:
+When a type has multiple type parameters, use descriptive parameter names in the definition and inline comments at call sites:
 
 ```elm
--- Good: each parameter is named
-type WebSocketChannel protocol =
-    WebSocketChannel { endpoint : String }
+-- Good: definition names the roles, comments label each argument
+type WebSocketChannel server serverMsg client clientMsg
+    = WebSocketChannel
 
 ptyChannel :
     WebSocketChannel
-        { from : TerminalUi
-        , to : SweServer
-        , receives : PtyProtocol.ServerMsg
-        , sends : PtyProtocol.ClientMsg
-        }
+        SweServer                 -- server
+        PtyProtocol.ServerMsg     -- serverMsg
+        TerminalUi                -- client
+        PtyProtocol.ClientMsg     -- clientMsg
 ```
 
-compared to positional parameters where the reader must remember which slot is which:
+The type definition `server serverMsg client clientMsg` is the legend. Comments at call sites are a convenience. Avoid cramming all parameters onto one line where the reader must count positions:
 
 ```elm
--- Avoid: positional parameters are opaque
-type WebSocketChannel from to receives sends =
-    WebSocketChannel { endpoint : String }
-
-ptyChannel : WebSocketChannel TerminalUi SweServer PtyProtocol.ServerMsg PtyProtocol.ClientMsg
+-- Avoid: positional parameters without comments
+ptyChannel : WebSocketChannel SweServer PtyProtocol.ServerMsg TerminalUi PtyProtocol.ClientMsg
 ```
-
-The record approach scales to any number of parameters without ambiguity.
 
 ### 3.7 Precision over generality
 
 Use process-specific types so invalid combinations are unrepresentable:
 
 ```elm
--- Good: only valid from/to combinations type-check
+-- Good: only valid server/client combinations type-check
 type TerminalUi = TerminalUi { label : String, sessionUuid : SessionUuid }
 type SweServer = SweServer
 
 ptyChannel :
     WebSocketChannel
-        { from : TerminalUi, to : SweServer, ... }
+        SweServer                 -- server
+        PtyProtocol.ServerMsg     -- serverMsg
+        TerminalUi                -- client
+        PtyProtocol.ClientMsg     -- clientMsg
 ```
 
 compared to a generic `Process` union where any variant could appear in any role:
 
 ```elm
--- Avoid: allows nonsensical combinations like from=Traefik, to=McpSidecar
+-- Avoid: allows nonsensical combinations like server=Traefik, client=McpSidecar
 type Process = BrowserTerminalUi | HostTraefik | ContainerMcpSidecar | ...
 
 ptyChannel :
-    { from : Process, to : Process, ... }
+    { server : Process, client : Process, ... }
 ```
 
 When each role has its own type, the compiler rejects impossible connections at definition time rather than at runtime.
 
-### 3.8 "Effects" represent server calls, storage operations, notifications, etc.
+### 3.8 Records over currying
+
+Use a record argument instead of multiple positional arguments. Currying is idiomatic Elm but requires the reader to understand partial application and remember argument order:
+
+```elm
+-- Good: each argument is named
+previewProxyPort : { offset : PortOffset, appPort : PreviewPort } -> PreviewProxyPort
+
+onPageLoad : { url : Url, now : Timestamp } -> ShellPageEffect
+```
+
+compared to curried positional arguments:
+
+```elm
+-- Avoid: reader must remember argument order
+previewProxyPort : PortOffset -> PreviewPort -> PreviewProxyPort
+
+onPageLoad : Url -> Timestamp -> ShellPageEffect
+```
+
+This spec is not runtime code — clarity for unfamiliar readers matters more than partial application convenience.
+
+### 3.9 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
 

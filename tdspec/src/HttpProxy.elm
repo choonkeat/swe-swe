@@ -32,7 +32,7 @@ Port derivation (default offset = 20000):
 
 -}
 
-import Domain exposing (AgentChatPort(..), PreviewPort(..), ProxyPort(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..))
 
 
 
@@ -48,12 +48,20 @@ type PortOffset
 
 {-| Preview proxy port = offset + preview app port.
 
-    previewProxyPort (PortOffset 20000) (PreviewPort 3000) == ProxyPort 23000
+    previewProxyPort { offset = PortOffset 20000, appPort = PreviewPort 3000 }
+        == PreviewProxyPort 23000
 
 -}
-previewProxyPort : PortOffset -> PreviewPort -> ProxyPort
-previewProxyPort (PortOffset offset) (PreviewPort p) =
-    ProxyPort (offset + p)
+previewProxyPort : { offset : PortOffset, appPort : PreviewPort } -> PreviewProxyPort
+previewProxyPort { offset, appPort } =
+    let
+        (PortOffset o) =
+            offset
+
+        (PreviewPort p) =
+            appPort
+    in
+    PreviewProxyPort (o + p)
 
 
 {-| Agent chat app port = preview port + 1000.
@@ -68,12 +76,20 @@ agentChatPort (PreviewPort p) =
 
 {-| Agent chat proxy port = offset + agent chat app port.
 
-    agentChatProxyPort (PortOffset 20000) (AgentChatPort 4000) == ProxyPort 24000
+    agentChatProxyPort { offset = PortOffset 20000, appPort = AgentChatPort 4000 }
+        == AgentChatProxyPort 24000
 
 -}
-agentChatProxyPort : PortOffset -> AgentChatPort -> ProxyPort
-agentChatProxyPort (PortOffset offset) (AgentChatPort p) =
-    ProxyPort (offset + p)
+agentChatProxyPort : { offset : PortOffset, appPort : AgentChatPort } -> AgentChatProxyPort
+agentChatProxyPort { offset, appPort } =
+    let
+        (PortOffset o) =
+            offset
+
+        (AgentChatPort p) =
+            appPort
+    in
+    AgentChatProxyPort (o + p)
 
 
 

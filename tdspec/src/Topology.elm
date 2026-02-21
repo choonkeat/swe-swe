@@ -1,5 +1,5 @@
 module Topology exposing
-    ( Process(..), TerminalUi(..), IframeClient(..), SweServer(..), AgentReverseProxy(..), OpenShim(..), Traefik(..), UserApp(..), McpSidecar(..)
+    ( Process(..), TerminalUi(..), PreviewUi(..), SweServer(..), AgentReverseProxy(..)
     , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
     , fullTopology
     )
@@ -54,14 +54,14 @@ Note: agent-reverse-proxy also exposes a vestigial
 `/__agent-reverse-proxy-debug__/agent` WS endpoint.
 It is unused — swe-swe-server uses in-process subscribers instead.
 
-@docs Process, TerminalUi, IframeClient, SweServer, AgentReverseProxy, OpenShim, Traefik, UserApp, McpSidecar
+@docs Process, TerminalUi, PreviewUi, SweServer, AgentReverseProxy
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
 @docs fullTopology
 
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), PreviewPort(..), ProxyPort(..), SessionUuid(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), SessionUuid(..))
 import HttpProxy exposing (PortOffset(..))
 import PtyProtocol
 
@@ -76,9 +76,9 @@ type TerminalUi
     = TerminalUi { label : String, sessionUuid : SessionUuid }
 
 
-{-| An iframe client inside the Preview tab.
+{-| Preview tab iframe — two scripts that connect as debug clients.
 -}
-type IframeClient
+type PreviewUi
     = ShellPage
     | InjectJs
 
@@ -95,36 +95,13 @@ type AgentReverseProxy
     = AgentReverseProxy
 
 
-{-| The swe-swe-open CLI shim.
--}
-type OpenShim
-    = OpenShim
-
-
-{-| Traefik reverse proxy on the host (forwardauth).
--}
-type Traefik
-    = Traefik
-
-
-{-| The user's application process.
--}
-type UserApp
-    = UserApp
-
-
-{-| The MCP sidecar process (agent chat backend).
--}
-type McpSidecar
-    = McpSidecar
-
 
 {-| A process in the system — wraps all specific process types.
 Used in the ASCII diagram to enumerate every participant.
 -}
 type Process
     = BrowserTerminalUi TerminalUi
-    | BrowserIframeClient IframeClient
+    | BrowserPreviewUi PreviewUi
     | ContainerSweServer
     | ContainerAgentReverseProxy
     | ContainerOpenShim
@@ -139,21 +116,19 @@ type Process
 
 {-| A WebSocket channel between two processes.
 
-The `protocol` type parameter is phantom — it exists only at the
-type level to constrain which processes and message types are valid
-for each channel. It is never constructed as a value.
+All type parameters are phantom — they exist only at the type level
+to document which processes and message types are valid for each channel.
 
     ptyAgentTerminal :
         WebSocketChannel
-            { from : TerminalUi
-            , to : SweServer
-            , receives : PtyProtocol.ServerMsg
-            , sends : PtyProtocol.ClientMsg
-            }
+            SweServer                 -- server
+            PtyProtocol.ServerMsg     -- serverMsg
+            TerminalUi                -- client
+            PtyProtocol.ClientMsg     -- clientMsg
 
 -}
-type WebSocketChannel protocol
-    = WebSocketChannel { endpoint : String }
+type WebSocketChannel server serverMsg client clientMsg
+    = WebSocketChannel
 
 
 {-| An HTTP endpoint exposed by a process.
@@ -169,7 +144,7 @@ Injects debug scripts, provides DebugHub, serves shell page.
 
 -}
 type alias PreviewProxyChain =
-    { listenPort : ProxyPort, appPort : PreviewPort }
+    { listenPort : PreviewProxyPort, appPort : PreviewPort }
 
 
 {-| Agent Chat proxy chain: Browser → Traefik → swe-swe-server → MCP sidecar.
@@ -179,7 +154,7 @@ Cookie stripping + CORS headers, no HTML injection.
 
 -}
 type alias AgentChatProxyChain =
-    { listenPort : ProxyPort, appPort : AgentChatPort }
+    { listenPort : AgentChatProxyPort, appPort : AgentChatPort }
 
 
 
@@ -192,46 +167,40 @@ type alias AgentChatProxyChain =
 fullTopology :
     { ptyAgentTerminal :
         WebSocketChannel
-            { from : TerminalUi
-            , to : SweServer
-            , receives : PtyProtocol.ServerMsg
-            , sends : PtyProtocol.ClientMsg
-            }
+            SweServer                 -- server
+            PtyProtocol.ServerMsg     -- serverMsg
+            TerminalUi                -- client
+            PtyProtocol.ClientMsg     -- clientMsg
     , ptyTerminal :
         WebSocketChannel
-            { from : TerminalUi
-            , to : SweServer
-            , receives : PtyProtocol.ServerMsg
-            , sends : PtyProtocol.ClientMsg
-            }
+            SweServer                 -- server
+            PtyProtocol.ServerMsg     -- serverMsg
+            TerminalUi                -- client
+            PtyProtocol.ClientMsg     -- clientMsg
     , debugUiAgentTerminal :
         WebSocketChannel
-            { from : TerminalUi
-            , to : AgentReverseProxy
-            , receives : DebugMsg
-            , sends : UiCommand
-            }
+            AgentReverseProxy         -- server
+            DebugMsg                  -- serverMsg
+            TerminalUi                -- client
+            UiCommand                 -- clientMsg
     , debugUiTerminal :
         WebSocketChannel
-            { from : TerminalUi
-            , to : AgentReverseProxy
-            , receives : DebugMsg
-            , sends : UiCommand
-            }
+            AgentReverseProxy         -- server
+            DebugMsg                  -- serverMsg
+            TerminalUi                -- client
+            UiCommand                 -- clientMsg
     , debugIframeShellPage :
         WebSocketChannel
-            { from : IframeClient
-            , to : AgentReverseProxy
-            , receives : IframeCommand
-            , sends : DebugMsg
-            }
+            AgentReverseProxy         -- server
+            IframeCommand             -- serverMsg
+            PreviewUi              -- client
+            DebugMsg                  -- clientMsg
     , debugIframeInjectJs :
         WebSocketChannel
-            { from : IframeClient
-            , to : AgentReverseProxy
-            , receives : IframeCommand
-            , sends : DebugMsg
-            }
+            AgentReverseProxy         -- server
+            IframeCommand             -- serverMsg
+            PreviewUi              -- client
+            DebugMsg                  -- clientMsg
     , openEndpoint : OpenEndpointHttp
     , previewProxy : PreviewProxyChain
     , agentChatProxy : AgentChatProxyChain
@@ -249,23 +218,17 @@ fullTopology =
             HttpProxy.agentChatPort previewPort
 
         previewProxyPort =
-            HttpProxy.previewProxyPort offset previewPort
+            HttpProxy.previewProxyPort { offset = offset, appPort = previewPort }
 
         acProxyPort =
-            HttpProxy.agentChatProxyPort offset acPort
+            HttpProxy.agentChatProxyPort { offset = offset, appPort = acPort }
     in
-    { ptyAgentTerminal =
-        WebSocketChannel { endpoint = "/ws/{uuid1}" }
-    , ptyTerminal =
-        WebSocketChannel { endpoint = "/ws/{uuid2}" }
-    , debugUiAgentTerminal =
-        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ui" }
-    , debugUiTerminal =
-        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ui" }
-    , debugIframeShellPage =
-        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ws" }
-    , debugIframeInjectJs =
-        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ws" }
+    { ptyAgentTerminal = WebSocketChannel
+    , ptyTerminal = WebSocketChannel
+    , debugUiAgentTerminal = WebSocketChannel
+    , debugUiTerminal = WebSocketChannel
+    , debugIframeShellPage = WebSocketChannel
+    , debugIframeInjectJs = WebSocketChannel
     , openEndpoint =
         { method = "GET"
         , path = "/__agent-reverse-proxy-debug__/open"
