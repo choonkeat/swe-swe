@@ -396,13 +396,21 @@ func loadEnvFile(path string) []string {
 		return nil
 	}
 	var entries []string
+	local := map[string]string{}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if _, _, ok := strings.Cut(line, "="); ok {
-			entries = append(entries, line)
+		if key, val, ok := strings.Cut(line, "="); ok {
+			val = os.Expand(val, func(k string) string {
+				if v, ok := local[k]; ok {
+					return v
+				}
+				return os.Getenv(k)
+			})
+			local[key] = val
+			entries = append(entries, key+"="+val)
 		}
 	}
 	return entries
