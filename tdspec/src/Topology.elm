@@ -186,13 +186,13 @@ fullTopology :
     , debugUiAgentTerminal :
         WebSocketChannel
             AgentReverseProxy         -- server
-            DebugMsg                  -- serverMsg
+            AllDebugMsg                  -- serverMsg
             TerminalUi                -- client
             UiCommand                 -- clientMsg
     , debugUiTerminal :
         WebSocketChannel
             AgentReverseProxy         -- server
-            DebugMsg                  -- serverMsg
+            AllDebugMsg                  -- serverMsg
             TerminalUi                -- client
             UiCommand                 -- clientMsg
     , debugIframeShellPage :
@@ -200,13 +200,13 @@ fullTopology :
             AgentReverseProxy         -- server
             ShellPageCommand          -- serverMsg
             ShellPage                 -- client
-            ShellPageMsg              -- clientMsg
+            ShellPageDebugMsg              -- clientMsg
     , debugIframeInjectJs :
         WebSocketChannel
             AgentReverseProxy         -- server
             InjectCommand             -- serverMsg
             InjectJs                  -- client
-            InjectMsg                 -- clientMsg
+            InjectJsDebugMsg                 -- clientMsg
     , openEndpoint : OpenEndpointHttp
     , previewProxy : PreviewProxyChain
     , agentChatProxy : AgentChatProxyChain

@@ -28,29 +28,29 @@ import Domain exposing (Url(..))
 {-| Side effects produced by the DebugHub routing logic.
 -}
 type Effect
-    = BroadcastToUiObservers DebugMsg
+    = BroadcastToUiObservers AllDebugMsg
       {- Go's ForwardToAgent sends to three destinations:
          1. The agent WS conn (vestigial, usually nil)
          2. All UI observers
          3. All in-process subscribers (MCP tools in swe-swe-server)
       -}
-    | SendToUiObserversOnly DebugMsg
+    | SendToUiObserversOnly AllDebugMsg
     | ForwardToShellPage ShellPageCommand
     | ForwardToInject InjectCommand
 
 
 {-| When the shell page (WS 5) sends a message, the hub
-broadcasts it to all UI observers as a DebugMsg.
+broadcasts it to all UI observers as a AllDebugMsg.
 -}
-onShellPageMessage : ShellPageMsg -> List Effect
+onShellPageMessage : ShellPageDebugMsg -> List Effect
 onShellPageMessage msg =
     [ BroadcastToUiObservers (FromShellPage msg) ]
 
 
 {-| When inject.js (WS 6) sends a message, the hub
-broadcasts it to all UI observers as a DebugMsg.
+broadcasts it to all UI observers as a AllDebugMsg.
 -}
-onInjectMessage : InjectMsg -> List Effect
+onInjectMessage : InjectJsDebugMsg -> List Effect
 onInjectMessage msg =
     [ BroadcastToUiObservers (FromInject msg) ]
 

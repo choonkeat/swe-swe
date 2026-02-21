@@ -115,7 +115,7 @@ both call `openIframePane -> setPreviewURL -> confirm()`.
 Result: 2x "Open in new tab?" dialogs for external URLs.
 
 -}
-onDebugMessage : { msg : DebugMsg, state : State } -> ( State, List Effect )
+onDebugMessage : { msg : AllDebugMsg, state : State } -> ( State, List Effect )
 onDebugMessage { msg, state } =
     case msg of
         FromShellPage shellMsg ->

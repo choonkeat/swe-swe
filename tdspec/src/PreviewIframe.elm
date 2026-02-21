@@ -16,8 +16,8 @@ Endpoint: `/__agent-reverse-proxy-debug__/ws` on agent-reverse-proxy.
 
 Each client sends and receives only its own message types:
 
-  - Shell page sends `ShellPageMsg`, receives `ShellPageCommand`
-  - inject.js sends `InjectMsg`, receives `InjectCommand`
+  - Shell page sends `ShellPageDebugMsg`, receives `ShellPageCommand`
+  - inject.js sends `InjectJsDebugMsg`, receives `InjectCommand`
 
 @docs ShellPageEffect, onPageLoad, onUrlChange, onNavStateChange
 @docs ShellPageAction, onShellCommand
@@ -37,7 +37,7 @@ import Domain exposing (Timestamp(..), Url(..))
 {-| Effects produced by the shell page — sends navigation messages to the hub.
 -}
 type ShellPageEffect
-    = ShellSend ShellPageMsg
+    = ShellSend ShellPageDebugMsg
 
 
 {-| On page load, the shell page sends an `Init` message with the current URL.
@@ -87,7 +87,7 @@ onShellCommand cmd =
 {-| Effects produced by inject.js — sends telemetry messages to the hub.
 -}
 type InjectEffect
-    = InjectSend InjectMsg
+    = InjectSend InjectJsDebugMsg
 
 
 {-| Captured console output (log/warn/error/info/debug).
@@ -113,14 +113,14 @@ onRejection payload =
 
 {-| Fetch request/response info.
 -}
-onFetch : FetchResult -> InjectEffect
+onFetch : HttpResult -> InjectEffect
 onFetch result =
     InjectSend (Fetch result)
 
 
 {-| XMLHttpRequest info.
 -}
-onXhr : XhrResult -> InjectEffect
+onXhr : HttpResult -> InjectEffect
 onXhr result =
     InjectSend (Xhr result)
 

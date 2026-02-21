@@ -1,14 +1,14 @@
 module DebugProtocol exposing
-    ( ShellPageMsg(..), ShellPageCommand(..)
-    , InjectMsg(..), InjectCommand(..), FetchResult(..), XhrResult(..)
-    , DebugMsg(..), UiCommand(..), NavigateAction(..)
+    ( ShellPageDebugMsg(..), ShellPageCommand(..)
+    , InjectJsDebugMsg(..), InjectCommand(..), HttpResult(..)
+    , AllDebugMsg(..), UiCommand(..), NavigateAction(..)
     )
 
 {-| Debug channel protocol types, split by client.
 
 Shell page (WS 5) handles navigation: page loads, URL changes, back/forward.
 inject.js (WS 6) handles telemetry: console, errors, network, DOM queries.
-DebugMsg is the aggregate that UI observers (terminal-ui on WS 3,4) receive.
+AllDebugMsg is the aggregate that UI observers (terminal-ui on WS 3,4) receive.
 
 Endpoints (on agent-reverse-proxy at `:PROXY_PORT_OFFSET+port`):
 
@@ -17,9 +17,9 @@ Endpoints (on agent-reverse-proxy at `:PROXY_PORT_OFFSET+port`):
 
 All messages use JSON with a `t` (type) discriminator field.
 
-@docs ShellPageMsg, ShellPageCommand
-@docs InjectMsg, InjectCommand, FetchResult, XhrResult
-@docs DebugMsg, UiCommand, NavigateAction
+@docs ShellPageDebugMsg, ShellPageCommand
+@docs InjectJsDebugMsg, InjectCommand, HttpResult
+@docs AllDebugMsg, UiCommand, NavigateAction
 
 -}
 
@@ -33,7 +33,7 @@ import Domain exposing (Timestamp(..), Url(..))
 {-| Messages sent by the shell page to the hub.
 Navigation-related: page loads, URL changes, back/forward state.
 -}
-type ShellPageMsg
+type ShellPageDebugMsg
     = Init { url : Url, ts : Timestamp }
     | UrlChange { url : Url, ts : Timestamp }
     | NavState { canGoBack : Bool, canGoForward : Bool }
@@ -53,7 +53,7 @@ type ShellPageCommand
 {-| Messages sent by inject.js to the hub.
 Telemetry: console output, errors, network activity, DOM query results.
 -}
-type InjectMsg
+type InjectJsDebugMsg
     = Console
         { m : String
 
@@ -78,8 +78,8 @@ type InjectMsg
         , ts : Timestamp
         }
     | Rejection { reason : String, ts : Timestamp }
-    | Fetch FetchResult
-    | Xhr XhrResult
+    | Fetch HttpResult
+    | Xhr HttpResult
     | QueryResult
         { id : String
         , found : Bool
@@ -99,18 +99,21 @@ type InjectMsg
         }
 
 
-{-| Fetch API result — success with status or failure with error.
+{-| Result of an HTTP request (Fetch API or XMLHttpRequest).
 -}
-type FetchResult
-    = FetchOk { url : Url, method : String, status : Int, ok : Bool, ms : Int, ts : Timestamp }
-    | FetchFailed { url : Url, method : String, error : String, ms : Int, ts : Timestamp }
-
-
-{-| XMLHttpRequest result — success with status or failure with error.
--}
-type XhrResult
-    = XhrOk { url : Url, method : String, status : Int, ok : Bool, ms : Int, ts : Timestamp }
-    | XhrFailed { url : Url, method : String, error : String, ms : Int, ts : Timestamp }
+type HttpResult
+    = HttpResult
+        { request :
+            { url : Url
+            , method : String
+            , ms : Int
+            , ts : Timestamp
+            }
+        , response :
+            Result
+                { error : String }
+                { httpStatus : Int }
+        }
 
 
 {-| Commands sent by the hub to inject.js.
@@ -126,9 +129,9 @@ type InjectCommand
 {-| Messages received by UI observers (terminal-ui) from the hub.
 Aggregate of all sources: shell page, inject.js, and HTTP /open.
 -}
-type DebugMsg
-    = FromShellPage ShellPageMsg
-    | FromInject InjectMsg
+type AllDebugMsg
+    = FromShellPage ShellPageDebugMsg
+    | FromInject InjectJsDebugMsg
     | Open { url : Url }
 
 

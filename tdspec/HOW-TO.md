@@ -249,29 +249,93 @@ When two clients use the same channel but handle different message subsets, give
 -- Avoid: both channels look identical, but shell page and inject.js
 -- handle completely different messages
 type IframeCommand = IframeNavigate | IframeReload | IframeQuery
-type DebugMsg = Init | UrlChange | Console | Error | ...
+type AllDebugMsg = Init | UrlChange | Console | Error | ...
 
-debugIframeShellPage : WebSocketChannel AgentReverseProxy IframeCommand ShellPage DebugMsg
-debugIframeInjectJs  : WebSocketChannel AgentReverseProxy IframeCommand InjectJs  DebugMsg
+debugIframeShellPage : WebSocketChannel AgentReverseProxy IframeCommand ShellPage AllDebugMsg
+debugIframeInjectJs  : WebSocketChannel AgentReverseProxy IframeCommand InjectJs  AllDebugMsg
 ```
 
 ```elm
 -- Good: each channel shows exactly what it carries
 type ShellPageCommand = ShellNavigate NavigateAction | ShellReload
-type ShellPageMsg = Init ... | UrlChange ... | NavState ...
+type ShellPageDebugMsg = Init ... | UrlChange ... | NavState ...
 
 type InjectCommand = DomQuery { id : String, selector : String }
-type InjectMsg = Console ... | Error ... | Fetch ... | ...
+type InjectJsDebugMsg = Console ... | Error ... | Fetch ... | ...
 
-debugIframeShellPage : WebSocketChannel AgentReverseProxy ShellPageCommand ShellPage ShellPageMsg
-debugIframeInjectJs  : WebSocketChannel AgentReverseProxy InjectCommand   InjectJs  InjectMsg
+debugIframeShellPage : WebSocketChannel AgentReverseProxy ShellPageCommand ShellPage ShellPageDebugMsg
+debugIframeInjectJs  : WebSocketChannel AgentReverseProxy InjectCommand   InjectJs  InjectJsDebugMsg
 ```
 
 The rule: if a function ignores variants with catch-all branches (`_ ->` or no-op cases), the type is too broad. Split it so each client's type contains only the variants it actually sends or receives.
 
-Exception: a handler that genuinely receives all variants over a single connection (e.g., terminal-ui receives every `DebugMsg` on WS 3/4) is correctly typed even if it only acts on a subset — the no-op branches document what it *chooses not to act on*, not what it *cannot receive*.
+Exception: a handler that genuinely receives all variants over a single connection (e.g., terminal-ui receives every `AllDebugMsg` on WS 3/4) is correctly typed even if it only acts on a subset — the no-op branches document what it *chooses not to act on*, not what it *cannot receive*.
 
-### 3.10 "Effects" represent server calls, storage operations, notifications, etc.
+### 3.10 Names should locate types in a family
+
+When types are related, make the relationship visible in the name. A shared suffix or prefix tells the reader they belong together without requiring them to read the definitions:
+
+```elm
+-- Avoid: three unrelated-looking names
+type DebugMsg = ...
+type ShellPageMsg = ...
+type InjectMsg = ...
+```
+
+```elm
+-- Good: shared suffix reveals the family
+type AllDebugMsg = FromShellPage ShellPageDebugMsg | FromInject InjectJsDebugMsg | Open ...
+type ShellPageDebugMsg = Init ... | UrlChange ... | NavState ...
+type InjectJsDebugMsg = Console ... | Error ... | Fetch ... | ...
+```
+
+The suffix `DebugMsg` is the family name. The prefix (`All`, `ShellPage`, `InjectJs`) is the scope. A reader scanning type names can immediately see these are variants of the same concept.
+
+### 3.11 Eliminate duplicate structure
+
+When two types have the same shape, they are the same type. The distinction belongs one level up — at the variant that holds the value, not inside the value itself:
+
+```elm
+-- Avoid: identical structure, different names
+type FetchResult
+    = FetchOk { url : Url, method : String, status : Int, ms : Int, ts : Timestamp }
+    | FetchFailed { url : Url, method : String, error : String, ms : Int, ts : Timestamp }
+
+type XhrResult
+    = XhrOk { url : Url, method : String, status : Int, ms : Int, ts : Timestamp }
+    | XhrFailed { url : Url, method : String, error : String, ms : Int, ts : Timestamp }
+```
+
+```elm
+-- Good: one type, distinction lives at the call site (Fetch vs Xhr)
+type HttpResult
+    = HttpResult
+        { request : { url : Url, method : String, ms : Int, ts : Timestamp }
+        , response : Result { error : String } { httpStatus : Int }
+        }
+```
+
+Use `Result` when the shape is success-or-failure — do not reinvent it with `Ok`/`Failed` variants.
+
+### 3.12 Nest records to separate roles
+
+A flat record mixes fields from different phases of an interaction. Nesting separates what was asked from what came back:
+
+```elm
+-- Avoid: flat bag — which fields are about the request vs the response?
+{ url : Url, method : String, status : Int, error : String, ms : Int, ts : Timestamp }
+```
+
+```elm
+-- Good: nesting names the roles
+{ request : { url : Url, method : String, ms : Int, ts : Timestamp }
+, response : Result { error : String } { httpStatus : Int }
+}
+```
+
+Each level of nesting is a claim about structure. If fields always travel together and belong to the same concept, group them.
+
+### 3.13 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
 
