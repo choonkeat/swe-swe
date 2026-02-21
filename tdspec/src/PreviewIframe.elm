@@ -12,7 +12,10 @@ Two processes connect via WS 5,6:
   - **shell page** (`shellPageHTML`) — outer wrapper managing back/forward nav
   - **inject.js** (`debugInjectJS`) — injected into every proxied HTML page
 
-Endpoint: `/__agent-reverse-proxy-debug__/ws` on agent-reverse-proxy.
+Both connect to the same endpoint with a `?role=` query parameter:
+
+    shell page: /__agent-reverse-proxy-debug__/ws?role=shell   (WS 5)
+    inject.js:  /__agent-reverse-proxy-debug__/ws?role=inject  (WS 6)
 
 Each client sends and receives only its own message types:
 

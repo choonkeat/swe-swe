@@ -85,7 +85,7 @@ onPtyMessage { msg, state } =
 
         PtyProtocol.Status payload ->
             ( { state
-                | preview = { port_ = Just payload.ports.preview, agentChatPort = payload.ports.agentChat, url = state.preview.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward }
+                | preview = { port_ = Just payload.ports.preview, agentChatPort = Just payload.ports.agentChat, url = state.preview.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward }
                 , session = { uuid = state.session.uuid, name = payload.session.name, workDir = payload.session.workDir, assistant = payload.session.assistant, viewers = payload.session.viewers }
                 , features = payload.features
               }

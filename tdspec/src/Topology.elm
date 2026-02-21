@@ -101,8 +101,10 @@ type InjectJs
 {-| The swe-swe-server process (PTY host + preview/agentchat proxy, port 9898).
 
 Hosts both proxies as path-based handlers — each session gets:
-- Preview proxy at `/proxy/{session-uuid}/preview/...`
-- Agent chat proxy at `/proxy/{session-uuid}/agentchat/...`
+
+  - Preview proxy at `/proxy/{session-uuid}/preview/...`
+  - Agent chat proxy at `/proxy/{session-uuid}/agentchat/...`
+
 -}
 type SweServer
     = SweServer
@@ -111,6 +113,7 @@ type SweServer
 {-| Traefik — host-level reverse proxy providing forwardauth.
 
 Only routes the main server port (:9898). No per-session ports needed.
+
 -}
 type Traefik
     = Traefik
@@ -139,6 +142,7 @@ type McpSidecar
 swe-swe-server's preview proxy HTTP MCP endpoint.
 
 Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp`
+
 -}
 type StdioBridge
     = StdioBridge

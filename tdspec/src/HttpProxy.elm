@@ -80,8 +80,7 @@ type ProbeResult
 
 
 
-{- Header absent → the session doesn't exist or proxy hasn't been set up yet.
--}
+{- Header absent → the session doesn't exist or proxy hasn't been set up yet. -}
 
 
 {-| Classify a probe response by the presence of `X-Agent-Reverse-Proxy`.

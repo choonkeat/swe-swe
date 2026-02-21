@@ -1,4 +1,4 @@
-.PHONY: build preview clean docs
+.PHONY: build preview clean docs audit
 
 EDP_STATIC := $(shell npm root -g 2>/dev/null || echo /home/app/.swe-swe/lib/node_modules)/elm-doc-preview/static
 
@@ -42,5 +42,7 @@ audit: build
 	@echo '    against our @tdspec for accuracy. point out and/or discuss where source code'
 	@echo '    and tdspec does not tally (this is not about what a design "should be", it is'
 	@echo '    about reflecting ground truth)'
+	@echo ''
+	@echo '    write the audit report in tdspec/audit/{yyyy-mm-dd}-{title}.md'
 	@echo ''
 	@echo ''

@@ -2,7 +2,7 @@ module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload, ExitPa
 
 {-| WS 1,2 — PTY WebSocket protocol.
 
-Endpoint: `/ws/{uuid}` on swe-swe-server (:3000).
+Endpoint: `/ws/{uuid}` on swe-swe-server (:9898).
 One connection per terminal-ui instance, unique UUID.
 
     terminal-ui #1 (Agent Terminal) <-> swe-swe-server  via /ws/{uuid1}
@@ -47,12 +47,17 @@ type ServerMsg
 Delivered periodically by swe-swe-server.
 `sessionUUID` is used by the browser to build path-based proxy URLs.
 `ports.preview` triggers the debug WebSocket connection to agent-reverse-proxy.
+
+Note: the wire format is flat JSON (`previewPort`, `agentChatPort` as top-level keys).
+The nesting here groups related fields for clarity (see HOW-TO.md §3.14).
+`agentChatPort` is `0` on the wire for terminal sessions (JS treats as falsy).
+
 -}
 type alias StatusPayload =
     { sessionUUID : SessionUuid
     , ports :
         { preview : PreviewPort
-        , agentChat : Maybe AgentChatPort
+        , agentChat : AgentChatPort
         }
     , terminal :
         { cols : Int
