@@ -1,4 +1,8 @@
-module Topology exposing (Process(..), WebSocketConnection(..), HttpEndpoint(..), HttpProxyChain(..), fullTopology)
+module Topology exposing
+    ( Process(..), TerminalUi(..), IframeClient(..), SweServer(..), AgentReverseProxy(..), OpenShim(..), Traefik(..), UserApp(..), McpSidecar(..)
+    , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
+    , fullTopology
+    )
 
 {-| System topology — all processes, connections, and message flows.
 
@@ -8,33 +12,33 @@ instances + Preview tab are active.
     WebSocket Topology
 
     Browser
-    +==============================================+
-    |                                              |
-    | Agent Terminal   Terminal     Preview tab     |
-    | terminal-ui #1   terminal-ui  shell page     |
-    | ws + _debugWs    #2           inject.js      |
-    |  |       |       ws+_debugWs   |       |     |
-    | WS1    WS3        |      |    WS5    WS6     |
-    |  |       |       WS2   WS4    |       |     |
-    +==|=======|========|=====|=====|=======|=====+
-       |       |        |     |     |       |
-    +==|=======|========|=====|=====|=======|=====+
-    |  v       v        v     v     v       v     |
-    | +------+ +-------------------------------+  |
-    | |swe-  | |    agent-reverse-proxy        |  |
-    | |swe-  | | +---------------------------+ |  |
-    | |server| | |       DebugHub            | |  |
-    | |:3000 | | | UI obs    <-- WS3, WS4   | |  |
-    | |      | | | iframe    <-- WS5, WS6   | |  |
-    | |      | | | GET/open  <-- 7 HTTP      | |  |
-    | +------+ | +---------------------------+ |  |
-    |          +-------------------------------+  |
-    |                                             |
-    |          +--------------+                   |
-    |          | swe-swe-open |-- 7 HTTP /open -> |
-    |          | (CLI shim)   |                   |
-    |          +--------------+         Container |
-    +==============================================+
+    +==========================================================+
+    |                                                          |
+    |  Agent Terminal     Terminal          Preview tab        |
+    |  terminal-ui #1    terminal-ui #2    shell page          |
+    |  ws + _debugWs     ws + _debugWs     inject.js           |
+    |   |       |         |       |         |       |          |
+    |  WS1    WS3       WS2    WS4       WS5     WS6           |
+    |   |       |         |       |         |       |          |
+    +===|=======|=========|=======|=========|=======|==========+
+        |       |         |       |         |       |
+    +===|=======|=========|=======|=========|=======|==========+
+    |   v       v         v       v         v       v          |
+    |  +--------+   +---------------------------------------+  |
+    |  | swe-   |   |       agent-reverse-proxy             |  |
+    |  | swe-   |   |  +---------------------------------+  |  |
+    |  | server |   |  |           DebugHub              |  |  |
+    |  | :3000  |   |  |  UI obs    <-- WS3, WS4         |  |  |
+    |  |        |   |  |  iframe    <-- WS5, WS6         |  |  |
+    |  |        |   |  |  GET/open  <-- HTTP             |  |  |
+    |  +--------+   |  +---------------------------------+  |  |
+    |               +---------------------------------------+  |
+    |                                                          |
+    |               +----------------+                         |
+    |               | swe-swe-open   |--- HTTP /open --->      |
+    |               | (CLI shim)     |                         |
+    |               +----------------+               Container |
+    +==========================================================+
 
     HTTP Proxy Chains (port-based, via Traefik)
 
@@ -50,25 +54,77 @@ Note: agent-reverse-proxy also exposes a vestigial
 `/__agent-reverse-proxy-debug__/agent` WS endpoint.
 It is unused — swe-swe-server uses in-process subscribers instead.
 
-@docs Process, WebSocketConnection, HttpEndpoint, HttpProxyChain, fullTopology
+@docs Process, TerminalUi, IframeClient, SweServer, AgentReverseProxy, OpenShim, Traefik, UserApp, McpSidecar
+@docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
+@docs fullTopology
 
 -}
 
-import DebugHub
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), PreviewPort(..), ProxyPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), PreviewPort(..), ProxyPort(..), SessionUuid(..))
 import HttpProxy exposing (PortOffset(..))
-import PreviewIframe
 import PtyProtocol
-import TerminalUi
 
 
-{-| A process in the system.
+
+-- ── Process types ──────────────────────────────────────────────
+
+
+{-| A terminal-ui web component instance in the browser.
+-}
+type TerminalUi
+    = TerminalUi { label : String, sessionUuid : SessionUuid }
+
+
+{-| An iframe client inside the Preview tab.
+-}
+type IframeClient
+    = ShellPage
+    | InjectJs
+
+
+{-| The swe-swe-server process (PTY host, port 3000).
+-}
+type SweServer
+    = SweServer
+
+
+{-| The agent-reverse-proxy process (debug/preview proxy).
+-}
+type AgentReverseProxy
+    = AgentReverseProxy
+
+
+{-| The swe-swe-open CLI shim.
+-}
+type OpenShim
+    = OpenShim
+
+
+{-| Traefik reverse proxy on the host (forwardauth).
+-}
+type Traefik
+    = Traefik
+
+
+{-| The user's application process.
+-}
+type UserApp
+    = UserApp
+
+
+{-| The MCP sidecar process (agent chat backend).
+-}
+type McpSidecar
+    = McpSidecar
+
+
+{-| A process in the system — wraps all specific process types.
+Used in the ASCII diagram to enumerate every participant.
 -}
 type Process
-    = BrowserTerminalUi { label : String, sessionUuid : SessionUuid }
-    | BrowserShellPage
-    | BrowserInjectJs
+    = BrowserTerminalUi TerminalUi
+    | BrowserIframeClient IframeClient
     | ContainerSweServer
     | ContainerAgentReverseProxy
     | ContainerOpenShim
@@ -77,98 +133,111 @@ type Process
     | ContainerMcpSidecar
 
 
-{-| A WebSocket connection between two processes.
-The `sends` and `receives` fields reference the protocol types,
-anchoring each connection to its message schema.
+
+-- ── Connection types ───────────────────────────────────────────
+
+
+{-| A WebSocket channel between two processes.
+
+The `protocol` type parameter is phantom — it exists only at the
+type level to constrain which processes and message types are valid
+for each channel. It is never constructed as a value.
+
+    ptyAgentTerminal :
+        WebSocketChannel
+            { from : TerminalUi
+            , to : SweServer
+            , receives : PtyProtocol.ServerMsg
+            , sends : PtyProtocol.ClientMsg
+            }
+
 -}
-type WebSocketConnection
-    = PtyWebSocket
-        { from : Process
-        , to : Process
-        , endpoint : String
-        , sends : PtyProtocol.ClientMsg -> ()
-        , receives : PtyProtocol.ServerMsg -> ()
-        }
-    | DebugUiWebSocket
-        { from : Process
-        , to : Process
-        , endpoint : String
-        , sends : UiCommand -> ()
-        , receives : DebugMsg -> ()
-        }
-    | DebugIframeWebSocket
-        { from : Process
-        , to : Process
-        , endpoint : String
-        , sends : DebugMsg -> ()
-        , receives : IframeCommand -> ()
-        }
+type WebSocketChannel protocol
+    = WebSocketChannel { endpoint : String }
 
 
-{-| An HTTP endpoint between two processes.
+{-| An HTTP endpoint exposed by a process.
 -}
-type HttpEndpoint
-    = OpenEndpoint
-        { from : Process
-        , to : Process
-        , method : String
-        , path : String
-        }
+type alias OpenEndpointHttp =
+    { method : String, path : String }
 
 
-{-| An HTTP reverse proxy chain from browser to backend.
+{-| Preview proxy chain: Browser → Traefik → agent-reverse-proxy → User app.
 
-Each chain passes through Traefik (forwardauth) and a container-side
-reverse proxy before reaching the backend app.
-
-Preview proxy: separate process (`npx @choonkeat/agent-reverse-proxy`).
+Separate process (`npx @choonkeat/agent-reverse-proxy`).
 Injects debug scripts, provides DebugHub, serves shell page.
 
-Agent Chat proxy: built into swe-swe-server (`handleProxyRequest`).
+-}
+type alias PreviewProxyChain =
+    { listenPort : ProxyPort, appPort : PreviewPort }
+
+
+{-| Agent Chat proxy chain: Browser → Traefik → swe-swe-server → MCP sidecar.
+
+Built into swe-swe-server (`handleProxyRequest`).
 Cookie stripping + CORS headers, no HTML injection.
 
 -}
-type HttpProxyChain
-    = PreviewProxy
-        { from : Process
-        , traefik : Process
-        , proxy : Process
-        , backend : Process
-        , proxyPort : ProxyPort
-        , appPort : PreviewPort
-        }
-    | AgentChatProxy
-        { from : Process
-        , traefik : Process
-        , proxy : Process
-        , backend : Process
-        , proxyPort : ProxyPort
-        , appPort : AgentChatPort
-        }
+type alias AgentChatProxyChain =
+    { listenPort : ProxyPort, appPort : AgentChatPort }
+
+
+
+-- ── Full topology ──────────────────────────────────────────────
 
 
 {-| Full topology with 2 terminals + preview active.
-4 WebSockets + 1 HTTP endpoint (+ 2 more WebSockets when Preview iframe active)
-
-  - 2 HTTP reverse proxy chains through Traefik.
-
+6 WebSockets + 1 HTTP endpoint + 2 HTTP reverse proxy chains.
 -}
 fullTopology :
-    { websockets : List WebSocketConnection
-    , http : List HttpEndpoint
-    , httpProxies : List HttpProxyChain
+    { ptyAgentTerminal :
+        WebSocketChannel
+            { from : TerminalUi
+            , to : SweServer
+            , receives : PtyProtocol.ServerMsg
+            , sends : PtyProtocol.ClientMsg
+            }
+    , ptyTerminal :
+        WebSocketChannel
+            { from : TerminalUi
+            , to : SweServer
+            , receives : PtyProtocol.ServerMsg
+            , sends : PtyProtocol.ClientMsg
+            }
+    , debugUiAgentTerminal :
+        WebSocketChannel
+            { from : TerminalUi
+            , to : AgentReverseProxy
+            , receives : DebugMsg
+            , sends : UiCommand
+            }
+    , debugUiTerminal :
+        WebSocketChannel
+            { from : TerminalUi
+            , to : AgentReverseProxy
+            , receives : DebugMsg
+            , sends : UiCommand
+            }
+    , debugIframeShellPage :
+        WebSocketChannel
+            { from : IframeClient
+            , to : AgentReverseProxy
+            , receives : IframeCommand
+            , sends : DebugMsg
+            }
+    , debugIframeInjectJs :
+        WebSocketChannel
+            { from : IframeClient
+            , to : AgentReverseProxy
+            , receives : IframeCommand
+            , sends : DebugMsg
+            }
+    , openEndpoint : OpenEndpointHttp
+    , previewProxy : PreviewProxyChain
+    , agentChatProxy : AgentChatProxyChain
     }
 fullTopology =
     let
-        agentTerminal =
-            BrowserTerminalUi { label = "Agent Terminal", sessionUuid = SessionUuid "uuid1" }
-
-        shellTerminal =
-            BrowserTerminalUi { label = "Terminal", sessionUuid = SessionUuid "uuid2" }
-
-        sink _ =
-            ()
-
         -- Port derivation example with default offset
         offset =
             PortOffset 20000
@@ -179,95 +248,34 @@ fullTopology =
         acPort =
             HttpProxy.agentChatPort previewPort
 
-        previewProxy =
+        previewProxyPort =
             HttpProxy.previewProxyPort offset previewPort
 
-        acProxy =
+        acProxyPort =
             HttpProxy.agentChatProxyPort offset acPort
     in
-    { websockets =
-        [ -- WS 1: PTY for Agent Terminal
-          PtyWebSocket
-            { from = agentTerminal
-            , to = ContainerSweServer
-            , endpoint = "/ws/{uuid1}"
-            , sends = sink
-            , receives = sink
-            }
-
-        -- WS 2: PTY for Terminal
-        , PtyWebSocket
-            { from = shellTerminal
-            , to = ContainerSweServer
-            , endpoint = "/ws/{uuid2}"
-            , sends = sink
-            , receives = sink
-            }
-
-        -- WS 3: Debug UI for Agent Terminal
-        , DebugUiWebSocket
-            { from = agentTerminal
-            , to = ContainerAgentReverseProxy
-            , endpoint = "/__agent-reverse-proxy-debug__/ui"
-            , sends = sink
-            , receives = sink
-            }
-
-        -- WS 4: Debug UI for Terminal
-        , DebugUiWebSocket
-            { from = shellTerminal
-            , to = ContainerAgentReverseProxy
-            , endpoint = "/__agent-reverse-proxy-debug__/ui"
-            , sends = sink
-            , receives = sink
-            }
-
-        -- WS 5: Shell page iframe client
-        , DebugIframeWebSocket
-            { from = BrowserShellPage
-            , to = ContainerAgentReverseProxy
-            , endpoint = "/__agent-reverse-proxy-debug__/ws"
-            , sends = sink
-            , receives = sink
-            }
-
-        -- WS 6: inject.js iframe client
-        , DebugIframeWebSocket
-            { from = BrowserInjectJs
-            , to = ContainerAgentReverseProxy
-            , endpoint = "/__agent-reverse-proxy-debug__/ws"
-            , sends = sink
-            , receives = sink
-            }
-        ]
-    , http =
-        [ -- 7: Open shim HTTP GET
-          OpenEndpoint
-            { from = ContainerOpenShim
-            , to = ContainerAgentReverseProxy
-            , method = "GET"
-            , path = "/__agent-reverse-proxy-debug__/open"
-            }
-        ]
-    , httpProxies =
-        [ -- Preview: agent-reverse-proxy (separate npx process, MCP tool)
-          PreviewProxy
-            { from = agentTerminal
-            , traefik = HostTraefik
-            , proxy = ContainerAgentReverseProxy
-            , backend = ContainerUserApp
-            , proxyPort = previewProxy
-            , appPort = previewPort
-            }
-
-        -- Agent Chat: swe-swe-server built-in proxy (handleProxyRequest)
-        , AgentChatProxy
-            { from = agentTerminal
-            , traefik = HostTraefik
-            , proxy = ContainerSweServer
-            , backend = ContainerMcpSidecar
-            , proxyPort = acProxy
-            , appPort = acPort
-            }
-        ]
+    { ptyAgentTerminal =
+        WebSocketChannel { endpoint = "/ws/{uuid1}" }
+    , ptyTerminal =
+        WebSocketChannel { endpoint = "/ws/{uuid2}" }
+    , debugUiAgentTerminal =
+        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ui" }
+    , debugUiTerminal =
+        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ui" }
+    , debugIframeShellPage =
+        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ws" }
+    , debugIframeInjectJs =
+        WebSocketChannel { endpoint = "/__agent-reverse-proxy-debug__/ws" }
+    , openEndpoint =
+        { method = "GET"
+        , path = "/__agent-reverse-proxy-debug__/open"
+        }
+    , previewProxy =
+        { listenPort = previewProxyPort
+        , appPort = previewPort
+        }
+    , agentChatProxy =
+        { listenPort = acProxyPort
+        , appPort = acPort
+        }
     }

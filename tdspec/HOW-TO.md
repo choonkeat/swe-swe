@@ -166,7 +166,63 @@ It describes:
 - what actions are available
 - what data must flow to the next page
 
-### 3.6 "Effects" represent server calls, storage operations, notifications, etc.
+### 3.6 Named type variables via record
+
+When a type has multiple type parameters, prefer wrapping them in a record so each role is named:
+
+```elm
+-- Good: each parameter is named
+type WebSocketChannel protocol =
+    WebSocketChannel { endpoint : String }
+
+ptyChannel :
+    WebSocketChannel
+        { from : TerminalUi
+        , to : SweServer
+        , receives : PtyProtocol.ServerMsg
+        , sends : PtyProtocol.ClientMsg
+        }
+```
+
+compared to positional parameters where the reader must remember which slot is which:
+
+```elm
+-- Avoid: positional parameters are opaque
+type WebSocketChannel from to receives sends =
+    WebSocketChannel { endpoint : String }
+
+ptyChannel : WebSocketChannel TerminalUi SweServer PtyProtocol.ServerMsg PtyProtocol.ClientMsg
+```
+
+The record approach scales to any number of parameters without ambiguity.
+
+### 3.7 Precision over generality
+
+Use process-specific types so invalid combinations are unrepresentable:
+
+```elm
+-- Good: only valid from/to combinations type-check
+type TerminalUi = TerminalUi { label : String, sessionUuid : SessionUuid }
+type SweServer = SweServer
+
+ptyChannel :
+    WebSocketChannel
+        { from : TerminalUi, to : SweServer, ... }
+```
+
+compared to a generic `Process` union where any variant could appear in any role:
+
+```elm
+-- Avoid: allows nonsensical combinations like from=Traefik, to=McpSidecar
+type Process = BrowserTerminalUi | HostTraefik | ContainerMcpSidecar | ...
+
+ptyChannel :
+    { from : Process, to : Process, ... }
+```
+
+When each role has its own type, the compiler rejects impossible connections at definition time rather than at runtime.
+
+### 3.8 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
 
