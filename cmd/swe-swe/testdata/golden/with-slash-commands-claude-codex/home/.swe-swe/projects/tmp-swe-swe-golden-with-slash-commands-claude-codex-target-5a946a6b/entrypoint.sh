@@ -86,7 +86,8 @@ echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
 # Uses claude mcp add which writes to ~/.claude.json
 # Must run as app user so config goes to /home/app/.claude.json (not /root/)
 # Skip if already configured (idempotent on container restart)
-if ! grep -q '"swe-swe-agent-chat"' /home/app/.claude.json 2>/dev/null; then
+# Also re-run if preview config is stale (missing --bridge flag from path-based routing migration)
+if ! grep -q '"swe-swe-agent-chat"' /home/app/.claude.json 2>/dev/null || ! grep -q '\-\-bridge' /home/app/.claude.json 2>/dev/null; then
   su -s /bin/bash app -c '
     unset CLAUDECODE
     claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
