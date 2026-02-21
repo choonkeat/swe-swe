@@ -355,6 +355,8 @@ Design improvements belong in issues or proposals, not in a spec that claims to 
 
 When auditing the spec against source code, fix bottom-up: start with concrete, verifiable discrepancies (missing fields, nonexistent variants, wrong types) before tackling ambiguous structural questions. Concrete fixes build the foundation for harder decisions.
 
+**Sum types vs record structure:** not all differences are equal. A sum type mismatch (spec has variants the code doesn't, or vice versa) is unacceptable — it means the spec is wrong about *what can happen*. A record nesting difference (spec groups fields into `{ request, response }` while the wire format is flat) is not ideal but fine — it means the spec is clearer about *what belongs together*. If the code can adopt the same nesting without runtime penalty, it should; but the spec need not flatten itself to match a flat serialization format.
+
 ### 3.15 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
