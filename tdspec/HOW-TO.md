@@ -335,7 +335,27 @@ A flat record mixes fields from different phases of an interaction. Nesting sepa
 
 Each level of nesting is a claim about structure. If fields always travel together and belong to the same concept, group them.
 
-### 3.13 "Effects" represent server calls, storage operations, notifications, etc.
+### 3.13 Every type is a claim
+
+A shared type claims two things are the same. A distinct type claims they are different. Every type decision in the spec is an assertion about the system.
+
+When `debugIframeShellPage` and `debugIframeInjectJs` shared `IframeCommand`/`DebugMsg`, the spec claimed they carry the same messages — which was false. Splitting into per-client types (`ShellPageCommand`/`InjectCommand`, `ShellPageDebugMsg`/`InjectJsDebugMsg`) made the spec stop lying.
+
+When `FetchResult` and `XhrResult` had identical structure, the spec claimed they were different — which was also false. Unifying into `HttpResult` made the spec tell the truth: same shape, distinction lives at the variant (`Fetch` vs `Xhr`).
+
+When a record is flat, it claims all fields belong to one concept. Nesting into `{ request, response }` or `{ browser, container, host }` claims they belong to different roles or locations. Each level of nesting is a structural assertion.
+
+This is the meta-rule behind §3.7 (precision over generality), §3.9 (exact types per client), §3.11 (eliminate duplicate structure), and §3.12 (nest records). Every type choice is a claim — make sure it is true.
+
+### 3.14 Ground truth, not aspiration
+
+The spec must reflect what the code *does*, not what it *should* do. If a message type does not exist in the source code, remove it from the spec. If a field exists in the source but is missing from the spec, add it. If the server broadcasts to all clients rather than routing selectively, the spec should say broadcast.
+
+Design improvements belong in issues or proposals, not in a spec that claims to describe the current system. A spec that describes a better design is a spec that lies about the actual one.
+
+When auditing the spec against source code, fix bottom-up: start with concrete, verifiable discrepancies (missing fields, nonexistent variants, wrong types) before tackling ambiguous structural questions. Concrete fixes build the foundation for harder decisions.
+
+### 3.15 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
 

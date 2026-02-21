@@ -1,5 +1,6 @@
 module Topology exposing
     ( Process(..), TerminalUi(..), ShellPage(..), InjectJs(..), SweServer(..), AgentReverseProxy(..)
+    , Traefik(..), OpenShim(..), UserApp(..), McpSidecar(..)
     , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
     , fullTopology
     )
@@ -55,6 +56,7 @@ Note: agent-reverse-proxy also exposes a vestigial
 It is unused — swe-swe-server uses in-process subscribers instead.
 
 @docs Process, TerminalUi, ShellPage, InjectJs, SweServer, AgentReverseProxy
+@docs Traefik, OpenShim, UserApp, McpSidecar
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
 @docs fullTopology
 
@@ -100,20 +102,43 @@ type AgentReverseProxy
     = AgentReverseProxy
 
 
+{-| Traefik — host-level reverse proxy providing port-based routing and forwardauth.
+-}
+type Traefik
+    = Traefik
+
+
+{-| swe-swe-open — CLI shim that sends `HTTP GET /open?url=...` to agent-reverse-proxy.
+-}
+type OpenShim
+    = OpenShim
+
+
+{-| The user's application process (e.g., a dev server on port 3000).
+-}
+type UserApp
+    = UserApp
+
+
+{-| MCP sidecar process — agent chat backend on port `previewPort + 1000`.
+-}
+type McpSidecar
+    = McpSidecar
+
 
 {-| A process in the system — wraps all specific process types.
-Used in the ASCII diagram to enumerate every participant.
+Location prefix (Browser/Container/Host) mirrors fullTopology nesting.
 -}
 type Process
     = BrowserTerminalUi TerminalUi
-    | BrowserShellPage
-    | BrowserInjectJs
-    | ContainerSweServer
-    | ContainerAgentReverseProxy
-    | ContainerOpenShim
-    | HostTraefik
-    | ContainerUserApp
-    | ContainerMcpSidecar
+    | BrowserShellPage ShellPage
+    | BrowserInjectJs InjectJs
+    | ContainerSweServer SweServer
+    | ContainerAgentReverseProxy AgentReverseProxy
+    | ContainerOpenShim OpenShim
+    | ContainerUserApp UserApp
+    | ContainerMcpSidecar McpSidecar
+    | HostTraefik Traefik
 
 
 
@@ -125,12 +150,18 @@ type Process
 All type parameters are phantom — they exist only at the type level
 to document which processes and message types are valid for each channel.
 
+
     ptyAgentTerminal :
         WebSocketChannel
-            SweServer                 -- server
-            PtyProtocol.ServerMsg     -- serverMsg
-            TerminalUi                -- client
-            PtyProtocol.ClientMsg     -- clientMsg
+            SweServer
+            -- server
+            PtyProtocol.ServerMsg
+            -- serverMsg
+            TerminalUi
+            -- client
+            PtyProtocol.ClientMsg
+
+    -- clientMsg
 
 -}
 type WebSocketChannel server serverMsg client clientMsg
@@ -171,42 +202,90 @@ type alias AgentChatProxyChain =
 6 WebSockets + 1 HTTP endpoint + 2 HTTP reverse proxy chains.
 -}
 fullTopology :
-    { ptyAgentTerminal :
-        WebSocketChannel
-            SweServer                 -- server
-            PtyProtocol.ServerMsg     -- serverMsg
-            TerminalUi                -- client
-            PtyProtocol.ClientMsg     -- clientMsg
-    , ptyTerminal :
-        WebSocketChannel
-            SweServer                 -- server
-            PtyProtocol.ServerMsg     -- serverMsg
-            TerminalUi                -- client
-            PtyProtocol.ClientMsg     -- clientMsg
-    , debugUiAgentTerminal :
-        WebSocketChannel
-            AgentReverseProxy         -- server
-            AllDebugMsg                  -- serverMsg
-            TerminalUi                -- client
-            UiCommand                 -- clientMsg
-    , debugUiTerminal :
-        WebSocketChannel
-            AgentReverseProxy         -- server
-            AllDebugMsg                  -- serverMsg
-            TerminalUi                -- client
-            UiCommand                 -- clientMsg
-    , debugIframeShellPage :
-        WebSocketChannel
-            AgentReverseProxy         -- server
-            ShellPageCommand          -- serverMsg
-            ShellPage                 -- client
-            ShellPageDebugMsg              -- clientMsg
-    , debugIframeInjectJs :
-        WebSocketChannel
-            AgentReverseProxy         -- server
-            InjectCommand             -- serverMsg
-            InjectJs                  -- client
-            InjectJsDebugMsg                 -- clientMsg
+    { browser :
+        { agentTerminal : TerminalUi
+        , terminal : TerminalUi
+        , shellPage : ShellPage
+        , injectJs : InjectJs
+        }
+    , container :
+        { sweServer : SweServer
+        , agentReverseProxy : AgentReverseProxy
+        , openShim : OpenShim
+        , userApp : UserApp
+        , mcpSidecar : McpSidecar
+        }
+    , host :
+        { traefik : Traefik
+        }
+    , channels :
+        { ptyAgentTerminal :
+            WebSocketChannel
+                SweServer
+                -- server
+                PtyProtocol.ServerMsg
+                -- serverMsg
+                TerminalUi
+                -- client
+                PtyProtocol.ClientMsg
+
+        -- clientMsg
+        , ptyTerminal :
+            WebSocketChannel
+                SweServer
+                -- server
+                PtyProtocol.ServerMsg
+                -- serverMsg
+                TerminalUi
+                -- client
+                PtyProtocol.ClientMsg
+
+        -- clientMsg
+        , debugUiAgentTerminal :
+            WebSocketChannel
+                AgentReverseProxy
+                -- server
+                AllDebugMsg
+                -- serverMsg
+                TerminalUi
+                -- client
+                UiCommand
+
+        -- clientMsg
+        , debugUiTerminal :
+            WebSocketChannel
+                AgentReverseProxy
+                -- server
+                AllDebugMsg
+                -- serverMsg
+                TerminalUi
+                -- client
+                UiCommand
+
+        -- clientMsg
+        , debugIframeShellPage :
+            WebSocketChannel
+                AgentReverseProxy
+                -- server
+                ShellPageCommand
+                -- serverMsg
+                ShellPage
+                -- client
+                ShellPageDebugMsg
+
+        -- clientMsg
+        , debugIframeInjectJs :
+            WebSocketChannel
+                AgentReverseProxy
+                -- server
+                InjectCommand
+                -- serverMsg
+                InjectJs
+                -- client
+                InjectJsDebugMsg
+
+        -- clientMsg
+        }
     , openEndpoint : OpenEndpointHttp
     , previewProxy : PreviewProxyChain
     , agentChatProxy : AgentChatProxyChain
@@ -229,12 +308,30 @@ fullTopology =
         acProxyPort =
             HttpProxy.agentChatProxyPort { offset = offset, appPort = acPort }
     in
-    { ptyAgentTerminal = WebSocketChannel
-    , ptyTerminal = WebSocketChannel
-    , debugUiAgentTerminal = WebSocketChannel
-    , debugUiTerminal = WebSocketChannel
-    , debugIframeShellPage = WebSocketChannel
-    , debugIframeInjectJs = WebSocketChannel
+    { browser =
+        { agentTerminal = TerminalUi { label = "Agent Terminal", sessionUuid = SessionUuid "uuid1" }
+        , terminal = TerminalUi { label = "Terminal", sessionUuid = SessionUuid "uuid2" }
+        , shellPage = ShellPage
+        , injectJs = InjectJs
+        }
+    , container =
+        { sweServer = SweServer
+        , agentReverseProxy = AgentReverseProxy
+        , openShim = OpenShim
+        , userApp = UserApp
+        , mcpSidecar = McpSidecar
+        }
+    , host =
+        { traefik = Traefik
+        }
+    , channels =
+        { ptyAgentTerminal = WebSocketChannel
+        , ptyTerminal = WebSocketChannel
+        , debugUiAgentTerminal = WebSocketChannel
+        , debugUiTerminal = WebSocketChannel
+        , debugIframeShellPage = WebSocketChannel
+        , debugIframeInjectJs = WebSocketChannel
+        }
     , openEndpoint =
         { method = "GET"
         , path = "/__agent-reverse-proxy-debug__/open"

@@ -23,7 +23,7 @@ Total: 4 WebSockets from 2 terminal-ui instances.
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (PreviewPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), PreviewPort(..), SessionUuid(..), Url(..))
 import PtyProtocol
 
 
@@ -39,6 +39,7 @@ type alias State =
         }
     , preview :
         { port_ : Maybe PreviewPort
+        , agentChatPort : Maybe AgentChatPort
         , url : Maybe Url
         , canGoBack : Bool
         , canGoForward : Bool
@@ -79,15 +80,12 @@ onPtyMessage { msg, state } =
         PtyProtocol.PtyOutput _ ->
             ( state, [] )
 
-        PtyProtocol.FileDownloadChunk _ ->
-            ( state, [] )
-
         PtyProtocol.Pong ->
             ( state, [] )
 
         PtyProtocol.Status payload ->
             ( { state
-                | preview = { port_ = Just payload.ports.preview, url = state.preview.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward }
+                | preview = { port_ = Just payload.ports.preview, agentChatPort = payload.ports.agentChat, url = state.preview.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward }
                 , session = { uuid = state.session.uuid, name = payload.session.name, workDir = payload.session.workDir, assistant = payload.session.assistant, viewers = payload.session.viewers }
                 , features = payload.features
               }
@@ -123,17 +121,17 @@ onDebugMessage { msg, state } =
         FromShellPage shellMsg ->
             case shellMsg of
                 Init payload ->
-                    ( { state | preview = { port_ = state.preview.port_, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
+                    ( { state | preview = { port_ = state.preview.port_, agentChatPort = state.preview.agentChatPort, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
                     , [ UpdateUrlBar payload.url ]
                     )
 
                 UrlChange payload ->
-                    ( { state | preview = { port_ = state.preview.port_, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
+                    ( { state | preview = { port_ = state.preview.port_, agentChatPort = state.preview.agentChatPort, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
                     , [ UpdateUrlBar payload.url ]
                     )
 
                 NavState payload ->
-                    ( { state | preview = { port_ = state.preview.port_, url = state.preview.url, canGoBack = payload.canGoBack, canGoForward = payload.canGoForward } }
+                    ( { state | preview = { port_ = state.preview.port_, agentChatPort = state.preview.agentChatPort, url = state.preview.url, canGoBack = payload.canGoBack, canGoForward = payload.canGoForward } }
                     , [ EnableBackButton payload.canGoBack
                       , EnableForwardButton payload.canGoForward
                       ]

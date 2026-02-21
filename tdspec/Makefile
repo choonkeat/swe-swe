@@ -12,3 +12,15 @@ preview:
 
 clean:
 	rm -rf elm-stuff docs.json
+
+
+audit: build
+	@echo ''
+	@echo ''
+	@echo '    now, do another thorough tallying of current state of our source code'
+	@echo '    (including @/repos/agent-reverse-proxy/workspace)'
+	@echo '    against our @tdspec for accuracy. point out and/or discuss where source code'
+	@echo '    and tdspec does not tally (this is not about what a design "should be", it is'
+	@echo '    about reflecting ground truth)'
+	@echo ''
+	@echo ''

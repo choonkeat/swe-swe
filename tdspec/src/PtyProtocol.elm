@@ -36,7 +36,6 @@ The `Status` message is critical — its `previewPort` triggers
 -}
 type ServerMsg
     = PtyOutput Bytes
-    | FileDownloadChunk Bytes
     | Pong {- server echoes { type: "pong", data?: {...} }; data mirrors what client sent in Ping -}
     | Status StatusPayload
     | ChatMsg { userName : String, text : String, timestamp : String }
