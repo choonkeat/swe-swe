@@ -71,7 +71,7 @@ It is unused — swe-swe-server uses in-process subscribers instead.
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), PreviewPort(..), SessionUuid(..))
+import Domain exposing (AgentChatPort(..), PreviewPort(..), ServerAddr(..), SessionUuid(..))
 import HttpProxy
 import PtyProtocol
 
@@ -98,7 +98,7 @@ type InjectJs
     = InjectJs
 
 
-{-| The swe-swe-server process (PTY host + preview/agentchat proxy, port 9898).
+{-| The swe-swe-server process (PTY host + preview/agentchat proxy).
 
 Hosts both proxies as path-based handlers — each session gets:
 
@@ -108,6 +108,8 @@ Hosts both proxies as path-based handlers — each session gets:
 -}
 type SweServer
     = SweServer
+        { addr : ServerAddr
+        }
 
 
 {-| Traefik — host-level reverse proxy providing forwardauth.
@@ -124,6 +126,8 @@ endpoint on swe-swe-server (`/proxy/{uuid}/preview/__agent-reverse-proxy-debug__
 -}
 type OpenShim
     = OpenShim
+        { target : ServerAddr
+        }
 
 
 {-| The user's application process (e.g., a dev server on port 3000).
@@ -141,11 +145,13 @@ type McpSidecar
 {-| Stdio bridge — lightweight relay between AI agent (stdio MCP) and
 swe-swe-server's preview proxy HTTP MCP endpoint.
 
-Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp`
+Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp`
 
 -}
 type StdioBridge
     = StdioBridge
+        { target : ServerAddr
+        }
 
 
 {-| A process in the system — wraps all specific process types.
@@ -320,6 +326,9 @@ fullTopology =
 
         acPort =
             HttpProxy.agentChatPort previewPort
+
+        serverAddr =
+            ServerAddr
     in
     { browser =
         { agentTerminal = TerminalUi { label = "Agent Terminal", sessionUuid = SessionUuid "uuid1" }
@@ -328,11 +337,11 @@ fullTopology =
         , injectJs = InjectJs
         }
     , container =
-        { sweServer = SweServer
-        , openShim = OpenShim
+        { sweServer = SweServer { addr = serverAddr }
+        , openShim = OpenShim { target = serverAddr }
         , userApp = UserApp
         , mcpSidecar = McpSidecar
-        , stdioBridge = StdioBridge
+        , stdioBridge = StdioBridge { target = serverAddr }
         }
     , host =
         { traefik = Traefik

@@ -995,7 +995,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
     top: 50%;
     padding: 3px 8px;
     background: rgba(0, 0, 0, 0.8);
-    color: var(--text-secondary);
+    color: #e2e8f0;
     font-size: 11px;
     font-family: var(--font-mono);
     border-radius: 4px;
@@ -1762,9 +1762,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     background: linear-gradient(135deg, #f97316, #ea580c);
 }
 
-[data-theme="light"] .terminal-ui__resize-tooltip {
-    background: rgba(0, 0, 0, 0.7);
-}
 
 [data-theme="light"] .terminal-ui__chat-message {
     background: rgba(255, 255, 255, 0.85);

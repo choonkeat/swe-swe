@@ -3307,23 +3307,23 @@ func agentChatPortFromPreview(previewPort int) int {
 }
 
 // findAvailablePortPair finds a preview port and its derived agent chat port
-// where both app addresses are available.
+// that are not already allocated to an existing session.
+// Must be called while holding sessionsMu.
 // Returns (previewPort, agentChatPort, error).
 func findAvailablePortPair() (int, int, error) {
+	// Collect ports already assigned to live sessions.
+	usedPorts := make(map[int]bool)
+	for _, sess := range sessions {
+		if sess.PreviewPort != 0 {
+			usedPorts[sess.PreviewPort] = true
+		}
+	}
+
 	for port := previewPortStart; port <= previewPortEnd; port++ {
-		appListener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-		if err != nil {
+		if usedPorts[port] {
 			continue
 		}
-		appListener.Close()
-
 		acPort := agentChatPortFromPreview(port)
-		acAppListener, err := net.Listen("tcp", fmt.Sprintf(":%d", acPort))
-		if err != nil {
-			continue
-		}
-		acAppListener.Close()
-
 		return port, acPort, nil
 	}
 	return 0, 0, fmt.Errorf("no available port pair in preview range %d-%d", previewPortStart, previewPortEnd)

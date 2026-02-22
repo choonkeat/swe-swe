@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), Bytes(..), Timestamp(..))
+module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
 
 {-| Shared primitive types used across the architecture.
 
@@ -11,7 +11,7 @@ System overview:
   - Agent Chat proxy is path-based (/proxy/{uuid}/agentchat/) on the main server port
   - Only 1 port goes through Traefik — no per-session proxy ports needed
 
-@docs Url, SessionUuid, PreviewPort, AgentChatPort, Bytes, Timestamp
+@docs Url, SessionUuid, PreviewPort, AgentChatPort, Bytes, Timestamp, ServerAddr
 
 -}
 
@@ -54,3 +54,21 @@ Used by inject.js and terminal-ui for telemetry timing.
 -}
 type Timestamp
     = Timestamp Int
+
+
+{-| Container-internal address where swe-swe-server listens.
+
+    localhost:9898
+
+Configured in:
+
+  - main.go: `-addr` flag (default `:9898`)
+  - docker-compose.yml: `loadbalancer.server.port=9898`
+  - entrypoint.sh: bridge `--bridge http://localhost:9898/...`
+  - entrypoint.sh: open shim `curl http://localhost:9898/...`
+
+The stdio bridge, open shim, and proxy chains all target this address.
+
+-}
+type ServerAddr
+    = ServerAddr
