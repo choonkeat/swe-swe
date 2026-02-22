@@ -361,7 +361,10 @@ class TerminalUI extends HTMLElement {
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back" disabled>◀</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-forward" title="Forward" disabled>▶</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-refresh" title="Refresh">↻</button>
-                                <input type="text" class="terminal-ui__iframe-url-input" placeholder="Enter URL..." title="Current URL" />
+                                <div class="terminal-ui__iframe-url-bar" title="Current URL">
+                                    <span class="terminal-ui__iframe-url-prefix"></span>
+                                    <input type="text" class="terminal-ui__iframe-url-input" placeholder="/" />
+                                </div>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
@@ -996,6 +999,7 @@ class TerminalUI extends HTMLElement {
                 this.workDir = msg.workDir || '';
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 this.previewPort = msg.previewPort || null;
+                this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
                 this.sessionUUID = msg.sessionUUID || null;
                 // Probe agent chat proxy — wait for our proxy to be up, then load iframe.
@@ -2904,9 +2908,8 @@ class TerminalUI extends HTMLElement {
                     if (confirm('Open in new tab?\n\n' + targetUrl)) {
                         window.open(targetUrl, '_blank');
                     }
-                    // Restore URL bar to previous value
-                    const defaultTarget = this.previewPort ? `http://localhost:${this.previewPort}` : '';
-                    urlInput.value = this._lastUrlChangeUrl ? this.reverseMapProxyUrl(this._lastUrlChangeUrl) : defaultTarget;
+                    // Restore URL bar to previous path
+                    urlInput.value = this._lastUrlChangeUrl ? this.pathFromProxyUrl(this._lastUrlChangeUrl) : '/';
                     return;
                 }
                 navUrl = parsed.pathname + parsed.search + parsed.hash;
@@ -3390,12 +3393,9 @@ class TerminalUI extends HTMLElement {
         const iframeSrc = base + '/__agent-reverse-proxy-debug__/shell?path=' + encodeURIComponent(path);
         this._lastUrlChangeUrl = base + path;
 
-        // URL bar = logical target if provided, else default localhost:{PORT}
+        // URL bar shows only the path — the fixed prefix handles host:port.
         if (urlInput) {
-            const defaultTarget = this.previewPort ? `http://localhost:${this.previewPort}` : '';
-            const displayUrl = targetURL || defaultTarget;
-            urlInput.value = displayUrl;
-            urlInput.title = displayUrl;
+            urlInput.value = path;
         }
 
         if (iframe) {
@@ -3474,6 +3474,34 @@ class TerminalUI extends HTMLElement {
     }
 
     /**
+     * Extract just the path from a proxy URL.
+     * e.g., https://host/proxy/{uuid}/preview/dashboard?tab=1#s → /dashboard?tab=1#s
+     */
+    pathFromProxyUrl(proxyUrl) {
+        try {
+            const parsed = new URL(proxyUrl);
+            const prefix = this.sessionUUID ? `/proxy/${this.sessionUUID}/preview` : '';
+            let path = parsed.pathname;
+            if (prefix && path.startsWith(prefix)) {
+                path = path.slice(prefix.length) || '/';
+            }
+            return path + parsed.search + parsed.hash;
+        } catch {
+            return '/';
+        }
+    }
+
+    /**
+     * Update the non-editable host:port prefix in the URL bar.
+     */
+    updateUrlBarPrefix() {
+        const prefix = this.querySelector('.terminal-ui__iframe-url-prefix');
+        if (prefix) {
+            prefix.textContent = this.previewPort ? `localhost:${this.previewPort}` : '';
+        }
+    }
+
+    /**
      * Connect to the debug WebSocket as a UI observer to receive URL change events.
      */
     connectDebugWebSocket() {
@@ -3522,9 +3550,7 @@ class TerminalUI extends HTMLElement {
                     }
                     const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
                     if (urlInput && this.activeTab === 'preview') {
-                        const displayUrl = this.reverseMapProxyUrl(msg.url);
-                        urlInput.value = displayUrl;
-                        urlInput.title = displayUrl;
+                        urlInput.value = this.pathFromProxyUrl(msg.url);
                     }
                     // Store for "open in new window"
                     if (msg.url) this._lastUrlChangeUrl = msg.url;

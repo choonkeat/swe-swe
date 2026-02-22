@@ -23,7 +23,7 @@ Total: 4 WebSockets from 2 terminal-ui instances.
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), PreviewPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), Path(..), PreviewPort(..), SessionUuid(..), Url(..))
 import PtyProtocol
 
 
@@ -59,11 +59,19 @@ type Connection
 
 
 {-| Side effects produced by terminal-ui message handlers.
+
+**Invariant:** The preview URL bar is split into a fixed prefix
+(`localhost:{PreviewPort}`) and an editable Path. The port shown
+in the URL bar is ALWAYS `state.preview.port_` — never extracted
+from the incoming Url. This prevents xdg-open or other sources
+from injecting a misleading port (e.g. AgentChatPort 4000 when
+PreviewPort is 3000).
+
 -}
 type Effect
     = SendPty PtyProtocol.ClientMsg
     | SendDebug UiCommand
-    | UpdateUrlBar Url
+    | UpdateUrlBar Path -- path only; prefix is fixed to state.preview.port_
     | EnableBackButton Bool
     | EnableForwardButton Bool
     | OpenIframePane { pane : String, url : Url }
@@ -114,6 +122,11 @@ With 2 terminal-ui instances, both receive the message,
 both call `openIframePane -> setPreviewURL -> confirm()`.
 Result: 2x "Open in new tab?" dialogs for external URLs.
 
+**Note:** `Init` and `UrlChange` call `pathFromProxyUrl` to strip the
+proxy prefix and host:port, producing a bare Path. `Open` also goes
+through `setPreviewURL` which extracts the path and ignores the port
+from the incoming Url.
+
 -}
 onDebugMessage : { msg : AllDebugMsg, state : State } -> ( State, List Effect )
 onDebugMessage { msg, state } =
@@ -122,12 +135,12 @@ onDebugMessage { msg, state } =
             case shellMsg of
                 Init payload ->
                     ( { state | preview = { port_ = state.preview.port_, agentChatPort = state.preview.agentChatPort, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
-                    , [ UpdateUrlBar payload.url ]
+                    , [ UpdateUrlBar (pathFromProxyUrl state.session.uuid payload.url) ]
                     )
 
                 UrlChange payload ->
                     ( { state | preview = { port_ = state.preview.port_, agentChatPort = state.preview.agentChatPort, url = Just payload.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward } }
-                    , [ UpdateUrlBar payload.url ]
+                    , [ UpdateUrlBar (pathFromProxyUrl state.session.uuid payload.url) ]
                     )
 
                 NavState payload ->
@@ -144,3 +157,19 @@ onDebugMessage { msg, state } =
             ( state
             , [ OpenIframePane { pane = "preview", url = payload.url } ]
             )
+
+
+{-| Strip /proxy/{uuid}/preview prefix and host:port from a proxy URL,
+returning only the path + query + fragment.
+
+    pathFromProxyUrl (SessionUuid "abc")
+        (Url "https://host:9898/proxy/abc/preview/dashboard?tab=1#s")
+    --> Path "/dashboard?tab=1#s"
+
+This ensures the URL bar never shows a port from the incoming URL.
+The fixed prefix in the UI supplies `localhost:{PreviewPort}` separately.
+
+-}
+pathFromProxyUrl : SessionUuid -> Url -> Path
+pathFromProxyUrl _ _ =
+    Path "/"

@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
+module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
 
 {-| Shared primitive types used across the architecture.
 
@@ -11,7 +11,7 @@ System overview:
   - Agent Chat proxy is path-based (/proxy/{uuid}/agentchat/) on the main server port
   - Only 1 port goes through Traefik — no per-session proxy ports needed
 
-@docs Url, SessionUuid, PreviewPort, AgentChatPort, Bytes, Timestamp, ServerAddr
+@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, Bytes, Timestamp, ServerAddr
 
 -}
 
@@ -20,6 +20,18 @@ System overview:
 -}
 type Url
     = Url String
+
+
+{-| URL path with query and fragment (no scheme, host, or port).
+
+Extracted from a full Url by stripping `localhost:{port}` or the proxy prefix.
+Used by the Preview URL bar which shows a fixed `localhost:{PreviewPort}` prefix
+and an editable path — the port is NEVER derived from the incoming URL because
+the preview proxy can only target one port per session.
+
+-}
+type Path
+    = Path String
 
 
 {-| Session identifier — each terminal-ui instance gets a unique UUID.

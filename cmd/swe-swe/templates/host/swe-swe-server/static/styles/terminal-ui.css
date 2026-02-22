@@ -1082,23 +1082,44 @@ terminal-ui.embedded-in-iframe .mobile-only {
     font-size: 13px;
 }
 
-.terminal-ui__iframe-url-input {
+/* URL bar: fixed host:port prefix + editable path input.
+   The proxy can only target one port, so the prefix is non-editable. */
+.terminal-ui__iframe-url-bar {
+    display: flex;
     flex: 1;
+    align-items: center;
     min-width: 100px;
-    padding: 4px 8px;
-    font-size: 11px;
-    font-family: {{STATUS_BAR_FONT_FAMILY}};
     background: var(--bg-primary);
-    color: #ccc;
     border: 1px solid var(--border-primary);
     border-radius: 4px;
-    outline: none;
+    overflow: hidden;
     transition: border-color 0.2s, background-color 0.2s;
 }
 
-.terminal-ui__iframe-url-input:focus {
+.terminal-ui__iframe-url-bar:focus-within {
     border-color: var(--accent-primary);
     background: var(--bg-tertiary);
+}
+
+.terminal-ui__iframe-url-prefix {
+    padding: 4px 0 4px 8px;
+    font-size: 11px;
+    font-family: {{STATUS_BAR_FONT_FAMILY}};
+    color: #888;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.terminal-ui__iframe-url-input {
+    flex: 1;
+    min-width: 50px;
+    padding: 4px 8px 4px 0;
+    font-size: 11px;
+    font-family: {{STATUS_BAR_FONT_FAMILY}};
+    background: transparent;
+    color: #ccc;
+    border: none;
+    outline: none;
 }
 
 .terminal-ui__iframe-url-input::placeholder {
