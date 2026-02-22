@@ -1,4 +1,4 @@
-# WebSocket & Proxy Architecture
+# swe-swe
 
 Elm type-checked specification of the swe-swe architecture.
 

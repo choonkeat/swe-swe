@@ -1,9 +1,9 @@
 {
     "type": "package",
-    "name": "tdspec/websocket-architecture",
-    "summary": "Type-domain spec of swe-swe WebSocket and proxy architecture",
-    "license": "BSD-3-Clause",
-    "version": "1.0.0",
+    "name": "choonkeat/swe-swe",
+    "summary": "Elm type-checked specification of the swe-swe architecture",
+    "license": "MIT",
+    "version": "2.0.0",
     "exposed-modules": [
         "Domain",
         "PtyProtocol",
