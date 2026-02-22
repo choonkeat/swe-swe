@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
+module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), ProxyPortOffset(..), PreviewProxyPort(..), AgentChatProxyPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
 
 {-| Shared primitive types used across the architecture.
 
@@ -7,11 +7,12 @@ System overview:
   - Browser page hosts 2x terminal-ui web components + 1x Preview iframe
   - Container runs swe-swe-server (PTY + embedded preview/agentchat proxy)
   - 4 WebSockets + 1 HTTP endpoint connect them (+ 2 more when Preview iframe active)
-  - Preview proxy is path-based (/proxy/{uuid}/preview/) on the main server port
-  - Agent Chat proxy is path-based (/proxy/{uuid}/agentchat/) on the main server port
-  - Only 1 port goes through Traefik — no per-session proxy ports needed
+  - Proxies reachable via two modes (browser auto-selects):
+      - Port-based (preferred): per-port listeners e.g. :23000, :24000
+      - Path-based (fallback): /proxy/{uuid}/preview/ on main server port
+  - Both modes reach the same proxy instance and share a DebugHub
 
-@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, Bytes, Timestamp, ServerAddr
+@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, ProxyPortOffset, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp, ServerAddr
 
 -}
 
@@ -52,6 +53,44 @@ Derived from preview port: `previewPort + 1000`.
 -}
 type AgentChatPort
     = AgentChatPort Int
+
+
+{-| Offset added to app ports to derive per-port proxy listener ports.
+
+    Default: 20000 (configurable via `--proxy-port-offset` at init time)
+    Constraint: offset >= 1024, offset + 5019 < 65536
+
+Stored in `.env` as `SWE_PROXY_PORT_OFFSET`.
+
+-}
+type ProxyPortOffset
+    = ProxyPortOffset Int
+
+
+{-| Per-port proxy listener for the preview proxy.
+
+    previewProxyPort = previewPort + proxyPortOffset
+    e.g., 3000 + 20000 = 23000
+
+Traefik forwards host port 23000 → container port 23000 → swe-swe-server
+listener → user app :3000.
+
+-}
+type PreviewProxyPort
+    = PreviewProxyPort Int
+
+
+{-| Per-port proxy listener for the agent chat proxy.
+
+    agentChatProxyPort = agentChatPort + proxyPortOffset
+    e.g., 4000 + 20000 = 24000
+
+Traefik forwards host port 24000 → container port 24000 → swe-swe-server
+listener → MCP sidecar :4000.
+
+-}
+type AgentChatProxyPort
+    = AgentChatProxyPort Int
 
 
 {-| Opaque binary data — PTY I/O, file upload/download chunks.

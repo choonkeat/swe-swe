@@ -2,6 +2,7 @@ module Topology exposing
     ( Process(..), TerminalUi(..), ShellPage(..), InjectJs(..), SweServer(..)
     , Traefik(..), OpenShim(..), UserApp(..), McpSidecar(..), StdioBridge(..)
     , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
+    , ProxyChains
     , fullTopology
     )
 
@@ -44,30 +45,36 @@ instances + Preview tab are active.
     |                                                Container |
     +==========================================================+
 
-    HTTP Proxy Chains (all path-based, single port through Traefik)
+    HTTP Proxy Chains (dual-mode: browser auto-selects)
 
-    Preview:
-    Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/preview/ → User app :3000
+    Port-based (preferred, per-origin isolation):
+      Preview:     Browser → Traefik :23000 → swe-swe-server :23000 → User app :3000
+      Agent Chat:  Browser → Traefik :24000 → swe-swe-server :24000 → MCP sidecar :4000
 
-    Agent Chat:
-    Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/agentchat/ → MCP sidecar :4000
+    Path-based (fallback, when per-port listeners are unreachable):
+      Preview:     Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/preview/    → User app :3000
+      Agent Chat:  Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/agentchat/  → MCP sidecar :4000
 
-    Both proxies are hosted inside swe-swe-server. Preview uses the
-    agent-reverse-proxy Go library; agent chat uses a lightweight
-    reverse proxy handler. Only 1 port goes through Traefik.
+    Both modes reach the same proxy instance — path-based and port-based
+    proxies share a single DebugHub per session. Port-based uses empty
+    BasePath (no URL rewriting); path-based uses BasePath for rewriting.
 
-    AI agents communicate with the preview proxy via a lightweight
-    stdio bridge process (npx @choonkeat/agent-reverse-proxy --bridge).
+    Port-based is cross-origin (browser on :1977, proxy on :23000) so
+    per-port handlers are wrapped in corsWrapper. Path-based is same-origin.
+
+    AI agents always use the internal path-based URL (container-internal,
+    never through Traefik).
 
 @docs Process, TerminalUi, ShellPage, InjectJs, SweServer
 @docs Traefik, OpenShim, UserApp, McpSidecar, StdioBridge
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
+@docs ProxyChains
 @docs fullTopology
 
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), PreviewPort(..), ServerAddr(..), SessionUuid(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), ProxyPortOffset(..), ServerAddr(..), SessionUuid(..))
 import HttpProxy
 import PtyProtocol
 
@@ -96,10 +103,12 @@ type InjectJs
 
 {-| The swe-swe-server process (PTY host + preview/agentchat proxy).
 
-Hosts both proxies as path-based handlers — each session gets:
+Each session gets two proxy instances that share a DebugHub:
 
-  - Preview proxy at `/proxy/{session-uuid}/preview/...`
-  - Agent chat proxy at `/proxy/{session-uuid}/agentchat/...`
+  - Path-based: `/proxy/{uuid}/preview/...`, `/proxy/{uuid}/agentchat/...` on :9898
+  - Port-based: per-port listeners (e.g., :23000, :24000) with empty BasePath
+
+Port-based listeners are wrapped in `corsWrapper` for cross-origin access.
 
 -}
 type SweServer
@@ -110,7 +119,13 @@ type SweServer
 
 {-| Traefik — host-level reverse proxy providing forwardauth.
 
-Only routes the main server port (:9898). No per-session ports needed.
+Routes the main server port (:9898) plus per-session proxy ports:
+
+  - Main: :1977 → :9898 (path-based proxy, UI, WebSockets)
+  - Preview: :23000 → :23000 (port-based proxy, up to 20 sessions)
+  - Agent Chat: :24000 → :24000 (port-based proxy, up to 20 sessions)
+
+Each per-port entrypoint gets its own Traefik router with forwardauth.
 
 -}
 type Traefik
@@ -196,25 +211,42 @@ type alias OpenEndpointHttp =
     { method : String, path : String }
 
 
-{-| Preview proxy chain: Browser → swe-swe-server /proxy/{uuid}/preview/ → User app.
+{-| Preview proxy chain: Browser → proxy → User app.
 
 Hosted inside swe-swe-server as an embedded Go library (no separate process).
 Injects debug scripts, provides DebugHub, serves shell page.
-Path-based routing on the main server port (:9898).
 
 -}
 type alias PreviewProxyChain =
-    { basePath : String, appPort : PreviewPort }
+    { basePath : String
+    , appPort : PreviewPort
+    , proxyPort : PreviewProxyPort
+    }
 
 
-{-| Agent Chat proxy chain: Browser → swe-swe-server /proxy/{uuid}/agentchat/ → MCP sidecar.
+{-| Agent Chat proxy chain: Browser → proxy → MCP sidecar.
 
-Hosted inside swe-swe-server as a path-based handler (no separate port or process).
-Cookie stripping, no HTML injection. Same-origin with the main UI.
+Hosted inside swe-swe-server. Cookie stripping, WebSocket relay, no HTML injection.
 
 -}
 type alias AgentChatProxyChain =
-    { basePath : String, appPort : AgentChatPort }
+    { basePath : String
+    , appPort : AgentChatPort
+    , proxyPort : AgentChatProxyPort
+    }
+
+
+{-| Both proxy chains bundled, with the shared port offset.
+
+Path-based and port-based proxies share a single DebugHub per session.
+Path-based uses `basePath` for URL rewriting; port-based uses empty BasePath.
+
+-}
+type alias ProxyChains =
+    { portOffset : ProxyPortOffset
+    , preview : PreviewProxyChain
+    , agentChat : AgentChatProxyChain
+    }
 
 
 
@@ -222,7 +254,7 @@ type alias AgentChatProxyChain =
 
 
 {-| Full topology with 2 terminals + preview active.
-6 WebSockets + 1 HTTP endpoint + 2 HTTP reverse proxy chains.
+6 WebSockets + 1 HTTP endpoint + 2 HTTP reverse proxy chains (dual-mode).
 -}
 fullTopology :
     { browser :
@@ -304,8 +336,7 @@ fullTopology :
                 InjectJsDebugMsg
         }
     , openEndpoint : OpenEndpointHttp
-    , previewProxy : PreviewProxyChain
-    , agentChatProxy : AgentChatProxyChain
+    , proxies : ProxyChains
     }
 fullTopology =
     let
@@ -314,6 +345,9 @@ fullTopology =
 
         acPort =
             HttpProxy.agentChatPort previewPort
+
+        portOffset =
+            ProxyPortOffset 20000
 
         serverAddr =
             ServerAddr
@@ -346,12 +380,17 @@ fullTopology =
         { method = "GET"
         , path = "/proxy/{uuid}/preview/__agent-reverse-proxy-debug__/open"
         }
-    , previewProxy =
-        { basePath = "/proxy/{uuid}/preview"
-        , appPort = previewPort
-        }
-    , agentChatProxy =
-        { basePath = "/proxy/{uuid}/agentchat"
-        , appPort = acPort
+    , proxies =
+        { portOffset = portOffset
+        , preview =
+            { basePath = "/proxy/{uuid}/preview"
+            , appPort = previewPort
+            , proxyPort = HttpProxy.previewProxyPort portOffset previewPort
+            }
+        , agentChat =
+            { basePath = "/proxy/{uuid}/agentchat"
+            , appPort = acPort
+            , proxyPort = HttpProxy.agentChatProxyPort portOffset acPort
+            }
         }
     }
