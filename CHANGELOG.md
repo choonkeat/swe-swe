@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## v2.11.0 - Path-Based Proxy Routing & Env Var Expansion
+
+### Major Features
+
+- **Eliminate all Traefik proxy ports**: Preview and agent chat now use path-based routing through swe-swe-server, removing the need for separate Traefik proxy ports entirely
+- **Preview proxy in swe-swe-server**: Host the preview proxy directly in swe-swe-server with stdio bridge wired in the entrypoint, simplifying the architecture
+- **Env var expansion in `swe-swe/env`**: Support `$VAR` and `${VAR}` expansion in environment files
+
+### Bug Fixes
+
+- **escapeHtml crash on session join**: Fix null URL crash caused by path-based routing
+- **Preview URL bar**: Display logical `localhost:PORT` prefix instead of proxy paths; strip proxy prefix from URL bar
+- **Self-heal stale MCP config**: Detect and fix Claude MCP config missing `--bridge` flag for preview
+- **Open shim URL**: Fix open shim URL, port allocation, and resize tooltip styling
+- **MCP bridge URL**: Use `localhost:9898` for preview MCP bridge URL
+- **iframe embedding**: Strip `X-Frame-Options` header via agent-reverse-proxy for proper iframe embedding
+- **MCP SDK dependency**: Add missing MCP SDK dependency to swe-swe-server `go.mod` template
+
+### Dependencies
+
+- **agent-reverse-proxy**: Update v0.2.4 → v0.2.7
+
+### Documentation (tdspec)
+
+- **Static tdspec docs**: Host tdspec documentation on Netlify site
+- **ServerAddr type**: Add `ServerAddr` type to prevent host:port confusion
+- **Accuracy fixes**: Fix 6+ tdspec audit inaccuracies (stale ports, Maybe wire type, Chat userName, Fetch/XHR divergence)
+- **Refactors**: Simplify types, split debug protocol types per client, unify HttpResult/ExitPayload, nest StatusPayload/State records
+- **HOW-TO**: Add sum type vs record structure distinction, meta-principles
+
 ## v2.10.0 - MCP Debug Tools, Per-Session Ports & WebSocket Proxy
 
 ### Major Features
