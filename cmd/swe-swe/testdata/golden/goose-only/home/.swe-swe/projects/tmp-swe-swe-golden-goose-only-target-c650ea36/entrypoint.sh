@@ -58,7 +58,7 @@ extensions:
     cmd: sh
     args:
       - "-c"
-      - "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"
+      - "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp"
   swe-swe-whiteboard:
     type: stdio
     cmd: npx

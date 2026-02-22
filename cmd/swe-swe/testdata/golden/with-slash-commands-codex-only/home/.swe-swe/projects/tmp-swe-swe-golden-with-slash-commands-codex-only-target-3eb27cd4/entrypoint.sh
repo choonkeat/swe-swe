@@ -59,7 +59,7 @@ args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp"]
+args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp"]
 
 [mcp_servers.swe-swe-whiteboard]
 command = "npx"
