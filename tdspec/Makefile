@@ -14,11 +14,11 @@ preview:
 
 # Generate static HTML docs into ../www/ (root level — Elm app uses absolute paths)
 WWW := $(CURDIR)/../www
-PKG := $(WWW)/packages/tdspec/websocket-architecture
+PKG := $(WWW)/packages/choonkeat/swe-swe
 
 docs: build
 	mkdir -p $(WWW)/css $(WWW)/fonts $(WWW)/highlight $(WWW)/js
-	mkdir -p $(PKG)/1.0.0
+	mkdir -p $(PKG)/2.0.0
 	cp $(EDP_STATIC)/css/* $(WWW)/css/
 	cp $(EDP_STATIC)/fonts/* $(WWW)/fonts/
 	cp $(EDP_STATIC)/highlight/highlight.pack.js $(WWW)/highlight/
@@ -26,8 +26,8 @@ docs: build
 	cp static-docs-index.js $(WWW)/js/index.js
 	cp static-docs-mobile.css $(WWW)/css/mobile.css
 	sed 's|</head>|<meta name="viewport" content="width=device-width, initial-scale=1"><link href="/css/mobile.css" rel="stylesheet">\n</head>|' $(EDP_STATIC)/index.html > $(WWW)/tdspec.html
-	cp docs.json README.md elm.json $(PKG)/1.0.0/
-	echo '{"1.0.0":$(shell date +%s)}' > $(PKG)/releases.json
+	cp docs.json README.md elm.json $(PKG)/2.0.0/
+	echo '{"2.0.0":$(shell date +%s)}' > $(PKG)/releases.json
 	echo '[]' > $(WWW)/search.json
 
 clean:
