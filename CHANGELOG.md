@@ -1,10 +1,10 @@
 # CHANGELOG
 
-## v2.11.0 - Path-Based Proxy Routing & Env Var Expansion
+## v2.11.0 - Port-Based Proxy, Path Fallback & Env Var Expansion
 
 ### Major Features
 
-- **Eliminate all Traefik proxy ports**: Preview and agent chat now use path-based routing through swe-swe-server, removing the need for separate Traefik proxy ports entirely
+- **`--proxy-port-offset` flag**: Port-based preview proxy (preferred) with automatic path-based fallback when port unavailable. Eliminates all Traefik proxy ports
 - **Preview proxy in swe-swe-server**: Host the preview proxy directly in swe-swe-server with stdio bridge wired in the entrypoint, simplifying the architecture
 - **Env var expansion in `swe-swe/env`**: Support `$VAR` and `${VAR}` expansion in environment files
 
@@ -17,6 +17,8 @@
 - **MCP bridge URL**: Use `localhost:9898` for preview MCP bridge URL
 - **iframe embedding**: Strip `X-Frame-Options` header via agent-reverse-proxy for proper iframe embedding
 - **MCP SDK dependency**: Add missing MCP SDK dependency to swe-swe-server `go.mod` template
+- **Port-based proxy BasePath**: Use empty BasePath to prevent double-prefixing
+- **Vestigial agent WS endpoint**: Remove unused agent WebSocket endpoint
 
 ### Dependencies
 
@@ -25,6 +27,10 @@
 ### Documentation (tdspec)
 
 - **Static tdspec docs**: Host tdspec documentation on Netlify site
+- **Package rename**: Rename tdspec package to `choonkeat/swe-swe`
+- **MCP tools spec**: Spec all 6 MCP tools and 5 resources
+- **Behavioral specs**: Probe state machine, WebSocket reconnect, placeholder lifecycle
+- **Proxy mode specs**: Spec both proxy modes — port-based (preferred) and path-based (fallback)
 - **ServerAddr type**: Add `ServerAddr` type to prevent host:port confusion
 - **Accuracy fixes**: Fix 6+ tdspec audit inaccuracies (stale ports, Maybe wire type, Chat userName, Fetch/XHR divergence)
 - **Refactors**: Simplify types, split debug protocol types per client, unify HttpResult/ExitPayload, nest StatusPayload/State records
