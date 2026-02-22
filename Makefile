@@ -167,8 +167,9 @@ golden-update: build-cli
 	@$(MAKE) _golden-previous-init-flags-ignore
 	@$(MAKE) _golden-variant NAME=previous-init-flags-ignore-claude FLAGS="--previous-init-flags=ignore --agents=claude"
 	@$(MAKE) _golden-variant NAME=previous-init-flags-invalid FLAGS="--previous-init-flags=invalid"
-	@$(MAKE) _golden-variant NAME=previous-init-flags-reuse-with-other-flags FLAGS="--previous-init-flags=reuse --agents=claude"
+	@$(MAKE) _golden-previous-init-flags-reuse-with-override
 	@$(MAKE) _golden-already-initialized
+	@$(MAKE) _golden-init-ask
 	@# Normalize TLS files to avoid flip-flopping due to random cert generation
 	@find $(GOLDEN_TESTDATA) -name "server.crt" -exec cp $(GOLDEN_TESTDATA)/../standard-tls/server.crt {} \;
 	@find $(GOLDEN_TESTDATA) -name "server.key" -exec cp $(GOLDEN_TESTDATA)/../standard-tls/server.key {} \;
@@ -212,6 +213,25 @@ _golden-already-initialized:
 		2> /dev/null || true
 	@HOME=/tmp/swe-swe-golden/already-initialized/home $(SWE_SWE_CLI) init --project-directory /tmp/swe-swe-golden/already-initialized/target \
 		2> $(GOLDEN_TESTDATA)/already-initialized/stderr.txt || true
+
+# Multi-step golden test: init with flags, then reuse with override to verify patching
+_golden-previous-init-flags-reuse-with-override:
+	@rm -rf $(GOLDEN_TESTDATA)/previous-init-flags-reuse-with-override/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse-with-override/target
+	@mkdir -p $(GOLDEN_TESTDATA)/previous-init-flags-reuse-with-override/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse-with-override/target
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-with-override/home $(SWE_SWE_CLI) init --agents=claude --with-docker --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-with-override/target \
+		2> /dev/null || true
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-with-override/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --ssl=selfsign --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-with-override/target \
+		2> $(GOLDEN_TESTDATA)/previous-init-flags-reuse-with-override/stderr.txt || true
+
+# Golden test: interactive init via --ask with piped stdin
+_golden-init-ask:
+	@rm -rf $(GOLDEN_TESTDATA)/init-ask/home $(GOLDEN_TESTDATA)/init-ask/target
+	@mkdir -p $(GOLDEN_TESTDATA)/init-ask/home $(GOLDEN_TESTDATA)/init-ask/target
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	printf 'claude,codex\nn\n\n' | HOME=/tmp/swe-swe-golden/init-ask/home $(SWE_SWE_CLI) init --ask=/tmp/swe-swe-golden/init-ask/home/.swe-swe/projects/init-ask --project-directory /tmp/swe-swe-golden/init-ask/target \
+		2> $(GOLDEN_TESTDATA)/init-ask/stderr.txt || true
 
 # Certificate test variants: with and without enterprise certificates
 _golden-certs-no-certs:

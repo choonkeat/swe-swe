@@ -90,7 +90,7 @@ Examples:
   swe-swe init --exclude-agents=aider,goose      Initialize current directory without Aider and Goose
   swe-swe init --apt-get-install="vim htop"      Initialize current directory with custom apt packages
   swe-swe init --npm-install="typescript tsx"    Initialize current directory with custom npm packages
-  swe-swe init --with-docker                     Initialize current directory with Docker-in-Docker
+  swe-swe init --with-docker                     Initialize current directory with Docker socket access
   swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
                                                  Initialize current directory with slash commands
   swe-swe init --ssl=selfsign                    Initialize with self-signed HTTPS certificate

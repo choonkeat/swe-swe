@@ -1,7 +1,0 @@
-Error: --previous-init-flags=reuse cannot be combined with other flags
-
-  To reapply saved configuration without changes:
-    swe-swe init --previous-init-flags=reuse
-
-  To apply new configuration:
-    swe-swe init --previous-init-flags=ignore [options]

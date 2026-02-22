@@ -369,6 +369,26 @@ func parsePreviewPortsRange(rangeStr string) ([]int, error) {
 	return ports, nil
 }
 
+// parseSSLFlagValue parses the --ssl flag value into mode, host, domain components.
+// Valid values: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'
+func parseSSLFlagValue(ssl string) (mode, host, domain string, err error) {
+	mode = ssl
+	if strings.HasPrefix(ssl, "selfsign@") {
+		mode = "selfsign"
+		host = strings.TrimPrefix(ssl, "selfsign@")
+	} else if strings.HasPrefix(ssl, "letsencrypt-staging@") {
+		mode = "letsencrypt-staging"
+		domain = strings.TrimPrefix(ssl, "letsencrypt-staging@")
+	} else if strings.HasPrefix(ssl, "letsencrypt@") {
+		mode = "letsencrypt"
+		domain = strings.TrimPrefix(ssl, "letsencrypt@")
+	}
+	if mode != "no" && mode != "selfsign" && mode != "letsencrypt" && mode != "letsencrypt-staging" {
+		return "", "", "", fmt.Errorf("--ssl must be 'no', 'selfsign', 'selfsign@<hostname>', 'letsencrypt@<domain>', or 'letsencrypt-staging@<domain>', got %q", ssl)
+	}
+	return mode, host, domain, nil
+}
+
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("project-directory", ".", "Project directory to initialize")
@@ -389,6 +409,7 @@ func handleInit() {
 	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
 	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 → 23000 with offset 20000)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
+	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	fs.Parse(os.Args[2:])
 
 	// Validate --previous-init-flags
@@ -397,22 +418,30 @@ func handleInit() {
 		os.Exit(1)
 	}
 
-	// Validate --ssl flag: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'
-	sslMode := *sslFlag
-	sslHost := ""
-	sslDomain := ""
-	if strings.HasPrefix(*sslFlag, "selfsign@") {
-		sslMode = "selfsign"
-		sslHost = strings.TrimPrefix(*sslFlag, "selfsign@")
-	} else if strings.HasPrefix(*sslFlag, "letsencrypt-staging@") {
-		sslMode = "letsencrypt-staging"
-		sslDomain = strings.TrimPrefix(*sslFlag, "letsencrypt-staging@")
-	} else if strings.HasPrefix(*sslFlag, "letsencrypt@") {
-		sslMode = "letsencrypt"
-		sslDomain = strings.TrimPrefix(*sslFlag, "letsencrypt@")
+	// Handle --ask flag: interactive init mode bypasses all other flag processing
+	askProvided := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "ask" {
+			askProvided = true
+		}
+	})
+	if askProvided {
+		*path = expandTilde(*path)
+		absPath, err := filepath.Abs(*path)
+		if err != nil {
+			log.Fatalf("Failed to resolve path: %v", err)
+		}
+		if err := os.MkdirAll(absPath, 0755); err != nil {
+			log.Fatalf("Failed to create directory %q: %v", absPath, err)
+		}
+		handleInteractiveInit(absPath, *askFlag)
+		return
 	}
-	if sslMode != "no" && sslMode != "selfsign" && sslMode != "letsencrypt" && sslMode != "letsencrypt-staging" {
-		fmt.Fprintf(os.Stderr, "Error: --ssl must be 'no', 'selfsign', 'selfsign@<hostname>', 'letsencrypt@<domain>', or 'letsencrypt-staging@<domain>', got %q\n", *sslFlag)
+
+	// Validate --ssl flag
+	sslMode, sslHost, sslDomain, sslErr := parseSSLFlagValue(*sslFlag)
+	if sslErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", sslErr)
 		os.Exit(1)
 	}
 
@@ -455,25 +484,14 @@ func handleInit() {
 		}
 	}
 
-	// Validate that --previous-init-flags=reuse is not combined with other flags
-	// Uses allowlist approach: only --project-directory and --previous-init-flags are allowed with reuse.
-	// This is safer than blocklist - forgetting to update allowlist fails safely (rejects new flag),
-	// while forgetting to update blocklist would allow invalid combinations.
+	// Collect explicitly-set flags for reuse patching
+	explicitFlags := make(map[string]bool)
 	if *previousInitFlags == "reuse" {
-		hasOtherFlags := false
 		fs.Visit(func(f *flag.Flag) {
 			if f.Name != "project-directory" && f.Name != "previous-init-flags" {
-				hasOtherFlags = true
+				explicitFlags[f.Name] = true
 			}
 		})
-		if hasOtherFlags {
-			fmt.Fprintf(os.Stderr, "Error: --previous-init-flags=reuse cannot be combined with other flags\n\n")
-			fmt.Fprintf(os.Stderr, "  To reapply saved configuration without changes:\n")
-			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=reuse\n\n")
-			fmt.Fprintf(os.Stderr, "  To apply new configuration:\n")
-			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=ignore [options]\n")
-			os.Exit(1)
-		}
 	}
 
 	// Validate --proxy-port-offset
@@ -550,52 +568,111 @@ func handleInit() {
 	}
 
 	// Handle --previous-init-flags=reuse
+	// Loads saved config as baseline, then patches with any explicitly-set flags.
 	if *previousInitFlags == "reuse" {
 		if !initConfigExists {
 			fmt.Fprintf(os.Stderr, "Error: No saved configuration to reuse at %s\n\n", absPath)
 			fmt.Fprintf(os.Stderr, "  Run init without --previous-init-flags first to create a configuration.\n")
 			os.Exit(1)
 		}
-		// Load saved config and override the parsed flags
+		// Load saved config as baseline
 		savedConfig, err := loadInitConfig(sweDir)
 		if err != nil {
 			log.Fatalf("Failed to load saved config: %v", err)
 		}
-		agents = savedConfig.Agents
-		aptPkgs = savedConfig.AptPackages
-		npmPkgs = savedConfig.NpmPackages
-		*withDocker = savedConfig.WithDocker
-		slashCmds = savedConfig.SlashCommands
-		*sslFlag = savedConfig.SSL
-		if *sslFlag == "" {
-			*sslFlag = "no" // Default for old configs without SSL field
+		// Start from saved values, then override with explicitly-set flags
+		if !explicitFlags["agents"] && !explicitFlags["exclude-agents"] {
+			agents = savedConfig.Agents
 		}
-		*emailFlag = savedConfig.Email
-		if savedConfig.PreviewPorts != "" {
-			*previewPorts = savedConfig.PreviewPorts
+		if !explicitFlags["apt-get-install"] {
+			aptPkgs = savedConfig.AptPackages
 		}
-		copyHomePaths = savedConfig.CopyHomePaths
-		*reposDir = savedConfig.ReposDir
-		// UI customization flags
-		if savedConfig.TerminalFontSize != 0 {
+		if !explicitFlags["npm-install"] {
+			npmPkgs = savedConfig.NpmPackages
+		}
+		if !explicitFlags["with-docker"] {
+			*withDocker = savedConfig.WithDocker
+		}
+		if !explicitFlags["with-slash-commands"] {
+			slashCmds = savedConfig.SlashCommands
+		}
+		if !explicitFlags["ssl"] {
+			*sslFlag = savedConfig.SSL
+			if *sslFlag == "" {
+				*sslFlag = "no" // Default for old configs without SSL field
+			}
+		}
+		if !explicitFlags["email"] {
+			*emailFlag = savedConfig.Email
+		}
+		if !explicitFlags["preview-ports"] {
+			if savedConfig.PreviewPorts != "" {
+				*previewPorts = savedConfig.PreviewPorts
+			}
+		}
+		if !explicitFlags["copy-home-paths"] {
+			copyHomePaths = savedConfig.CopyHomePaths
+		}
+		if !explicitFlags["repos-dir"] {
+			*reposDir = savedConfig.ReposDir
+		}
+		if !explicitFlags["terminal-font-size"] && savedConfig.TerminalFontSize != 0 {
 			*terminalFontSize = savedConfig.TerminalFontSize
 		}
-		if savedConfig.TerminalFontFamily != "" {
+		if !explicitFlags["terminal-font-family"] && savedConfig.TerminalFontFamily != "" {
 			*terminalFontFamily = savedConfig.TerminalFontFamily
 		}
-		if savedConfig.StatusBarFontSize != 0 {
+		if !explicitFlags["status-bar-font-size"] && savedConfig.StatusBarFontSize != 0 {
 			*statusBarFontSize = savedConfig.StatusBarFontSize
 		}
-		if savedConfig.StatusBarFontFamily != "" {
+		if !explicitFlags["status-bar-font-family"] && savedConfig.StatusBarFontFamily != "" {
 			*statusBarFontFamily = savedConfig.StatusBarFontFamily
 		}
-		if savedConfig.ProxyPortOffset != 0 {
+		if !explicitFlags["proxy-port-offset"] && savedConfig.ProxyPortOffset != 0 {
 			*proxyPortOffset = savedConfig.ProxyPortOffset
 		}
-		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
+		if len(explicitFlags) > 0 {
+			fmt.Printf("Reusing saved configuration from %s (with overrides)\n", initConfigPath)
+		} else {
+			fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
+		}
 	}
 
-	previewPortsRange, err := parsePreviewPortsRange(*previewPorts)
+	// Build config from parsed flag values
+	config := InitConfig{
+		Agents:              agents,
+		AptPackages:         aptPkgs,
+		NpmPackages:         npmPkgs,
+		WithDocker:          *withDocker,
+		SlashCommands:       slashCmds,
+		SSL:                 *sslFlag,
+		Email:               *emailFlag,
+		PreviewPorts:        *previewPorts,
+		CopyHomePaths:       copyHomePaths,
+		ReposDir:            *reposDir,
+		TerminalFontSize:    *terminalFontSize,
+		TerminalFontFamily:  *terminalFontFamily,
+		StatusBarFontSize:   *statusBarFontSize,
+		StatusBarFontFamily: *statusBarFontFamily,
+		ProxyPortOffset:     *proxyPortOffset,
+	}
+
+	// Re-parse SSL from config.SSL in case reuse overwrote sslFlag
+	if *previousInitFlags == "reuse" {
+		sslMode, sslHost, sslDomain, sslErr = parseSSLFlagValue(config.SSL)
+		if sslErr != nil {
+			log.Fatalf("Invalid SSL value in saved config: %v", sslErr)
+		}
+	}
+
+	executeInit(absPath, sweDir, config, sslMode, sslHost, sslDomain)
+}
+
+// executeInit performs the actual project initialization: creates directories,
+// processes templates, writes files, and saves the configuration.
+// sweDir is the metadata directory (e.g. ~/.swe-swe/projects/<hash>/).
+func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslHost, sslDomain string) {
+	previewPortsRange, err := parsePreviewPortsRange(config.PreviewPorts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: --preview-ports must be in the form start-end within 3000-3999 (e.g., 3000-3019). %v\n", err)
 		os.Exit(1)
@@ -614,6 +691,8 @@ func handleInit() {
 	// Capture host user's UID and GID for container app user creation
 	hostUID := os.Getuid()
 	hostGID := os.Getgid()
+	config.HostUID = hostUID
+	config.HostGID = hostGID
 	fmt.Printf("Detected host user: UID=%d GID=%d\n", hostUID, hostGID)
 
 	// Create bin, home, and certs subdirectories in sweDir (project config directory)
@@ -637,7 +716,7 @@ func handleInit() {
 	// Create repos directory only when --repos-dir is NOT specified
 	// (when user specifies --repos-dir, they are responsible for the directory)
 	// This is in workspace: ${WORKSPACE_DIR:-.}/.swe-swe/repos
-	if *reposDir == "" {
+	if config.ReposDir == "" {
 		reposDirPath := filepath.Join(workspaceSweDir, "repos")
 		if err := os.MkdirAll(reposDirPath, 0755); err != nil {
 			log.Fatalf("Failed to create directory %q: %v", reposDirPath, err)
@@ -656,12 +735,12 @@ func handleInit() {
 	})
 
 	// Copy paths from user's $HOME to project home directory
-	if len(copyHomePaths) > 0 {
+	if len(config.CopyHomePaths) > 0 {
 		userHome, err := os.UserHomeDir()
 		if err != nil {
 			log.Fatalf("Failed to get user home directory: %v", err)
 		}
-		for _, relPath := range copyHomePaths {
+		for _, relPath := range config.CopyHomePaths {
 			srcPath := filepath.Join(userHome, relPath)
 			destPath := filepath.Join(homeDir, relPath)
 
@@ -741,7 +820,7 @@ func handleInit() {
 		if err == nil {
 			fmt.Fprintf(f, "SWE_PREVIEW_PORTS=%d-%d\n", previewPortsRange[0], previewPortsRange[len(previewPortsRange)-1])
 			fmt.Fprintf(f, "SWE_AGENT_CHAT_PORTS=%d-%d\n", agentChatPortsRange[0], agentChatPortsRange[len(agentChatPortsRange)-1])
-			fmt.Fprintf(f, "SWE_PROXY_PORT_OFFSET=%d\n", *proxyPortOffset)
+			fmt.Fprintf(f, "SWE_PROXY_PORT_OFFSET=%d\n", config.ProxyPortOffset)
 			f.Close()
 		}
 	}
@@ -802,219 +881,199 @@ func handleInit() {
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	// Walk embedded templates/host/ to discover all files automatically.
 	// New files are included by default — no whitelist to maintain.
-		var hostFiles []string
-		if err := iofs.WalkDir(assets, "templates/host", func(path string, d iofs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-			// Skip test files — not needed in production builds
-			if strings.HasSuffix(d.Name(), "_test.go") {
-				return nil
-			}
-			hostFiles = append(hostFiles, path)
+	var hostFiles []string
+	if err := iofs.WalkDir(assets, "templates/host", func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
-		}); err != nil {
-			log.Fatalf("Failed to walk templates/host: %v", err)
+		}
+		// Skip test files — not needed in production builds
+		if strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+		hostFiles = append(hostFiles, path)
+		return nil
+	}); err != nil {
+		log.Fatalf("Failed to walk templates/host: %v", err)
+	}
+
+	// Files that go to project directory (accessible by Claude in container)
+	containerFiles := []string{
+		"templates/container/.swe-swe/docs/AGENTS.md",
+		"templates/container/.swe-swe/docs/browser-automation.md",
+	}
+
+	// Only include swe-swe/setup for agents that don't support slash commands
+	// (Goose, Aider, or any unknown agent). Slash-command agents get /swe-swe:setup instead.
+	if config.HasNonSlashAgents() {
+		containerFiles = append(containerFiles, "templates/container/swe-swe/setup")
+	}
+
+	if config.WithDocker {
+		containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
+	}
+
+	// Always include app-preview.md since split-pane UI is always available
+	containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/app-preview.md")
+
+	// Print selected agents
+	if len(config.Agents) > 0 {
+		fmt.Printf("Selected agents: %s\n", strings.Join(config.Agents, ", "))
+	} else {
+		fmt.Println("No agents selected (minimal environment)")
+	}
+	if config.AptPackages != "" {
+		fmt.Printf("Additional apt packages: %s\n", config.AptPackages)
+	}
+	if config.NpmPackages != "" {
+		fmt.Printf("Additional npm packages: %s\n", config.NpmPackages)
+	}
+	if config.WithDocker {
+		fmt.Println("Docker access: enabled (container can run Docker commands on host)")
+	}
+
+	// Print slash commands info
+	for _, repo := range config.SlashCommands {
+		fmt.Printf("Slash commands: %s -> /tmp/slash-commands/%s\n", repo.URL, repo.Alias)
+	}
+
+	for _, hostFile := range hostFiles {
+		content, err := assets.ReadFile(hostFile)
+		if err != nil {
+			log.Fatalf("Failed to read embedded file %q: %v", hostFile, err)
 		}
 
-		// Files that go to project directory (accessible by Claude in container)
-		containerFiles := []string{
-			"templates/container/.swe-swe/docs/AGENTS.md",
-			"templates/container/.swe-swe/docs/browser-automation.md",
+		// Process Dockerfile template with conditional sections
+		if hostFile == "templates/host/Dockerfile" {
+			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID))
 		}
 
-		// Only include swe-swe/setup for agents that don't support slash commands
-		// (Goose, Aider, or any unknown agent). Slash-command agents get /swe-swe:setup instead.
-		tempConfig := InitConfig{Agents: agents}
-		if tempConfig.HasNonSlashAgents() {
-			containerFiles = append(containerFiles, "templates/container/swe-swe/setup")
+		// Process docker-compose.yml template with conditional sections
+		if hostFile == "templates/host/docker-compose.yml" {
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, config.ProxyPortOffset))
 		}
 
-		if *withDocker {
-			containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
+		// Process traefik-dynamic.yml template with SSL conditional sections
+		if hostFile == "templates/host/traefik-dynamic.yml" {
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, config.ProxyPortOffset))
 		}
 
-		// Always include app-preview.md since split-pane UI is always available
-		containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/app-preview.md")
-
-		// Print selected agents
-		if len(agents) > 0 {
-			fmt.Printf("Selected agents: %s\n", strings.Join(agents, ", "))
-		} else {
-			fmt.Println("No agents selected (minimal environment)")
-		}
-		if aptPkgs != "" {
-			fmt.Printf("Additional apt packages: %s\n", aptPkgs)
-		}
-		if npmPkgs != "" {
-			fmt.Printf("Additional npm packages: %s\n", npmPkgs)
-		}
-		if *withDocker {
-			fmt.Println("Docker access: enabled (container can run Docker commands on host)")
+		// Process entrypoint.sh template with conditional sections
+		if hostFile == "templates/host/entrypoint.sh" {
+			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands))
 		}
 
-		// Print slash commands info (already parsed earlier)
-		for _, repo := range slashCmds {
-			fmt.Printf("Slash commands: %s -> /tmp/slash-commands/%s\n", repo.URL, repo.Alias)
+		// Inject version info and proxy port offset into swe-swe-server main.go
+		if hostFile == "templates/host/swe-swe-server/main.go" {
+			contentStr := string(content)
+			contentStr = strings.Replace(contentStr, `Version   = "dev"`, fmt.Sprintf(`Version   = "%s"`, Version), 1)
+			contentStr = strings.Replace(contentStr, `GitCommit = "unknown"`, fmt.Sprintf(`GitCommit = "%s"`, GitCommit), 1)
+			contentStr = strings.Replace(contentStr, "proxyPortOffset    = 20000", fmt.Sprintf("proxyPortOffset    = %d", config.ProxyPortOffset), 1)
+			content = []byte(contentStr)
 		}
 
-		for _, hostFile := range hostFiles {
-			content, err := assets.ReadFile(hostFile)
-			if err != nil {
-				log.Fatalf("Failed to read embedded file %q: %v", hostFile, err)
-			}
-
-			// Process Dockerfile template with conditional sections
-			if hostFile == "templates/host/Dockerfile" {
-				content = []byte(processDockerfileTemplate(string(content), agents, aptPkgs, npmPkgs, *withDocker, hasCerts, slashCmds, hostUID, hostGID))
-			}
-
-			// Process docker-compose.yml template with conditional sections
-			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange, *proxyPortOffset))
-			}
-
-			// Process traefik-dynamic.yml template with SSL conditional sections
-			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange, *proxyPortOffset))
-			}
-
-			// Process entrypoint.sh template with conditional sections
-			if hostFile == "templates/host/entrypoint.sh" {
-				content = []byte(processEntrypointTemplate(string(content), agents, *withDocker, slashCmds))
-			}
-
-			// Inject version info and proxy port offset into swe-swe-server main.go
-			if hostFile == "templates/host/swe-swe-server/main.go" {
-				contentStr := string(content)
-				contentStr = strings.Replace(contentStr, `Version   = "dev"`, fmt.Sprintf(`Version   = "%s"`, Version), 1)
-				contentStr = strings.Replace(contentStr, `GitCommit = "unknown"`, fmt.Sprintf(`GitCommit = "%s"`, GitCommit), 1)
-				contentStr = strings.Replace(contentStr, "proxyPortOffset    = 20000", fmt.Sprintf("proxyPortOffset    = %d", *proxyPortOffset), 1)
-				content = []byte(contentStr)
-			}
-
-			// Process terminal-ui.js template with UI customization values
-			if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
-				content = []byte(processTerminalUITemplate(string(content), *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
-			}
-
-			// Process terminal-ui.css template with UI customization values
-			if hostFile == "templates/host/swe-swe-server/static/styles/terminal-ui.css" {
-				content = []byte(processTerminalUITemplate(string(content), *statusBarFontSize, *statusBarFontFamily, *terminalFontSize, *terminalFontFamily))
-			}
-
-			// Calculate destination path, preserving subdirectories
-			relPath := strings.TrimPrefix(hostFile, "templates/host/")
-			// Rename go.mod.txt and go.sum.txt back to go.mod/go.sum
-			// (workaround for go:embed excluding directories with go.mod files)
-			if strings.HasSuffix(relPath, "go.mod.txt") || strings.HasSuffix(relPath, "go.sum.txt") {
-				relPath = strings.TrimSuffix(relPath, ".txt")
-			}
-			destPath := filepath.Join(sweDir, relPath)
-
-			// Create parent directories if needed
-			destDir := filepath.Dir(destPath)
-			if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
-				log.Fatalf("Failed to create directory %q: %v", destDir, err)
-			}
-
-			// entrypoint.sh should be executable
-			fileMode := os.FileMode(0644)
-			if filepath.Base(hostFile) == "entrypoint.sh" {
-				fileMode = os.FileMode(0755)
-			}
-
-			if err := os.WriteFile(destPath, content, fileMode); err != nil {
-				log.Fatalf("Failed to write %q: %v", destPath, err)
-			}
-			fmt.Printf("Created %s\n", destPath)
+		// Process terminal-ui.js template with UI customization values
+		if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
+			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily))
 		}
 
-		// Extract container files (go to project directory, accessible by Claude)
-		for _, containerFile := range containerFiles {
-			content, err := assets.ReadFile(containerFile)
-			if err != nil {
-				log.Fatalf("Failed to read embedded file %q: %v", containerFile, err)
-			}
-
-			// Calculate destination path in project directory
-			relPath := strings.TrimPrefix(containerFile, "templates/container/")
-			destPath := filepath.Join(absPath, relPath)
-
-			// Create parent directories if needed
-			destDir := filepath.Dir(destPath)
-			if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
-				log.Fatalf("Failed to create directory %q: %v", destDir, err)
-			}
-
-			if err := os.WriteFile(destPath, content, 0644); err != nil {
-				log.Fatalf("Failed to write %q: %v", destPath, err)
-			}
-			fmt.Printf("Created %s\n", destPath)
-
-			// Also write baseline snapshot for three-way merge during updates
-			// Baseline always uses the template content (not merged)
-			baselinePath := filepath.Join(absPath, ".swe-swe", "baseline", relPath)
-			baselineDir := filepath.Dir(baselinePath)
-			if err := os.MkdirAll(baselineDir, os.FileMode(0755)); err != nil {
-				log.Fatalf("Failed to create baseline directory %q: %v", baselineDir, err)
-			}
-			if err := os.WriteFile(baselinePath, content, 0644); err != nil {
-				log.Fatalf("Failed to write baseline %q: %v", baselinePath, err)
-			}
+		// Process terminal-ui.css template with UI customization values
+		if hostFile == "templates/host/swe-swe-server/static/styles/terminal-ui.css" {
+			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily))
 		}
 
-		// Copy ALL container templates into server source for embedding in server binary.
-		// This allows the server to write swe-swe files into cloned repos and new projects.
-		// All files are included unconditionally (extra docs cause no harm).
-		allContainerTemplates := []string{
-			"templates/container/.swe-swe/docs/AGENTS.md",
-			"templates/container/.swe-swe/docs/browser-automation.md",
-			"templates/container/.swe-swe/docs/app-preview.md",
-			"templates/container/.swe-swe/docs/docker.md",
-			"templates/container/swe-swe/setup",
+		// Calculate destination path, preserving subdirectories
+		relPath := strings.TrimPrefix(hostFile, "templates/host/")
+		// Rename go.mod.txt and go.sum.txt back to go.mod/go.sum
+		// (workaround for go:embed excluding directories with go.mod files)
+		if strings.HasSuffix(relPath, "go.mod.txt") || strings.HasSuffix(relPath, "go.sum.txt") {
+			relPath = strings.TrimSuffix(relPath, ".txt")
 		}
-		for _, tmplFile := range allContainerTemplates {
-			content, err := assets.ReadFile(tmplFile)
-			if err != nil {
-				log.Fatalf("Failed to read embedded file %q: %v", tmplFile, err)
-			}
-			relPath := strings.TrimPrefix(tmplFile, "templates/container/")
-			destPath := filepath.Join(sweDir, "swe-swe-server", "container-templates", relPath)
-			destDir := filepath.Dir(destPath)
-			if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
-				log.Fatalf("Failed to create directory %q: %v", destDir, err)
-			}
-			if err := os.WriteFile(destPath, content, 0644); err != nil {
-				log.Fatalf("Failed to write %q: %v", destPath, err)
-			}
-			fmt.Printf("Created %s\n", destPath)
+		destPath := filepath.Join(sweDir, relPath)
+
+		// Create parent directories if needed
+		destDir := filepath.Dir(destPath)
+		if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
+			log.Fatalf("Failed to create directory %q: %v", destDir, err)
 		}
+
+		// entrypoint.sh should be executable
+		fileMode := os.FileMode(0644)
+		if filepath.Base(hostFile) == "entrypoint.sh" {
+			fileMode = os.FileMode(0755)
+		}
+
+		if err := os.WriteFile(destPath, content, fileMode); err != nil {
+			log.Fatalf("Failed to write %q: %v", destPath, err)
+		}
+		fmt.Printf("Created %s\n", destPath)
+	}
+
+	// Extract container files (go to project directory, accessible by Claude)
+	for _, containerFile := range containerFiles {
+		content, err := assets.ReadFile(containerFile)
+		if err != nil {
+			log.Fatalf("Failed to read embedded file %q: %v", containerFile, err)
+		}
+
+		// Calculate destination path in project directory
+		relPath := strings.TrimPrefix(containerFile, "templates/container/")
+		destPath := filepath.Join(absPath, relPath)
+
+		// Create parent directories if needed
+		destDir := filepath.Dir(destPath)
+		if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
+			log.Fatalf("Failed to create directory %q: %v", destDir, err)
+		}
+
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			log.Fatalf("Failed to write %q: %v", destPath, err)
+		}
+		fmt.Printf("Created %s\n", destPath)
+
+		// Also write baseline snapshot for three-way merge during updates
+		// Baseline always uses the template content (not merged)
+		baselinePath := filepath.Join(absPath, ".swe-swe", "baseline", relPath)
+		baselineDir := filepath.Dir(baselinePath)
+		if err := os.MkdirAll(baselineDir, os.FileMode(0755)); err != nil {
+			log.Fatalf("Failed to create baseline directory %q: %v", baselineDir, err)
+		}
+		if err := os.WriteFile(baselinePath, content, 0644); err != nil {
+			log.Fatalf("Failed to write baseline %q: %v", baselinePath, err)
+		}
+	}
+
+	// Copy ALL container templates into server source for embedding in server binary.
+	// This allows the server to write swe-swe files into cloned repos and new projects.
+	// All files are included unconditionally (extra docs cause no harm).
+	allContainerTemplates := []string{
+		"templates/container/.swe-swe/docs/AGENTS.md",
+		"templates/container/.swe-swe/docs/browser-automation.md",
+		"templates/container/.swe-swe/docs/app-preview.md",
+		"templates/container/.swe-swe/docs/docker.md",
+		"templates/container/swe-swe/setup",
+	}
+	for _, tmplFile := range allContainerTemplates {
+		content, err := assets.ReadFile(tmplFile)
+		if err != nil {
+			log.Fatalf("Failed to read embedded file %q: %v", tmplFile, err)
+		}
+		relPath := strings.TrimPrefix(tmplFile, "templates/container/")
+		destPath := filepath.Join(sweDir, "swe-swe-server", "container-templates", relPath)
+		destDir := filepath.Dir(destPath)
+		if err := os.MkdirAll(destDir, os.FileMode(0755)); err != nil {
+			log.Fatalf("Failed to create directory %q: %v", destDir, err)
+		}
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			log.Fatalf("Failed to write %q: %v", destPath, err)
+		}
+		fmt.Printf("Created %s\n", destPath)
+	}
 
 	// Save init configuration for --previous-init-flags=reuse
-	initConfig := InitConfig{
-		Agents:              agents,
-		AptPackages:         aptPkgs,
-		NpmPackages:         npmPkgs,
-		WithDocker:          *withDocker,
-		SlashCommands:       slashCmds,
-		SSL:                 *sslFlag,
-		Email:               *emailFlag,
-		PreviewPorts:        *previewPorts,
-		CopyHomePaths:       copyHomePaths,
-		ReposDir:            *reposDir,
-		TerminalFontSize:    *terminalFontSize,
-		TerminalFontFamily:  *terminalFontFamily,
-		StatusBarFontSize:   *statusBarFontSize,
-		StatusBarFontFamily: *statusBarFontFamily,
-		HostUID:             hostUID,
-		HostGID:             hostGID,
-		ProxyPortOffset:     *proxyPortOffset,
-	}
-	if err := saveInitConfig(sweDir, initConfig); err != nil {
+	if err := saveInitConfig(sweDir, config); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)
 	}
 

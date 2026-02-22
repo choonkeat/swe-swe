@@ -1094,6 +1094,106 @@ func TestInitConfigBackwardsCompatibility(t *testing.T) {
 	}
 }
 
+// TestGoldenInitAsk verifies the interactive --ask golden test produces expected output
+func TestGoldenInitAsk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping golden file test in short mode")
+	}
+
+	goldenDir := filepath.Join("testdata", "golden", "init-ask")
+	if _, err := os.Stat(goldenDir); os.IsNotExist(err) {
+		t.Skipf("Golden files not found at %s - run 'make golden-update' first", goldenDir)
+	}
+
+	// Verify the metadata directory was created (--ask override path)
+	metadataDir := filepath.Join(goldenDir, "home", ".swe-swe", "projects", "init-ask")
+	if _, err := os.Stat(metadataDir); os.IsNotExist(err) {
+		t.Fatalf("Metadata directory not created at %s", metadataDir)
+	}
+
+	// Verify init.json was created with correct agents
+	config, err := loadInitConfig(metadataDir)
+	if err != nil {
+		t.Fatalf("Failed to load init config: %v", err)
+	}
+	if len(config.Agents) != 2 || config.Agents[0] != "claude" || config.Agents[1] != "codex" {
+		t.Errorf("Expected agents [claude codex], got %v", config.Agents)
+	}
+	if config.WithDocker {
+		t.Error("Expected WithDocker=false (answered 'n')")
+	}
+	if config.SSL != "no" {
+		t.Errorf("Expected SSL='no' (pressed Enter), got %q", config.SSL)
+	}
+
+	// Verify Dockerfile was created
+	dockerfilePath := filepath.Join(metadataDir, "Dockerfile")
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		t.Fatal("Dockerfile not created")
+	}
+
+	// Verify target directory has container files
+	targetFiles := []string{
+		filepath.Join(goldenDir, "target", ".swe-swe", "docs", "AGENTS.md"),
+		filepath.Join(goldenDir, "target", ".swe-swe", "docs", "browser-automation.md"),
+	}
+	for _, tf := range targetFiles {
+		if _, err := os.Stat(tf); err != nil {
+			t.Errorf("Target file missing: %s", tf)
+		}
+	}
+}
+
+// TestGoldenReuseWithOverride verifies --previous-init-flags=reuse with flag override
+func TestGoldenReuseWithOverride(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping golden file test in short mode")
+	}
+
+	goldenDir := filepath.Join("testdata", "golden", "previous-init-flags-reuse-with-override")
+	if _, err := os.Stat(goldenDir); os.IsNotExist(err) {
+		t.Skipf("Golden files not found at %s - run 'make golden-update' first", goldenDir)
+	}
+
+	// Find metadata directory
+	goldenHomeDir := filepath.Join(goldenDir, "home", ".swe-swe", "projects")
+	entries, err := os.ReadDir(goldenHomeDir)
+	if err != nil {
+		t.Fatalf("Failed to read golden home dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("Expected exactly one project dir, got %d", len(entries))
+	}
+	metadataDir := filepath.Join(goldenHomeDir, entries[0].Name())
+
+	config, err := loadInitConfig(metadataDir)
+	if err != nil {
+		t.Fatalf("Failed to load init config: %v", err)
+	}
+
+	// Agents should be preserved from first init (claude)
+	if len(config.Agents) != 1 || config.Agents[0] != "claude" {
+		t.Errorf("Expected agents [claude] (preserved from first init), got %v", config.Agents)
+	}
+	// WithDocker should be preserved from first init
+	if !config.WithDocker {
+		t.Error("Expected WithDocker=true (preserved from first init)")
+	}
+	// SSL should be overridden to selfsign
+	if config.SSL != "selfsign" {
+		t.Errorf("Expected SSL='selfsign' (overridden), got %q", config.SSL)
+	}
+
+	// Verify stderr doesn't contain error
+	stderrContent, err := os.ReadFile(filepath.Join(goldenDir, "stderr.txt"))
+	if err != nil {
+		t.Fatalf("Failed to read stderr.txt: %v", err)
+	}
+	if strings.Contains(string(stderrContent), "Error:") {
+		t.Errorf("stderr should not contain errors, got: %s", stderrContent)
+	}
+}
+
 // TestSaveLoadInitConfig verifies save and load work together
 func TestSaveLoadInitConfig(t *testing.T) {
 	tmpDir := t.TempDir()

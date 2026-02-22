@@ -25,9 +25,8 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose. Not listed? [Let us kn
    cd /path/to/your/project
    ```
 
-3. **Initialize and start**
+3. **Start**
    ```bash
-   swe-swe init
    swe-swe up
    ```
 
@@ -46,12 +45,12 @@ For the full command reference — all flags, examples, environment variables, a
 
 ```bash
 # Native commands
-swe-swe init [options]          # Initialize a project
+swe-swe init [options]          # Initialize a project (advanced; `up` does this interactively)
 swe-swe list                    # List initialized projects
 swe-swe proxy <command>         # Bridge host commands into containers
 
 # Docker Compose pass-through (all other commands)
-swe-swe up                      # Start the environment
+swe-swe up                      # Start the environment (runs interactive setup on first use)
 swe-swe down                    # Stop the environment
 swe-swe build                   # Rebuild Docker images
 swe-swe ps / logs / exec ...    # Any docker compose command

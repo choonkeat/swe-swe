@@ -75,7 +75,15 @@ func handlePassthrough(command string, args []string) {
 
 	// Check if metadata directory exists
 	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
-		log.Fatalf("Project not initialized at %q. Run: swe-swe init --project-directory %s\nView projects: swe-swe list", absPath, absPath)
+		if command == "up" {
+			// Auto-initialize via interactive prompts
+			fmt.Printf("Project not initialized at %s — starting interactive setup...\n\n", absPath)
+			if err := runInteractiveInit(absPath, "", os.Stdin, os.Stdout); err != nil {
+				log.Fatalf("Interactive init failed: %v", err)
+			}
+		} else {
+			log.Fatalf("Project not initialized at %q. Run: swe-swe up --project-directory %s\nView projects: swe-swe list", absPath, absPath)
+		}
 	}
 
 	// Check if docker compose is available
