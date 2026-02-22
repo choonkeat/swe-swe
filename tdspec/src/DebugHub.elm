@@ -29,10 +29,9 @@ import Domain exposing (Url(..))
 -}
 type Effect
     = BroadcastToUiObservers AllDebugMsg
-      {- Go's ForwardToAgent sends to three destinations:
-         1. The agent WS conn (vestigial, usually nil)
-         2. All UI observers
-         3. All in-process subscribers (MCP tools in swe-swe-server)
+      {- Go's BroadcastFromIframe sends to two destinations:
+         1. All UI observers
+         2. All in-process subscribers (MCP tools in swe-swe-server)
       -}
     | SendToUiObserversOnly AllDebugMsg
     | ForwardToShellPage ShellPageCommand

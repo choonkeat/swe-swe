@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump
+.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs
 
 build: build-cli
 
@@ -264,9 +264,10 @@ publish-dry: build-platforms
 publish: build-platforms
 	DRY_RUN=false bash scripts/publish.sh
 
-bump:
+docs:
+	$(MAKE) -C tdspec docs
+
+bump: docs
 	@if [ -z "$(NEW_VERSION)" ]; then echo "Usage: make bump NEW_VERSION=x.y.z"; exit 1; fi
 	@node -e 'var fs=require("fs"),p=JSON.parse(fs.readFileSync("package.json","utf8"));p.version="$(NEW_VERSION)";Object.keys(p.optionalDependencies||{}).forEach(function(d){p.optionalDependencies[d]="$(NEW_VERSION)"});fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
 	@echo "Updated package.json to $(NEW_VERSION)"
-	$(MAKE) -C tdspec docs
-	@echo "Regenerated www/ from tdspec"

@@ -59,10 +59,6 @@ instances + Preview tab are active.
     AI agents communicate with the preview proxy via a lightweight
     stdio bridge process (npx @choonkeat/agent-reverse-proxy --bridge).
 
-Note: agent-reverse-proxy also exposes a vestigial
-`/__agent-reverse-proxy-debug__/agent` WS endpoint.
-It is unused — swe-swe-server uses in-process subscribers instead.
-
 @docs Process, TerminalUi, ShellPage, InjectJs, SweServer
 @docs Traefik, OpenShim, UserApp, McpSidecar, StdioBridge
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
