@@ -96,6 +96,62 @@ func TestNormalHTTPThroughProxy(t *testing.T) {
 	}
 }
 
+// TestWebSocketProxyRelayWithStripPrefix exercises the exact production path:
+// StripPrefix + agentChatProxyHandler, matching the /proxy/{uuid}/agentchat/ mount.
+func TestWebSocketProxyRelayWithStripPrefix(t *testing.T) {
+	const backendPrefix = "echo:"
+	wsUpgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := wsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("backend upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			mt, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := conn.WriteMessage(mt, append([]byte(backendPrefix), msg...)); err != nil {
+				return
+			}
+		}
+	}))
+	defer backend.Close()
+
+	backendURL, _ := url.Parse(backend.URL)
+	const prefix = "/proxy/test-uuid/agentchat"
+	proxyMux := http.NewServeMux()
+	proxyMux.Handle(prefix+"/", http.StripPrefix(prefix, agentChatProxyHandler(backendURL)))
+	proxy := httptest.NewServer(proxyMux)
+	defer proxy.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(proxy.URL, "http") + prefix + "/ws"
+	dialer := websocket.Dialer{}
+	conn, resp, err := dialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("WebSocket dial through StripPrefix proxy failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	testMsg := "hello stripprefix"
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(testMsg)); err != nil {
+		t.Fatalf("Failed to write message: %v", err)
+	}
+
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("Failed to read echo message: %v", err)
+	}
+	expected := backendPrefix + testMsg
+	if string(msg) != expected {
+		t.Errorf("Expected %q, got %q", expected, string(msg))
+	}
+}
+
 // TestWebSocketProxyBackendDown verifies that the proxy returns an HTTP error
 // when the backend is not listening (instead of hanging or panicking).
 func TestWebSocketProxyBackendDown(t *testing.T) {

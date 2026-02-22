@@ -1386,81 +1386,61 @@ func processProxyResponse(w http.ResponseWriter, resp *http.Response, target *ur
 	io.Copy(w, resp.Body)
 }
 
-// handleWebSocketRelay hijacks the client connection and relays raw bytes
-// to/from the backend WebSocket server. This avoids the normal HTTP proxy
-// path which strips hop-by-hop headers (Upgrade, Connection) that are
-// required for the WebSocket handshake.
+// handleWebSocketRelay upgrades both sides to WebSocket and relays frames
+// between client and backend. Using gorilla/websocket on both sides gives
+// each proxy hop a proper WebSocket handshake, which is required for
+// multi-hop proxy chains (e.g. Cloudflare → cloudflared → Traefik).
 func handleWebSocketRelay(w http.ResponseWriter, r *http.Request, target *url.URL) {
-	// Determine backend address
-	backendHost := target.Hostname()
-	backendPort := target.Port()
-	if backendPort == "" {
-		if target.Scheme == "https" {
-			backendPort = "443"
-		} else {
-			backendPort = "80"
-		}
-	}
-	backendAddr := net.JoinHostPort(backendHost, backendPort)
-
-	// Dial the backend
-	backendConn, err := net.DialTimeout("tcp", backendAddr, 10*time.Second)
+	// Dial backend FIRST — if it's down we can still return HTTP 502
+	backendWsURL := fmt.Sprintf("ws://%s%s", target.Host, r.URL.RequestURI())
+	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	backendConn, _, err := dialer.Dial(backendWsURL, nil)
 	if err != nil {
-		log.Printf("Preview proxy: WebSocket backend dial error: %v", err)
+		log.Printf("Agent chat proxy: WebSocket backend dial error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
+	defer backendConn.Close()
 
-	// Hijack the client connection
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		log.Printf("Preview proxy: ResponseWriter does not support hijacking")
-		backendConn.Close()
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	clientConn, clientBuf, err := hijacker.Hijack()
+	// Upgrade client connection
+	clientConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Preview proxy: hijack error: %v", err)
-		backendConn.Close()
+		log.Printf("Agent chat proxy: WebSocket client upgrade error: %v", err)
 		return
 	}
+	defer clientConn.Close()
 
-	// Reconstruct the HTTP upgrade request to send to backend
-	reqPath := r.URL.RequestURI()
-	var reqBuf bytes.Buffer
-	fmt.Fprintf(&reqBuf, "%s %s HTTP/1.1\r\n", r.Method, reqPath)
-	fmt.Fprintf(&reqBuf, "Host: %s\r\n", backendAddr)
-	for key, values := range r.Header {
-		for _, value := range values {
-			fmt.Fprintf(&reqBuf, "%s: %s\r\n", key, value)
-		}
-	}
-	reqBuf.WriteString("\r\n")
-
-	// Send the upgrade request to backend
-	if _, err := backendConn.Write(reqBuf.Bytes()); err != nil {
-		log.Printf("Preview proxy: WebSocket backend write error: %v", err)
-		clientConn.Close()
-		backendConn.Close()
-		return
-	}
-
-	// Read the backend's response and forward it to the client
-	// We use a small buffer to read the 101 response header, then relay everything
+	// Bidirectional frame relay
+	errc := make(chan error, 2)
+	// backend → client
 	go func() {
-		defer clientConn.Close()
-		defer backendConn.Close()
-		io.Copy(clientConn, backendConn)
+		for {
+			mt, msg, err := backendConn.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if err := clientConn.WriteMessage(mt, msg); err != nil {
+				errc <- err
+				return
+			}
+		}
 	}()
-
-	// Forward any buffered data from the client, then relay
-	if clientBuf.Reader.Buffered() > 0 {
-		buffered := make([]byte, clientBuf.Reader.Buffered())
-		clientBuf.Read(buffered)
-		backendConn.Write(buffered)
-	}
-	io.Copy(backendConn, clientConn)
+	// client → backend
+	go func() {
+		for {
+			mt, msg, err := clientConn.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if err := backendConn.WriteMessage(mt, msg); err != nil {
+				errc <- err
+				return
+			}
+		}
+	}()
+	<-errc // first error closes both via defers
 }
 
 // isHopByHopHeader returns true if the header is a hop-by-hop header
