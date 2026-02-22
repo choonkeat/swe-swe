@@ -26,12 +26,12 @@ instances + Preview tab are active.
     +===|=======|=========|=======|=========|=======|==========+
     |   v       v         v       v         v       v          |
     |  +----------------------------------------------------+  |
-    |  |              swe-swe-server :9898                   |  |
+    |  |              swe-swe-server :9898                  |  |
     |  |  PTY host (WS1, WS2)                               |  |
     |  |  +----------------------------------------------+  |  |
     |  |  |  Preview proxy (/proxy/{uuid}/preview/...)   |  |  |
     |  |  |  Agent chat proxy (/proxy/{uuid}/agentchat/) |  |  |
-    |  |  |  DebugHub (UI obs WS3,WS4 / iframe WS5,WS6) |  |  |
+    |  |  |  DebugHub (UI obs WS3,WS4 / iframe WS5,WS6)  |  |  |
     |  |  |  GET/open <-- HTTP                           |  |  |
     |  |  +----------------------------------------------+  |  |
     |  +----------------------------------------------------+  |
@@ -39,7 +39,7 @@ instances + Preview tab are active.
     |  +------------------+    +----------------------------+  |
     |  | swe-swe-open     |    | stdio bridge               |  |
     |  | (CLI shim)       |    | (agent-reverse-proxy       |  |
-    |  | HTTP → server    |    |  --bridge → server /mcp)   |  |
+    |  | HTTP → serve |    |  --bridge → server /mcp)
     |  +------------------+    +----------------------------+  |
     |                                                Container |
     +==========================================================+
@@ -178,18 +178,16 @@ type Process
 All type parameters are phantom — they exist only at the type level
 to document which processes and message types are valid for each channel.
 
-
     ptyAgentTerminal :
         WebSocketChannel
-            SweServer
             -- server
-            PtyProtocol.ServerMsg
+            SweServer
             -- serverMsg
-            TerminalUi
+            PtyProtocol.ServerMsg
             -- client
+            TerminalUi
+            -- clientMsg
             PtyProtocol.ClientMsg
-
-    -- clientMsg
 
 -}
 type WebSocketChannel server serverMsg client clientMsg
@@ -250,70 +248,64 @@ fullTopology :
     , channels :
         { ptyAgentTerminal :
             WebSocketChannel
-                SweServer
                 -- server
-                PtyProtocol.ServerMsg
+                SweServer
                 -- serverMsg
-                TerminalUi
+                PtyProtocol.ServerMsg
                 -- client
+                TerminalUi
+                -- clientMsg
                 PtyProtocol.ClientMsg
-
-        -- clientMsg
         , ptyTerminal :
             WebSocketChannel
-                SweServer
                 -- server
-                PtyProtocol.ServerMsg
+                SweServer
                 -- serverMsg
-                TerminalUi
+                PtyProtocol.ServerMsg
                 -- client
+                TerminalUi
+                -- clientMsg
                 PtyProtocol.ClientMsg
-
-        -- clientMsg
         , debugUiAgentTerminal :
             WebSocketChannel
-                SweServer
                 -- server (preview proxy hosted in swe-swe-server)
-                AllDebugMsg
+                SweServer
                 -- serverMsg
-                TerminalUi
+                AllDebugMsg
                 -- client
+                TerminalUi
+                -- clientMsg
                 UiCommand
-
-        -- clientMsg
         , debugUiTerminal :
             WebSocketChannel
-                SweServer
                 -- server (preview proxy hosted in swe-swe-server)
-                AllDebugMsg
+                SweServer
                 -- serverMsg
-                TerminalUi
+                AllDebugMsg
                 -- client
+                TerminalUi
+                -- clientMsg
                 UiCommand
-
-        -- clientMsg
         , debugIframeShellPage :
             WebSocketChannel
-                SweServer
                 -- server (preview proxy hosted in swe-swe-server)
-                ShellPageCommand
+                SweServer
                 -- serverMsg
-                ShellPage
+                ShellPageCommand
                 -- client
+                ShellPage
+                -- clientMsg
                 ShellPageDebugMsg
-
-        -- clientMsg
         , debugIframeInjectJs :
             WebSocketChannel
-                SweServer
                 -- server (preview proxy hosted in swe-swe-server)
-                InjectCommand
+                SweServer
                 -- serverMsg
-                InjectJs
+                InjectCommand
                 -- client
+                InjectJs
+                -- clientMsg
                 InjectJsDebugMsg
-
-        -- clientMsg
         }
     , openEndpoint : OpenEndpointHttp
     , previewProxy : PreviewProxyChain

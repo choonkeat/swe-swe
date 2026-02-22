@@ -168,19 +168,48 @@ It describes:
 
 ### 3.6 Named type variables with comments
 
-When a type has multiple type parameters, use descriptive parameter names in the definition and inline comments at call sites:
+When a type has multiple type parameters, use descriptive parameter names in the definition and inline comments at call sites.
+
+**Critical: comments must precede the thing they describe**, not follow it. `elm-format` moves trailing comments to the next line, detaching them from the value they annotate:
 
 ```elm
--- Good: definition names the roles, comments label each argument
-type WebSocketChannel server serverMsg client clientMsg
-    = WebSocketChannel
-
+-- BAD: trailing comments — elm-format will break this
 ptyChannel :
     WebSocketChannel
         SweServer                 -- server
         PtyProtocol.ServerMsg     -- serverMsg
         TerminalUi                -- client
         PtyProtocol.ClientMsg     -- clientMsg
+
+-- After elm-format (broken — "clientMsg" escapes the expression):
+ptyChannel :
+    WebSocketChannel
+        SweServer
+        -- server
+        PtyProtocol.ServerMsg
+        -- serverMsg
+        TerminalUi
+        -- client
+        PtyProtocol.ClientMsg
+
+    -- clientMsg   ← detached, now outside the type annotation
+```
+
+```elm
+-- GOOD: comments before — survives elm-format intact
+type WebSocketChannel server serverMsg client clientMsg
+    = WebSocketChannel
+
+ptyChannel :
+    WebSocketChannel
+        -- server
+        SweServer
+        -- serverMsg
+        PtyProtocol.ServerMsg
+        -- client
+        TerminalUi
+        -- clientMsg
+        PtyProtocol.ClientMsg
 ```
 
 The type definition `server serverMsg client clientMsg` is the legend. Comments at call sites are a convenience. Avoid cramming all parameters onto one line where the reader must count positions:
@@ -201,10 +230,14 @@ type SweServer = SweServer
 
 ptyChannel :
     WebSocketChannel
-        SweServer                 -- server
-        PtyProtocol.ServerMsg     -- serverMsg
-        TerminalUi                -- client
-        PtyProtocol.ClientMsg     -- clientMsg
+        -- server
+        SweServer
+        -- serverMsg
+        PtyProtocol.ServerMsg
+        -- client
+        TerminalUi
+        -- clientMsg
+        PtyProtocol.ClientMsg
 ```
 
 compared to a generic `Process` union where any variant could appear in any role:
