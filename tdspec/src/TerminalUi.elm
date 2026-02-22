@@ -166,10 +166,124 @@ returning only the path + query + fragment.
         (Url "https://host:9898/proxy/abc/preview/dashboard?tab=1#s")
     --> Path "/dashboard?tab=1#s"
 
-This ensures the URL bar never shows a port from the incoming URL.
-The fixed prefix in the UI supplies `localhost:{PreviewPort}` separately.
+    pathFromProxyUrl (SessionUuid "abc")
+        (Url "http://localhost:23000/dashboard?tab=1#s")
+    --> Path "/dashboard?tab=1#s"
+
+    pathFromProxyUrl (SessionUuid "abc")
+        (Url "https://host:9898/proxy/abc/preview/")
+    --> Path "/"
+
+    pathFromProxyUrl (SessionUuid "abc")
+        (Url "https://host:9898/proxy/abc/preview")
+    --> Path "/"
+
+Port-based URLs have no proxy prefix, so the pathname passes through unchanged.
+Path-based URLs have the prefix stripped. In both cases, the scheme, host, and
+port are discarded — the UI supplies `localhost:{PreviewPort}` separately.
+
+Mirrors JS: `terminal-ui.js` `pathFromProxyUrl(proxyUrl)`.
 
 -}
 pathFromProxyUrl : SessionUuid -> Url -> Path
-pathFromProxyUrl _ _ =
-    Path "/"
+pathFromProxyUrl (SessionUuid uuid) (Url raw) =
+    let
+        -- Strip scheme + authority: everything after "://" up to the first "/"
+        afterAuthority =
+            case splitOnce "://" raw of
+                Just ( _, rest ) ->
+                    case splitOnce "/" rest of
+                        Just ( _, pathAndMore ) ->
+                            "/" ++ pathAndMore
+
+                        Nothing ->
+                            "/"
+
+                Nothing ->
+                    -- No scheme — treat the whole string as a path
+                    raw
+
+        -- Separate path from query+fragment
+        ( pathname, queryAndFragment ) =
+            splitPathFromQueryFragment afterAuthority
+
+        -- The proxy prefix to strip (path-based mode)
+        prefix =
+            "/proxy/" ++ uuid ++ "/preview"
+
+        strippedPath =
+            if String.startsWith prefix pathname then
+                let
+                    remainder =
+                        String.dropLeft (String.length prefix) pathname
+                in
+                if remainder == "" then
+                    "/"
+
+                else
+                    remainder
+
+            else
+                -- Port-based URL or no prefix — pass through
+                pathname
+    in
+    Path (strippedPath ++ queryAndFragment)
+
+
+{-| Split a string on the first occurrence of a separator.
+-}
+splitOnce : String -> String -> Maybe ( String, String )
+splitOnce sep str =
+    case String.indexes sep str of
+        [] ->
+            Nothing
+
+        i :: _ ->
+            Just
+                ( String.left i str
+                , String.dropLeft (i + String.length sep) str
+                )
+
+
+{-| Separate pathname from query string and fragment.
+
+    splitPathFromQueryFragment "/foo?bar=1#baz"
+    --> ( "/foo", "?bar=1#baz" )
+
+    splitPathFromQueryFragment "/foo#baz?bar=1"
+    --> ( "/foo", "#baz?bar=1" )
+
+    splitPathFromQueryFragment "/foo"
+    --> ( "/foo", "" )
+
+-}
+splitPathFromQueryFragment : String -> ( String, String )
+splitPathFromQueryFragment str =
+    let
+        -- Find first '?' or '#' — whichever comes first
+        qIdx =
+            String.indexes "?" str |> List.head
+
+        hIdx =
+            String.indexes "#" str |> List.head
+
+        splitIdx =
+            case ( qIdx, hIdx ) of
+                ( Just q, Just h ) ->
+                    Just (min q h)
+
+                ( Just q, Nothing ) ->
+                    Just q
+
+                ( Nothing, Just h ) ->
+                    Just h
+
+                ( Nothing, Nothing ) ->
+                    Nothing
+    in
+    case splitIdx of
+        Just i ->
+            ( String.left i str, String.dropLeft i str )
+
+        Nothing ->
+            ( str, "" )
