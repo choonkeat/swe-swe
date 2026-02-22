@@ -4,21 +4,35 @@ How the Preview tab and Agent Chat tab work end-to-end.
 
 ## Port Layout
 
-Each session gets a **preview port** (e.g., 3000) and a derived **agent chat port** (+1000, e.g., 4000). Both are container-internal only — no host port bindings needed.
+Each session gets a **preview port** (e.g., 3000) and a derived **agent chat port** (+1000, e.g., 4000). Both are container-internal only.
 
-Both proxies are path-based, hosted inside swe-swe-server on the main port (:9898):
+The proxy is reachable via **two paths** — the browser automatically picks whichever works:
 
 ```
-Preview:     User's app  ←  swe-swe-server /proxy/{uuid}/preview/    ←  Traefik :1977  ←  Browser
-               :3000          :9898
+Port-based (preferred, per-origin isolation):
+  Preview:     User's app  ←  swe-swe-server :23000  ←  Traefik :23000  ←  Browser
+                 :3000
 
-Agent Chat:  MCP sidecar ←  swe-swe-server /proxy/{uuid}/agentchat/  ←  Traefik :1977  ←  Browser
-               :4000          :9898
+  Agent Chat:  MCP sidecar ←  swe-swe-server :24000  ←  Traefik :24000  ←  Browser
+                 :4000
+
+Path-based (fallback, when ports are unreachable):
+  Preview:     User's app  ←  swe-swe-server /proxy/{uuid}/preview/    ←  Traefik :1977  ←  Browser
+                 :3000          :9898
+
+  Agent Chat:  MCP sidecar ←  swe-swe-server /proxy/{uuid}/agentchat/  ←  Traefik :1977  ←  Browser
+                 :4000          :9898
 ```
 
-- `agentChatPortFromPreview(previewPort) = previewPort + 1000`
-- Only **1 port** goes through Traefik (the main server port)
-- No per-session Traefik entrypoints, ports, or routers
+Both paths reach the **same proxy instance** — the embedded `agent-reverse-proxy` Go library inside swe-swe-server. The per-port listeners are thin wrappers that delegate to the same handler.
+
+### Derived ports
+
+- `agentChatPort(previewPort) = previewPort + 1000`
+- `previewProxyPort(previewPort) = previewPort + proxyPortOffset` (default offset: 20000)
+- `agentChatProxyPort(acPort) = acPort + proxyPortOffset`
+
+### Environment variables
 
 swe-swe-server passes these to the container environment:
 - `PORT={previewPort}` — tells the user's app which port to bind (e.g., 3000)
@@ -27,7 +41,31 @@ swe-swe-server passes these to the container environment:
 
 ### Port reservation
 
-`findAvailablePortPair()` reserves two ports (preview app, agent chat app) by binding and then releasing them. No proxy port listeners are needed — both proxies are handled as path-based routes inside swe-swe-server's main HTTP handler.
+`findAvailablePortPair()` reserves two app ports (preview, agent chat) by bind-probing. Additionally, swe-swe-server starts per-port listeners on the derived proxy ports (e.g., :23000, :24000) when each session is created.
+
+### Agent bridge
+
+AI agents always communicate via the internal path-based URL:
+
+```
+npx @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp
+```
+
+This is container-internal (never goes through Traefik), so it works regardless of which mode the browser uses.
+
+## Proxy Mode Discovery (Browser)
+
+The browser discovers which mode to use via a two-phase probe:
+
+1. **Path probe** — `probeUntilReady(pathBasedUrl)`. Checks if the proxy handler is active (target app may or may not be up). Retries with exponential backoff. If this fails, neither mode works yet — keep retrying.
+
+2. **Port probe** — once the path probe succeeds, make a single quick fetch to the port-based URL (e.g., `https://hostname:23000/`). If reachable (proxy header present), use port-based URLs. If not (blocked port, timeout), stay on path-based.
+
+The decided mode is stored for the session. All subsequent URL construction (iframe src, debug WebSocket, agent chat) follows the chosen mode consistently.
+
+### Why path-first
+
+The path-based URL is always reachable (it's on the main server port). By probing it first, we know whether the proxy handler and target app exist at all. The port probe is then a quick "can I reach it on the dedicated port?" check — not a "is the app up?" check.
 
 ## Agent Chat Proxy (swe-swe-server)
 
@@ -36,11 +74,11 @@ The agent chat proxy uses `agentChatProxyHandler()` which:
 1. Sets `X-Agent-Reverse-Proxy: 1` header on **every response** (before any body writing)
 2. Detects WebSocket upgrades → raw byte relay via `handleWebSocketRelay()`
 3. For HTTP: forwards the request to `http://localhost:{targetPort}`, copies response via `processProxyResponse()`
-4. On connection error: returns 502 with `agentChatWaitingPage` ("Waiting for Agent Chat…" with auto-poll)
+4. On connection error: returns 502 with `agentChatWaitingPage` ("Waiting for Agent Chat..." with auto-poll)
 
 `processProxyResponse()` copies headers (stripping cookie Domain/Secure attributes) then streams the body. No modification of response content.
 
-Since both proxies are same-origin (path-based on the main server port), no CORS headers are needed. The browser can always read the `X-Agent-Reverse-Proxy` header from JavaScript.
+In port-based mode, the agent chat proxy is also reachable on its dedicated port (e.g., :24000) via the per-port listener. In path-based mode, it's at `/proxy/{uuid}/agentchat/` on the main port.
 
 ## The `X-Agent-Reverse-Proxy` Header
 
@@ -52,11 +90,11 @@ This header serves one purpose: **let the browser-side probe detect that our pro
 
 The probe uses `resp.headers.has('X-Agent-Reverse-Proxy')` — it doesn't care about the status code. A 502 *with* the header means "our proxy is running but the backend app isn't up yet."
 
+In port-based mode, this header is readable because it's same-origin (dedicated port). In path-based mode, it's readable because it's same-origin (same main port). No CORS needed in either case.
+
 ## Preview Tab Flow
 
-The Preview tab uses a **placeholder → probe → iframe load** pattern. The preview proxy is hosted inside swe-swe-server as an embedded Go library (`github.com/choonkeat/agent-reverse-proxy`), with each session getting a proxy instance at `/proxy/{session-uuid}/preview/...`.
-
-AI agents communicate with the preview proxy via a lightweight stdio bridge process (`npx @choonkeat/agent-reverse-proxy --bridge http://swe-swe:3000/proxy/$SESSION_UUID/preview/mcp`).
+The Preview tab uses a **placeholder → probe → iframe load** pattern. The preview proxy is hosted inside swe-swe-server as an embedded Go library (`github.com/choonkeat/agent-reverse-proxy`), with each session getting a proxy instance.
 
 ### HTML structure
 
@@ -88,9 +126,10 @@ Each placeholder overlays its iframe and stays visible until dismissed.
 
 1. **User opens Preview** → `openIframePane('preview')` → calls `setPreviewURL()`
 2. **Placeholder shown** → `placeholder.classList.remove('hidden')`, `_previewWaiting = true`
-3. **Probe starts** → `probeUntilReady(base + '/', { method: 'GET', isReady: resp => resp.headers.has('X-Agent-Reverse-Proxy') })` — retries up to 10 times with exponential backoff (2s → 30s). Uses GET instead of the default HEAD to avoid an iOS Safari preflight bug.
-4. **Probe succeeds** (proxy is up) → `iframe.src = base + '/__agent-reverse-proxy-debug__/shell?path=...'`
-5. **Placeholder dismissed** when either:
+3. **Path probe** → `probeUntilReady(pathBasedUrl + '/', ...)` — retries until proxy header detected. Uses GET to avoid iOS Safari preflight bug.
+4. **Port probe** → quick fetch to `portBasedUrl + '/'`. If header present → port-based mode. Otherwise → path-based mode.
+5. **Iframe loaded** → `iframe.src = chosenBaseUrl + '/__agent-reverse-proxy-debug__/shell?path=...'`
+6. **Placeholder dismissed** when either:
    - `iframe.onload` fires while `_previewWaiting` is true (fallback)
    - Debug WebSocket receives `urlchange` or `init` message from the preview proxy (primary)
 
@@ -110,13 +149,13 @@ The preview proxy serves a shell page at `/__agent-reverse-proxy-debug__/shell` 
 
 1. **`session=chat`**: Tab shown immediately. Placeholder ("Connecting to chat...") shown over iframe area.
 2. **`session=terminal`**: Server-side `SessionMode` controls this — when `SessionMode != "chat"`, the server sends `agentChatPort: 0` in status messages, so the client never probes and never shows the tab.
-3. **Probe** uses `probeUntilReady(acUrl + '/', { method: 'GET', isReady: resp => resp.headers.has('X-Agent-Reverse-Proxy') })` — same pattern as preview (GET to avoid iOS Safari preflight bug).
-4. **On probe success**: set `chatIframe.src` to the agent chat URL. On iframe load, dismiss placeholder.
+3. **Path probe** then **port probe** — same two-phase discovery as preview.
+4. **On probe success**: set `chatIframe.src` to the chosen URL (port-based or path-based). On iframe load, dismiss placeholder.
 
 ### What the user sees
 
 ```
 [Session not ready]     → "Connecting to chat..." (placeholder)
-[Proxy up, app not up]  → "Waiting for Agent Chat…" (swe-swe-server's 502 page with auto-poll)
+[Proxy up, app not up]  → "Waiting for Agent Chat..." (swe-swe-server's 502 page with auto-poll)
 [App up]                → Agent chat UI
 ```

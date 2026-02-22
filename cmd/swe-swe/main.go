@@ -70,6 +70,8 @@ Init Options:
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
   --preview-ports RANGE                  App preview port range (default: 3000-3019)
+  --proxy-port-offset OFFSET             Offset for per-session proxy ports (default: 20000)
+                                         e.g., app port 3000 → proxy port 23000
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
   --terminal-font-family FONT            Terminal font family (default: Menlo, Monaco, "Courier New", monospace)
   --status-bar-font-size SIZE            Status bar font size in pixels (default: 12)

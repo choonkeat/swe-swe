@@ -56,3 +56,6 @@ Bad: ...
 | [028](0028-preview-shell-page.md) | Preview shell page architecture | Accepted |
 | [029](0029-embedded-container-templates.md) | Embedded container templates | Accepted |
 | [030](0030-three-way-merge-update.md) | Three-way merge for swe-swe file updates | Accepted |
+| [031](0031-upsert-mcp-servers.md) | Upsert MCP servers | Accepted |
+| [032](0032-proxy-port-range-below-ephemeral.md) | Proxy port range below ephemeral | Accepted |
+| [033](0033-port-with-path-fallback-proxy.md) | Port-based proxy with path-based fallback | Accepted |

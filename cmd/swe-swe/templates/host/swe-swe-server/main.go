@@ -83,7 +83,11 @@ var (
 	previewPortEnd     = 3019
 	agentChatPortStart = 4000
 	agentChatPortEnd   = 4019
+	proxyPortOffset    = 20000
 )
+
+func previewProxyPort(port int) int    { return proxyPortOffset + port }
+func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 
 // ANSI escape sequence helpers for terminal formatting
 func ansiCyan(s string) string   { return "\033[0;36m" + s + "\033[0m" }
@@ -336,8 +340,10 @@ type Session struct {
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
 	SessionMode     string             // "terminal" or "chat"
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
-	PreviewProxy *agentproxy.Proxy // Per-session preview proxy instance
-	SessionMux   http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
+	PreviewProxy          *agentproxy.Proxy // Per-session preview proxy instance
+	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
+	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
+	AgentChatProxyServer  *http.Server      // Per-port listener for agent chat proxy (port-based mode)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -650,19 +656,23 @@ func (s *Session) BroadcastStatus() {
 		agentChatPort = s.AgentChatPort
 	}
 	status := map[string]interface{}{
-		"type":          "status",
-		"sessionUUID":   s.UUID,
-		"viewers":       len(s.wsClients),
-		"cols":          cols,
-		"rows":          rows,
-		"assistant":     s.AssistantConfig.Name,
-		"sessionName":   s.Name,
-		"uuidShort":     uuidShort,
-		"workDir":       workDir,
-		"previewPort":    s.PreviewPort,
-		"agentChatPort":  agentChatPort,
-		"yoloMode":       s.yoloMode,
-		"yoloSupported": s.AssistantConfig.YoloRestartCmd != "",
+		"type":               "status",
+		"sessionUUID":        s.UUID,
+		"viewers":            len(s.wsClients),
+		"cols":               cols,
+		"rows":               rows,
+		"assistant":          s.AssistantConfig.Name,
+		"sessionName":        s.Name,
+		"uuidShort":          uuidShort,
+		"workDir":            workDir,
+		"previewPort":        s.PreviewPort,
+		"agentChatPort":      agentChatPort,
+		"previewProxyPort":   previewProxyPort(s.PreviewPort),
+		"yoloMode":           s.yoloMode,
+		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
+	}
+	if agentChatPort != 0 {
+		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
 	}
 
 	data, err := json.Marshal(status)
@@ -797,6 +807,16 @@ func (s *Session) Close() {
 	// Cancel session context (used for coordinating shutdown of chat sessions)
 	if s.agentChatCancel != nil {
 		s.agentChatCancel()
+	}
+
+	// Shut down per-port proxy servers
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer shutdownCancel()
+	if s.PreviewProxyServer != nil {
+		s.PreviewProxyServer.Shutdown(shutdownCtx)
+	}
+	if s.AgentChatProxyServer != nil {
+		s.AgentChatProxyServer.Shutdown(shutdownCtx)
 	}
 
 	// Close all WebSocket client connections
@@ -1248,6 +1268,24 @@ const agentChatWaitingPage = `<!DOCTYPE html>
 </body>
 </html>`
 
+// corsWrapper wraps an HTTP handler with CORS headers for cross-origin per-port
+// proxy access. The browser on :1977 probes per-port listeners (e.g., :23000)
+// which are cross-origin, so preflight and response headers are required.
+func corsWrapper(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Agent-Reverse-Proxy")
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // agentChatProxyHandler returns an HTTP handler that reverse-proxies requests
 // to the agent chat app running on the given target URL.
 func agentChatProxyHandler(target *url.URL) http.Handler {
@@ -1483,6 +1521,13 @@ func main() {
 					agentChatPortEnd = end
 				}
 			}
+		}
+	}
+
+	// Override proxy port offset from environment (set by docker-compose / .env)
+	if offsetStr := os.Getenv("SWE_PROXY_PORT_OFFSET"); offsetStr != "" {
+		if v, err := strconv.Atoi(offsetStr); err == nil {
+			proxyPortOffset = v
 		}
 	}
 
@@ -3546,6 +3591,55 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		))
 		sess.PreviewProxy = previewProxy
 		sess.SessionMux = sessMux
+
+		// Start per-port listeners for port-based proxy mode.
+		// These listen on dedicated host ports and rewrite URLs to the path-based
+		// SessionMux, enabling dual-mode access (port-based with path-based fallback).
+		previewPP := previewProxyPort(previewPort)
+		previewSrv := &http.Server{
+			Addr: fmt.Sprintf(":%d", previewPP),
+			Handler: corsWrapper(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r2 := r.Clone(r.Context())
+				r2.URL.Path = "/proxy/" + sessionUUID + "/preview" + r.URL.Path
+				r2.URL.RawPath = ""
+				sessMux.ServeHTTP(w, r2)
+			})),
+		}
+		go func() {
+			ln, err := net.Listen("tcp", previewSrv.Addr)
+			if err != nil {
+				log.Printf("Session %s: preview proxy port %d unavailable: %v", sessionUUID, previewPP, err)
+				return
+			}
+			log.Printf("Session %s: preview proxy listening on :%d", sessionUUID, previewPP)
+			if err := previewSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("Session %s: preview proxy server error: %v", sessionUUID, err)
+			}
+		}()
+		sess.PreviewProxyServer = previewSrv
+
+		acPP := agentChatProxyPort(acPort)
+		acSrv := &http.Server{
+			Addr: fmt.Sprintf(":%d", acPP),
+			Handler: corsWrapper(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r2 := r.Clone(r.Context())
+				r2.URL.Path = "/proxy/" + sessionUUID + "/agentchat" + r.URL.Path
+				r2.URL.RawPath = ""
+				sessMux.ServeHTTP(w, r2)
+			})),
+		}
+		go func() {
+			ln, err := net.Listen("tcp", acSrv.Addr)
+			if err != nil {
+				log.Printf("Session %s: agent chat proxy port %d unavailable: %v", sessionUUID, acPP, err)
+				return
+			}
+			log.Printf("Session %s: agent chat proxy listening on :%d", sessionUUID, acPP)
+			if err := acSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("Session %s: agent chat proxy server error: %v", sessionUUID, err)
+			}
+		}()
+		sess.AgentChatProxyServer = acSrv
 	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly

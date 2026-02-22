@@ -98,6 +98,7 @@ type InitConfig struct {
 	StatusBarFontFamily string              `json:"statusBarFontFamily,omitempty"`
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
+	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -386,6 +387,7 @@ func handleInit() {
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
+	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 → 23000 with offset 20000)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	fs.Parse(os.Args[2:])
 
@@ -472,6 +474,16 @@ func handleInit() {
 			fmt.Fprintf(os.Stderr, "    swe-swe init --previous-init-flags=ignore [options]\n")
 			os.Exit(1)
 		}
+	}
+
+	// Validate --proxy-port-offset
+	if *proxyPortOffset < 1024 {
+		fmt.Fprintf(os.Stderr, "Error: --proxy-port-offset must be >= 1024, got %d\n", *proxyPortOffset)
+		os.Exit(1)
+	}
+	if *proxyPortOffset+5019 >= 65536 {
+		fmt.Fprintf(os.Stderr, "Error: --proxy-port-offset %d is too large (offset + max port must be < 65536)\n", *proxyPortOffset)
+		os.Exit(1)
 	}
 
 	if *path == "" {
@@ -576,6 +588,9 @@ func handleInit() {
 		}
 		if savedConfig.StatusBarFontFamily != "" {
 			*statusBarFontFamily = savedConfig.StatusBarFontFamily
+		}
+		if savedConfig.ProxyPortOffset != 0 {
+			*proxyPortOffset = savedConfig.ProxyPortOffset
 		}
 		fmt.Printf("Reusing saved configuration from %s\n", initConfigPath)
 	}
@@ -726,6 +741,7 @@ func handleInit() {
 		if err == nil {
 			fmt.Fprintf(f, "SWE_PREVIEW_PORTS=%d-%d\n", previewPortsRange[0], previewPortsRange[len(previewPortsRange)-1])
 			fmt.Fprintf(f, "SWE_AGENT_CHAT_PORTS=%d-%d\n", agentChatPortsRange[0], agentChatPortsRange[len(agentChatPortsRange)-1])
+			fmt.Fprintf(f, "SWE_PROXY_PORT_OFFSET=%d\n", *proxyPortOffset)
 			f.Close()
 		}
 	}
@@ -858,12 +874,12 @@ func handleInit() {
 
 			// Process docker-compose.yml template with conditional sections
 			if hostFile == "templates/host/docker-compose.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange, *proxyPortOffset))
 			}
 
 			// Process traefik-dynamic.yml template with SSL conditional sections
 			if hostFile == "templates/host/traefik-dynamic.yml" {
-				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir))
+				content = []byte(processSimpleTemplate(string(content), *withDocker, *sslFlag, hostUID, hostGID, *emailFlag, sslDomain, *reposDir, previewPortsRange, *proxyPortOffset))
 			}
 
 			// Process entrypoint.sh template with conditional sections
@@ -871,11 +887,12 @@ func handleInit() {
 				content = []byte(processEntrypointTemplate(string(content), agents, *withDocker, slashCmds))
 			}
 
-			// Inject version info into swe-swe-server main.go
+			// Inject version info and proxy port offset into swe-swe-server main.go
 			if hostFile == "templates/host/swe-swe-server/main.go" {
 				contentStr := string(content)
 				contentStr = strings.Replace(contentStr, `Version   = "dev"`, fmt.Sprintf(`Version   = "%s"`, Version), 1)
 				contentStr = strings.Replace(contentStr, `GitCommit = "unknown"`, fmt.Sprintf(`GitCommit = "%s"`, GitCommit), 1)
+				contentStr = strings.Replace(contentStr, "proxyPortOffset    = 20000", fmt.Sprintf("proxyPortOffset    = %d", *proxyPortOffset), 1)
 				content = []byte(contentStr)
 			}
 
@@ -995,6 +1012,7 @@ func handleInit() {
 		StatusBarFontFamily: *statusBarFontFamily,
 		HostUID:             hostUID,
 		HostGID:             hostGID,
+		ProxyPortOffset:     *proxyPortOffset,
 	}
 	if err := saveInitConfig(sweDir, initConfig); err != nil {
 		log.Fatalf("Failed to save init config: %v", err)

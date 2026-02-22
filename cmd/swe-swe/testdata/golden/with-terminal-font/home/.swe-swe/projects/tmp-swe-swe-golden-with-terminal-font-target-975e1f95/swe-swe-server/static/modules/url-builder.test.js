@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -226,6 +226,93 @@ test('buildAgentChatUrl handles https base URL', () => {
     assert.strictEqual(
         buildAgentChatUrl('https://example.com', 'uuid-456'),
         'https://example.com/proxy/uuid-456/agentchat'
+    );
+});
+
+// buildPortBasedPreviewUrl tests
+test('buildPortBasedPreviewUrl returns protocol://hostname:port', () => {
+    assert.strictEqual(
+        buildPortBasedPreviewUrl({ protocol: 'http:', hostname: 'localhost' }, 23000),
+        'http://localhost:23000'
+    );
+});
+
+test('buildPortBasedPreviewUrl returns null when port is null', () => {
+    assert.strictEqual(
+        buildPortBasedPreviewUrl({ protocol: 'http:', hostname: 'localhost' }, null),
+        null
+    );
+});
+
+test('buildPortBasedPreviewUrl returns null when port is 0', () => {
+    assert.strictEqual(
+        buildPortBasedPreviewUrl({ protocol: 'http:', hostname: 'localhost' }, 0),
+        null
+    );
+});
+
+test('buildPortBasedPreviewUrl handles https', () => {
+    assert.strictEqual(
+        buildPortBasedPreviewUrl({ protocol: 'https:', hostname: 'example.com' }, 23000),
+        'https://example.com:23000'
+    );
+});
+
+// buildPortBasedAgentChatUrl tests
+test('buildPortBasedAgentChatUrl returns protocol://hostname:port', () => {
+    assert.strictEqual(
+        buildPortBasedAgentChatUrl({ protocol: 'http:', hostname: 'localhost' }, 24000),
+        'http://localhost:24000'
+    );
+});
+
+test('buildPortBasedAgentChatUrl returns null when port is null', () => {
+    assert.strictEqual(
+        buildPortBasedAgentChatUrl({ protocol: 'http:', hostname: 'localhost' }, null),
+        null
+    );
+});
+
+test('buildPortBasedAgentChatUrl returns null when port is 0', () => {
+    assert.strictEqual(
+        buildPortBasedAgentChatUrl({ protocol: 'http:', hostname: 'localhost' }, 0),
+        null
+    );
+});
+
+// buildPortBasedProxyUrl tests
+test('buildPortBasedProxyUrl with no targetURL returns base with slash', () => {
+    assert.strictEqual(
+        buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, 23000, null),
+        'http://localhost:23000/'
+    );
+});
+
+test('buildPortBasedProxyUrl extracts path from full URL', () => {
+    assert.strictEqual(
+        buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, 23000, 'http://localhost:3000/api/health'),
+        'http://localhost:23000/api/health'
+    );
+});
+
+test('buildPortBasedProxyUrl preserves query and hash', () => {
+    assert.strictEqual(
+        buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, 23000, 'http://localhost:3000/page?q=1#section'),
+        'http://localhost:23000/page?q=1#section'
+    );
+});
+
+test('buildPortBasedProxyUrl handles bare path', () => {
+    assert.strictEqual(
+        buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, 23000, '/some/path'),
+        'http://localhost:23000/some/path'
+    );
+});
+
+test('buildPortBasedProxyUrl returns null when port is null', () => {
+    assert.strictEqual(
+        buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, null, 'http://localhost:3000/'),
+        null
     );
 });
 

@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -36,6 +36,10 @@ class TerminalUI extends HTMLElement {
         this.previewBaseUrl = null;
         this.agentChatPort = null;
         this.sessionUUID = null;
+        // Port-based proxy mode state
+        this._proxyMode = null; // null = undecided, 'port' = per-port, 'path' = path-based
+        this.previewProxyPort = null;
+        this.agentChatProxyPort = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1002,32 +1006,52 @@ class TerminalUI extends HTMLElement {
                 this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
                 this.sessionUUID = msg.sessionUUID || null;
-                // Probe agent chat proxy — wait for our proxy to be up, then load iframe.
+                this.previewProxyPort = msg.previewProxyPort || null;
+                this.agentChatProxyPort = msg.agentChatProxyPort || null;
+                // Probe agent chat proxy — two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
                     this._agentChatProbing = true;
-                    const acUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
-                    if (acUrl) {
+                    const acPathUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
+                    const acPortUrl = buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
+                    if (acPathUrl) {
                         this._agentChatProbeController = new AbortController();
-                        probeUntilReady(acUrl + '/', {
-                            method: 'GET', // GET avoids iOS Safari preflight bug with HEAD
+                        // Phase 1: probe path-based URL to wait for proxy handler to be up
+                        probeUntilReady(acPathUrl + '/', {
+                            method: 'GET',
                             maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
                             isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                             signal: this._agentChatProbeController.signal,
                         }).then(() => {
+                            // Phase 2: quick probe port-based URL to determine mode
+                            let chosenUrl = acPathUrl;
+                            if (acPortUrl) {
+                                return fetch(acPortUrl + '/', { method: 'GET', mode: 'cors', credentials: 'include' })
+                                    .then(resp => {
+                                        if (resp.headers.has('X-Agent-Reverse-Proxy')) {
+                                            chosenUrl = acPortUrl;
+                                            this._acProxyMode = 'port';
+                                        } else {
+                                            this._acProxyMode = 'path';
+                                        }
+                                    })
+                                    .catch(() => { this._acProxyMode = 'path'; })
+                                    .then(() => chosenUrl);
+                            }
+                            this._acProxyMode = 'path';
+                            return chosenUrl;
+                        }).then((chosenUrl) => {
                             this._agentChatAvailable = true;
                             this._agentChatProbing = false;
                             this.setAgentChatTabVisible(true);
-                            // Load agent chat into iframe and dismiss placeholder on load
                             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                             if (chatIframe) {
-                                chatIframe.src = acUrl + '/';
+                                chatIframe.src = (chosenUrl || acPathUrl) + '/';
                                 chatIframe.onload = () => {
                                     const ph = this.querySelector('.terminal-ui__agent-chat-placeholder');
                                     if (ph) ph.classList.add('hidden');
                                 };
                             }
-                            // Auto-activate chat tab in chat session mode
                             if (new URLSearchParams(location.search).get('session') === 'chat') {
                                 this.switchLeftPanelTab('chat');
                                 this.switchMobileNav('agent-chat');
@@ -2829,6 +2853,9 @@ class TerminalUI extends HTMLElement {
 
     // === Split-Pane UI Methods ===
     getPreviewBaseUrl() {
+        if (this._proxyMode === 'port' && this.previewProxyPort) {
+            return buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
+        }
         return buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
     }
 
@@ -3409,29 +3436,46 @@ class TerminalUI extends HTMLElement {
             if (placeholder) placeholder.classList.remove('hidden');
             this._previewWaiting = true;
 
-            // Probe the reverse proxy until it responds with its identity
-            // header. The agent-reverse-proxy sets X-Agent-Reverse-Proxy on
-            // every response (even 502 when the upstream app isn't ready).
-            // Traefik's own 502 (proxy container not started) won't have it,
-            // so the probe retries until our proxy is actually serving.
+            // Two-phase probe:
+            // Phase 1: Probe path-based URL to wait for proxy handler to be up.
+            // Phase 2: Quick probe port-based URL to determine preferred mode.
             this._previewProbeController = new AbortController();
+            const portBasedBase = buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
             probeUntilReady(base + '/', {
-                method: 'GET', // GET avoids iOS Safari preflight bug with HEAD
+                method: 'GET',
                 maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
                 isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
             }).then(() => {
-                if (this.activeTab === 'preview') {
-                    iframe.src = iframeSrc;
-                } else {
-                    // Defer: only load when user switches to Preview tab
-                    this._pendingPreviewIframeSrc = iframeSrc;
-                    return; // skip onload handler — will be set when user switches to Preview
+                // Phase 2: try port-based if available
+                if (portBasedBase && this._proxyMode !== 'path') {
+                    return fetch(portBasedBase + '/', { method: 'GET', mode: 'cors', credentials: 'include' })
+                        .then(resp => {
+                            if (resp.headers.has('X-Agent-Reverse-Proxy')) {
+                                this._proxyMode = 'port';
+                            } else {
+                                this._proxyMode = 'path';
+                            }
+                        })
+                        .catch(() => { this._proxyMode = 'path'; });
                 }
-                // Fallback: dismiss placeholder on iframe load in case the
-                // debug WebSocket hasn't connected yet (race condition where
-                // the shell page sends urlchange before the UI observer WS
-                // joins the hub).
+                if (!this._proxyMode) this._proxyMode = 'path';
+            }).then(() => {
+                // Compute final iframe src based on chosen mode
+                let finalBase = base;
+                let finalIframeSrc = iframeSrc;
+                if (this._proxyMode === 'port' && portBasedBase) {
+                    finalBase = portBasedBase;
+                    finalIframeSrc = finalBase + '/__agent-reverse-proxy-debug__/shell?path=' + encodeURIComponent(path);
+                    this._lastUrlChangeUrl = finalBase + path;
+                }
+
+                if (this.activeTab === 'preview') {
+                    iframe.src = finalIframeSrc;
+                } else {
+                    this._pendingPreviewIframeSrc = finalIframeSrc;
+                    return;
+                }
                 iframe.onload = () => {
                     if (this._previewWaiting) {
                         this._onPreviewReady();
