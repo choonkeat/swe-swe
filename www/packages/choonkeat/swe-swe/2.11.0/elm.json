@@ -3,7 +3,7 @@
     "name": "choonkeat/swe-swe",
     "summary": "Elm type-checked specification of the swe-swe architecture",
     "license": "MIT",
-    "version": "2.0.0",
+    "version": "2.11.0",
     "exposed-modules": [
         "Domain",
         "PtyProtocol",

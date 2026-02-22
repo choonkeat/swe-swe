@@ -28,7 +28,7 @@ document.addEventListener("click", function (e) {
 });
 
 // Load docs statically instead of via WebSocket
-var pkg = "/packages/choonkeat/swe-swe/2.0.0";
+var pkg = "/packages/choonkeat/swe-swe/2.11.0";
 Promise.all([
   fetch(pkg + "/README.md").then(function (r) { return r.text(); }),
   fetch(pkg + "/elm.json").then(function (r) { return r.json(); }),
@@ -41,19 +41,19 @@ Promise.all([
   app.ports.onReadme.send({
     author: "choonkeat",
     project: "swe-swe",
-    version: "2.0.0",
+    version: "2.11.0",
     readme: readme
   });
   app.ports.onManifest.send({
     author: "choonkeat",
     project: "swe-swe",
-    version: "2.0.0",
+    version: "2.11.0",
     manifest: manifest
   });
   app.ports.onDocs.send({
     author: "choonkeat",
     project: "swe-swe",
-    version: "2.0.0",
+    version: "2.11.0",
     time: Math.round(Date.now() / 1000),
     docs: docs
   });

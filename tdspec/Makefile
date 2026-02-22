@@ -1,11 +1,13 @@
 .PHONY: build preview clean docs audit
 
 EDP_STATIC := $(shell npm root -g 2>/dev/null || echo /home/app/.swe-swe/lib/node_modules)/elm-doc-preview/static
+VERSION := $(shell node -e 'console.log(JSON.parse(require("fs").readFileSync("$(CURDIR)/../package.json","utf8")).version)')
 
 PORT ?= 8000
 
-# Format and type-check all spec modules
+# Format and type-check all spec modules; sync elm.json version from package.json
 build:
+	@node -e 'var fs=require("fs"),p=JSON.parse(fs.readFileSync("$(CURDIR)/elm.json","utf8"));if(p.version!=="$(VERSION)"){p.version="$(VERSION)";fs.writeFileSync("$(CURDIR)/elm.json",JSON.stringify(p,null,4)+"\n");console.log("elm.json version → $(VERSION)")}'
 	cd $(CURDIR) && npx elm-format src/ --yes && elm make --docs=docs.json
 
 # Serve browsable docs with clickable type cross-references
@@ -18,17 +20,18 @@ PKG := $(WWW)/packages/choonkeat/swe-swe
 
 docs: build
 	mkdir -p $(WWW)/css $(WWW)/fonts $(WWW)/highlight $(WWW)/js
-	mkdir -p $(PKG)/2.0.0
+	mkdir -p $(PKG)/$(VERSION)
 	cp $(EDP_STATIC)/css/* $(WWW)/css/
 	cp $(EDP_STATIC)/fonts/* $(WWW)/fonts/
 	cp $(EDP_STATIC)/highlight/highlight.pack.js $(WWW)/highlight/
 	cp $(EDP_STATIC)/js/elm.js $(EDP_STATIC)/js/clipboard.min.js $(WWW)/js/
-	cp static-docs-index.js $(WWW)/js/index.js
+	sed 's|__VERSION__|$(VERSION)|g' static-docs-index.js > $(WWW)/js/index.js
 	cp static-docs-mobile.css $(WWW)/css/mobile.css
 	sed 's|</head>|<meta name="viewport" content="width=device-width, initial-scale=1"><link href="/css/mobile.css" rel="stylesheet">\n</head>|' $(EDP_STATIC)/index.html > $(WWW)/tdspec.html
-	cp docs.json README.md elm.json $(PKG)/2.0.0/
-	echo '{"2.0.0":$(shell date +%s)}' > $(PKG)/releases.json
+	cp docs.json README.md elm.json $(PKG)/$(VERSION)/
+	echo '{"$(VERSION)":$(shell date +%s)}' > $(PKG)/releases.json
 	echo '[]' > $(WWW)/search.json
+	sed -i 's|/packages/choonkeat/swe-swe/[^/]*/|/packages/choonkeat/swe-swe/$(VERSION)/|g' $(WWW)/index.html
 
 clean:
 	rm -rf elm-stuff
