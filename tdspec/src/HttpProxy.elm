@@ -1,6 +1,7 @@
 module HttpProxy exposing
     ( agentChatPort, previewProxyPort, agentChatProxyPort
     , ProxyMode(..), ProbeResult(..), classifyProbe, PlaceholderDismiss(..)
+    , ProbePhase(..), ProbeEvent(..), probeTransition, probeConfig
     )
 
 {-| HTTP Proxy Architecture — port derivation, dual-mode routing, and readiness probing.
@@ -49,6 +50,7 @@ never through Traefik), so they work regardless of browser mode.
 
 @docs agentChatPort, previewProxyPort, agentChatProxyPort
 @docs ProxyMode, ProbeResult, classifyProbe, PlaceholderDismiss
+@docs ProbePhase, ProbeEvent, probeTransition, probeConfig
 
 -}
 
@@ -202,3 +204,132 @@ type PlaceholderDismiss
    For Preview: fallback if debug WS hasn't connected yet.
    For Agent Chat: the only dismissal path.
 -}
+-- ── Probe state machine ────────────────────────────────────────
+
+
+{-| Probe timing configuration.
+
+    probeConfig
+        == { maxAttempts = 10
+           , baseDelayMs = 2000
+           , maxDelayMs = 30000
+           }
+
+Delay for attempt N (1-indexed): `min(baseDelay * 2^(N-1), maxDelay)`.
+First attempt is immediate (no delay). Subsequent: 2s, 4s, 8s, 16s, 30s, ...
+
+Mirrors JS: `reconnect.js` `probeUntilReady()`.
+
+-}
+probeConfig : { maxAttempts : Int, baseDelayMs : Int, maxDelayMs : Int }
+probeConfig =
+    { maxAttempts = 10
+    , baseDelayMs = 2000
+    , maxDelayMs = 30000
+    }
+
+
+{-| Two-phase probe state machine.
+
+    Idle
+      → PathProbing 1        (user opens preview/agent chat)
+
+    PathProbing N
+      → PathProbing (N+1)    (no header, N < maxAttempts → retry with backoff)
+      → PortChecking          (header found → single port check)
+      → Exhausted             (N >= maxAttempts → give up)
+      → Aborted               (new URL arrived → abort old probe)
+
+    PortChecking
+      → Decided PortBased    (header present on port-based URL)
+      → Decided PathBased    (error or no header)
+
+    Decided _               — terminal; mode stored for session
+    Exhausted               — terminal; placeholder stuck, no retry
+    Aborted                 — terminal; superseded by new probe cycle
+
+-}
+type ProbePhase
+    = Idle
+    | PathProbing Int {- Attempt number (1-indexed). Exponential backoff between attempts. -}
+    | PortChecking {- Path probe succeeded; doing single fetch to port-based URL. -}
+    | Decided ProxyMode {- Mode selected; all subsequent URLs use this mode. -}
+    | Exhausted {- Max attempts reached. Placeholder stays visible indefinitely. -}
+    | Aborted
+
+
+
+{- Superseded by a new probe cycle (e.g., new setPreviewURL() call). -}
+
+
+{-| Events that drive probe state transitions.
+-}
+type ProbeEvent
+    = StartProbe {- User opens preview or agent chat pane. -}
+    | PathResponse ProbeResult {- Response from path-based URL probe. -}
+    | PortResponse ProbeResult {- Response from port-based URL quick check. -}
+    | PathError {- Network error during path probe (treated same as NotReady). -}
+    | AbortProbe
+
+
+
+{- New URL arrived; cancel current probe. -}
+
+
+{-| Transition the probe state machine.
+
+    probeTransition StartProbe Idle
+    --> PathProbing 1
+
+    probeTransition (PathResponse ProxyReady) (PathProbing 3)
+    --> PortChecking
+
+    probeTransition (PathResponse NotReady) (PathProbing 10)
+    --> Exhausted
+
+    probeTransition (PortResponse ProxyReady) PortChecking
+    --> Decided PortBased
+
+    probeTransition (PortResponse NotReady) PortChecking
+    --> Decided PathBased
+
+-}
+probeTransition : ProbeEvent -> ProbePhase -> ProbePhase
+probeTransition event phase =
+    case ( event, phase ) of
+        ( StartProbe, Idle ) ->
+            PathProbing 1
+
+        ( StartProbe, _ ) ->
+            -- Re-probe from scratch (previous cycle aborted)
+            PathProbing 1
+
+        ( PathResponse ProxyReady, PathProbing _ ) ->
+            PortChecking
+
+        ( PathResponse NotReady, PathProbing n ) ->
+            if n >= probeConfig.maxAttempts then
+                Exhausted
+
+            else
+                PathProbing (n + 1)
+
+        ( PathError, PathProbing n ) ->
+            if n >= probeConfig.maxAttempts then
+                Exhausted
+
+            else
+                PathProbing (n + 1)
+
+        ( PortResponse ProxyReady, PortChecking ) ->
+            Decided PortBased
+
+        ( PortResponse NotReady, PortChecking ) ->
+            Decided PathBased
+
+        ( AbortProbe, _ ) ->
+            Aborted
+
+        _ ->
+            -- Invalid transitions are no-ops
+            phase
