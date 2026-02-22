@@ -3563,12 +3563,17 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 	sessions[sessionUUID] = sess
 
-	// Create per-session preview proxy hosted inside swe-swe-server
+	// Create per-session preview proxy hosted inside swe-swe-server.
+	// Two instances share a DebugHub: path-based (with basePath prefix for URL
+	// rewriting) and port-based (empty basePath, no rewriting needed).
+	previewTarget := &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", previewPort)}
+	sharedHub := agentproxy.NewDebugHub()
 	previewProxy, err := agentproxy.New(agentproxy.Config{
 		BasePath:    "/proxy/" + sessionUUID + "/preview",
-		Target:      &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", previewPort)},
+		Target:      previewTarget,
 		ToolPrefix:  "preview",
 		ThemeCookie: "swe-swe-theme",
+		Hub:         sharedHub,
 	})
 	if err != nil {
 		log.Printf("Warning: failed to create preview proxy for session %s: %v", sessionUUID, err)
@@ -3593,17 +3598,18 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		sess.SessionMux = sessMux
 
 		// Start per-port listeners for port-based proxy mode.
-		// These listen on dedicated host ports and rewrite URLs to the path-based
-		// SessionMux, enabling dual-mode access (port-based with path-based fallback).
+		// Port-based proxy uses empty BasePath (no URL rewriting) and shares
+		// the same DebugHub so MCP tools and debug WebSockets work in both modes.
+		portPreviewProxy, _ := agentproxy.New(agentproxy.Config{
+			Target:      previewTarget,
+			ToolPrefix:  "preview",
+			ThemeCookie: "swe-swe-theme",
+			Hub:         sharedHub,
+		})
 		previewPP := previewProxyPort(previewPort)
 		previewSrv := &http.Server{
-			Addr: fmt.Sprintf(":%d", previewPP),
-			Handler: corsWrapper(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				r2 := r.Clone(r.Context())
-				r2.URL.Path = "/proxy/" + sessionUUID + "/preview" + r.URL.Path
-				r2.URL.RawPath = ""
-				sessMux.ServeHTTP(w, r2)
-			})),
+			Addr:    fmt.Sprintf(":%d", previewPP),
+			Handler: corsWrapper(portPreviewProxy),
 		}
 		go func() {
 			ln, err := net.Listen("tcp", previewSrv.Addr)
@@ -3620,13 +3626,8 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 		acPP := agentChatProxyPort(acPort)
 		acSrv := &http.Server{
-			Addr: fmt.Sprintf(":%d", acPP),
-			Handler: corsWrapper(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				r2 := r.Clone(r.Context())
-				r2.URL.Path = "/proxy/" + sessionUUID + "/agentchat" + r.URL.Path
-				r2.URL.RawPath = ""
-				sessMux.ServeHTTP(w, r2)
-			})),
+			Addr:    fmt.Sprintf(":%d", acPP),
+			Handler: corsWrapper(agentChatProxyHandler(acTarget)),
 		}
 		go func() {
 			ln, err := net.Listen("tcp", acSrv.Addr)
