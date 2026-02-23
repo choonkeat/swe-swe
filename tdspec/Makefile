@@ -20,6 +20,8 @@ PKG := $(WWW)/packages/choonkeat/swe-swe
 
 docs: build
 	mkdir -p $(WWW)/css $(WWW)/fonts $(WWW)/highlight $(WWW)/js
+	@test -n "$(PKG)" && test -n "$(VERSION)" || { echo "ERROR: PKG or VERSION is empty"; exit 1; }
+	find $(PKG) -mindepth 1 -maxdepth 1 -type d ! -name "$(VERSION)" -exec rm -rf {} +
 	mkdir -p $(PKG)/$(VERSION)
 	cp $(EDP_STATIC)/css/* $(WWW)/css/
 	cp $(EDP_STATIC)/fonts/* $(WWW)/fonts/

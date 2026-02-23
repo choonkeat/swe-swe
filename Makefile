@@ -276,7 +276,9 @@ publish: build-platforms
 docs:
 	$(MAKE) -C tdspec docs
 
-bump: docs
+bump:
 	@if [ -z "$(NEW_VERSION)" ]; then echo "Usage: make bump NEW_VERSION=x.y.z"; exit 1; fi
 	@node -e 'var fs=require("fs"),p=JSON.parse(fs.readFileSync("package.json","utf8"));p.version="$(NEW_VERSION)";Object.keys(p.optionalDependencies||{}).forEach(function(d){p.optionalDependencies[d]="$(NEW_VERSION)"});fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
 	@echo "Updated package.json to $(NEW_VERSION)"
+	$(MAKE) docs
+	$(MAKE) build golden-update
