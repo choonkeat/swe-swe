@@ -334,7 +334,7 @@ class TerminalUI extends HTMLElement {
                                 <iframe class="terminal-ui__agent-chat-iframe"
                                         src="about:blank"
                                         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-                                        allow="microphone; autoplay">
+                                        allow="microphone; autoplay; speech-synthesis">
                                 </iframe>
                             </div>
                             <div class="terminal-ui__drop-overlay">

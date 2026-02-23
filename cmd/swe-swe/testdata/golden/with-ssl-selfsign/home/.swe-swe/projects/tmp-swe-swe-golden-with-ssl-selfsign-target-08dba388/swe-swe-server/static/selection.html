@@ -1276,6 +1276,7 @@
             </div>
         </header>
 
+        {{if .HasSSLCert}}
         <div class="ios-safari-warning" id="ios-safari-warning">
             <div class="ios-safari-warning__title">iOS Safari + Self-Signed Certs</div>
             <div class="ios-safari-warning__text">
@@ -1283,6 +1284,7 @@
                 Please use <strong>Chrome</strong> or another browser on iOS for best results.
             </div>
         </div>
+        {{end}}
 
         <main class="main">
             <!-- Active Sessions Section -->

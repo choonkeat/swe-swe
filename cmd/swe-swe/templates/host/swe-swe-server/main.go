@@ -4394,7 +4394,9 @@ func loadEndedRecordings() []RecordingInfo {
 				children[parentUUID] = ci
 			}
 			if fileType == "events" {
-				ci.chatUUID = childUUID
+				if fi, err := entry.Info(); err == nil && fi.Size() > 0 {
+					ci.chatUUID = childUUID
+				}
 			} else if fileType == "log" {
 				ci.terminalUUIDs = append(ci.terminalUUIDs, childUUID)
 			}
@@ -5002,7 +5004,9 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 			childMap[parentUUID] = cp
 		}
 		if fileType == "events" {
-			cp.hasChat = true
+			if fi, err := entry.Info(); err == nil && fi.Size() > 0 {
+				cp.hasChat = true
+			}
 		} else if fileType == "log" {
 			cp.hasTerminal = true
 		}
