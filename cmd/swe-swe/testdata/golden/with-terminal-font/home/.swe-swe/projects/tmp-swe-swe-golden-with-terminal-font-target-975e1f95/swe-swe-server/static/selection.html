@@ -1370,7 +1370,7 @@
                 </div>
 
                 <div class="recordings-list">
-                    {{range .Recordings}}
+                    {{range .Recordings}}{{$rec := .}}
                     <div class="recording-card" data-uuid="{{.UUID}}">
                         <div class="recording-card__info">
                             <h3 class="recording-card__title">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</h3>
@@ -1423,7 +1423,7 @@
                             </div>
                             <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
                             {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
-                            {{if .HasTerminal}}{{range .TerminalUUIDs}}<a href="/recording/{{$.UUID}}-{{.}}" class="btn-view">Terminal</a>{{end}}{{end}}
+                            {{if .HasTerminal}}{{range .TerminalUUIDs}}<a href="/recording/{{$rec.UUID}}-{{.}}" class="btn-view">Terminal</a>{{end}}{{end}}
                         </div>
                     </div>
                     {{end}}
