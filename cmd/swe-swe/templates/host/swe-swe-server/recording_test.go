@@ -170,6 +170,20 @@ func (h *testHelper) createTestServer() *httptest.Server {
 			return
 		}
 
+		// Serve chat events JSONL file
+		if strings.HasSuffix(path, "/chat.events.jsonl") {
+			parentUUID := strings.TrimSuffix(path, "/chat.events.jsonl")
+			handleChatEventsFile(w, r, parentUUID)
+			return
+		}
+
+		// Serve chat playback page
+		if strings.HasSuffix(path, "/chat") {
+			parentUUID := strings.TrimSuffix(path, "/chat")
+			handleChatPlaybackPage(w, r, parentUUID)
+			return
+		}
+
 		// Serve raw session.log for streaming
 		if strings.HasSuffix(path, "/session.log") {
 			recordingUUID := strings.TrimSuffix(path, "/session.log")
@@ -183,6 +197,26 @@ func (h *testHelper) createTestServer() *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+// createChildFiles creates child recording files (chat events, terminal, etc.)
+func (h *testHelper) createChildFiles(parentUUID, childUUID, fileType, content string) {
+	h.t.Helper()
+	prefix := "session-" + parentUUID + "-" + childUUID
+	var path string
+	switch fileType {
+	case "events":
+		path = filepath.Join(h.recordingDir, prefix+".events.jsonl")
+	case "log":
+		path = filepath.Join(h.recordingDir, prefix+".log")
+	case "metadata":
+		path = filepath.Join(h.recordingDir, prefix+".metadata.json")
+	default:
+		h.t.Fatalf("unknown file type: %s", fileType)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		h.t.Fatalf("failed to create child file: %v", err)
+	}
+}
+
 // ============================================================================
 // Phase 1: Smoke Test - Verify test infrastructure works
 // ============================================================================
@@ -191,7 +225,7 @@ func TestRecordingAPI_SmokeTest(t *testing.T) {
 	h := newTestHelper(t)
 
 	// Create a mock recording
-	testUUID := "test-uuid-1234-5678-9abc-def012345678"
+	testUUID := "11111111-1111-1111-1111-111111111111"
 	startTime := time.Now().Add(-time.Hour)
 	endTime := time.Now()
 	h.createRecordingFiles(testUUID, recordingOpts{
@@ -556,8 +590,8 @@ func TestListRecordings_MultipleRecordingsSortedByDate(t *testing.T) {
 	h := newTestHelper(t)
 
 	// Create recordings with different dates
-	oldUUID := "old-uuid-1234-5678-9abc-def012345678"
-	newUUID := "new-uuid-1234-5678-9abc-def012345678"
+	oldUUID := "22222222-2222-2222-2222-222222222222"
+	newUUID := "33333333-3333-3333-3333-333333333333"
 
 	oldTime := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	newTime := time.Date(2026, 1, 7, 10, 0, 0, 0, time.UTC)
@@ -1950,6 +1984,346 @@ func TestCleanupRecentRecordings_LimitPerAgent(t *testing.T) {
 		if !h.recordingFileExists(uuid, ".log") {
 			t.Errorf("aider recording %s should NOT have been deleted", uuid[:8])
 		}
+	}
+}
+
+// ============================================================================
+// parseRecordingFilename Tests
+// ============================================================================
+
+func TestParseRecordingFilename_RootUUID(t *testing.T) {
+	parent, child, ok := parseRecordingFilename("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	if !ok {
+		t.Fatal("expected ok=true for valid root UUID")
+	}
+	if parent != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+		t.Errorf("expected parent UUID, got %s", parent)
+	}
+	if child != "" {
+		t.Errorf("expected empty child, got %s", child)
+	}
+}
+
+func TestParseRecordingFilename_ParentChild(t *testing.T) {
+	stem := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-11111111-2222-3333-4444-555555555555"
+	parent, child, ok := parseRecordingFilename(stem)
+	if !ok {
+		t.Fatal("expected ok=true for valid parent-child stem")
+	}
+	if parent != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+		t.Errorf("expected parent UUID, got %s", parent)
+	}
+	if child != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("expected child UUID, got %s", child)
+	}
+}
+
+func TestParseRecordingFilename_Invalid(t *testing.T) {
+	tests := []string{
+		"",
+		"short",
+		"not-a-valid-uuid-at-all-nope-nada!!",
+		"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-too-short",
+		strings.Repeat("x", 73), // right length but invalid UUIDs
+	}
+	for _, stem := range tests {
+		_, _, ok := parseRecordingFilename(stem)
+		if ok {
+			t.Errorf("expected ok=false for stem %q", stem)
+		}
+	}
+}
+
+// ============================================================================
+// Grouped Recording Listing Tests
+// ============================================================================
+
+func TestLoadEndedRecordings_GroupsChildFiles(t *testing.T) {
+	h := newTestHelper(t)
+
+	parentUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	chatChildUUID := "11111111-2222-3333-4444-555555555555"
+	termChildUUID := "22222222-3333-4444-5555-666666666666"
+
+	// Create parent recording
+	h.createRecordingFiles(parentUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:  parentUUID,
+			Name:  "Parent Session",
+			Agent: "claude",
+		},
+	})
+
+	// Create chat child files
+	h.createChildFiles(parentUUID, chatChildUUID, "events", `{"type":"agentMessage","text":"hi"}`)
+	h.createChildFiles(parentUUID, chatChildUUID, "metadata", `{"uuid":"`+chatChildUUID+`","recording_type":"chat"}`)
+
+	// Create terminal child files
+	h.createChildFiles(parentUUID, termChildUUID, "log", "terminal output")
+
+	recordings := loadEndedRecordings()
+
+	if len(recordings) != 1 {
+		t.Fatalf("expected 1 grouped recording, got %d", len(recordings))
+	}
+
+	rec := recordings[0]
+	if rec.UUID != parentUUID {
+		t.Errorf("expected parent UUID, got %s", rec.UUID)
+	}
+	if !rec.HasChat {
+		t.Error("expected HasChat=true")
+	}
+	if rec.ChatUUID != chatChildUUID {
+		t.Errorf("expected ChatUUID=%s, got %s", chatChildUUID, rec.ChatUUID)
+	}
+	if !rec.HasTerminal {
+		t.Error("expected HasTerminal=true")
+	}
+	if len(rec.TerminalUUIDs) != 1 || rec.TerminalUUIDs[0] != termChildUUID {
+		t.Errorf("expected TerminalUUIDs=[%s], got %v", termChildUUID, rec.TerminalUUIDs)
+	}
+}
+
+func TestLoadEndedRecordings_ParentOnly(t *testing.T) {
+	h := newTestHelper(t)
+
+	parentUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	h.createRecordingFiles(parentUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:  parentUUID,
+			Name:  "Simple Session",
+			Agent: "claude",
+		},
+	})
+
+	recordings := loadEndedRecordings()
+	if len(recordings) != 1 {
+		t.Fatalf("expected 1 recording, got %d", len(recordings))
+	}
+	if recordings[0].HasChat || recordings[0].HasTerminal {
+		t.Error("expected no child presence flags for parent-only recording")
+	}
+}
+
+// ============================================================================
+// Delete Recording Group Tests
+// ============================================================================
+
+func TestDeleteRecordingGroup_RemovesChildren(t *testing.T) {
+	h := newTestHelper(t)
+
+	parentUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	chatChildUUID := "11111111-2222-3333-4444-555555555555"
+
+	// Create parent
+	h.createRecordingFiles(parentUUID, recordingOpts{
+		withTiming: true,
+		metadata: &RecordingMetadata{
+			UUID: parentUUID,
+		},
+	})
+
+	// Create chat child
+	h.createChildFiles(parentUUID, chatChildUUID, "events", `{"type":"agentMessage","text":"hi"}`)
+	h.createChildFiles(parentUUID, chatChildUUID, "metadata", `{"uuid":"`+chatChildUUID+`","recording_type":"chat"}`)
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	// Delete the parent
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/api/recording/"+parentUUID, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("expected status 204, got %d", resp.StatusCode)
+	}
+
+	// Verify parent files deleted
+	if h.recordingFileExists(parentUUID, ".log") {
+		t.Error("parent .log should be deleted")
+	}
+	if h.recordingFileExists(parentUUID, ".metadata.json") {
+		t.Error("parent .metadata.json should be deleted")
+	}
+
+	// Verify child files deleted
+	chatEventsPath := filepath.Join(h.recordingDir, "session-"+parentUUID+"-"+chatChildUUID+".events.jsonl")
+	if h.fileExists(chatEventsPath) {
+		t.Error("child .events.jsonl should be deleted")
+	}
+	chatMetaPath := filepath.Join(h.recordingDir, "session-"+parentUUID+"-"+chatChildUUID+".metadata.json")
+	if h.fileExists(chatMetaPath) {
+		t.Error("child .metadata.json should be deleted")
+	}
+}
+
+// ============================================================================
+// Chat Events File Serving Tests
+// ============================================================================
+
+func TestChatEventsFileServing(t *testing.T) {
+	h := newTestHelper(t)
+
+	parentUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	chatChildUUID := "11111111-2222-3333-4444-555555555555"
+
+	// Create parent
+	h.createRecordingFiles(parentUUID, recordingOpts{})
+
+	// Create chat child events file
+	eventsContent := `{"type":"agentMessage","text":"hello"}
+{"type":"userMessage","text":"hi"}
+`
+	h.createChildFiles(parentUUID, chatChildUUID, "events", eventsContent)
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + parentUUID + "/chat.events.jsonl")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read body: %v", err)
+	}
+
+	if !strings.Contains(string(body), "agentMessage") {
+		t.Error("expected response to contain event data")
+	}
+	if !strings.Contains(string(body), "userMessage") {
+		t.Error("expected response to contain user message event")
+	}
+}
+
+func TestChatEventsFileServing_NotFound(t *testing.T) {
+	h := newTestHelper(t)
+	_ = h
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/chat.events.jsonl")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestChatPlaybackPage(t *testing.T) {
+	h := newTestHelper(t)
+
+	parentUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	chatChildUUID := "11111111-2222-3333-4444-555555555555"
+
+	// Create parent with metadata
+	h.createRecordingFiles(parentUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID: parentUUID,
+			Name: "My Chat Session",
+		},
+	})
+
+	// Create chat child events file
+	h.createChildFiles(parentUUID, chatChildUUID, "events", `{"type":"agentMessage","text":"hello"}`)
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/recording/" + parentUUID + "/chat")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read body: %v", err)
+	}
+	html := string(body)
+
+	// Should be HTML
+	if !strings.Contains(html, "<!DOCTYPE html>") {
+		t.Error("expected valid HTML document")
+	}
+
+	// Should reference the events URL
+	if !strings.Contains(html, "/chat.events.jsonl") {
+		t.Error("expected page to reference events JSONL URL")
+	}
+
+	// Should contain session name in title
+	if !strings.Contains(html, "My Chat Session") {
+		t.Error("expected page title to contain session name")
+	}
+}
+
+// ============================================================================
+// List Recordings API — child filtering Tests
+// ============================================================================
+
+func TestListRecordings_FiltersChildRecordings(t *testing.T) {
+	h := newTestHelper(t)
+
+	parentUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	chatChildUUID := "11111111-2222-3333-4444-555555555555"
+
+	// Create parent
+	h.createRecordingFiles(parentUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:  parentUUID,
+			Agent: "Claude",
+		},
+	})
+
+	// Create child files (terminal and chat)
+	h.createChildFiles(parentUUID, chatChildUUID, "events", `{"type":"agentMessage","text":"hi"}`)
+
+	server := h.createTestServer()
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/api/recording/list")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Recordings []RecordingListItem `json:"recordings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Should only have 1 recording (parent), not the child
+	if len(result.Recordings) != 1 {
+		t.Fatalf("expected 1 recording (parent only), got %d", len(result.Recordings))
+	}
+	if result.Recordings[0].UUID != parentUUID {
+		t.Errorf("expected parent UUID, got %s", result.Recordings[0].UUID)
+	}
+	if !result.Recordings[0].HasChat {
+		t.Error("expected HasChat=true")
 	}
 }
 

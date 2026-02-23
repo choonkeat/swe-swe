@@ -48,6 +48,9 @@ var staticFS embed.FS
 //go:embed all:container-templates
 var containerTemplatesFS embed.FS
 
+//go:embed agent-chat-dist
+var agentChatDistFS embed.FS
+
 // Version information set at build time via ldflags
 var (
 	Version   = "dev"
@@ -207,11 +210,12 @@ type AgentWithSessions struct {
 
 // RecordingMetadata stores information about a terminal recording session
 type RecordingMetadata struct {
-	UUID         string     `json:"uuid"`
-	Name         string     `json:"name,omitempty"`
-	Agent        string     `json:"agent"`
-	StartedAt    time.Time  `json:"started_at"`
-	EndedAt      *time.Time `json:"ended_at,omitempty"`
+	UUID          string     `json:"uuid"`
+	Name          string     `json:"name,omitempty"`
+	Agent         string     `json:"agent"`
+	RecordingType string     `json:"recording_type,omitempty"` // "agent", "chat", "terminal"
+	StartedAt     time.Time  `json:"started_at"`
+	EndedAt       *time.Time `json:"ended_at,omitempty"`
 	KeptAt       *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
 	Command      []string   `json:"command"`
 	Visitors     []Visitor  `json:"visitors,omitempty"`
@@ -320,8 +324,9 @@ type Session struct {
 	ringHead int    // write position (where next byte goes)
 	ringLen  int    // current bytes stored (0 to RingBufferSize)
 	// Recording
-	RecordingUUID string             // UUID for recording files (separate from session UUID for restarts)
-	Metadata      *RecordingMetadata // Recording metadata (saved on name change or visitor join)
+	RecordingUUID   string             // UUID for recording files (separate from session UUID for restarts)
+	RecordingPrefix string             // Filename prefix: "session-{uuid}" or "session-{parent}-{child}"
+	Metadata        *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 	// Parent session relationship
 	ParentUUID  string // UUID of parent session (for shell sessions opened from agent sessions)
 	PreviewPort   int // App preview target port for this session
@@ -983,8 +988,8 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	// Create new command and PTY
 	cmdName, cmdArgs := parseCommand(cmdStr)
 
-	// Wrap with script for recording (reuse existing recording UUID)
-	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingUUID)
+	// Wrap with script for recording (reuse existing recording prefix)
+	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
 	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.Theme, s.WorkDir, s.SessionMode)
@@ -1826,6 +1831,20 @@ func main() {
 			path := strings.TrimPrefix(r.URL.Path, "/recording/")
 			if path == "" {
 				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+
+			// Serve chat events JSONL file
+			if strings.HasSuffix(path, "/chat.events.jsonl") {
+				parentUUID := strings.TrimSuffix(path, "/chat.events.jsonl")
+				handleChatEventsFile(w, r, parentUUID)
+				return
+			}
+
+			// Serve chat playback page
+			if strings.HasSuffix(path, "/chat") {
+				parentUUID := strings.TrimSuffix(path, "/chat")
+				handleChatPlaybackPage(w, r, parentUUID)
 				return
 			}
 
@@ -3235,9 +3254,16 @@ func cleanupRecentRecordings() {
 			continue
 		}
 
-		// Extract UUID
-		uuid := strings.TrimPrefix(name, "session-")
-		uuid = strings.TrimSuffix(uuid, ".metadata.json")
+		// Extract UUID stem
+		stem := strings.TrimPrefix(name, "session-")
+		stem = strings.TrimSuffix(stem, ".metadata.json")
+
+		// Only process root recordings (skip children)
+		parentUUID, childUUID, ok := parseRecordingFilename(stem)
+		if !ok || childUUID != "" {
+			continue
+		}
+		uuid := parentUUID
 
 		// Skip active recordings
 		if activeRecordings[uuid] {
@@ -3315,14 +3341,16 @@ func cleanupRecentRecordings() {
 	}
 }
 
-// deleteRecordingFiles removes all files for a recording
-func deleteRecordingFiles(uuid string) {
-	patterns := []string{
-		recordingsDir + "/session-" + uuid + ".log",
-		recordingsDir + "/session-" + uuid + ".timing",
-		recordingsDir + "/session-" + uuid + ".metadata.json",
+// deleteRecordingFiles removes all files for a recording and its children.
+func deleteRecordingFiles(recUUID string) {
+	// Delete parent files
+	suffixes := []string{".log", ".timing", ".input", ".metadata.json"}
+	for _, suffix := range suffixes {
+		os.Remove(recordingsDir + "/session-" + recUUID + suffix)
 	}
-	for _, path := range patterns {
+	// Delete child files (session-{uuid}-*)
+	childMatches, _ := filepath.Glob(recordingsDir + "/session-" + recUUID + "-*")
+	for _, path := range childMatches {
 		os.Remove(path)
 	}
 }
@@ -3360,7 +3388,7 @@ func findAvailablePortPair() (int, int, error) {
 // The branch parameter is used for worktree creation (optional, separate from display name)
 // The workDir parameter sets the working directory for the session (empty = use server cwd)
 // The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
-func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string, theme string, sessionMode string) (*Session, bool, error) {
+func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string, parentRecordingUUID string, theme string, sessionMode string) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -3451,8 +3479,17 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		}
 	}
 
-	// Generate recording UUID
+	// Generate recording UUID and compute filename prefix
 	recordingUUID := uuid.New().String()
+	recPrefix := recordingPrefix(parentRecordingUUID, recordingUUID)
+
+	// Determine recording type
+	var recType string
+	if parentUUID != "" {
+		recType = "terminal"
+	} else {
+		recType = "agent"
+	}
 
 	// For shell assistant, resolve $SHELL at runtime
 	shellCmdToUse := cfg.ShellCmd
@@ -3472,11 +3509,21 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	cmdName, cmdArgs := parseCommand(shellCmdToUse)
 
 	// Wrap with script for recording
-	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recordingUUID)
-	log.Printf("Recording session to: %s/session-%s.{log,timing}", recordingsDir, recordingUUID)
+	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
+	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
 
 	env := buildSessionEnv(previewPort, acPort, theme, workDir, sessionMode)
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", sessionUUID))
+
+	// Set up chat event log recording for chat sessions
+	var chatRecordingUUID string
+	if sessionMode == "chat" {
+		chatRecordingUUID = uuid.New().String()
+		chatPrefix := recordingPrefix(recordingUUID, chatRecordingUUID)
+		chatLogPath := fmt.Sprintf("%s/%s.events.jsonl", recordingsDir, chatPrefix)
+		env = append(env, fmt.Sprintf("AGENT_CHAT_EVENT_LOG=%s", chatLogPath))
+		log.Printf("Chat event log: %s", chatLogPath)
+	}
 
 	// Agent-chat sidecar context for chat sessions.
 	// The sidecar process itself is managed externally (e.g. baked into the container image),
@@ -3522,6 +3569,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		vt:              vt10x.New(vt10x.WithSize(80, 24)),
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
+		RecordingPrefix: recPrefix,
 		ParentUUID:      parentUUID,
 		PreviewPort:     previewPort,
 		AgentChatPort:   acPort,
@@ -3531,14 +3579,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		agentChatCancel: sessionCancel,
 		SessionMode:     sessionMode,
 		Metadata: &RecordingMetadata{
-			UUID:      recordingUUID,
-			Name:      name,
-			Agent:     cfg.Name,
-			StartedAt: now,
-			Command:   append([]string{cmdName}, cmdArgs...),
-			MaxCols:   80, // Default starting size
-			MaxRows:   24,
-			WorkDir:   workDir,
+			UUID:          recordingUUID,
+			Name:          name,
+			Agent:         cfg.Name,
+			RecordingType: recType,
+			StartedAt:     now,
+			Command:       append([]string{cmdName}, cmdArgs...),
+			MaxCols:       80, // Default starting size
+			MaxRows:       24,
+			WorkDir:       workDir,
 		},
 	}
 	sessions[sessionUUID] = sess
@@ -3628,6 +3677,25 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		log.Printf("Failed to save initial metadata: %v", err)
 	}
 
+	// Save chat sidecar metadata so grouped listings can discover it
+	if chatRecordingUUID != "" {
+		chatPrefix := recordingPrefix(recordingUUID, chatRecordingUUID)
+		chatMeta := &RecordingMetadata{
+			UUID:          chatRecordingUUID,
+			Name:          name,
+			Agent:         cfg.Name,
+			RecordingType: "chat",
+			StartedAt:     now,
+			WorkDir:       workDir,
+		}
+		chatMetaPath := fmt.Sprintf("%s/%s.metadata.json", recordingsDir, chatPrefix)
+		if data, err := json.MarshalIndent(chatMeta, "", "  "); err == nil {
+			if err := os.WriteFile(chatMetaPath, data, 0644); err != nil {
+				log.Printf("Failed to save chat metadata: %v", err)
+			}
+		}
+	}
+
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sessionUUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
 }
@@ -3689,11 +3757,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	parentUUID := r.URL.Query().Get("parent")
 	var workDir string
 	var parentName string
+	var parentRecordingUUID string
 	if parentUUID != "" {
 		sessionsMu.RLock()
 		if parentSess, ok := sessions[parentUUID]; ok {
 			workDir = parentSess.WorkDir
 			parentName = parentSess.Name
+			parentRecordingUUID = parentSess.RecordingUUID
 			log.Printf("Shell session inheriting workDir from parent %s: %s", parentUUID, workDir)
 		}
 		sessionsMu.RUnlock()
@@ -3708,7 +3778,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionMode = "terminal" // default
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName, theme, sessionMode)
+	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName, parentRecordingUUID, theme, sessionMode)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
@@ -4026,7 +4096,7 @@ func ensureRecordingsDir() error {
 func (s *Session) saveMetadata() error {
 	s.mu.RLock()
 	metadata := s.Metadata
-	recordingUUID := s.RecordingUUID
+	recPrefix := s.RecordingPrefix
 	s.mu.RUnlock()
 
 	if metadata == nil {
@@ -4035,7 +4105,7 @@ func (s *Session) saveMetadata() error {
 
 	// Calculate playback dimensions when session ends (only once)
 	if metadata.EndedAt != nil && metadata.PlaybackCols == 0 {
-		logPath := fmt.Sprintf("%s/session-%s.log", recordingsDir, recordingUUID)
+		logPath := fmt.Sprintf("%s/%s.log", recordingsDir, recPrefix)
 		dims := calculateTerminalDimensions(logPath)
 		s.mu.Lock()
 		s.Metadata.PlaybackCols = dims.Cols
@@ -4043,7 +4113,7 @@ func (s *Session) saveMetadata() error {
 		s.mu.Unlock()
 	}
 
-	path := fmt.Sprintf("%s/session-%s.metadata.json", recordingsDir, recordingUUID)
+	path := fmt.Sprintf("%s/%s.metadata.json", recordingsDir, recPrefix)
 	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return err
@@ -4051,18 +4121,58 @@ func (s *Session) saveMetadata() error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// recordingPrefix returns the filename prefix for a recording.
+// Child sessions use "session-{parentRecUUID}-{recUUID}", root sessions use "session-{recUUID}".
+func recordingPrefix(parentRecUUID, recUUID string) string {
+	if parentRecUUID != "" {
+		return "session-" + parentRecUUID + "-" + recUUID
+	}
+	return "session-" + recUUID
+}
+
+// parseRecordingFilename extracts parent and child UUIDs from a recording filename stem.
+// A stem is the filename minus the "session-" prefix and the extension(s).
+// Root recordings have a single UUID (36 chars). Child recordings have parent-child (36+1+36=73 chars).
+// Returns (parentUUID, childUUID, ok). For root recordings, childUUID is empty.
+func parseRecordingFilename(stem string) (parentUUID, childUUID string, ok bool) {
+	const uuidLen = 36
+	switch len(stem) {
+	case uuidLen:
+		if _, err := uuid.Parse(stem); err != nil {
+			return "", "", false
+		}
+		return stem, "", true
+	case uuidLen + 1 + uuidLen:
+		if stem[uuidLen] != '-' {
+			return "", "", false
+		}
+		parent := stem[:uuidLen]
+		child := stem[uuidLen+1:]
+		if _, err := uuid.Parse(parent); err != nil {
+			return "", "", false
+		}
+		if _, err := uuid.Parse(child); err != nil {
+			return "", "", false
+		}
+		return parent, child, true
+	default:
+		return "", "", false
+	}
+}
+
 // wrapWithScript wraps a command with the Linux script command for recording
-// Returns the new command name and arguments to record terminal output and timing
-func wrapWithScript(cmdName string, cmdArgs []string, recordingUUID string) (string, []string) {
+// Returns the new command name and arguments to record terminal output and timing.
+// The prefix is the filename stem (e.g. "session-{uuid}" or "session-{parent}-{child}").
+func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []string) {
 	// Build the full command string for script -c
 	fullCmd := cmdName
 	if len(cmdArgs) > 0 {
 		fullCmd += " " + strings.Join(cmdArgs, " ")
 	}
 
-	logPath := fmt.Sprintf("%s/session-%s.log", recordingsDir, recordingUUID)
-	timingPath := fmt.Sprintf("%s/session-%s.timing", recordingsDir, recordingUUID)
-	inputPath := fmt.Sprintf("%s/session-%s.input", recordingsDir, recordingUUID)
+	logPath := fmt.Sprintf("%s/%s.log", recordingsDir, prefix)
+	timingPath := fmt.Sprintf("%s/%s.timing", recordingsDir, prefix)
+	inputPath := fmt.Sprintf("%s/%s.input", recordingsDir, prefix)
 
 	// script -q (quiet) -f (flush) -T timing -I input -O output -c "command"
 	return "script", []string{
@@ -4133,12 +4243,14 @@ func handleSSLCertDownload(w http.ResponseWriter, r *http.Request) {
 
 // RecordingListItem represents a recording in the API response
 type RecordingListItem struct {
-	UUID      string     `json:"uuid"`
-	Name      string     `json:"name,omitempty"`
-	Agent     string     `json:"agent,omitempty"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	KeptAt    *time.Time `json:"kept_at,omitempty"`
+	UUID        string     `json:"uuid"`
+	Name        string     `json:"name,omitempty"`
+	Agent       string     `json:"agent,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	KeptAt      *time.Time `json:"kept_at,omitempty"`
+	HasChat     bool       `json:"has_chat,omitempty"`
+	HasTerminal bool       `json:"has_terminal,omitempty"`
 	HasTiming bool       `json:"has_timing"`
 	SizeBytes int64      `json:"size_bytes"`
 	IsActive  bool       `json:"is_active,omitempty"`
@@ -4156,6 +4268,10 @@ type RecordingInfo struct {
 	KeptAt          *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
 	IsKept          bool       // Convenience field for templates
 	ExpiresIn       string     // "59m", "30m" - time until auto-deletion (only for non-kept)
+	HasChat         bool       // has a chat .events.jsonl child recording
+	HasTerminal     bool       // has a terminal .log child recording
+	ChatUUID        string     // child UUID for chat playback URL
+	TerminalUUIDs   []string   // child UUIDs for terminal playback
 }
 
 func agentBadgeClass(agent string) string {
@@ -4197,7 +4313,8 @@ func formatTimeAgo(t time.Time) string {
 	return fmt.Sprintf("%d days ago", days)
 }
 
-// loadEndedRecordings returns a list of ended recordings for the homepage
+// loadEndedRecordings returns a list of ended recordings for the homepage.
+// Child recordings (terminal, chat) are grouped into their parent's RecordingInfo.
 func loadEndedRecordings() []RecordingInfo {
 	entries, err := os.ReadDir(recordingsDir)
 	if err != nil {
@@ -4215,38 +4332,107 @@ func loadEndedRecordings() []RecordingInfo {
 	}
 	sessionsMu.RUnlock()
 
-	// Find ended recordings (those with metadata and ended_at set, or inactive without ended_at)
-	var recordings []RecordingInfo
+	// First pass: classify files into root and child sets.
+	// Track which parent UUIDs have children, and what kind.
+	type childInfo struct {
+		chatUUID      string
+		terminalUUIDs []string
+	}
+	children := make(map[string]*childInfo) // parentUUID -> child info
+	rootLogs := make(map[string]os.DirEntry) // uuid -> dir entry for .log files
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".log") {
+		if !strings.HasPrefix(name, "session-") {
 			continue
 		}
 
-		// Extract UUID
-		uuid := strings.TrimPrefix(name, "session-")
-		uuid = strings.TrimSuffix(uuid, ".log")
+		// Strip "session-" prefix and extension to get the stem
+		rest := strings.TrimPrefix(name, "session-")
 
+		// Determine file type from extension
+		var stem string
+		var fileType string // "log", "events", "metadata", "timing", "input"
+		switch {
+		case strings.HasSuffix(rest, ".events.jsonl"):
+			stem = strings.TrimSuffix(rest, ".events.jsonl")
+			fileType = "events"
+		case strings.HasSuffix(rest, ".metadata.json"):
+			stem = strings.TrimSuffix(rest, ".metadata.json")
+			fileType = "metadata"
+		case strings.HasSuffix(rest, ".log"):
+			stem = strings.TrimSuffix(rest, ".log")
+			fileType = "log"
+		case strings.HasSuffix(rest, ".timing"):
+			stem = strings.TrimSuffix(rest, ".timing")
+			fileType = "timing"
+		case strings.HasSuffix(rest, ".input"):
+			stem = strings.TrimSuffix(rest, ".input")
+			fileType = "input"
+		default:
+			continue
+		}
+
+		parentUUID, childUUID, ok := parseRecordingFilename(stem)
+		if !ok {
+			continue
+		}
+
+		if childUUID == "" {
+			// Root recording
+			if fileType == "log" {
+				rootLogs[parentUUID] = entry
+			}
+		} else {
+			// Child recording — classify by file type
+			ci := children[parentUUID]
+			if ci == nil {
+				ci = &childInfo{}
+				children[parentUUID] = ci
+			}
+			if fileType == "events" {
+				ci.chatUUID = childUUID
+			} else if fileType == "log" {
+				ci.terminalUUIDs = append(ci.terminalUUIDs, childUUID)
+			}
+		}
+	}
+
+	// Second pass: build RecordingInfo entries for root recordings
+	var recordings []RecordingInfo
+	for ruuid, entry := range rootLogs {
 		// Skip active recordings
-		if activeRecordings[uuid] {
+		if activeRecordings[ruuid] {
 			continue
 		}
 
-		uuidShort := uuid
-		if len(uuid) >= 8 {
-			uuidShort = uuid[:8]
+		uuidShort := ruuid
+		if len(ruuid) >= 8 {
+			uuidShort = ruuid[:8]
 		}
 
 		info := RecordingInfo{
-			UUID:      uuid,
+			UUID:      ruuid,
 			UUIDShort: uuidShort,
 		}
 
+		// Attach child info
+		if ci := children[ruuid]; ci != nil {
+			if ci.chatUUID != "" {
+				info.HasChat = true
+				info.ChatUUID = ci.chatUUID
+			}
+			if len(ci.terminalUUIDs) > 0 {
+				info.HasTerminal = true
+				info.TerminalUUIDs = ci.terminalUUIDs
+			}
+		}
+
 		// Load metadata if exists
-		metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+		metadataPath := recordingsDir + "/session-" + ruuid + ".metadata.json"
 		if metaData, err := os.ReadFile(metadataPath); err == nil {
 			var meta RecordingMetadata
 			if json.Unmarshal(metaData, &meta) == nil {
@@ -4276,7 +4462,7 @@ func loadEndedRecordings() []RecordingInfo {
 
 		// Calculate ExpiresIn for non-kept recordings based on log file mtime
 		if !info.IsKept {
-			logPath := recordingsDir + "/session-" + uuid + ".log"
+			logPath := recordingsDir + "/session-" + ruuid + ".log"
 			var logMtime time.Time
 			if logStat, err := os.Stat(logPath); err == nil {
 				logMtime = logStat.ModTime()
@@ -4422,6 +4608,94 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 // Query params:
 //   - render=embedded: use embedded approach (data in HTML, no streaming)
 //   - (default): use streaming approach (fetch data via JS)
+// findChatEventsFile finds the .events.jsonl file for a parent recording UUID.
+// Returns the full path, or empty string if not found.
+func findChatEventsFile(parentUUID string) string {
+	pattern := recordingsDir + "/session-" + parentUUID + "-*.events.jsonl"
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	return matches[0]
+}
+
+// handleChatEventsFile serves the raw .events.jsonl file for a parent recording.
+func handleChatEventsFile(w http.ResponseWriter, r *http.Request, parentUUID string) {
+	if _, err := uuid.Parse(parentUUID); err != nil {
+		http.Error(w, "Invalid UUID", http.StatusBadRequest)
+		return
+	}
+	path := findChatEventsFile(parentUUID)
+	if path == "" {
+		http.Error(w, "Chat events not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	http.ServeFile(w, r, path)
+}
+
+// handleChatPlaybackPage serves an HTML page that replays agent-chat events.
+// It inlines the agent-chat CSS/JS from the embedded agent-chat-dist directory.
+func handleChatPlaybackPage(w http.ResponseWriter, r *http.Request, parentUUID string) {
+	if _, err := uuid.Parse(parentUUID); err != nil {
+		http.Error(w, "Invalid UUID", http.StatusBadRequest)
+		return
+	}
+	path := findChatEventsFile(parentUUID)
+	if path == "" {
+		http.Error(w, "Chat recording not found", http.StatusNotFound)
+		return
+	}
+
+	// Read embedded assets
+	cssData, _ := agentChatDistFS.ReadFile("agent-chat-dist/style.css")
+	canvasJS, _ := agentChatDistFS.ReadFile("agent-chat-dist/canvas-bundle.js")
+	appJS, _ := agentChatDistFS.ReadFile("agent-chat-dist/app.js")
+
+	// Load metadata for title
+	title := "Chat Playback"
+	metaPattern := recordingsDir + "/session-" + parentUUID + ".metadata.json"
+	if metaData, err := os.ReadFile(metaPattern); err == nil {
+		var meta RecordingMetadata
+		if json.Unmarshal(metaData, &meta) == nil && meta.Name != "" {
+			title = meta.Name + " — Chat"
+		}
+	}
+
+	eventsURL := "/recording/" + parentUUID + "/chat.events.jsonl"
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>%s</title>
+  <style>%s</style>
+</head>
+<body>
+  <div id="app">
+    <div id="chat">
+      <div id="chat-header">
+        <button id="btn-download" style="display:none"></button>
+      </div>
+      <div id="messages"></div>
+      <div id="quick-replies"></div>
+      <div id="input-bar">
+        <span id="status-dot"></span>
+        <textarea id="chat-input" rows="1" placeholder="Type a message..." disabled></textarea>
+        <button id="btn-send" disabled>Send</button>
+      </div>
+    </div>
+  </div>
+  <script>var THEME_COOKIE_NAME = "swe-swe-theme"; var AGENT_CHAT_DEFER_STARTUP = true;</script>
+  <script>%s</script>
+  <script>%s</script>
+  <script>startPlaybackMode(%q);</script>
+</body>
+</html>`, title, string(cssData), string(canvasJS), string(appJS), eventsURL)
+}
+
 func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -4691,7 +4965,50 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionsMu.RUnlock()
 
-	// Find all recordings by looking for .log files
+	// First pass: identify child files for each parent
+	type childPresence struct {
+		hasChat     bool
+		hasTerminal bool
+	}
+	childMap := make(map[string]*childPresence)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") {
+			continue
+		}
+		rest := strings.TrimPrefix(name, "session-")
+		var stem string
+		var fileType string
+		switch {
+		case strings.HasSuffix(rest, ".events.jsonl"):
+			stem = strings.TrimSuffix(rest, ".events.jsonl")
+			fileType = "events"
+		case strings.HasSuffix(rest, ".log"):
+			stem = strings.TrimSuffix(rest, ".log")
+			fileType = "log"
+		default:
+			continue
+		}
+		parentUUID, childUUID, ok := parseRecordingFilename(stem)
+		if !ok || childUUID == "" {
+			continue
+		}
+		cp := childMap[parentUUID]
+		if cp == nil {
+			cp = &childPresence{}
+			childMap[parentUUID] = cp
+		}
+		if fileType == "events" {
+			cp.hasChat = true
+		} else if fileType == "log" {
+			cp.hasTerminal = true
+		}
+	}
+
+	// Second pass: find root recordings by looking for .log files with single UUID
 	recordings := make([]RecordingListItem, 0)
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -4703,8 +5020,15 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Extract UUID from filename: session-{uuid}.log
-		uuid := strings.TrimPrefix(name, "session-")
-		uuid = strings.TrimSuffix(uuid, ".log")
+		stem := strings.TrimPrefix(name, "session-")
+		stem = strings.TrimSuffix(stem, ".log")
+
+		// Only process root recordings
+		parentUUID, childUUID, ok := parseRecordingFilename(stem)
+		if !ok || childUUID != "" {
+			continue
+		}
+		recUUID := parentUUID
 
 		// Get file info
 		info, err := entry.Info()
@@ -4713,19 +5037,25 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		item := RecordingListItem{
-			UUID:      uuid,
+			UUID:      recUUID,
 			SizeBytes: info.Size(),
-			IsActive:  activeRecordings[uuid],
+			IsActive:  activeRecordings[recUUID],
+		}
+
+		// Attach child presence
+		if cp := childMap[recUUID]; cp != nil {
+			item.HasChat = cp.hasChat
+			item.HasTerminal = cp.hasTerminal
 		}
 
 		// Check if timing file exists
-		timingPath := recordingsDir + "/session-" + uuid + ".timing"
+		timingPath := recordingsDir + "/session-" + recUUID + ".timing"
 		if _, err := os.Stat(timingPath); err == nil {
 			item.HasTiming = true
 		}
 
 		// Load metadata if exists
-		metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+		metadataPath := recordingsDir + "/session-" + recUUID + ".metadata.json"
 		if metaData, err := os.ReadFile(metadataPath); err == nil {
 			var meta RecordingMetadata
 			if json.Unmarshal(metaData, &meta) == nil {
@@ -4756,7 +5086,7 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// handleDeleteRecording deletes a recording and its associated files
+// handleDeleteRecording deletes a recording and its associated files (including children)
 func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) {
 	// Check if recording is active (only block if process is still running)
 	sessionsMu.RLock()
@@ -4770,26 +5100,18 @@ func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) 
 	}
 	sessionsMu.RUnlock()
 
-	// Delete all files matching session-{uuid}.*
-	patterns := []string{
-		recordingsDir + "/session-" + uuid + ".log",
-		recordingsDir + "/session-" + uuid + ".timing",
-		recordingsDir + "/session-" + uuid + ".metadata.json",
-	}
-
-	deleted := false
-	for _, path := range patterns {
-		if err := os.Remove(path); err == nil {
-			deleted = true
-			log.Printf("Deleted recording file: %s", path)
+	// Check if recording exists before deleting
+	logPath := recordingsDir + "/session-" + uuid + ".log"
+	metaPath := recordingsDir + "/session-" + uuid + ".metadata.json"
+	if _, err1 := os.Stat(logPath); err1 != nil {
+		if _, err2 := os.Stat(metaPath); err2 != nil {
+			http.Error(w, "Recording not found", http.StatusNotFound)
+			return
 		}
 	}
 
-	if !deleted {
-		http.Error(w, "Recording not found", http.StatusNotFound)
-		return
-	}
-
+	deleteRecordingFiles(uuid)
+	log.Printf("Deleted recording group: %s", uuid)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -4920,11 +5242,9 @@ func handleRenameRecording(w http.ResponseWriter, r *http.Request, uuid string) 
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleDownloadRecording creates a zip archive of the recording files
+// handleDownloadRecording creates a zip archive of the recording files (including children)
 func handleDownloadRecording(w http.ResponseWriter, r *http.Request, uuid string) {
 	logPath := recordingsDir + "/session-" + uuid + ".log"
-	timingPath := recordingsDir + "/session-" + uuid + ".timing"
-	metadataPath := recordingsDir + "/session-" + uuid + ".metadata.json"
 
 	// Check if log file exists
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
@@ -4936,25 +5256,32 @@ func handleDownloadRecording(w http.ResponseWriter, r *http.Request, uuid string
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
 
-	// Add files to zip
-	files := []struct {
+	// Add parent files
+	parentFiles := []struct {
 		path string
 		name string
 	}{
-		{logPath, "session.log"},
-		{timingPath, "session.timing"},
-		{metadataPath, "session.metadata.json"},
+		{recordingsDir + "/session-" + uuid + ".log", "session.log"},
+		{recordingsDir + "/session-" + uuid + ".timing", "session.timing"},
+		{recordingsDir + "/session-" + uuid + ".metadata.json", "session.metadata.json"},
 	}
-
-	for _, f := range files {
+	for _, f := range parentFiles {
 		data, err := os.ReadFile(f.path)
-		if err != nil {
-			continue // Skip missing files
-		}
-		zf, err := zipWriter.Create(f.name)
 		if err != nil {
 			continue
 		}
+		zf, _ := zipWriter.Create(f.name)
+		zf.Write(data)
+	}
+
+	// Add child files (session-{uuid}-*)
+	childMatches, _ := filepath.Glob(recordingsDir + "/session-" + uuid + "-*")
+	for _, path := range childMatches {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		zf, _ := zipWriter.Create(filepath.Base(path))
 		zf.Write(data)
 	}
 
