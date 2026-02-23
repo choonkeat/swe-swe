@@ -941,6 +941,30 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: var(--accent-text);
 }
 
+.settings-panel__divider {
+    border: none;
+    border-top: 1px solid var(--border-primary);
+    margin: 8px 0 16px;
+}
+
+.settings-panel__end-session {
+    width: 100%;
+    padding: 8px 0;
+    font-size: 13px;
+    font-weight: 500;
+    background: transparent;
+    border: 1px solid #dc2626;
+    border-radius: 6px;
+    color: #dc2626;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.settings-panel__end-session:hover {
+    background: #dc2626;
+    color: #fff;
+}
+
 /* === Basic UI Split-Pane Layout === */
 .terminal-ui__split-pane {
     display: flex;

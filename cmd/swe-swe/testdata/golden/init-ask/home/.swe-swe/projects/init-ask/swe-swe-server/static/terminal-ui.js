@@ -243,6 +243,8 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                 </div>
                             </section>
+                            <hr class="settings-panel__divider">
+                            <button class="settings-panel__end-session" id="settings-end-session">End Session</button>
                         </div>
                     </div>
                 </div>
@@ -1444,6 +1446,29 @@ class TerminalUI extends HTMLElement {
 
         // Theme color picker
         this.setupColorPicker();
+
+        // End Session button
+        const endSessionBtn = panel.querySelector('#settings-end-session');
+        if (endSessionBtn) {
+            endSessionBtn.addEventListener('click', () => {
+                if (!confirm('End this session?')) return;
+                this.closeSettingsPanel();
+                const uuid = this.sessionUUID;
+                if (!uuid) {
+                    window.location.href = '/';
+                    return;
+                }
+                fetch('/api/session/' + uuid + '/end', { method: 'POST' })
+                    .then(resp => {
+                        if (resp.ok) {
+                            window.location.href = '/';
+                        } else {
+                            alert('Failed to end session');
+                        }
+                    })
+                    .catch(err => alert('Error: ' + err.message));
+            });
+        }
 
     }
 
