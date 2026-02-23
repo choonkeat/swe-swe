@@ -10,27 +10,35 @@ The swe-swe-server is built inside Docker using its own go.mod, so stale templat
 
 ## Restart Commands
 
-From inside the swe-swe container (with Docker socket access), run these commands to restart the entire stack:
+From inside the swe-swe container (with Docker socket access), run these commands **in this order**:
 
 ```bash
-# 1. Apply host system updates (runs apt upgrade on the host via Docker)
-docker run --rm --privileged --pid=host --network=host alpine sh -c \
-  "nsenter -t 1 -m -u -i -n -p -- /bin/bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq'"
-
-# 2. Re-init
+# 1. Re-init (builds binary + rebuilds Docker images with latest templates)
 bash .swe-swe/pre-restart.sh
 
-# 3. Stop any test containers first
+# 2. Stop any test containers
 docker compose -p swe-swe-test down -t 10 2>/dev/null || true
 
-# 4. Stop the chrome container (it doesn't always respond to compose down)
+# 3. Stop the chrome container (it doesn't always respond to compose down)
 # Replace <project-name> with your actual compose project name (visible in `docker ps`)
 docker stop -t 10 <project-name>-chrome-1
 
-# 5. Bring down the rest of the stack (we're all going offline here, including agent)
+# 4. Bring down the rest of the stack (we're all going offline here, including agent)
 docker compose -p <project-name> down -t 20
 ```
 
-This will cause the host's restart loop (`.swe-swe/restart-loop.sh`) to re-init and bring everything back up with the latest changes.
+**Why this order**: Re-init (step 1) rebuilds images while the stack is still running, so build failures are caught before we go offline. The final compose down is the point of no return — the host restart loop brings everything back up.
 
-**Note**: If apt upgrade installed a new kernel, a host reboot is needed for it to take effect. Reboot via DigitalOcean Console or: `docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -i -n -p -- /sbin/reboot`
+## Host Apt Upgrade (separate)
+
+Host OS security patches are independent of code changes. Run this separately, not as part of every reboot:
+
+```bash
+docker run --rm --privileged --pid=host --network=host alpine sh -c \
+  "nsenter -t 1 -m -u -i -n -p -- /bin/bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq'"
+```
+
+If apt upgrade installed a new kernel, a host reboot is needed for it to take effect. Reboot via DigitalOcean Console or:
+```bash
+docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -i -n -p -- /sbin/reboot
+```
