@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+trap 'echo -e "\n\033[0;31m✗ Entrypoint failed at line $LINENO (exit code $?)\033[0m" >&2' ERR
 
 # Enterprise Certificate Installation Entrypoint
 # This script installs enterprise certificates into the system trust store

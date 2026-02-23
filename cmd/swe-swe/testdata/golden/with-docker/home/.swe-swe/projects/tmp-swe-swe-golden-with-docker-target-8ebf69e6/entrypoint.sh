@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+trap 'echo -e "\n\033[0;31m✗ Entrypoint failed at line $LINENO (exit code $?)\033[0m" >&2' ERR
 
 # Enterprise Certificate Installation Entrypoint
 # This script installs enterprise certificates into the system trust store
@@ -164,11 +165,14 @@ echo -e "${GREEN}✓ Created Goose wrapper script${NC}"
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
 # Must run as app user so config goes to /home/app/.claude.json (not /root/)
-# Skip if already configured (idempotent on container restart)
-# Also re-run if preview config is stale (missing --bridge flag from path-based routing migration)
+# Re-run if config is missing or stale (remove-then-add ensures fresh config)
 if ! grep -q '"swe-swe-agent-chat"' /home/app/.claude.json 2>/dev/null || ! grep -q '\-\-bridge' /home/app/.claude.json 2>/dev/null; then
   su -s /bin/bash app -c '
     unset CLAUDECODE
+    claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
+    claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
+    claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
+    claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
     claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
     claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
     claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp'"'"'
