@@ -17,6 +17,7 @@ WORKDIR /build
 COPY swe-swe-server/go.mod swe-swe-server/go.sum ./
 RUN go mod download
 COPY swe-swe-server/*.go ./
+COPY swe-swe-server/agent-chat-dist/ ./agent-chat-dist/
 COPY swe-swe-server/static/ ./static/
 COPY swe-swe-server/container-templates/ ./container-templates/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server .

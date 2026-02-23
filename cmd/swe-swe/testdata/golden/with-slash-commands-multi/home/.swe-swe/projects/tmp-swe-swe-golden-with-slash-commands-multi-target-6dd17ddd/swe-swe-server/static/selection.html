@@ -365,30 +365,6 @@
             background: rgba(30, 41, 59, 0.7);
         }
 
-        .recording-card__play {
-            width: 44px;
-            height: 44px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--accent-10);
-            border: 1px solid var(--accent-20);
-            border-radius: 50%;
-            color: var(--accent-light);
-            cursor: pointer;
-            transition: all 0.2s ease;
-            flex-shrink: 0;
-        }
-        .recording-card__play:hover {
-            background: var(--accent-20);
-            border-color: var(--accent-30);
-        }
-        .recording-card__play svg {
-            width: 18px;
-            height: 18px;
-            margin-left: 2px;
-        }
-
         .recording-card__info {
             flex: 1;
             min-width: 0;
@@ -423,38 +399,6 @@
         .recording-card__dot {
             color: var(--border-secondary);
         }
-        .recording-card__types {
-            display: inline-flex;
-            gap: 4px;
-        }
-        .recording-type-badge {
-            display: inline-block;
-            padding: 1px 6px;
-            font-size: 11px;
-            font-weight: 500;
-            border-radius: 3px;
-            background: rgba(96, 165, 250, 0.15);
-            color: #60a5fa;
-            text-decoration: none;
-        }
-        .recording-type-badge:hover {
-            background: rgba(96, 165, 250, 0.3);
-        }
-        .recording-type-badge--chat {
-            background: rgba(168, 85, 247, 0.15);
-            color: #a855f7;
-        }
-        .recording-type-badge--chat:hover {
-            background: rgba(168, 85, 247, 0.3);
-        }
-        .recording-type-badge--terminal {
-            background: rgba(34, 197, 94, 0.15);
-            color: #22c55e;
-        }
-        .recording-type-badge--terminal:hover {
-            background: rgba(34, 197, 94, 0.3);
-        }
-
         .recording-card__right {
             display: flex;
             align-items: center;
@@ -1014,14 +958,6 @@
                 gap: 12px;
                 padding: 16px;
             }
-            .recording-card__play {
-                width: 36px;
-                height: 36px;
-            }
-            .recording-card__play svg {
-                width: 14px;
-                height: 14px;
-            }
             .recording-card__info {
                 width: 100%;
             }
@@ -1436,25 +1372,12 @@
                 <div class="recordings-list">
                     {{range .Recordings}}
                     <div class="recording-card" data-uuid="{{.UUID}}">
-                        <a href="/recording/{{.UUID}}" class="recording-card__play" title="Play recording">
-                            <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M8 5.14V19.14L19 12.14L8 5.14Z"/>
-                            </svg>
-                        </a>
                         <div class="recording-card__info">
                             <h3 class="recording-card__title">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</h3>
                             <div class="recording-card__meta">
                                 <span>{{.EndedAgo}}</span>
                                 <span class="recording-card__dot">•</span>
                                 <span class="agent-badge agent-badge--{{.AgentBadgeClass}}">{{if .Agent}}{{.Agent}}{{else}}Unknown{{end}}</span>
-                                {{if or .HasChat .HasTerminal}}
-                                <span class="recording-card__dot">•</span>
-                                <span class="recording-card__types">
-                                    <a href="/recording/{{.UUID}}" class="recording-type-badge" title="Agent terminal">Agent</a>
-                                    {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="recording-type-badge recording-type-badge--chat" title="Chat log">Chat</a>{{end}}
-                                    {{if .HasTerminal}}{{range .TerminalUUIDs}}<a href="/recording/{{$.UUID}}-{{.}}" class="recording-type-badge recording-type-badge--terminal" title="Terminal">Terminal</a>{{end}}{{end}}
-                                </span>
-                                {{end}}
                             </div>
                         </div>
                         <div class="recording-card__right">
@@ -1498,7 +1421,9 @@
                                 </button>
                                 {{end}}
                             </div>
-                            <a href="/recording/{{.UUID}}" class="btn-view">View</a>
+                            <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
+                            {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
+                            {{if .HasTerminal}}{{range .TerminalUUIDs}}<a href="/recording/{{$.UUID}}-{{.}}" class="btn-view">Terminal</a>{{end}}{{end}}
                         </div>
                     </div>
                     {{end}}
