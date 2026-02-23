@@ -969,10 +969,7 @@
             }
             .recording-card__right {
                 width: 100%;
-                justify-content: space-between;
-            }
-            .recording-card__status {
-                font-size: 12px;
+                justify-content: flex-end;
             }
 
             .footer {
@@ -1378,12 +1375,13 @@
                                 <span>{{.EndedAgo}}</span>
                                 <span class="recording-card__dot">•</span>
                                 <span class="agent-badge agent-badge--{{.AgentBadgeClass}}">{{if .Agent}}{{.Agent}}{{else}}Unknown{{end}}</span>
+                                <span class="recording-card__dot">•</span>
+                                <span class="recording-card__status {{if .IsKept}}recording-card__status--saved{{else}}recording-card__status--expires{{end}}">
+                                    {{if .IsKept}}Saved{{else}}Expires in {{.ExpiresIn}}{{end}}
+                                </span>
                             </div>
                         </div>
                         <div class="recording-card__right">
-                            <span class="recording-card__status {{if .IsKept}}recording-card__status--saved{{else}}recording-card__status--expires{{end}}">
-                                {{if .IsKept}}Saved{{else}}Expires in {{.ExpiresIn}}{{end}}
-                            </span>
                             <div class="recording-card__btn-group">
                                 {{if .IsKept}}
                                 <button class="btn-icon btn-icon--keep" title="Kept indefinitely">
