@@ -1419,9 +1419,9 @@
                                 </button>
                                 {{end}}
                             </div>
-                            <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
-                            {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
                             {{if .HasTerminal}}{{range .TerminalUUIDs}}<a href="/recording/{{$rec.UUID}}-{{.}}" class="btn-view">Terminal</a>{{end}}{{end}}
+                            {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
+                            <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
                         </div>
                     </div>
                     {{end}}
