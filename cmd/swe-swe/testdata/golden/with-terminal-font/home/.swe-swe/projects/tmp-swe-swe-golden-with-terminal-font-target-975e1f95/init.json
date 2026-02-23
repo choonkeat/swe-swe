@@ -9,6 +9,7 @@
   ],
   "ssl": "no",
   "previewPorts": "3000-3019",
+  "publicPorts": "5000-5019",
   "terminalFontSize": 16,
   "terminalFontFamily": "JetBrains Mono",
   "statusBarFontSize": 12,

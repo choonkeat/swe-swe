@@ -86,11 +86,14 @@ var (
 	previewPortEnd     = 3019
 	agentChatPortStart = 4000
 	agentChatPortEnd   = 4019
+	publicPortStart    = 5000
+	publicPortEnd      = 5019
 	proxyPortOffset    = 20000
 )
 
 func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
+func publicProxyPort(port int) int     { return proxyPortOffset + port }
 
 // ANSI escape sequence helpers for terminal formatting
 func ansiCyan(s string) string   { return "\033[0;36m" + s + "\033[0m" }
@@ -331,6 +334,7 @@ type Session struct {
 	ParentUUID  string // UUID of parent session (for shell sessions opened from agent sessions)
 	PreviewPort   int // App preview target port for this session
 	AgentChatPort int // Agent chat MCP server port for this session
+	PublicPort    int // Public (no-auth) port for this session
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -349,6 +353,7 @@ type Session struct {
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
 	AgentChatProxyServer  *http.Server      // Per-port listener for agent chat proxy (port-based mode)
+	PublicProxyServer     *http.Server      // Per-port listener for public (no-auth) proxy (port-based mode)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -379,12 +384,13 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort, agentChatPort int, theme, workDir, sessionMode string) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE")
+func buildSessionEnv(previewPort, agentChatPort, publicPort int, theme, workDir, sessionMode string) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
 		fmt.Sprintf("AGENT_CHAT_PORT=%d", agentChatPort),
+		fmt.Sprintf("PUBLIC_PORT=%d", publicPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
@@ -673,6 +679,8 @@ func (s *Session) BroadcastStatus() {
 		"previewPort":        s.PreviewPort,
 		"agentChatPort":      agentChatPort,
 		"previewProxyPort":   previewProxyPort(s.PreviewPort),
+		"publicPort":         s.PublicPort,
+		"publicProxyPort":    publicProxyPort(s.PublicPort),
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 	}
@@ -822,6 +830,9 @@ func (s *Session) Close() {
 	}
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
+	}
+	if s.PublicProxyServer != nil {
+		s.PublicProxyServer.Shutdown(shutdownCtx)
 	}
 
 	// Close all WebSocket client connections
@@ -992,7 +1003,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.Theme, s.WorkDir, s.SessionMode)
+	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.PublicPort, s.Theme, s.WorkDir, s.SessionMode)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -1504,6 +1515,18 @@ func main() {
 				if end, err := strconv.Atoi(parts[1]); err == nil {
 					agentChatPortStart = start
 					agentChatPortEnd = end
+				}
+			}
+		}
+	}
+
+	// Override public port range from environment (set by docker-compose)
+	if portRange := os.Getenv("SWE_PUBLIC_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					publicPortStart = start
+					publicPortEnd = end
 				}
 			}
 		}
@@ -3359,11 +3382,15 @@ func agentChatPortFromPreview(previewPort int) int {
 	return previewPort + 1000
 }
 
-// findAvailablePortPair finds a preview port and its derived agent chat port
-// that are not already allocated to an existing session.
+func publicPortFromPreview(previewPort int) int {
+	return previewPort + 2000
+}
+
+// findAvailablePortTriple finds a preview port and its derived agent chat and
+// public ports that are not already allocated to an existing session.
 // Must be called while holding sessionsMu.
-// Returns (previewPort, agentChatPort, error).
-func findAvailablePortPair() (int, int, error) {
+// Returns (previewPort, agentChatPort, publicPort, error).
+func findAvailablePortTriple() (int, int, int, error) {
 	// Collect ports already assigned to live sessions.
 	usedPorts := make(map[int]bool)
 	for _, sess := range sessions {
@@ -3377,9 +3404,10 @@ func findAvailablePortPair() (int, int, error) {
 			continue
 		}
 		acPort := agentChatPortFromPreview(port)
-		return port, acPort, nil
+		pubPort := publicPortFromPreview(port)
+		return port, acPort, pubPort, nil
 	}
-	return 0, 0, fmt.Errorf("no available port pair in preview range %d-%d", previewPortStart, previewPortEnd)
+	return 0, 0, 0, fmt.Errorf("no available port triple in preview range %d-%d", previewPortStart, previewPortEnd)
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -3449,15 +3477,17 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	var previewPort int
 	var acPort int
+	var pubPort int
 	if parentUUID != "" {
 		if parentSess, ok := sessions[parentUUID]; ok {
 			previewPort = parentSess.PreviewPort
 			acPort = parentSess.AgentChatPort
+			pubPort = parentSess.PublicPort
 		}
 	}
 	if previewPort == 0 {
 		var err error
-		previewPort, acPort, err = findAvailablePortPair()
+		previewPort, acPort, pubPort, err = findAvailablePortTriple()
 		if err != nil {
 			return nil, false, err
 		}
@@ -3512,7 +3542,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
 	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
 
-	env := buildSessionEnv(previewPort, acPort, theme, workDir, sessionMode)
+	env := buildSessionEnv(previewPort, acPort, pubPort, theme, workDir, sessionMode)
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", sessionUUID))
 
 	// Set up chat event log recording for chat sessions
@@ -3573,6 +3603,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		ParentUUID:      parentUUID,
 		PreviewPort:     previewPort,
 		AgentChatPort:   acPort,
+		PublicPort:      pubPort,
 		Theme:           theme,
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
@@ -3670,6 +3701,26 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			}
 		}()
 		sess.AgentChatProxyServer = acSrv
+
+		// Start public (no-auth) proxy listener
+		pubTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", pubPort))
+		pubPP := publicProxyPort(pubPort)
+		pubSrv := &http.Server{
+			Addr:    fmt.Sprintf(":%d", pubPP),
+			Handler: corsWrapper(agentChatProxyHandler(pubTarget)),
+		}
+		go func() {
+			ln, err := net.Listen("tcp", pubSrv.Addr)
+			if err != nil {
+				log.Printf("Session %s: public proxy port %d unavailable: %v", sessionUUID, pubPP, err)
+				return
+			}
+			log.Printf("Session %s: public proxy listening on :%d", sessionUUID, pubPP)
+			if err := pubSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("Session %s: public proxy server error: %v", sessionUUID, err)
+			}
+		}()
+		sess.PublicProxyServer = pubSrv
 	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly

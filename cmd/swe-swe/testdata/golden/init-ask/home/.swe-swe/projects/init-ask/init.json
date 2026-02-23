@@ -5,6 +5,7 @@
   ],
   "ssl": "no",
   "previewPorts": "3000-3019",
+  "publicPorts": "5000-5019",
   "terminalFontSize": 14,
   "terminalFontFamily": "Menlo, Monaco, \"Courier New\", monospace",
   "statusBarFontSize": 12,

@@ -90,6 +90,7 @@ type InitConfig struct {
 	SSL                 string              `json:"ssl,omitempty"`
 	Email               string              `json:"email,omitempty"`
 	PreviewPorts        string              `json:"previewPorts,omitempty"`
+	PublicPorts         string              `json:"publicPorts,omitempty"`
 	CopyHomePaths       []string            `json:"copyHomePaths,omitempty"`
 	ReposDir            string              `json:"reposDir,omitempty"`
 	TerminalFontSize    int                 `json:"terminalFontSize,omitempty"`
@@ -369,6 +370,46 @@ func parsePreviewPortsRange(rangeStr string) ([]int, error) {
 	return ports, nil
 }
 
+func parsePublicPortsRange(rangeStr string) ([]int, error) {
+	trimmed := strings.TrimSpace(rangeStr)
+	if trimmed == "" {
+		return nil, fmt.Errorf("range is empty")
+	}
+
+	parts := strings.Split(trimmed, "-")
+	if len(parts) < 1 || len(parts) > 2 {
+		return nil, fmt.Errorf("invalid range format: %q", rangeStr)
+	}
+
+	startStr := strings.TrimSpace(parts[0])
+	endStr := startStr
+	if len(parts) == 2 {
+		endStr = strings.TrimSpace(parts[1])
+	}
+
+	start, err := strconv.Atoi(startStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start port %q", startStr)
+	}
+	end, err := strconv.Atoi(endStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end port %q", endStr)
+	}
+	if start > end {
+		return nil, fmt.Errorf("range start %d is greater than end %d", start, end)
+	}
+	if start < 5000 || end > 5999 {
+		return nil, fmt.Errorf("range must be within 5000-5999 (got %d-%d)", start, end)
+	}
+
+	ports := make([]int, 0, end-start+1)
+	for port := start; port <= end; port++ {
+		ports = append(ports, port)
+	}
+
+	return ports, nil
+}
+
 // parseSSLFlagValue parses the --ssl flag value into mode, host, domain components.
 // Valid values: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'
 func parseSSLFlagValue(ssl string) (mode, host, domain string, err error) {
@@ -407,6 +448,7 @@ func handleInit() {
 	statusBarFontSize := fs.Int("status-bar-font-size", 12, "Status bar font size in pixels")
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
+	publicPorts := fs.String("public-ports", "5000-5019", "Public (no-auth) port range (e.g., 5000-5019)")
 	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 → 23000 with offset 20000)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
@@ -610,6 +652,11 @@ func handleInit() {
 				*previewPorts = savedConfig.PreviewPorts
 			}
 		}
+		if !explicitFlags["public-ports"] {
+			if savedConfig.PublicPorts != "" {
+				*publicPorts = savedConfig.PublicPorts
+			}
+		}
 		if !explicitFlags["copy-home-paths"] {
 			copyHomePaths = savedConfig.CopyHomePaths
 		}
@@ -648,6 +695,7 @@ func handleInit() {
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
 		PreviewPorts:        *previewPorts,
+		PublicPorts:         *publicPorts,
 		CopyHomePaths:       copyHomePaths,
 		ReposDir:            *reposDir,
 		TerminalFontSize:    *terminalFontSize,
@@ -682,6 +730,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	agentChatPortsRange := make([]int, len(previewPortsRange))
 	for i, p := range previewPortsRange {
 		agentChatPortsRange[i] = agentChatPort(p)
+	}
+
+	publicPortsRange, err := parsePublicPortsRange(config.PublicPorts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: --public-ports must be in the form start-end within 5000-5999 (e.g., 5000-5019). %v\n", err)
+		os.Exit(1)
 	}
 
 	if err := os.MkdirAll(sweDir, 0755); err != nil {
@@ -820,6 +874,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		if err == nil {
 			fmt.Fprintf(f, "SWE_PREVIEW_PORTS=%d-%d\n", previewPortsRange[0], previewPortsRange[len(previewPortsRange)-1])
 			fmt.Fprintf(f, "SWE_AGENT_CHAT_PORTS=%d-%d\n", agentChatPortsRange[0], agentChatPortsRange[len(agentChatPortsRange)-1])
+			fmt.Fprintf(f, "SWE_PUBLIC_PORTS=%d-%d\n", publicPortsRange[0], publicPortsRange[len(publicPortsRange)-1])
 			fmt.Fprintf(f, "SWE_PROXY_PORT_OFFSET=%d\n", config.ProxyPortOffset)
 			f.Close()
 		}
@@ -952,12 +1007,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process docker-compose.yml template with conditional sections
 		if hostFile == "templates/host/docker-compose.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, config.ProxyPortOffset))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, config.ProxyPortOffset))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 		}
 
 		// Process entrypoint.sh template with conditional sections

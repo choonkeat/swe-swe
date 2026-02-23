@@ -165,6 +165,7 @@ func runInteractiveInit(absPath string, metadataDir string, stdin io.Reader, std
 		SSL:                 sslFlag,
 		Email:               email,
 		PreviewPorts:        "3000-3019",
+		PublicPorts:         "5000-5019",
 		TerminalFontSize:    14,
 		TerminalFontFamily:  `Menlo, Monaco, "Courier New", monospace`,
 		StatusBarFontSize:   12,
