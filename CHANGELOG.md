@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## v2.12.0 - Interactive `swe-swe up`, Agent-Chat Persistence & Recording UI
+
+### Major Features
+
+- **`swe-swe up` merges interactive init**: No separate `swe-swe init` step needed — `swe-swe up` now runs interactive setup inline
+- **Agent-chat persistence**: JSONL event logs with grouped session playback in browser
+- **Recording button UI**: Distinct [Terminal] [Chat] [Agent] buttons replacing single [View] button
+- **agent-chat-dist in Docker**: Embedded chat viewer in production image
+
+### Security
+
+- **Auth hardening**: Constant-time comparison, 7-day cookie expiry, per-IP rate limiting
+
+### Bug Fixes
+
+- **WebSocket relay**: gorilla/websocket frame relay (fixes path-based proxy/Cloudflare)
+- **Template crash**: Fix $rec variable in TerminalUUIDs range
+- **Recording card**: Move "Expires in" status into recording card meta line
+
+### Documentation
+
+- Clarify restart order and separate apt upgrade
+- Extensive tdspec additions (MCP tools, behavioral specs, proxy specs, audit)
+
 ## v2.11.0 - Port-Based Proxy, Path Fallback & Env Var Expansion
 
 ### Major Features
