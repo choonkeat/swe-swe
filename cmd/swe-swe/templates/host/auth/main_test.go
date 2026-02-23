@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSignCookie_ProducesNonEmptySignature(t *testing.T) {
@@ -473,5 +475,116 @@ func TestLoginPostHandler_WrongPassword_CanRetry(t *testing.T) {
 	responseBody := w.Body.String()
 	if !strings.Contains(responseBody, `type="password"`) {
 		t.Error("expected password field to be present for retry")
+	}
+}
+
+// Cookie expiry tests
+
+func TestVerifyCookie_ExpiredTimestamp_ReturnsFalse(t *testing.T) {
+	secret := "test-secret"
+	// Create a cookie with a timestamp 8 days ago (beyond 7-day maxAge)
+	oldTimestamp := fmt.Sprintf("%d", time.Now().Unix()-8*24*60*60)
+	signature := computeHMAC(oldTimestamp, secret)
+	expiredCookie := oldTimestamp + cookieDelimiter + signature
+	if verifyCookie(expiredCookie, secret) {
+		t.Error("verifyCookie should return false for expired cookie")
+	}
+}
+
+func TestVerifyCookie_RecentTimestamp_ReturnsTrue(t *testing.T) {
+	secret := "test-secret"
+	// Create a cookie with a timestamp 1 day ago (within 7-day maxAge)
+	recentTimestamp := fmt.Sprintf("%d", time.Now().Unix()-1*24*60*60)
+	signature := computeHMAC(recentTimestamp, secret)
+	recentCookie := recentTimestamp + cookieDelimiter + signature
+	if !verifyCookie(recentCookie, secret) {
+		t.Error("verifyCookie should return true for recent cookie")
+	}
+}
+
+func TestVerifyCookie_InvalidTimestamp_ReturnsFalse(t *testing.T) {
+	secret := "test-secret"
+	badTimestamp := "not-a-number"
+	signature := computeHMAC(badTimestamp, secret)
+	badCookie := badTimestamp + cookieDelimiter + signature
+	if verifyCookie(badCookie, secret) {
+		t.Error("verifyCookie should return false for non-numeric timestamp")
+	}
+}
+
+// Rate limiting tests
+
+func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
+	rl := &rateLimiter{attempts: make(map[string][]time.Time)}
+	ip := "192.168.1.1"
+	for i := 0; i < rateLimitMax-1; i++ {
+		rl.record(ip)
+	}
+	if !rl.allow(ip) {
+		t.Error("should allow attempts under the limit")
+	}
+}
+
+func TestRateLimiter_BlocksAtLimit(t *testing.T) {
+	rl := &rateLimiter{attempts: make(map[string][]time.Time)}
+	ip := "192.168.1.2"
+	for i := 0; i < rateLimitMax; i++ {
+		rl.record(ip)
+	}
+	if rl.allow(ip) {
+		t.Error("should block attempts at the limit")
+	}
+}
+
+func TestRateLimiter_DifferentIPsIndependent(t *testing.T) {
+	rl := &rateLimiter{attempts: make(map[string][]time.Time)}
+	// Fill up IP1
+	for i := 0; i < rateLimitMax; i++ {
+		rl.record("ip1")
+	}
+	// IP2 should still be allowed
+	if !rl.allow("ip2") {
+		t.Error("different IPs should be rate limited independently")
+	}
+}
+
+func TestRateLimiter_CleanupRemovesExpiredEntries(t *testing.T) {
+	rl := &rateLimiter{attempts: make(map[string][]time.Time)}
+	// Add an old entry (beyond the window)
+	rl.mu.Lock()
+	rl.attempts["old-ip"] = []time.Time{time.Now().Add(-rateLimitWindow - time.Minute)}
+	rl.mu.Unlock()
+
+	rl.cleanup()
+
+	rl.mu.Lock()
+	_, exists := rl.attempts["old-ip"]
+	rl.mu.Unlock()
+	if exists {
+		t.Error("cleanup should remove expired entries")
+	}
+}
+
+func TestLoginPostHandler_RateLimited_Returns429(t *testing.T) {
+	secret = "correct-password"
+	// Reset the global rate limiter
+	loginLimiter = &rateLimiter{attempts: make(map[string][]time.Time)}
+
+	// Exhaust rate limit for a specific IP
+	testIP := "10.0.0.99"
+	for i := 0; i < rateLimitMax; i++ {
+		loginLimiter.record(testIP)
+	}
+
+	body := strings.NewReader("password=wrong-password")
+	req := httptest.NewRequest(http.MethodPost, "/swe-swe-auth/login", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-For", testIP)
+	w := httptest.NewRecorder()
+
+	loginHandler(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("expected status 429, got %d", w.Code)
 	}
 }

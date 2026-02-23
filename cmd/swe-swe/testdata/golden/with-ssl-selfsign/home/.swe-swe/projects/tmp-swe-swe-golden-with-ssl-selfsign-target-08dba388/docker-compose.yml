@@ -165,6 +165,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.${PROJECT_NAME}-auth.rule=PathPrefix(`/swe-swe-auth`)"
       - "traefik.http.routers.${PROJECT_NAME}-auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.middlewares=login-ratelimit@file"
       - "traefik.http.routers.${PROJECT_NAME}-auth.entrypoints=websecure"
       - "traefik.http.routers.${PROJECT_NAME}-auth.tls=true"
       - "traefik.http.services.${PROJECT_NAME}-auth.loadbalancer.server.port=4180"

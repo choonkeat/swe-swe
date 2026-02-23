@@ -9,6 +9,13 @@ http:
         # Trust X-Forwarded-* headers for proper URL handling
         trustForwardHeader: true
 
+    # Rate limiting for login endpoint to prevent brute force
+    login-ratelimit:
+      rateLimit:
+        average: 5
+        burst: 10
+        period: 1m
+
   routers:
     # Traefik dashboard protected by ForwardAuth
     # Note: Only match traefik's internal API paths, not /api/recording/* which goes to swe-swe

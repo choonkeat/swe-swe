@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"html"
@@ -10,18 +11,84 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	cookieName      = "swe_swe_session"
 	cookieDelimiter = "|"
+	cookieMaxAge    = 7 * 24 * 60 * 60 // 7 days in seconds
+
+	// Rate limiting for login endpoint
+	rateLimitWindow  = 5 * time.Minute
+	rateLimitMax     = 10 // max attempts per IP per window
+	rateLimitCleanup = 10 * time.Minute
 )
 
 // secret is the password used for authentication and cookie signing.
 // Set from SWE_SWE_PASSWORD environment variable in main().
 var secret string
+
+// loginLimiter tracks failed login attempts per IP for rate limiting.
+var loginLimiter = &rateLimiter{
+	attempts: make(map[string][]time.Time),
+}
+
+type rateLimiter struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+}
+
+// allow returns true if the IP is allowed to attempt login.
+func (rl *rateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rateLimitWindow)
+
+	// Filter to only recent attempts
+	recent := rl.attempts[ip][:0]
+	for _, t := range rl.attempts[ip] {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	rl.attempts[ip] = recent
+
+	return len(recent) < rateLimitMax
+}
+
+// record adds a failed attempt for the IP.
+func (rl *rateLimiter) record(ip string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	rl.attempts[ip] = append(rl.attempts[ip], time.Now())
+}
+
+// cleanup removes expired entries to prevent memory growth.
+func (rl *rateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-rateLimitWindow)
+	for ip, attempts := range rl.attempts {
+		recent := attempts[:0]
+		for _, t := range attempts {
+			if t.After(cutoff) {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) == 0 {
+			delete(rl.attempts, ip)
+		} else {
+			rl.attempts[ip] = recent
+		}
+	}
+}
 
 // signCookie creates an HMAC-signed cookie value.
 // Format: "timestamp|hmac-signature"
@@ -31,7 +98,7 @@ func signCookie(secret string) string {
 	return timestamp + cookieDelimiter + signature
 }
 
-// verifyCookie validates an HMAC-signed cookie value.
+// verifyCookie validates an HMAC-signed cookie value and checks expiry.
 func verifyCookie(cookie, secret string) bool {
 	if cookie == "" {
 		return false
@@ -45,8 +112,22 @@ func verifyCookie(cookie, secret string) bool {
 	timestamp := parts[0]
 	signature := parts[1]
 
+	// Verify HMAC signature
 	expectedSignature := computeHMAC(timestamp, secret)
-	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+	if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
+		return false
+	}
+
+	// Verify timestamp hasn't expired
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	if time.Now().Unix()-ts > cookieMaxAge {
+		return false
+	}
+
+	return true
 }
 
 // computeHMAC generates an HMAC-SHA256 signature.
@@ -249,7 +330,29 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 
 	password := r.FormValue("password")
 	redirectURL := r.FormValue("redirect")
-	if password == "" || password != secret {
+
+	// Rate limit check
+	clientIP := r.Header.Get("X-Forwarded-For")
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+	}
+	// Use first IP if X-Forwarded-For contains multiple
+	if idx := strings.Index(clientIP, ","); idx != -1 {
+		clientIP = strings.TrimSpace(clientIP[:idx])
+	}
+
+	if !loginLimiter.allow(clientIP) {
+		log.Printf("Rate limited: ip=%s", clientIP)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(renderLoginForm(redirectURL, "Too many attempts. Please wait a few minutes.")))
+		return
+	}
+
+	// Constant-time password comparison
+	passwordMatch := subtle.ConstantTimeCompare([]byte(password), []byte(secret)) == 1
+	if password == "" || !passwordMatch {
+		loginLimiter.record(clientIP)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(renderLoginForm(redirectURL, "Invalid password")))
@@ -280,6 +383,14 @@ func main() {
 	if secret == "" {
 		log.Fatal("SWE_SWE_PASSWORD environment variable is required")
 	}
+
+	// Periodic cleanup of rate limiter state
+	go func() {
+		for {
+			time.Sleep(rateLimitCleanup)
+			loginLimiter.cleanup()
+		}
+	}()
 
 	http.HandleFunc("/swe-swe-auth/verify", verifyHandler)
 	http.HandleFunc("/swe-swe-auth/login", loginHandler)

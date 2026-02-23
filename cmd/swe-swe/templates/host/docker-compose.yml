@@ -88,6 +88,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.${PROJECT_NAME}-auth.rule=PathPrefix(`/swe-swe-auth`)"
       - "traefik.http.routers.${PROJECT_NAME}-auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-auth.middlewares=login-ratelimit@file"
 # {{IF SSL}}
       - "traefik.http.routers.${PROJECT_NAME}-auth.entrypoints=websecure"
 # {{ENDIF}}
