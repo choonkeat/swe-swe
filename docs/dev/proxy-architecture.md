@@ -4,17 +4,20 @@ How the Preview tab and Agent Chat tab work end-to-end.
 
 ## Port Layout
 
-Each session gets a **preview port** (e.g., 3000) and a derived **agent chat port** (+1000, e.g., 4000). Both are container-internal only.
+Each session gets a **preview port** (e.g., 3000), a derived **agent chat port** (+1000, e.g., 4000), and a **public port** (e.g., 5000). All are container-internal only.
 
-The proxy is reachable via **two paths** — the browser automatically picks whichever works:
+The preview and agent chat proxies are reachable via **two paths** — the browser automatically picks whichever works:
 
 ```
 Port-based (preferred, per-origin isolation):
-  Preview:     User's app  ←  swe-swe-server :23000  ←  Traefik :23000  ←  Browser
+  Preview:     User's app  ←  swe-swe-server :23000  ←  Traefik :23000 (forwardauth)  ←  Browser
                  :3000
 
-  Agent Chat:  MCP sidecar ←  swe-swe-server :24000  ←  Traefik :24000  ←  Browser
+  Agent Chat:  MCP sidecar ←  swe-swe-server :24000  ←  Traefik :24000 (forwardauth)  ←  Browser
                  :4000
+
+  Public:      User's app  ←  swe-swe-server :25000  ←  Traefik :25000 (NO auth)      ←  Anyone
+                 :5000
 
 Path-based (fallback, when ports are unreachable):
   Preview:     User's app  ←  swe-swe-server /proxy/{uuid}/preview/    ←  Traefik :1977  ←  Browser
@@ -24,24 +27,29 @@ Path-based (fallback, when ports are unreachable):
                  :4000          :9898
 ```
 
+The **public port** differs from preview/agent chat: its Traefik router omits the `forwardauth@file` middleware, making it accessible without login. Use it for webhooks, public APIs, or shareable URLs.
+
 Both paths reach the **same proxy instance** — the embedded `agent-reverse-proxy` Go library inside swe-swe-server. The per-port listeners are thin wrappers that delegate to the same handler.
 
 ### Derived ports
 
 - `agentChatPort(previewPort) = previewPort + 1000`
+- `publicPort(previewPort) = previewPort + 2000` (e.g., 3000 → 5000)
 - `previewProxyPort(previewPort) = previewPort + proxyPortOffset` (default offset: 20000)
 - `agentChatProxyPort(acPort) = acPort + proxyPortOffset`
+- `publicProxyPort(publicPort) = publicPort + proxyPortOffset`
 
 ### Environment variables
 
 swe-swe-server passes these to the container environment:
 - `PORT={previewPort}` — tells the user's app which port to bind (e.g., 3000)
 - `AGENT_CHAT_PORT={agentChatPort}` — tells the MCP sidecar which port to bind (e.g., 4000)
+- `PUBLIC_PORT={publicPort}` — no-auth port for webhooks/public APIs (e.g., 5000)
 - `SESSION_UUID={uuid}` — used by the stdio bridge and open shim to address the correct proxy instance
 
 ### Port reservation
 
-`findAvailablePortPair()` reserves two app ports (preview, agent chat) by bind-probing. Additionally, swe-swe-server starts per-port listeners on the derived proxy ports (e.g., :23000, :24000) when each session is created.
+`findAvailablePortPair()` reserves three app ports (preview, agent chat, public) by bind-probing. Additionally, swe-swe-server starts per-port listeners on the derived proxy ports (e.g., :23000, :24000, :25000) when each session is created.
 
 ### Agent bridge
 

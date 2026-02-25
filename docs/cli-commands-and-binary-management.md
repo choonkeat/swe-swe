@@ -421,6 +421,8 @@ swe-swe up
 
 ### Default: `changeme`
 
+**Note**: All services are protected by `SWE_SWE_PASSWORD` via ForwardAuth, except for **public ports** (default 5000-5019). Each session gets a `PUBLIC_PORT` that bypasses authentication, enabling webhooks, public APIs, and shareable preview URLs. Configure the range with `--public-ports` during `swe-swe init`.
+
 ### Workspace Directory
 ```bash
 export WORKSPACE_DIR=/path/to/workspace

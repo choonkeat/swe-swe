@@ -14,6 +14,10 @@ Use Traefik's ForwardAuth middleware with a dedicated auth service:
 - Session cookie shared across all services
 - Auth service validates credentials against `SWE_SWE_PASSWORD` env var
 
+## Exceptions
+
+Since v2.12.1, **public ports** (default 5000-5019, configured via `--public-ports`) are routed through Traefik *without* `forwardAuth` middleware. This enables webhooks, public APIs, and shareable preview URLs without login. Each session's `PUBLIC_PORT` env var provides the allocated port. See ADR-025 for the port architecture.
+
 ## Consequences
 Good: Single login for all services, consistent UX, centralized auth logic.
 Bad: Auth service is single point of failure, requires cookie-based sessions.

@@ -22,6 +22,7 @@ Init Options:
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
   --preview-ports RANGE                  App preview port range (default: 3000-3019)
+  --public-ports RANGE                   Public (no-auth) port range (default: 5000-5019)
   --repos-dir DIR                        Host directory to mount at /repos for external repo clones
                                          (default: .swe-swe/repos in project)
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
@@ -41,6 +42,7 @@ Init Options:
 | `ANTHROPIC_API_KEY` | Claude API key (passed through automatically) | — |
 | `OPENAI_API_KEY` | OpenAI API key for Codex (uncomment in docker-compose.yml) | — |
 | `GEMINI_API_KEY` | Google Gemini API key (uncomment in docker-compose.yml) | — |
+| `SWE_PUBLIC_PORTS` | Public port range override (default: `5000-5019`, must be within 5000-5999) | `5000-5019` |
 | `NODE_EXTRA_CA_CERTS` | Enterprise CA certificate path (auto-copied during init) | — |
 | `SSL_CERT_FILE` | SSL certificate file path (auto-copied during init) | — |
 | `NODE_EXTRA_CA_CERTS_BUNDLE` | Bundle of CA certificates (auto-copied during init) | — |
@@ -72,6 +74,19 @@ And in your project directory:
 | `swe-swe/env` | Environment file sourced inside the container |
 
 Saved init flags are stored in `$HOME/.swe-swe/projects/{sanitized-path}/init.json` and can be reapplied with `--previous-init-flags=reuse`.
+
+### Container-side (injected per session)
+
+Each session gets these environment variables automatically:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PORT` | Preview app port (from `--preview-ports` range) | `3000` |
+| `AGENT_CHAT_PORT` | Agent chat MCP port (`PORT` + 1000) | `4000` |
+| `PUBLIC_PORT` | Public no-auth port (from `--public-ports` range) | `5000` |
+| `SESSION_UUID` | Unique session identifier | `a1b2c3...` |
+
+The `PUBLIC_PORT` is accessible externally without authentication, unlike `PORT` and `AGENT_CHAT_PORT` which are behind ForwardAuth. Use it for webhooks, public APIs, or shareable preview URLs that don't require login.
 
 ## Runtime
 

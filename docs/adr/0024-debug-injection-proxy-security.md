@@ -46,6 +46,8 @@ Preview ports are still routed through Traefik and `forwardauth`, even without T
 
 The debug channel does not introduce new exposure patterns - it inherits the existing preview security model.
 
+**Note**: Since v2.12.1, each session also gets a **public port** (default 5000-5019) that bypasses `forwardauth`. The public port proxies to the session's `PUBLIC_PORT` and does *not* expose debug endpoints — only the preview proxy (with auth) serves `/__swe-swe-debug__/` paths.
+
 ## Consequences
 
 **Good:**

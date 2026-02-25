@@ -24,6 +24,7 @@ Good:
 - Short UUID fallback ensures sessions are always identifiable
 - Simple validation prevents injection attacks
 - No database required - names are session-scoped
+- Session names help identify public port URLs (since v2.12.1, each session gets a `PUBLIC_PORT` for shareable no-auth access)
 
 Bad:
 - Names don't persist if server restarts (acceptable for ephemeral sessions)

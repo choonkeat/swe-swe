@@ -90,6 +90,8 @@ Preview proxy ports are not exposed directly from the container. Traefik receive
 
 The alternative — terminating TLS in the Go preview proxy — would require the app container to have access to the TLS private key. Currently only Traefik has the key, and we want to keep it that way. Routing through Traefik also gives us auth for free; a Go-side TLS proxy would need its own auth layer.
 
+**Note**: Since v2.12.1, each session also gets a **public port** (default 5000-5019, configured via `--public-ports`) that routes through Traefik *without* `forwardAuth` middleware. This enables webhooks, public APIs, and shareable preview URLs without login. See the `PUBLIC_ROUTERS` in `docker-compose.yml` — they omit `forwardauth@file`, which is the key difference from preview/agent-chat routers.
+
 #### Subdomain routing: abandoned
 
 The first design used wildcard subdomains (`{port}.https.local.swe-swe.com`) with a centralized cert server distributing wildcard certs via Let's Encrypt DNS-01 (DNSimple). This was abandoned because:

@@ -38,6 +38,8 @@ Scripts automatically acquire the first available slot. If all slots are busy, t
 
 **Preview ports:** Test containers use `--preview-ports=3100-3119` (external ports 23100-23119) to avoid conflicts with the production stack's default 23000-23019 range.
 
+**Public ports:** Each session also gets a public port (default 5000-5019, external 25000-25019) that bypasses authentication — useful for testing webhook integrations. If the test stack conflicts with the production stack on these ports, pass `--public-ports=5100-5119` via `SWE_SWE_INIT_FLAGS`.
+
 ## Docker-in-Docker Path Translation
 
 The init script automatically handles path translation between container and host:
