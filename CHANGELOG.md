@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v2.12.1 - Public Ports, End Session & Chat Fixes
+
+### Features
+
+- **`PUBLIC_PORT` per session**: Each session gets a public port with a no-auth Traefik route, enabling shareable preview URLs
+- **End Session button**: New button in Session Settings dialog for explicit session termination
+- **Agent-chat iframe permissions**: Allow microphone and autoplay on agent-chat iframe
+
+### Bug Fixes
+
+- **Empty chat event files**: Skip empty JSONL files during chat event loading; conditionally show iOS Safari warning
+- **Entrypoint error reporting**: Improve error messages and fix `claude mcp add` crash in entrypoint
+- **Bump target ordering**: Ensure `make bump` runs docs and golden-update in correct order
+
 ## v2.12.0 - Interactive `swe-swe up`, Agent-Chat Persistence & Recording UI
 
 ### Major Features
