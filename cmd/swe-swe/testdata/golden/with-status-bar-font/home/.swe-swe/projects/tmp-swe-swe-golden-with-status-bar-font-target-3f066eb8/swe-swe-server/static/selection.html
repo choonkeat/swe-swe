@@ -378,6 +378,12 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .recording-card__uuid {
+            font-weight: 400;
+            color: var(--text-muted);
+            margin-left: 6px;
+            font-size: 13px;
+        }
         .recording-card__meta {
             display: flex;
             align-items: center;
@@ -1347,7 +1353,7 @@
                                 </svg>
                                 Join Session
                             </a>
-                            <button class="btn-end" data-action="end-session" data-uuid="{{.UUID}}">End</button>
+                            <button class="btn-end" data-action="end-session" data-uuid="{{.UUID}}" data-public-port="{{.PublicPort}}" data-public-proxy-port="{{.PublicProxyPort}}">End</button>
                         </div>
                     </div>
                     {{end}}
@@ -1372,7 +1378,7 @@
                     {{range .Recordings}}{{$rec := .}}
                     <div class="recording-card" data-uuid="{{.UUID}}">
                         <div class="recording-card__info">
-                            <h3 class="recording-card__title">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}</h3>
+                            <h3 class="recording-card__title">{{if .Name}}{{.Name}}{{else}}session-{{.UUIDShort}}{{end}}<span class="recording-card__uuid">{{.UUIDShort}}</span></h3>
                             <div class="recording-card__meta">
                                 <span>{{.EndedAgo}}</span>
                                 <span class="recording-card__dot">•</span>
@@ -1463,6 +1469,7 @@
     </div>
 
     <script src="/combo-box.js"></script>
+    <script src="/end-session.js"></script>
     <script src="/homepage-main.js"></script>
     <script src="/new-session-dialog.js"></script>
     <script type="module" src="/theme-mode.js"></script>

@@ -1455,22 +1455,20 @@ class TerminalUI extends HTMLElement {
         const endSessionBtn = panel.querySelector('#settings-end-session');
         if (endSessionBtn) {
             endSessionBtn.addEventListener('click', () => {
-                if (!confirm('End this session?')) return;
                 this.closeSettingsPanel();
                 const uuid = this.sessionUUID;
                 if (!uuid) {
                     window.location.href = '/';
                     return;
                 }
-                fetch('/api/session/' + uuid + '/end', { method: 'POST' })
-                    .then(resp => {
-                        if (resp.ok) {
-                            window.location.href = '/';
-                        } else {
-                            alert('Failed to end session');
-                        }
-                    })
-                    .catch(err => alert('Error: ' + err.message));
+                checkPublicPortAndEndSession({
+                    uuid: uuid,
+                    publicPort: this.publicPort,
+                    publicProxyPort: this.publicProxyPort,
+                    onSuccess: function() {
+                        window.location.href = '/';
+                    }
+                });
             });
         }
 

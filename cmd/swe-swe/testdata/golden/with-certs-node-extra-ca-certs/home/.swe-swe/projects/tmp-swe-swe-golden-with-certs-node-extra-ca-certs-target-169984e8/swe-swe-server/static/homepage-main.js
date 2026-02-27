@@ -30,20 +30,15 @@
 })();
 
 function endSession(uuid, button) {
-    if (!confirm('End this session?')) {
-        return;
-    }
-    fetch('/api/session/' + uuid + '/end', {
-        method: 'POST'
-    }).then(function(response) {
-        if (response.ok) {
-            // Reload to show the new recording in the list
+    var publicPort = parseInt(button.dataset.publicPort, 10) || 0;
+    var publicProxyPort = parseInt(button.dataset.publicProxyPort, 10) || 0;
+    checkPublicPortAndEndSession({
+        uuid: uuid,
+        publicPort: publicPort,
+        publicProxyPort: publicProxyPort,
+        onSuccess: function() {
             window.location.reload();
-        } else {
-            alert('Failed to end session');
         }
-    }).catch(function(err) {
-        alert('Error: ' + err.message);
     });
 }
 

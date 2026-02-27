@@ -176,13 +176,15 @@ type AssistantConfig struct {
 
 // SessionInfo holds session data for template rendering
 type SessionInfo struct {
-	UUID        string
-	UUIDShort   string
-	Name        string // User-assigned session name (optional)
-	Assistant   string // binary name for URL
-	ClientCount int
-	CreatedAt   time.Time
-	DurationStr string // human-readable duration (e.g., "5m", "1h 23m")
+	UUID            string
+	UUIDShort       string
+	Name            string // User-assigned session name (optional)
+	Assistant       string // binary name for URL
+	ClientCount     int
+	CreatedAt       time.Time
+	DurationStr     string // human-readable duration (e.g., "5m", "1h 23m")
+	PublicPort      int    // PUBLIC_PORT env var value (e.g. 5000)
+	PublicProxyPort int    // Traefik proxy port (e.g. 25000)
 }
 
 // formatDuration returns a human-readable duration string
@@ -1658,7 +1660,9 @@ func main() {
 					Assistant:   sess.Assistant,
 					ClientCount: sess.ClientCount(),
 					CreatedAt:   sess.CreatedAt,
-					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
+					DurationStr:     formatDuration(time.Since(sess.CreatedAt)),
+					PublicPort:      sess.PublicPort,
+					PublicProxyPort: publicProxyPort(sess.PublicPort),
 				}
 				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
 			}

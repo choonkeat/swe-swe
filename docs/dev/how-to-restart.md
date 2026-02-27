@@ -8,6 +8,11 @@
 
 The swe-swe-server is built inside Docker using its own go.mod, so stale template files will cause the container to run old dependency versions even after restart.
 
+**Check public ports**: If any sessions have PUBLIC_PORT active, check whether anything is listening on the public port range (default 5000-5019). Restarting will disrupt any public users accessing those ports. You can check with:
+```bash
+for port in $(seq 5000 5019); do (echo >/dev/tcp/localhost/$port) 2>/dev/null && echo "Port $port: LISTENING"; done
+```
+
 ## Restart Commands
 
 From inside the swe-swe container (with Docker socket access), run these commands **in this order**:
