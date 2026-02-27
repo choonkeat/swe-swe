@@ -10,9 +10,7 @@ services:
       # Only discover containers with matching project label (enables multi-project isolation)
       - "--providers.docker.constraints=Label(`swe.project`,`${PROJECT_NAME}`)"
       - "--providers.file.filename=/etc/traefik/dynamic.yml"
-      - "--log.level=DEBUG"
-      - "--accesslog=true"
-      - "--accesslog.format=json"
+      - "--log.level=WARN"
 # {{IF NO_SSL}}
       - "--entrypoints.web.address=:7000"
       - "--entrypoints.web.transport.respondingTimeouts.readTimeout=60s"
