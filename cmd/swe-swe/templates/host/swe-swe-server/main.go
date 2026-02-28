@@ -843,9 +843,11 @@ func (s *Session) Close() {
 	}
 	s.wsClients = make(map[*SafeConn]bool)
 
-	// Kill the process and close PTY
+	// Kill the process group and close PTY
 	if s.Cmd != nil && s.Cmd.Process != nil {
-		s.Cmd.Process.Kill()
+		pid := s.Cmd.Process.Pid
+		// Kill entire process group to clean up child processes
+		syscall.Kill(-pid, syscall.SIGKILL)
 		// Wait to reap the zombie process
 		s.Cmd.Wait()
 	}
@@ -1005,6 +1007,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.PublicPort, s.Theme, s.WorkDir, s.SessionMode)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
@@ -1050,12 +1053,12 @@ func (s *Session) startPTYReader() {
 				s.mu.RUnlock()
 
 				// PTY can be broken while process is still alive (e.g., I/O error).
-				// Kill the process if it's still running, otherwise cmd.Wait() blocks forever.
+				// Kill the process group if still running, otherwise cmd.Wait() blocks forever.
 				if cmd != nil && cmd.Process != nil {
 					if err := cmd.Process.Signal(syscall.Signal(0)); err == nil {
-						log.Printf("Session %s: PTY broken but process (pid %d) still alive, killing it",
+						log.Printf("Session %s: PTY broken but process (pid %d) still alive, killing process group",
 							s.UUID, cmd.Process.Pid)
-						cmd.Process.Kill()
+						syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 					}
 				}
 
@@ -3569,6 +3572,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 
 	cmd := exec.Command(cmdName, cmdArgs...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = env
 	if workDir != "" {
 		cmd.Dir = workDir
@@ -4048,9 +4052,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				sess.vtMu.Unlock()
 				sess.Broadcast(feedbackMsg)
 
-				// Kill process - pendingReplacement will cause process to be replaced
+				// Kill process group - pendingReplacement will cause process to be replaced
 				if cmd != nil && cmd.Process != nil {
-					cmd.Process.Signal(syscall.SIGTERM)
+					syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
@@ -4892,6 +4896,39 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 	http.ServeFile(w, r, logPath)
 }
 
+// killSessionProcessGroup sends SIGTERM to the session's entire process group,
+// waits briefly for graceful shutdown, then sends SIGKILL if still alive.
+// This ensures all child processes (dev servers, background tasks, etc.) are cleaned up.
+func killSessionProcessGroup(s *Session) {
+	if s.Cmd == nil || s.Cmd.Process == nil {
+		return
+	}
+
+	pid := s.Cmd.Process.Pid
+
+	// Send SIGTERM to the entire process group (-pid)
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
+		log.Printf("Failed to SIGTERM process group %d: %v", pid, err)
+	}
+
+	// Wait briefly for graceful shutdown
+	done := make(chan struct{})
+	go func() {
+		s.Cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Process group exited gracefully
+	case <-time.After(3 * time.Second):
+		// Force kill the entire process group
+		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
+			log.Printf("Failed to SIGKILL process group %d: %v", pid, err)
+		}
+		s.Cmd.Wait()
+	}
+}
+
 // handleSessionEndAPI handles POST /api/session/{uuid}/end
 func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -4909,7 +4946,7 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find and close the session
+	// Find the session and any child sessions (Terminal sessions opened from this agent)
 	sessionsMu.Lock()
 	session, exists := sessions[sessionUUID]
 	if !exists {
@@ -4918,25 +4955,26 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delete(sessions, sessionUUID)
-	sessionsMu.Unlock()
 
-	// Send SIGINT first for graceful shutdown, then SIGKILL after timeout
-	if session.Cmd != nil && session.Cmd.Process != nil {
-		session.Cmd.Process.Signal(syscall.SIGINT)
-		// Wait briefly for graceful shutdown
-		done := make(chan struct{})
-		go func() {
-			session.Cmd.Wait()
-			close(done)
-		}()
-		select {
-		case <-done:
-			// Process exited gracefully
-		case <-time.After(2 * time.Second):
-			// Force kill if still running
-			session.Cmd.Process.Kill()
+	// Collect child sessions (sessions whose ParentUUID matches this session)
+	var childSessions []*Session
+	for childUUID, childSess := range sessions {
+		if childSess.ParentUUID == sessionUUID {
+			childSessions = append(childSessions, childSess)
+			delete(sessions, childUUID)
 		}
 	}
+	sessionsMu.Unlock()
+
+	// End child sessions first
+	for _, child := range childSessions {
+		log.Printf("Cascade-ending child session %s (parent=%s)", child.UUID, sessionUUID)
+		killSessionProcessGroup(child)
+		child.Close()
+	}
+
+	// End the main session
+	killSessionProcessGroup(session)
 
 	// Close session resources (PTY, WebSocket clients, save metadata)
 	session.Close()
