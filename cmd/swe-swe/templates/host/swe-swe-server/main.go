@@ -4876,15 +4876,71 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 	http.ServeFile(w, r, logPath)
 }
 
+// collectDescendantPIDs returns all descendant PIDs of the given root PID
+// by traversing /proc. This catches processes in different process groups
+// (e.g., MCP servers spawned with detached: true by AI agents).
+func collectDescendantPIDs(rootPID int) []int {
+	// Build PPID → children map by scanning /proc
+	children := make(map[int][]int)
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			continue
+		}
+		// Parse PPID from /proc/[pid]/stat
+		// Format: pid (comm) state ppid ...
+		// comm can contain spaces and ')' so find the LAST ')'
+		statStr := string(data)
+		lastParen := strings.LastIndex(statStr, ")")
+		if lastParen < 0 || lastParen+2 >= len(statStr) {
+			continue
+		}
+		fields := strings.Fields(statStr[lastParen+2:])
+		if len(fields) < 2 {
+			continue
+		}
+		// fields[0] = state, fields[1] = ppid
+		ppid, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		children[ppid] = append(children[ppid], pid)
+	}
+
+	// BFS from rootPID to collect all descendants
+	var result []int
+	queue := children[rootPID]
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		result = append(result, pid)
+		queue = append(queue, children[pid]...)
+	}
+	return result
+}
+
 // killSessionProcessGroup sends SIGTERM to the session's entire process group,
 // waits briefly for graceful shutdown, then sends SIGKILL if still alive.
-// This ensures all child processes (dev servers, background tasks, etc.) are cleaned up.
+// Also traverses the process tree to kill any descendant processes that escaped
+// the process group (e.g., MCP servers spawned in detached process groups).
 func killSessionProcessGroup(s *Session) {
 	if s.Cmd == nil || s.Cmd.Process == nil {
 		return
 	}
 
 	pid := s.Cmd.Process.Pid
+
+	// Collect all descendant PIDs BEFORE killing — once the parent dies,
+	// orphaned children get reparented to PID 1 and we lose the lineage.
+	descendants := collectDescendantPIDs(pid)
 
 	// Send SIGTERM to the entire process group (-pid)
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
@@ -4907,6 +4963,15 @@ func killSessionProcessGroup(s *Session) {
 		}
 		s.Cmd.Wait()
 	}
+
+	// Kill any descendant processes that escaped the process group.
+	// These may be in a different PGID (e.g., detached MCP servers)
+	// and would not have received the group-wide signals above.
+	for _, dpid := range descendants {
+		if err := syscall.Kill(dpid, syscall.SIGKILL); err == nil {
+			log.Printf("Killed escaped descendant process %d (session pid %d)", dpid, pid)
+		}
+	}
 }
 
 // handleSessionEndAPI handles POST /api/session/{uuid}/end
@@ -4926,7 +4991,9 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the session and any child sessions (Terminal sessions opened from this agent)
+	// Find the session and collect child sessions, but keep them in the map
+	// so their ports stay reserved until cleanup completes. This prevents a
+	// new session from grabbing the same ports while processes are still dying.
 	sessionsMu.Lock()
 	session, exists := sessions[sessionUUID]
 	if !exists {
@@ -4934,14 +5001,14 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
-	delete(sessions, sessionUUID)
 
 	// Collect child sessions (sessions whose ParentUUID matches this session)
 	var childSessions []*Session
+	var childUUIDs []string
 	for childUUID, childSess := range sessions {
 		if childSess.ParentUUID == sessionUUID {
 			childSessions = append(childSessions, childSess)
-			delete(sessions, childUUID)
+			childUUIDs = append(childUUIDs, childUUID)
 		}
 	}
 	sessionsMu.Unlock()
@@ -4958,6 +5025,14 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 
 	// Close session resources (PTY, WebSocket clients, save metadata)
 	session.Close()
+
+	// Now remove sessions from the map — ports are safe to reuse
+	sessionsMu.Lock()
+	delete(sessions, sessionUUID)
+	for _, childUUID := range childUUIDs {
+		delete(sessions, childUUID)
+	}
+	sessionsMu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
 }
