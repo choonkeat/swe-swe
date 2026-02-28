@@ -1007,12 +1007,15 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.PublicPort, s.Theme, s.WorkDir, s.SessionMode)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
 
+	// Note: pty.Start sets Setsid=true which creates a new session AND process group,
+	// so kill(-pid, sig) still works for process group cleanup. Don't set Setpgid here
+	// because Setpgid + Setsid conflict (setpgid makes process a group leader, then
+	// setsid fails with EPERM).
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return err
@@ -3572,12 +3575,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = env
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
 
+	// Note: pty.Start sets Setsid=true which creates a new session AND process group,
+	// so kill(-pid, sig) still works for process group cleanup. Don't set Setpgid here
+	// because Setpgid + Setsid conflict (setpgid makes process a group leader, then
+	// setsid fails with EPERM).
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		if sessionCancel != nil {
