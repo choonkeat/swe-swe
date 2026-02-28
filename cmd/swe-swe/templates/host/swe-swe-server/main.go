@@ -190,7 +190,9 @@ type SessionPageQuery struct {
 }
 
 // Encode returns a URL-encoded query string (without leading "?").
-func (q SessionPageQuery) Encode() string {
+// Returns template.URL so html/template won't double-escape the & and = characters
+// when used inside href attributes.
+func (q SessionPageQuery) Encode() template.URL {
 	v := url.Values{}
 	if q.Assistant != "" {
 		v.Set("assistant", q.Assistant)
@@ -213,7 +215,7 @@ func (q SessionPageQuery) Encode() string {
 	if q.Debug {
 		v.Set("debug", "1")
 	}
-	return v.Encode()
+	return template.URL(v.Encode())
 }
 
 type SessionInfo struct {
