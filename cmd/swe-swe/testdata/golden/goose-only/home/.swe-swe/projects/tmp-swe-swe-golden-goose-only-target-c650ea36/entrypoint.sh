@@ -66,6 +66,12 @@ extensions:
     args:
       - "-y"
       - "@choonkeat/agent-whiteboard"
+  swe-swe:
+    type: stdio
+    cmd: sh
+    args:
+      - "-c"
+      - "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:9898/mcp?key='$MCP_AUTH_KEY"
 EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}✓ Created Goose MCP configuration${NC}"

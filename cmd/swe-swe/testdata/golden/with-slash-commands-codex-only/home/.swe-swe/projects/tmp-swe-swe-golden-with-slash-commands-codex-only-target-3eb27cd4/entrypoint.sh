@@ -65,6 +65,10 @@ args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localh
 [mcp_servers.swe-swe-whiteboard]
 command = "npx"
 args = ["-y", "@choonkeat/agent-whiteboard"]
+
+[mcp_servers.swe-swe]
+command = "sh"
+args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:9898/mcp?key='$MCP_AUTH_KEY"]
 EOF
 chown -R app: /home/app/.codex
 echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
