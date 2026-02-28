@@ -16,7 +16,7 @@ Port-based (preferred, per-origin isolation):
   Agent Chat:  MCP sidecar ←  swe-swe-server :24000  ←  Traefik :24000 (forwardauth)  ←  Browser
                  :4000
 
-  Public:      User's app  ←  swe-swe-server :25000  ←  Traefik :25000 (NO auth)      ←  Anyone
+  Public:      User's app  ←  Traefik :5000 (NO auth)  ←  Anyone
                  :5000
 
 Path-based (fallback, when ports are unreachable):
@@ -27,9 +27,9 @@ Path-based (fallback, when ports are unreachable):
                  :4000          :9898
 ```
 
-The **public port** differs from preview/agent chat: its Traefik router omits the `forwardauth@file` middleware, making it accessible without login. Use it for webhooks, public APIs, or shareable URLs.
+The **public port** differs from preview/agent chat: Traefik routes directly to the user's app (no swe-swe-server proxy in between) and omits the `forwardauth@file` middleware, making it accessible without login. Use it for webhooks, public APIs, or shareable URLs.
 
-Both paths reach the **same proxy instance** — the embedded `agent-reverse-proxy` Go library inside swe-swe-server. The per-port listeners are thin wrappers that delegate to the same handler.
+Preview and agent chat paths reach the **same proxy instance** — the embedded `agent-reverse-proxy` Go library inside swe-swe-server. The per-port listeners are thin wrappers that delegate to the same handler.
 
 ### Derived ports
 
@@ -37,7 +37,7 @@ Both paths reach the **same proxy instance** — the embedded `agent-reverse-pro
 - `publicPort(previewPort) = previewPort + 2000` (e.g., 3000 → 5000)
 - `previewProxyPort(previewPort) = previewPort + proxyPortOffset` (default offset: 20000)
 - `agentChatProxyPort(acPort) = acPort + proxyPortOffset`
-- `publicProxyPort(publicPort) = publicPort + proxyPortOffset`
+- Public ports have no proxy offset — Traefik routes directly to the app port
 
 ### Environment variables
 
@@ -49,7 +49,7 @@ swe-swe-server passes these to the container environment:
 
 ### Port reservation
 
-`findAvailablePortPair()` reserves three app ports (preview, agent chat, public) by bind-probing. Additionally, swe-swe-server starts per-port listeners on the derived proxy ports (e.g., :23000, :24000, :25000) when each session is created.
+`findAvailablePortPair()` reserves three app ports (preview, agent chat, public) by bind-probing. swe-swe-server starts per-port listeners on the derived proxy ports for preview and agent chat (e.g., :23000, :24000) when each session is created. Public ports need no proxy listener — Traefik routes directly to the app.
 
 ### Agent bridge
 

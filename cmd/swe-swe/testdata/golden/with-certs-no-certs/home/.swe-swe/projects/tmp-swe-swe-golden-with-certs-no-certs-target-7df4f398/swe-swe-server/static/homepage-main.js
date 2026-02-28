@@ -31,11 +31,9 @@
 
 function endSession(uuid, button) {
     var publicPort = parseInt(button.dataset.publicPort, 10) || 0;
-    var publicProxyPort = parseInt(button.dataset.publicProxyPort, 10) || 0;
     checkPublicPortAndEndSession({
         uuid: uuid,
         publicPort: publicPort,
-        publicProxyPort: publicProxyPort,
         onSuccess: function() {
             window.location.reload();
         }

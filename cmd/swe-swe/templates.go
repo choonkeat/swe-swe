@@ -221,8 +221,7 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 				indent := strings.Split(line, "{{PUBLIC_ENTRYPOINTS}}")[0]
 				for _, port := range publicPorts {
 					entrypoint := fmt.Sprintf("public%d", port)
-					pp := publicProxyPort(port, proxyPortOffset)
-					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, pp))
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, port))
 					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.transport.respondingTimeouts.readTimeout=60s\"", indent, entrypoint))
 				}
 				continue
@@ -231,8 +230,7 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 			if strings.Contains(line, "{{PUBLIC_PORTS}}") {
 				indent := strings.Split(line, "{{PUBLIC_PORTS}}")[0]
 				for _, port := range publicPorts {
-					pp := publicProxyPort(port, proxyPortOffset)
-					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, pp, pp))
+					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, port, port))
 				}
 				continue
 			}
@@ -288,12 +286,11 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 				indent := strings.Split(line, "{{PUBLIC_ROUTERS}}")[0]
 				for _, port := range publicPorts {
 					entrypoint := fmt.Sprintf("public%d", port)
-					pp := publicProxyPort(port, proxyPortOffset)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-public-%d", port)
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, pp))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, port))
 					if isSSL {
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
@@ -347,9 +344,6 @@ func agentChatProxyPort(port, offset int) int {
 	return offset + port
 }
 
-func publicProxyPort(port, offset int) int {
-	return offset + port
-}
 
 // processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions
 func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo) string {

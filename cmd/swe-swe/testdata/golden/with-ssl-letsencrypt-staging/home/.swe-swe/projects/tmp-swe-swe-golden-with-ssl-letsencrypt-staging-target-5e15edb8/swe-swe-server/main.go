@@ -93,7 +93,6 @@ var (
 
 func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
-func publicProxyPort(port int) int     { return proxyPortOffset + port }
 
 // ANSI escape sequence helpers for terminal formatting
 func ansiCyan(s string) string   { return "\033[0;36m" + s + "\033[0m" }
@@ -183,8 +182,7 @@ type SessionInfo struct {
 	ClientCount     int
 	CreatedAt       time.Time
 	DurationStr     string // human-readable duration (e.g., "5m", "1h 23m")
-	PublicPort      int    // PUBLIC_PORT env var value (e.g. 5000)
-	PublicProxyPort int    // Traefik proxy port (e.g. 25000)
+	PublicPort int // PUBLIC_PORT env var value (e.g. 5000)
 }
 
 // formatDuration returns a human-readable duration string
@@ -354,8 +352,7 @@ type Session struct {
 	PreviewProxy          *agentproxy.Proxy // Per-session preview proxy instance
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
-	AgentChatProxyServer  *http.Server      // Per-port listener for agent chat proxy (port-based mode)
-	PublicProxyServer     *http.Server      // Per-port listener for public (no-auth) proxy (port-based mode)
+	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -682,7 +679,6 @@ func (s *Session) BroadcastStatus() {
 		"agentChatPort":      agentChatPort,
 		"previewProxyPort":   previewProxyPort(s.PreviewPort),
 		"publicPort":         s.PublicPort,
-		"publicProxyPort":    publicProxyPort(s.PublicPort),
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 	}
@@ -832,9 +828,6 @@ func (s *Session) Close() {
 	}
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
-	}
-	if s.PublicProxyServer != nil {
-		s.PublicProxyServer.Shutdown(shutdownCtx)
 	}
 
 	// Close all WebSocket client connections
@@ -1667,8 +1660,7 @@ func main() {
 					ClientCount: sess.ClientCount(),
 					CreatedAt:   sess.CreatedAt,
 					DurationStr:     formatDuration(time.Since(sess.CreatedAt)),
-					PublicPort:      sess.PublicPort,
-					PublicProxyPort: publicProxyPort(sess.PublicPort),
+					PublicPort: sess.PublicPort,
 				}
 				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
 			}
@@ -3716,25 +3708,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		}()
 		sess.AgentChatProxyServer = acSrv
 
-		// Start public (no-auth) proxy listener
-		pubTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", pubPort))
-		pubPP := publicProxyPort(pubPort)
-		pubSrv := &http.Server{
-			Addr:    fmt.Sprintf(":%d", pubPP),
-			Handler: corsWrapper(agentChatProxyHandler(pubTarget)),
-		}
-		go func() {
-			ln, err := net.Listen("tcp", pubSrv.Addr)
-			if err != nil {
-				log.Printf("Session %s: public proxy port %d unavailable: %v", sessionUUID, pubPP, err)
-				return
-			}
-			log.Printf("Session %s: public proxy listening on :%d", sessionUUID, pubPP)
-			if err := pubSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: public proxy server error: %v", sessionUUID, err)
-			}
-		}()
-		sess.PublicProxyServer = pubSrv
+		// Public port: Traefik routes directly to the app (no swe-swe-server proxy needed)
 	}
 
 	// Save metadata immediately so recordings are properly tracked even if session ends unexpectedly

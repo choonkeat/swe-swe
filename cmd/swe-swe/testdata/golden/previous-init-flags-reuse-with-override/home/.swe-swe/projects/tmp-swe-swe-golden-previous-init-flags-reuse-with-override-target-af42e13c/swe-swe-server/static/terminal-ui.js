@@ -41,7 +41,6 @@ class TerminalUI extends HTMLElement {
         this.previewProxyPort = null;
         this.agentChatProxyPort = null;
         this.publicPort = null;
-        this.publicProxyPort = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1014,7 +1013,6 @@ class TerminalUI extends HTMLElement {
                 this.previewProxyPort = msg.previewProxyPort || null;
                 this.agentChatProxyPort = msg.agentChatProxyPort || null;
                 this.publicPort = msg.publicPort || null;
-                this.publicProxyPort = msg.publicProxyPort || null;
                 // Probe agent chat proxy — two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
@@ -1464,7 +1462,6 @@ class TerminalUI extends HTMLElement {
                 checkPublicPortAndEndSession({
                     uuid: uuid,
                     publicPort: this.publicPort,
-                    publicProxyPort: this.publicProxyPort,
                     onSuccess: function() {
                         window.location.href = '/';
                     }

@@ -6,15 +6,13 @@
  *
  * @param {Object} opts
  * @param {string} opts.uuid - Session UUID
- * @param {number|null} opts.publicPort - PUBLIC_PORT env var value (e.g. 5000)
- * @param {number|null} opts.publicProxyPort - Traefik proxy port (e.g. 25000)
+ * @param {number|null} opts.publicPort - PUBLIC_PORT value (e.g. 5000); Traefik routes directly to this port
  * @param {function} opts.onSuccess - Called after session is ended successfully
  * @param {function} [opts.onError] - Called on error (defaults to alert)
  */
 function checkPublicPortAndEndSession(opts) {
     var uuid = opts.uuid;
     var publicPort = opts.publicPort;
-    var publicProxyPort = opts.publicProxyPort;
     var onSuccess = opts.onSuccess;
     var onError = opts.onError || function(msg) { alert(msg); };
 
@@ -24,13 +22,13 @@ function checkPublicPortAndEndSession(opts) {
     }
 
     // If no public port configured, skip the check
-    if (!publicPort || !publicProxyPort) {
+    if (!publicPort) {
         doEndSession(uuid, onSuccess, onError);
         return;
     }
 
-    // Try to fetch the public proxy URL to see if something is listening
-    var publicUrl = location.protocol + '//' + location.hostname + ':' + publicProxyPort + '/';
+    // Probe the public port to see if something is listening
+    var publicUrl = location.protocol + '//' + location.hostname + ':' + publicPort + '/';
 
     fetch(publicUrl, { method: 'GET', mode: 'cors' })
         .then(function(response) {
