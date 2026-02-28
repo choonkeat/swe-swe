@@ -1918,11 +1918,14 @@ func main() {
 			}
 
 			// If session already exists with different assistant, redirect to correct URL
+			// preserving all other query params (pwd, branch, name, session, etc.)
 			sessionsMu.RLock()
 			existingSession, exists := sessions[sessionUUID]
 			sessionsMu.RUnlock()
 			if exists && existingSession.Assistant != assistant {
-				correctURL := fmt.Sprintf("/session/%s?assistant=%s", sessionUUID, existingSession.Assistant)
+				q := r.URL.Query()
+				q.Set("assistant", existingSession.Assistant)
+				correctURL := fmt.Sprintf("/session/%s?%s", sessionUUID, q.Encode())
 				log.Printf("Session %s exists with assistant=%s, redirecting from %s", sessionUUID, existingSession.Assistant, assistant)
 				http.Redirect(w, r, correctURL, http.StatusFound)
 				return
@@ -3799,13 +3802,24 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	var parentRecordingUUID string
 	if parentUUID != "" {
 		sessionsMu.RLock()
-		if parentSess, ok := sessions[parentUUID]; ok {
+		parentSess, parentFound := sessions[parentUUID]
+		if parentFound {
 			workDir = parentSess.WorkDir
 			parentName = parentSess.Name
 			parentRecordingUUID = parentSess.RecordingUUID
 			log.Printf("Shell session inheriting workDir from parent %s: %s", parentUUID, workDir)
 		}
 		sessionsMu.RUnlock()
+
+		// If parent was specified but not found (e.g., after server reboot),
+		// reject the connection so the client retries — the parent tab may
+		// reconnect shortly and recreate the parent session.
+		if !parentFound {
+			log.Printf("Parent session %s not found for child %s, rejecting (client will retry)", parentUUID, sessionUUID)
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(4001, "parent session not found"))
+			return
+		}
 	}
 
 	// Get theme hint from client for COLORFGBG env var

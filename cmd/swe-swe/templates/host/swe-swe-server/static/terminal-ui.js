@@ -830,6 +830,14 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
+            // Parent session not found (e.g., after server reboot) — retry so
+            // the parent tab has a chance to reconnect and recreate first.
+            if (event.code === 4001) {
+                this.updateStatus('connecting', 'Waiting for parent session...');
+                setTimeout(() => this.scheduleReconnect(), 1000);
+                return;
+            }
+
             // Show close reason in status bar for debugging
             this.updateStatus('error', `Disconnected: ${reason}`);
             // Brief delay to show the error before scheduling reconnect
