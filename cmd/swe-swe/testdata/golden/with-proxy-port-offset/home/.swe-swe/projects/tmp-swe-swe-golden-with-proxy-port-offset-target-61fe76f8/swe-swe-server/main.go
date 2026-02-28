@@ -176,15 +176,54 @@ type AssistantConfig struct {
 }
 
 // SessionInfo holds session data for template rendering
+// SessionPageQuery holds the query parameters for a session page URL.
+// Encode() produces the canonical query string used by both the Go
+// templates and (mirrored in) the JS buildSessionPageUrl function.
+type SessionPageQuery struct {
+	Assistant   string // required — agent binary name
+	SessionMode string // "chat" or "terminal"; omit if terminal (default)
+	Name        string // display name (optional)
+	BranchName  string // git branch / worktree (optional)
+	WorkDir     string // working directory; omit if "/workspace" (default)
+	ParentUUID  string // parent session UUID (shell sub-sessions)
+	Debug       bool   // debug UI flag
+}
+
+// Encode returns a URL-encoded query string (without leading "?").
+func (q SessionPageQuery) Encode() string {
+	v := url.Values{}
+	if q.Assistant != "" {
+		v.Set("assistant", q.Assistant)
+	}
+	if q.SessionMode != "" && q.SessionMode != "terminal" {
+		v.Set("session", q.SessionMode)
+	}
+	if q.Name != "" {
+		v.Set("name", q.Name)
+	}
+	if q.BranchName != "" {
+		v.Set("branch", q.BranchName)
+	}
+	if q.WorkDir != "" && q.WorkDir != "/workspace" {
+		v.Set("pwd", q.WorkDir)
+	}
+	if q.ParentUUID != "" {
+		v.Set("parent", q.ParentUUID)
+	}
+	if q.Debug {
+		v.Set("debug", "1")
+	}
+	return v.Encode()
+}
+
 type SessionInfo struct {
-	UUID            string
-	UUIDShort       string
-	Name            string // User-assigned session name (optional)
-	Assistant       string // binary name for URL
-	ClientCount     int
-	CreatedAt       time.Time
-	DurationStr     string // human-readable duration (e.g., "5m", "1h 23m")
-	PublicPort int // PUBLIC_PORT env var value (e.g. 5000)
+	UUID        string
+	UUIDShort   string
+	ClientCount int
+	CreatedAt   time.Time
+	DurationStr string // human-readable duration (e.g., "5m", "1h 23m")
+	PublicPort  int    // PUBLIC_PORT env var value (e.g. 5000)
+	Query       SessionPageQuery
 }
 
 // formatDuration returns a human-readable duration string
@@ -218,7 +257,10 @@ type RecordingMetadata struct {
 	UUID          string     `json:"uuid"`
 	Name          string     `json:"name,omitempty"`
 	Agent         string     `json:"agent"`
+	AgentBinary   string     `json:"agent_binary,omitempty"`   // binary name for URLs (e.g. "claude"); empty in old recordings
 	RecordingType string     `json:"recording_type,omitempty"` // "agent", "chat", "terminal"
+	SessionMode   string     `json:"session_mode,omitempty"`   // "terminal" or "chat"
+	BranchName    string     `json:"branch_name,omitempty"`    // git branch / worktree name
 	StartedAt     time.Time  `json:"started_at"`
 	EndedAt       *time.Time `json:"ended_at,omitempty"`
 	KeptAt       *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
@@ -1684,12 +1726,19 @@ func main() {
 				info := SessionInfo{
 					UUID:        sess.UUID,
 					UUIDShort:   uuidShort,
-					Name:        sess.Name,
-					Assistant:   sess.Assistant,
 					ClientCount: sess.ClientCount(),
 					CreatedAt:   sess.CreatedAt,
-					DurationStr:     formatDuration(time.Since(sess.CreatedAt)),
-					PublicPort: sess.PublicPort,
+					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
+					PublicPort:  sess.PublicPort,
+					Query: SessionPageQuery{
+						Assistant:   sess.Assistant,
+						SessionMode: sess.SessionMode,
+						Name:        sess.Name,
+						BranchName:  sess.BranchName,
+						WorkDir:     sess.WorkDir,
+						ParentUUID:  sess.ParentUUID,
+						Debug:       debugMode,
+					},
 				}
 				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
 			}
@@ -1738,6 +1787,13 @@ func main() {
 					end = len(recordings)
 				}
 				recordings = recordings[start:end]
+			}
+
+			// Propagate debug flag to recording restart queries
+			if debugMode {
+				for i := range recordings {
+					recordings[i].Query.Debug = true
+				}
 			}
 
 			// Build AgentWithSessions for all available assistants (homepage only)
@@ -3652,7 +3708,10 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			UUID:          recordingUUID,
 			Name:          name,
 			Agent:         cfg.Name,
+			AgentBinary:   cfg.Binary,
 			RecordingType: recType,
+			SessionMode:   sessionMode,
+			BranchName:    branch,
 			StartedAt:     now,
 			Command:       append([]string{cmdName}, cmdArgs...),
 			MaxCols:       80, // Default starting size
@@ -4355,6 +4414,8 @@ type RecordingInfo struct {
 	HasTerminal     bool       // has a terminal .log child recording
 	ChatUUID        string     // child UUID for chat playback URL
 	TerminalUUIDs   []string   // child UUIDs for terminal playback
+	RestartUUID     string           // fresh UUID for "restart" link
+	Query           SessionPageQuery // params to restart a similar session
 }
 
 func agentBadgeClass(agent string) string {
@@ -4500,8 +4561,9 @@ func loadEndedRecordings() []RecordingInfo {
 		}
 
 		info := RecordingInfo{
-			UUID:      ruuid,
-			UUIDShort: uuidShort,
+			UUID:        ruuid,
+			UUIDShort:   uuidShort,
+			RestartUUID: uuid.New().String(),
 		}
 
 		// Attach child info
@@ -4532,6 +4594,19 @@ func loadEndedRecordings() []RecordingInfo {
 				} else {
 					info.EndedAt = meta.StartedAt
 					info.EndedAgo = formatTimeAgo(meta.StartedAt)
+				}
+				// Build restart query from metadata
+				binary := meta.AgentBinary
+				if binary == "" {
+					// Old recordings: fall back to lowercased display name
+					binary = strings.ToLower(meta.Agent)
+				}
+				info.Query = SessionPageQuery{
+					Assistant:   binary,
+					SessionMode: meta.SessionMode,
+					Name:        meta.Name,
+					BranchName:  meta.BranchName,
+					WorkDir:     meta.WorkDir,
 				}
 			}
 		} else {

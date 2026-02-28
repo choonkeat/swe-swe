@@ -505,27 +505,25 @@
         }
     });
 
-    // Build session URL (shared by both start buttons)
-    function buildSessionUrl() {
-        var url = '/session/' + dialogState.sessionUUID + '?assistant=' + encodeURIComponent(dialogState.selectedAgent);
-        if (dialogState.debug) {
-            url += '&debug=1';
+    // Build session URL (shared by both start buttons).
+    // Mirrors url-builder.js:buildSessionPageUrl — keep param contract in sync.
+    function buildSessionUrl(sessionMode) {
+        var p = new URLSearchParams();
+        p.set('assistant', dialogState.selectedAgent);
+        if (sessionMode && sessionMode !== 'terminal') p.set('session', sessionMode);
+        if (dialogState.isNewProject && dialogState.projectName) {
+            p.set('name', dialogState.projectName);
+        } else if (dialogState.selectedBranch) {
+            p.set('branch', dialogState.selectedBranch);
         }
         if (dialogState.repoPath && dialogState.repoPath !== '/workspace') {
-            url += '&pwd=' + encodeURIComponent(dialogState.repoPath);
+            p.set('pwd', dialogState.repoPath);
         }
+        if (dialogState.debug) p.set('debug', '1');
 
-        // For new projects, name is the display name (no branch/worktree needed)
-        if (dialogState.isNewProject && dialogState.projectName) {
-            url += '&name=' + encodeURIComponent(dialogState.projectName);
-        } else if (dialogState.selectedBranch) {
-            // For workspace/existing repos, branch is used for worktree creation
-            url += '&branch=' + encodeURIComponent(dialogState.selectedBranch);
-        }
-
-        // Save and pass color
+        // color is CSS-only (not read by server), append after canonical params
         if (dialogState.sessionColor) {
-            url += '&color=' + encodeURIComponent(dialogState.sessionColor.replace('#', ''));
+            p.set('color', dialogState.sessionColor.replace('#', ''));
             if (dialogState.whereKey && window.sweSweTheme) {
                 window.sweSweTheme.saveColorPreference(
                     window.sweSweTheme.COLOR_STORAGE_KEYS.REPO_TYPE_PREFIX + dialogState.whereKey,
@@ -534,19 +532,19 @@
             }
         }
 
-        return url;
+        return '/session/' + dialogState.sessionUUID + '?' + p.toString();
     }
 
     // Start Agent Terminal session
     startTerminalBtn.addEventListener('click', function() {
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
-        window.location.href = buildSessionUrl() + '&session=terminal';
+        window.location.href = buildSessionUrl('terminal');
     });
 
     // Start Agent Chat session
     startChatBtn.addEventListener('click', function() {
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
-        window.location.href = buildSessionUrl() + '&session=chat';
+        window.location.href = buildSessionUrl('chat');
     });
 
     // Dialog open

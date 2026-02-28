@@ -34,8 +34,11 @@ export function buildVSCodeUrl(baseUrl, workDir) {
  */
 export function buildShellUrl(config) {
     const { baseUrl, shellUUID, parentUUID, debug } = config;
-    const debugQS = debug ? '&debug=1' : '';
-    return `${baseUrl}/session/${shellUUID}?assistant=shell&parent=${encodeURIComponent(parentUUID)}${debugQS}`;
+    return buildSessionPageUrl(baseUrl, shellUUID, {
+        assistant: 'shell',
+        parent: parentUUID,
+        debug,
+    });
 }
 
 /**
@@ -118,6 +121,28 @@ export function buildPortBasedProxyUrl(location, previewProxyPort, targetURL) {
     } catch {
         return base + (targetURL.startsWith('/') ? targetURL : '/' + targetURL);
     }
+}
+
+/**
+ * Build a session page URL with canonical query param ordering.
+ * Mirrors Go SessionPageQuery.Encode() — keep both in sync.
+ *
+ * @param {string} baseUrl - Base URL (e.g. "http://localhost:8080")
+ * @param {string} sessionUUID - Session UUID for the path segment
+ * @param {{assistant: string, session?: string, name?: string, branch?: string, pwd?: string, parent?: string, debug?: boolean}} params
+ * @returns {string} Full session page URL
+ */
+export function buildSessionPageUrl(baseUrl, sessionUUID, params) {
+    const p = new URLSearchParams();
+    if (params.assistant) p.set('assistant', params.assistant);
+    if (params.session && params.session !== 'terminal') p.set('session', params.session);
+    if (params.name) p.set('name', params.name);
+    if (params.branch) p.set('branch', params.branch);
+    if (params.pwd && params.pwd !== '/workspace') p.set('pwd', params.pwd);
+    if (params.parent) p.set('parent', params.parent);
+    if (params.debug) p.set('debug', '1');
+    const qs = p.toString();
+    return `${baseUrl}/session/${sessionUUID}${qs ? '?' + qs : ''}`;
 }
 
 /**

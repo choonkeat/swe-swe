@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -119,6 +119,72 @@ test('buildShellUrl handles https base URL', () => {
         }),
         'https://secure.example.com/session/secure-shell?assistant=shell&parent=secure-parent&debug=1'
     );
+});
+
+// buildSessionPageUrl tests
+test('buildSessionPageUrl with assistant only', () => {
+    assert.strictEqual(
+        buildSessionPageUrl('http://localhost:8080', 'uuid-1', { assistant: 'claude' }),
+        'http://localhost:8080/session/uuid-1?assistant=claude'
+    );
+});
+
+test('buildSessionPageUrl with chat session mode', () => {
+    assert.strictEqual(
+        buildSessionPageUrl('http://localhost:8080', 'uuid-1', { assistant: 'claude', session: 'chat' }),
+        'http://localhost:8080/session/uuid-1?assistant=claude&session=chat'
+    );
+});
+
+test('buildSessionPageUrl omits session param for terminal mode', () => {
+    assert.strictEqual(
+        buildSessionPageUrl('http://localhost:8080', 'uuid-1', { assistant: 'claude', session: 'terminal' }),
+        'http://localhost:8080/session/uuid-1?assistant=claude'
+    );
+});
+
+test('buildSessionPageUrl with all optional params', () => {
+    const url = buildSessionPageUrl('http://localhost:8080', 'uuid-1', {
+        assistant: 'claude',
+        session: 'chat',
+        name: 'my-session',
+        branch: 'feature/foo',
+        pwd: '/repos/myproject',
+        parent: 'parent-uuid',
+        debug: true,
+    });
+    assert.strictEqual(
+        url,
+        'http://localhost:8080/session/uuid-1?assistant=claude&session=chat&name=my-session&branch=feature%2Ffoo&pwd=%2Frepos%2Fmyproject&parent=parent-uuid&debug=1'
+    );
+});
+
+test('buildSessionPageUrl omits pwd when /workspace', () => {
+    assert.strictEqual(
+        buildSessionPageUrl('http://localhost:8080', 'uuid-1', { assistant: 'claude', pwd: '/workspace' }),
+        'http://localhost:8080/session/uuid-1?assistant=claude'
+    );
+});
+
+test('buildSessionPageUrl includes pwd when not /workspace', () => {
+    const url = buildSessionPageUrl('http://localhost:8080', 'uuid-1', { assistant: 'claude', pwd: '/repos/foo' });
+    assert.ok(url.includes('pwd=%2Frepos%2Ffoo'));
+});
+
+test('buildSessionPageUrl with debug flag', () => {
+    const url = buildSessionPageUrl('http://localhost:8080', 'uuid-1', { assistant: 'claude', debug: true });
+    assert.strictEqual(
+        url,
+        'http://localhost:8080/session/uuid-1?assistant=claude&debug=1'
+    );
+});
+
+test('buildSessionPageUrl encodes special characters', () => {
+    const url = buildSessionPageUrl('http://localhost:8080', 'uuid-1', {
+        assistant: 'claude',
+        name: 'my session & stuff',
+    });
+    assert.ok(url.includes('name=my+session+%26+stuff'));
 });
 
 // buildPreviewUrl tests
