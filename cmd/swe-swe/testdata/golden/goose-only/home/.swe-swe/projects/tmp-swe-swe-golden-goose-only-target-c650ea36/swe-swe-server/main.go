@@ -5695,7 +5695,122 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			return nil, nil, fmt.Errorf("invalid mode '%s': use workspace, clone, or create", args.Mode)
 		}
 	})
+
+	// send_chat_message — proxy to agent-chat orchestrator
+	type sendChatArgs struct {
+		UUID string `json:"uuid" jsonschema:"Session UUID"`
+		Text string `json:"text" jsonschema:"Message text to send"`
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "send_chat_message",
+		Description: "Send a message to a session's agent chat (as if a user sent it from the browser)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendChatArgs) (*mcp.CallToolResult, any, error) {
+		sessionsMu.RLock()
+		sess, exists := sessions[args.UUID]
+		sessionsMu.RUnlock()
+		if !exists {
+			return nil, nil, fmt.Errorf("session not found")
+		}
+		if sess.AgentChatPort == 0 {
+			return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
+		}
+		result, err := callAgentChatOrchestrator(sess.AgentChatPort, "push_message", map[string]string{"text": args.Text})
+		if err != nil {
+			return nil, nil, fmt.Errorf("agent chat error: %w", err)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil, nil
+	})
+
+	// get_chat_history — proxy to agent-chat orchestrator
+	type getChatArgs struct {
+		UUID   string `json:"uuid" jsonschema:"Session UUID"`
+		Cursor int64  `json:"cursor,omitempty" jsonschema:"Return events with seq > cursor. 0 returns all."`
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_chat_history",
+		Description: "Get chat event history from a session's agent chat",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args getChatArgs) (*mcp.CallToolResult, any, error) {
+		sessionsMu.RLock()
+		sess, exists := sessions[args.UUID]
+		sessionsMu.RUnlock()
+		if !exists {
+			return nil, nil, fmt.Errorf("session not found")
+		}
+		if sess.AgentChatPort == 0 {
+			return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
+		}
+		result, err := callAgentChatOrchestrator(sess.AgentChatPort, "get_chat_history", map[string]int64{"cursor": args.Cursor})
+		if err != nil {
+			return nil, nil, fmt.Errorf("agent chat error: %w", err)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil, nil
+	})
+
 	return nil
+}
+
+// callAgentChatOrchestrator makes a JSON-RPC call to the agent-chat's
+// /mcp/orchestrator StreamableHTTP endpoint.
+func callAgentChatOrchestrator(port int, toolName string, args any) (string, error) {
+	// Build MCP tools/call JSON-RPC request
+	type mcpCallParams struct {
+		Name      string `json:"name"`
+		Arguments any    `json:"arguments,omitempty"`
+	}
+	type jsonRPCRequest struct {
+		JSONRPC string        `json:"jsonrpc"`
+		ID      int           `json:"id"`
+		Method  string        `json:"method"`
+		Params  mcpCallParams `json:"params"`
+	}
+	rpcReq := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "tools/call",
+		Params:  mcpCallParams{Name: toolName, Arguments: args},
+	}
+	body, err := json.Marshal(rpcReq)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("http://localhost:%d/mcp/orchestrator", port)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("POST %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse JSON-RPC response to extract tool result text
+	var rpcResp struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError,omitempty"`
+		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
+		return "", fmt.Errorf("parse response: %w (body: %s)", err, string(respBody))
+	}
+	if rpcResp.Error != nil {
+		return "", fmt.Errorf("RPC error: %s", rpcResp.Error.Message)
+	}
+	if len(rpcResp.Result.Content) > 0 {
+		return rpcResp.Result.Content[0].Text, nil
+	}
+	return "", nil
 }
 
 // handleRecordingAPI routes recording API requests
