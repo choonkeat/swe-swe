@@ -5499,8 +5499,21 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if !exists {
 			return nil, nil, fmt.Errorf("session not found")
 		}
-		if err := sess.WriteInputOrBuffer([]byte(args.Text)); err != nil {
-			return nil, nil, fmt.Errorf("write failed: %w", err)
+		// Strip trailing newlines/carriage-returns and send them after a delay
+		// as a raw CR byte, matching the mobile keyboard pattern (300ms) so the
+		// TUI processes the text before receiving Enter.
+		text := strings.TrimRight(args.Text, "\r\n")
+		hasTrailingNewline := len(text) < len(args.Text)
+		if text != "" {
+			if err := sess.WriteInputOrBuffer([]byte(text)); err != nil {
+				return nil, nil, fmt.Errorf("write failed: %w", err)
+			}
+		}
+		if hasTrailingNewline {
+			time.Sleep(300 * time.Millisecond)
+			if err := sess.WriteInputOrBuffer([]byte{'\r'}); err != nil {
+				return nil, nil, fmt.Errorf("write failed: %w", err)
+			}
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "input sent"}}}, nil, nil
 	})
