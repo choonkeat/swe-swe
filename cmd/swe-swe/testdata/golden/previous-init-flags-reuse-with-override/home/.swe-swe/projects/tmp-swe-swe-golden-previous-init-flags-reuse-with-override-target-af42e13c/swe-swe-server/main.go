@@ -3028,7 +3028,7 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		}
 	}
 
-	// Write swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup) into cloned repo
+	// Set up swe-swe files (.swe-swe/docs/*, swe-swe/setup) and clean up legacy .mcp.json
 	if err := setupSweSweFiles(repoPath); err != nil {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
@@ -3115,7 +3115,7 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		// Non-fatal: the repo still works, just without an initial commit
 	}
 
-	// Write swe-swe files (.mcp.json, .swe-swe/docs/*, swe-swe/setup) into new project
+	// Set up swe-swe files (.swe-swe/docs/*, swe-swe/setup) and clean up legacy .mcp.json
 	if err := setupSweSweFiles(repoPath); err != nil {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}

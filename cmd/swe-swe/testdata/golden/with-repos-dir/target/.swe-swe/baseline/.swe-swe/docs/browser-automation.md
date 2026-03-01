@@ -34,9 +34,9 @@ If browser tools are unavailable, check in order:
 
 ### 1. Is MCP config present?
 ```bash
-cat .mcp.json
+claude mcp list
 ```
-Should show playwright config with `--cdp-endpoint http://chrome:9223` in args
+Should show `swe-swe-playwright` with `--cdp-endpoint http://chrome:9223` in args
 
 ### 2. Is Chrome container running?
 From host: Screencast should work at http://localhost:1977/chrome/
@@ -60,7 +60,7 @@ Should show `0.0.0.0:9223` (not 127.0.0.1).
 - **Container needs rebuild**: After config changes, run `swe-swe stop && swe-swe build && swe-swe up`
 
 ## Configuration Files
-- `.mcp.json` - MCP Playwright config (in project root)
+- `~/.claude.json` - MCP server config (user scope, set up at container startup)
 - `cmd/swe-swe/templates/host/chrome-screencast/Dockerfile` - Chrome container image
 - `cmd/swe-swe/templates/host/chrome-screencast/supervisord.conf` - Process manager (chromium, nginx, screencast)
 - `cmd/swe-swe/templates/host/chrome-screencast/nginx-cdp.conf` - CDP reverse proxy config

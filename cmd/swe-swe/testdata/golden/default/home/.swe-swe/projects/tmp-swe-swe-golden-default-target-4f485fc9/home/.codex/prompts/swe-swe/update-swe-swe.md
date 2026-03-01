@@ -32,11 +32,6 @@ Apply these rules:
 
 ### 3. Special merge notes
 
-**`.mcp.json`**: This is a JSON object with `mcpServers`. Merge the objects:
-- Keep any user-added server entries
-- Update/replace entries that came from swe-swe (compare with baseline)
-- Add any new entries from the new template
-
 **`AGENTS.md`**: Has structured sections:
 - **Commands table** and **Documentation list**: Replace from new template
 - **Current Setup section**: Preserve entirely (agent-written content)
