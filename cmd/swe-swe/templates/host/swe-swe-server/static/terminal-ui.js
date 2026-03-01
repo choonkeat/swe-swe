@@ -2446,6 +2446,16 @@ class TerminalUI extends HTMLElement {
                 this.sendKey(e.data.keystroke);
                 this.sendKey('\r');
             }
+            // When user says Stop/Cancel in Agent Chat, send Esc Esc to abort
+            // the current tool, then nudge agent to check_messages
+            if (e.data && e.data.type === 'agent-chat-interrupt') {
+                this.sendKey('\x1b');
+                this.sendKey('\x1b');
+                setTimeout(() => {
+                    this.sendKey('check_messages; i sent u a chat message');
+                    setTimeout(() => this.sendKey('\r'), 300);
+                }, 300);
+            }
         });
 
         // Status bar click: reconnect when disconnected, open settings when connected
