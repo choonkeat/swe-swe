@@ -20,6 +20,10 @@ function checkPublicPortAndEndSession(opts) {
         return;
     }
 
+    if (!confirm('End this session?')) {
+        return;
+    }
+
     doEndSession(uuid, null, onSuccess, onError);
 }
 
