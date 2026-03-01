@@ -5,10 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	crypto_rand "crypto/rand"
 	"crypto/tls"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -1220,10 +1218,6 @@ var (
 	// serverCtx is cancelled on SIGINT/SIGTERM for graceful shutdown.
 	// Session contexts derive from this so all processes are cleaned up.
 	serverCtx context.Context
-
-	// mcpAuthKey authenticates requests to the global orchestration MCP server.
-	// Generated at boot, injected into sessions as MCP_AUTH_KEY env var.
-	mcpAuthKey string
 )
 
 // detectAvailableAssistants checks which AI assistants are installed and populates availableAssistants.
@@ -1590,11 +1584,6 @@ func main() {
 		}
 	}
 
-	// Generate auth key for global MCP orchestration endpoint
-	authKeyBytes := make([]byte, 32)
-	crypto_rand.Read(authKeyBytes)
-	mcpAuthKey = hex.EncodeToString(authKeyBytes)
-
 	// Handle --version flag
 	if *version {
 		fmt.Printf("swe-swe-server %s (%s)\n", Version, GitCommit)
@@ -1676,24 +1665,6 @@ func main() {
 
 	// Start session reaper
 	go sessionReaper()
-
-	// Global MCP orchestration server
-	orchMCPSrv := mcp.NewServer(&mcp.Implementation{
-		Name:    "swe-swe",
-		Version: Version,
-	}, nil)
-	registerOrchestrationTools(orchMCPSrv)
-	orchHandler := mcp.NewStreamableHTTPHandler(
-		func(r *http.Request) *mcp.Server { return orchMCPSrv },
-		&mcp.StreamableHTTPOptions{Stateless: true},
-	)
-	http.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("key") != mcpAuthKey {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		orchHandler.ServeHTTP(w, r)
-	}))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Root path: show assistant selection page
@@ -3636,7 +3607,6 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	env := buildSessionEnv(previewPort, acPort, pubPort, theme, workDir, sessionMode)
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", sessionUUID))
-	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", mcpAuthKey))
 
 	// Set up chat event log recording for chat sessions
 	var chatRecordingUUID string
@@ -5095,51 +5065,48 @@ func killSessionProcessGroup(s *Session) {
 	}
 }
 
-// endSessionByUUID terminates a session by UUID. Used by both REST API and MCP tool.
-func endSessionByUUID(sessionUUID string) error {
-	// Find the session and collect child sessions, but keep them in the map
-	// so their ports stay reserved until cleanup completes.
-	sessionsMu.Lock()
-	session, exists := sessions[sessionUUID]
-	if !exists {
-		sessionsMu.Unlock()
-		return fmt.Errorf("session not found")
+// probePort checks if something is listening on the given port by making an
+// HTTP GET to localhost. Returns (listening, pageTitle). If the HTTP request
+// succeeds, extracts <title> from the response body as a best-effort hint
+// for the user. Falls back to a TCP connect if HTTP fails but port is open.
+func probePort(port int) (bool, string) {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	client := &http.Client{
+		Timeout: 500 * time.Millisecond,
+		// Don't follow redirects — we just want the first response
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
-
-	// Collect child sessions (sessions whose ParentUUID matches this session)
-	var childSessions []*Session
-	var childUUIDs []string
-	for childUUID, childSess := range sessions {
-		if childSess.ParentUUID == sessionUUID {
-			childSessions = append(childSessions, childSess)
-			childUUIDs = append(childUUIDs, childUUID)
+	resp, err := client.Get(fmt.Sprintf("http://%s/", addr))
+	if err == nil {
+		defer resp.Body.Close()
+		// Read up to 64KB to find <title>
+		body := make([]byte, 64*1024)
+		n, _ := io.ReadAtLeast(resp.Body, body, 1)
+		if n > 0 {
+			re := regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
+			if m := re.FindSubmatch(body[:n]); len(m) > 1 {
+				return true, strings.TrimSpace(string(m[1]))
+			}
 		}
+		return true, ""
 	}
-	sessionsMu.Unlock()
-
-	// End child sessions first
-	for _, child := range childSessions {
-		log.Printf("Cascade-ending child session %s (parent=%s)", child.UUID, sessionUUID)
-		killSessionProcessGroup(child)
-		child.Close()
+	// HTTP failed — try raw TCP to distinguish "not listening" from "not HTTP"
+	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	if err != nil {
+		return false, ""
 	}
-
-	// End the main session
-	killSessionProcessGroup(session)
-	session.Close()
-
-	// Now remove sessions from the map — ports are safe to reuse
-	sessionsMu.Lock()
-	delete(sessions, sessionUUID)
-	for _, childUUID := range childUUIDs {
-		delete(sessions, childUUID)
-	}
-	sessionsMu.Unlock()
-
-	return nil
+	conn.Close()
+	return true, ""
 }
 
 // handleSessionEndAPI handles POST /api/session/{uuid}/end
+//
+// Two-phase protocol for public port safety:
+//  1. First call: if something is listening on the session's public port,
+//     returns 409 Conflict with JSON {"publicPort": 5007, "message": "..."}
+//  2. Second call with header X-Confirm-Public-Port: 5007 proceeds with ending.
 func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -5156,353 +5123,174 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := endSessionByUUID(sessionUUID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	// Find the session and collect child sessions, but keep them in the map
+	// so their ports stay reserved until cleanup completes. This prevents a
+	// new session from grabbing the same ports while processes are still dying.
+	sessionsMu.Lock()
+	session, exists := sessions[sessionUUID]
+	if !exists {
+		sessionsMu.Unlock()
+		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
+
+	// Server-side public port check: probe before ending
+	publicPort := session.PublicPort
+	if publicPort != 0 {
+		confirmed := r.Header.Get("X-Confirm-Public-Port")
+		if confirmed != strconv.Itoa(publicPort) {
+			listening, pageTitle := probePort(publicPort)
+			if listening {
+				sessionsMu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				resp := map[string]interface{}{
+					"publicPort": publicPort,
+					"message":    fmt.Sprintf("Something is listening on PUBLIC_PORT %d. Confirm to end.", publicPort),
+				}
+				if pageTitle != "" {
+					resp["pageTitle"] = pageTitle
+				}
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+		}
+	}
+
+	// Collect child sessions (sessions whose ParentUUID matches this session)
+	var childSessions []*Session
+	var childUUIDs []string
+	for childUUID, childSess := range sessions {
+		if childSess.ParentUUID == sessionUUID {
+			childSessions = append(childSessions, childSess)
+			childUUIDs = append(childUUIDs, childUUID)
+		}
+	}
+	sessionsMu.Unlock()
+
+	// Collect all session ports for port-based cleanup after tree kill
+	sessionPorts := []int{session.PreviewPort, session.AgentChatPort, publicPort}
+	for _, child := range childSessions {
+		sessionPorts = append(sessionPorts, child.PreviewPort, child.AgentChatPort, child.PublicPort)
+	}
+
+	// End child sessions first
+	for _, child := range childSessions {
+		log.Printf("Cascade-ending child session %s (parent=%s)", child.UUID, sessionUUID)
+		killSessionProcessGroup(child)
+		child.Close()
+	}
+
+	// End the main session
+	killSessionProcessGroup(session)
+
+	// Close session resources (PTY, WebSocket clients, save metadata)
+	session.Close()
+
+	// Kill any remaining processes still listening on session ports.
+	// Belt-and-suspenders: catches processes that escaped both the process
+	// group kill and the /proc descendant scan (e.g., double-forked daemons).
+	killProcessesOnPorts(sessionPorts)
+
+	// Now remove sessions from the map — ports are safe to reuse
+	sessionsMu.Lock()
+	delete(sessions, sessionUUID)
+	for _, childUUID := range childUUIDs {
+		delete(sessions, childUUID)
+	}
+	sessionsMu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- MCP Orchestration Tools ---
+// killProcessesOnPorts finds and kills any processes listening on the given
+// ports by parsing /proc/net/tcp. This is a last-resort cleanup for processes
+// that escaped both process group signals and /proc descendant tracking.
+func killProcessesOnPorts(ports []int) {
+	if len(ports) == 0 {
+		return
+	}
 
-func registerOrchestrationTools(server *mcp.Server) {
-	// list_sessions
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_sessions",
-		Description: "List all active agent sessions",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		type sessionInfo struct {
-			UUID        string `json:"uuid"`
-			Name        string `json:"name"`
-			Assistant   string `json:"assistant"`
-			ClientCount int    `json:"clientCount"`
-			Duration    string `json:"duration"`
-			WorkDir     string `json:"workDir"`
-			BranchName  string `json:"branchName,omitempty"`
-			PreviewPort int    `json:"previewPort"`
-			PublicPort  int    `json:"publicPort"`
+	// Build a set of target ports (hex-encoded, as they appear in /proc/net/tcp)
+	targetPorts := make(map[int]bool)
+	for _, p := range ports {
+		if p != 0 {
+			targetPorts[p] = true
 		}
-		var result []sessionInfo
-		sessionsMu.RLock()
-		for _, sess := range sessions {
-			if sess.Cmd.ProcessState != nil {
+	}
+	if len(targetPorts) == 0 {
+		return
+	}
+
+	// Parse /proc/net/tcp to find inodes of sockets listening on our ports.
+	// Format: sl local_address rem_address st tx_queue rx_queue ... inode
+	// State 0A = LISTEN
+	data, err := os.ReadFile("/proc/net/tcp")
+	if err != nil {
+		return
+	}
+
+	targetInodes := make(map[string]int) // inode string → port
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			continue
+		}
+		// State must be LISTEN (0A)
+		if fields[3] != "0A" {
+			continue
+		}
+		// Parse port from local_address (format: hex_ip:hex_port)
+		addrParts := strings.SplitN(fields[1], ":", 2)
+		if len(addrParts) != 2 {
+			continue
+		}
+		port, err := strconv.ParseInt(addrParts[1], 16, 32)
+		if err != nil {
+			continue
+		}
+		if targetPorts[int(port)] {
+			targetInodes[fields[9]] = int(port)
+		}
+	}
+
+	if len(targetInodes) == 0 {
+		return
+	}
+
+	// Scan /proc to find PIDs holding these socket inodes
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == os.Getpid() {
+			continue // skip non-PID entries and our own process
+		}
+		fdDir := fmt.Sprintf("/proc/%d/fd", pid)
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+			if err != nil {
 				continue
 			}
-			sess.mu.RLock()
-			result = append(result, sessionInfo{
-				UUID:        sess.UUID,
-				Name:        sess.Name,
-				Assistant:   sess.Assistant,
-				ClientCount: len(sess.wsClients),
-				Duration:    formatDuration(time.Since(sess.CreatedAt)),
-				WorkDir:     sess.WorkDir,
-				BranchName:  sess.BranchName,
-				PreviewPort: sess.PreviewPort,
-				PublicPort:  sess.PublicPort,
-			})
-			sess.mu.RUnlock()
+			// link looks like "socket:[12345]"
+			if !strings.HasPrefix(link, "socket:[") {
+				continue
+			}
+			inode := link[len("socket:[") : len(link)-1]
+			if port, ok := targetInodes[inode]; ok {
+				if err := syscall.Kill(pid, syscall.SIGKILL); err == nil {
+					log.Printf("Killed lingering process %d on port %d (session port cleanup)", pid, port)
+				}
+				break // one kill per PID is enough
+			}
 		}
-		sessionsMu.RUnlock()
-		if result == nil {
-			result = []sessionInfo{}
-		}
-		data, _ := json.Marshal(result)
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-	})
-
-	// create_session
-	type createSessionArgs struct {
-		Assistant string `json:"assistant" jsonschema:"required,description=Agent binary name (e.g. claude, gemini)"`
-		Name      string `json:"name,omitempty" jsonschema:"description=Session display name"`
-		Branch    string `json:"branch,omitempty" jsonschema:"description=Git branch to create worktree for"`
-		RepoPath  string `json:"repo_path,omitempty" jsonschema:"description=Repository path (default /workspace)"`
 	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "create_session",
-		Description: "Create a new agent session",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, any, error) {
-		if args.Assistant == "" {
-			return nil, nil, fmt.Errorf("assistant is required")
-		}
-		sessionUUID := uuid.New().String()
-		sess, _, err := getOrCreateSession(sessionUUID, args.Assistant, args.Name, args.Branch,
-			args.RepoPath, "", "", "", "", "", "chat")
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create session: %w", err)
-		}
-		sess.startPTYReader()
-		info := map[string]string{
-			"uuid":      sess.UUID,
-			"name":      sess.Name,
-			"assistant": sess.Assistant,
-			"workDir":   sess.WorkDir,
-		}
-		data, _ := json.Marshal(info)
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-	})
-
-	// end_session
-	type endSessionArgs struct {
-		UUID string `json:"uuid" jsonschema:"required,description=Session UUID to terminate"`
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "end_session",
-		Description: "Gracefully terminate an agent session",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args endSessionArgs) (*mcp.CallToolResult, any, error) {
-		if err := endSessionByUUID(args.UUID); err != nil {
-			return nil, nil, err
-		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "session ended"}}}, nil, nil
-	})
-
-	// get_session_output
-	type getOutputArgs struct {
-		UUID string `json:"uuid" jsonschema:"required,description=Session UUID"`
-		Mode string `json:"mode,omitempty" jsonschema:"description=Output mode: screen (default) or scrollback"`
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "get_session_output",
-		Description: "Read terminal output from a session (screen = current visible state, scrollback = full history)",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args getOutputArgs) (*mcp.CallToolResult, any, error) {
-		sessionsMu.RLock()
-		sess, exists := sessions[args.UUID]
-		sessionsMu.RUnlock()
-		if !exists {
-			return nil, nil, fmt.Errorf("session not found")
-		}
-
-		var text string
-		if args.Mode == "scrollback" {
-			sess.vtMu.Lock()
-			raw := sess.readRing()
-			sess.vtMu.Unlock()
-			// Strip ANSI escape sequences
-			text = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[mGKHJP]`).ReplaceAllString(string(raw), "")
-		} else {
-			// Screen mode: read clean text from VT state
-			sess.vtMu.Lock()
-			cols, rows := sess.vt.Size()
-			var buf strings.Builder
-			for row := 0; row < rows; row++ {
-				var line strings.Builder
-				for col := 0; col < cols; col++ {
-					cell := sess.vt.Cell(col, row)
-					if cell.Char == 0 {
-						line.WriteRune(' ')
-					} else {
-						line.WriteRune(cell.Char)
-					}
-				}
-				buf.WriteString(strings.TrimRight(line.String(), " "))
-				if row < rows-1 {
-					buf.WriteRune('\n')
-				}
-			}
-			sess.vtMu.Unlock()
-			text = buf.String()
-		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
-	})
-
-	// send_session_input
-	type sendInputArgs struct {
-		UUID string `json:"uuid" jsonschema:"required,description=Session UUID"`
-		Text string `json:"text" jsonschema:"required,description=Text to write to the session PTY"`
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "send_session_input",
-		Description: "Write text to a session's terminal (PTY)",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendInputArgs) (*mcp.CallToolResult, any, error) {
-		sessionsMu.RLock()
-		sess, exists := sessions[args.UUID]
-		sessionsMu.RUnlock()
-		if !exists {
-			return nil, nil, fmt.Errorf("session not found")
-		}
-		if err := sess.WriteInputOrBuffer([]byte(args.Text)); err != nil {
-			return nil, nil, fmt.Errorf("write failed: %w", err)
-		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "input sent"}}}, nil, nil
-	})
-
-	// list_worktrees
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_worktrees",
-		Description: "List git worktrees with their active sessions",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		worktrees, err := listWorktrees()
-		if err != nil {
-			return nil, nil, err
-		}
-		// Attach active sessions
-		sessionsMu.RLock()
-		branchToSession := make(map[string]*Session)
-		for _, sess := range sessions {
-			if sess.BranchName != "" {
-				branchToSession[sess.BranchName] = sess
-			}
-		}
-		sessionsMu.RUnlock()
-		for i := range worktrees {
-			if sess, ok := branchToSession[worktrees[i].Name]; ok {
-				sess.mu.RLock()
-				worktrees[i].ActiveSession = &WorktreeSessionInfo{
-					UUID:        sess.UUID,
-					Name:        sess.Name,
-					Assistant:   sess.Assistant,
-					ClientCount: len(sess.wsClients),
-					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
-				}
-				sess.mu.RUnlock()
-			}
-		}
-		data, _ := json.Marshal(map[string]interface{}{"worktrees": worktrees})
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-	})
-
-	// list_recordings
-	type listRecordingsArgs struct {
-		Limit int `json:"limit,omitempty" jsonschema:"description=Maximum number of recordings to return (default 20)"`
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_recordings",
-		Description: "List ended session recordings",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args listRecordingsArgs) (*mcp.CallToolResult, any, error) {
-		recordings := loadEndedRecordings()
-		limit := args.Limit
-		if limit <= 0 {
-			limit = 20
-		}
-		if limit > len(recordings) {
-			limit = len(recordings)
-		}
-		// Sort newest first
-		sort.Slice(recordings, func(i, j int) bool {
-			return recordings[i].EndedAt.After(recordings[j].EndedAt)
-		})
-		type recInfo struct {
-			UUID    string `json:"uuid"`
-			Name    string `json:"name,omitempty"`
-			Agent   string `json:"agent,omitempty"`
-			EndedAt string `json:"endedAt,omitempty"`
-			HasChat bool   `json:"hasChat,omitempty"`
-		}
-		var result []recInfo
-		for _, r := range recordings[:limit] {
-			result = append(result, recInfo{
-				UUID:    r.UUID,
-				Name:    r.Name,
-				Agent:   r.Agent,
-				EndedAt: r.EndedAgo,
-				HasChat: r.HasChat,
-			})
-		}
-		if result == nil {
-			result = []recInfo{}
-		}
-		data, _ := json.Marshal(result)
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-	})
-
-	// prepare_repo
-	type prepareRepoArgs struct {
-		Mode string `json:"mode" jsonschema:"required,description=Preparation mode: workspace, clone, or create"`
-		URL  string `json:"url,omitempty" jsonschema:"description=Repository URL (for clone mode)"`
-		Name string `json:"name,omitempty" jsonschema:"description=Project name (for create mode)"`
-		Path string `json:"path,omitempty" jsonschema:"description=Existing repo path (for workspace mode)"`
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "prepare_repo",
-		Description: "Clone, create, or prepare a repository for use",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args prepareRepoArgs) (*mcp.CallToolResult, any, error) {
-		switch args.Mode {
-		case "workspace":
-			workDir := "/workspace"
-			if args.Path != "" {
-				cleaned := filepath.Clean(args.Path)
-				if !strings.HasPrefix(cleaned, reposDir+"/") {
-					return nil, nil, fmt.Errorf("invalid repository path")
-				}
-				workDir = cleaned
-			}
-			resp := map[string]interface{}{"path": workDir}
-			// Soft fetch if git repo
-			if _, err := os.Stat(filepath.Join(workDir, ".git")); err == nil {
-				remoteCmd := exec.Command("git", "-C", workDir, "remote")
-				if out, err := remoteCmd.Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-					cmd := exec.Command("git", "-C", workDir, "fetch", "--all")
-					if out, err := cmd.CombinedOutput(); err != nil {
-						resp["warning"] = fmt.Sprintf("fetch failed: %s", string(out))
-					}
-				}
-			}
-			data, _ := json.Marshal(resp)
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-
-		case "clone":
-			if args.URL == "" {
-				return nil, nil, fmt.Errorf("url is required for clone mode")
-			}
-			sanitizedURL := sanitizeRepoURL(args.URL)
-			if sanitizedURL == "" {
-				return nil, nil, fmt.Errorf("invalid repository URL")
-			}
-			repoBase := filepath.Join(reposDir, sanitizedURL)
-			repoPath := filepath.Join(repoBase, "workspace")
-			if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-				cmd := exec.Command("git", "-C", repoPath, "fetch", "--all")
-				if out, err := cmd.CombinedOutput(); err != nil {
-					return nil, nil, fmt.Errorf("git fetch failed: %s", string(out))
-				}
-			} else {
-				if err := os.MkdirAll(repoBase, 0755); err != nil {
-					return nil, nil, fmt.Errorf("failed to create directory: %w", err)
-				}
-				cmd := exec.Command("git", "clone", args.URL, repoPath)
-				if out, err := cmd.CombinedOutput(); err != nil {
-					return nil, nil, fmt.Errorf("git clone failed: %s", string(out))
-				}
-			}
-			if err := setupSweSweFiles(repoPath); err != nil {
-				log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
-			}
-			data, _ := json.Marshal(map[string]string{"path": repoPath})
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-
-		case "create":
-			if args.Name == "" {
-				return nil, nil, fmt.Errorf("name is required for create mode")
-			}
-			dirName := sanitizeProjectDirName(args.Name)
-			if dirName == "" {
-				return nil, nil, fmt.Errorf("project name must contain at least one letter or number")
-			}
-			repoPath := filepath.Join(reposDir, dirName, "workspace")
-			if _, err := os.Stat(repoPath); err == nil {
-				return nil, nil, fmt.Errorf("project '%s' already exists", dirName)
-			}
-			if err := os.MkdirAll(repoPath, 0755); err != nil {
-				return nil, nil, fmt.Errorf("failed to create directory: %w", err)
-			}
-			cmd := exec.Command("git", "-C", repoPath, "init")
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return nil, nil, fmt.Errorf("git init failed: %s", string(out))
-			}
-			commitCmd := exec.Command("git", "-C", repoPath,
-				"-c", "user.name=swe-swe", "-c", "user.email=swe-swe@localhost",
-				"commit", "--allow-empty", "-m", "initial")
-			commitCmd.CombinedOutput() // non-fatal
-			if err := setupSweSweFiles(repoPath); err != nil {
-				log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
-			}
-			data, _ := json.Marshal(map[string]string{"path": repoPath})
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
-
-		default:
-			return nil, nil, fmt.Errorf("invalid mode '%s': use workspace, clone, or create", args.Mode)
-		}
-	})
 }
 
 // handleRecordingAPI routes recording API requests

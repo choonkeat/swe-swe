@@ -4,20 +4,20 @@ module HttpProxy exposing
     , ProbePhase(..), ProbeEvent(..), probeTransition, probeConfig
     )
 
-{-| HTTP Proxy Architecture — port derivation, dual-mode routing, and readiness probing.
+{-| HTTP Proxy Architecture -- port derivation, dual-mode routing, and readiness probing.
 
 Two reverse proxy chains sit between browser and backend apps. Each is
-reachable via **two modes** — the browser auto-selects at runtime:
+reachable via **two modes** -- the browser auto-selects at runtime:
 
     Port-based (preferred, per-origin isolation):
-      Preview:     Browser → Traefik :23000 → swe-swe-server :23000 → User app :3000
-      Agent Chat:  Browser → Traefik :24000 → swe-swe-server :24000 → MCP sidecar :4000
+      Preview:     Browser -> Traefik :23000 -> swe-swe-server :23000 -> User app :3000
+      Agent Chat:  Browser -> Traefik :24000 -> swe-swe-server :24000 -> MCP sidecar :4000
 
     Path-based (fallback, when per-port listeners are unreachable):
-      Preview:     Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/preview/    → User app :3000
-      Agent Chat:  Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/agentchat/  → MCP sidecar :4000
+      Preview:     Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/preview/    -> User app :3000
+      Agent Chat:  Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/agentchat/  -> MCP sidecar :4000
 
-Both modes reach the **same proxy instance** — a path-based proxy and a
+Both modes reach the **same proxy instance** -- a path-based proxy and a
 port-based proxy share a single DebugHub per session. The port-based
 proxy uses an empty BasePath (no URL rewriting needed); the path-based
 proxy uses `/proxy/{uuid}/preview` as BasePath for URL rewriting.
@@ -34,7 +34,7 @@ same `agentChatProxyHandler`.
 CORS: Port-based is cross-origin (browser on :1977, proxy on :23000),
 so per-port handlers are wrapped in `corsWrapper` that sets
 `Access-Control-Allow-Origin`, `-Credentials`, `-Methods`, `-Headers`.
-Path-based is same-origin — no CORS needed.
+Path-based is same-origin -- no CORS needed.
 
 Both proxies set `X-Agent-Reverse-Proxy` on every response (including 502),
 so browser probes can detect when the proxy handler is active.
@@ -58,7 +58,7 @@ import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(.
 
 
 
--- ── Port derivation ──────────────────────────────────────────────
+-- -- Port derivation ----------------------------------------------
 
 
 {-| Agent chat app port = preview port + 1000.
@@ -92,20 +92,20 @@ agentChatProxyPort (ProxyPortOffset offset) (AgentChatPort p) =
 
 
 
--- ── Proxy mode ─────────────────────────────────────────────────
+-- -- Proxy mode -------------------------------------------------
 
 
 {-| Which proxy mode the browser is using for a session.
 
 The browser discovers this via a two-phase probe:
 
-1.  **Path probe** — `probeUntilReady(pathBasedUrl)`. Checks if the proxy
+1.  **Path probe** -- `probeUntilReady(pathBasedUrl)`. Checks if the proxy
     handler is active (target app may or may not be up). Retries with
     exponential backoff. If this fails, neither mode works yet.
 
-2.  **Port probe** — once path probe succeeds, single fetch to port-based
+2.  **Port probe** -- once path probe succeeds, single fetch to port-based
     URL (e.g., `https://hostname:23000/`). If `X-Agent-Reverse-Proxy`
-    header present → PortBased. Otherwise → PathBased.
+    header present -> PortBased. Otherwise -> PathBased.
 
 The decided mode is stored for the session. All subsequent URL
 construction (iframe src, debug WebSocket, agent chat) follows the
@@ -127,34 +127,34 @@ type ProxyMode
 
 
 {- Path on main server port (e.g., /proxy/{uuid}/preview/ on :9898).
-   Same-origin with main UI — no CORS needed.
+   Same-origin with main UI -- no CORS needed.
    Fallback when per-port listeners are unreachable (firewall, etc.).
 -}
--- ── Probe readiness ──────────────────────────────────────────────
+-- -- Probe readiness ----------------------------------------------
 
 
 {-| What a probe response tells us about the proxy chain.
 
-The browser calls `probeUntilReady(url, { method: 'GET', ... })` — uses GET
+The browser calls `probeUntilReady(url, { method: 'GET', ... })` -- uses GET
 (not the default HEAD) to avoid an iOS Safari CORS preflight bug.
-Retries up to 10 times with exponential backoff (2 s → 30 s).
+Retries up to 10 times with exponential backoff (2 s -> 30 s).
 On each response, checks `resp.headers.has('X-Agent-Reverse-Proxy')`.
 
-Path-based probes are same-origin — headers always readable. Port-based
+Path-based probes are same-origin -- headers always readable. Port-based
 probes are cross-origin, but `corsWrapper` sets `Access-Control-Expose-Headers`
 so the `X-Agent-Reverse-Proxy` header is visible.
 
 -}
 type ProbeResult
     = ProxyReady
-      {- Header present → our proxy handler is active.
+      {- Header present -> our proxy handler is active.
          Status may be 200 (app up) or 502 (proxy's waiting page).
       -}
     | NotReady
 
 
 
-{- Header absent → the session doesn't exist or proxy hasn't been set up yet. -}
+{- Header absent -> the session doesn't exist or proxy hasn't been set up yet. -}
 
 
 {-| Classify a probe response by the presence of `X-Agent-Reverse-Proxy`.
@@ -169,7 +169,7 @@ classifyProbe { hasReverseProxyHeader } =
 
 
 
--- ── Placeholder dismissal ────────────────────────────────────────
+-- -- Placeholder dismissal ----------------------------------------
 
 
 {-| How a placeholder overlay gets dismissed after probe succeeds.
@@ -180,10 +180,10 @@ placeholder waits for a dismissal event.
 
 Preview has two paths; Agent Chat has one:
 
-    Preview:      DebugWebSocket (urlchange | init)  — primary
-                  IframeOnLoad                       — fallback
+    Preview:      DebugWebSocket (urlchange | init)  -- primary
+                  IframeOnLoad                       -- fallback
 
-    Agent Chat:   IframeOnLoad                       — only path
+    Agent Chat:   IframeOnLoad                       -- only path
 
 Placeholder CSS: both share `.terminal-ui__iframe-placeholder`.
 Preview scopes to `.terminal-ui__iframe-container .terminal-ui__iframe-placeholder`.
@@ -193,7 +193,7 @@ Agent Chat uses `.terminal-ui__agent-chat-placeholder`.
 type PlaceholderDismiss
     = DebugWebSocket
       {- Debug WS (WS 3/4) receives `urlchange` or `init` from
-         agent-reverse-proxy. Only available for Preview — agent chat
+         agent-reverse-proxy. Only available for Preview -- agent chat
          has no debug WS. Primary path: fires when proxied page loads.
       -}
     | IframeOnLoad
@@ -204,7 +204,7 @@ type PlaceholderDismiss
    For Preview: fallback if debug WS hasn't connected yet.
    For Agent Chat: the only dismissal path.
 -}
--- ── Probe state machine ────────────────────────────────────────
+-- -- Probe state machine ----------------------------------------
 
 
 {-| Probe timing configuration.
@@ -232,21 +232,21 @@ probeConfig =
 {-| Two-phase probe state machine.
 
     Idle
-      → PathProbing 1        (user opens preview/agent chat)
+      -> PathProbing 1        (user opens preview/agent chat)
 
     PathProbing N
-      → PathProbing (N+1)    (no header, N < maxAttempts → retry with backoff)
-      → PortChecking          (header found → single port check)
-      → Exhausted             (N >= maxAttempts → give up)
-      → Aborted               (new URL arrived → abort old probe)
+      -> PathProbing (N+1)    (no header, N < maxAttempts -> retry with backoff)
+      -> PortChecking          (header found -> single port check)
+      -> Exhausted             (N >= maxAttempts -> give up)
+      -> Aborted               (new URL arrived -> abort old probe)
 
     PortChecking
-      → Decided PortBased    (header present on port-based URL)
-      → Decided PathBased    (error or no header)
+      -> Decided PortBased    (header present on port-based URL)
+      -> Decided PathBased    (error or no header)
 
-    Decided _               — terminal; mode stored for session
-    Exhausted               — terminal; placeholder stuck, no retry
-    Aborted                 — terminal; superseded by new probe cycle
+    Decided _               -- terminal; mode stored for session
+    Exhausted               -- terminal; placeholder stuck, no retry
+    Aborted                 -- terminal; superseded by new probe cycle
 
 -}
 type ProbePhase

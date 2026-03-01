@@ -5095,6 +5095,42 @@ func killSessionProcessGroup(s *Session) {
 	}
 }
 
+// probePort checks if something is listening on the given port by making an
+// HTTP GET to localhost. Returns (listening, pageTitle). If the HTTP request
+// succeeds, extracts <title> from the response body as a best-effort hint
+// for the user. Falls back to a TCP connect if HTTP fails but port is open.
+func probePort(port int) (bool, string) {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	client := &http.Client{
+		Timeout: 500 * time.Millisecond,
+		// Don't follow redirects — we just want the first response
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get(fmt.Sprintf("http://%s/", addr))
+	if err == nil {
+		defer resp.Body.Close()
+		// Read up to 64KB to find <title>
+		body := make([]byte, 64*1024)
+		n, _ := io.ReadAtLeast(resp.Body, body, 1)
+		if n > 0 {
+			re := regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
+			if m := re.FindSubmatch(body[:n]); len(m) > 1 {
+				return true, strings.TrimSpace(string(m[1]))
+			}
+		}
+		return true, ""
+	}
+	// HTTP failed — try raw TCP to distinguish "not listening" from "not HTTP"
+	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	if err != nil {
+		return false, ""
+	}
+	conn.Close()
+	return true, ""
+}
+
 // endSessionByUUID terminates a session by UUID. Used by both REST API and MCP tool.
 func endSessionByUUID(sessionUUID string) error {
 	// Find the session and collect child sessions, but keep them in the map
@@ -5117,6 +5153,12 @@ func endSessionByUUID(sessionUUID string) error {
 	}
 	sessionsMu.Unlock()
 
+	// Collect all session ports for port-based cleanup after tree kill
+	sessionPorts := []int{session.PreviewPort, session.AgentChatPort, session.PublicPort}
+	for _, child := range childSessions {
+		sessionPorts = append(sessionPorts, child.PreviewPort, child.AgentChatPort, child.PublicPort)
+	}
+
 	// End child sessions first
 	for _, child := range childSessions {
 		log.Printf("Cascade-ending child session %s (parent=%s)", child.UUID, sessionUUID)
@@ -5127,6 +5169,11 @@ func endSessionByUUID(sessionUUID string) error {
 	// End the main session
 	killSessionProcessGroup(session)
 	session.Close()
+
+	// Kill any remaining processes still listening on session ports.
+	// Belt-and-suspenders: catches processes that escaped both the process
+	// group kill and the /proc descendant scan (e.g., double-forked daemons).
+	killProcessesOnPorts(sessionPorts)
 
 	// Now remove sessions from the map — ports are safe to reuse
 	sessionsMu.Lock()
@@ -5140,6 +5187,11 @@ func endSessionByUUID(sessionUUID string) error {
 }
 
 // handleSessionEndAPI handles POST /api/session/{uuid}/end
+//
+// Two-phase protocol for public port safety:
+//  1. First call: if something is listening on the session's public port,
+//     returns 409 Conflict with JSON {"publicPort": 5007, "message": "..."}
+//  2. Second call with header X-Confirm-Public-Port: 5007 proceeds with ending.
 func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -5156,12 +5208,131 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Server-side public port check: probe before ending
+	sessionsMu.RLock()
+	session, exists := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+	publicPort := session.PublicPort
+	if publicPort != 0 {
+		confirmed := r.Header.Get("X-Confirm-Public-Port")
+		if confirmed != strconv.Itoa(publicPort) {
+			listening, pageTitle := probePort(publicPort)
+			if listening {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusConflict)
+				resp := map[string]interface{}{
+					"publicPort": publicPort,
+					"message":    fmt.Sprintf("Something is listening on PUBLIC_PORT %d. Confirm to end.", publicPort),
+				}
+				if pageTitle != "" {
+					resp["pageTitle"] = pageTitle
+				}
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+		}
+	}
+
 	if err := endSessionByUUID(sessionUUID); err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// killProcessesOnPorts finds and kills any processes listening on the given
+// ports by parsing /proc/net/tcp. This is a last-resort cleanup for processes
+// that escaped both process group signals and /proc descendant tracking.
+func killProcessesOnPorts(ports []int) {
+	if len(ports) == 0 {
+		return
+	}
+
+	// Build a set of target ports (hex-encoded, as they appear in /proc/net/tcp)
+	targetPorts := make(map[int]bool)
+	for _, p := range ports {
+		if p != 0 {
+			targetPorts[p] = true
+		}
+	}
+	if len(targetPorts) == 0 {
+		return
+	}
+
+	// Parse /proc/net/tcp to find inodes of sockets listening on our ports.
+	// Format: sl local_address rem_address st tx_queue rx_queue ... inode
+	// State 0A = LISTEN
+	data, err := os.ReadFile("/proc/net/tcp")
+	if err != nil {
+		return
+	}
+
+	targetInodes := make(map[string]int) // inode string → port
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			continue
+		}
+		// State must be LISTEN (0A)
+		if fields[3] != "0A" {
+			continue
+		}
+		// Parse port from local_address (format: hex_ip:hex_port)
+		addrParts := strings.SplitN(fields[1], ":", 2)
+		if len(addrParts) != 2 {
+			continue
+		}
+		port, err := strconv.ParseInt(addrParts[1], 16, 32)
+		if err != nil {
+			continue
+		}
+		if targetPorts[int(port)] {
+			targetInodes[fields[9]] = int(port)
+		}
+	}
+
+	if len(targetInodes) == 0 {
+		return
+	}
+
+	// Scan /proc to find PIDs holding these socket inodes
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == os.Getpid() {
+			continue // skip non-PID entries and our own process
+		}
+		fdDir := fmt.Sprintf("/proc/%d/fd", pid)
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
+			if err != nil {
+				continue
+			}
+			// link looks like "socket:[12345]"
+			if !strings.HasPrefix(link, "socket:[") {
+				continue
+			}
+			inode := link[len("socket:[") : len(link)-1]
+			if port, ok := targetInodes[inode]; ok {
+				if err := syscall.Kill(pid, syscall.SIGKILL); err == nil {
+					log.Printf("Killed lingering process %d on port %d (session port cleanup)", pid, port)
+				}
+				break // one kill per PID is enough
+			}
+		}
+	}
 }
 
 // --- MCP Orchestration Tools ---
@@ -5503,7 +5674,6 @@ func registerOrchestrationTools(server *mcp.Server) {
 			return nil, nil, fmt.Errorf("invalid mode '%s': use workspace, clone, or create", args.Mode)
 		}
 	})
-}
 
 // handleRecordingAPI routes recording API requests
 func handleRecordingAPI(w http.ResponseWriter, r *http.Request) {

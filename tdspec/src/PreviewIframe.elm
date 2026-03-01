@@ -5,12 +5,12 @@ module PreviewIframe exposing
     , InjectAction(..), onInjectCommand
     )
 
-{-| Preview iframe — the shell page and inject.js inside the Preview tab.
+{-| Preview iframe -- the shell page and inject.js inside the Preview tab.
 
 Two processes connect via WS 5,6:
 
-  - **shell page** (`shellPageHTML`) — outer wrapper managing back/forward nav
-  - **inject.js** (`debugInjectJS`) — injected into every proxied HTML page
+  - **shell page** (`shellPageHTML`) -- outer wrapper managing back/forward nav
+  - **inject.js** (`debugInjectJS`) -- injected into every proxied HTML page
 
 Both connect to the same endpoint with a `?role=` query parameter:
 
@@ -34,10 +34,10 @@ import Domain exposing (Timestamp(..), Url(..))
 
 
 
--- ── Shell page (WS 5) ──────────────────────────────────────────
+-- -- Shell page (WS 5) ------------------------------------------
 
 
-{-| Effects produced by the shell page — sends navigation messages to the hub.
+{-| Effects produced by the shell page -- sends navigation messages to the hub.
 -}
 type ShellPageEffect
     = ShellSend ShellPageDebugMsg
@@ -84,10 +84,10 @@ onShellCommand cmd =
 
 
 
--- ── inject.js (WS 6) ───────────────────────────────────────────
+-- -- inject.js (WS 6) -------------------------------------------
 
 
-{-| Effects produced by inject.js — sends telemetry messages to the hub.
+{-| Effects produced by inject.js -- sends telemetry messages to the hub.
 -}
 type InjectEffect
     = InjectSend InjectJsDebugMsg
@@ -114,14 +114,14 @@ onRejection payload =
     InjectSend (Rejection payload)
 
 
-{-| Fetch request/response — success (status + ok) or failure (error string).
+{-| Fetch request/response -- success (status + ok) or failure (error string).
 -}
 onFetch : FetchResult -> InjectEffect
 onFetch result =
     InjectSend (Fetch result)
 
 
-{-| XMLHttpRequest — always completes with status + ok (no error branch).
+{-| XMLHttpRequest -- always completes with status + ok (no error branch).
 -}
 onXhr : XhrResult -> InjectEffect
 onXhr result =

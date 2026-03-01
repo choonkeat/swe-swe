@@ -27,7 +27,7 @@ type Url
 
 Extracted from a full Url by stripping `localhost:{port}` or the proxy prefix.
 Used by the Preview URL bar which shows a fixed `localhost:{PreviewPort}` prefix
-and an editable path — the port is NEVER derived from the incoming URL because
+and an editable path -- the port is NEVER derived from the incoming URL because
 the preview proxy can only target one port per session.
 
 -}
@@ -35,7 +35,7 @@ type Path
     = Path String
 
 
-{-| Session identifier — each terminal-ui instance gets a unique UUID.
+{-| Session identifier -- each terminal-ui instance gets a unique UUID.
 -}
 type SessionUuid
     = SessionUuid String
@@ -62,7 +62,7 @@ Derived from preview port: `previewPort + 2000`.
 
     publicPort (PreviewPort 3000) == PublicPort 5000
 
-Range: 5000–5019 (configurable via `SWE_PUBLIC_PORTS`).
+Range: 5000-5019 (configurable via `SWE_PUBLIC_PORTS`).
 Passed to the session as env var `PUBLIC_PORT=5000`.
 
 Users can run any server on this port to make it publicly accessible.
@@ -91,8 +91,8 @@ type ProxyPortOffset
     previewProxyPort = previewPort + proxyPortOffset
     e.g., 3000 + 20000 = 23000
 
-Traefik forwards host port 23000 → container port 23000 → swe-swe-server
-listener → user app :3000.
+Traefik forwards host port 23000 -> container port 23000 -> swe-swe-server
+listener -> user app :3000.
 
 -}
 type PreviewProxyPort
@@ -104,15 +104,15 @@ type PreviewProxyPort
     agentChatProxyPort = agentChatPort + proxyPortOffset
     e.g., 4000 + 20000 = 24000
 
-Traefik forwards host port 24000 → container port 24000 → swe-swe-server
-listener → MCP sidecar :4000.
+Traefik forwards host port 24000 -> container port 24000 -> swe-swe-server
+listener -> MCP sidecar :4000.
 
 -}
 type AgentChatProxyPort
     = AgentChatProxyPort Int
 
 
-{-| Opaque binary data — PTY I/O, file upload/download chunks.
+{-| Opaque binary data -- PTY I/O, file upload/download chunks.
 Not JSON-encoded; sent as WebSocket binary frames.
 -}
 type Bytes

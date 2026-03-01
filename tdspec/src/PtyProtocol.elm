@@ -1,6 +1,6 @@
 module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload, ExitPayload, FileUploadResult)
 
-{-| WS 1,2 — PTY WebSocket protocol.
+{-| WS 1,2 -- PTY WebSocket protocol.
 
 Endpoint: `/ws/{uuid}` on swe-swe-server (:9898).
 One connection per terminal-ui instance, unique UUID.
@@ -26,12 +26,12 @@ type ClientMsg
     | FileUpload { filename : String, data : Bytes }
     | Ping {- client sends { type: "ping", data?: {...} }; data is optional opaque pass-through (terminal-ui puts { ts } in it) -}
     | RenameSession { name : String }
-    | ToggleYolo {- client sends { type: "toggleYolo" }; no payload — server toggles current state -}
+    | ToggleYolo {- client sends { type: "toggleYolo" }; no payload -- server toggles current state -}
     | Chat { userName : String, text : String }
 
 
 {-| Messages received by terminal-ui from swe-swe-server.
-The `Status` message is critical — its `previewPort` triggers
+The `Status` message is critical -- its `previewPort` triggers
 `connectDebugWebSocket()`, opening WS 3/4 to the agent-reverse-proxy.
 -}
 type ServerMsg
@@ -49,7 +49,7 @@ Delivered periodically by swe-swe-server.
 `ports.preview` triggers the debug WebSocket connection to agent-reverse-proxy.
 
 Note: the wire format is flat JSON (`previewPort`, `agentChatPort` as top-level keys).
-The nesting here groups related fields for clarity (see HOW-TO.md §3.14).
+The nesting here groups related fields for clarity (see HOW-TO.md #3.14).
 `agentChatPort` is `0` on the wire for terminal sessions (JS treats as falsy).
 
 -}
@@ -77,7 +77,7 @@ type alias StatusPayload =
     }
 
 
-{-| Exit message payload — exit code plus optional worktree info.
+{-| Exit message payload -- exit code plus optional worktree info.
 -}
 type alias ExitPayload =
     { exitCode : Int
@@ -90,7 +90,7 @@ type alias ExitPayload =
     }
 
 
-{-| Result of a file upload — success with filename or failure with error.
+{-| Result of a file upload -- success with filename or failure with error.
 -}
 type alias FileUploadResult =
     { filename : String

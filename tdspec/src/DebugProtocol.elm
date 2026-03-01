@@ -28,7 +28,7 @@ import Domain exposing (Timestamp(..), Url(..))
 
 
 
--- ── Shell page protocol (WS 5) ───────────────────────────────
+-- -- Shell page protocol (WS 5) -------------------------------
 
 
 {-| Messages sent by the shell page to the hub.
@@ -48,7 +48,7 @@ type ShellPageCommand
 
 
 
--- ── inject.js protocol (WS 6) ────────────────────────────────
+-- -- inject.js protocol (WS 6) --------------------------------
 
 
 {-| Messages sent by inject.js to the hub.
@@ -119,7 +119,7 @@ type FetchResult
 
 
 {-| Result of an XMLHttpRequest.
-XHR `loadend` always fires — even network failures report status 0.
+XHR `loadend` always fires -- even network failures report status 0.
 There is no error branch; ok = status >= 200 && status < 300.
 -}
 type XhrResult
@@ -142,7 +142,7 @@ type InjectCommand
 
 
 
--- ── UI observer protocol (WS 3,4) ────────────────────────────
+-- -- UI observer protocol (WS 3,4) ----------------------------
 
 
 {-| Messages received by UI observers (terminal-ui) from the hub.

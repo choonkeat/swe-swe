@@ -6,7 +6,7 @@ module McpTools exposing
     , allPreviewTools, allAgentChatTools
     )
 
-{-| MCP Tools — the AI-facing tools hosted by two independent MCP servers.
+{-| MCP Tools -- the AI-facing tools hosted by two independent MCP servers.
 
 Two MCP servers expose tools to the AI agent (Claude):
 
@@ -22,12 +22,12 @@ Two MCP servers expose tools to the AI agent (Claude):
 
 Message flow for preview tools:
 
-    inject.js → WS → DebugHub → subscriber channel → MCP tool → response
+    inject.js -> WS -> DebugHub -> subscriber channel -> MCP tool -> response
 
 Message flow for agent chat tools:
 
-    Claude → MCP → agent-chat → event bus → WS → browser
-    browser → user click → WS → event bus → MCP response
+    Claude -> MCP -> agent-chat -> event bus -> WS -> browser
+    browser -> user click -> WS -> event bus -> MCP response
 
 @docs McpServer, PreviewTool, AgentChatTool
 @docs PreviewResource, AgentChatResource
@@ -41,7 +41,7 @@ import Domain exposing (Timestamp(..), Url(..))
 
 
 
--- ── MCP servers ────────────────────────────────────────────────
+-- -- MCP servers ------------------------------------------------
 
 
 {-| The two independent MCP servers in the system.
@@ -62,7 +62,7 @@ type McpServer
    Also available via stdio MCP transport.
    Communicates with browser via event bus + WebSocket.
 -}
--- ── Preview MCP tools ──────────────────────────────────────────
+-- -- Preview MCP tools ------------------------------------------
 
 
 {-| Tools exposed by the preview MCP server.
@@ -88,7 +88,7 @@ type PreviewTool
 
 {- Listen for console/error/network activity for N seconds.
 
-   Input:  { durationSeconds : Float }  -- clamped to 0.1–30, default 5
+   Input:  { durationSeconds : Float }  -- clamped to 0.1-30, default 5
    Output: List ConsoleEntry (one per line, newline-delimited JSON)
 
    Subscribes to DebugHub, collects all iframe messages for the
@@ -134,7 +134,7 @@ allPreviewTools =
 
 
 
--- ── Preview MCP resources ──────────────────────────────────────
+-- -- Preview MCP resources --------------------------------------
 
 
 {-| Resources exposed by the preview MCP server.
@@ -154,7 +154,7 @@ type PreviewResource
 {- preview-browser://help (help.md)
    How to debug web apps using the App Preview: tool examples, workflow, tips.
 -}
--- ── Agent Chat MCP tools ───────────────────────────────────────
+-- -- Agent Chat MCP tools ---------------------------------------
 
 
 {-| Tools exposed by the agent chat MCP server.
@@ -236,7 +236,7 @@ allAgentChatTools =
 
 
 
--- ── Agent Chat MCP resources ───────────────────────────────────
+-- -- Agent Chat MCP resources -----------------------------------
 
 
 {-| Resources exposed by the agent chat MCP server.

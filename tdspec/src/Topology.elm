@@ -6,7 +6,7 @@ module Topology exposing
     , fullTopology
     )
 
-{-| System topology — all processes, connections, and message flows.
+{-| System topology -- all processes, connections, and message flows.
 
 Enumerates every WebSocket and HTTP endpoint when 2 terminal-ui
 instances + Preview tab are active.
@@ -40,7 +40,7 @@ instances + Preview tab are active.
     |  +------------------+    +----------------------------+  |
     |  | swe-swe-open     |    | stdio bridge               |  |
     |  | (CLI shim)       |    | (agent-reverse-proxy       |  |
-    |  | HTTP → serve |    |  --bridge → server /mcp)
+    |  | HTTP -> serve |    |  --bridge -> server /mcp)
     |  +------------------+    +----------------------------+  |
     |                                                Container |
     +==========================================================+
@@ -48,14 +48,14 @@ instances + Preview tab are active.
     HTTP Proxy Chains (dual-mode: browser auto-selects)
 
     Port-based (preferred, per-origin isolation):
-      Preview:     Browser → Traefik :23000 → swe-swe-server :23000 → User app :3000
-      Agent Chat:  Browser → Traefik :24000 → swe-swe-server :24000 → MCP sidecar :4000
+      Preview:     Browser -> Traefik :23000 -> swe-swe-server :23000 -> User app :3000
+      Agent Chat:  Browser -> Traefik :24000 -> swe-swe-server :24000 -> MCP sidecar :4000
 
     Path-based (fallback, when per-port listeners are unreachable):
-      Preview:     Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/preview/    → User app :3000
-      Agent Chat:  Browser → Traefik :1977 → swe-swe-server :9898 /proxy/{uuid}/agentchat/  → MCP sidecar :4000
+      Preview:     Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/preview/    -> User app :3000
+      Agent Chat:  Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/agentchat/  -> MCP sidecar :4000
 
-    Both modes reach the same proxy instance — path-based and port-based
+    Both modes reach the same proxy instance -- path-based and port-based
     proxies share a single DebugHub per session. Port-based uses empty
     BasePath (no URL rewriting); path-based uses BasePath for rewriting.
 
@@ -80,7 +80,7 @@ import PtyProtocol
 
 
 
--- ── Process types ──────────────────────────────────────────────
+-- -- Process types ----------------------------------------------
 
 
 {-| A terminal-ui web component instance in the browser.
@@ -89,13 +89,13 @@ type TerminalUi
     = TerminalUi { label : String, sessionUuid : SessionUuid }
 
 
-{-| Shell page — outer wrapper in Preview iframe, manages navigation (WS 5).
+{-| Shell page -- outer wrapper in Preview iframe, manages navigation (WS 5).
 -}
 type ShellPage
     = ShellPage
 
 
-{-| inject.js — injected into every proxied HTML page, captures telemetry (WS 6).
+{-| inject.js -- injected into every proxied HTML page, captures telemetry (WS 6).
 -}
 type InjectJs
     = InjectJs
@@ -117,13 +117,13 @@ type SweServer
         }
 
 
-{-| Traefik — host-level reverse proxy providing forwardauth.
+{-| Traefik -- host-level reverse proxy providing forwardauth.
 
 Routes the main server port (:9898) plus per-session proxy ports:
 
-  - Main: :1977 → :9898 (path-based proxy, UI, WebSockets)
-  - Preview: :23000 → :23000 (port-based proxy, up to 20 sessions)
-  - Agent Chat: :24000 → :24000 (port-based proxy, up to 20 sessions)
+  - Main: :1977 -> :9898 (path-based proxy, UI, WebSockets)
+  - Preview: :23000 -> :23000 (port-based proxy, up to 20 sessions)
+  - Agent Chat: :24000 -> :24000 (port-based proxy, up to 20 sessions)
 
 Each per-port entrypoint gets its own Traefik router with forwardauth.
 
@@ -132,7 +132,7 @@ type Traefik
     = Traefik
 
 
-{-| swe-swe-open — CLI shim that sends `HTTP GET /open?url=...` to the preview proxy
+{-| swe-swe-open -- CLI shim that sends `HTTP GET /open?url=...` to the preview proxy
 endpoint on swe-swe-server (`/proxy/{uuid}/preview/__agent-reverse-proxy-debug__/open`).
 -}
 type OpenShim
@@ -147,13 +147,13 @@ type UserApp
     = UserApp
 
 
-{-| MCP sidecar process — agent chat backend on port `previewPort + 1000`.
+{-| MCP sidecar process -- agent chat backend on port `previewPort + 1000`.
 -}
 type McpSidecar
     = McpSidecar
 
 
-{-| Stdio bridge — lightweight relay between AI agent (stdio MCP) and
+{-| Stdio bridge -- lightweight relay between AI agent (stdio MCP) and
 swe-swe-server's preview proxy HTTP MCP endpoint.
 
 Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp`
@@ -165,7 +165,7 @@ type StdioBridge
         }
 
 
-{-| A process in the system — wraps all specific process types.
+{-| A process in the system -- wraps all specific process types.
 Location prefix (Browser/Container/Host) mirrors fullTopology nesting.
 -}
 type Process
@@ -181,12 +181,12 @@ type Process
 
 
 
--- ── Connection types ───────────────────────────────────────────
+-- -- Connection types -------------------------------------------
 
 
 {-| A WebSocket channel between two processes.
 
-All type parameters are phantom — they exist only at the type level
+All type parameters are phantom -- they exist only at the type level
 to document which processes and message types are valid for each channel.
 
     ptyAgentTerminal :
@@ -211,7 +211,7 @@ type alias OpenEndpointHttp =
     { method : String, path : String }
 
 
-{-| Preview proxy chain: Browser → proxy → User app.
+{-| Preview proxy chain: Browser -> proxy -> User app.
 
 Hosted inside swe-swe-server as an embedded Go library (no separate process).
 Injects debug scripts, provides DebugHub, serves shell page.
@@ -224,7 +224,7 @@ type alias PreviewProxyChain =
     }
 
 
-{-| Agent Chat proxy chain: Browser → proxy → MCP sidecar.
+{-| Agent Chat proxy chain: Browser -> proxy -> MCP sidecar.
 
 Hosted inside swe-swe-server. Cookie stripping, WebSocket relay, no HTML injection.
 
@@ -250,7 +250,7 @@ type alias ProxyChains =
 
 
 
--- ── Full topology ──────────────────────────────────────────────
+-- -- Full topology ----------------------------------------------
 
 
 {-| Full topology with 2 terminals + preview active.

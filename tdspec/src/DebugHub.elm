@@ -1,6 +1,6 @@
 module DebugHub exposing (Effect(..), onShellPageMessage, onInjectMessage, onOpenRequest, onUiCommand)
 
-{-| DebugHub — the message router inside agent-reverse-proxy.
+{-| DebugHub -- the message router inside agent-reverse-proxy.
 
 Manages three subscriber pools:
 
@@ -56,7 +56,7 @@ onInjectMessage msg =
 
 {-| When the swe-swe-open CLI shim hits `HTTP GET /open?url=...`,
 the hub broadcasts an `Open` message to all UI observers.
-This is the source of the duplicate-prompt bug — all terminal-ui
+This is the source of the duplicate-prompt bug -- all terminal-ui
 instances receive and handle it.
 -}
 onOpenRequest : { url : Url } -> List Effect
@@ -66,7 +66,7 @@ onOpenRequest payload =
 
 {-| When a UI observer (WS 3,4) sends a command, the hub
 routes it to the appropriate iframe client:
-Navigate/Reload → shell page, Query → inject.js.
+Navigate/Reload -> shell page, Query -> inject.js.
 -}
 onUiCommand : UiCommand -> List Effect
 onUiCommand cmd =

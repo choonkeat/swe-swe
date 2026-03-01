@@ -1,18 +1,17 @@
-// Shared end-session logic with PUBLIC_PORT safety check.
+// Shared end-session logic with server-side PUBLIC_PORT safety check.
 // Included as a regular <script> so both homepage-main.js and terminal-ui.js can call it.
 
 /**
- * End a session, warning the user if something is listening on the public port.
+ * End a session. The server probes the public port and returns 409 if
+ * something is listening, requiring the user to confirm before proceeding.
  *
  * @param {Object} opts
  * @param {string} opts.uuid - Session UUID
- * @param {number|null} opts.publicPort - PUBLIC_PORT value (e.g. 5000); Traefik routes directly to this port
  * @param {function} opts.onSuccess - Called after session is ended successfully
  * @param {function} [opts.onError] - Called on error (defaults to alert)
  */
 function checkPublicPortAndEndSession(opts) {
     var uuid = opts.uuid;
-    var publicPort = opts.publicPort;
     var onSuccess = opts.onSuccess;
     var onError = opts.onError || function(msg) { alert(msg); };
 
@@ -21,62 +20,56 @@ function checkPublicPortAndEndSession(opts) {
         return;
     }
 
-    // If no public port configured, skip the check
-    if (!publicPort) {
-        doEndSession(uuid, onSuccess, onError);
-        return;
-    }
-
-    // Probe the public port to see if something is listening
-    var publicUrl = location.protocol + '//' + location.hostname + ':' + publicPort + '/';
-
-    fetch(publicUrl, { method: 'GET', mode: 'cors' })
-        .then(function(response) {
-            return response.text();
-        })
-        .then(function(html) {
-            // Something is listening — extract <title> if present
-            var title = '';
-            var match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-            if (match) {
-                title = match[1].trim();
-            }
-
-            var message = 'Something is running on PUBLIC_PORT ' + publicPort + '.';
-            if (title) {
-                message += '\nPage title: "' + title + '"';
-            }
-            message += '\n\nEnding this session would disrupt any public users accessing it.';
-            message += '\n\nType ' + publicPort + ' to confirm:';
-
-            var input = prompt(message);
-            if (input === null) {
-                return; // User cancelled
-            }
-            if (input.trim() !== String(publicPort)) {
-                alert('Port number did not match. Session was NOT ended.');
-                return;
-            }
-
-            doEndSession(uuid, onSuccess, onError);
-        })
-        .catch(function() {
-            // Nothing listening on public port — safe to end
-            doEndSession(uuid, onSuccess, onError);
-        });
+    doEndSession(uuid, null, onSuccess, onError);
 }
 
 /**
- * Call the end session API.
+ * Call the end session API with optional public port confirmation.
+ * @param {string} uuid
+ * @param {number|null} confirmedPort - If set, sends X-Confirm-Public-Port header
+ * @param {function} onSuccess
+ * @param {function} onError
  */
-function doEndSession(uuid, onSuccess, onError) {
-    fetch('/api/session/' + uuid + '/end', { method: 'POST' })
+function doEndSession(uuid, confirmedPort, onSuccess, onError) {
+    var headers = {};
+    if (confirmedPort) {
+        headers['X-Confirm-Public-Port'] = String(confirmedPort);
+    }
+
+    fetch('/api/session/' + uuid + '/end', { method: 'POST', headers: headers })
         .then(function(response) {
             if (response.ok) {
                 onSuccess();
-            } else {
-                onError('Failed to end session');
+                return;
             }
+
+            // 409 = server detected something listening on public port
+            if (response.status === 409) {
+                response.json().then(function(body) {
+                    var port = body.publicPort;
+                    var message = 'Something is running on PUBLIC_PORT ' + port + '.';
+                    if (body.pageTitle) {
+                        message += '\nPage title: "' + body.pageTitle + '"';
+                    }
+                    message += '\n\nEnding this session would disrupt any public users accessing it.';
+                    message += '\n\nType ' + port + ' to confirm:';
+
+                    var input = prompt(message);
+                    if (input === null) {
+                        return; // User cancelled
+                    }
+                    if (input.trim() !== String(port)) {
+                        alert('Port number did not match. Session was NOT ended.');
+                        return;
+                    }
+
+                    // Retry with confirmation header
+                    doEndSession(uuid, port, onSuccess, onError);
+                });
+                return;
+            }
+
+            onError('Failed to end session');
         })
         .catch(function(err) {
             onError('Error: ' + err.message);

@@ -166,14 +166,46 @@ It describes:
 - what actions are available
 - what data must flow to the next page
 
-### 3.6 Named type variables with comments
+### 3.6 ASCII only -- no Unicode box-drawing or special characters
+
+All `.elm` files must use **pure ASCII** (code points 0-127). Unicode characters
+like box-drawing (`─│├└`), arrows (`→←`), em dashes (`—`), and section signs (`§`)
+render as unreadable hex sequences (`<E2><80><94>`) in `git diff` output, making
+code review painful.
+
+**Replacements:**
+
+| Instead of | Use     | Context                    |
+|------------|---------|----------------------------|
+| `—`        | `--`    | em dash in prose            |
+| `–`        | `-`     | en dash in prose            |
+| `→`        | `->`    | arrows in diagrams          |
+| `←`        | `<-`    | arrows in diagrams          |
+| `─`        | `-`     | horizontal lines            |
+| `│`        | `\|`    | vertical lines              |
+| `├` `└` `┌` `┘` `┤` | `+` | tree/box corners    |
+| `§`        | `#`     | section references          |
+
+**Tree diagrams** use `+`, `|`, `-`:
+
+    swe-swe-server
+    +-- bash (session PID)
+        +-- claude (AI agent)
+        |   +-- node mcp-server
+        +-- vim
+
+**Section headers** use `-- --`:
+
+    -- -- Section name ----------------------------------------
+
+### 3.7 Named type variables with comments
 
 When a type has multiple type parameters, use descriptive parameter names in the definition and inline comments at call sites.
 
 **Critical: comments must precede the thing they describe**, not follow it. `elm-format` moves trailing comments to the next line, detaching them from the value they annotate:
 
 ```elm
--- BAD: trailing comments — elm-format will break this
+-- BAD: trailing comments -- elm-format will break this
 ptyChannel :
     WebSocketChannel
         SweServer                 -- server
@@ -181,7 +213,7 @@ ptyChannel :
         TerminalUi                -- client
         PtyProtocol.ClientMsg     -- clientMsg
 
--- After elm-format (broken — "clientMsg" escapes the expression):
+-- After elm-format (broken -- "clientMsg" escapes the expression):
 ptyChannel :
     WebSocketChannel
         SweServer
@@ -192,11 +224,11 @@ ptyChannel :
         -- client
         PtyProtocol.ClientMsg
 
-    -- clientMsg   ← detached, now outside the type annotation
+    -- clientMsg   <- detached, now outside the type annotation
 ```
 
 ```elm
--- GOOD: comments before — survives elm-format intact
+-- GOOD: comments before -- survives elm-format intact
 type WebSocketChannel server serverMsg client clientMsg
     = WebSocketChannel
 
@@ -219,7 +251,7 @@ The type definition `server serverMsg client clientMsg` is the legend. Comments 
 ptyChannel : WebSocketChannel SweServer PtyProtocol.ServerMsg TerminalUi PtyProtocol.ClientMsg
 ```
 
-### 3.7 Precision over generality
+### 3.8 Precision over generality
 
 Use process-specific types so invalid combinations are unrepresentable:
 
@@ -252,7 +284,7 @@ ptyChannel :
 
 When each role has its own type, the compiler rejects impossible connections at definition time rather than at runtime.
 
-### 3.8 Records over currying
+### 3.9 Records over currying
 
 Use a record argument instead of multiple positional arguments. Currying is idiomatic Elm but requires the reader to understand partial application and remember argument order:
 
@@ -272,9 +304,9 @@ previewProxyPort : PortOffset -> PreviewPort -> PreviewProxyPort
 onPageLoad : Url -> Timestamp -> ShellPageEffect
 ```
 
-This spec is not runtime code — clarity for unfamiliar readers matters more than partial application convenience.
+This spec is not runtime code -- clarity for unfamiliar readers matters more than partial application convenience.
 
-### 3.9 Exact types per client
+### 3.10 Exact types per client
 
 When two clients use the same channel but handle different message subsets, give each client its own types. A shared union that each client partially ignores hides the real protocol:
 
@@ -302,9 +334,9 @@ debugIframeInjectJs  : WebSocketChannel AgentReverseProxy InjectCommand   Inject
 
 The rule: if a function ignores variants with catch-all branches (`_ ->` or no-op cases), the type is too broad. Split it so each client's type contains only the variants it actually sends or receives.
 
-Exception: a handler that genuinely receives all variants over a single connection (e.g., terminal-ui receives every `AllDebugMsg` on WS 3/4) is correctly typed even if it only acts on a subset — the no-op branches document what it *chooses not to act on*, not what it *cannot receive*.
+Exception: a handler that genuinely receives all variants over a single connection (e.g., terminal-ui receives every `AllDebugMsg` on WS 3/4) is correctly typed even if it only acts on a subset -- the no-op branches document what it *chooses not to act on*, not what it *cannot receive*.
 
-### 3.10 Names should locate types in a family
+### 3.11 Names should locate types in a family
 
 When types are related, make the relationship visible in the name. A shared suffix or prefix tells the reader they belong together without requiring them to read the definitions:
 
@@ -324,9 +356,9 @@ type InjectJsDebugMsg = Console ... | Error ... | Fetch ... | ...
 
 The suffix `DebugMsg` is the family name. The prefix (`All`, `ShellPage`, `InjectJs`) is the scope. A reader scanning type names can immediately see these are variants of the same concept.
 
-### 3.11 Eliminate duplicate structure
+### 3.12 Eliminate duplicate structure
 
-When two types have the same shape, they are the same type. The distinction belongs one level up — at the variant that holds the value, not inside the value itself:
+When two types have the same shape, they are the same type. The distinction belongs one level up -- at the variant that holds the value, not inside the value itself:
 
 ```elm
 -- Avoid: identical structure, different names
@@ -348,14 +380,14 @@ type HttpResult
         }
 ```
 
-Use `Result` when the shape is success-or-failure — do not reinvent it with `Ok`/`Failed` variants.
+Use `Result` when the shape is success-or-failure -- do not reinvent it with `Ok`/`Failed` variants.
 
-### 3.12 Nest records to separate roles
+### 3.13 Nest records to separate roles
 
 A flat record mixes fields from different phases of an interaction. Nesting separates what was asked from what came back:
 
 ```elm
--- Avoid: flat bag — which fields are about the request vs the response?
+-- Avoid: flat bag -- which fields are about the request vs the response?
 { url : Url, method : String, status : Int, error : String, ms : Int, ts : Timestamp }
 ```
 
@@ -368,19 +400,19 @@ A flat record mixes fields from different phases of an interaction. Nesting sepa
 
 Each level of nesting is a claim about structure. If fields always travel together and belong to the same concept, group them.
 
-### 3.13 Every type is a claim
+### 3.14 Every type is a claim
 
 A shared type claims two things are the same. A distinct type claims they are different. Every type decision in the spec is an assertion about the system.
 
-When `debugIframeShellPage` and `debugIframeInjectJs` shared `IframeCommand`/`DebugMsg`, the spec claimed they carry the same messages — which was false. Splitting into per-client types (`ShellPageCommand`/`InjectCommand`, `ShellPageDebugMsg`/`InjectJsDebugMsg`) made the spec stop lying.
+When `debugIframeShellPage` and `debugIframeInjectJs` shared `IframeCommand`/`DebugMsg`, the spec claimed they carry the same messages -- which was false. Splitting into per-client types (`ShellPageCommand`/`InjectCommand`, `ShellPageDebugMsg`/`InjectJsDebugMsg`) made the spec stop lying.
 
-When `FetchResult` and `XhrResult` had identical structure, the spec claimed they were different — which was also false. Unifying into `HttpResult` made the spec tell the truth: same shape, distinction lives at the variant (`Fetch` vs `Xhr`).
+When `FetchResult` and `XhrResult` had identical structure, the spec claimed they were different -- which was also false. Unifying into `HttpResult` made the spec tell the truth: same shape, distinction lives at the variant (`Fetch` vs `Xhr`).
 
 When a record is flat, it claims all fields belong to one concept. Nesting into `{ request, response }` or `{ browser, container, host }` claims they belong to different roles or locations. Each level of nesting is a structural assertion.
 
-This is the meta-rule behind §3.7 (precision over generality), §3.9 (exact types per client), §3.11 (eliminate duplicate structure), and §3.12 (nest records). Every type choice is a claim — make sure it is true.
+This is the meta-rule behind #3.8 (precision over generality), #3.10 (exact types per client), #3.12 (eliminate duplicate structure), and #3.13 (nest records). Every type choice is a claim -- make sure it is true.
 
-### 3.14 Ground truth, not aspiration
+### 3.15 Ground truth, not aspiration
 
 The spec must reflect what the code *does*, not what it *should* do. If a message type does not exist in the source code, remove it from the spec. If a field exists in the source but is missing from the spec, add it. If the server broadcasts to all clients rather than routing selectively, the spec should say broadcast.
 
@@ -388,9 +420,9 @@ Design improvements belong in issues or proposals, not in a spec that claims to 
 
 When auditing the spec against source code, fix bottom-up: start with concrete, verifiable discrepancies (missing fields, nonexistent variants, wrong types) before tackling ambiguous structural questions. Concrete fixes build the foundation for harder decisions.
 
-**Sum types vs record structure:** not all differences are equal. A sum type mismatch (spec has variants the code doesn't, or vice versa) is unacceptable — it means the spec is wrong about *what can happen*. A record nesting difference (spec groups fields into `{ request, response }` while the wire format is flat) is not ideal but fine — it means the spec is clearer about *what belongs together*. If the code can adopt the same nesting without runtime penalty, it should; but the spec need not flatten itself to match a flat serialization format.
+**Sum types vs record structure:** not all differences are equal. A sum type mismatch (spec has variants the code doesn't, or vice versa) is unacceptable -- it means the spec is wrong about *what can happen*. A record nesting difference (spec groups fields into `{ request, response }` while the wire format is flat) is not ideal but fine -- it means the spec is clearer about *what belongs together*. If the code can adopt the same nesting without runtime penalty, it should; but the spec need not flatten itself to match a flat serialization format.
 
-### 3.15 "Effects" represent server calls, storage operations, notifications, etc.
+### 3.16 "Effects" represent server calls, storage operations, notifications, etc.
 
 An **Effect** type enumerates operations requiring raw data:
 

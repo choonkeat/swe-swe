@@ -6,7 +6,7 @@ module TerminalUi exposing
     , PendingNav(..)
     )
 
-{-| terminal-ui — custom web component mounted in the browser.
+{-| terminal-ui -- custom web component mounted in the browser.
 
 Two instances are active simultaneously:
 
@@ -68,7 +68,7 @@ type Connection
 
 **Invariant:** The preview URL bar is split into a fixed prefix
 (`localhost:{PreviewPort}`) and an editable Path. The port shown
-in the URL bar is ALWAYS `state.preview.port_` — never extracted
+in the URL bar is ALWAYS `state.preview.port_` -- never extracted
 from the incoming Url. This prevents xdg-open or other sources
 from injecting a misleading port (e.g. AgentChatPort 4000 when
 PreviewPort is 3000).
@@ -120,7 +120,7 @@ onPtyMessage { msg, state } =
 
 Only 4 message types are actually acted on by terminal-ui:
 `UrlChange`, `Init`, `NavState`, and `Open`.
-The rest (`Console`, `Error`, `Fetch`, etc.) are ignored here —
+The rest (`Console`, `Error`, `Fetch`, etc.) are ignored here --
 they are consumed by MCP tools via in-process subscribers.
 
 **BUG:** `Open` is broadcast to ALL UI observers by DebugHub.
@@ -186,7 +186,7 @@ returning only the path + query + fragment.
 
 Port-based URLs have no proxy prefix, so the pathname passes through unchanged.
 Path-based URLs have the prefix stripped. In both cases, the scheme, host, and
-port are discarded — the UI supplies `localhost:{PreviewPort}` separately.
+port are discarded -- the UI supplies `localhost:{PreviewPort}` separately.
 
 Mirrors JS: `terminal-ui.js` `pathFromProxyUrl(proxyUrl)`.
 
@@ -206,7 +206,7 @@ pathFromProxyUrl (SessionUuid uuid) (Url raw) =
                             "/"
 
                 Nothing ->
-                    -- No scheme — treat the whole string as a path
+                    -- No scheme -- treat the whole string as a path
                     raw
 
         -- Separate path from query+fragment
@@ -230,7 +230,7 @@ pathFromProxyUrl (SessionUuid uuid) (Url raw) =
                     remainder
 
             else
-                -- Port-based URL or no prefix — pass through
+                -- Port-based URL or no prefix -- pass through
                 pathname
     in
     Path (strippedPath ++ queryAndFragment)
@@ -266,7 +266,7 @@ splitOnce sep str =
 splitPathFromQueryFragment : String -> ( String, String )
 splitPathFromQueryFragment str =
     let
-        -- Find first '?' or '#' — whichever comes first
+        -- Find first '?' or '#' -- whichever comes first
         qIdx =
             String.indexes "?" str |> List.head
 
@@ -296,18 +296,18 @@ splitPathFromQueryFragment str =
 
 
 
--- ── WebSocket reconnection state machine ───────────────────────
+-- -- WebSocket reconnection state machine -----------------------
 
 
-{-| Which WebSocket channel — each has different reconnect timing.
+{-| Which WebSocket channel -- each has different reconnect timing.
 -}
 type WsChannel
-    = PtyChannel {- PTY WebSocket (WS 1/2). Backoff: 1s → 60s. -}
+    = PtyChannel {- PTY WebSocket (WS 1/2). Backoff: 1s -> 60s. -}
     | DebugChannel
 
 
 
-{- Debug UI WebSocket (WS 3/4). Backoff: 1s → 10s.
+{- Debug UI WebSocket (WS 3/4). Backoff: 1s -> 10s.
    On reconnect: reloads iframe if placeholder still visible.
 -}
 
@@ -338,21 +338,21 @@ wsConfig channel =
 {-| WebSocket connection lifecycle.
 
     Disconnected 0
-      → Connecting              (initial connect or reconnect after backoff)
+      -> Connecting              (initial connect or reconnect after backoff)
 
     Connecting
-      → Connected               (onopen fires)
-      → Disconnected (N+1)      (onerror/onclose fires)
+      -> Connected               (onopen fires)
+      -> Disconnected (N+1)      (onerror/onclose fires)
 
     Connected
-      → Disconnected (N+1)      (onclose fires)
+      -> Disconnected (N+1)      (onclose fires)
 
-    ProcessExited               — terminal; no reconnection attempted
+    ProcessExited               -- terminal; no reconnection attempted
 
 PTY-specific: if `processExited` flag is set when onclose fires,
 transitions to `ProcessExited` instead of `Disconnected`.
 
-Debug-specific: on `Connecting → Connected`, if placeholder is still
+Debug-specific: on `Connecting -> Connected`, if placeholder is still
 visible (`_previewWaiting`), reloads the iframe.
 
 -}
@@ -427,24 +427,24 @@ wsTransition event phase =
 
 
 
--- ── Placeholder lifecycle ──────────────────────────────────────
+-- -- Placeholder lifecycle --------------------------------------
 
 
 {-| Placeholder overlay state machine for preview and agent chat panels.
 
     Hidden
-      → Shown           (setPreviewURL() called, or agentChatPort received)
+      -> Shown           (setPreviewURL() called, or agentChatPort received)
 
     Shown
-      → Probing          (probe started via probeUntilReady())
+      -> Probing          (probe started via probeUntilReady())
 
     Probing
-      → IframeSrcSet     (probe succeeded, iframe.src assigned)
+      -> IframeSrcSet     (probe succeeded, iframe.src assigned)
 
     IframeSrcSet
-      → Hidden           (dismissed via DebugWebSocket or IframeOnLoad)
+      -> Hidden           (dismissed via DebugWebSocket or IframeOnLoad)
 
-    Preview can cycle: Hidden → Shown → ... → Hidden → Shown → ...
+    Preview can cycle: Hidden -> Shown -> ... -> Hidden -> Shown -> ...
     (each setPreviewURL() call restarts the cycle).
 
     Agent Chat goes through the cycle once and stays Hidden.
@@ -519,7 +519,7 @@ placeholderTransition event phase =
 
 
 
--- ── Navigation queuing ─────────────────────────────────────────
+-- -- Navigation queuing -----------------------------------------
 
 
 {-| Pending navigation state for the preview tab.
@@ -528,8 +528,9 @@ When a URL arrives while the preview tab is not active (e.g., during
 probe or while another tab is focused), the iframe src is stashed
 rather than applied immediately.
 
-    NoNav                — nothing pending
-    Pending iframeSrc    — stashed; applied when user switches to preview tab
+    NoNav -- nothing pending
+
+    Pending iframeSrc -- stashed; applied when user switches to preview tab
 
 On tab switch to preview:
 
