@@ -5775,7 +5775,13 @@ func callAgentChatOrchestrator(port int, toolName string, args any) (string, err
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/mcp/orchestrator", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("POST %s: %w", url, err)
 	}
