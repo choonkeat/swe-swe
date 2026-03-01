@@ -5714,7 +5714,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if sess.AgentChatPort == 0 {
 			return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
 		}
-		result, err := callAgentChatOrchestrator(sess.AgentChatPort, "push_message", map[string]string{"text": args.Text})
+		result, err := callAgentChatOrchestrator(sess.AgentChatPort, "send_chat_message", map[string]string{"text": args.Text})
 		if err != nil {
 			return nil, nil, fmt.Errorf("agent chat error: %w", err)
 		}
