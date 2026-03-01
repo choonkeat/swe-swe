@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## v2.13.0 - MCP Orchestration, Agent Chat Tools & Session Management
+
+### Features
+
+- **MCP orchestration server**: Agent-to-agent coordination via MCP orchestration server
+- **Chat MCP tools**: `send_chat_message` and `get_chat_history` MCP tools for programmatic chat interaction
+- **Agent-chat interrupt**: Handle `agent-chat-interrupt` to send Esc Esc + `check_messages`
+- **End session confirmation**: `confirm()` dialog before ending sessions
+- **Session page query params**: Unify session page query params into `SessionPageQuery` type
+
+### Bug Fixes
+
+- **StreamableHTTP Accept header**: Set Accept header in `callAgentChatOrchestrator` for MCP StreamableHTTP
+- **Theme cookie**: Add `--theme-cookie swe-swe-theme` to agent-chat MCP config
+- **Session input timing**: `send_session_input` delays CR after text, matching mobile keyboard pattern
+- **JSON schema tags**: Use plain description in jsonschema struct tags for go-sdk v1.2.0
+- **Template escaping**: Prevent `html/template` from double-escaping session URL query params
+- **Child session handling**: Reject child session when parent not found, preserve query params on redirect
+- **Process cleanup**: Kill escaped descendant processes and defer port reuse on session end
+- **PTY Setpgid conflict**: Remove Setpgid that conflicts with pty.Start's Setsid
+- **Public port routing**: Server-side public port probe and port-based process cleanup on session end
+
+### Refactoring
+
+- **Rename**: `push_message` → `send_chat_message` for consistency
+- **Public port routing**: Route `PUBLIC_PORT` directly through Traefik, remove proxy hop
+
+### Documentation
+
+- Add `PUBLIC_PORT` direct route to tdspec topology
+- Add `SessionLifecycle` tdspec for process management and end-session flow
+
 ## v2.12.1 - Public Ports, End Session & Chat Fixes
 
 ### Features
