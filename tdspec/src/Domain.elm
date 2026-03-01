@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), ProxyPortOffset(..), PreviewProxyPort(..), AgentChatProxyPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
+module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), PublicPort(..), ProxyPortOffset(..), PreviewProxyPort(..), AgentChatProxyPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
 
 {-| Shared primitive types used across the architecture.
 
@@ -12,7 +12,7 @@ System overview:
       - Path-based (fallback): /proxy/{uuid}/preview/ on main server port
   - Both modes reach the same proxy instance and share a DebugHub
 
-@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, ProxyPortOffset, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp, ServerAddr
+@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, PublicPort, ProxyPortOffset, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp, ServerAddr
 
 -}
 
@@ -53,6 +53,25 @@ Derived from preview port: `previewPort + 1000`.
 -}
 type AgentChatPort
     = AgentChatPort Int
+
+
+{-| Public-facing port (no authentication). Routed directly through Traefik
+without forwardauth middleware.
+
+Derived from preview port: `previewPort + 2000`.
+
+    publicPort (PreviewPort 3000) == PublicPort 5000
+
+Range: 5000–5019 (configurable via `SWE_PUBLIC_PORTS`).
+Passed to the session as env var `PUBLIC_PORT=5000`.
+
+Users can run any server on this port to make it publicly accessible.
+Because it bypasses auth, ending a session with an active public port
+requires explicit confirmation.
+
+-}
+type PublicPort
+    = PublicPort Int
 
 
 {-| Offset added to app ports to derive per-port proxy listener ports.
