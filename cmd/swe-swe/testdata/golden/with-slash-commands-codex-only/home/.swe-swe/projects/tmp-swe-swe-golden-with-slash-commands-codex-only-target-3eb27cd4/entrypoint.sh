@@ -52,7 +52,7 @@ mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
 command = "npx"
-args = ["-y", "@choonkeat/agent-chat"]
+args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
 
 [mcp_servers.swe-swe-playwright]
 command = "npx"

@@ -58,7 +58,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   "mcp": {
     "swe-swe-agent-chat": {
       "type": "local",
-      "command": ["npx", "-y", "@choonkeat/agent-chat"]
+      "command": ["npx", "-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
     },
     "swe-swe-playwright": {
       "type": "local",
@@ -89,7 +89,7 @@ mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
 command = "npx"
-args = ["-y", "@choonkeat/agent-chat"]
+args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
 
 [mcp_servers.swe-swe-playwright]
 command = "npx"
@@ -119,7 +119,7 @@ cat > /home/app/.gemini/settings.json << 'EOF'
   "mcpServers": {
     "swe-swe-agent-chat": {
       "command": "npx",
-      "args": ["-y", "@choonkeat/agent-chat"]
+      "args": ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
     },
     "swe-swe-playwright": {
       "command": "npx",
@@ -155,6 +155,8 @@ extensions:
     args:
       - "-y"
       - "@choonkeat/agent-chat"
+      - "--theme-cookie"
+      - "swe-swe-theme"
   swe-swe-playwright:
     type: stdio
     cmd: npx
@@ -207,7 +209,7 @@ if ! grep -q '"swe-swe"' /home/app/.claude.json 2>/dev/null || ! grep -q '\-\-br
     claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
     claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
     claude mcp remove --scope user swe-swe 2>/dev/null || true
-    claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat
+    claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme
     claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
     claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp'"'"'
     claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard

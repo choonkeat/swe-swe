@@ -41,7 +41,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   "mcp": {
     "swe-swe-agent-chat": {
       "type": "local",
-      "command": ["npx", "-y", "@choonkeat/agent-chat"]
+      "command": ["npx", "-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
     },
     "swe-swe-playwright": {
       "type": "local",

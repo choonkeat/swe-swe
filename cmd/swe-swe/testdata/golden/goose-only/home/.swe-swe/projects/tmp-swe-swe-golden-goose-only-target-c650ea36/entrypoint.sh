@@ -46,6 +46,8 @@ extensions:
     args:
       - "-y"
       - "@choonkeat/agent-chat"
+      - "--theme-cookie"
+      - "swe-swe-theme"
   swe-swe-playwright:
     type: stdio
     cmd: npx
