@@ -5674,6 +5674,7 @@ func registerOrchestrationTools(server *mcp.Server) {
 			return nil, nil, fmt.Errorf("invalid mode '%s': use workspace, clone, or create", args.Mode)
 		}
 	})
+}
 
 // handleRecordingAPI routes recording API requests
 func handleRecordingAPI(w http.ResponseWriter, r *http.Request) {

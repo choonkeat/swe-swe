@@ -1,5 +1,5 @@
 module HttpProxy exposing
-    ( agentChatPort, previewProxyPort, agentChatProxyPort
+    ( agentChatPort, publicPort, previewProxyPort, agentChatProxyPort
     , ProxyMode(..), ProbeResult(..), classifyProbe, PlaceholderDismiss(..)
     , ProbePhase(..), ProbeEvent(..), probeTransition, probeConfig
     )
@@ -41,20 +41,26 @@ so browser probes can detect when the proxy handler is active.
 
 Port derivation:
 
-    agentChatPort     = previewPort + 1000          (e.g., 4000)
-    previewProxyPort  = previewPort + portOffset     (e.g., 23000)
+    agentChatPort      = previewPort + 1000          (e.g., 4000)
+    publicPort         = previewPort + 2000          (e.g., 5000)
+    previewProxyPort   = previewPort + portOffset    (e.g., 23000)
     agentChatProxyPort = agentChatPort + portOffset  (e.g., 24000)
+
+PUBLIC\_PORT is architecturally different: Traefik routes it directly to the
+container port without forwardauth and without swe-swe-server proxy. This is
+reflected in the type system -- see `PublicDirectRoute` vs `PreviewProxyChain`
+in Topology.
 
 AI agents always use the internal path-based URL (container-internal,
 never through Traefik), so they work regardless of browser mode.
 
-@docs agentChatPort, previewProxyPort, agentChatProxyPort
+@docs agentChatPort, publicPort, previewProxyPort, agentChatProxyPort
 @docs ProxyMode, ProbeResult, classifyProbe, PlaceholderDismiss
 @docs ProbePhase, ProbeEvent, probeTransition, probeConfig
 
 -}
 
-import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), ProxyPortOffset(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), ProxyPortOffset(..), PublicPort(..))
 
 
 
@@ -69,6 +75,20 @@ import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(.
 agentChatPort : PreviewPort -> AgentChatPort
 agentChatPort (PreviewPort p) =
     AgentChatPort (p + 1000)
+
+
+{-| Public port = preview port + 2000.
+
+    publicPort (PreviewPort 3000) == PublicPort 5000
+
+Unlike preview and agent chat, the public port has NO swe-swe-server
+proxy -- Traefik routes directly to whatever the user runs on this port.
+See `PublicDirectRoute` in Topology for the structural difference.
+
+-}
+publicPort : PreviewPort -> PublicPort
+publicPort (PreviewPort p) =
+    PublicPort (p + 2000)
 
 
 {-| Per-port proxy listener port for preview.

@@ -2,6 +2,7 @@ module Topology exposing
     ( Process(..), TerminalUi(..), ShellPage(..), InjectJs(..), SweServer(..)
     , Traefik(..), OpenShim(..), UserApp(..), McpSidecar(..), StdioBridge(..)
     , WebSocketChannel(..), OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
+    , PublicDirectRoute
     , ProxyChains
     , fullTopology
     )
@@ -65,16 +66,25 @@ instances + Preview tab are active.
     AI agents always use the internal path-based URL (container-internal,
     never through Traefik).
 
+    PUBLIC_PORT (direct, no proxy, no auth):
+      Public:      Browser -> Traefik :5000 -> User app :5000
+
+    Unlike preview/agentchat, the public port bypasses swe-swe-server
+    entirely. Traefik routes without forwardauth middleware. This is
+    reflected in the types: PreviewProxyChain/AgentChatProxyChain have
+    basePath + proxyPort; PublicDirectRoute has only appPort.
+
 @docs Process, TerminalUi, ShellPage, InjectJs, SweServer
 @docs Traefik, OpenShim, UserApp, McpSidecar, StdioBridge
 @docs WebSocketChannel, OpenEndpointHttp, PreviewProxyChain, AgentChatProxyChain
+@docs PublicDirectRoute
 @docs ProxyChains
 @docs fullTopology
 
 -}
 
 import DebugProtocol exposing (..)
-import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), ProxyPortOffset(..), ServerAddr(..), SessionUuid(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), PreviewPort(..), PreviewProxyPort(..), ProxyPortOffset(..), PublicPort(..), ServerAddr(..), SessionUuid(..))
 import HttpProxy
 import PtyProtocol
 
@@ -117,15 +127,22 @@ type SweServer
         }
 
 
-{-| Traefik -- host-level reverse proxy providing forwardauth.
+{-| Traefik -- host-level reverse proxy.
 
-Routes the main server port (:9898) plus per-session proxy ports:
+Routes the main server port plus per-session proxy and public ports:
+
+Authenticated (with forwardauth middleware):
 
   - Main: :1977 -> :9898 (path-based proxy, UI, WebSockets)
   - Preview: :23000 -> :23000 (port-based proxy, up to 20 sessions)
   - Agent Chat: :24000 -> :24000 (port-based proxy, up to 20 sessions)
 
-Each per-port entrypoint gets its own Traefik router with forwardauth.
+Unauthenticated (NO forwardauth -- public-facing):
+
+  - Public: :5000 -> :5000 (direct to user app, up to 20 sessions)
+
+The public port routes are structurally different from proxy routes --
+see `PublicDirectRoute` vs `PreviewProxyChain`.
 
 -}
 type Traefik
@@ -236,7 +253,26 @@ type alias AgentChatProxyChain =
     }
 
 
-{-| Both proxy chains bundled, with the shared port offset.
+{-| Public port route: Browser -> Traefik -> user app (direct, no proxy, no auth).
+
+Structurally different from `PreviewProxyChain` and `AgentChatProxyChain`:
+no `basePath` (no URL rewriting), no `proxyPort` (no swe-swe-server proxy hop).
+The type-level absence of these fields encodes the architectural difference --
+this route bypasses swe-swe-server entirely.
+
+Traefik routes the public port without forwardauth middleware, making it
+accessible to anyone with the URL.
+
+-}
+type alias PublicDirectRoute =
+    { appPort : PublicPort
+    }
+
+
+{-| All session routes bundled, with the shared port offset.
+
+Preview and AgentChat are proxied (two hops, authenticated).
+Public is direct (one hop, unauthenticated).
 
 Path-based and port-based proxies share a single DebugHub per session.
 Path-based uses `basePath` for URL rewriting; port-based uses empty BasePath.
@@ -246,6 +282,7 @@ type alias ProxyChains =
     { portOffset : ProxyPortOffset
     , preview : PreviewProxyChain
     , agentChat : AgentChatProxyChain
+    , public : PublicDirectRoute
     }
 
 
@@ -254,7 +291,7 @@ type alias ProxyChains =
 
 
 {-| Full topology with 2 terminals + preview active.
-6 WebSockets + 1 HTTP endpoint + 2 HTTP reverse proxy chains (dual-mode).
+6 WebSockets + 1 HTTP endpoint + 2 proxied chains (dual-mode) + 1 public direct route.
 -}
 fullTopology :
     { browser :
@@ -391,6 +428,9 @@ fullTopology =
             { basePath = "/proxy/{uuid}/agentchat"
             , appPort = acPort
             , proxyPort = HttpProxy.agentChatProxyPort portOffset acPort
+            }
+        , public =
+            { appPort = HttpProxy.publicPort previewPort
             }
         }
     }
