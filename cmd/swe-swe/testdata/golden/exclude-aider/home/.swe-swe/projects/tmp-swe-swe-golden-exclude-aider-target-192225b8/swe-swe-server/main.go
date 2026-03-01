@@ -1682,7 +1682,9 @@ func main() {
 		Name:    "swe-swe",
 		Version: Version,
 	}, nil)
-	registerOrchestrationTools(orchMCPSrv)
+	if err := registerOrchestrationTools(orchMCPSrv); err != nil {
+		log.Printf("WARNING: %v", err)
+	}
 	orchHandler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return orchMCPSrv },
 		&mcp.StreamableHTTPOptions{Stateless: true},
@@ -5337,7 +5339,13 @@ func killProcessesOnPorts(ports []int) {
 
 // --- MCP Orchestration Tools ---
 
-func registerOrchestrationTools(server *mcp.Server) {
+func registerOrchestrationTools(server *mcp.Server) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("AddTool panicked: %v", r)
+		}
+	}()
+
 	// list_sessions
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_sessions",
@@ -5384,10 +5392,10 @@ func registerOrchestrationTools(server *mcp.Server) {
 
 	// create_session
 	type createSessionArgs struct {
-		Assistant string `json:"assistant" jsonschema:"required,description=Agent binary name (e.g. claude, gemini)"`
-		Name      string `json:"name,omitempty" jsonschema:"description=Session display name"`
-		Branch    string `json:"branch,omitempty" jsonschema:"description=Git branch to create worktree for"`
-		RepoPath  string `json:"repo_path,omitempty" jsonschema:"description=Repository path (default /workspace)"`
+		Assistant string `json:"assistant" jsonschema:"Agent binary name (e.g. claude, gemini)"`
+		Name      string `json:"name,omitempty" jsonschema:"Session display name"`
+		Branch    string `json:"branch,omitempty" jsonschema:"Git branch to create worktree for"`
+		RepoPath  string `json:"repo_path,omitempty" jsonschema:"Repository path (default /workspace)"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_session",
@@ -5415,7 +5423,7 @@ func registerOrchestrationTools(server *mcp.Server) {
 
 	// end_session
 	type endSessionArgs struct {
-		UUID string `json:"uuid" jsonschema:"required,description=Session UUID to terminate"`
+		UUID string `json:"uuid" jsonschema:"Session UUID to terminate"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "end_session",
@@ -5429,8 +5437,8 @@ func registerOrchestrationTools(server *mcp.Server) {
 
 	// get_session_output
 	type getOutputArgs struct {
-		UUID string `json:"uuid" jsonschema:"required,description=Session UUID"`
-		Mode string `json:"mode,omitempty" jsonschema:"description=Output mode: screen (default) or scrollback"`
+		UUID string `json:"uuid" jsonschema:"Session UUID"`
+		Mode string `json:"mode,omitempty" jsonschema:"Output mode: screen (default) or scrollback"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_session_output",
@@ -5478,8 +5486,8 @@ func registerOrchestrationTools(server *mcp.Server) {
 
 	// send_session_input
 	type sendInputArgs struct {
-		UUID string `json:"uuid" jsonschema:"required,description=Session UUID"`
-		Text string `json:"text" jsonschema:"required,description=Text to write to the session PTY"`
+		UUID string `json:"uuid" jsonschema:"Session UUID"`
+		Text string `json:"text" jsonschema:"Text to write to the session PTY"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "send_session_input",
@@ -5534,7 +5542,7 @@ func registerOrchestrationTools(server *mcp.Server) {
 
 	// list_recordings
 	type listRecordingsArgs struct {
-		Limit int `json:"limit,omitempty" jsonschema:"description=Maximum number of recordings to return (default 20)"`
+		Limit int `json:"limit,omitempty" jsonschema:"Maximum number of recordings to return (default 20)"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_recordings",
@@ -5578,10 +5586,10 @@ func registerOrchestrationTools(server *mcp.Server) {
 
 	// prepare_repo
 	type prepareRepoArgs struct {
-		Mode string `json:"mode" jsonschema:"required,description=Preparation mode: workspace, clone, or create"`
-		URL  string `json:"url,omitempty" jsonschema:"description=Repository URL (for clone mode)"`
-		Name string `json:"name,omitempty" jsonschema:"description=Project name (for create mode)"`
-		Path string `json:"path,omitempty" jsonschema:"description=Existing repo path (for workspace mode)"`
+		Mode string `json:"mode" jsonschema:"Preparation mode: workspace, clone, or create"`
+		URL  string `json:"url,omitempty" jsonschema:"Repository URL (for clone mode)"`
+		Name string `json:"name,omitempty" jsonschema:"Project name (for create mode)"`
+		Path string `json:"path,omitempty" jsonschema:"Existing repo path (for workspace mode)"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "prepare_repo",
@@ -5674,6 +5682,7 @@ func registerOrchestrationTools(server *mcp.Server) {
 			return nil, nil, fmt.Errorf("invalid mode '%s': use workspace, clone, or create", args.Mode)
 		}
 	})
+	return nil
 }
 
 // handleRecordingAPI routes recording API requests

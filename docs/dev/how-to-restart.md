@@ -18,6 +18,9 @@ for port in $(seq 5000 5019); do (echo >/dev/tcp/localhost/$port) 2>/dev/null &&
 From inside the swe-swe container (with Docker socket access), run these commands **in this order**:
 
 ```bash
+# 0. Run tests first — catch broken templates before going offline
+make test
+
 # 1. Re-init (builds binary + rebuilds Docker images with latest templates)
 bash .swe-swe/pre-restart.sh
 
