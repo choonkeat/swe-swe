@@ -5132,7 +5132,11 @@ func killSessionProcessGroup(s *Session) {
 // startSignalMonitor logs all catchable signals for crash forensics.
 // SIGKILL (9) cannot be caught, so if the server dies without any signal log
 // entry, it confirms the death was by SIGKILL.
+// SIGURG and SIGCHLD are very noisy (Go runtime uses SIGURG for goroutine
+// preemption, SIGCHLD fires on every child exit) so they are only logged
+// when LOGGING=verbose is set.
 func startSignalMonitor() {
+	verbose := os.Getenv("LOGGING") == "verbose"
 	sigs := make(chan os.Signal, 64)
 	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT,
 		syscall.SIGILL, syscall.SIGTRAP, syscall.SIGABRT, syscall.SIGBUS,
@@ -5143,10 +5147,15 @@ func startSignalMonitor() {
 		syscall.SIGPROF, syscall.SIGWINCH, syscall.SIGIO, syscall.SIGSYS)
 	go func() {
 		for sig := range sigs {
+			// SIGURG (Go runtime goroutine preemption) and SIGCHLD (child exits)
+			// are extremely frequent and harmless — skip unless verbose.
+			if !verbose && (sig == syscall.SIGURG || sig == syscall.SIGCHLD) {
+				continue
+			}
 			log.Printf("[SIGNAL] pid=%d received signal %v", os.Getpid(), sig)
 		}
 	}()
-	log.Printf("[SIGNAL] monitor started for pid=%d", os.Getpid())
+	log.Printf("[SIGNAL] monitor started for pid=%d (verbose=%v)", os.Getpid(), verbose)
 }
 
 // startHeartbeat writes the current timestamp to /tmp/swe-swe-heartbeat every
