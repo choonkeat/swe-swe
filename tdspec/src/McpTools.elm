@@ -1,14 +1,21 @@
 module McpTools exposing
-    ( McpServer(..), PreviewTool(..), AgentChatTool(..)
+    ( McpServer(..), ServerTool(..), PreviewTool(..), AgentChatTool(..)
     , PreviewResource(..), AgentChatResource(..)
     , SnapshotResult, ConsoleEntry(..)
     , DrawReply(..)
-    , allPreviewTools, allAgentChatTools
+    , allPreviewTools, allAgentChatTools, allServerTools
     )
 
-{-| MCP Tools -- the AI-facing tools hosted by two independent MCP servers.
+{-| MCP Tools -- the AI-facing tools hosted by three independent MCP servers.
 
-Two MCP servers expose tools to the AI agent (Claude):
+Three MCP servers expose tools to the AI agent (Claude):
+
+    swe-swe-server MCP (session management, built into swe-swe-server)
+      Endpoint: /mcp on :9898 (StreamableHTTP)
+      Tools:    list_sessions, create_session, end_session, get_session_output,
+                send_session_input, list_worktrees, list_recordings, prepare_repo,
+                send_chat_message, get_chat_history
+      Manages:  Session lifecycle, terminal I/O, recordings, repos
 
     Preview MCP (agent-reverse-proxy, embedded in swe-swe-server)
       Endpoint: /proxy/{uuid}/preview/mcp (StreamableHTTP)
@@ -17,8 +24,13 @@ Two MCP servers expose tools to the AI agent (Claude):
 
     Agent Chat MCP (agent-chat sidecar, separate process)
       Endpoint: http://localhost:{AGENT_CHAT_PORT}/mcp (StreamableHTTP + stdio)
-      Tools:    send_message, draw, send_progress, check_messages
+      Tools:    send_message, send_verbal_reply, draw, send_progress,
+                send_verbal_progress, check_messages
       Reads:    Event bus connected to browser WebSocket
+
+Message flow for server tools:
+
+    Claude -> MCP -> swe-swe-server -> session map / PTY / git
 
 Message flow for preview tools:
 
@@ -29,15 +41,15 @@ Message flow for agent chat tools:
     Claude -> MCP -> agent-chat -> event bus -> WS -> browser
     browser -> user click -> WS -> event bus -> MCP response
 
-@docs McpServer, PreviewTool, AgentChatTool
+@docs McpServer, ServerTool, PreviewTool, AgentChatTool
 @docs PreviewResource, AgentChatResource
 @docs SnapshotResult, ConsoleEntry
 @docs DrawReply
-@docs allPreviewTools, allAgentChatTools
+@docs allPreviewTools, allAgentChatTools, allServerTools
 
 -}
 
-import Domain exposing (Timestamp(..), Url(..))
+import Domain exposing (PreviewPort(..), PublicPort(..), SessionUuid(..), Timestamp(..), Url(..))
 
 
 
@@ -47,7 +59,12 @@ import Domain exposing (Timestamp(..), Url(..))
 {-| The two independent MCP servers in the system.
 -}
 type McpServer
-    = PreviewMcp
+    = ServerMcp
+      {- Built into swe-swe-server.
+         Endpoint: /mcp on :9898
+         Tools manage sessions, terminals, recordings, repos.
+      -}
+    | PreviewMcp
       {- Embedded in swe-swe-server via agent-reverse-proxy Go library.
          Endpoint: /proxy/{uuid}/preview/mcp
          ToolPrefix: "preview" (tools named preview_browser_*)
@@ -62,6 +79,112 @@ type McpServer
    Also available via stdio MCP transport.
    Communicates with browser via event bus + WebSocket.
 -}
+-- -- swe-swe-server MCP tools -----------------------------------
+
+
+{-| Tools exposed by swe-swe-server's MCP endpoint (/mcp on :9898).
+
+Session management, terminal I/O, recordings, git worktrees, repos.
+
+-}
+type ServerTool
+    = ListSessions
+      {- List all active agent sessions.
+
+         Input:  (none)
+         Output: JSON array of session objects
+                 { uuid, name, assistant, clientCount, duration, workDir, branchName?, previewPort, publicPort }
+      -}
+    | CreateSession
+      {- Create a new agent session.
+
+         Input:  { assistant : String
+                 , name : Maybe String
+                 , branch : Maybe String
+                 , repoPath : Maybe String
+                 }
+         Output: JSON { uuid, name, assistant, workDir }
+      -}
+    | EndSession
+      {- Gracefully terminate an agent session.
+
+         Input:  { uuid : SessionUuid }
+         Output: "session ended"
+      -}
+    | GetSessionOutput
+      {- Read terminal output from a session.
+
+         Input:  { uuid : SessionUuid
+                 , mode : Maybe String  -- "screen" (default) or "scrollback"
+                 }
+         Output: Plain text (ANSI-stripped for scrollback, clean VT state for screen)
+      -}
+    | SendSessionInput
+      {- Write text to a session's terminal (PTY).
+
+         Input:  { uuid : SessionUuid
+                 , text : String
+                 }
+         Output: "input sent"
+
+         Trailing newlines are sent as CR after 300ms delay (mobile keyboard pattern).
+      -}
+    | ListWorktrees
+      {- List git worktrees with their active sessions.
+
+         Input:  (none)
+         Output: JSON { worktrees: [...] } with optional activeSession per worktree
+      -}
+    | ListRecordings
+      {- List ended session recordings.
+
+         Input:  { limit : Maybe Int }  -- default 20
+         Output: JSON array of recording objects { uuid, name?, agent?, endedAt?, hasChat? }
+      -}
+    | PrepareRepo
+      {- Clone, create, or prepare a repository for use.
+
+         Input:  { mode : String  -- "workspace", "clone", or "create"
+                 , url : Maybe String   -- for clone mode
+                 , name : Maybe String  -- for create mode
+                 , path : Maybe String  -- for workspace mode
+                 }
+         Output: JSON { path } (with optional warning for workspace mode)
+      -}
+    | SendChatMessage
+      {- Send a message to a session's agent chat (proxied to agent-chat orchestrator).
+
+         Input:  { uuid : SessionUuid
+                 , text : String
+                 }
+         Output: Orchestrator response text
+
+         Requires session to have an AgentChatPort (chat mode, not terminal-only).
+      -}
+    | GetChatHistory
+
+
+
+{- Get chat event history from a session's agent chat.
+
+   Input:  { uuid : SessionUuid
+           , cursor : Maybe Int  -- return events with seq > cursor; 0 returns all
+           }
+   Output: Orchestrator response (JSON events)
+-}
+
+
+{-| All swe-swe-server MCP tools.
+
+    allServerTools == [ ListSessions, CreateSession, EndSession, GetSessionOutput, SendSessionInput, ListWorktrees, ListRecordings, PrepareRepo, SendChatMessage, GetChatHistory ]
+
+-}
+allServerTools : List ServerTool
+allServerTools =
+    [ ListSessions, CreateSession, EndSession, GetSessionOutput, SendSessionInput, ListWorktrees, ListRecordings, PrepareRepo, SendChatMessage, GetChatHistory ]
+
+
+
 -- -- Preview MCP tools ------------------------------------------
 
 
@@ -170,11 +293,25 @@ type AgentChatTool
          Input:  { text : String
                  , quickReply : String
                  , moreQuickReplies : Maybe (List String)
+                 , imageUrls : Maybe (List String)
                  }
          Output: "User responded: {reply}"
 
          Lazily starts HTTP server and opens browser on first call.
          Blocks until user clicks a reply button.
+      -}
+    | SendVerbalReply
+      {- Send spoken reply in voice mode, wait for user response.
+
+         Input:  { text : String
+                 , quickReply : String
+                 , moreQuickReplies : Maybe (List String)
+                 , imageUrls : Maybe (List String)
+                 }
+         Output: "User responded: {reply}"
+
+         Used when user interacts via voice (message prefixed with microphone emoji).
+         Text is spoken aloud via browser text-to-speech.
       -}
     | Draw
       {- Draw diagram slide on whiteboard canvas, wait for acknowledgment.
@@ -193,10 +330,22 @@ type AgentChatTool
     | SendProgress
       {- Non-blocking progress update.
 
-         Input:  { text : String }
+         Input:  { text : String
+                 , imageUrls : Maybe (List String)
+                 }
          Output: "Progress sent."
 
          Fire-and-forget. Does not wait for subscriber.
+      -}
+    | SendVerbalProgress
+      {- Non-blocking spoken progress update in voice mode.
+
+         Input:  { text : String
+                 , imageUrls : Maybe (List String)
+                 }
+         Output: "Progress sent."
+
+         Text is spoken via browser text-to-speech.
       -}
     | CheckMessages
 
@@ -227,12 +376,12 @@ type DrawReply
 
 {-| All agent chat MCP tools.
 
-    allAgentChatTools == [ SendMessage, Draw, SendProgress, CheckMessages ]
+    allAgentChatTools == [ SendMessage, SendVerbalReply, Draw, SendProgress, SendVerbalProgress, CheckMessages ]
 
 -}
 allAgentChatTools : List AgentChatTool
 allAgentChatTools =
-    [ SendMessage, Draw, SendProgress, CheckMessages ]
+    [ SendMessage, SendVerbalReply, Draw, SendProgress, SendVerbalProgress, CheckMessages ]
 
 
 

@@ -139,6 +139,11 @@ onWsUpgrade payload =
 -}
 type InjectAction
     = RunQuery { id : String, selector : String }
+    | RunClick { id : String, selector : String }
+    | RunType { id : String, selector : Maybe String, text : String, clear : Bool, submit : Bool }
+    | RunFillForm { id : String, fields : List { selector : String, value : String } }
+    | RunPressKey { id : String, key : String, selector : Maybe String }
+    | RunEvaluate { id : String, expression : String }
 
 
 {-| Handle a command from the hub on WS 6.
@@ -148,3 +153,18 @@ onInjectCommand cmd =
     case cmd of
         DomQuery payload ->
             RunQuery payload
+
+        DomClick payload ->
+            RunClick payload
+
+        DomType payload ->
+            RunType payload
+
+        DomFillForm payload ->
+            RunFillForm payload
+
+        DomPressKey payload ->
+            RunPressKey payload
+
+        DomEvaluate payload ->
+            RunEvaluate payload

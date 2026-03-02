@@ -136,9 +136,18 @@ type XhrResult
 
 
 {-| Commands sent by the hub to inject.js.
+
+The hub routes commands from terminal-ui (WS 3,4) to inject.js (WS 6).
+See debughub.go RouteCommand: query, click, type, fillForm, pressKey, evaluate.
+
 -}
 type InjectCommand
     = DomQuery { id : String, selector : String }
+    | DomClick { id : String, selector : String }
+    | DomType { id : String, selector : Maybe String, text : String, clear : Bool, submit : Bool }
+    | DomFillForm { id : String, fields : List { selector : String, value : String } }
+    | DomPressKey { id : String, key : String, selector : Maybe String }
+    | DomEvaluate { id : String, expression : String }
 
 
 
@@ -155,12 +164,18 @@ type AllDebugMsg
 
 
 {-| Commands sent by terminal-ui to the hub (on WS 3,4).
-The hub routes Navigate/Reload to the shell page, Query to inject.js.
+The hub routes Navigate/Reload to the shell page (WS 5).
+Query, Click, Type, FillForm, PressKey, Evaluate to inject.js (WS 6).
 -}
 type UiCommand
     = Navigate NavigateAction
     | Reload
     | Query { id : String, selector : String }
+    | Click { id : String, selector : String }
+    | Type { id : String, selector : Maybe String, text : String, clear : Bool, submit : Bool }
+    | FillForm { id : String, fields : List { selector : String, value : String } }
+    | PressKey { id : String, key : String, selector : Maybe String }
+    | Evaluate { id : String, expression : String }
 
 
 {-| Navigation direction.

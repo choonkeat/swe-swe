@@ -15,7 +15,7 @@ Routing rules:
     inject.js sends      -> BroadcastToUiObservers (FromInject msg)
     HTTP GET /open       -> SendToUiObserversOnly (Open)
     UI Navigate/Reload   -> ForwardToShellPage
-    UI Query             -> ForwardToInject
+    UI Query/Click/Type/FillForm/PressKey/Evaluate -> ForwardToInject
 
 @docs Effect, onShellPageMessage, onInjectMessage, onOpenRequest, onUiCommand
 
@@ -66,7 +66,7 @@ onOpenRequest payload =
 
 {-| When a UI observer (WS 3,4) sends a command, the hub
 routes it to the appropriate iframe client:
-Navigate/Reload -> shell page, Query -> inject.js.
+Navigate/Reload -> shell page; Query/Click/Type/FillForm/PressKey/Evaluate -> inject.js.
 -}
 onUiCommand : UiCommand -> List Effect
 onUiCommand cmd =
@@ -79,3 +79,18 @@ onUiCommand cmd =
 
         Query payload ->
             [ ForwardToInject (DomQuery payload) ]
+
+        Click payload ->
+            [ ForwardToInject (DomClick payload) ]
+
+        Type payload ->
+            [ ForwardToInject (DomType payload) ]
+
+        FillForm payload ->
+            [ ForwardToInject (DomFillForm payload) ]
+
+        PressKey payload ->
+            [ ForwardToInject (DomPressKey payload) ]
+
+        Evaluate payload ->
+            [ ForwardToInject (DomEvaluate payload) ]

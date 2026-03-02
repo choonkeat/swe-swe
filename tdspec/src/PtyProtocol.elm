@@ -14,7 +14,7 @@ Carries: binary PTY data (xterm I/O) + JSON control messages.
 
 -}
 
-import Domain exposing (AgentChatPort(..), Bytes(..), PreviewPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), Bytes(..), PreviewPort(..), PreviewProxyPort(..), PublicPort(..), SessionUuid(..), Url(..))
 
 
 {-| Messages sent by terminal-ui to swe-swe-server.
@@ -58,6 +58,9 @@ type alias StatusPayload =
     , ports :
         { preview : PreviewPort
         , agentChat : AgentChatPort
+        , previewProxy : PreviewProxyPort
+        , agentChatProxy : Maybe AgentChatProxyPort
+        , public : PublicPort
         }
     , terminal :
         { cols : Int
