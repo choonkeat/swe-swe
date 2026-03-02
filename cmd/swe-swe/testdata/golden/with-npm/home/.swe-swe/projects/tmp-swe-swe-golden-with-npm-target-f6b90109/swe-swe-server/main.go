@@ -3477,6 +3477,43 @@ func cleanupRecentRecordings() {
 			}
 		}
 	}
+
+	// Second pass: clean up orphaned files (no corresponding .log file).
+	// This handles files left behind by past bugs (e.g. .input files not
+	// deleted before Feb 23 fix) and edge cases like metadata-only ghosts.
+	orphanCount := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") || entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(name, ".log") {
+			continue // .log files are authoritative — never orphan-delete them
+		}
+
+		// Extract stem by removing "session-" prefix and any known suffix
+		stem := strings.TrimPrefix(name, "session-")
+		for _, suffix := range []string{".timing", ".input", ".metadata.json", ".events.jsonl"} {
+			stem = strings.TrimSuffix(stem, suffix)
+		}
+
+		parentUUID, _, ok := parseRecordingFilename(stem)
+		if !ok {
+			continue
+		}
+		if activeRecordings[parentUUID] {
+			continue
+		}
+		if _, err := os.Stat(recordingsDir + "/session-" + parentUUID + ".log"); err == nil {
+			continue
+		}
+
+		os.Remove(recordingsDir + "/" + name)
+		orphanCount++
+	}
+	if orphanCount > 0 {
+		log.Printf("Cleaned up %d orphaned recording files (no corresponding .log)", orphanCount)
+	}
 }
 
 // deleteRecordingFiles removes all files for a recording and its children.
