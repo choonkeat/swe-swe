@@ -516,6 +516,21 @@
         .btn-view--restart:hover {
             background: var(--accent-10);
         }
+        .recording-card__view-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-right: 4px;
+            align-self: center;
+        }
+        .recording-card__separator {
+            width: 1px;
+            height: 20px;
+            background: var(--border-color, rgba(248, 250, 252, 0.15));
+            margin: 0 8px;
+            align-self: center;
+        }
 
         /* Empty state */
         .empty-state {
@@ -1131,6 +1146,9 @@
         [data-theme="light"] .btn-view:hover {
             background: rgba(0, 0, 0, 0.05);
         }
+        [data-theme="light"] .recording-card__separator {
+            background: rgba(0, 0, 0, 0.15);
+        }
         [data-theme="light"] .color-picker__preset.selected {
             box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
         }
@@ -1434,10 +1452,11 @@
                                 </button>
                                 {{end}}
                             </div>
+                            <span class="recording-card__view-label">View</span>
                             {{if .HasTerminal}}{{range .TerminalUUIDs}}<a href="/recording/{{$rec.UUID}}-{{.}}" class="btn-view">Terminal</a>{{end}}{{end}}
                             {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
                             <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
-                            {{if .Query.Assistant}}<a href="/session/{{.RestartUUID}}?{{.Query.Encode}}" class="btn-view btn-view--restart" title="Start new session with same settings">Restart</a>{{end}}
+                            {{if .Query.Assistant}}<span class="recording-card__separator"></span><a href="/session/{{.RestartUUID}}?{{.Query.Encode}}" class="btn-view btn-view--restart" title="Start new session with same settings">+ New</a>{{end}}
                         </div>
                     </div>
                     {{end}}

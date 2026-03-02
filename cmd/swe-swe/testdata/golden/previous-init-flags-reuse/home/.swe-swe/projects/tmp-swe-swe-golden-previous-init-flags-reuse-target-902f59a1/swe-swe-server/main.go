@@ -897,6 +897,7 @@ func (s *Session) Close() {
 	if s.Cmd != nil && s.Cmd.Process != nil {
 		pid := s.Cmd.Process.Pid
 		// Kill entire process group to clean up child processes
+		log.Printf("[KILL] Session.Close: sending SIGKILL to process group -%d (server pid=%d)", pid, os.Getpid())
 		syscall.Kill(-pid, syscall.SIGKILL)
 		// Wait to reap the zombie process
 		s.Cmd.Wait()
@@ -1112,6 +1113,7 @@ func (s *Session) startPTYReader() {
 					if err := cmd.Process.Signal(syscall.Signal(0)); err == nil {
 						log.Printf("Session %s: PTY broken but process (pid %d) still alive, killing process group",
 							s.UUID, cmd.Process.Pid)
+						log.Printf("[KILL] PTY broken: sending SIGKILL to process group -%d (server pid=%d)", cmd.Process.Pid, os.Getpid())
 						syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 					}
 				}
@@ -2072,6 +2074,10 @@ func main() {
 	if workingDir != "" {
 		log.Printf("  working-directory: %s", workingDir)
 	}
+
+	// Start signal monitor and heartbeat for crash forensics
+	startSignalMonitor()
+	startHeartbeat()
 
 	// Signal-aware shutdown: cancel serverCtx on SIGINT/SIGTERM
 	var serverCancel context.CancelFunc
@@ -4158,6 +4164,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 
 				// Kill process group - pendingReplacement will cause process to be replaced
 				if cmd != nil && cmd.Process != nil {
+					log.Printf("[KILL] YOLO toggle: sending SIGTERM to process group -%d (server pid=%d)", cmd.Process.Pid, os.Getpid())
 					syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 				}
 			default:
@@ -5083,6 +5090,7 @@ func killSessionProcessGroup(s *Session) {
 	descendants := collectDescendantPIDs(pid)
 
 	// Send SIGTERM to the entire process group (-pid)
+	log.Printf("[KILL] killSessionProcessGroup: sending SIGTERM to process group -%d (server pid=%d)", pid, os.Getpid())
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
 		log.Printf("Failed to SIGTERM process group %d: %v", pid, err)
 	}
@@ -5099,6 +5107,7 @@ func killSessionProcessGroup(s *Session) {
 		// Process group exited gracefully
 	case <-time.After(3 * time.Second):
 		// Force kill the entire process group
+		log.Printf("[KILL] killSessionProcessGroup: sending SIGKILL to process group -%d (server pid=%d)", pid, os.Getpid())
 		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
 			log.Printf("Failed to SIGKILL process group %d: %v", pid, err)
 		}
@@ -5109,10 +5118,50 @@ func killSessionProcessGroup(s *Session) {
 	// These may be in a different PGID (e.g., detached MCP servers)
 	// and would not have received the group-wide signals above.
 	for _, dpid := range descendants {
+		if dpid == os.Getpid() {
+			log.Printf("[BUG] collectDescendantPIDs included server PID %d, skipping!", dpid)
+			continue
+		}
+		log.Printf("[KILL] killing escaped descendant %d (session pid %d, server pid=%d)", dpid, pid, os.Getpid())
 		if err := syscall.Kill(dpid, syscall.SIGKILL); err == nil {
 			log.Printf("Killed escaped descendant process %d (session pid %d)", dpid, pid)
 		}
 	}
+}
+
+// startSignalMonitor logs all catchable signals for crash forensics.
+// SIGKILL (9) cannot be caught, so if the server dies without any signal log
+// entry, it confirms the death was by SIGKILL.
+func startSignalMonitor() {
+	sigs := make(chan os.Signal, 64)
+	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT,
+		syscall.SIGILL, syscall.SIGTRAP, syscall.SIGABRT, syscall.SIGBUS,
+		syscall.SIGFPE, syscall.SIGUSR1, syscall.SIGSEGV, syscall.SIGUSR2,
+		syscall.SIGPIPE, syscall.SIGALRM, syscall.SIGTERM, syscall.SIGCHLD,
+		syscall.SIGCONT, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU,
+		syscall.SIGURG, syscall.SIGXCPU, syscall.SIGXFSZ, syscall.SIGVTALRM,
+		syscall.SIGPROF, syscall.SIGWINCH, syscall.SIGIO, syscall.SIGSYS)
+	go func() {
+		for sig := range sigs {
+			log.Printf("[SIGNAL] pid=%d received signal %v", os.Getpid(), sig)
+		}
+	}()
+	log.Printf("[SIGNAL] monitor started for pid=%d", os.Getpid())
+}
+
+// startHeartbeat writes the current timestamp to /tmp/swe-swe-heartbeat every
+// second. On unexpected death (SIGKILL), the file's mtime reveals when the
+// server was last alive, narrowing the death window to ~1 second.
+func startHeartbeat() {
+	go func() {
+		for {
+			os.WriteFile("/tmp/swe-swe-heartbeat",
+				[]byte(fmt.Sprintf("%d %s", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))),
+				0644)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	log.Printf("[HEARTBEAT] started, writing to /tmp/swe-swe-heartbeat")
 }
 
 // probePort checks if something is listening on the given port by making an
@@ -5346,6 +5395,7 @@ func killProcessesOnPorts(ports []int) {
 			}
 			inode := link[len("socket:[") : len(link)-1]
 			if port, ok := targetInodes[inode]; ok {
+				log.Printf("[KILL] killProcessesOnPorts: sending SIGKILL to pid %d on port %d (server pid=%d)", pid, port, os.Getpid())
 				if err := syscall.Kill(pid, syscall.SIGKILL); err == nil {
 					log.Printf("Killed lingering process %d on port %d (session port cleanup)", pid, port)
 				}
