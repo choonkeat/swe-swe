@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +59,16 @@ var (
 	Version   = "dev"
 	GitCommit = "unknown"
 )
+
+// recoverGoroutine logs panics from goroutines without crashing the server.
+// Usage: defer recoverGoroutine("description")
+func recoverGoroutine(where string) {
+	if r := recover(); r != nil {
+		buf := make([]byte, 4096)
+		n := runtime.Stack(buf, false)
+		log.Printf("PANIC recovered in %s: %v\n%s", where, r, buf[:n])
+	}
+}
 
 var indexTemplate *template.Template
 var selectionTemplate *template.Template
@@ -1076,6 +1087,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 // If the process exits with code 0 (success), it does not restart
 func (s *Session) startPTYReader() {
 	go func() {
+		defer recoverGoroutine(fmt.Sprintf("PTY reader for session %s", s.UUID))
 		buf := make([]byte, 4096)
 		for {
 			s.mu.RLock()
@@ -1481,6 +1493,7 @@ func handleWebSocketRelay(w http.ResponseWriter, r *http.Request, target *url.UR
 	errc := make(chan error, 2)
 	// backend → client
 	go func() {
+		defer recoverGoroutine("WebSocket relay backend→client")
 		for {
 			mt, msg, err := backendConn.ReadMessage()
 			if err != nil {
@@ -1495,6 +1508,7 @@ func handleWebSocketRelay(w http.ResponseWriter, r *http.Request, target *url.UR
 	}()
 	// client → backend
 	go func() {
+		defer recoverGoroutine("WebSocket relay client→backend")
 		for {
 			mt, msg, err := clientConn.ReadMessage()
 			if err != nil {
@@ -2066,6 +2080,7 @@ func main() {
 
 	srv := &http.Server{Addr: *addr}
 	go func() {
+		defer recoverGoroutine("shutdown handler")
 		<-serverCtx.Done()
 		log.Println("Shutting down server...")
 		// Close all sessions (kills processes)
@@ -3774,6 +3789,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			Handler: corsWrapper(portPreviewProxy),
 		}
 		go func() {
+			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sessionUUID))
 			ln, err := net.Listen("tcp", previewSrv.Addr)
 			if err != nil {
 				log.Printf("Session %s: preview proxy port %d unavailable: %v", sessionUUID, previewPP, err)
@@ -3792,6 +3808,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			Handler: corsWrapper(agentChatProxyHandler(acTarget)),
 		}
 		go func() {
+			defer recoverGoroutine(fmt.Sprintf("agent chat proxy for session %s", sessionUUID))
 			ln, err := net.Listen("tcp", acSrv.Addr)
 			if err != nil {
 				log.Printf("Session %s: agent chat proxy port %d unavailable: %v", sessionUUID, acPP, err)
@@ -5073,6 +5090,7 @@ func killSessionProcessGroup(s *Session) {
 	// Wait briefly for graceful shutdown
 	done := make(chan struct{})
 	go func() {
+		defer recoverGoroutine(fmt.Sprintf("process wait for session %s", s.UUID))
 		s.Cmd.Wait()
 		close(done)
 	}()
