@@ -260,6 +260,9 @@ func renderLoginForm(redirectURL, errorMsg string) string {
         }
         button:hover { background: #0056b3; }
         button:active { background: #004085; }
+        .footer { margin-top: 24px; text-align: center; }
+        .footer a { color: #999; font-size: 13px; text-decoration: none; }
+        .footer a:hover { color: #666; text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -272,6 +275,7 @@ func renderLoginForm(redirectURL, errorMsg string) string {
             <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required autofocus>
             <button type="submit">Login</button>
         </form>
+        <div class="footer"><a href="https://swe-swe.netlify.app" target="_blank">swe-swe.netlify.app</a></div>
     </div>
     <script>
         // localStorage key matches terminal-ui.js

@@ -107,6 +107,25 @@ var (
 func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 
+// agentChatClient is a shared HTTP client for the agent chat reverse proxy.
+// Using a single client avoids leaking http.Transport instances (each with its
+// own TLS state and connection pool) on every proxied request. See OOM crash
+// investigation 2026-03-07.
+var agentChatClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	},
+	// Don't follow redirects automatically - let the browser handle them
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // ANSI escape sequence helpers for terminal formatting
 func ansiCyan(s string) string   { return "\033[0;36m" + s + "\033[0m" }
 func ansiDim(s string) string    { return "\033[2m" + s + "\033[0m" }
@@ -1385,20 +1404,6 @@ func agentChatProxyHandler(target *url.URL) http.Handler {
 		targetURL.Path = singleJoiningSlash(target.Path, r.URL.Path)
 		targetURL.RawQuery = r.URL.RawQuery
 
-		// Create HTTP client with TLS config that allows self-signed certs
-		client := &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
-			},
-			// Don't follow redirects automatically - let the browser handle them
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-
 		// Create outgoing request
 		outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
 		if err != nil {
@@ -1421,7 +1426,7 @@ func agentChatProxyHandler(target *url.URL) http.Handler {
 		outReq.Host = target.Host
 
 		// Make the request
-		resp, err := client.Do(outReq)
+		resp, err := agentChatClient.Do(outReq)
 		if err != nil {
 			log.Printf("Agent chat proxy error: %v", err)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
