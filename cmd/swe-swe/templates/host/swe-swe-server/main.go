@@ -256,6 +256,8 @@ type SessionInfo struct {
 	DurationStr string // human-readable duration (e.g., "5m", "1h 23m")
 	PublicPort  int    // PUBLIC_PORT env var value (e.g. 5000)
 	Query       SessionPageQuery
+	SummaryLine   string // One-line summary: "{who}: {message}" from last chat event or terminal
+	SummaryStatus string // "green" (waiting for user) or "red" (agent busy) or "" (unknown)
 }
 
 // formatDuration returns a human-readable duration string
@@ -1736,6 +1738,16 @@ func main() {
 			// Build agents with their sessions
 			sessionsByAssistant := make(map[string][]SessionInfo)
 
+			// Collect session info and data needed for summaries under the read lock
+			type sessionSummaryInput struct {
+				assistant    string
+				index        int
+				recordingUUID string
+				sessionMode  string
+				sess         *Session
+			}
+			var summaryInputs []sessionSummaryInput
+
 			sessionsMu.RLock()
 			for _, sess := range sessions {
 				// Skip sessions where process has exited
@@ -1765,9 +1777,34 @@ func main() {
 						Debug:       debugMode,
 					},
 				}
+				idx := len(sessionsByAssistant[sess.Assistant])
 				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
+				summaryInputs = append(summaryInputs, sessionSummaryInput{
+					assistant:     sess.Assistant,
+					index:         idx,
+					recordingUUID: sess.RecordingUUID,
+					sessionMode:   sess.SessionMode,
+					sess:          sess,
+				})
 			}
 			sessionsMu.RUnlock()
+
+			// Populate session summaries outside the lock (involves file I/O)
+			for _, si := range summaryInputs {
+				var summaryLine, status string
+				if si.sessionMode == "chat" {
+					summaryLine, status = getSessionSummaryFromChat(si.recordingUUID)
+				}
+				if summaryLine == "" {
+					// Fallback to terminal output
+					termLine := getSessionSummaryFromTerminal(si.sess)
+					if termLine != "" {
+						summaryLine = termLine
+					}
+				}
+				sessionsByAssistant[si.assistant][si.index].SummaryLine = summaryLine
+				sessionsByAssistant[si.assistant][si.index].SummaryStatus = status
+			}
 
 			// Sort sessions within each assistant by CreatedAt desc (most recent first)
 			for assistant := range sessionsByAssistant {
@@ -4838,6 +4875,131 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 // Query params:
 //   - render=embedded: use embedded approach (data in HTML, no streaming)
 //   - (default): use streaming approach (fetch data via JS)
+// getSessionSummaryFromChat reads the last event from an agent-chat events JSONL file
+// and returns a summary line and status color.
+// summaryLine: "{who}: {message start}" — always starts from beginning, truncated by CSS.
+// status: "green" if last event is agent message with quick_replies (waiting for user),
+//
+//	"red" if agent is busy or user message unanswered, "" if unknown.
+func getSessionSummaryFromChat(recordingUUID string) (summaryLine string, status string) {
+	eventsPath := findChatEventsFile(recordingUUID)
+	if eventsPath == "" {
+		return "", ""
+	}
+
+	// Read last line of JSONL file efficiently (read last 4KB)
+	f, err := os.Open(eventsPath)
+	if err != nil {
+		return "", ""
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return "", ""
+	}
+
+	// Read the tail of the file to find the last complete line
+	readSize := int64(4096)
+	if fi.Size() < readSize {
+		readSize = fi.Size()
+	}
+	buf := make([]byte, readSize)
+	_, err = f.ReadAt(buf, fi.Size()-readSize)
+	if err != nil && err != io.EOF {
+		return "", ""
+	}
+
+	// Find the last complete JSON line
+	lines := bytes.Split(bytes.TrimRight(buf, "\n"), []byte("\n"))
+	if len(lines) == 0 {
+		return "", ""
+	}
+	lastLine := lines[len(lines)-1]
+
+	// Parse the JSON event
+	var event struct {
+		Type         string   `json:"type"`
+		Text         string   `json:"text"`
+		QuickReplies []string `json:"quick_replies"`
+	}
+	if err := json.Unmarshal(lastLine, &event); err != nil {
+		return "", ""
+	}
+
+	// Build summary line
+	switch event.Type {
+	case "userMessage":
+		summaryLine = "You: " + sanitizeSummaryText(event.Text)
+		status = "red" // user sent message, agent hasn't replied
+	case "agentMessage", "verbalReply":
+		summaryLine = "Agent: " + sanitizeSummaryText(event.Text)
+		if len(event.QuickReplies) > 0 {
+			status = "green" // waiting for user reply
+		} else {
+			status = "red" // agent sent update, still working
+		}
+	case "draw":
+		summaryLine = "Agent: [diagram]"
+		if len(event.QuickReplies) > 0 {
+			status = "green"
+		} else {
+			status = "red"
+		}
+	default:
+		// agentProgress, verbalProgress, etc.
+		summaryLine = "Agent: " + sanitizeSummaryText(event.Text)
+		status = "red" // still working
+	}
+	return summaryLine, status
+}
+
+// sanitizeSummaryText removes newlines, control characters, and excess whitespace
+// from a chat message for single-line display.
+func sanitizeSummaryText(s string) string {
+	// Remove markdown-style formatting that won't render in plain text
+	// Replace newlines with spaces
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\t", " ")
+	// Collapse multiple spaces
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return strings.TrimSpace(s)
+}
+
+// getSessionSummaryFromTerminal reads the last visible line from a session's
+// virtual terminal as a fallback when no chat events exist.
+func getSessionSummaryFromTerminal(sess *Session) string {
+	sess.vtMu.Lock()
+	defer sess.vtMu.Unlock()
+
+	cols, rows := sess.vt.Size()
+	// Find last non-empty line (scanning from bottom)
+	var lastLine string
+	for row := rows - 1; row >= 0; row-- {
+		var line strings.Builder
+		for col := 0; col < cols; col++ {
+			cell := sess.vt.Cell(col, row)
+			if cell.Char == 0 {
+				line.WriteRune(' ')
+			} else {
+				line.WriteRune(cell.Char)
+			}
+		}
+		trimmed := strings.TrimSpace(line.String())
+		if trimmed != "" && trimmed != "❯" {
+			lastLine = trimmed
+			break
+		}
+	}
+	if lastLine == "" {
+		return ""
+	}
+	return sanitizeSummaryText(lastLine)
+}
+
 // findChatEventsFile finds the .events.jsonl file for a parent recording UUID.
 // Returns the full path, or empty string if not found.
 func findChatEventsFile(parentUUID string) string {

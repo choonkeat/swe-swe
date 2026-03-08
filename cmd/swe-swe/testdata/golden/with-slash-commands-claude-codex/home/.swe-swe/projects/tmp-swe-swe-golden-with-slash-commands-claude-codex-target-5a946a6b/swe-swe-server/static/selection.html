@@ -273,6 +273,26 @@
             background: rgba(168, 85, 247, 0.1);
         }
 
+        /* Session summary line */
+        .session-card__summary {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-height: 20px; /* consistent card height even without summary */
+            line-height: 20px;
+        }
+
+        /* Status-colored icon next to session title */
+        .session-card__repo svg.status-green {
+            color: #22c55e;
+        }
+        .session-card__repo svg.status-red {
+            color: #ef4444;
+        }
+
         /* Session meta row */
         .session-card__meta {
             display: flex;
@@ -1345,7 +1365,7 @@
                         <div class="session-card__top">
                             <div class="session-card__info">
                                 <div class="session-card__repo">
-                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="{{if eq .SummaryStatus "green"}}status-green{{else if eq .SummaryStatus "red"}}status-red{{end}}" {{if eq .SummaryStatus "green"}}title="Waiting for your reply"{{else if eq .SummaryStatus "red"}}title="Agent is working"{{end}}>
                                         <path d="M4 17V7C4 5.89543 4.89543 5 6 5H18C19.1046 5 20 5.89543 20 7V17C20 18.1046 19.1046 19 18 19H6C4.89543 19 4 18.1046 4 17Z" stroke="currentColor" stroke-width="2"/>
                                         <path d="M8 9H8.01M12 9H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                                         <path d="M7 13L10 16L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
@@ -1355,6 +1375,7 @@
                             </div>
                             <span class="agent-badge agent-badge--{{.Query.Assistant}}">{{.Query.Assistant}}</span>
                         </div>
+                        <div class="session-card__summary" {{if .SummaryLine}}title="{{.SummaryLine}}"{{end}}>{{if .SummaryLine}}{{.SummaryLine}}{{end}}</div>
                         <div class="session-card__meta">
                             <span class="session-card__meta-item">
                                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
