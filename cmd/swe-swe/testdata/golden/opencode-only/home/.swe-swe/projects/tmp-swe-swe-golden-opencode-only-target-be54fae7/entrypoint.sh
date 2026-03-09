@@ -41,11 +41,11 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   "mcp": {
     "swe-swe-agent-chat": {
       "type": "local",
-      "command": ["npx", "-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
+      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command,@=filepath --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID"]
     },
     "swe-swe-playwright": {
       "type": "local",
-      "command": ["env", "-u", "BROWSER", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+      "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
     },
     "swe-swe-preview": {
       "type": "local",

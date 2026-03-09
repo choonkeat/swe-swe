@@ -51,12 +51,12 @@ fi
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
-command = "npx"
-args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
+command = "sh"
+args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command,@=filepath --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID"]
 
 [mcp_servers.swe-swe-playwright]
-command = "env"
-args = ["-u", "BROWSER", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"
