@@ -412,6 +412,16 @@
             color: var(--text-secondary);
             flex-wrap: wrap;
         }
+        .recording-card__summary {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+        }
         .recording-card__branch {
             display: inline-flex;
             align-items: center;
@@ -1434,6 +1444,7 @@
                                     {{if .IsKept}}Saved{{else}}Expires in {{.ExpiresIn}}{{end}}
                                 </span>
                             </div>
+                            {{if .SummaryLine}}<div class="recording-card__summary" title="{{.SummaryLine}}">{{.SummaryLine}}</div>{{end}}
                         </div>
                         <div class="recording-card__right">
                             <div class="recording-card__btn-group">

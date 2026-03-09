@@ -55,8 +55,8 @@ command = "npx"
 args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
 
 [mcp_servers.swe-swe-playwright]
-command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+command = "env"
+args = ["-u", "BROWSER", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"

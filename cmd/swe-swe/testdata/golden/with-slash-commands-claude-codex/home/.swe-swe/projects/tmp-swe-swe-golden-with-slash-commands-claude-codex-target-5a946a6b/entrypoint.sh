@@ -67,8 +67,8 @@ command = "npx"
 args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme"]
 
 [mcp_servers.swe-swe-playwright]
-command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+command = "env"
+args = ["-u", "BROWSER", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"
@@ -100,7 +100,7 @@ if ! grep -q '"swe-swe"' /home/app/.claude.json 2>/dev/null || ! grep -q '\-\-br
     claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
     claude mcp remove --scope user swe-swe 2>/dev/null || true
     claude mcp add --scope user --transport stdio swe-swe-agent-chat -- npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme
-    claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
+    claude mcp add --scope user --transport stdio swe-swe-playwright -- env -u BROWSER npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
     claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp'"'"'
     claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
     claude mcp add --scope user --transport stdio swe-swe -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/mcp?key=$MCP_AUTH_KEY'"'"'

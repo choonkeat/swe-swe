@@ -4521,6 +4521,7 @@ type RecordingInfo struct {
 	HasTerminal     bool       // has a terminal .log child recording
 	ChatUUID        string     // child UUID for chat playback URL
 	TerminalUUIDs   []string   // child UUIDs for terminal playback
+	SummaryLine     string           // one-line summary from last chat event
 	RestartUUID     string           // fresh UUID for "restart" link
 	Query           SessionPageQuery // params to restart a similar session
 }
@@ -4750,6 +4751,12 @@ func loadEndedRecordings() []RecordingInfo {
 			} else {
 				info.ExpiresIn = "soon"
 			}
+		}
+
+		// Extract summary from chat events (if available)
+		if info.HasChat {
+			summaryLine, _ := getSessionSummaryFromChat(ruuid)
+			info.SummaryLine = summaryLine
 		}
 
 		recordings = append(recordings, info)

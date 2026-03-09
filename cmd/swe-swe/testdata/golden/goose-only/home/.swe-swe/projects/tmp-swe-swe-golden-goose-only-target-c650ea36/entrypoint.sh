@@ -50,8 +50,11 @@ extensions:
       - "swe-swe-theme"
   swe-swe-playwright:
     type: stdio
-    cmd: npx
+    cmd: env
     args:
+      - "-u"
+      - "BROWSER"
+      - "npx"
       - "-y"
       - "@playwright/mcp@latest"
       - "--cdp-endpoint"
