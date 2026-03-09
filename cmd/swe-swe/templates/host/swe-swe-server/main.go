@@ -1986,6 +1986,12 @@ func main() {
 			return
 		}
 
+		// Autocomplete API endpoint (for agent-chat slash command completion)
+		if strings.HasPrefix(r.URL.Path, "/api/autocomplete/") {
+			handleAutocompleteAPI(w, r)
+			return
+		}
+
 		// Recording API endpoints
 		if strings.HasPrefix(r.URL.Path, "/api/recording/") {
 			handleRecordingAPI(w, r)
