@@ -31,6 +31,8 @@ services:
       {{AGENT_CHAT_ENTRYPOINTS}}
       # Public proxy entrypoints (per-session, no auth)
       {{PUBLIC_ENTRYPOINTS}}
+      # VNC proxy entrypoints (per-session browser view)
+      {{VNC_ENTRYPOINTS}}
 # {{IF LETSENCRYPT_PRODUCTION}}
       # Let's Encrypt ACME configuration (production)
       - "--certificatesresolvers.letsencrypt.acme.email={{EMAIL}}"
@@ -61,6 +63,8 @@ services:
       {{AGENT_CHAT_PORTS}}
       # Public proxy ports (per-session, no auth)
       {{PUBLIC_PORTS}}
+      # VNC proxy ports (per-session browser view)
+      {{VNC_PORTS}}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -169,6 +173,8 @@ services:
       {{AGENT_CHAT_ROUTERS}}
       # Public proxy routing (per-session, no auth)
       {{PUBLIC_ROUTERS}}
+      # VNC proxy routing (per-session browser view)
+      {{VNC_ROUTERS}}
     depends_on:
       - chrome
     volumes:
@@ -217,6 +223,10 @@ services:
       - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
       # Container-internal app port range for public (no-auth) sessions
       - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
+      # Container-internal port range for Chrome DevTools Protocol (per-session)
+      - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
+      # Container-internal port range for VNC browser view (per-session)
+      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
     restart: unless-stopped
 
   vscode-proxy:

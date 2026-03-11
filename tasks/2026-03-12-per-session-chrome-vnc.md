@@ -22,7 +22,7 @@ See ADR-0034 for full decision record.
 
 ---
 
-## Phase 1: Per-Session Port Allocation for Browser
+## Phase 1: Per-Session Port Allocation for Browser ✅
 
 ### What
 Extend the port triple (preview/agentchat/public) to include CDP and VNC ports per session. No Chrome changes yet — just the plumbing.

@@ -1,0 +1,9 @@
+020621 Starting Phase 1: Per-Session Port Allocation for Browser
+020621 Will implement: Add CDPPort/VNCPort to Session, extend port triple to quintuple, add env vars, update templates, update cleanup
+020621 Expected: make test passes, make build golden-update shows new port ranges in traefik/docker-compose config
+021211 Phase 1 implementation complete. Results:
+021211 - make build: SUCCESS
+021211 - make test: PASS (all tests pass)
+021211 - make build golden-update: SUCCESS
+021211 - Golden diff shows: VNC entrypoints (27000-27019), VNC port mappings, VNC routers with forwardauth, SWE_CDP_PORTS/SWE_VNC_PORTS env vars, CDPPort/VNCPort in Session struct, findAvailablePortQuintuple(), buildSessionEnv with 5 ports, port cleanup includes CDP+VNC ports
+021211 - autocomplete.go golden changes are from a prior unrelated refactor (not our changes)

@@ -227,10 +227,32 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 				continue
 			}
 
+			if strings.Contains(line, "{{VNC_ENTRYPOINTS}}") {
+				indent := strings.Split(line, "{{VNC_ENTRYPOINTS}}")[0]
+				for _, port := range previewPorts {
+					vp := vncPort(port)
+					entrypoint := fmt.Sprintf("vnc%d", vp)
+					pp := vncProxyPort(vp, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, pp))
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.transport.respondingTimeouts.readTimeout=60s\"", indent, entrypoint))
+				}
+				continue
+			}
+
 			if strings.Contains(line, "{{PUBLIC_PORTS}}") {
 				indent := strings.Split(line, "{{PUBLIC_PORTS}}")[0]
 				for _, port := range publicPorts {
 					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, port, port))
+				}
+				continue
+			}
+
+			if strings.Contains(line, "{{VNC_PORTS}}") {
+				indent := strings.Split(line, "{{VNC_PORTS}}")[0]
+				for _, port := range previewPorts {
+					vp := vncPort(port)
+					pp := vncProxyPort(vp, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, pp, pp))
 				}
 				continue
 			}
@@ -303,6 +325,30 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 				continue
 			}
 
+			if strings.Contains(line, "{{VNC_ROUTERS}}") {
+				indent := strings.Split(line, "{{VNC_ROUTERS}}")[0]
+				for _, port := range previewPorts {
+					vp := vncPort(port)
+					entrypoint := fmt.Sprintf("vnc%d", vp)
+					pp := vncProxyPort(vp, proxyPortOffset)
+					routerName := fmt.Sprintf("${PROJECT_NAME}-vnc-%d", vp)
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, pp))
+					if isSSL {
+						if isLetsEncrypt {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
+						} else if isSelfSign {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
+						}
+					}
+				}
+				continue
+			}
+
 			// Handle UID and GID placeholders
 			if strings.Contains(line, "{{UID}}") {
 				line = strings.ReplaceAll(line, "{{UID}}", fmt.Sprintf("%d", hostUID))
@@ -336,11 +382,27 @@ func agentChatPort(previewPort int) int {
 	return previewPort + 1000
 }
 
+func cdpPort(previewPort int) int {
+	return previewPort + 3000
+}
+
+func vncPort(previewPort int) int {
+	return previewPort + 4000
+}
+
 func previewProxyPort(port, offset int) int {
 	return offset + port
 }
 
 func agentChatProxyPort(port, offset int) int {
+	return offset + port
+}
+
+func cdpProxyPort(port, offset int) int {
+	return offset + port
+}
+
+func vncProxyPort(port, offset int) int {
 	return offset + port
 }
 

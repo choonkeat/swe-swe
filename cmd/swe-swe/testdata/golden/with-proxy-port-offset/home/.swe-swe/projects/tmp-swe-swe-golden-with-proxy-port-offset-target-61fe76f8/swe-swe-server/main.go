@@ -101,11 +101,17 @@ var (
 	agentChatPortEnd   = 4019
 	publicPortStart    = 5000
 	publicPortEnd      = 5019
+	cdpPortStart       = 6000
+	cdpPortEnd         = 6019
+	vncPortStart       = 7000
+	vncPortEnd         = 7019
 	proxyPortOffset    = 50000
 )
 
 func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
+func cdpProxyPort(port int) int        { return proxyPortOffset + port }
+func vncProxyPort(port int) int        { return proxyPortOffset + port }
 
 // agentChatClient is a shared HTTP client for the agent chat reverse proxy.
 // Using a single client avoids leaking http.Transport instances (each with its
@@ -413,6 +419,8 @@ type Session struct {
 	PreviewPort   int // App preview target port for this session
 	AgentChatPort int // Agent chat MCP server port for this session
 	PublicPort    int // Public (no-auth) port for this session
+	CDPPort       int // Chrome DevTools Protocol port for this session
+	VNCPort       int // VNC port for browser view for this session
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -461,13 +469,15 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort, agentChatPort, publicPort int, theme, workDir, sessionMode string) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT")
+func buildSessionEnv(previewPort, agentChatPort, publicPort, cdpPort, vncPort int, theme, workDir, sessionMode string) []string {
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", previewPort),
 		fmt.Sprintf("AGENT_CHAT_PORT=%d", agentChatPort),
 		fmt.Sprintf("PUBLIC_PORT=%d", publicPort),
+		fmt.Sprintf("BROWSER_CDP_PORT=%d", cdpPort),
+		fmt.Sprintf("BROWSER_VNC_PORT=%d", vncPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
@@ -757,6 +767,8 @@ func (s *Session) BroadcastStatus() {
 		"agentChatPort":      agentChatPort,
 		"previewProxyPort":   previewProxyPort(s.PreviewPort),
 		"publicPort":         s.PublicPort,
+		"cdpPort":            s.CDPPort,
+		"vncPort":            s.VNCPort,
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 	}
@@ -1079,7 +1091,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.PublicPort, s.Theme, s.WorkDir, s.SessionMode)
+	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.PublicPort, s.CDPPort, s.VNCPort, s.Theme, s.WorkDir, s.SessionMode)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -1601,6 +1613,30 @@ func main() {
 				if end, err := strconv.Atoi(parts[1]); err == nil {
 					publicPortStart = start
 					publicPortEnd = end
+				}
+			}
+		}
+	}
+
+	// Override CDP port range from environment (set by docker-compose)
+	if portRange := os.Getenv("SWE_CDP_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					cdpPortStart = start
+					cdpPortEnd = end
+				}
+			}
+		}
+	}
+
+	// Override VNC port range from environment (set by docker-compose)
+	if portRange := os.Getenv("SWE_VNC_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					vncPortStart = start
+					vncPortEnd = end
 				}
 			}
 		}
@@ -3586,11 +3622,19 @@ func publicPortFromPreview(previewPort int) int {
 	return previewPort + 2000
 }
 
-// findAvailablePortTriple finds a preview port and its derived agent chat and
-// public ports that are not already allocated to an existing session.
+func cdpPortFromPreview(previewPort int) int {
+	return previewPort + 3000
+}
+
+func vncPortFromPreview(previewPort int) int {
+	return previewPort + 4000
+}
+
+// findAvailablePortQuintuple finds a preview port and its derived agent chat,
+// public, CDP, and VNC ports that are not already allocated to an existing session.
 // Must be called while holding sessionsMu.
-// Returns (previewPort, agentChatPort, publicPort, error).
-func findAvailablePortTriple() (int, int, int, error) {
+// Returns (previewPort, agentChatPort, publicPort, cdpPort, vncPort, error).
+func findAvailablePortQuintuple() (int, int, int, int, int, error) {
 	// Collect ports already assigned to live sessions.
 	usedPorts := make(map[int]bool)
 	for _, sess := range sessions {
@@ -3605,9 +3649,11 @@ func findAvailablePortTriple() (int, int, int, error) {
 		}
 		acPort := agentChatPortFromPreview(port)
 		pubPort := publicPortFromPreview(port)
-		return port, acPort, pubPort, nil
+		cdpPort := cdpPortFromPreview(port)
+		vncPort := vncPortFromPreview(port)
+		return port, acPort, pubPort, cdpPort, vncPort, nil
 	}
-	return 0, 0, 0, fmt.Errorf("no available port triple in preview range %d-%d", previewPortStart, previewPortEnd)
+	return 0, 0, 0, 0, 0, fmt.Errorf("no available port quintuple in preview range %d-%d", previewPortStart, previewPortEnd)
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -3678,16 +3724,20 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	var previewPort int
 	var acPort int
 	var pubPort int
+	var cdpPort int
+	var vncPort int
 	if parentUUID != "" {
 		if parentSess, ok := sessions[parentUUID]; ok {
 			previewPort = parentSess.PreviewPort
 			acPort = parentSess.AgentChatPort
 			pubPort = parentSess.PublicPort
+			cdpPort = parentSess.CDPPort
+			vncPort = parentSess.VNCPort
 		}
 	}
 	if previewPort == 0 {
 		var err error
-		previewPort, acPort, pubPort, err = findAvailablePortTriple()
+		previewPort, acPort, pubPort, cdpPort, vncPort, err = findAvailablePortQuintuple()
 		if err != nil {
 			return nil, false, err
 		}
@@ -3742,7 +3792,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
 	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
 
-	env := buildSessionEnv(previewPort, acPort, pubPort, theme, workDir, sessionMode)
+	env := buildSessionEnv(previewPort, acPort, pubPort, cdpPort, vncPort, theme, workDir, sessionMode)
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", sessionUUID))
 	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", mcpAuthKey))
 
@@ -3809,6 +3859,8 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		PreviewPort:     previewPort,
 		AgentChatPort:   acPort,
 		PublicPort:      pubPort,
+		CDPPort:         cdpPort,
+		VNCPort:         vncPort,
 		Theme:           theme,
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
@@ -5527,9 +5579,9 @@ func endSessionByUUID(sessionUUID string) error {
 	sessionsMu.Unlock()
 
 	// Collect all session ports for port-based cleanup after tree kill
-	sessionPorts := []int{session.PreviewPort, session.AgentChatPort, session.PublicPort}
+	sessionPorts := []int{session.PreviewPort, session.AgentChatPort, session.PublicPort, session.CDPPort, session.VNCPort}
 	for _, child := range childSessions {
-		sessionPorts = append(sessionPorts, child.PreviewPort, child.AgentChatPort, child.PublicPort)
+		sessionPorts = append(sessionPorts, child.PreviewPort, child.AgentChatPort, child.PublicPort, child.CDPPort, child.VNCPort)
 	}
 
 	// End child sessions first
