@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## v2.14.0 - Autocomplete, Session Summaries & VNC Browser
+
+### Features
+
+- **Slash command autocomplete**: New `/api/autocomplete` endpoint with structured responses and `has_more` field for agent-chat slash command completion
+- **Session summaries**: Summary lines on session selection page and recording cards, with fallback to agent terminal log
+- **Interactive browser via VNC**: Replace CDP screencast with VNC for interactive browser viewing
+
+### Bug Fixes
+
+- **Memory leak fix**: Use shared `http.Client` in `agentChatProxyHandler` to prevent OOM from per-request Transport allocation
+- **MCP config reliability**: Always re-create Claude MCP config on container start
+- **Recording cleanup**: Clean up orphaned recording files without corresponding `.log`
+- **Autocomplete trigger**: Remove `@=filepath` autocomplete trigger from agent-chat config
+
+### Documentation
+
+- Add session and recording summaries documentation
+- tdspec: add inject commands, server MCP tools, fix port gaps
+
 ## v2.13.0 - MCP Orchestration, Agent Chat Tools & Session Management
 
 ### Features
