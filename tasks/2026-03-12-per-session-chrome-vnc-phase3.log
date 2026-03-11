@@ -1,0 +1,10 @@
+021926 Starting Phase 3: Dynamic Playwright MCP Configuration
+021926 Will implement: Per-session BROWSER_WS_ENDPOINT, update entrypoint.sh MCP config, remove global ws://chrome:9223
+021926 Expected: make test passes, make build succeeds
+022152 Phase 3 implementation complete. Results:
+022152 - make build: SUCCESS
+022152 - make test: PASS
+022152 - Updated all 5 agent MCP configs (OpenCode, Codex, Gemini, Goose, Claude) to use $BROWSER_CDP_PORT
+022152 - All Playwright configs now use sh -c wrapper for env var expansion at runtime
+022152 - Removed BROWSER_WS_ENDPOINT=ws://chrome:9223 from docker-compose.yml
+022152 - chrome:9223 references remain only in chrome/ directory (removed in Phase 5) and docs

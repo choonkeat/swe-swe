@@ -55,8 +55,8 @@ command = "sh"
 args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID"]
 
 [mcp_servers.swe-swe-playwright]
-command = "npx"
-args = ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+command = "sh"
+args = ["-c", "exec npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"

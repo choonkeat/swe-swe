@@ -74,7 +74,7 @@ Each session launches its own Chrome, Xvfb, x11vnc, and noVNC when it starts, an
 
 ---
 
-## Phase 3: Dynamic Playwright MCP Configuration
+## Phase 3: Dynamic Playwright MCP Configuration ✅
 
 ### What
 Make `BROWSER_WS_ENDPOINT` per-session instead of a single shared `ws://chrome:9223`.

@@ -48,12 +48,10 @@ extensions:
       - "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID"
   swe-swe-playwright:
     type: stdio
-    cmd: npx
+    cmd: sh
     args:
-      - "-y"
-      - "@playwright/mcp@latest"
-      - "--cdp-endpoint"
-      - "http://chrome:9223"
+      - "-c"
+      - "exec npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
   swe-swe-preview:
     type: stdio
     cmd: sh

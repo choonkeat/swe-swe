@@ -45,7 +45,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     },
     "swe-swe-playwright": {
       "type": "local",
-      "command": ["npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://chrome:9223"]
+      "command": ["sh", "-c", "exec npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
     },
     "swe-swe-preview": {
       "type": "local",

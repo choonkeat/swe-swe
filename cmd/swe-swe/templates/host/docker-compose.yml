@@ -213,8 +213,6 @@ services:
       # Enterprise certificates (if configured during swe-swe init)
       - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
       - SSL_CERT_FILE=${SSL_CERT_FILE:-}
-      # Browser automation via MCP Playwright connected to chrome service
-      - BROWSER_WS_ENDPOINT=ws://chrome:9223
       # App preview proxy target port (for split-pane iframe)
       - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
       # Container-internal app port range for preview sessions
