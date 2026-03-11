@@ -1,0 +1,10 @@
+022224 Starting Phase 4: Per-Session Browser Tab in UI
+022224 Will implement: Update browser tab URL to per-session VNC, add proxy handler, update noVNC wrapper
+022224 Expected: make test passes, make build succeeds
+022521 Phase 4 implementation complete. Results:
+022521 - make build: SUCCESS
+022521 - make test: PASS
+022521 - terminal-ui.js: Added getBrowserViewUrl() method using vncPort from session status
+022521 - Browser tab now uses per-session VNC proxy port (27000-27019) via noVNC vnc_lite.html
+022521 - Session status handler stores cdpPort and vncPort from server broadcasts
+022521 - URL format: protocol://hostname:vncProxyPort/vnc_lite.html?host=...&port=...&autoconnect=true

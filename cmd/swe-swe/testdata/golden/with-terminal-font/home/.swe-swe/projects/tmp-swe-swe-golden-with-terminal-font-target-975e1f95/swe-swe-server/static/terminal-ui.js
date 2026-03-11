@@ -41,6 +41,8 @@ class TerminalUI extends HTMLElement {
         this.previewProxyPort = null;
         this.agentChatProxyPort = null;
         this.publicPort = null;
+        this.cdpPort = null;
+        this.vncPort = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -549,7 +551,7 @@ class TerminalUI extends HTMLElement {
         const services = [
             { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
             { name: 'preview', label: 'App Preview', url: this.getPreviewBaseUrl() },
-            { name: 'browser', label: 'Agent View', url: `${baseUrl}/chrome/` }
+            { name: 'browser', label: 'Agent View', url: this.getBrowserViewUrl() }
         ].filter(s => s.url != null);
 
         // Add shell link if not already in a shell session
@@ -1021,6 +1023,8 @@ class TerminalUI extends HTMLElement {
                 this.previewProxyPort = msg.previewProxyPort || null;
                 this.agentChatProxyPort = msg.agentChatProxyPort || null;
                 this.publicPort = msg.publicPort || null;
+                this.cdpPort = msg.cdpPort || null;
+                this.vncPort = msg.vncPort || null;
                 // Probe agent chat proxy — two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
@@ -1587,7 +1591,7 @@ class TerminalUI extends HTMLElement {
                     url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
                     break;
                 case 'browser':
-                    url = `${baseUrl}/chrome/`;
+                    url = this.getBrowserViewUrl();
                     break;
                 default:
                     return;
@@ -2895,6 +2899,17 @@ class TerminalUI extends HTMLElement {
     }
 
     // === Split-Pane UI Methods ===
+    getBrowserViewUrl() {
+        if (!this.vncPort) return null;
+        // VNC proxy port = proxyPortOffset + vncPort (default: 20000 + 7000 = 27000)
+        // The proxy port offset is derived from the main swe-swe port pattern
+        const proxyPortOffset = 20000;
+        const vncProxyPort = proxyPortOffset + this.vncPort;
+        const loc = window.location;
+        // noVNC's vnc_lite.html with query params to configure WebSocket connection
+        return `${loc.protocol}//${loc.hostname}:${vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${vncProxyPort}&reconnect=true&resize=scale&autoconnect=true`;
+    }
+
     getPreviewBaseUrl() {
         if (this._proxyMode === 'port' && this.previewProxyPort) {
             return buildPortBasedPreviewUrl(window.location, this.previewProxyPort);

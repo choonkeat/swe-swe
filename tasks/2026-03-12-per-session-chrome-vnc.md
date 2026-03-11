@@ -99,7 +99,7 @@ Make `BROWSER_WS_ENDPOINT` per-session instead of a single shared `ws://chrome:9
 
 ---
 
-## Phase 4: Per-Session Browser Tab in UI
+## Phase 4: Per-Session Browser Tab in UI ✅
 
 ### What
 Route the "Agent View" tab to the session's own VNC endpoint instead of the shared `/chrome/`.
