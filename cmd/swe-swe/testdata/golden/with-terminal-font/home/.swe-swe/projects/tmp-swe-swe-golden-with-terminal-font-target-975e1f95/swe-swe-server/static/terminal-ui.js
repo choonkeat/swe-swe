@@ -43,6 +43,7 @@ class TerminalUI extends HTMLElement {
         this.publicPort = null;
         this.cdpPort = null;
         this.vncPort = null;
+        this.vncProxyPort = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1025,6 +1026,7 @@ class TerminalUI extends HTMLElement {
                 this.publicPort = msg.publicPort || null;
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
+                this.vncProxyPort = msg.vncProxyPort || null;
                 // Probe agent chat proxy — two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
@@ -2900,14 +2902,10 @@ class TerminalUI extends HTMLElement {
 
     // === Split-Pane UI Methods ===
     getBrowserViewUrl() {
-        if (!this.vncPort) return null;
-        // VNC proxy port = proxyPortOffset + vncPort (default: 20000 + 7000 = 27000)
-        // The proxy port offset is derived from the main swe-swe port pattern
-        const proxyPortOffset = 20000;
-        const vncProxyPort = proxyPortOffset + this.vncPort;
+        if (!this.vncProxyPort) return null;
         const loc = window.location;
         // noVNC's vnc_lite.html with query params to configure WebSocket connection
-        return `${loc.protocol}//${loc.hostname}:${vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${vncProxyPort}&reconnect=true&resize=scale&autoconnect=true`;
+        return `${loc.protocol}//${loc.hostname}:${this.vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${this.vncProxyPort}&reconnect=true&resize=scale&autoconnect=true`;
     }
 
     getPreviewBaseUrl() {

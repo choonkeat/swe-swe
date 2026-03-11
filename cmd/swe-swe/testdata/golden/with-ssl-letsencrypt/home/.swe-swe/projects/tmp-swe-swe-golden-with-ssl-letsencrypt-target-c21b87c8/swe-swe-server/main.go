@@ -771,6 +771,7 @@ func (s *Session) BroadcastStatus() {
 		"publicPort":         s.PublicPort,
 		"cdpPort":            s.CDPPort,
 		"vncPort":            s.VNCPort,
+		"vncProxyPort":       vncProxyPort(s.VNCPort),
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 	}
