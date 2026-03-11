@@ -3688,8 +3688,8 @@ func startSessionBrowser(sess *Session) error {
 	time.Sleep(1 * time.Second)
 
 	// 3. Start x11vnc on an internal port (raw VNC protocol, consumed by noVNC)
-	// Internal port = VNCPort + 100, not exposed externally
-	x11vncInternalPort := sess.VNCPort + 100
+	// Offset by the range size so internal ports never collide with session VNC ports
+	x11vncInternalPort := sess.VNCPort + (vncPortEnd - vncPortStart + 1)
 	x11vncCmd := exec.Command("x11vnc",
 		"-display", displayStr,
 		"-forever",
