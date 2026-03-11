@@ -4759,10 +4759,13 @@ func loadEndedRecordings() []RecordingInfo {
 			}
 		}
 
-		// Extract summary from chat events (if available)
+		// Extract summary from chat events (if available), fall back to agent terminal log
 		if info.HasChat {
 			summaryLine, _ := getSessionSummaryFromChat(ruuid)
 			info.SummaryLine = summaryLine
+		}
+		if info.SummaryLine == "" {
+			info.SummaryLine = getSessionSummaryFromLog(ruuid)
 		}
 
 		recordings = append(recordings, info)
@@ -5011,6 +5014,81 @@ func getSessionSummaryFromTerminal(sess *Session) string {
 		return ""
 	}
 	return sanitizeSummaryText(lastLine)
+}
+
+// ansiEscapeRe matches ANSI escape sequences (CSI, OSC, and simple escapes).
+var ansiEscapeRe = regexp.MustCompile(`\x1b(?:\[[0-9;?]*[a-zA-Z@]|\][^\x07\x1b]*(?:\x07|\x1b\\)|\([A-Z0-9]|[>=<])`)
+
+// orphanedAnsiParamsRe matches leftover ANSI parameter fragments that leak when
+// we start reading in the middle of an escape sequence (e.g. "255;255m").
+var orphanedAnsiParamsRe = regexp.MustCompile(`(?:^|[^a-zA-Z0-9])[0-9]+(?:;[0-9]+)*[a-zA-Z]`)
+
+// getSessionSummaryFromLog reads the tail of a root .log recording file,
+// strips ANSI escape sequences, and returns the last non-empty line as a summary.
+// Used as a fallback when no chat events are available.
+func getSessionSummaryFromLog(recordingUUID string) string {
+	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
+	f, err := os.Open(logPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return ""
+	}
+
+	// Read the last 8KB to find readable text
+	readSize := int64(8192)
+	if fi.Size() < readSize {
+		readSize = fi.Size()
+	}
+	buf := make([]byte, readSize)
+	_, err = f.ReadAt(buf, fi.Size()-readSize)
+	if err != nil && err != io.EOF {
+		return ""
+	}
+
+	// Strip ANSI escape sequences
+	clean := ansiEscapeRe.ReplaceAll(buf, nil)
+
+	// Remove remaining non-printable control characters (except newline)
+	var filtered []byte
+	for _, b := range clean {
+		if b == '\n' || (b >= 32 && b < 127) {
+			filtered = append(filtered, b)
+		}
+	}
+
+	// Find the last non-empty, meaningful line (skip prompts, script footers, and garbled text)
+	lines := bytes.Split(bytes.TrimRight(filtered, "\n"), []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(string(lines[i]))
+		if trimmed == "" || trimmed == "❯" || trimmed == "$" || trimmed == "%" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Script done") || strings.HasPrefix(trimmed, "Script started") {
+			continue
+		}
+		// Skip garbled TUI output: if less than half the characters are word chars
+		// or spaces, it's likely cursor-positioned screen fragments, not real text.
+		wordChars := 0
+		for _, r := range trimmed {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '.' || r == ',' || r == '-' || r == '\'' || r == '"' || r == ':' || r == '!' || r == '?' {
+				wordChars++
+			}
+		}
+		if len(trimmed) > 10 && wordChars*2 < len(trimmed) {
+			continue // too many non-word characters — likely garbled
+		}
+		// Skip lines that are too short to be meaningful
+		if len(trimmed) < 8 {
+			continue
+		}
+		return "Agent: " + sanitizeSummaryText(trimmed)
+	}
+	return ""
 }
 
 // findChatEventsFile finds the .events.jsonl file for a parent recording UUID.
