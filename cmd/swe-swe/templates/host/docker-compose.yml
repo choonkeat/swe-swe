@@ -110,39 +110,6 @@ services:
       - swe-network
     restart: unless-stopped
 
-  chrome:
-    build:
-      context: .
-      dockerfile: chrome/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    labels:
-      - "swe.project=${PROJECT_NAME}"
-      - "traefik.enable=true"
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.rule=Path(`/chrome`) || PathPrefix(`/chrome/`)"
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.priority=100"
-# {{IF SSL}}
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.entrypoints=websecure"
-# {{ENDIF}}
-# {{IF SELFSIGN}}
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.tls=true"
-# {{ENDIF}}
-# {{IF LETSENCRYPT}}
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.tls.domains[0].main={{DOMAIN}}"
-# {{ENDIF}}
-      - "traefik.http.routers.${PROJECT_NAME}-chrome.middlewares=forwardauth@file,${PROJECT_NAME}-chrome-redirect@docker,${PROJECT_NAME}-chrome-strip@docker"
-      - "traefik.http.services.${PROJECT_NAME}-chrome.loadbalancer.server.port=6080"
-      - "traefik.http.middlewares.${PROJECT_NAME}-chrome-redirect.redirectregex.regex=^/chrome$$"
-      - "traefik.http.middlewares.${PROJECT_NAME}-chrome-redirect.redirectregex.replacement=/chrome/"
-      - "traefik.http.middlewares.${PROJECT_NAME}-chrome-strip.stripprefix.prefixes=/chrome"
-    volumes:
-      # Enterprise certificates (if certs/ directory exists with certificates)
-      - ./certs:/swe-swe/certs:ro
-    networks:
-      - swe-network
-    restart: unless-stopped
-
   swe-swe:
     build:
       context: .
@@ -175,8 +142,6 @@ services:
       {{PUBLIC_ROUTERS}}
       # VNC proxy routing (per-session browser view)
       {{VNC_ROUTERS}}
-    depends_on:
-      - chrome
     volumes:
       # Mount project directory to /workspace
       - ${WORKSPACE_DIR:-.}:/workspace

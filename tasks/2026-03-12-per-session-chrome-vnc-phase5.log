@@ -1,0 +1,12 @@
+022554 Starting Phase 5: Remove Chrome Container
+022554 Will implement: Remove chrome service from docker-compose, delete chrome/ directory, remove embed directives, remove depends_on chrome
+022554 Expected: make build succeeds, make test passes, golden diff shows chrome removal
+022908 Phase 5 implementation complete. Results:
+022908 - make build: SUCCESS
+022908 - make test: PASS
+022908 - Removed chrome service block (32 lines) from docker-compose.yml
+022908 - Removed depends_on: chrome from swe-swe service
+022908 - Deleted chrome/ directory (Dockerfile, supervisord.conf, nginx-cdp.conf, novnc-wrapper.html, entrypoint.sh)
+022908 - Updated browser-automation.md for per-session architecture
+022908 - Updated help text to remove chrome from services list
+022908 - Golden diff confirms: chrome files deleted, docker-compose shrunk, docs updated

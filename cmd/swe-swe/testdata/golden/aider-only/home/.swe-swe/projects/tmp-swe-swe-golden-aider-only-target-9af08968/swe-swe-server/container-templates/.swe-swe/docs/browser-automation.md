@@ -1,20 +1,20 @@
 # Browser Automation in swe-swe
 
 ## Overview
-Browser automation uses MCP Playwright connected to a Chrome sidecar container. When the user asks to "use browser tool" or similar, use the `mcp__swe-swe-playwright__*` tools.
+Browser automation uses MCP Playwright connected to a per-session Chromium instance. When the user asks to "use browser tool" or similar, use the `mcp__swe-swe-playwright__*` tools.
 
 ## Architecture
 ```
-claude-code container  -->  chrome container
-   (MCP Playwright)         (Chromium + Xvfb + x11vnc + noVNC + nginx)
-        |                        |
-        +--- http://chrome:9223 -+
-                  (CDP)
+swe-swe container (per session)
+   ├── Xvfb (virtual X11 display, unique per session)
+   ├── Chromium (CDP on $BROWSER_CDP_PORT)
+   ├── x11vnc (raw VNC, internal port)
+   └── noVNC/websockify (WebSocket bridge, $BROWSER_VNC_PORT)
 ```
 
-- Chrome runs with a virtual X11 display (Xvfb) in a separate container
-- User can watch and interact via noVNC at http://localhost:1977/chrome/ (full mouse/keyboard)
-- CDP (Chrome DevTools Protocol) is exposed on port 9223 via nginx reverse proxy
+- Each session gets its own isolated browser instance (Xvfb + Chromium + VNC)
+- User can watch and interact via the "Agent View" tab in the UI
+- CDP (Chrome DevTools Protocol) is available on a per-session port via `$BROWSER_CDP_PORT`
 - noVNC provides a web-based VNC client for interactive browser access
 
 ## Available Tools
@@ -36,34 +36,20 @@ If browser tools are unavailable, check in order:
 ```bash
 claude mcp list
 ```
-Should show `swe-swe-playwright` with `--cdp-endpoint http://chrome:9223` in args
+Should show `swe-swe-playwright` with `--cdp-endpoint http://localhost:$BROWSER_CDP_PORT` in args
 
-### 2. Is Chrome container running?
-From host: noVNC should work at http://localhost:1977/chrome/
-
-### 3. Is CDP port accessible?
-From inside claude-code container:
+### 2. Is CDP port accessible?
 ```bash
-curl -s http://chrome:9223/json/version
+curl -s http://localhost:$BROWSER_CDP_PORT/json/version
 ```
 Should return JSON with Chrome version info.
 
-### 4. Is nginx CDP proxy running?
-From host:
+### 3. Are browser processes running?
 ```bash
-docker exec <chrome-container> netstat -tlnp | grep 9223
+ps aux | grep -E 'Xvfb|chromium|x11vnc|websockify'
 ```
-Should show `0.0.0.0:9223` (not 127.0.0.1).
+Should show processes for your session's display number.
 
 ### Common Issues
-- **Chrome binds to localhost only**: Chromium ignores `--remote-debugging-address=0.0.0.0`. We use nginx on port 9223 to proxy to localhost:9222.
+- **Browser not started**: Browser processes start automatically with each session. Check server logs for startup errors.
 - **Container needs rebuild**: After config changes, run `swe-swe stop && swe-swe build && swe-swe up`
-
-## Configuration Files
-- `~/.claude.json` - MCP server config (user scope, set up at container startup)
-- `cmd/swe-swe/templates/host/chrome/Dockerfile` - Chrome container image
-- `cmd/swe-swe/templates/host/chrome/supervisord.conf` - Process manager (xvfb, chromium, x11vnc, noVNC, nginx)
-- `cmd/swe-swe/templates/host/chrome/nginx-cdp.conf` - CDP reverse proxy config
-- `cmd/swe-swe/templates/host/chrome/novnc-wrapper.html` - noVNC path routing wrapper
-- `cmd/swe-swe/templates/host/chrome/entrypoint.sh` - Enterprise certificate installation + noVNC setup
-- `cmd/swe-swe/templates/host/docker-compose.yml` - Container orchestration

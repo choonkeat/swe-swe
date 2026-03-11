@@ -120,7 +120,7 @@ Route the "Agent View" tab to the session's own VNC endpoint instead of the shar
 
 ---
 
-## Phase 5: Remove Chrome Container
+## Phase 5: Remove Chrome Container ✅
 
 ### What
 Delete the old shared Chrome container setup now that per-session browsers work.

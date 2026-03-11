@@ -81,7 +81,7 @@ Available Agents:
   claude, gemini, codex, aider, goose, opencode
 
 Services (defined in docker-compose.yml after init):
-  swe-swe, chrome, code-server, vscode-proxy, traefik, auth
+  swe-swe, code-server, vscode-proxy, traefik, auth
 
 Examples:
   swe-swe init                                   Initialize current directory with all agents
