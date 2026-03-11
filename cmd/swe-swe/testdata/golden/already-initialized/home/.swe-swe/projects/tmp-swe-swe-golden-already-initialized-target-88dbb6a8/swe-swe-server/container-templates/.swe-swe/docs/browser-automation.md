@@ -6,16 +6,16 @@ Browser automation uses MCP Playwright connected to a Chrome sidecar container. 
 ## Architecture
 ```
 claude-code container  -->  chrome container
-   (MCP Playwright)         (Chromium headless + nginx + screencast)
+   (MCP Playwright)         (Chromium + Xvfb + x11vnc + noVNC + nginx)
         |                        |
         +--- http://chrome:9223 -+
                   (CDP)
 ```
 
-- Chrome runs in headless mode in a separate container
-- User can watch via screencast at http://localhost:1977/chrome/ (read-only)
+- Chrome runs with a virtual X11 display (Xvfb) in a separate container
+- User can watch and interact via noVNC at http://localhost:1977/chrome/ (full mouse/keyboard)
 - CDP (Chrome DevTools Protocol) is exposed on port 9223 via nginx reverse proxy
-- Screencast uses CDP Page.startScreencast for efficient frame streaming
+- noVNC provides a web-based VNC client for interactive browser access
 
 ## Available Tools
 - `mcp__swe-swe-playwright__browser_navigate` - Navigate to URL
@@ -39,7 +39,7 @@ claude mcp list
 Should show `swe-swe-playwright` with `--cdp-endpoint http://chrome:9223` in args
 
 ### 2. Is Chrome container running?
-From host: Screencast should work at http://localhost:1977/chrome/
+From host: noVNC should work at http://localhost:1977/chrome/
 
 ### 3. Is CDP port accessible?
 From inside claude-code container:
@@ -61,9 +61,9 @@ Should show `0.0.0.0:9223` (not 127.0.0.1).
 
 ## Configuration Files
 - `~/.claude.json` - MCP server config (user scope, set up at container startup)
-- `cmd/swe-swe/templates/host/chrome-screencast/Dockerfile` - Chrome container image
-- `cmd/swe-swe/templates/host/chrome-screencast/supervisord.conf` - Process manager (chromium, nginx, screencast)
-- `cmd/swe-swe/templates/host/chrome-screencast/nginx-cdp.conf` - CDP reverse proxy config
-- `cmd/swe-swe/templates/host/chrome-screencast/server.js` - Screencast WebSocket server
-- `cmd/swe-swe/templates/host/chrome-screencast/entrypoint.sh` - Enterprise certificate installation
+- `cmd/swe-swe/templates/host/chrome/Dockerfile` - Chrome container image
+- `cmd/swe-swe/templates/host/chrome/supervisord.conf` - Process manager (xvfb, chromium, x11vnc, noVNC, nginx)
+- `cmd/swe-swe/templates/host/chrome/nginx-cdp.conf` - CDP reverse proxy config
+- `cmd/swe-swe/templates/host/chrome/novnc-wrapper.html` - noVNC path routing wrapper
+- `cmd/swe-swe/templates/host/chrome/entrypoint.sh` - Enterprise certificate installation + noVNC setup
 - `cmd/swe-swe/templates/host/docker-compose.yml` - Container orchestration

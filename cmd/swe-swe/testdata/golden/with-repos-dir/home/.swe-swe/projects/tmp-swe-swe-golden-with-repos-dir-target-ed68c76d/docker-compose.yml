@@ -233,7 +233,7 @@ services:
   chrome:
     build:
       context: .
-      dockerfile: chrome-screencast/Dockerfile
+      dockerfile: chrome/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
