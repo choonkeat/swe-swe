@@ -58,14 +58,23 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir, ext := slashCommandDirForAgent(sess.Assistant, sess.AssistantConfig.SlashCmdFormat)
-	if dir == "" {
+	systemDir, ext := slashCommandDirForAgent(sess.Assistant, sess.AssistantConfig.SlashCmdFormat)
+	if systemDir == "" && ext == "" {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(autocompleteResponse{Results: []autocompleteItem{}})
 		return
 	}
 
-	items := discoverSlashCommands(dir, ext)
+	// Collect commands from system-level and project-level directories
+	var items []autocompleteItem
+	if systemDir != "" {
+		items = append(items, discoverSlashCommands(systemDir, ext)...)
+	}
+	projectDir := projectCommandDir(sess.Assistant, sess.WorkDir)
+	if projectDir != "" && projectDir != systemDir {
+		items = append(items, discoverSlashCommands(projectDir, ext)...)
+	}
+
 	if req.Query != "" {
 		items = filterAutocomplete(items, req.Query)
 	}
@@ -77,8 +86,8 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(autocompleteResponse{Results: items})
 }
 
-// slashCommandDirForAgent returns the slash command directory and file extension
-// for the given agent type.
+// slashCommandDirForAgent returns the system-level slash command directory and
+// file extension for the given agent type.
 func slashCommandDirForAgent(assistant string, format SlashCommandFormat) (dir string, ext string) {
 	switch assistant {
 	case "claude":
@@ -100,50 +109,84 @@ func slashCommandDirForAgent(assistant string, format SlashCommandFormat) (dir s
 	}
 }
 
+// projectCommandDir returns the project-level slash command directory for the
+// given agent, based on the session's working directory. Returns "" if the
+// agent has no project-level command convention or workDir is empty.
+func projectCommandDir(assistant string, workDir string) string {
+	if workDir == "" {
+		return ""
+	}
+	switch assistant {
+	case "claude":
+		return filepath.Join(workDir, ".claude", "commands")
+	case "codex":
+		return filepath.Join(workDir, ".codex", "prompts")
+	case "opencode":
+		return filepath.Join(workDir, ".opencode", "command")
+	case "gemini":
+		return filepath.Join(workDir, ".gemini", "commands")
+	default:
+		return ""
+	}
+}
+
 // discoverSlashCommands scans a slash command directory and returns all
-// commands with their descriptions. Directory structure is:
+// commands with their descriptions. Supports two layouts:
 //
 //	commands/
+//	  command.md            → V="command"           (flat, no namespace)
 //	  namespace/
-//	    command.md (or .toml)
+//	    command.md          → V="namespace:command"  (namespaced)
 //
-// Returns items with V="namespace:command" and H=description.
+// Returns items with H=description extracted from file content.
 func discoverSlashCommands(dir string, ext string) []autocompleteItem {
-	namespaces, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
 
 	var items []autocompleteItem
-	for _, ns := range namespaces {
-		if !ns.IsDir() {
-			continue
-		}
-		nsName := ns.Name()
-		nsPath := filepath.Join(dir, nsName)
-		entries, err := os.ReadDir(nsPath)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			if entry.IsDir() {
+	for _, entry := range entries {
+		if entry.IsDir() {
+			// Namespaced: namespace/command.ext
+			nsName := entry.Name()
+			nsPath := filepath.Join(dir, nsName)
+			subEntries, err := os.ReadDir(nsPath)
+			if err != nil {
 				continue
 			}
+			for _, sub := range subEntries {
+				if sub.IsDir() {
+					continue
+				}
+				name := sub.Name()
+				if !strings.HasSuffix(name, "."+ext) {
+					continue
+				}
+				cmdName := strings.TrimSuffix(name, "."+ext)
+				fullName := nsName + ":" + cmdName
+
+				content, err := os.ReadFile(filepath.Join(nsPath, name))
+				hint := ""
+				if err == nil {
+					hint = extractDescription(string(content), ext)
+				}
+				items = append(items, autocompleteItem{V: fullName, H: hint})
+			}
+		} else {
+			// Flat: command.ext (no namespace)
 			name := entry.Name()
 			if !strings.HasSuffix(name, "."+ext) {
 				continue
 			}
 			cmdName := strings.TrimSuffix(name, "."+ext)
-			fullName := nsName + ":" + cmdName
 
-			// Read file to extract description
-			content, err := os.ReadFile(filepath.Join(nsPath, name))
+			content, err := os.ReadFile(filepath.Join(dir, name))
 			hint := ""
 			if err == nil {
 				hint = extractDescription(string(content), ext)
 			}
-
-			items = append(items, autocompleteItem{V: fullName, H: hint})
+			items = append(items, autocompleteItem{V: cmdName, H: hint})
 		}
 	}
 	return items
