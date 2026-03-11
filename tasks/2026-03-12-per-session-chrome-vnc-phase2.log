@@ -1,0 +1,11 @@
+021245 Starting Phase 2: Per-Session Chrome Process Spawning
+021245 Will implement: Install Chrome/Xvfb/x11vnc/noVNC in Dockerfile, create startSessionBrowser/stopSessionBrowser, track browser PIDs, integrate with session lifecycle
+021245 Expected: make test passes, make build succeeds
+021851 Phase 2 implementation complete. Results:
+021851 - make build: SUCCESS
+021851 - make test: PASS (after golden-update)
+021851 - Dockerfile: Added chromium, xvfb, x11vnc, novnc, websockify packages
+021851 - main.go: Added BrowserPIDs to Session, startSessionBrowser() (Xvfb→Chromium→x11vnc→noVNC), stopSessionBrowser(), displayNumberFromPreview()
+021851 - Session lifecycle: startSessionBrowser called for top-level sessions only (children share parent browser)
+021851 - Session teardown: stopSessionBrowser called in Close()
+021851 - x11vnc uses internal port (VNCPort+100), noVNC listens on VNCPort (WebSocket bridge)

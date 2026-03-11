@@ -71,6 +71,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 # {{ENDIF}}
 
+# Install browser automation dependencies (Chromium, Xvfb, x11vnc, noVNC)
+# Each session gets its own Xvfb display, Chromium instance, and VNC server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    && rm -rf /var/lib/apt/lists/*
+
 # {{IF APT_PACKAGES}}
 # Install user-specified packages
 RUN apt-get update && apt-get install -y \

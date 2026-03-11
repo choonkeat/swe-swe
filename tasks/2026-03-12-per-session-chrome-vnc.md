@@ -46,7 +46,7 @@ Extend the port triple (preview/agentchat/public) to include CDP and VNC ports p
 
 ---
 
-## Phase 2: Per-Session Chrome Process Spawning
+## Phase 2: Per-Session Chrome Process Spawning ✅
 
 ### What
 Each session launches its own Chrome, Xvfb, x11vnc, and noVNC when it starts, and tears them down when it ends.

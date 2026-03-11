@@ -41,6 +41,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
 ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
 
 
+# Install browser automation dependencies (Chromium, Xvfb, x11vnc, noVNC)
+# Each session gets its own Xvfb display, Chromium instance, and VNC server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    && rm -rf /var/lib/apt/lists/*
+
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code

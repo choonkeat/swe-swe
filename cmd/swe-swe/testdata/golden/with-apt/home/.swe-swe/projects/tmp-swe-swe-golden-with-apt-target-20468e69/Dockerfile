@@ -46,6 +46,16 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Install browser automation dependencies (Chromium, Xvfb, x11vnc, noVNC)
+# Each session gets its own Xvfb display, Chromium instance, and VNC server
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install user-specified packages
 RUN apt-get update && apt-get install -y \
     vim curl \

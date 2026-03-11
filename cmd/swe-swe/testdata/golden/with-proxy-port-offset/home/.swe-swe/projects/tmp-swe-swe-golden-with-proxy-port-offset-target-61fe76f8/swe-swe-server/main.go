@@ -10,6 +10,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -421,6 +422,7 @@ type Session struct {
 	PublicPort    int // Public (no-auth) port for this session
 	CDPPort       int // Chrome DevTools Protocol port for this session
 	VNCPort       int // VNC port for browser view for this session
+	BrowserPIDs   []int // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -919,6 +921,9 @@ func (s *Session) Close() {
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
 	}
+
+	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
+	stopSessionBrowser(s)
 
 	// Close all WebSocket client connections
 	for conn := range s.wsClients {
@@ -3630,6 +3635,110 @@ func vncPortFromPreview(previewPort int) int {
 	return previewPort + 4000
 }
 
+// displayNumberFromPreview derives a unique X11 display number from a preview port.
+// Preview port 3000 → DISPLAY=:1, 3001 → :2, etc.
+func displayNumberFromPreview(previewPort int) int {
+	return (previewPort - previewPortStart) + 1
+}
+
+// startSessionBrowser starts per-session Xvfb, Chromium, x11vnc, and noVNC processes.
+// The session gets its own isolated X11 display and browser instance.
+func startSessionBrowser(sess *Session) error {
+	display := displayNumberFromPreview(sess.PreviewPort)
+	displayStr := fmt.Sprintf(":%d", display)
+
+	// 1. Start Xvfb on a unique display with Unix socket only (no TCP)
+	xvfbCmd := exec.Command("Xvfb", displayStr, "-screen", "0", "1024x768x24", "-nolisten", "tcp")
+	if err := xvfbCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start Xvfb on display %s: %w", displayStr, err)
+	}
+	sess.BrowserPIDs = append(sess.BrowserPIDs, xvfbCmd.Process.Pid)
+	log.Printf("Started Xvfb on display %s (PID %d) for session %s", displayStr, xvfbCmd.Process.Pid, sess.UUID)
+	go func() { xvfbCmd.Wait() }()
+
+	// Wait briefly for Xvfb to initialize
+	time.Sleep(500 * time.Millisecond)
+
+	// 2. Start Chromium with remote debugging on the session's CDP port
+	chromiumBinary := "chromium"
+	if _, err := exec.LookPath("chromium"); err != nil {
+		chromiumBinary = "chromium-browser" // fallback name on some distros
+	}
+	chromeCmd := exec.Command(chromiumBinary,
+		"--no-sandbox",
+		"--disable-gpu",
+		"--disable-software-rasterizer",
+		"--disable-dev-shm-usage",
+		"--remote-debugging-address=0.0.0.0",
+		fmt.Sprintf("--remote-debugging-port=%d", sess.CDPPort),
+		"--remote-allow-origins=*",
+		"--window-size=1024,768",
+		"--start-maximized",
+	)
+	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
+	if err := chromeCmd.Start(); err != nil {
+		stopSessionBrowser(sess)
+		return fmt.Errorf("failed to start Chromium on CDP port %d: %w", sess.CDPPort, err)
+	}
+	sess.BrowserPIDs = append(sess.BrowserPIDs, chromeCmd.Process.Pid)
+	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for session %s", sess.CDPPort, displayStr, chromeCmd.Process.Pid, sess.UUID)
+	go func() { chromeCmd.Wait() }()
+
+	// Wait for Chrome to start
+	time.Sleep(1 * time.Second)
+
+	// 3. Start x11vnc on an internal port (raw VNC protocol, consumed by noVNC)
+	// Internal port = VNCPort + 100, not exposed externally
+	x11vncInternalPort := sess.VNCPort + 100
+	x11vncCmd := exec.Command("x11vnc",
+		"-display", displayStr,
+		"-forever",
+		"-shared",
+		"-nopw",
+		"-rfbport", fmt.Sprintf("%d", x11vncInternalPort),
+		"-xkb",
+	)
+	if err := x11vncCmd.Start(); err != nil {
+		stopSessionBrowser(sess)
+		return fmt.Errorf("failed to start x11vnc on port %d: %w", x11vncInternalPort, err)
+	}
+	sess.BrowserPIDs = append(sess.BrowserPIDs, x11vncCmd.Process.Pid)
+	log.Printf("Started x11vnc on port %d, display %s (PID %d) for session %s", x11vncInternalPort, displayStr, x11vncCmd.Process.Pid, sess.UUID)
+	go func() { x11vncCmd.Wait() }()
+
+	// 4. Start noVNC (websockify) proxy on the session's VNC port
+	// Bridges WebSocket (VNCPort) to raw VNC (x11vncInternalPort)
+	noVNCCmd := exec.Command("websockify",
+		"--web", "/usr/share/novnc",
+		fmt.Sprintf("%d", sess.VNCPort),
+		fmt.Sprintf("localhost:%d", x11vncInternalPort),
+	)
+	if err := noVNCCmd.Start(); err != nil {
+		stopSessionBrowser(sess)
+		return fmt.Errorf("failed to start noVNC proxy on port %d: %w", sess.VNCPort, err)
+	}
+	sess.BrowserPIDs = append(sess.BrowserPIDs, noVNCCmd.Process.Pid)
+	log.Printf("Started noVNC proxy on port %d → localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCCmd.Process.Pid, sess.UUID)
+	go func() { noVNCCmd.Wait() }()
+
+	return nil
+}
+
+// stopSessionBrowser kills all browser processes for a session.
+func stopSessionBrowser(sess *Session) {
+	for _, pid := range sess.BrowserPIDs {
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+			// Process may have already exited
+			if !errors.Is(err, syscall.ESRCH) {
+				log.Printf("Failed to kill browser process PID %d for session %s: %v", pid, sess.UUID, err)
+			}
+		} else {
+			log.Printf("[KILL] Killed browser process PID %d for session %s (server PID %d)", pid, sess.UUID, os.Getpid())
+		}
+	}
+	sess.BrowserPIDs = nil
+}
+
 // findAvailablePortQuintuple finds a preview port and its derived agent chat,
 // public, CDP, and VNC ports that are not already allocated to an existing session.
 // Must be called while holding sessionsMu.
@@ -3988,6 +4097,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			if err := os.WriteFile(chatMetaPath, data, 0644); err != nil {
 				log.Printf("Failed to save chat metadata: %v", err)
 			}
+		}
+	}
+
+	// Start per-session browser (Xvfb + Chromium + x11vnc + noVNC) for top-level sessions.
+	// Child sessions (terminals opened from agents) share the parent's browser.
+	if parentUUID == "" {
+		if err := startSessionBrowser(sess); err != nil {
+			log.Printf("Warning: failed to start session browser for %s: %v", sessionUUID, err)
+			// Non-fatal: session works without browser, Playwright just won't have a display
 		}
 	}
 
