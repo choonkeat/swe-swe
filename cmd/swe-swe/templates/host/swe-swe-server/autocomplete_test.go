@@ -128,6 +128,55 @@ func TestSlashCommandDiscovery(t *testing.T) {
 		}
 	})
 
+	t.Run("discovers flat (non-namespaced) commands", func(t *testing.T) {
+		flatDir := filepath.Join(tmpDir, "flat-commands")
+		mkdirAll(t, flatDir)
+		writeFile(t, filepath.Join(flatDir, "setup.md"),
+			"---\ndescription: Project setup\n---\n\n# Setup\n")
+		writeFile(t, filepath.Join(flatDir, "slide.md"),
+			"---\ndescription: Generate slides\n---\n\n# Slide\n")
+		writeFile(t, filepath.Join(flatDir, "notes.txt"), "ignored")
+
+		items := discoverSlashCommands(flatDir, "md")
+		if len(items) != 2 {
+			t.Fatalf("expected 2 flat commands, got %d: %+v", len(items), items)
+		}
+		found := map[string]string{}
+		for _, item := range items {
+			found[item.V] = item.H
+		}
+		if found["setup"] != "Project setup" {
+			t.Errorf("unexpected hint for setup: %q", found["setup"])
+		}
+		if found["slide"] != "Generate slides" {
+			t.Errorf("unexpected hint for slide: %q", found["slide"])
+		}
+	})
+
+	t.Run("discovers mixed flat and namespaced commands", func(t *testing.T) {
+		mixedDir := filepath.Join(tmpDir, "mixed-commands")
+		mkdirAll(t, filepath.Join(mixedDir, "ck"))
+		writeFile(t, filepath.Join(mixedDir, "deploy.md"),
+			"---\ndescription: Quick deploy\n---\n")
+		writeFile(t, filepath.Join(mixedDir, "ck", "plan.md"),
+			"---\ndescription: Plan carefully\n---\n")
+
+		items := discoverSlashCommands(mixedDir, "md")
+		if len(items) != 2 {
+			t.Fatalf("expected 2 commands, got %d: %+v", len(items), items)
+		}
+		found := map[string]string{}
+		for _, item := range items {
+			found[item.V] = item.H
+		}
+		if found["deploy"] != "Quick deploy" {
+			t.Errorf("unexpected: %q", found["deploy"])
+		}
+		if found["ck:plan"] != "Plan carefully" {
+			t.Errorf("unexpected: %q", found["ck:plan"])
+		}
+	})
+
 	t.Run("fuzzy filters by query", func(t *testing.T) {
 		items := discoverSlashCommands(claudeDir, "md")
 		filtered := filterAutocomplete(items, "setup")
@@ -184,6 +233,29 @@ func TestSlashCommandDiscovery(t *testing.T) {
 			t.Errorf("expected 0 results, got %d", len(items))
 		}
 	})
+}
+
+func TestProjectCommandDir(t *testing.T) {
+	tests := []struct {
+		assistant string
+		workDir   string
+		want      string
+	}{
+		{"claude", "/workspace", "/workspace/.claude/commands"},
+		{"codex", "/workspace", "/workspace/.codex/prompts"},
+		{"opencode", "/workspace", "/workspace/.opencode/command"},
+		{"gemini", "/workspace", "/workspace/.gemini/commands"},
+		{"shell", "/workspace", ""},
+		{"claude", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.assistant+"_"+tt.workDir, func(t *testing.T) {
+			got := projectCommandDir(tt.assistant, tt.workDir)
+			if got != tt.want {
+				t.Errorf("projectCommandDir(%q, %q) = %q, want %q", tt.assistant, tt.workDir, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestSlashCommandDirForAgent(t *testing.T) {
