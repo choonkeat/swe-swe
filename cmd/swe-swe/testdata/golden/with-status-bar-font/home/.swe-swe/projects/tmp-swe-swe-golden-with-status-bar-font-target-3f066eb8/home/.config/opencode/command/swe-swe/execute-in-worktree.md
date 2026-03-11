@@ -1,0 +1,32 @@
+---
+description: Create a worktree session and execute a task plan in it
+---
+
+$ARGUMENTS
+
+Create a new agent session on a worktree branch and execute a task plan file in it.
+
+## Steps
+
+1. **Parse the task file path** from the arguments (e.g., `tasks/2026-03-12-per-session-chrome-vnc.md`)
+2. **Derive a branch name** from the task filename:
+   - Strip the `tasks/` prefix and `.md` suffix
+   - Remove the date prefix (e.g., `2026-03-12-`)
+   - Result: `per-session-chrome-vnc`
+3. **Create a new session** using the `create_session` MCP tool:
+   - `assistant`: same agent as current session (e.g., `claude`)
+   - `name`: the derived branch name
+   - `branch`: the derived branch name
+4. **Wait 15 seconds** for the agent to initialize
+5. **Send input** to the new session using `send_session_input` MCP tool:
+   - Text: `/swe-swe:execute-step-by-step {task file path}\n`
+6. **Report** the session UUID and branch name back to the user
+
+## Example
+
+Given: `/swe-swe:execute-in-worktree tasks/2026-03-12-per-session-chrome-vnc.md`
+
+Creates session `per-session-chrome-vnc` on branch `per-session-chrome-vnc` and sends:
+```
+/swe-swe:execute-step-by-step tasks/2026-03-12-per-session-chrome-vnc.md
+```
