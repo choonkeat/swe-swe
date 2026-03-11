@@ -72,10 +72,13 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Errorf("expected 200, got %d", w.Code)
 		}
-		var resp []autocompleteItem
+		var resp autocompleteResponse
 		json.NewDecoder(w.Body).Decode(&resp)
-		if len(resp) != 0 {
-			t.Errorf("expected empty results, got %d", len(resp))
+		if len(resp.Results) != 0 {
+			t.Errorf("expected empty results, got %d", len(resp.Results))
+		}
+		if resp.HasMore {
+			t.Error("expected has_more to be false")
 		}
 	})
 }

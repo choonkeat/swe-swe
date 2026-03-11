@@ -15,6 +15,13 @@ type autocompleteItem struct {
 	H string `json:"h,omitempty"`
 }
 
+// autocompleteResponse is the structured response matching the agent-chat
+// autocomplete API spec (see docs/autocomplete-api.md).
+type autocompleteResponse struct {
+	Results []autocompleteItem `json:"results"`
+	HasMore bool               `json:"has_more,omitempty"`
+}
+
 // handleAutocompleteAPI handles POST /api/autocomplete/{sessionUUID}
 // It returns slash command completions for the given session's agent.
 func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +61,7 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	dir, ext := slashCommandDirForAgent(sess.Assistant, sess.AssistantConfig.SlashCmdFormat)
 	if dir == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]autocompleteItem{})
+		json.NewEncoder(w).Encode(autocompleteResponse{Results: []autocompleteItem{}})
 		return
 	}
 
@@ -62,9 +69,12 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	if req.Query != "" {
 		items = filterAutocomplete(items, req.Query)
 	}
+	if items == nil {
+		items = []autocompleteItem{}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items)
+	json.NewEncoder(w).Encode(autocompleteResponse{Results: items})
 }
 
 // slashCommandDirForAgent returns the slash command directory and file extension
