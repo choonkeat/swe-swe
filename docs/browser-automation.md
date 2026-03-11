@@ -1,90 +1,81 @@
 # Browser Automation
 
-This document describes the browser automation capabilities in swe-swe, enabling AI assistants to interact with web pages through a headless Chromium browser.
+This document describes the browser automation capabilities in swe-swe, enabling AI assistants to interact with web pages through per-session Chromium instances.
 
 ## Overview
 
-swe-swe includes a dedicated Chrome container that provides:
+Each swe-swe session runs its own isolated browser stack:
 
-- **Headless Chromium** browser for automated web interactions
-- **Chrome DevTools Protocol (CDP)** access for programmatic control
-- **CDP Screencast** for visual observation of browser activity (lightweight, no VNC/Xvfb needed)
+- **Chromium** browser for automated web interactions
+- **Chrome DevTools Protocol (CDP)** access on a per-session port
+- **VNC** via noVNC for visual observation of browser activity
 - **MCP Playwright** integration for AI-driven browser automation
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        swe-swe Environment                       │
+│                     swe-swe Container                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐  │
-│  │  swe-swe     │      │    chrome    │      │   traefik    │  │
-│  │  container   │─────▶│  container   │◀─────│    proxy     │  │
-│  │              │ CDP  │              │ HTTP │              │  │
-│  │ MCP Playwright      │  Chromium    │      │              │  │
-│  └──────────────┘      │  + screencast│      └──────────────┘  │
-│                        └──────────────┘                         │
-│                              │                                   │
-│                              ▼                                   │
-│                     localhost:1977/chrome                       │
-│                     (screencast viewer)                         │
+│  Per Session:                                                    │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  Xvfb (:N)  →  Chromium (CDP port)  →  x11vnc  →  noVNC │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Port Ranges:                                                    │
+│  ├── CDP:  6000-6019 (preview port + 3000)                      │
+│  ├── VNC:  7000-7019 (preview port + 4000)                      │
+│  └── External: 26000-26019, 27000-27019 (via Traefik)           │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Chrome Container
+## Per-Session Browser
 
-### Services Running
+Each session automatically starts its own browser processes:
 
-The Chrome container runs multiple services via supervisord:
-
-| Service | Port | Purpose |
+| Process | Port | Purpose |
 |---------|------|---------|
-| Chromium | 9222 (localhost) | Headless browser with remote debugging |
-| nginx | 9223 | CDP reverse proxy (fixes Host header) |
-| Node.js screencast | 6080 | CDP screencast web UI (Page.startScreencast) |
+| Xvfb | Unix socket (:N) | Virtual X11 display (no TCP) |
+| Chromium | CDPPort (6000+) | Browser with remote debugging |
+| x11vnc | VNCPort+100 (internal) | Raw VNC server |
+| noVNC/websockify | VNCPort (7000+) | WebSocket bridge for browser viewing |
 
-### Ports
-
-| External | Internal | Description |
-|----------|----------|-------------|
-| `localhost:1977/chrome` | 6080 | Screencast web viewer (via Traefik path-based routing) |
-| - | 9223 | CDP WebSocket (internal network only) |
+Display numbering derives from preview port: port 3000 → `:1`, port 3001 → `:2`, etc.
 
 ### Environment Variables
 
-The swe-swe container is pre-configured with:
+Each session receives:
 
-```yaml
-BROWSER_WS_ENDPOINT=ws://chrome:9223
+```bash
+BROWSER_CDP_PORT=6000   # Per-session CDP port
+BROWSER_VNC_PORT=7000   # Per-session VNC port
 ```
 
-This allows MCP Playwright to automatically connect to the Chrome container.
+MCP Playwright connects via `--cdp-endpoint http://localhost:$BROWSER_CDP_PORT`.
 
 ## Using Browser Automation
 
 ### Visual Observation
 
-Watch the browser in real-time at: **http://localhost:1977/chrome** (or **https://localhost:1977/chrome** if using `--ssl=selfsign`)
-
-The screencast viewer shows exactly what the AI assistant sees when automating the browser, using CDP's `Page.startScreencast` API for efficient frame streaming.
+Watch the browser in the **Agent View** tab in the swe-swe UI. Each session shows its own independent browser view via noVNC.
 
 ### MCP Playwright Integration
 
-The swe-swe container includes `@playwright/mcp` which provides browser automation tools to AI assistants. When using Claude Code or similar tools:
+The swe-swe container includes `@playwright/mcp` which provides browser automation tools to AI assistants:
 
 ```javascript
-// Example: Navigate to a URL
+// Navigate to a URL
 mcp__swe-swe-playwright__browser_navigate({ url: "https://example.com" })
 
-// Example: Take a screenshot
+// Take a screenshot
 mcp__swe-swe-playwright__browser_take_screenshot({ filename: "screenshot.png" })
 
-// Example: Click an element
+// Click an element
 mcp__swe-swe-playwright__browser_click({ element: "Login button", ref: "e5" })
 
-// Example: Get page snapshot (accessibility tree)
+// Get page snapshot (accessibility tree)
 mcp__swe-swe-playwright__browser_snapshot()
 ```
 
@@ -110,7 +101,7 @@ mcp__swe-swe-playwright__browser_snapshot()
 
 ## Enterprise SSL Certificates
 
-The Chrome container supports enterprise SSL certificates for accessing internal sites behind corporate proxies.
+Chromium in the swe-swe container uses certificates from the system CA store, which are installed at container startup by the entrypoint script.
 
 ### How It Works
 
@@ -121,123 +112,29 @@ The Chrome container supports enterprise SSL certificates for accessing internal
 
 2. Certificates are copied to `$HOME/.swe-swe/projects/{path}/certs/`
 
-3. At container startup, the entrypoint script:
-   - Installs certs to system CA store (for curl, wget)
-   - Installs certs to NSS database (for Chromium)
-
-### NSS Database
-
-Chromium uses the NSS (Network Security Services) database instead of the system CA store. The entrypoint script handles this:
-
-```bash
-# Create NSS database
-certutil -d sql:/home/chrome/.pki/nssdb -N --empty-password
-
-# Add certificate
-certutil -d sql:/home/chrome/.pki/nssdb -A -t "C,," -n "enterprise-ca" -i /swe-swe/certs/cert.pem
-```
-
-### Verifying Certificate Installation
-
-```bash
-# List certificates in NSS database
-docker exec <chrome-container> certutil -d sql:/home/chrome/.pki/nssdb -L
-
-# Expected output:
-# Certificate Nickname                Trust Attributes
-# enterprise-ca                       C,,
-```
-
-## Configuration
-
-### Docker Compose
-
-The Chrome service is defined in `docker-compose.yml`:
-
-```yaml
-chrome:
-  build:
-    context: .
-    dockerfile: chrome/Dockerfile
-  labels:
-    - "traefik.enable=true"
-    - "traefik.http.routers.chrome.rule=PathPrefix(`/chrome`)"
-    - "traefik.http.routers.chrome.middlewares=strip-chrome"
-    - "traefik.http.middlewares.strip-chrome.stripprefix.prefixes=/chrome"
-    - "traefik.http.services.chrome.loadbalancer.server.port=6080"
-  volumes:
-    - ./certs:/swe-swe/certs:ro
-  networks:
-    - swe-network  # Compose-internal alias; actual network is ${PROJECT_NAME}_swe-network
-  deploy:
-    resources:
-      limits:
-        cpus: '1'
-        memory: 1G
-```
-
-### Resource Limits
-
-Default resource limits for the Chrome container:
-- CPU: 1 core (0.5 reserved)
-- Memory: 1GB (512MB reserved)
-
-Adjust in `docker-compose.yml` if needed for resource-intensive automation tasks.
+3. At container startup, the entrypoint script installs certs to the system CA store
 
 ## Troubleshooting
-
-### SSL Certificate Errors
-
-**Error**: `net::ERR_CERT_AUTHORITY_INVALID`
-
-**Solution**: Verify certificates are installed in NSS database:
-```bash
-docker exec <chrome-container> certutil -d sql:/home/chrome/.pki/nssdb -L
-```
-
-If empty, check:
-1. Certificate files exist in `certs/` directory
-2. Files have `.pem` extension
-3. Rebuild container: `swe-swe build chrome`
-
-### Screencast Not Loading
-
-**Error**: Blank page or connection error at `/chrome`
-
-**Solution**: The screencast server may not have started. Rebuild:
-```bash
-swe-swe build chrome
-swe-swe down chrome && swe-swe up chrome -- -d
-```
 
 ### CDP Connection Failed
 
 **Error**: MCP Playwright cannot connect to browser
 
 **Solution**:
-1. Verify Chrome container is running: `docker ps | grep chrome`
-2. Check `BROWSER_WS_ENDPOINT` is set: should be `ws://chrome:9223`
-3. Verify nginx CDP proxy is running inside container
+1. Check browser processes are running: `ps aux | grep -E 'Xvfb|chromium'`
+2. Verify CDP port is accessible: `curl -s http://localhost:$BROWSER_CDP_PORT/json/version`
+3. Check server logs for browser startup errors
 
 ### Browser Crashes
 
 **Error**: Chromium crashes or becomes unresponsive
 
-**Solution**: Check resource limits. Increase memory if needed:
-```yaml
-deploy:
-  resources:
-    limits:
-      memory: 2G
-```
+**Solution**: Check server logs for crash details. The session will need to be ended and recreated.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `chrome-screencast/Dockerfile` | Chrome container image definition |
-| `chrome-screencast/supervisord.conf` | Process manager (chromium, nginx, screencast) |
-| `chrome-screencast/entrypoint.sh` | Certificate installation script |
-| `chrome-screencast/nginx-cdp.conf` | CDP reverse proxy (Host header fix) |
-| `chrome-screencast/server.js` | Screencast WebSocket server |
-| `chrome-screencast/package.json` | Node.js dependencies for screencast |
+| `cmd/swe-swe/templates/host/Dockerfile` | Main container with browser packages |
+| `cmd/swe-swe/templates/host/entrypoint.sh` | MCP configuration with per-session CDP |
+| `cmd/swe-swe/templates/host/swe-swe-server/main.go` | Browser process management |
