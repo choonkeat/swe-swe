@@ -246,23 +246,21 @@ echo -e "${GREEN}✓ Created Goose wrapper script${NC}"
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
 # Must run as app user so config goes to /home/app/.claude.json (not /root/)
-# Re-run if config is missing or stale (remove-then-add ensures fresh config)
-if ! grep -q '"swe-swe"' /home/app/.claude.json 2>/dev/null || ! grep -q '\-\-bridge' /home/app/.claude.json 2>/dev/null; then
-  su -s /bin/bash app -c '
-    unset CLAUDECODE
-    claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
-    claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
-    claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
-    claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
-    claude mcp remove --scope user swe-swe 2>/dev/null || true
-    claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c '"'"'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command,@=filepath --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID'"'"'
-    claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
-    claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp'"'"'
-    claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
-    claude mcp add --scope user --transport stdio swe-swe -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/mcp?key=$MCP_AUTH_KEY'"'"'
-  '
-  echo -e "${GREEN}✓ Created Claude MCP configuration${NC}"
-fi
+# Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
+su -s /bin/bash app -c '
+  unset CLAUDECODE
+  claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
+  claude mcp remove --scope user swe-swe 2>/dev/null || true
+  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c '"'"'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command,@=filepath --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID'"'"'
+  claude mcp add --scope user --transport stdio swe-swe-playwright -- npx -y @playwright/mcp@latest --cdp-endpoint http://chrome:9223
+  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp'"'"'
+  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
+  claude mcp add --scope user --transport stdio swe-swe -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/mcp?key=$MCP_AUTH_KEY'"'"'
+'
+echo -e "${GREEN}✓ Created Claude MCP configuration${NC}"
 
 # Create open/xdg-open shims that route URLs to the Preview pane
 mkdir -p /home/app/.swe-swe/bin
