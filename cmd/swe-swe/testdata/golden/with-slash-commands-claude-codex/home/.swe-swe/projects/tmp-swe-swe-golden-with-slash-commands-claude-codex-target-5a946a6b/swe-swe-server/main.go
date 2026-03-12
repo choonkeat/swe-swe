@@ -422,7 +422,8 @@ type Session struct {
 	PublicPort    int // Public (no-auth) port for this session
 	CDPPort       int // Chrome DevTools Protocol port for this session
 	VNCPort       int // VNC port for browser view for this session
-	BrowserPIDs   []int // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
+	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
+	BrowserDataDir string // Per-session Chromium user data directory
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -3660,11 +3661,16 @@ func startSessionBrowser(sess *Session) error {
 	// Wait briefly for Xvfb to initialize
 	time.Sleep(500 * time.Millisecond)
 
-	// 2. Start Chromium with remote debugging on the session's CDP port
+	// 2. Start Chromium with remote debugging on the session's CDP port.
+	// Each session gets its own --user-data-dir to avoid Chrome's singleton
+	// profile lock, which would cause all but the first instance to delegate
+	// to the first and immediately exit.
 	chromiumBinary := "chromium"
 	if _, err := exec.LookPath("chromium"); err != nil {
 		chromiumBinary = "chromium-browser" // fallback name on some distros
 	}
+	userDataDir := fmt.Sprintf("/tmp/chromium-session-%s", sess.UUID)
+	sess.BrowserDataDir = userDataDir
 	chromeCmd := exec.Command(chromiumBinary,
 		"--no-sandbox",
 		"--disable-gpu",
@@ -3672,6 +3678,7 @@ func startSessionBrowser(sess *Session) error {
 		"--disable-dev-shm-usage",
 		"--remote-debugging-address=0.0.0.0",
 		fmt.Sprintf("--remote-debugging-port=%d", sess.CDPPort),
+		fmt.Sprintf("--user-data-dir=%s", userDataDir),
 		"--remote-allow-origins=*",
 		"--window-size=1024,768",
 		"--start-maximized",
@@ -3682,8 +3689,16 @@ func startSessionBrowser(sess *Session) error {
 		return fmt.Errorf("failed to start Chromium on CDP port %d: %w", sess.CDPPort, err)
 	}
 	sess.BrowserPIDs = append(sess.BrowserPIDs, chromeCmd.Process.Pid)
-	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for session %s", sess.CDPPort, displayStr, chromeCmd.Process.Pid, sess.UUID)
-	go func() { chromeCmd.Wait() }()
+	chromePID := chromeCmd.Process.Pid
+	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for session %s", sess.CDPPort, displayStr, chromePID, sess.UUID)
+	go func() {
+		err := chromeCmd.Wait()
+		if err != nil {
+			log.Printf("Chromium exited with error (PID %d, session %s): %v", chromePID, sess.UUID, err)
+		} else {
+			log.Printf("Chromium exited normally (PID %d, session %s)", chromePID, sess.UUID)
+		}
+	}()
 
 	// Wait for Chrome to start
 	time.Sleep(1 * time.Second)
@@ -3725,7 +3740,8 @@ func startSessionBrowser(sess *Session) error {
 	return nil
 }
 
-// stopSessionBrowser kills all browser processes for a session.
+// stopSessionBrowser kills all browser processes for a session and cleans up
+// the per-session Chromium user data directory.
 func stopSessionBrowser(sess *Session) {
 	for _, pid := range sess.BrowserPIDs {
 		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
@@ -3738,6 +3754,13 @@ func stopSessionBrowser(sess *Session) {
 		}
 	}
 	sess.BrowserPIDs = nil
+	// Clean up per-session Chromium user data directory
+	if sess.BrowserDataDir != "" {
+		if err := os.RemoveAll(sess.BrowserDataDir); err != nil {
+			log.Printf("Failed to clean up browser data dir %s for session %s: %v", sess.BrowserDataDir, sess.UUID, err)
+		}
+		sess.BrowserDataDir = ""
+	}
 }
 
 // findAvailablePortQuintuple finds a preview port and its derived agent chat,
