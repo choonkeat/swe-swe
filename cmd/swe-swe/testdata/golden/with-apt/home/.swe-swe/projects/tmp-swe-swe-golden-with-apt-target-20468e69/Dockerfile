@@ -56,6 +56,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     websockify \
     && rm -rf /var/lib/apt/lists/*
 
+# Override default noVNC viewer with custom version (adds View only / Interactive toggle)
+COPY swe-swe-server/static/vnc_lite.html /usr/share/novnc/vnc_lite.html
+
 # Install user-specified packages
 RUN apt-get update && apt-get install -y \
     vim curl \

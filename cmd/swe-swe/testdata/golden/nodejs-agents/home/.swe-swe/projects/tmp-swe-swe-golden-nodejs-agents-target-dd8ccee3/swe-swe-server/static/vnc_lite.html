@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--
+    Custom noVNC viewer for swe-swe Agent View.
+    Based on noVNC vnc_lite.html (MPL 2.0 / 2-Clause BSD).
+    Adds View only / Interactive mode toggle to the top bar.
+    Reads swe-swe-theme cookie for dark/light theme.
+    -->
+    <title>noVNC</title>
+    <meta charset="utf-8">
+    <script>
+        // Apply theme from cookie before first paint
+        (function(){
+            var m = document.cookie.match(/(?:^|;\s*)swe-swe-theme=([^;]+)/);
+            if (m && m[1] === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <style>
+        :root {
+            --vnc-bg: #1e293b;
+            --vnc-bg-screen: #0f172a;
+            --vnc-border: #334155;
+            --vnc-text: #e2e8f0;
+            --vnc-text-muted: #94a3b8;
+            --vnc-accent: #7c3aed;
+            --vnc-accent-text: #ffffff;
+            --vnc-toggle-bg: #0f172a;
+            --vnc-btn-hover: #334155;
+            --vnc-status-dot: #9ece6a;
+        }
+        [data-theme="light"] {
+            --vnc-bg: #f8f9fb;
+            --vnc-bg-screen: #ffffff;
+            --vnc-border: #e2e8f0;
+            --vnc-text: #1e293b;
+            --vnc-text-muted: #64748b;
+            --vnc-accent: #7c3aed;
+            --vnc-accent-text: #ffffff;
+            --vnc-toggle-bg: #e2e8f0;
+            --vnc-btn-hover: #cbd5e1;
+            --vnc-status-dot: #22c55e;
+        }
+
+        html {
+            height: 100%;
+        }
+        body {
+            margin: 0;
+            background-color: var(--vnc-bg-screen);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #top_bar {
+            background: var(--vnc-bg);
+            color: var(--vnc-text);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 5px 12px;
+            border-bottom: 1px solid var(--vnc-border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 32px;
+        }
+        #status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--vnc-text-muted);
+            font-size: 11px;
+        }
+        #statusDot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--vnc-status-dot);
+        }
+        #statusText {
+            /* text set by JS */
+        }
+        .spacer {
+            flex: 1;
+        }
+        #sendCtrlAltDelButton {
+            background: none;
+            border: 1px solid var(--vnc-border);
+            border-radius: 4px;
+            color: var(--vnc-text-muted);
+            padding: 3px 10px;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        #sendCtrlAltDelButton:hover {
+            color: var(--vnc-text);
+            border-color: var(--vnc-text-muted);
+        }
+
+        /* View only / Interactive toggle */
+        #modeToggle {
+            display: flex;
+            align-items: center;
+            background: var(--vnc-toggle-bg);
+            border: 1px solid var(--vnc-border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        #modeToggle button {
+            background: none;
+            border: none;
+            color: var(--vnc-text-muted);
+            padding: 4px 12px;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: inherit;
+            font-weight: 500;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        #modeToggle button:hover {
+            color: var(--vnc-text);
+        }
+        #modeToggle button.active {
+            background: var(--vnc-accent);
+            color: var(--vnc-accent-text);
+            font-weight: 600;
+        }
+
+        #screen {
+            flex: 1;
+            overflow: hidden;
+        }
+    </style>
+
+    <script type="module" crossorigin="anonymous">
+        import RFB from './core/rfb.js';
+
+        let rfb;
+        let desktopName;
+
+        function connectedToServer(e) {
+            status("Connected to " + desktopName);
+        }
+
+        function disconnectedFromServer(e) {
+            if (e.detail.clean) {
+                status("Disconnected");
+            } else {
+                status("Something went wrong, connection is closed");
+            }
+        }
+
+        function credentialsAreRequired(e) {
+            const password = prompt("Password Required:");
+            rfb.sendCredentials({ password: password });
+        }
+
+        function updateDesktopName(e) {
+            desktopName = e.detail.name;
+        }
+
+        function sendCtrlAltDel() {
+            rfb.sendCtrlAltDel();
+            return false;
+        }
+
+        function status(text) {
+            document.getElementById('statusText').textContent = text;
+        }
+
+        function readQueryVariable(name, defaultValue) {
+            const re = new RegExp('.*[?&]' + name + '=([^&#]*)'),
+                  match = ''.concat(document.location.href, window.location.hash).match(re);
+            if (match) {
+                return decodeURIComponent(match[1]);
+            }
+            return defaultValue;
+        }
+
+        // Mode toggle: "View only" vs "Interactive"
+        function setMode(mode) {
+            if (!rfb) return;
+            const viewBtn = document.getElementById('btnView');
+            const interactBtn = document.getElementById('btnInteract');
+
+            if (mode === 'view') {
+                rfb.viewOnly = true;
+                rfb.scaleViewport = false;
+                viewBtn.classList.add('active');
+                interactBtn.classList.remove('active');
+            } else {
+                rfb.viewOnly = false;
+                rfb.scaleViewport = true;
+                viewBtn.classList.remove('active');
+                interactBtn.classList.add('active');
+            }
+        }
+
+        document.getElementById('sendCtrlAltDelButton').onclick = sendCtrlAltDel;
+        document.getElementById('btnView').onclick = () => setMode('view');
+        document.getElementById('btnInteract').onclick = () => setMode('interact');
+
+        const host = readQueryVariable('host', window.location.hostname);
+        let port = readQueryVariable('port', window.location.port);
+        const password = readQueryVariable('password');
+        const path = readQueryVariable('path', 'websockify');
+
+        status("Connecting");
+
+        let url;
+        if (window.location.protocol === "https:") {
+            url = 'wss';
+        } else {
+            url = 'ws';
+        }
+        url += '://' + host;
+        if(port) {
+            url += ':' + port;
+        }
+        url += '/' + path;
+
+        rfb = new RFB(document.getElementById('screen'), url,
+                      { credentials: { password: password } });
+
+        rfb.addEventListener("connect",  connectedToServer);
+        rfb.addEventListener("disconnect", disconnectedFromServer);
+        rfb.addEventListener("credentialsrequired", credentialsAreRequired);
+        rfb.addEventListener("desktopname", updateDesktopName);
+
+        // Default to "Interactive" mode (scale to fit, full interaction)
+        rfb.viewOnly = false;
+        rfb.scaleViewport = readQueryVariable('scale', false);
+    </script>
+</head>
+
+<body>
+    <div id="top_bar">
+        <div id="status">
+            <span id="statusDot"></span>
+            <span id="statusText">Loading</span>
+        </div>
+        <div class="spacer"></div>
+        <div id="modeToggle">
+            <button id="btnView">View only</button>
+            <button id="btnInteract" class="active">Interactive</button>
+        </div>
+        <button id="sendCtrlAltDelButton">Send CtrlAltDel</button>
+    </div>
+    <div id="screen">
+    </div>
+</body>
+</html>
