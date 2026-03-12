@@ -1,0 +1,9 @@
+161645 Starting Phase 3: Integration & Wiring
+161645 Will implement: Dockerfile build step for mcp-lazy-init, entrypoint.sh MCP registration changes, golden file updates
+161645 Expected: make test passes, golden files show only Dockerfile build step + entrypoint MCP registration changes
+161645 Completed Phase 3:
+161645 - Added mcp-lazy-init/main.go template under cmd/swe-swe/templates/host/
+161645 - Dockerfile: added build step (go mod init + go build) and COPY to /usr/local/bin/mcp-lazy-init
+161645 - entrypoint.sh: updated all 5 MCP registration patterns (OpenCode, Codex, Gemini, Goose, Claude) to wrap Playwright with mcp-lazy-init
+161645 - Golden files updated (70 files: Dockerfile +7 lines, entrypoint.sh 1 line, main.go from Phase 1)
+161645 - make test passes (all 3 test targets green, golden tests pass)

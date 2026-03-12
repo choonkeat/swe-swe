@@ -135,7 +135,7 @@ Flags:
 
 ---
 
-## Phase 3: Integration & Wiring
+## Phase 3: Integration & Wiring ✅
 
 ### What will be achieved
 The proxy binary is compiled, deployed into containers, and wired into the MCP registration. Sessions no longer start browser at creation time.
@@ -171,7 +171,7 @@ The proxy binary is compiled, deployed into containers, and wired into the MCP r
 
 ### Verification
 
-- `make test` passes (golden tests match updated templates)
+- ✅ `make test` passes (golden tests match updated templates)
 - **Manual test with test container:**
   1. Start a session — confirm no Xvfb/Chromium/x11vnc/websockify processes running (`ps aux | grep -E 'Xvfb|chromium|x11vnc|websockify'`)
   2. Open Agent View tab — VNC should show nothing / connection waiting (no browser yet)

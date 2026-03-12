@@ -58,7 +58,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     },
     "swe-swe-playwright": {
       "type": "local",
-      "command": ["sh", "-c", "exec npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
+      "command": ["sh", "-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:9898/api/session/$SESSION_UUID/browser/start -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
     },
     "swe-swe-preview": {
       "type": "local",

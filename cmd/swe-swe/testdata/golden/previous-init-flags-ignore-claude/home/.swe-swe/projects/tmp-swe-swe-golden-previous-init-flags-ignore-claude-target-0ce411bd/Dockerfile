@@ -13,6 +13,10 @@ COPY swe-swe-server/static/ ./static/
 COPY swe-swe-server/container-templates/ ./container-templates/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server .
 
+# Build mcp-lazy-init (generic lazy-init MCP proxy, stdlib only)
+COPY mcp-lazy-init/main.go /build-mcp-lazy-init/main.go
+RUN cd /build-mcp-lazy-init && go mod init mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
+
 # Stage 2: Main development environment
 FROM golang:1.23-bookworm
 
@@ -74,8 +78,9 @@ RUN npm install -g @playwright/mcp
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.
 
-# Copy swe-swe-server binary from builder stage
+# Copy swe-swe-server and mcp-lazy-init binaries from builder stage
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
+COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
