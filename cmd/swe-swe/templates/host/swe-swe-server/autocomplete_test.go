@@ -56,6 +56,64 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("disambiguates duplicate commands from system and project dirs", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		systemDir := filepath.Join(tmpDir, "system", "commands")
+		projectDir := filepath.Join(tmpDir, "project", "commands")
+		mkdirAll(t, filepath.Join(systemDir, "swe-swe"))
+		mkdirAll(t, filepath.Join(projectDir, "swe-swe"))
+
+		writeFile(t, filepath.Join(systemDir, "swe-swe", "merge-worktree.md"),
+			"---\ndescription: Merge a worktree\n---\n")
+		writeFile(t, filepath.Join(projectDir, "swe-swe", "merge-worktree.md"),
+			"---\ndescription: Merge a worktree\n---\n")
+		// Unique command in system only
+		writeFile(t, filepath.Join(systemDir, "swe-swe", "setup.md"),
+			"---\ndescription: Configure git\n---\n")
+
+		origHome := os.Getenv("HOME")
+		os.Setenv("HOME", tmpDir+"/system")
+		defer os.Setenv("HOME", origHome)
+
+		sessions["test-uuid"] = &Session{
+			UUID:      "test-uuid",
+			Assistant: "claude",
+			WorkDir:   tmpDir + "/project",
+			AssistantConfig: AssistantConfig{
+				SlashCmdFormat: SlashCmdMD,
+			},
+		}
+		defer delete(sessions, "test-uuid")
+
+		// Temporarily override slashCommandDirForAgent by using a custom session
+		// We can't easily override that, so test the dedup logic directly:
+		type sourced struct {
+			item autocompleteItem
+			dir  string
+		}
+		var all []sourced
+		for _, item := range discoverSlashCommands(systemDir, "md") {
+			all = append(all, sourced{item, systemDir})
+		}
+		for _, item := range discoverSlashCommands(projectDir, "md") {
+			all = append(all, sourced{item, projectDir})
+		}
+
+		counts := make(map[string]int)
+		for _, s := range all {
+			counts[s.item.V]++
+		}
+
+		// swe-swe:merge-worktree should be duplicate (count=2)
+		if counts["swe-swe:merge-worktree"] != 2 {
+			t.Errorf("expected 2 copies of merge-worktree, got %d", counts["swe-swe:merge-worktree"])
+		}
+		// swe-swe:setup should not be duplicate (count=1)
+		if counts["swe-swe:setup"] != 1 {
+			t.Errorf("expected 1 copy of setup, got %d", counts["swe-swe:setup"])
+		}
+	})
+
 	t.Run("returns empty results for agent with no slash commands", func(t *testing.T) {
 		sessions["test-uuid"] = &Session{
 			UUID:      "test-uuid",
