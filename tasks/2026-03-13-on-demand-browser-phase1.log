@@ -1,0 +1,12 @@
+160558 Starting Phase 1: Server API Endpoint for on-demand browser startup
+160558 Step 1-5: Implementing all Phase 1 steps (BrowserStarted field, startSessionBrowser flag, handleBrowserStartAPI handler, route registration, remove eager browser start)
+160558 Expected: All tests pass, golden files show only expected changes (new handler + route + field + removed eager start)
+160949 Completed all Phase 1 steps:
+160949 - Added BrowserStarted field to Session struct
+160949 - Set sess.BrowserStarted = true at end of startSessionBrowser()
+160949 - Added handleBrowserStartAPI() handler (POST /api/session/{uuid}/browser/start, idempotent)
+160949 - Registered route in main handler
+160949 - Removed eager startSessionBrowser() call from getOrCreateSession()
+160949 - Added browser_start_test.go with 4 test cases (GET 405, unknown UUID 404, valid POST, already_started 200)
+160949 - make test passes (all tests green)
+160949 - Golden files updated (36 files, all showing same main.go template changes)

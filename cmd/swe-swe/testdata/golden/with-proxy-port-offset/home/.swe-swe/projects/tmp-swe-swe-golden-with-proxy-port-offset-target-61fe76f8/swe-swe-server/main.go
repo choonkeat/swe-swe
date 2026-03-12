@@ -424,6 +424,7 @@ type Session struct {
 	VNCPort       int // VNC port for browser view for this session
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
+	BrowserStarted bool   // Whether browser processes have been started
 	// Input buffering during MOTD grace period
 	inputBuffer   [][]byte // buffered input during grace period
 	inputBufferMu sync.Mutex
@@ -2044,6 +2045,12 @@ func main() {
 		// Session end API endpoint
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
 			handleSessionEndAPI(w, r)
+			return
+		}
+
+		// Browser start API endpoint (on-demand browser)
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/browser/start") {
+			handleBrowserStartAPI(w, r)
 			return
 		}
 
@@ -3738,6 +3745,7 @@ func startSessionBrowser(sess *Session) error {
 	log.Printf("Started noVNC proxy on port %d → localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCCmd.Process.Pid, sess.UUID)
 	go func() { noVNCCmd.Wait() }()
 
+	sess.BrowserStarted = true
 	return nil
 }
 
@@ -4125,14 +4133,9 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		}
 	}
 
-	// Start per-session browser (Xvfb + Chromium + x11vnc + noVNC) for top-level sessions.
-	// Child sessions (terminals opened from agents) share the parent's browser.
-	if parentUUID == "" {
-		if err := startSessionBrowser(sess); err != nil {
-			log.Printf("Warning: failed to start session browser for %s: %v", sessionUUID, err)
-			// Non-fatal: session works without browser, Playwright just won't have a display
-		}
-	}
+	// Browser processes are started on-demand via POST /api/session/{uuid}/browser/start
+	// (triggered by mcp-lazy-init on first Playwright MCP tool call).
+	// Child sessions share the parent's browser.
 
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sessionUUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
@@ -5811,6 +5814,50 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleBrowserStartAPI handles POST /api/session/{uuid}/browser/start
+// Starts browser processes on demand. Idempotent — returns success if already started.
+func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse UUID from path: /api/session/{uuid}/browser/start
+	path := strings.TrimPrefix(r.URL.Path, "/api/session/")
+	path = strings.TrimSuffix(path, "/browser/start")
+	sessionUUID := path
+
+	if sessionUUID == "" {
+		http.Error(w, "Missing session UUID", http.StatusBadRequest)
+		return
+	}
+
+	sessionsMu.RLock()
+	sess, exists := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	if sess.BrowserStarted {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"already_started"}`))
+		return
+	}
+
+	if err := startSessionBrowser(sess); err != nil {
+		log.Printf("Failed to start browser for session %s: %v", sessionUUID, err)
+		http.Error(w, fmt.Sprintf("Failed to start browser: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"started"}`))
 }
 
 // killProcessesOnPorts finds and kills any processes listening on the given
