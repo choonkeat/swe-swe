@@ -1,3 +1,6 @@
 141745 Step 1: Add browserStarted to BroadcastStatus() JSON
   Will do: Add "browserStarted": sess.BrowserStarted to the status map in BroadcastStatus()
   Expect: Field appears in status JSON sent to WebSocket clients
+141901 Step 1 result: Added "browserStarted": s.BrowserStarted to status map at line 779 of main.go
+  make test passes. make build golden-update shows expected main.go golden diffs (plus pre-existing autocomplete.go diffs from prior commit).
+  Step 1 DONE.

@@ -66,13 +66,47 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Collect commands from system-level and project-level directories
-	var items []autocompleteItem
+	type sourced struct {
+		item autocompleteItem
+		dir  string
+	}
+	var all []sourced
 	if systemDir != "" {
-		items = append(items, discoverSlashCommands(systemDir, ext)...)
+		for _, item := range discoverSlashCommands(systemDir, ext) {
+			all = append(all, sourced{item, systemDir})
+		}
 	}
 	projectDir := projectCommandDir(sess.Assistant, sess.WorkDir)
 	if projectDir != "" && projectDir != systemDir {
-		items = append(items, discoverSlashCommands(projectDir, ext)...)
+		for _, item := range discoverSlashCommands(projectDir, ext) {
+			all = append(all, sourced{item, projectDir})
+		}
+	}
+
+	// Detect duplicate command names and annotate with source path
+	counts := make(map[string]int)
+	for _, s := range all {
+		counts[s.item.V]++
+	}
+	home := os.Getenv("HOME")
+	var items []autocompleteItem
+	for _, s := range all {
+		item := s.item
+		if counts[item.V] > 1 {
+			// Disambiguate: append source path to hint
+			displayDir := s.dir
+			if home != "" && strings.HasPrefix(displayDir, home) {
+				displayDir = "~" + displayDir[len(home):]
+			} else if sess.WorkDir != "" && strings.HasPrefix(displayDir, sess.WorkDir+"/") {
+				displayDir = displayDir[len(sess.WorkDir)+1:]
+			}
+			if item.H != "" {
+				item.H = item.H + " — " + displayDir
+			} else {
+				item.H = displayDir
+			}
+		}
+		items = append(items, item)
 	}
 
 	if req.Query != "" {

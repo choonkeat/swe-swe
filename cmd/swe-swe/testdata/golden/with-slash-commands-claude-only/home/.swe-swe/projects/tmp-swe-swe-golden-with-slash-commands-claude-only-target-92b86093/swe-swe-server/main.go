@@ -776,6 +776,7 @@ func (s *Session) BroadcastStatus() {
 		"vncProxyPort":       vncProxyPort(s.VNCPort),
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
+		"browserStarted":     s.BrowserStarted,
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
