@@ -1,0 +1,3 @@
+141745 Step 1: Add browserStarted to BroadcastStatus() JSON
+  Will do: Add "browserStarted": sess.BrowserStarted to the status map in BroadcastStatus()
+  Expect: Field appears in status JSON sent to WebSocket clients
