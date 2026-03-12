@@ -2143,7 +2143,7 @@ func main() {
 				UUIDShort:     uuidShort,
 				Assistant:     assistant,
 				AssistantName: assistantName,
-				Version:       Version,
+				Version:       Version + "-" + GitCommit,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)
@@ -3673,6 +3673,7 @@ func startSessionBrowser(sess *Session) error {
 	sess.BrowserDataDir = userDataDir
 	chromeCmd := exec.Command(chromiumBinary,
 		"--no-sandbox",
+		"--test-type",
 		"--disable-gpu",
 		"--disable-software-rasterizer",
 		"--disable-dev-shm-usage",
