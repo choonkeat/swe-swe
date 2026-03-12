@@ -2905,7 +2905,8 @@ class TerminalUI extends HTMLElement {
         if (!this.vncProxyPort) return null;
         const loc = window.location;
         // noVNC's vnc_lite.html with query params to configure WebSocket connection
-        return `${loc.protocol}//${loc.hostname}:${this.vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${this.vncProxyPort}&reconnect=true&resize=scale&autoconnect=true`;
+        const v = new URL(import.meta.url).searchParams.get('v') || '';
+        return `${loc.protocol}//${loc.hostname}:${this.vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${this.vncProxyPort}&reconnect=true&resize=scale&autoconnect=true${v ? '&v=' + v : ''}`;
     }
 
     getPreviewBaseUrl() {
