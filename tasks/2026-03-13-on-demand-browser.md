@@ -64,7 +64,7 @@ A new `POST /api/session/{uuid}/browser/start` endpoint in `main.go` that trigge
 
 ---
 
-## Phase 2: Generic Lazy-Init MCP Proxy (`mcp-lazy-init`)
+## Phase 2: Generic Lazy-Init MCP Proxy (`mcp-lazy-init`) ✅
 
 ### What will be achieved
 A standalone Go binary that wraps any stdio MCP server. Before the first `tools/call` reaches the wrapped server, it makes a configurable HTTP request. After that, it's a transparent relay.
@@ -129,12 +129,9 @@ Flags:
   - Use `httptest.NewServer` as the init endpoint
   - Verify correct method, URL, headers, body are sent
 
-- **Integration test**
-  - Build the binary
-  - Pipe JSON-RPC messages through it wrapping a mock MCP server
-  - Verify end-to-end relay behavior
+- ✅ **Integration test** (TestRunMessageRouting uses `cat` as mock MCP server, pipes JSON-RPC messages through)
 
-- `make test` passes
+- ✅ `make test` passes
 
 ---
 

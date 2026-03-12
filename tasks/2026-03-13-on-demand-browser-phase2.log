@@ -1,0 +1,14 @@
+161032 Starting Phase 2: Generic Lazy-Init MCP Proxy (mcp-lazy-init)
+161032 Will implement: Go binary that wraps any stdio MCP server, makes HTTP request on first tools/call, then becomes transparent relay
+161032 Expected: Binary builds, unit tests pass (message routing, HTTP init request), integration test passes
+161252 Completed Phase 2:
+161252 - Created cmd/mcp-lazy-init/main.go with CLI parsing, JSON-RPC method extraction, HTTP init, stdin/stdout relay
+161252 - Created cmd/mcp-lazy-init/main_test.go with 6 tests:
+161252   - TestParseArgs (5 subtests): valid args, headers+body, missing separator, empty command, unknown flag
+161252   - TestJSONRPCMethod: JSON-RPC method extraction from various inputs
+161252   - TestDoInit: HTTP request with correct method, URL, headers, body
+161252   - TestDoInitFailure: 500 response returns error
+161252   - TestRunMessageRouting: initialize/tools/list pass through, first tools/call triggers init, second tools/call doesn't
+161252   - TestRunNoToolsCall: no init when only initialize/tools/list are sent
+161252 - Added test-mcp-lazy-init target to Makefile
+161252 - make test passes (all 3 test targets green)

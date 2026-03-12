@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs
+.PHONY: build run stop test test-cli test-mcp-lazy-init test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs
 
 build: build-cli
 
@@ -18,10 +18,13 @@ stop:
 	if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "Stopped dev server (pid $$pid)"; \
 	else echo "No dev server running on :$(PORT)"; fi
 
-test: check-gomod-sync test-cli test-server
+test: check-gomod-sync test-cli test-mcp-lazy-init test-server
 
 test-cli:
 	go test -v ./cmd/swe-swe
+
+test-mcp-lazy-init:
+	go test -v ./cmd/mcp-lazy-init
 
 # Test the swe-swe-server template code
 # Copies template to temp dir, sets up go.mod, runs tests, syncs go.sum back
