@@ -59,3 +59,5 @@ Bad: ...
 | [031](0031-upsert-mcp-servers.md) | Upsert MCP servers | Accepted |
 | [032](0032-proxy-port-range-below-ephemeral.md) | Proxy port range below ephemeral | Accepted |
 | [033](0033-port-with-path-fallback-proxy.md) | Port-based proxy with path-based fallback | Accepted |
+| [034](0034-per-session-chrome-vnc.md) | Per-session Chrome/VNC | Accepted |
+| [035](0035-on-demand-browser-startup.md) | On-demand browser startup via mcp-lazy-init | Accepted |
