@@ -5856,6 +5856,9 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Push browserStarted:true to all connected WebSocket clients
+	sess.BroadcastStatus()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"started"}`))

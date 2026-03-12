@@ -4,3 +4,9 @@
 141901 Step 1 result: Added "browserStarted": s.BrowserStarted to status map at line 779 of main.go
   make test passes. make build golden-update shows expected main.go golden diffs (plus pre-existing autocomplete.go diffs from prior commit).
   Step 1 DONE.
+141930 Step 2: Broadcast status after browser start in handleBrowserStartAPI()
+  Will do: After startSessionBrowser(sess) succeeds, call sess.BroadcastStatus() to push browserStarted:true to all WebSocket clients
+  Expect: Connected clients receive updated status with browserStarted:true immediately after browser starts
+141945 Step 2 result: Added sess.BroadcastStatus() call after startSessionBrowser succeeds in handleBrowserStartAPI.
+  make test passes. Golden files updated.
+  Step 2 DONE.
