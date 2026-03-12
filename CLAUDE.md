@@ -189,6 +189,10 @@ docker run --rm --privileged --pid=host alpine:latest nsenter -t 1 -m -u -i -n -
 | 1977, 3000-3019, 4000-4019, 23000-23019, 24000-24019 | swe-swe session ports via Traefik | behind auth |
 | 5000-5019 | Preview ports (direct access) | no auth, user-controlled |
 
+## Coding Rules
+
+**Never silently discard child process exit status.** Do not write `go func() { cmd.Wait() }()`. Always log the process name, PID, and exit status. A silent Wait hid the Chrome singleton bug for the entire per-session browser rollout — Chrome exited immediately on all but the first session but no log entry was produced.
+
 ## Known Issues
 
 ### Memory leak: per-request `http.Transport` (fixed 2026-03-07)
