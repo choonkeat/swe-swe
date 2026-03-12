@@ -330,13 +330,12 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 				for _, port := range previewPorts {
 					vp := vncPort(port)
 					entrypoint := fmt.Sprintf("vnc%d", vp)
-					pp := vncProxyPort(vp, proxyPortOffset)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-vnc-%d", vp)
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
-					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, pp))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, vp))
 					if isSSL {
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
