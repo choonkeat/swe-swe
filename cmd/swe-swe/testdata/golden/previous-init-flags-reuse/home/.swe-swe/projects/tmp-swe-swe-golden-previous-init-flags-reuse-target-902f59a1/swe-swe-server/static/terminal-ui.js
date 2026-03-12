@@ -44,6 +44,7 @@ class TerminalUI extends HTMLElement {
         this.cdpPort = null;
         this.vncPort = null;
         this.vncProxyPort = null;
+        this.browserViewMode = 'view'; // 'view' (readonly, scroll to pan) or 'interact'
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -378,6 +379,17 @@ class TerminalUI extends HTMLElement {
                                 </div>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
+                            </div>
+                            <div class="terminal-ui__browser-toolbar">
+                                <div class="terminal-ui__browser-toolbar-status">
+                                    <span class="terminal-ui__browser-toolbar-dot"></span>
+                                    <span class="terminal-ui__browser-toolbar-text">Connected</span>
+                                </div>
+                                <div class="terminal-ui__browser-toolbar-spacer"></div>
+                                <div class="terminal-ui__browser-mode-toggle">
+                                    <button data-mode="view" class="active">View only</button>
+                                    <button data-mode="interact">Interactive</button>
+                                </div>
                             </div>
                             <div class="terminal-ui__iframe-container">
                                 <div class="terminal-ui__iframe-placeholder">
@@ -3037,6 +3049,51 @@ class TerminalUI extends HTMLElement {
             this.switchLeftPanelTab('chat');
             this.switchMobileNav('agent-chat');
         }
+
+        // Setup Agent View mode toggle
+        this.setupBrowserModeToggle();
+    }
+
+    // Setup Agent View "View only / Interactive" mode toggle
+    setupBrowserModeToggle() {
+        const toggle = this.querySelector('.terminal-ui__browser-mode-toggle');
+        if (!toggle) return;
+
+        toggle.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-mode]');
+            if (!btn) return;
+            const mode = btn.dataset.mode;
+            if (mode === this.browserViewMode) return;
+
+            this.browserViewMode = mode;
+
+            // Update toggle button states
+            toggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            this.applyBrowserViewMode();
+        });
+    }
+
+    // Apply current browser view mode to iframe container
+    applyBrowserViewMode() {
+        const container = this.querySelector('.terminal-ui__iframe-container');
+        if (!container) return;
+
+        if (this.browserViewMode === 'view') {
+            container.classList.add('browser-view-mode');
+            container.classList.remove('browser-interact-mode');
+        } else {
+            container.classList.remove('browser-view-mode');
+            container.classList.add('browser-interact-mode');
+        }
+    }
+
+    // Clear browser view mode classes (when switching away from Agent View tab)
+    clearBrowserViewMode() {
+        const container = this.querySelector('.terminal-ui__iframe-container');
+        if (!container) return;
+        container.classList.remove('browser-view-mode', 'browser-interact-mode');
     }
 
     // Check if viewport is wide enough for split-pane layout
@@ -3082,13 +3139,25 @@ class TerminalUI extends HTMLElement {
         // Add class to show iframe pane
         terminalUi.classList.add('iframe-visible');
 
-        // Show/hide toolbar based on tab (only preview gets toolbar)
+        // Show/hide toolbar based on tab
         if (iframePane) {
             if (tab === 'preview') {
                 iframePane.classList.add('show-toolbar');
+                iframePane.classList.remove('show-browser-toolbar');
+            } else if (tab === 'browser') {
+                iframePane.classList.remove('show-toolbar');
+                iframePane.classList.add('show-browser-toolbar');
             } else {
                 iframePane.classList.remove('show-toolbar');
+                iframePane.classList.remove('show-browser-toolbar');
             }
+        }
+
+        // Apply browser view mode when switching to Agent View
+        if (tab === 'browser') {
+            this.applyBrowserViewMode();
+        } else {
+            this.clearBrowserViewMode();
         }
 
         // Apply saved pane width

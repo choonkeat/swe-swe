@@ -1203,6 +1203,100 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: var(--text-muted);
 }
 
+/* === Agent View Browser Toolbar === */
+.terminal-ui__browser-toolbar {
+    display: none; /* Hidden by default, shown only for browser tab */
+    align-items: center;
+    gap: 10px;
+    padding: 5px 12px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+    font-size: 12px;
+    min-height: 32px;
+}
+
+.terminal-ui__iframe-pane.show-browser-toolbar .terminal-ui__browser-toolbar {
+    display: flex;
+}
+
+.terminal-ui__browser-toolbar-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.terminal-ui__browser-toolbar-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #9ece6a;
+}
+
+.terminal-ui__browser-toolbar-spacer {
+    flex: 1;
+}
+
+.terminal-ui__browser-mode-toggle {
+    display: flex;
+    align-items: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.terminal-ui__browser-mode-toggle button {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s;
+    white-space: nowrap;
+    font-family: monospace;
+}
+
+.terminal-ui__browser-mode-toggle button:hover {
+    color: var(--text-secondary);
+}
+
+.terminal-ui__browser-mode-toggle button.active {
+    background: var(--accent-primary);
+    color: var(--bg-primary);
+    font-weight: 600;
+}
+
+/* Agent View: "View only" mode — iframe at native VNC resolution, container scrolls */
+.terminal-ui__iframe-container.browser-view-mode {
+    overflow: auto;
+}
+
+.terminal-ui__iframe-container.browser-view-mode .terminal-ui__iframe {
+    width: 1024px;
+    height: 768px;
+    pointer-events: none;
+}
+
+/* Agent View: "Interactive" mode — iframe fills container, events pass through */
+.terminal-ui__iframe-container.browser-interact-mode {
+    overflow: hidden;
+}
+
+.terminal-ui__iframe-container.browser-interact-mode .terminal-ui__iframe {
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+
+/* Scrollbar styling for Agent View panning */
+.terminal-ui__iframe-container.browser-view-mode::-webkit-scrollbar { width: 8px; height: 8px; }
+.terminal-ui__iframe-container.browser-view-mode::-webkit-scrollbar-track { background: var(--bg-secondary); }
+.terminal-ui__iframe-container.browser-view-mode::-webkit-scrollbar-thumb { background: var(--border-primary); border-radius: 4px; }
+.terminal-ui__iframe-container.browser-view-mode::-webkit-scrollbar-thumb:hover { background: #4a5068; }
+
 /* Responsive: on narrow screens, hide iframe pane when it's open */
 @media (max-width: 768px) {
     .terminal-ui.iframe-visible .terminal-ui__split-pane {
