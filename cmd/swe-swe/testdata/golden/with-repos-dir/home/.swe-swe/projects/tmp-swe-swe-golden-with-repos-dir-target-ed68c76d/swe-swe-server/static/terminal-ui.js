@@ -306,7 +306,7 @@ class TerminalUI extends HTMLElement {
                         <option value="preview">App Preview</option>
                         <option value="vscode">Code</option>
                         <option value="shell">Terminal</option>
-                        <option value="browser">Agent View</option>
+                        <option value="browser" hidden disabled>Agent View</option>
                     </select>
                     <span class="terminal-ui__assistant-badge">CLAUDE</span>
                 </div>
@@ -364,7 +364,7 @@ class TerminalUI extends HTMLElement {
                                     <button data-tab="preview" class="active">Preview</button>
                                     <button data-tab="vscode">Code</button>
                                     <button data-tab="shell">Terminal</button>
-                                    <button data-tab="browser">Agent View</button>
+                                    <button data-tab="browser" style="display: none;">Agent View</button>
                                 </div>
                             </div>
                             <div class="terminal-ui__iframe-location">
@@ -549,11 +549,14 @@ class TerminalUI extends HTMLElement {
 
         // Build services list (filter out entries with null URLs — e.g. preview before sessionUUID arrives)
         const baseUrl = getBaseUrl(window.location);
-        const services = [
+        const serviceEntries = [
             { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
             { name: 'preview', label: 'App Preview', url: this.getPreviewBaseUrl() },
-            { name: 'browser', label: 'Agent View', url: this.getBrowserViewUrl() }
-        ].filter(s => s.url != null);
+        ];
+        if (this.browserStarted) {
+            serviceEntries.push({ name: 'browser', label: 'Agent View', url: this.getBrowserViewUrl() });
+        }
+        const services = serviceEntries.filter(s => s.url != null);
 
         // Add shell link if not already in a shell session
         if (this.assistant !== 'shell') {
@@ -1027,6 +1030,13 @@ class TerminalUI extends HTMLElement {
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
+                // Show/hide Agent View tab based on browser state
+                if (msg.browserStarted && !this.browserStarted) {
+                    this.browserStarted = true;
+                    this.setAgentViewTabVisible(true);
+                } else if (!this.browserStarted) {
+                    this.browserStarted = false;
+                }
                 // Probe agent chat proxy — two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
@@ -1663,6 +1673,18 @@ class TerminalUI extends HTMLElement {
         // iOS Safari ignores display:none on <option> in native pickers;
         // use hidden+disabled attributes which Safari does respect.
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+        if (mobileOpt) {
+            mobileOpt.hidden = !visible;
+            mobileOpt.disabled = !visible;
+        }
+    }
+
+    // Show/hide the Agent View tab (desktop button + mobile dropdown option).
+    setAgentViewTabVisible(visible) {
+        const display = visible ? '' : 'none';
+        const desktopBtn = this.querySelector('button[data-tab="browser"]');
+        if (desktopBtn) desktopBtn.style.display = display;
+        const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="browser"]');
         if (mobileOpt) {
             mobileOpt.hidden = !visible;
             mobileOpt.disabled = !visible;

@@ -10,3 +10,13 @@
 141945 Step 2 result: Added sess.BroadcastStatus() call after startSessionBrowser succeeds in handleBrowserStartAPI.
   make test passes. Golden files updated.
   Step 2 DONE.
+141955 Step 3: Hide Agent View tab in terminal-ui.js when browserStarted is false
+  Will do: In handleJSONMessage "status" case, store browserStarted. Hide Agent View tab button (desktop), mobile dropdown option, and service link when false. Show when true.
+  Expect: Agent View tab hidden on page load (browserStarted=false), appears when status with browserStarted=true arrives
+142030 Step 3 result:
+  - Desktop tab button: hidden by default (style="display: none;"), shown via setAgentViewTabVisible(true)
+  - Mobile dropdown: hidden+disabled by default, toggled via setAgentViewTabVisible
+  - Service links: browser entry only included when this.browserStarted is true
+  - Status handler: stores browserStarted, calls setAgentViewTabVisible(true) on false→true transition
+  make test passes. Golden files updated.
+  Step 3 DONE.
