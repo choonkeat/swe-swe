@@ -33,7 +33,7 @@ Each swe-swe session runs its own isolated browser stack:
 
 ## Per-Session Browser
 
-Each session automatically starts its own browser processes:
+Browser processes start on-demand when the first Playwright MCP tool is used (not at session creation). There is a ~2-3 second one-time delay on the first tool call. Each session gets its own browser processes:
 
 | Process | Port | Purpose |
 |---------|------|---------|
@@ -59,7 +59,7 @@ MCP Playwright connects via `--cdp-endpoint http://localhost:$BROWSER_CDP_PORT`.
 
 ### Visual Observation
 
-Watch the browser in the **Agent View** tab in the swe-swe UI. Each session shows its own independent browser view via noVNC.
+Watch the browser in the **Agent View** tab in the swe-swe UI. Each session shows its own independent browser view via noVNC. The Agent View will show a connection waiting screen until the first Playwright tool is used, which triggers browser startup.
 
 ### MCP Playwright Integration
 

@@ -1,0 +1,10 @@
+161739 Starting Phase 4: Cleanup & Edge Cases
+161739 Will implement: Update browser-automation.md docs, verify logging, note Agent View edge case
+161739 Expected: Documentation updated to reflect on-demand browser startup, make test passes
+161937 Completed Phase 4:
+161937 - Updated container template browser-automation.md: noted on-demand startup, ~2-3s delay, Agent View behavior
+161937 - Updated docs/browser-automation.md: same changes for repo-level docs
+161937 - Logging already in place: mcp-lazy-init logs init request with method, URL, status code, and elapsed time
+161937 - Server already logs browser start with session UUID
+161937 - Agent View edge case: documented that VNC shows connection waiting until first Playwright tool use
+161937 - make test passes (all 3 test targets green)

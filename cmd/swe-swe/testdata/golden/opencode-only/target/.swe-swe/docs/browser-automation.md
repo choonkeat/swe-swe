@@ -13,7 +13,8 @@ swe-swe container (per session)
 ```
 
 - Each session gets its own isolated browser instance (Xvfb + Chromium + VNC)
-- User can watch and interact via the "Agent View" tab in the UI
+- Browser processes start on-demand: they are launched on the first Playwright MCP tool call, not at session creation. There is a ~2-3 second one-time delay on the first tool call.
+- User can watch and interact via the "Agent View" tab in the UI (appears after first Playwright tool use)
 - CDP (Chrome DevTools Protocol) is available on a per-session port via `$BROWSER_CDP_PORT`
 - noVNC provides a web-based VNC client for interactive browser access
 
@@ -51,5 +52,5 @@ ps aux | grep -E 'Xvfb|chromium|x11vnc|websockify'
 Should show processes for your session's display number.
 
 ### Common Issues
-- **Browser not started**: Browser processes start automatically with each session. Check server logs for startup errors.
+- **Browser not started**: Browser processes start on-demand when the first Playwright MCP tool is used. If browser tools fail, try using a Playwright tool first (e.g., `browser_navigate`). Check server logs for startup errors.
 - **Container needs rebuild**: After config changes, run `swe-swe stop && swe-swe build && swe-swe up`
