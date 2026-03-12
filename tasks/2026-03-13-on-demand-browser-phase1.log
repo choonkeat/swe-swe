@@ -10,3 +10,4 @@
 160949 - Added browser_start_test.go with 4 test cases (GET 405, unknown UUID 404, valid POST, already_started 200)
 160949 - make test passes (all tests green)
 160949 - Golden files updated (36 files, all showing same main.go template changes)
+163555 Fixed test: "valid POST" test was accepting both 200/500 (non-deterministic). Now clears PATH so Xvfb cannot be found, deterministically gets 500. Also verifies BrowserStarted stays false on failure. All tests pass.

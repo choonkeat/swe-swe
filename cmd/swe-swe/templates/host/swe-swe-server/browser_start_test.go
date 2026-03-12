@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -39,7 +40,7 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("valid POST calls startSessionBrowser", func(t *testing.T) {
+	t.Run("POST returns 500 when browser cannot start", func(t *testing.T) {
 		sess := &Session{
 			UUID:        testUUID,
 			PreviewPort: 3000,
@@ -48,29 +49,20 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		sessionsMu.Lock()
 		sessions[testUUID] = sess
 		sessionsMu.Unlock()
-		defer func() {
-			// Clean up any browser processes that may have started
-			stopSessionBrowser(sess)
-		}()
+
+		// Clear PATH so Xvfb binary cannot be found
+		origPath := os.Getenv("PATH")
+		os.Setenv("PATH", "")
+		defer os.Setenv("PATH", origPath)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start", nil)
 		w := httptest.NewRecorder()
 		handleBrowserStartAPI(w, req)
-		// Accept either 200 (binaries available) or 500 (binaries missing)
-		if w.Code != http.StatusOK && w.Code != http.StatusInternalServerError {
-			t.Errorf("expected 200 or 500, got %d", w.Code)
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("expected 500, got %d", w.Code)
 		}
-		if w.Code == http.StatusOK {
-			var resp map[string]string
-			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-				t.Fatalf("failed to parse response: %v", err)
-			}
-			if resp["status"] != "started" {
-				t.Errorf("expected status=started, got %q", resp["status"])
-			}
-			if !sess.BrowserStarted {
-				t.Error("expected BrowserStarted to be true after successful start")
-			}
+		if sess.BrowserStarted {
+			t.Error("expected BrowserStarted to remain false after failed start")
 		}
 	})
 
