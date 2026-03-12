@@ -206,3 +206,39 @@ Handle edge cases and clean up any loose ends.
 - Full manual test cycle
 - Review compose logs for clean startup/init sequence
 - Verify no regressions in existing functionality
+
+---
+
+## Phase 5: Hide Agent View Until Browser Starts
+
+### What will be achieved
+The Agent View tab is hidden by default and only appears (auto-activating) when browser processes are started on-demand. New browser visits to an already-started session see the Agent View tab immediately.
+
+### Steps
+
+1. **Add `browserStarted` to `BroadcastStatus()` JSON**
+   - In `BroadcastStatus()`, add `"browserStarted": sess.BrowserStarted` to the status message
+   - This field is sent on every status broadcast (client connect, resize, etc.)
+
+2. **Broadcast status after browser start in `handleBrowserStartAPI()`**
+   - After `startSessionBrowser(sess)` succeeds, call `sess.BroadcastStatus()`
+   - This pushes `browserStarted: true` to all connected WebSocket clients
+
+3. **Hide Agent View in terminal-ui.js when `browserStarted` is false**
+   - In `handleJSONMessage()` for `"status"` type, store `this.browserStarted`
+   - Hide the Agent View tab button (desktop), mobile dropdown option, and service link when `browserStarted` is false
+   - Use CSS class or `style.display` toggle based on the flag
+
+4. **Auto-switch to Agent View when browser starts**
+   - In `handleJSONMessage()`, detect when `browserStarted` transitions from false to true
+   - On that transition, call `switchPanelTab('browser')` to auto-activate the Agent View tab
+
+### Verification
+
+- `make test` passes
+- **Manual test with test container:**
+  1. Start a session — Agent View tab is NOT visible
+  2. Use a Playwright MCP tool (e.g., `browser_navigate`) — Agent View tab appears and auto-activates
+  3. Refresh the page — Agent View tab is still visible (session already has browser started)
+  4. Open a new browser window to the same session — Agent View tab is visible immediately
+  5. Check that other tabs (Preview, Code, Terminal) still work normally
