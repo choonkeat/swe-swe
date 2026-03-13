@@ -1034,6 +1034,7 @@ class TerminalUI extends HTMLElement {
                 if (msg.browserStarted && !this.browserStarted) {
                     this.browserStarted = true;
                     this.setAgentViewTabVisible(true);
+                    this.switchPanelTab('browser');
                 } else if (!this.browserStarted) {
                     this.browserStarted = false;
                 }

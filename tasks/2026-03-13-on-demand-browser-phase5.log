@@ -20,3 +20,9 @@
   - Status handler: stores browserStarted, calls setAgentViewTabVisible(true) on false→true transition
   make test passes. Golden files updated.
   Step 3 DONE.
+142045 Step 4: Auto-switch to Agent View when browser starts
+  Will do: On browserStarted false→true transition, call switchPanelTab('browser') to auto-activate Agent View
+  Expect: When browser first starts, the right panel auto-switches to show the browser VNC view
+142055 Step 4 result: Added switchPanelTab('browser') call on browserStarted false→true transition.
+  make test passes. Golden files updated.
+  Step 4 DONE.
