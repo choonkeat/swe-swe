@@ -209,7 +209,7 @@ Handle edge cases and clean up any loose ends.
 
 ---
 
-## Phase 5: Hide Agent View Until Browser Starts
+## Phase 5: Hide Agent View Until Browser Starts ✅
 
 ### What will be achieved
 The Agent View tab is hidden by default and only appears (auto-activating) when browser processes are started on-demand. New browser visits to an already-started session see the Agent View tab immediately.
