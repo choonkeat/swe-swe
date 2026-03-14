@@ -18,10 +18,10 @@
 
 ### Steps
 
-- [ ] **1.1** Add `DockerfileOnly bool` field to `InitConfig` struct in `cmd/swe-swe/init.go`
-- [ ] **1.2** Add `--dockerfile-only` flag parsing in `cmd/swe-swe/main.go`, wire to config
-- [ ] **1.3** Add golden test variant `dockerfile-only` in `cmd/swe-swe/main_test.go`
-- [ ] **1.4** Run `make build golden-update`
+- [x] **1.1** Add `DockerfileOnly bool` field to `InitConfig` struct in `cmd/swe-swe/init.go`
+- [x] **1.2** Add `--dockerfile-only` flag parsing in `cmd/swe-swe/main.go`, wire to config
+- [x] **1.3** Add golden test variant `dockerfile-only` in `cmd/swe-swe/main_test.go`
+- [x] **1.4** Run `make build golden-update`
 
 ### Verification
 

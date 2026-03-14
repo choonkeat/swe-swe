@@ -101,6 +101,7 @@ type InitConfig struct {
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
+	DockerfileOnly      bool                `json:"dockerfileOnly,omitempty"`
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -440,6 +441,7 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
+	dockerfileOnly := fs.Bool("dockerfile-only", false, "Generate a single Dockerfile instead of docker-compose setup")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
 	emailFlag := fs.String("email", "", "Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)")
@@ -640,6 +642,9 @@ func handleInit() {
 		if !explicitFlags["with-vscode"] {
 			*withVSCode = savedConfig.WithVSCode
 		}
+		if !explicitFlags["dockerfile-only"] {
+			*dockerfileOnly = savedConfig.DockerfileOnly
+		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
 		}
@@ -697,6 +702,7 @@ func handleInit() {
 		NpmPackages:         npmPkgs,
 		WithDocker:          *withDocker,
 		WithVSCode:          *withVSCode,
+		DockerfileOnly:      *dockerfileOnly,
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,

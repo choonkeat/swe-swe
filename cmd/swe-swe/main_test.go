@@ -701,6 +701,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
 		{"with-vscode", []string{"--with-vscode"}},
+		{"dockerfile-only", []string{"--dockerfile-only"}},
 	}
 
 	for _, v := range variants {
@@ -815,7 +816,8 @@ func TestGoldenFiles(t *testing.T) {
 				v.name == "with-docker" ||
 				v.name == "with-repos-dir" ||
 				v.name == "with-proxy-port-offset" ||
-				v.name == "with-vscode"
+				v.name == "with-vscode" ||
+				v.name == "dockerfile-only"
 			if hasNonSlashAgents {
 				if _, err := os.Stat(sweSweSetup); err != nil {
 					t.Errorf("Target file missing (expected for variant with non-slash agents): %s", sweSweSetup)

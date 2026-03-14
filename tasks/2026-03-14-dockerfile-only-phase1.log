@@ -1,0 +1,11 @@
+214259 Phase 1: Baseline flag (TDD commit 1)
+214259 Step 1.1: Added DockerfileOnly bool to InitConfig struct
+214259 Step 1.2: Added --dockerfile-only flag parsing in handleInit(), wired to config including reuse logic
+214259 Step 1.3: Added golden test variant "dockerfile-only" in main_test.go and Makefile
+214259 Step 1.4: Ran make build golden-update
+
+214259 Verification: make test — expected: all tests pass — will run now
+214259 Verification: make test — PASS. All tests pass.
+214259 Verification: golden diff — expected: only init.json change with "dockerfileOnly": true
+214259 Verification: golden diff — CONFIRMED. Only new dockerfile-only/ directory added, init.json shows "dockerfileOnly": true. No other golden variants changed.
+214259 Phase 1 complete.
