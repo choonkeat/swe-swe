@@ -1531,6 +1531,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
     gap: 8px;
     font-size: 13px;
     color: var(--text-muted);
+    position: relative;
+    z-index: 20; /* above touch-scroll-proxy (z-index: 10) so tabs are tappable on iPad */
 }
 
 .terminal-ui__terminal-icon {
