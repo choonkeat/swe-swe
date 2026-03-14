@@ -43,22 +43,22 @@ feat: add --dockerfile-only flag (baseline, no effect yet)
 
 ### Steps
 
-- [ ] **2.1** Create `cmd/swe-swe/templates/host/swe-swe-server/auth.go` with auth logic extracted from `cmd/swe-swe/templates/host/auth/main.go`:
+- [x] **2.1** Create `cmd/swe-swe/templates/host/swe-swe-server/auth.go` with auth logic extracted from `cmd/swe-swe/templates/host/auth/main.go`:
   - Cookie signing/verification (HMAC-SHA256, 7-day expiry)
   - Rate limiter (per-IP, 10 attempts / 5 min window)
   - Login form HTML (GET handler)
   - Login POST handler (password validation, cookie set, redirect)
   - `authMiddleware(next http.Handler) http.Handler` — wraps any handler with cookie check
-- [ ] **2.2** In `main.go`, after setting up all handlers:
+- [x] **2.2** In `main.go`, after setting up all handlers:
   - Read `SWE_SWE_PASSWORD` env var
   - If set, register `/swe-swe-auth/login` and wrap `http.DefaultServeMux` with `authMiddleware`
   - If unset, no change (Traefik/auth-service handle it in compose mode)
-- [ ] **2.3** Auth middleware exemptions:
+- [x] **2.3** Auth middleware exemptions:
   - `/swe-swe-auth/login` — login page itself
   - `/ssl/ca.crt` — certificate download (pre-auth)
   - `/mcp` — uses its own key-based auth
   - Static assets needed for login page (CSS if any)
-- [ ] **2.4** Run `make build golden-update` — golden files should be unchanged since auth.go is a new file in the template but doesn't affect init output structure
+- [x] **2.4** Run `make build golden-update` — golden files should be unchanged since auth.go is a new file in the template but doesn't affect init output structure
 
 ### Verification
 

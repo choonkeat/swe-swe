@@ -1,0 +1,19 @@
+214758 Phase 2: Embed auth middleware in swe-swe-server
+214758 Step 2.1: Created auth.go with cookie signing/verification, rate limiter, login form, login handler, authMiddleware
+214758 Step 2.2: Integrated setupEmbeddedAuth into main.go — reads SWE_SWE_PASSWORD env var, wraps DefaultServeMux
+214758 Step 2.3: Auth middleware exemptions: /swe-swe-auth/login, /ssl/*, /mcp
+214758 Step 2.4: Ran make build golden-update — golden files show auth.go appearing in all variants, main.go updated in all variants
+
+214758 Verification: make test — expected: all tests pass
+214758 Verification: make test — PASS. All tests pass (initial build error: strings.Itoa → fixed to fmt.Sprintf)
+214758 Verification: golden diff — expected: auth.go new file in all variants, main.go changed in all variants
+214758 Verification: golden diff — CONFIRMED. 38 files changed: auth.go new in all variants, main.go shows embedded auth setup
+214758 Unit tests: authSignCookie/authVerifyCookie round-trip — PASS
+214758 Unit tests: expired cookie returns false — PASS
+214758 Unit tests: wrong secret returns false — PASS
+214758 Unit tests: middleware redirects unauthenticated — PASS
+214758 Unit tests: middleware passes authenticated — PASS
+214758 Unit tests: exempt paths pass without auth — PASS
+214758 Unit tests: wrong password returns 401 — PASS
+214758 Unit tests: correct password sets cookie and redirects — PASS
+214758 Phase 2 complete.

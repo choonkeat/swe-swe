@@ -2183,7 +2183,15 @@ func main() {
 	serverCtx, serverCancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer serverCancel()
 
-	srv := &http.Server{Addr: *addr}
+	// Set up embedded auth if SWE_SWE_PASSWORD is set (dockerfile-only mode).
+	// In compose mode, Traefik + auth service handle authentication externally.
+	var handler http.Handler
+	if authPassword := os.Getenv("SWE_SWE_PASSWORD"); authPassword != "" {
+		handler = setupEmbeddedAuth(authPassword)
+		log.Printf("Embedded auth enabled (SWE_SWE_PASSWORD set)")
+	}
+
+	srv := &http.Server{Addr: *addr, Handler: handler}
 	go func() {
 		defer recoverGoroutine("shutdown handler")
 		<-serverCtx.Done()
