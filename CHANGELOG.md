@@ -1,5 +1,38 @@
 # CHANGELOG
 
+## v2.15.0 - Per-Session Browser, On-Demand Startup & VS Code Opt-In
+
+### Features
+
+- **Per-session browser**: Each session gets its own Chrome/Xvfb/VNC stack instead of a shared sidecar — eliminates cross-session interference (ADR-0034)
+- **On-demand browser startup**: Browser processes (~1.5 GB) deferred until first Playwright MCP call via `mcp-lazy-init` proxy — code-only sessions stay lightweight (ADR-0035)
+- **Agent View auto-show**: Agent View tab hidden until browser starts, then auto-switches to it
+- **View only / Interactive toggle**: Agent View gains a mode toggle between view-only VNC and interactive control
+- **VS Code opt-in**: New `--with-vscode` flag makes code-server installation opt-in (ADR-0036)
+- **Slash command autocomplete**: `/api/autocomplete` endpoint, project-level + flat command discovery, duplicate disambiguation
+- **Slash command skills**: Built-in `plan-carefully`, `execute-step-by-step`, `execute-in-worktree` commands
+
+### Bug Fixes
+
+- **Preview proxy OOM**: Update agent-reverse-proxy to v0.2.9
+- **Memory leak**: Shared `http.Client` prevents per-request Transport OOM
+- **Chrome singleton lock**: Per-session user-data-dir prevents conflict
+- **Stale template cleanup**: `swe-swe init` cleans container-templates dir
+- **iPad tab tapping**: Raise tab bar z-index above touch-scroll-proxy
+- **Cache busting**: Use GitCommit for static assets + vnc_lite.html
+- **VNC routing**: Fix Traefik→websockify port routing, server-sent vncProxyPort
+
+### Refactoring
+
+- Replace CDP screencast with VNC for browser viewing
+
+### Documentation
+
+- ADR-0034: Per-session Chrome/VNC architecture
+- ADR-0035: On-demand browser startup via mcp-lazy-init
+- ADR-0036: VS Code (code-server) as opt-in flag
+- Extract crash forensics and host security runbooks from CLAUDE.md
+
 ## v2.14.0 - Autocomplete, Session Summaries & VNC Browser
 
 ### Features
