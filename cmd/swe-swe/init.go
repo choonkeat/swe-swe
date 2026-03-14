@@ -1103,6 +1103,11 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	// Copy ALL container templates into server source for embedding in server binary.
 	// This allows the server to write swe-swe files into cloned repos and new projects.
 	// All files are included unconditionally (extra docs cause no harm).
+	// Clean the directory first so stale files from previous inits don't leak into the Docker image.
+	containerTemplatesDir := filepath.Join(sweDir, "swe-swe-server", "container-templates")
+	if err := os.RemoveAll(containerTemplatesDir); err != nil {
+		log.Fatalf("Failed to clean container-templates directory: %v", err)
+	}
 	allContainerTemplates := []string{
 		"templates/container/.swe-swe/docs/AGENTS.md",
 		"templates/container/.swe-swe/docs/browser-automation.md",
