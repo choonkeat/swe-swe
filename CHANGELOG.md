@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## v2.16.0 - Dockerfile-Only Single-Container Mode
+
+### Features
+
+- **`--dockerfile-only` mode**: New `swe-swe init --dockerfile-only` flag generates a single Dockerfile for deployment on platforms like Fly.io, Railway, and Render that only support single containers (ADR-0037)
+- **Embedded auth**: Auth middleware (cookie-based, HMAC-SHA256, rate limiting) embedded in swe-swe-server, activated by `SWE_SWE_PASSWORD` env var — no separate auth service needed
+
+### Documentation
+
+- ADR-0037: `--dockerfile-only` single-container mode
+
 ## v2.15.0 - Per-Session Browser, On-Demand Startup & VS Code Opt-In
 
 ### Features

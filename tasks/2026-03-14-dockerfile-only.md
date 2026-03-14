@@ -126,12 +126,12 @@ feat: generate single Dockerfile in --dockerfile-only mode
 
 ### Steps
 
-- [ ] **4.1** Write `docs/adr/0037-dockerfile-only-mode.md`:
+- [x] **4.1** Write `docs/adr/0037-dockerfile-only-mode.md`:
   - Context: Single-container platforms (Fly, Railway, Render) can't use docker-compose
   - Decision: `--dockerfile-only` flag generates single Dockerfile with embedded auth
   - Trade-offs: No built-in TLS (platform provides it), no Traefik routing features
-- [ ] **4.2** Update `CHANGELOG.md` with the feature
-- [ ] **4.3** Add usage example to docs (optional):
+- [x] **4.2** Update `CHANGELOG.md` with the feature
+- [x] **4.3** Add usage example to docs (optional):
   ```
   cd my-project
   swe-swe init --dockerfile-only
