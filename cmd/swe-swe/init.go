@@ -1019,9 +1019,32 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 			}
 		}
 
+		// Skip compose-only files when dockerfile-only mode is enabled
+		if config.DockerfileOnly {
+			if hostFile == "templates/host/docker-compose.yml" ||
+				hostFile == "templates/host/traefik-dynamic.yml" ||
+				strings.HasPrefix(hostFile, "templates/host/auth/") ||
+				hostFile == "templates/host/code-server/Dockerfile" ||
+				hostFile == "templates/host/nginx-vscode.conf" ||
+				hostFile == "templates/host/.dockerignore" {
+				continue
+			}
+		}
+
 		// Process Dockerfile template with conditional sections
 		if hostFile == "templates/host/Dockerfile" {
 			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID))
+			// In dockerfile-only mode, change the server port and add EXPOSE
+			if config.DockerfileOnly {
+				contentStr := string(content)
+				contentStr = strings.Replace(contentStr, `"-addr", "0.0.0.0:9898"`, `"-addr", "0.0.0.0:${SWE_PORT:-1977}"`, 1)
+				// Add EXPOSE and ENV before the CMD line
+				contentStr = strings.Replace(contentStr,
+					"# Default command: run swe-swe-server",
+					"# Environment variables for dockerfile-only mode\nENV SWE_PORT=1977\nENV SWE_SWE_PASSWORD=changeme\n\nEXPOSE ${SWE_PORT:-1977}\n\n# Default command: run swe-swe-server",
+					1)
+				content = []byte(contentStr)
+			}
 		}
 
 		// Process docker-compose.yml template with conditional sections
@@ -1158,5 +1181,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")
-	fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
+	if config.DockerfileOnly {
+		fmt.Printf("\nDockerfile-only mode: no docker-compose setup generated.\n")
+		fmt.Printf("Next steps:\n")
+		fmt.Printf("  docker build -t my-swe -f %s/Dockerfile %s/\n", sweDir, sweDir)
+		fmt.Printf("  docker run -p 1977:1977 -e SWE_SWE_PASSWORD=mypass -v %s:/workspace my-swe\n", absPath)
+	} else {
+		fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
+	}
 }

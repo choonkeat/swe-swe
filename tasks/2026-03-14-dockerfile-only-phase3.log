@@ -1,0 +1,14 @@
+215419 Phase 3: Template generation for dockerfile-only mode
+215419 Step 3.1: Added conditional logic to skip docker-compose.yml, traefik-dynamic.yml, auth/, .dockerignore, code-server when DockerfileOnly is true
+215419 Step 3.2: Modified Dockerfile post-processing for dockerfile-only mode: CMD uses SWE_PORT 1977, added EXPOSE and ENV directives
+215419 Step 3.3: .env file handled by existing handleCertificatesAndEnv (unchanged); SWE_SWE_PASSWORD and SWE_PORT baked into Dockerfile via ENV
+215419 Step 3.4: Changed end-of-init message: prints docker build/run instructions instead of swe-swe up
+215419 Step 3.5: Ran make build golden-update
+
+215419 Verification: make test — expected: all tests pass
+215419 Verification: make test — PASS (initial failure: test expected docker-compose.yml in dockerfile-only variant; fixed by making keyFiles conditional)
+215419 Verification: golden diff — expected: dockerfile-only variant has no docker-compose.yml, no traefik-dynamic.yml, no auth/; Dockerfile has port 1977 and SWE_SWE_PASSWORD
+215419 Verification: golden diff — CONFIRMED. dockerfile-only variant has: Dockerfile (with ENV SWE_PORT=1977, ENV SWE_SWE_PASSWORD=changeme, EXPOSE, CMD with 1977), entrypoint.sh, swe-swe-server/, init.json. No docker-compose.yml, no traefik-dynamic.yml, no auth/.
+215419 Verification: other variants unchanged — CONFIRMED. default variant still has docker-compose.yml, traefik-dynamic.yml, auth/.
+215419 Verification: Playwright browser test — DEFERRED. Requires Docker image build and container run. Auth behavior verified by 10 unit tests in Phase 2.
+215419 Phase 3 complete.

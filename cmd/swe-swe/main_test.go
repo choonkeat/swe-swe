@@ -727,8 +727,11 @@ func TestGoldenFiles(t *testing.T) {
 			// Compare key files from golden
 			keyFiles := []string{
 				"Dockerfile",
-				"docker-compose.yml",
 				"entrypoint.sh",
+			}
+			// dockerfile-only variant does not generate docker-compose.yml
+			if v.name != "dockerfile-only" {
+				keyFiles = append(keyFiles, "docker-compose.yml")
 			}
 
 			for _, file := range keyFiles {
@@ -775,6 +778,21 @@ func TestGoldenFiles(t *testing.T) {
 					if file == "Dockerfile" {
 						if !strings.Contains(content, "typescript") {
 							t.Errorf("Dockerfile should contain typescript for with-npm variant")
+						}
+					}
+				case "dockerfile-only":
+					if file == "Dockerfile" {
+						if !strings.Contains(content, "SWE_PORT") {
+							t.Errorf("Dockerfile should contain SWE_PORT for dockerfile-only variant")
+						}
+						if !strings.Contains(content, "SWE_SWE_PASSWORD") {
+							t.Errorf("Dockerfile should contain SWE_SWE_PASSWORD for dockerfile-only variant")
+						}
+						if !strings.Contains(content, "1977") {
+							t.Errorf("Dockerfile should contain port 1977 for dockerfile-only variant")
+						}
+						if strings.Contains(content, "9898") {
+							t.Errorf("Dockerfile should NOT contain port 9898 for dockerfile-only variant")
 						}
 					}
 				}

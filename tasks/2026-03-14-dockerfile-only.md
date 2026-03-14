@@ -83,20 +83,20 @@ feat: embed auth middleware in swe-swe-server (activated by SWE_SWE_PASSWORD)
 
 ### Steps
 
-- [ ] **3.1** In `init.go`, add conditional logic when `DockerfileOnly` is true:
+- [x] **3.1** In `init.go`, add conditional logic when `DockerfileOnly` is true:
   - **Generate**: `Dockerfile`, `entrypoint.sh`, `.env`, `swe-swe-server/` source, `home/` directory
   - **Skip**: `docker-compose.yml`, `traefik-dynamic.yml`, `auth/` directory
-- [ ] **3.2** Modify Dockerfile template (or create variant) for dockerfile-only mode:
+- [x] **3.2** Modify Dockerfile template (or create variant) for dockerfile-only mode:
   - `EXPOSE ${SWE_PORT:-1977}`
   - `CMD` uses `-addr 0.0.0.0:${SWE_PORT:-1977}` instead of `:9898`
   - `ENV SWE_SWE_PASSWORD=changeme` to activate embedded auth
   - `ENV SWE_PORT=1977`
-- [ ] **3.3** Generate `.env` for dockerfile-only mode:
+- [x] **3.3** Generate `.env` for dockerfile-only mode:
   - `SWE_PORT=1977`
   - `SWE_SWE_PASSWORD=changeme`
   - API keys (same as compose mode)
-- [ ] **3.4** Skip `swe-swe up` docker-compose commands when `DockerfileOnly` is true — print instructions for `docker build` and `docker run` instead
-- [ ] **3.5** Run `make build golden-update` — dockerfile-only variant should show:
+- [x] **3.4** Skip `swe-swe up` docker-compose commands when `DockerfileOnly` is true — print instructions for `docker build` and `docker run` instead
+- [x] **3.5** Run `make build golden-update` — dockerfile-only variant should show:
   - No `docker-compose.yml`
   - No `traefik-dynamic.yml`
   - No `auth/` directory
