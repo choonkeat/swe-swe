@@ -163,7 +163,6 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-repos-dir FLAGS="--repos-dir /data/repos"
 	@$(MAKE) _golden-variant NAME=with-proxy-port-offset FLAGS="--proxy-port-offset 50000"
 	@$(MAKE) _golden-variant NAME=with-vscode FLAGS="--with-vscode"
-	@$(MAKE) _golden-variant NAME=dockerfile-only FLAGS="--dockerfile-only"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs
 	@$(MAKE) _golden-certs-ssl-cert-file

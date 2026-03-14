@@ -80,34 +80,7 @@ services:
     networks:
       - swe-network
     depends_on:
-      - auth
       - swe-swe
-    restart: unless-stopped
-
-  auth:
-    build:
-      context: ./auth
-    environment:
-      - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
-    labels:
-      - "swe.project=${PROJECT_NAME}"
-      - "traefik.enable=true"
-      - "traefik.http.routers.${PROJECT_NAME}-auth.rule=PathPrefix(`/swe-swe-auth`)"
-      - "traefik.http.routers.${PROJECT_NAME}-auth.priority=200"
-      - "traefik.http.routers.${PROJECT_NAME}-auth.middlewares=login-ratelimit@file"
-# {{IF SSL}}
-      - "traefik.http.routers.${PROJECT_NAME}-auth.entrypoints=websecure"
-# {{ENDIF}}
-# {{IF SELFSIGN}}
-      - "traefik.http.routers.${PROJECT_NAME}-auth.tls=true"
-# {{ENDIF}}
-# {{IF LETSENCRYPT}}
-      - "traefik.http.routers.${PROJECT_NAME}-auth.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${PROJECT_NAME}-auth.tls.domains[0].main={{DOMAIN}}"
-# {{ENDIF}}
-      - "traefik.http.services.${PROJECT_NAME}-auth.loadbalancer.server.port=4180"
-    networks:
-      - swe-network
     restart: unless-stopped
 
   swe-swe:
@@ -171,6 +144,8 @@ services:
     networks:
       - swe-network
     environment:
+      # Auth password (activates embedded auth middleware)
+      - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
       # Pass through API keys from host environment (set as env vars or in .env file)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       # - GEMINI_API_KEY=${GEMINI_API_KEY:-}

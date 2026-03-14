@@ -162,6 +162,7 @@ func runInteractiveInit(absPath string, metadataDir string, stdin io.Reader, std
 	config := InitConfig{
 		Agents:              agents,
 		WithDocker:          withDocker,
+		DockerfileOnly:      sslFlag == "no", // no VS Code in interactive mode; auto-detect: no SSL = dockerfile-only
 		SSL:                 sslFlag,
 		Email:               email,
 		PreviewPorts:        "3000-3019",

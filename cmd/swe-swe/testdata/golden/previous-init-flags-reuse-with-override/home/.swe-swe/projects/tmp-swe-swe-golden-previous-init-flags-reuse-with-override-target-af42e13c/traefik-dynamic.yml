@@ -5,7 +5,7 @@ http:
     # ForwardAuth middleware for session-based authentication
     forwardauth:
       forwardAuth:
-        address: "http://auth:4180/swe-swe-auth/verify"
+        address: "http://swe-swe:9898/swe-swe-auth/verify"
         # Trust X-Forwarded-* headers for proper URL handling
         trustForwardHeader: true
 

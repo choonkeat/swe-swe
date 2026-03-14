@@ -101,7 +101,7 @@ type InitConfig struct {
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
-	DockerfileOnly      bool                `json:"dockerfileOnly,omitempty"`
+	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -441,7 +441,7 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
-	dockerfileOnly := fs.Bool("dockerfile-only", false, "Generate a single Dockerfile instead of docker-compose setup")
+	// Note: dockerfile-only mode is auto-detected (no SSL + no VS Code = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
 	emailFlag := fs.String("email", "", "Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)")
@@ -642,9 +642,6 @@ func handleInit() {
 		if !explicitFlags["with-vscode"] {
 			*withVSCode = savedConfig.WithVSCode
 		}
-		if !explicitFlags["dockerfile-only"] {
-			*dockerfileOnly = savedConfig.DockerfileOnly
-		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
 		}
@@ -702,7 +699,7 @@ func handleInit() {
 		NpmPackages:         npmPkgs,
 		WithDocker:          *withDocker,
 		WithVSCode:          *withVSCode,
-		DockerfileOnly:      *dockerfileOnly,
+		DockerfileOnly:      *sslFlag == "no" && !*withVSCode,
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
@@ -1019,11 +1016,15 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 			}
 		}
 
+		// Auth is now embedded in swe-swe-server — skip standalone auth service files
+		if strings.HasPrefix(hostFile, "templates/host/auth/") {
+			continue
+		}
+
 		// Skip compose-only files when dockerfile-only mode is enabled
 		if config.DockerfileOnly {
 			if hostFile == "templates/host/docker-compose.yml" ||
 				hostFile == "templates/host/traefik-dynamic.yml" ||
-				strings.HasPrefix(hostFile, "templates/host/auth/") ||
 				hostFile == "templates/host/code-server/Dockerfile" ||
 				hostFile == "templates/host/nginx-vscode.conf" ||
 				hostFile == "templates/host/.dockerignore" {
@@ -1149,6 +1150,11 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	containerTemplatesDir := filepath.Join(sweDir, "swe-swe-server", "container-templates")
 	if err := os.RemoveAll(containerTemplatesDir); err != nil {
 		log.Fatalf("Failed to clean container-templates directory: %v", err)
+	}
+	// Auth is now embedded in swe-swe-server — remove stale standalone auth directory from previous inits
+	authDir := filepath.Join(sweDir, "auth")
+	if err := os.RemoveAll(authDir); err != nil {
+		log.Fatalf("Failed to clean auth directory: %v", err)
 	}
 	allContainerTemplates := []string{
 		"templates/container/.swe-swe/docs/AGENTS.md",

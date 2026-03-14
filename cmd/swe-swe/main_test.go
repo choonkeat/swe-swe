@@ -701,7 +701,6 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
 		{"with-vscode", []string{"--with-vscode"}},
-		{"dockerfile-only", []string{"--dockerfile-only"}},
 	}
 
 	for _, v := range variants {
@@ -729,8 +728,9 @@ func TestGoldenFiles(t *testing.T) {
 				"Dockerfile",
 				"entrypoint.sh",
 			}
-			// dockerfile-only variant does not generate docker-compose.yml
-			if v.name != "dockerfile-only" {
+			// Compose mode (SSL or VS Code) generates docker-compose.yml; dockerfile-only mode does not
+			isComposeMode := strings.HasPrefix(v.name, "with-ssl-") || strings.Contains(v.name, "vscode")
+			if isComposeMode {
 				keyFiles = append(keyFiles, "docker-compose.yml")
 			}
 
@@ -780,19 +780,20 @@ func TestGoldenFiles(t *testing.T) {
 							t.Errorf("Dockerfile should contain typescript for with-npm variant")
 						}
 					}
-				case "dockerfile-only":
+				case "default":
 					if file == "Dockerfile" {
+						// Default variant is now dockerfile-only (no SSL, no VS Code)
 						if !strings.Contains(content, "SWE_PORT") {
-							t.Errorf("Dockerfile should contain SWE_PORT for dockerfile-only variant")
+							t.Errorf("Dockerfile should contain SWE_PORT for default (dockerfile-only) variant")
 						}
 						if !strings.Contains(content, "SWE_SWE_PASSWORD") {
-							t.Errorf("Dockerfile should contain SWE_SWE_PASSWORD for dockerfile-only variant")
+							t.Errorf("Dockerfile should contain SWE_SWE_PASSWORD for default (dockerfile-only) variant")
 						}
 						if !strings.Contains(content, "1977") {
-							t.Errorf("Dockerfile should contain port 1977 for dockerfile-only variant")
+							t.Errorf("Dockerfile should contain port 1977 for default (dockerfile-only) variant")
 						}
 						if strings.Contains(content, "9898") {
-							t.Errorf("Dockerfile should NOT contain port 9898 for dockerfile-only variant")
+							t.Errorf("Dockerfile should NOT contain port 9898 for default (dockerfile-only) variant")
 						}
 					}
 				}
@@ -834,8 +835,7 @@ func TestGoldenFiles(t *testing.T) {
 				v.name == "with-docker" ||
 				v.name == "with-repos-dir" ||
 				v.name == "with-proxy-port-offset" ||
-				v.name == "with-vscode" ||
-				v.name == "dockerfile-only"
+				v.name == "with-vscode"
 			if hasNonSlashAgents {
 				if _, err := os.Stat(sweSweSetup); err != nil {
 					t.Errorf("Target file missing (expected for variant with non-slash agents): %s", sweSweSetup)
@@ -898,6 +898,16 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 			// Generate expected output from template
 			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, false, v.slashCommands, testUID, testGID)
+
+			// Apply dockerfile-only post-processing for non-SSL/non-VS-Code variants
+			isComposeMode := strings.HasPrefix(v.name, "with-ssl-")
+			if !isComposeMode {
+				expected = strings.Replace(expected, `"-addr", "0.0.0.0:9898"`, `"-addr", "0.0.0.0:${SWE_PORT:-1977}"`, 1)
+				expected = strings.Replace(expected,
+					"# Default command: run swe-swe-server",
+					"# Environment variables for dockerfile-only mode\nENV SWE_PORT=1977\nENV SWE_SWE_PASSWORD=changeme\n\nEXPOSE ${SWE_PORT:-1977}\n\n# Default command: run swe-swe-server",
+					1)
+			}
 
 			// Read golden file
 			goldenDir := filepath.Join("testdata", "golden", v.name, "home", ".swe-swe", "projects")

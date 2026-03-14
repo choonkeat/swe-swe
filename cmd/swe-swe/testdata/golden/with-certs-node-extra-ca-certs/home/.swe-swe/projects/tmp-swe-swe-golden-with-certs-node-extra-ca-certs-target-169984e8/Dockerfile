@@ -133,5 +133,11 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default working directory (entrypoint will cd to /workspace for the server)
 WORKDIR /workspace
 
+# Environment variables for dockerfile-only mode
+ENV SWE_PORT=1977
+ENV SWE_SWE_PASSWORD=changeme
+
+EXPOSE ${SWE_PORT:-1977}
+
 # Default command: run swe-swe-server pointing to /workspace
-CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
+CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-addr", "0.0.0.0:${SWE_PORT:-1977}"]
