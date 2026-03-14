@@ -49,6 +49,9 @@ import (
 //go:embed all:static
 var staticFS embed.FS
 
+//go:embed all:page-templates
+var pageTemplatesFS embed.FS
+
 //go:embed all:container-templates
 var containerTemplatesFS embed.FS
 
@@ -1703,7 +1706,7 @@ func main() {
 	}
 
 	// Parse templates
-	indexContent, err := staticFS.ReadFile("static/index.html")
+	indexContent, err := pageTemplatesFS.ReadFile("page-templates/index.html")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1712,7 +1715,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	selectionContent, err := staticFS.ReadFile("static/selection.html")
+	selectionContent, err := pageTemplatesFS.ReadFile("page-templates/selection.html")
 	if err != nil {
 		log.Fatal(err)
 	}
