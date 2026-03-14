@@ -304,7 +304,7 @@ class TerminalUI extends HTMLElement {
                         <option value="agent-terminal">Agent Terminal</option>
                         <option value="agent-chat" hidden disabled>Agent Chat</option>
                         <option value="preview">App Preview</option>
-                        <option value="vscode">Code</option>
+                        <option value="vscode" {{VSCODE_OPTION_ATTR}}>Code</option>
                         <option value="shell">Terminal</option>
                         <option value="browser" hidden disabled>Agent View</option>
                     </select>
@@ -362,7 +362,7 @@ class TerminalUI extends HTMLElement {
                             <div class="terminal-ui__panel-header desktop-only">
                                 <div class="terminal-ui__panel-tabs">
                                     <button data-tab="preview" class="active">Preview</button>
-                                    <button data-tab="vscode">Code</button>
+                                    <button data-tab="vscode" style="{{VSCODE_TAB_STYLE}}">Code</button>
                                     <button data-tab="shell">Terminal</button>
                                     <button data-tab="browser" style="display: none;">Agent View</button>
                                 </div>
@@ -550,7 +550,7 @@ class TerminalUI extends HTMLElement {
         // Build services list (filter out entries with null URLs — e.g. preview before sessionUUID arrives)
         const baseUrl = getBaseUrl(window.location);
         const serviceEntries = [
-            { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
+            {{VSCODE_SERVICE_ENTRY}}
             { name: 'preview', label: 'App Preview', url: this.getPreviewBaseUrl() },
         ];
         if (this.browserStarted) {

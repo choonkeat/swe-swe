@@ -100,6 +100,7 @@ type InitConfig struct {
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
+	WithVSCode          bool                `json:"withVSCode,omitempty"`
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -438,6 +439,7 @@ func handleInit() {
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
+	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
 	emailFlag := fs.String("email", "", "Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)")
@@ -635,6 +637,9 @@ func handleInit() {
 		if !explicitFlags["with-docker"] {
 			*withDocker = savedConfig.WithDocker
 		}
+		if !explicitFlags["with-vscode"] {
+			*withVSCode = savedConfig.WithVSCode
+		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
 		}
@@ -691,6 +696,7 @@ func handleInit() {
 		AptPackages:         aptPkgs,
 		NpmPackages:         npmPkgs,
 		WithDocker:          *withDocker,
+		WithVSCode:          *withVSCode,
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
@@ -1000,6 +1006,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 			log.Fatalf("Failed to read embedded file %q: %v", hostFile, err)
 		}
 
+		// Skip code-server files when VSCode is not enabled
+		if !config.WithVSCode {
+			if hostFile == "templates/host/code-server/Dockerfile" || hostFile == "templates/host/nginx-vscode.conf" {
+				continue
+			}
+		}
+
 		// Process Dockerfile template with conditional sections
 		if hostFile == "templates/host/Dockerfile" {
 			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID))
@@ -1007,12 +1020,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process docker-compose.yml template with conditional sections
 		if hostFile == "templates/host/docker-compose.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 		}
 
 		// Process entrypoint.sh template with conditional sections
@@ -1031,12 +1044,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process terminal-ui.js template with UI customization values
 		if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
-			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily))
+			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily, config.WithVSCode))
 		}
 
 		// Process terminal-ui.css template with UI customization values
 		if hostFile == "templates/host/swe-swe-server/static/styles/terminal-ui.css" {
-			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily))
+			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily, config.WithVSCode))
 		}
 
 		// Calculate destination path, preserving subdirectories

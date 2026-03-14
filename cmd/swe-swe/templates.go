@@ -119,7 +119,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int) string {
+func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -362,6 +362,72 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 			if strings.Contains(line, "{{DOMAIN}}") {
 				line = strings.ReplaceAll(line, "{{DOMAIN}}", domain)
 			}
+			// Handle VSCODE_SERVICES placeholder — generates vscode-proxy + code-server services or empty
+			if strings.Contains(line, "{{VSCODE_SERVICES}}") {
+				if withVSCode {
+					var vscodeSslLabels string
+					if isSSL {
+						vscodeSslLabels += fmt.Sprintf("      - \"traefik.http.routers.${PROJECT_NAME}-vscode.entrypoints=websecure\"\n")
+					}
+					if isSelfSign {
+						vscodeSslLabels += fmt.Sprintf("      - \"traefik.http.routers.${PROJECT_NAME}-vscode.tls=true\"\n")
+					}
+					if isLetsEncrypt {
+						vscodeSslLabels += fmt.Sprintf("      - \"traefik.http.routers.${PROJECT_NAME}-vscode.tls.certresolver=letsencrypt\"\n")
+						vscodeSslLabels += fmt.Sprintf("      - \"traefik.http.routers.${PROJECT_NAME}-vscode.tls.domains[0].main=%s\"\n", domain)
+					}
+					vscodeBlock := fmt.Sprintf(`  vscode-proxy:
+    image: nginx:latest
+    volumes:
+      - ./nginx-vscode.conf:/etc/nginx/conf.d/default.conf:ro
+    labels:
+      - "swe.project=${PROJECT_NAME}"
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.rule=PathPrefix(`+"`"+`/vscode`+"`"+`)"
+      - "traefik.http.routers.${PROJECT_NAME}-vscode.priority=100"
+%s      - "traefik.http.routers.${PROJECT_NAME}-vscode.middlewares=forwardauth@file"
+      - "traefik.http.services.${PROJECT_NAME}-vscode.loadbalancer.server.port=8081"
+    depends_on:
+      - code-server
+    networks:
+      - swe-network
+    restart: unless-stopped
+
+  code-server:
+    build:
+      context: code-server
+      args:
+        UID: %d
+        GID: %d
+    command:
+      - "--bind-addr=0.0.0.0:8080"
+      - "--auth=none"
+    labels:
+      - "swe.project=${PROJECT_NAME}"
+    volumes:
+      # Mount project directory (same path as swe-swe container for git worktree compatibility)
+      - ${WORKSPACE_DIR:-.}:/workspace
+      # Mount worktrees to /worktrees for cleaner agent path separation
+      - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
+      # Mount persistent home for VSCode settings/extensions
+      - ./home:/home/coder
+      # Enterprise certificates (if certs/ directory exists with certificates)
+      - ./certs:/swe-swe/certs:ro
+    working_dir: /workspace
+    networks:
+      - swe-network
+    environment:
+      - TZ=${TZ:-UTC}
+      # Enterprise certificates (if configured during swe-swe init)
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-}
+    restart: unless-stopped`, vscodeSslLabels, hostUID, hostGID)
+					for _, vl := range strings.Split(vscodeBlock, "\n") {
+						result = append(result, vl)
+					}
+				}
+				continue
+			}
 			// Handle REPOS_DIR placeholder - default to .swe-swe/repos if not specified
 			if strings.Contains(line, "{{REPOS_DIR}}") {
 				reposDirValue := reposDir
@@ -527,11 +593,20 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 }
 
 // processTerminalUITemplate processes the terminal-ui.js template with UI customization values
-func processTerminalUITemplate(content string, statusBarFontSize int, statusBarFontFamily string, terminalFontSize int, terminalFontFamily string) string {
+func processTerminalUITemplate(content string, statusBarFontSize int, statusBarFontFamily string, terminalFontSize int, terminalFontFamily string, withVSCode bool) string {
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_SIZE}}", strconv.Itoa(statusBarFontSize))
 	content = strings.ReplaceAll(content, "{{STATUS_BAR_FONT_FAMILY}}", statusBarFontFamily)
 	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_SIZE}}", strconv.Itoa(terminalFontSize))
 	content = strings.ReplaceAll(content, "{{TERMINAL_FONT_FAMILY}}", terminalFontFamily)
+	if withVSCode {
+		content = strings.ReplaceAll(content, "{{VSCODE_TAB_STYLE}}", "")
+		content = strings.ReplaceAll(content, "{{VSCODE_OPTION_ATTR}}", "")
+		content = strings.ReplaceAll(content, "{{VSCODE_SERVICE_ENTRY}}", "{ name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },")
+	} else {
+		content = strings.ReplaceAll(content, "{{VSCODE_TAB_STYLE}}", "display: none;")
+		content = strings.ReplaceAll(content, "{{VSCODE_OPTION_ATTR}}", "hidden disabled")
+		content = strings.ReplaceAll(content, "{{VSCODE_SERVICE_ENTRY}}", "")
+	}
 
 	return content
 }

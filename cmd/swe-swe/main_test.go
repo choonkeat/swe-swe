@@ -700,6 +700,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
+		{"with-vscode", []string{"--with-vscode"}},
 	}
 
 	for _, v := range variants {
@@ -813,7 +814,8 @@ func TestGoldenFiles(t *testing.T) {
 				v.name == "with-slash-commands-no-alias" ||
 				v.name == "with-docker" ||
 				v.name == "with-repos-dir" ||
-				v.name == "with-proxy-port-offset"
+				v.name == "with-proxy-port-offset" ||
+				v.name == "with-vscode"
 			if hasNonSlashAgents {
 				if _, err := os.Stat(sweSweSetup); err != nil {
 					t.Errorf("Target file missing (expected for variant with non-slash agents): %s", sweSweSetup)
@@ -963,7 +965,7 @@ func TestProcessSimpleTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processSimpleTemplate(tt.input, tt.withDocker, "no", 1000, 1000, "", "", "", nil, nil, 20000)
+			result := processSimpleTemplate(tt.input, tt.withDocker, false, "no", 1000, 1000, "", "", "", nil, nil, 20000)
 			if result != tt.expected {
 				t.Errorf("processSimpleTemplate mismatch.\nExpected:\n%s\n\nGot:\n%s", tt.expected, result)
 			}
