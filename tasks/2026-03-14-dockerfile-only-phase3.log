@@ -11,4 +11,16 @@
 215419 Verification: golden diff — CONFIRMED. dockerfile-only variant has: Dockerfile (with ENV SWE_PORT=1977, ENV SWE_SWE_PASSWORD=changeme, EXPOSE, CMD with 1977), entrypoint.sh, swe-swe-server/, init.json. No docker-compose.yml, no traefik-dynamic.yml, no auth/.
 215419 Verification: other variants unchanged — CONFIRMED. default variant still has docker-compose.yml, traefik-dynamic.yml, auth/.
 215419 Verification: Playwright browser test — DEFERRED. Requires Docker image build and container run. Auth behavior verified by 10 unit tests in Phase 2.
-215419 Phase 3 complete.
+
+222622 Playwright browser test — EXECUTED (previously deferred)
+222622 Setup: swe-swe init --dockerfile-only --agents claude → generated files at /home/app/.swe-swe/projects/workspace-test-dockerfile-only-4075edfa/
+222622 Verified: no docker-compose.yml, no traefik-dynamic.yml, no auth/ in generated files
+222622 Verified: Dockerfile has ENV SWE_PORT=1977, ENV SWE_SWE_PASSWORD=changeme, EXPOSE, CMD with 1977
+222622 Docker build: swe-dockerfile-only-test image built successfully (30 steps)
+222622 Docker run: container started on port 19777→1977, logs show "Embedded auth enabled (SWE_SWE_PASSWORD set)"
+222622 Test 1: Navigate http://host.docker.internal:19777 — expected: redirect to /swe-swe-auth/login — GOT: redirected to /swe-swe-auth/login?redirect=%2F, login form shown. PASS
+222622 Test 2: Enter wrong password "wrongpassword" — expected: error message — GOT: "Invalid password" shown, stayed on login page. PASS
+222622 Test 3: Enter correct password "testpass" — expected: redirect to main UI — GOT: redirected to /, Session Manager page with Active Sessions and New Session button. PASS
+222622 Test 4: Navigate to /selection.html — expected: no re-auth (cookie pass-through) — GOT: page loaded at /selection.html, no redirect to login. PASS
+222622 Cleanup: container stopped, image removed, test project cleaned up.
+222622 Phase 3 Playwright verification complete. All 4 browser tests PASS.
