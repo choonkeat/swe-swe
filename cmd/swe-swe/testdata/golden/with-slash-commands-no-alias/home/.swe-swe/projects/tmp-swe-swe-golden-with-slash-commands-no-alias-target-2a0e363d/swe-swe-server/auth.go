@@ -316,8 +316,14 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		return
 	}
 
-	// Set Secure flag based on SWE_COOKIE_SECURE env var (set by init based on SSL config)
-	isSecure := os.Getenv("SWE_COOKIE_SECURE") == "true"
+	// Secure flag: explicit env var takes priority, otherwise auto-detect from proxy headers
+	// (PaaS platforms like Fly/Railway set X-Forwarded-Proto: https)
+	isSecure := false
+	if v := os.Getenv("SWE_COOKIE_SECURE"); v != "" {
+		isSecure = v == "true"
+	} else {
+		isSecure = r.Header.Get("X-Forwarded-Proto") == "https"
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    authSignCookie(secret),
