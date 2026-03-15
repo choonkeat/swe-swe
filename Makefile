@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-mcp-lazy-init test-server clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs
+.PHONY: build run stop test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs
 
 build: build-cli
 
@@ -68,6 +68,11 @@ check-gomod-sync:
 	rm -f /tmp/gomod-main.txt /tmp/gomod-template.txt; \
 	if [ $$failed -ne 0 ]; then exit 1; fi
 	@echo "go.mod.txt in sync with go.mod"
+
+# End-to-end tests using Playwright against a real container build (dockerfile-only mode)
+# Builds CLI, generates project, builds container, runs tests, tears down
+test-e2e:
+	./scripts/e2e.sh $(E2E_ARGS)
 
 clean:
 	rm -rf ./dist
