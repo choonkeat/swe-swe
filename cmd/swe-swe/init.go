@@ -1074,6 +1074,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - ./home:/home/app
     working_dir: /workspace
     environment:
+      - SWE_PORT=${SWE_PORT:-1977}
       - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
