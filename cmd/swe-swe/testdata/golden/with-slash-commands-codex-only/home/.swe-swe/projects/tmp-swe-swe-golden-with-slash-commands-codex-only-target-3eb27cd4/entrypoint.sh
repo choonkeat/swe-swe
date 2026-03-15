@@ -52,15 +52,15 @@ mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
 command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
+args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
 
 [mcp_servers.swe-swe-playwright]
 command = "sh"
-args = ["-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:9898/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
+args = ["-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp"]
+args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"]
 
 [mcp_servers.swe-swe-whiteboard]
 command = "npx"
@@ -68,7 +68,7 @@ args = ["-y", "@choonkeat/agent-whiteboard"]
 
 [mcp_servers.swe-swe]
 command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:9898/mcp?key='$MCP_AUTH_KEY"]
+args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
 EOF
 chown -R app: /home/app/.codex
 echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
@@ -76,13 +76,17 @@ echo -e "${GREEN}✓ Created Codex MCP configuration${NC}"
 
 
 
+# Resolve internal server port (SWE_PORT for dockerfile-only mode, 9898 for compose mode)
+SWE_SERVER_PORT="${SWE_PORT:-9898}"
+export SWE_SERVER_PORT
+
 # Create open/xdg-open shims that route URLs to the Preview pane
 mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 #!/bin/sh
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
-curl -sf "http://localhost:9898/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
 echo "→ Preview: $URL" >&2
 SHIM
 chmod +x /home/app/.swe-swe/bin/swe-swe-open
