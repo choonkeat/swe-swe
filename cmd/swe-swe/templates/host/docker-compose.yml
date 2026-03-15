@@ -107,6 +107,21 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
+      # Auth login/verify routes — no ForwardAuth (otherwise redirect loop)
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.rule=PathPrefix(`/swe-swe-auth`)"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.middlewares=login-ratelimit@file"
+# {{IF SSL}}
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.entrypoints=websecure"
+# {{ENDIF}}
+# {{IF SELFSIGN}}
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.tls=true"
+# {{ENDIF}}
+# {{IF LETSENCRYPT}}
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.tls.domains[0].main={{DOMAIN}}"
+# {{ENDIF}}
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.service=${PROJECT_NAME}-swe-swe"
       # Preview proxy routing (per-session)
       {{PREVIEW_ROUTERS}}
       # Agent chat proxy routing (per-session)

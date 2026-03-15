@@ -303,6 +303,14 @@ services:
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
       - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
       - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=9898"
+      # Auth login/verify routes — no ForwardAuth (otherwise redirect loop)
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.rule=PathPrefix(`/swe-swe-auth`)"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.middlewares=login-ratelimit@file"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.tls.domains[0].main=google.com"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.service=${PROJECT_NAME}-swe-swe"
       # Preview proxy routing (per-session)
       - "traefik.http.routers.${PROJECT_NAME}-preview-3000.rule=PathPrefix(`/`)"
       - "traefik.http.routers.${PROJECT_NAME}-preview-3000.entrypoints=preview3000"
