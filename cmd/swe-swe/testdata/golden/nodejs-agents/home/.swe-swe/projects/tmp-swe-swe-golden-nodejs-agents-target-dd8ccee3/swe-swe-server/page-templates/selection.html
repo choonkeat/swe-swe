@@ -535,6 +535,7 @@
             cursor: pointer;
             text-decoration: none;
             transition: all 0.2s ease;
+            white-space: nowrap;
         }
         .btn-view:hover {
             background: rgba(248, 250, 252, 0.1);
@@ -1028,6 +1029,20 @@
             .recording-card__right {
                 width: 100%;
                 justify-content: flex-end;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .recording-card__btn-group {
+                opacity: 1;
+                order: 1;
+                width: 100%;
+                justify-content: flex-end;
+            }
+            .btn-view {
+                padding: 6px 10px;
+            }
+            .recording-card__separator {
+                margin: 0 4px;
             }
 
             .footer {
