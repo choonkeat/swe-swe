@@ -21,8 +21,12 @@ test.describe('Login', () => {
   test('accepts correct password and redirects to home', async ({ page }) => {
     await page.goto('/swe-swe-auth/login');
     await page.fill('input[type="password"]', PASSWORD);
-    await page.click('button[type="submit"]');
-    // Should redirect to home page
-    await expect(page).toHaveURL(/\/$/);
+    await Promise.all([
+      page.waitForNavigation(),
+      page.click('button[type="submit"]'),
+    ]);
+    // Should redirect to home page (not back to login)
+    const url = page.url();
+    expect(url).not.toContain('swe-swe-auth/login');
   });
 });

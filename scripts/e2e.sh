@@ -89,10 +89,14 @@ EOF
 
 # Sibling container override: translate container paths to host paths
 # (Docker daemon runs on host, so volume mounts need host paths)
+# Explicitly set environment vars to override host env (host SWE_SWE_PASSWORD
+# takes precedence over .env if not explicitly set in the compose override)
 cat > "$PROJECT_PATH/docker-compose.override.yml" <<EOF
 # Auto-generated for sibling-container e2e testing
 services:
   swe-swe:
+    environment:
+      - SWE_SWE_PASSWORD=${E2E_PASSWORD}
     volumes:
       - ${HOST_TEST_STACK_DIR}:/workspace
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
