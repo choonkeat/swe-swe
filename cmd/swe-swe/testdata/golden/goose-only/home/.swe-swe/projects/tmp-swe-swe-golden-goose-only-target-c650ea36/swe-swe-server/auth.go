@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -315,8 +316,8 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		return
 	}
 
-	// Determine if request is over HTTPS
-	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	// Set Secure flag based on SWE_COOKIE_SECURE env var (set by init based on SSL config)
+	isSecure := os.Getenv("SWE_COOKIE_SECURE") == "true"
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    authSignCookie(secret),
