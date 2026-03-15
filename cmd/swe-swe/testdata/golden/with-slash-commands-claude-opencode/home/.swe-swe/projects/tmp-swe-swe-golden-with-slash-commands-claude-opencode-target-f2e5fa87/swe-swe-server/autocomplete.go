@@ -30,6 +30,12 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// API key authentication (shared with MCP endpoint)
+	if r.URL.Query().Get("key") != mcpAuthKey {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Parse session UUID from path: /api/autocomplete/{uuid}
 	sessionUUID := strings.TrimPrefix(r.URL.Path, "/api/autocomplete/")
 	if sessionUUID == "" {

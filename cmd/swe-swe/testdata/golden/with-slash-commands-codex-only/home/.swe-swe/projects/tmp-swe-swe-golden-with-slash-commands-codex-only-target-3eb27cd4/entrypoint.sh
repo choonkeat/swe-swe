@@ -52,11 +52,11 @@ mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
 command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID"]
+args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
 
 [mcp_servers.swe-swe-playwright]
 command = "sh"
-args = ["-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:9898/api/session/$SESSION_UUID/browser/start -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
+args = ["-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:9898/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
 
 [mcp_servers.swe-swe-preview]
 command = "sh"

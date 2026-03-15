@@ -45,13 +45,13 @@ extensions:
     cmd: sh
     args:
       - "-c"
-      - "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID"
+      - "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:9898/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"
   swe-swe-playwright:
     type: stdio
     cmd: sh
     args:
       - "-c"
-      - "exec mcp-lazy-init --init-method POST --init-url http://localhost:9898/api/session/$SESSION_UUID/browser/start -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
+      - "exec mcp-lazy-init --init-method POST --init-url http://localhost:9898/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
   swe-swe-preview:
     type: stdio
     cmd: sh

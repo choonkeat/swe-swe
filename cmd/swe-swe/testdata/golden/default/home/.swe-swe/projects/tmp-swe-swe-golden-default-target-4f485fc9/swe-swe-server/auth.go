@@ -372,16 +372,20 @@ func authVerifyHandler(secret string) http.HandlerFunc {
 
 // authMiddleware wraps an http.Handler with cookie-based authentication.
 // Unauthenticated requests are redirected to /swe-swe-auth/login.
-// Exempt paths: /swe-swe-auth/login, /swe-swe-auth/verify, /ssl/*, /mcp
+// Exempt paths: /swe-swe-auth/login, /swe-swe-auth/verify, /ssl/*, /mcp,
+// /api/session/*, /api/autocomplete/* (these use API key auth instead).
 func authMiddleware(next http.Handler, secret string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
 		// Exempt paths that don't require authentication
+		// (API key-authenticated routes handle their own auth)
 		if path == "/swe-swe-auth/login" ||
 			path == "/swe-swe-auth/verify" ||
 			strings.HasPrefix(path, "/ssl/") ||
-			path == "/mcp" {
+			path == "/mcp" ||
+			(strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/browser/start")) ||
+			strings.HasPrefix(path, "/api/autocomplete/") {
 			next.ServeHTTP(w, r)
 			return
 		}
