@@ -1,6 +1,6 @@
 {
   "name": "swe-swe",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "description": "Your agent: containerized with browser, terminal, and parallel sessions",
   "type": "module",
   "bin": {
@@ -15,11 +15,11 @@
   },
   "license": "MIT",
   "optionalDependencies": {
-    "@choonkeat/swe-swe-linux-x64": "2.14.0",
-    "@choonkeat/swe-swe-linux-arm64": "2.14.0",
-    "@choonkeat/swe-swe-darwin-x64": "2.14.0",
-    "@choonkeat/swe-swe-darwin-arm64": "2.14.0",
-    "@choonkeat/swe-swe-win32-x64": "2.14.0",
-    "@choonkeat/swe-swe-win32-arm64": "2.14.0"
+    "@choonkeat/swe-swe-linux-x64": "2.15.0",
+    "@choonkeat/swe-swe-linux-arm64": "2.15.0",
+    "@choonkeat/swe-swe-darwin-x64": "2.15.0",
+    "@choonkeat/swe-swe-darwin-arm64": "2.15.0",
+    "@choonkeat/swe-swe-win32-x64": "2.15.0",
+    "@choonkeat/swe-swe-win32-arm64": "2.15.0"
   }
 }
