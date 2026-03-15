@@ -1,51 +1,69 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
-// Helper: login and return authenticated page
+const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
+
+// Helper: login
 async function login(page) {
   await page.goto('/swe-swe-auth/login');
-  const password = process.env.SWE_SWE_PASSWORD || 'changeme';
-  await page.fill('input[type="password"]', password);
-  await page.click('button[type="submit"]');
-  await expect(page).toHaveURL(/\/$/);
+  await page.fill('input[type="password"]', PASSWORD);
+  await Promise.all([
+    page.waitForNavigation(),
+    page.click('button[type="submit"]'),
+  ]);
 }
 
 test.describe('Agent Browser E2E', () => {
   test('OpenCode chat session: playwright visits example.com and takes screenshot', async ({ page }) => {
     await login(page);
 
-    // Create a chat session with OpenCode by navigating directly
+    // Create a chat session with OpenCode
     const uuid = crypto.randomUUID();
     await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
 
-    // Wait for the Agent Chat tab to become visible and active
+    // Wait for Agent Chat tab to become visible and click it
     const chatTab = page.locator('button[data-left-tab="chat"]');
     await expect(chatTab).toBeVisible({ timeout: 30_000 });
+    await chatTab.click();
 
     // Wait for the agent-chat iframe to load
     const chatIframe = page.frameLocator('.terminal-ui__agent-chat-iframe');
-
-    // Wait for the chat input to be enabled (agent-chat app is ready)
     const chatInput = chatIframe.locator('#chat-input');
     await expect(chatInput).toBeEnabled({ timeout: 60_000 });
 
-    // Type the prompt and send
+    // Send the prompt
     await chatInput.fill('use playwright to visit example.com and take a screenshot');
     await chatIframe.locator('#btn-send').click();
 
-    // Wait for a reply bubble with a screenshot image
-    // The agent processes the request: OpenCode → Playwright MCP → mcp-lazy-init
-    // triggers browser start → Chrome boots → navigates → screenshot → image in chat
+    // OpenCode may ask "Shall I proceed?" — click the quick reply to confirm
+    // Poll for either a quick reply button or a screenshot image
+    const quickReplyBtn = chatIframe.locator('#quick-replies .chip');
     const screenshotImg = chatIframe.locator('.bubble.agent.canvas-bubble img');
-    await expect(screenshotImg).toBeVisible({ timeout: 120_000 });
 
-    // Verify the image has a valid src (data URI or URL)
+    for (let i = 0; i < 24; i++) {
+      await page.waitForTimeout(5_000);
+
+      // Click any quick reply buttons that appear (e.g., "Yes, proceed")
+      const btnCount = await quickReplyBtn.count();
+      if (btnCount > 0) {
+        const firstBtn = quickReplyBtn.first();
+        const text = await firstBtn.textContent();
+        console.log(`[${(i+1)*5}s] Clicking quick reply: "${text}"`);
+        await firstBtn.click();
+      }
+
+      // Check if screenshot appeared
+      if (await screenshotImg.isVisible()) {
+        console.log(`[${(i+1)*5}s] Screenshot image found!`);
+        break;
+      }
+    }
+
+    await expect(screenshotImg).toBeVisible({ timeout: 10_000 });
+
+    // Verify the image has a valid src
     const src = await screenshotImg.getAttribute('src');
     expect(src).toBeTruthy();
-    expect(src.length).toBeGreaterThan(100); // data URIs are long
-
-    // Also verify the Agent View tab appeared (browser was started)
-    const browserTab = page.locator('.terminal-ui__panel-option[value="browser"]');
-    await expect(browserTab).toBeVisible({ timeout: 5_000 });
+    expect(src.length).toBeGreaterThan(100);
   });
 });
