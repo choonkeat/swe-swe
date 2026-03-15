@@ -1043,6 +1043,7 @@ class TerminalUI extends HTMLElement {
                     this.switchPanelTab('browser');
                 } else if (!this.browserStarted) {
                     this.browserStarted = false;
+                    this._browserViewReady = false;
                 }
                 // Probe agent chat proxy — two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
@@ -1611,6 +1612,34 @@ class TerminalUI extends HTMLElement {
                     break;
                 case 'browser':
                     url = this.getBrowserViewUrl();
+                    if (url && !this._browserViewReady) {
+                        // Probe websockify before loading iframe to avoid "Bad Gateway"
+                        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
+                        const placeholderText = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder-text');
+                        if (placeholder) placeholder.classList.remove('hidden');
+                        if (placeholderText) placeholderText.textContent = 'Starting browser…';
+                        if (!this._browserViewProbing) {
+                            this._browserViewProbing = true;
+                            probeUntilReady(url, {
+                                method: 'HEAD',
+                                maxAttempts: 15,
+                                baseDelay: 1000,
+                                maxDelay: 5000,
+                            }).then(() => {
+                                this._browserViewReady = true;
+                                this._browserViewProbing = false;
+                                if (this.activeTab === 'browser') {
+                                    this.setIframeUrl(this.getBrowserViewUrl());
+                                }
+                            }).catch(() => {
+                                this._browserViewProbing = false;
+                            });
+                        }
+                        this.updateActiveTabIndicator();
+                        const panelDropdown = this.querySelector('.terminal-ui__panel-select');
+                        if (panelDropdown) panelDropdown.value = tab;
+                        return;
+                    }
                     break;
                 default:
                     return;
