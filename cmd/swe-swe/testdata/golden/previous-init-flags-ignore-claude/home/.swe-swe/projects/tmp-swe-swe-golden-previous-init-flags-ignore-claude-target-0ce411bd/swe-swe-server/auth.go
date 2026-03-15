@@ -334,15 +334,45 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
+// authVerifyHandler checks the session cookie and returns 200 (valid) or redirects to login.
+// Used by Traefik ForwardAuth middleware in compose mode.
+func authVerifyHandler(secret string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie(authCookieName)
+		if err != nil || !authVerifyCookie(cookie.Value, secret) {
+			// Build redirect URL using forwarded headers (Traefik sends these)
+			redirectURI := r.Header.Get("X-Forwarded-Uri")
+			if redirectURI == "" {
+				redirectURI = "/"
+			}
+			scheme := r.Header.Get("X-Forwarded-Proto")
+			if scheme == "" {
+				scheme = "http"
+			}
+			host := r.Header.Get("X-Forwarded-Host")
+			if host == "" {
+				host = r.Host
+			}
+			loginPath := "/swe-swe-auth/login?redirect=" + url.QueryEscape(redirectURI)
+			loginURL := scheme + "://" + host + loginPath
+			w.Header().Set("Location", loginURL)
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 // authMiddleware wraps an http.Handler with cookie-based authentication.
 // Unauthenticated requests are redirected to /swe-swe-auth/login.
-// Exempt paths: /swe-swe-auth/login, /ssl/ca.crt, /mcp
+// Exempt paths: /swe-swe-auth/login, /swe-swe-auth/verify, /ssl/*, /mcp
 func authMiddleware(next http.Handler, secret string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
 		// Exempt paths that don't require authentication
 		if path == "/swe-swe-auth/login" ||
+			path == "/swe-swe-auth/verify" ||
 			strings.HasPrefix(path, "/ssl/") ||
 			path == "/mcp" {
 			next.ServeHTTP(w, r)
@@ -382,8 +412,9 @@ func setupEmbeddedAuth(password string) http.Handler {
 		}
 	}()
 
-	// Register login handler on the default mux
+	// Register auth handlers on the default mux
 	http.HandleFunc("/swe-swe-auth/login", authLoginHandler(password))
+	http.HandleFunc("/swe-swe-auth/verify", authVerifyHandler(password))
 
 	// Wrap default mux with auth middleware
 	return authMiddleware(http.DefaultServeMux, password)
