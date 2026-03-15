@@ -456,6 +456,7 @@ func handleInit() {
 	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 → 23000 with offset 20000)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
+	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
 	fs.Parse(os.Args[2:])
 
 	// Validate --previous-init-flags
@@ -591,10 +592,18 @@ func handleInit() {
 		log.Fatalf("Failed to create directory %q: %v", absPath, err)
 	}
 
-	// Get metadata directory in $HOME/.swe-swe/projects/
-	sweDir, err := getMetadataDir(absPath)
-	if err != nil {
-		log.Fatalf("Failed to compute metadata directory: %v", err)
+	// Get metadata directory — use flag override or auto-derive
+	var sweDir string
+	if *metadataDirFlag != "" {
+		sweDir, err = filepath.Abs(*metadataDirFlag)
+		if err != nil {
+			log.Fatalf("Failed to resolve metadata dir: %v", err)
+		}
+	} else {
+		sweDir, err = getMetadataDir(absPath)
+		if err != nil {
+			log.Fatalf("Failed to compute metadata directory: %v", err)
+		}
 	}
 
 	// Check if project is already initialized (init.json exists)
