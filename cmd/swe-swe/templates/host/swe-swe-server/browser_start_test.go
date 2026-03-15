@@ -9,21 +9,24 @@ import (
 )
 
 func TestHandleBrowserStartAPI(t *testing.T) {
-	// Save and restore global sessions map
+	// Save and restore global sessions map and mcpAuthKey
 	sessionsMu.Lock()
 	origSessions := sessions
 	sessions = make(map[string]*Session)
 	sessionsMu.Unlock()
+	origKey := mcpAuthKey
+	mcpAuthKey = "test-api-key"
 	defer func() {
 		sessionsMu.Lock()
 		sessions = origSessions
 		sessionsMu.Unlock()
+		mcpAuthKey = origKey
 	}()
 
 	testUUID := "test-session-1234"
 
 	t.Run("GET returns 405", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/session/"+testUUID+"/browser/start", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/session/"+testUUID+"/browser/start?key="+mcpAuthKey, nil)
 		w := httptest.NewRecorder()
 		handleBrowserStartAPI(w, req)
 		if w.Code != http.StatusMethodNotAllowed {
@@ -31,8 +34,26 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("missing API key returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start", nil)
+		w := httptest.NewRecorder()
+		handleBrowserStartAPI(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("wrong API key returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start?key=wrong-key", nil)
+		w := httptest.NewRecorder()
+		handleBrowserStartAPI(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", w.Code)
+		}
+	})
+
 	t.Run("unknown UUID returns 404", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/session/unknown-uuid/browser/start", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/session/unknown-uuid/browser/start?key="+mcpAuthKey, nil)
 		w := httptest.NewRecorder()
 		handleBrowserStartAPI(w, req)
 		if w.Code != http.StatusNotFound {
@@ -55,7 +76,7 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		os.Setenv("PATH", "")
 		defer os.Setenv("PATH", origPath)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start?key="+mcpAuthKey, nil)
 		w := httptest.NewRecorder()
 		handleBrowserStartAPI(w, req)
 		if w.Code != http.StatusInternalServerError {
@@ -75,7 +96,7 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		}
 		sessionsMu.Unlock()
 
-		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start?key="+mcpAuthKey, nil)
 		w := httptest.NewRecorder()
 		handleBrowserStartAPI(w, req)
 		if w.Code != http.StatusOK {

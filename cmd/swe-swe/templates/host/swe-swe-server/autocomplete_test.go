@@ -11,8 +11,13 @@ import (
 )
 
 func TestHandleAutocompleteAPI(t *testing.T) {
+	// Save and restore mcpAuthKey
+	origKey := mcpAuthKey
+	mcpAuthKey = "test-api-key"
+	defer func() { mcpAuthKey = origKey }()
+
 	t.Run("GET returns method not allowed", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/autocomplete/test-uuid", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/autocomplete/test-uuid?key="+mcpAuthKey, nil)
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusMethodNotAllowed {
@@ -20,8 +25,26 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("missing API key returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid", strings.NewReader(`{"type":"slash-command","query":""}`))
+		w := httptest.NewRecorder()
+		handleAutocompleteAPI(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("wrong API key returns 401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key=wrong-key", strings.NewReader(`{"type":"slash-command","query":""}`))
+		w := httptest.NewRecorder()
+		handleAutocompleteAPI(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", w.Code)
+		}
+	})
+
 	t.Run("missing session UUID returns 400", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/", strings.NewReader(`{"type":"slash-command","query":""}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":""}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -30,7 +53,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 	})
 
 	t.Run("unknown session returns 404", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/nonexistent-uuid", strings.NewReader(`{"type":"slash-command","query":""}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/nonexistent-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":""}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusNotFound {
@@ -48,7 +71,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 		defer delete(sessions, "test-uuid")
 
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid", strings.NewReader(`{invalid`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{invalid`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -124,7 +147,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 		defer delete(sessions, "test-uuid")
 
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid", strings.NewReader(`{"type":"slash-command","query":""}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":""}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusOK {

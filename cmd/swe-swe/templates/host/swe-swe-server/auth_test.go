@@ -109,6 +109,8 @@ func TestAuthMiddlewareExemptPaths(t *testing.T) {
 		"/swe-swe-auth/login",
 		"/ssl/ca.crt",
 		"/mcp",
+		"/api/session/some-uuid/browser/start",
+		"/api/autocomplete/some-uuid",
 	}
 
 	for _, path := range exemptPaths {

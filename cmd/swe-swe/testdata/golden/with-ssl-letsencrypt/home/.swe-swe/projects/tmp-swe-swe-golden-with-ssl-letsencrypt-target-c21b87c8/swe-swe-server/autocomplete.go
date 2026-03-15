@@ -31,7 +31,7 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// API key authentication (shared with MCP endpoint)
-	if r.URL.Query().Get("key") != mcpAuthKey {
+	if key := r.URL.Query().Get("key"); key == "" || key != mcpAuthKey {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
