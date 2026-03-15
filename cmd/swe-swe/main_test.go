@@ -728,11 +728,8 @@ func TestGoldenFiles(t *testing.T) {
 				"Dockerfile",
 				"entrypoint.sh",
 			}
-			// Compose mode (SSL or VS Code) generates docker-compose.yml; dockerfile-only mode does not
-			isComposeMode := strings.HasPrefix(v.name, "with-ssl-") || strings.Contains(v.name, "vscode")
-			if isComposeMode {
-				keyFiles = append(keyFiles, "docker-compose.yml")
-			}
+			// All modes generate docker-compose.yml (dockerfile-only generates a minimal shim)
+			keyFiles = append(keyFiles, "docker-compose.yml")
 
 			for _, file := range keyFiles {
 				goldenPath := filepath.Join(goldenProjectDir, file)

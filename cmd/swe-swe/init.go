@@ -1031,9 +1031,9 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		}
 
 		// Skip compose-only files when dockerfile-only mode is enabled
+		// (docker-compose.yml is NOT skipped — a minimal shim is generated instead)
 		if config.DockerfileOnly {
-			if hostFile == "templates/host/docker-compose.yml" ||
-				hostFile == "templates/host/traefik-dynamic.yml" ||
+			if hostFile == "templates/host/traefik-dynamic.yml" ||
 				hostFile == "templates/host/code-server/Dockerfile" ||
 				hostFile == "templates/host/nginx-vscode.conf" ||
 				hostFile == "templates/host/.dockerignore" {
@@ -1059,7 +1059,33 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process docker-compose.yml template with conditional sections
 		if hostFile == "templates/host/docker-compose.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
+			if config.DockerfileOnly {
+				// Generate minimal compose shim for dockerfile-only mode
+				content = []byte(fmt.Sprintf(`services:
+  swe-swe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"
+    volumes:
+      - ${WORKSPACE_DIR:-.}:/workspace
+      - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
+      - ./home:/home/app
+    working_dir: /workspace
+    environment:
+      - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
+      - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
+      - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
+      - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
+      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+    restart: unless-stopped
+`))
+			} else {
+				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
+			}
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
@@ -1196,12 +1222,5 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 	fmt.Printf("\nInitialized swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")
-	if config.DockerfileOnly {
-		fmt.Printf("\nDockerfile-only mode: no docker-compose setup generated.\n")
-		fmt.Printf("Next steps:\n")
-		fmt.Printf("  docker build -t my-swe -f %s/Dockerfile %s/\n", sweDir, sweDir)
-		fmt.Printf("  docker run -p 1977:1977 -e SWE_SWE_PASSWORD=mypass -v %s:/workspace my-swe\n", absPath)
-	} else {
-		fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
-	}
+	fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
 }
