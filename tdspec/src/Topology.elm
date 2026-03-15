@@ -28,7 +28,7 @@ instances + Preview tab are active.
     +===|=======|=========|=======|=========|=======|==========+
     |   v       v         v       v         v       v          |
     |  +----------------------------------------------------+  |
-    |  |              swe-swe-server :9898                  |  |
+    |  |      swe-swe-server :$SWE_SERVER_PORT (def 9898)  |  |
     |  |  PTY host (WS1, WS2)                               |  |
     |  |  +----------------------------------------------+  |  |
     |  |  |  Preview proxy (/proxy/{uuid}/preview/...)   |  |  |
@@ -53,8 +53,8 @@ instances + Preview tab are active.
       Agent Chat:  Browser -> Traefik :24000 -> swe-swe-server :24000 -> MCP sidecar :4000
 
     Path-based (fallback, when per-port listeners are unreachable):
-      Preview:     Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/preview/    -> User app :3000
-      Agent Chat:  Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/agentchat/  -> MCP sidecar :4000
+      Preview:     Browser -> Traefik :1977 -> swe-swe-server /proxy/{uuid}/preview/    -> User app :3000
+      Agent Chat:  Browser -> Traefik :1977 -> swe-swe-server /proxy/{uuid}/agentchat/  -> MCP sidecar :4000
 
     Both modes reach the same proxy instance -- path-based and port-based
     proxies share a single DebugHub per session. Port-based uses empty
@@ -111,7 +111,7 @@ type InjectJs
     = InjectJs
 
 
-{-| The swe-swe-server process (PTY host + preview/agentchat proxy).
+{-| The swe-swe-server process (PTY host + preview/agentchat proxy + embedded auth).
 
 Each session gets two proxy instances that share a DebugHub:
 
@@ -120,6 +120,20 @@ Each session gets two proxy instances that share a DebugHub:
 
 Port-based listeners are wrapped in `corsWrapper` for cross-origin access.
 
+Embedded auth (activated when SWE\_SWE\_PASSWORD env var is set):
+
+  - `/swe-swe-auth/login` -- login form (GET) and password check (POST)
+  - `/swe-swe-auth/verify` -- cookie validation for Traefik ForwardAuth
+  - Cookie: `swe_swe_session` with HMAC signature and expiry
+  - Secure flag: explicit via SWE\_COOKIE\_SECURE env var, or auto-detected from
+    X-Forwarded-Proto header (PaaS platforms like Fly/Railway set `https`)
+
+Internal API protection (MCP\_AUTH\_KEY):
+
+  - `/mcp`, `/api/session/{uuid}/browser/start`, `/api/autocomplete/{uuid}`
+    require `?key=$MCP_AUTH_KEY` query parameter
+  - Key: 256-bit random hex, generated at boot, injected into session env
+
 -}
 type SweServer
     = SweServer
@@ -127,15 +141,20 @@ type SweServer
         }
 
 
-{-| Traefik -- host-level reverse proxy.
+{-| Traefik -- host-level reverse proxy (compose mode only).
 
 Routes the main server port plus per-session proxy and public ports:
 
-Authenticated (with forwardauth middleware):
+Authenticated (with forwardauth middleware -> swe-swe-server /swe-swe-auth/verify):
 
   - Main: :1977 -> :9898 (path-based proxy, UI, WebSockets)
   - Preview: :23000 -> :23000 (port-based proxy, up to 20 sessions)
   - Agent Chat: :24000 -> :24000 (port-based proxy, up to 20 sessions)
+
+Auth routes (priority=200, NO forwardauth -- to prevent redirect loop):
+
+  - /swe-swe-auth/login -> swe-swe-server (login form + POST handler)
+  - /swe-swe-auth/verify -> swe-swe-server (ForwardAuth cookie check)
 
 Unauthenticated (NO forwardauth -- public-facing):
 
@@ -143,6 +162,9 @@ Unauthenticated (NO forwardauth -- public-facing):
 
 The public port routes are structurally different from proxy routes --
 see `PublicDirectRoute` vs `PreviewProxyChain`.
+
+In dockerfile-only mode, Traefik is absent. swe-swe-server handles auth
+directly via embedded middleware (activated by SWE\_SWE\_PASSWORD env var).
 
 -}
 type Traefik
@@ -173,7 +195,7 @@ type McpSidecar
 {-| Stdio bridge -- lightweight relay between AI agent (stdio MCP) and
 swe-swe-server's preview proxy HTTP MCP endpoint.
 
-Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://localhost:9898/proxy/$SESSION_UUID/preview/mcp`
+Spawned as: `npx @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp`
 
 -}
 type StdioBridge

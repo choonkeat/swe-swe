@@ -52,6 +52,10 @@ Note: the wire format is flat JSON (`previewPort`, `agentChatPort` as top-level 
 The nesting here groups related fields for clarity (see HOW-TO.md #3.14).
 `agentChatPort` is `0` on the wire for terminal sessions (JS treats as falsy).
 
+`browserStarted` is set to `True` after `/api/session/{uuid}/browser/start` is called.
+terminal-ui auto-switches to the Agent View tab when this becomes `True`.
+The Agent View tab is hidden until `browserStarted` is `True`.
+
 -}
 type alias StatusPayload =
     { sessionUUID : SessionUuid
@@ -76,6 +80,7 @@ type alias StatusPayload =
     , features :
         { yoloMode : Bool
         , yoloSupported : Bool
+        , browserStarted : Bool
         }
     }
 

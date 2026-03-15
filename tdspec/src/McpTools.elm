@@ -11,7 +11,8 @@ module McpTools exposing
 Three MCP servers expose tools to the AI agent (Claude):
 
     swe-swe-server MCP (session management, built into swe-swe-server)
-      Endpoint: /mcp on :9898 (StreamableHTTP)
+      Endpoint: /mcp on :$SWE_SERVER_PORT (StreamableHTTP)
+      Auth:     ?key=$MCP_AUTH_KEY query parameter (256-bit hex, generated at boot)
       Tools:    list_sessions, create_session, end_session, get_session_output,
                 send_session_input, list_worktrees, list_recordings, prepare_repo,
                 send_chat_message, get_chat_history
@@ -28,9 +29,16 @@ Three MCP servers expose tools to the AI agent (Claude):
                 send_verbal_progress, check_messages
       Reads:    Event bus connected to browser WebSocket
 
+Authentication:
+
+    MCP_AUTH_KEY protects internal API routes (/mcp, /api/session/{uuid}/browser/start,
+    /api/autocomplete/{uuid}). The key is generated at server boot (crypto/rand, 32 bytes,
+    hex-encoded) and injected into each session's environment. All MCP bridge configurations
+    in entrypoint.sh append `?key=$MCP_AUTH_KEY` to orchestration endpoint URLs.
+
 Message flow for server tools:
 
-    Claude -> MCP -> swe-swe-server -> session map / PTY / git
+    Claude -> stdio bridge -> /mcp?key=$MCP_AUTH_KEY -> swe-swe-server -> session map / PTY / git
 
 Message flow for preview tools:
 
@@ -82,9 +90,10 @@ type McpServer
 -- -- swe-swe-server MCP tools -----------------------------------
 
 
-{-| Tools exposed by swe-swe-server's MCP endpoint (/mcp on :9898).
+{-| Tools exposed by swe-swe-server's MCP endpoint (/mcp on :$SWE\_SERVER\_PORT).
 
 Session management, terminal I/O, recordings, git worktrees, repos.
+Protected by MCP\_AUTH\_KEY query parameter.
 
 -}
 type ServerTool

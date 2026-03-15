@@ -53,6 +53,7 @@ type alias State =
     , features :
         { yoloMode : Bool
         , yoloSupported : Bool
+        , browserStarted : Bool
         }
     }
 
@@ -83,6 +84,11 @@ type Effect
     | OpenIframePane { pane : String, url : Url }
     | ConfirmExternalUrl Url
     | ConnectDebugWebSocket PreviewPort
+    | AutoSwitchToAgentView
+
+
+
+{- When browserStarted transitions to True, auto-switch to Agent View tab and show the tab (previously hidden). -}
 
 
 {-| Handle a message from the PTY WebSocket (WS 1/2).
@@ -101,7 +107,7 @@ onPtyMessage { msg, state } =
             ( { state
                 | preview = { port_ = Just payload.ports.preview, agentChatPort = Just payload.ports.agentChat, url = state.preview.url, canGoBack = state.preview.canGoBack, canGoForward = state.preview.canGoForward }
                 , session = { uuid = state.session.uuid, name = payload.session.name, workDir = payload.session.workDir, assistant = payload.session.assistant, viewers = payload.session.viewers }
-                , features = payload.features
+                , features = { yoloMode = payload.features.yoloMode, yoloSupported = payload.features.yoloSupported, browserStarted = payload.features.browserStarted }
               }
             , [ ConnectDebugWebSocket payload.ports.preview ]
             )
