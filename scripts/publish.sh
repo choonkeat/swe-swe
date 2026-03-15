@@ -19,6 +19,47 @@ fi
 
 echo ""
 
+# ── 0. Verify versions match ─────────────────────────────────────────────
+MAIN_VERSION=$(node -p "require('$REPO_ROOT/package.json').version")
+echo "Verifying version consistency (v${MAIN_VERSION})..."
+
+MISMATCH=0
+# Check platform package versions
+for platform in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
+  pkg_json="$OUT_DIR/$platform/package.json"
+  if [ ! -f "$pkg_json" ]; then
+    echo "  ERROR: Missing $pkg_json"
+    MISMATCH=1
+    continue
+  fi
+  plat_version=$(node -p "require('$pkg_json').version")
+  if [ "$plat_version" != "$MAIN_VERSION" ]; then
+    echo "  ERROR: $platform version=$plat_version (expected $MAIN_VERSION)"
+    MISMATCH=1
+  fi
+done
+
+# Check optionalDependencies point to the same version
+node -e "
+  var p = require('$REPO_ROOT/package.json');
+  var deps = p.optionalDependencies || {};
+  var ok = true;
+  for (var k in deps) {
+    if (deps[k] !== '$MAIN_VERSION') {
+      console.log('  ERROR: optionalDependencies[' + k + ']=' + deps[k] + ' (expected $MAIN_VERSION)');
+      ok = false;
+    }
+  }
+  if (!ok) process.exit(1);
+" || MISMATCH=1
+
+if [ "$MISMATCH" -ne 0 ]; then
+  echo "Version mismatch detected! Run 'make bump NEW_VERSION=x.y.z' first."
+  exit 1
+fi
+echo "  All versions match: v${MAIN_VERSION}"
+echo ""
+
 # ── 1. Publish platform packages ─────────────────────────────────────────
 PLATFORMS=(linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64)
 
