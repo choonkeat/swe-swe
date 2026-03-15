@@ -887,16 +887,21 @@ class TerminalUI extends HTMLElement {
                     combined.set(arr, offset);
                     offset += arr.length;
                 }
-                // xterm.js 5.5.0 handles clear-screen sequences without
-                // viewport jumping — no scroll correction needed.
+                // Fix 4 (Mar 15): Restore write callback scrollToBottom.
+                // Cursor-up sequences (\x1b[nA) during Claude's spinner/status
+                // redraws move the viewport up. Without correction, the viewport
+                // gets stuck at the top during MCP waits. The rAF write batching
+                // reduces flicker vs the original Fix 2 since cursor-up + content
+                // are now coalesced into a single write.
                 const buffer = this.term.buffer.active;
                 const maxLine = buffer.length - this.term.rows;
                 const scrolledUp = maxLine - buffer.viewportY;
                 const wasNearBottom = scrolledUp < this.term.rows / 2;
-                this.term.write(combined);
-                if (wasNearBottom) {
-                    console.log(`[scroll-debug] would have called scrollToBottom (scrolledUp=${scrolledUp}, rows=${this.term.rows})`);
-                }
+                this.term.write(combined, () => {
+                    if (wasNearBottom) {
+                        this.term.scrollToBottom();
+                    }
+                });
                 this.pendingWrites = null;
             });
         }
@@ -945,8 +950,9 @@ class TerminalUI extends HTMLElement {
             const decompressed = await this.decompressSnapshot(compressed);
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
             this.showStatusNotification(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
-            this.term.write(decompressed);
-            console.log(`[scroll-debug] snapshot: would have called scrollToBottom`);
+            this.term.write(decompressed, () => {
+                this.term.scrollToBottom();
+            });
         } catch (e) {
             console.error('Failed to decompress snapshot:', e);
             this.showStatusNotification(`Decompress failed: ${e.message}`, 5000);

@@ -94,3 +94,40 @@ Would have set `visibility: hidden` during write, restored in callback. Rejected
 ### 3. Lock scroll position at the DOM level
 
 Would have set `overflow: hidden` on xterm's viewport div during writes. Rejected: amounts to DIY scrolling that fights xterm.js internals.
+
+---
+
+## Reopened: Cursor-Up Viewport Jump (Mar 15, 2026)
+
+### New Root Cause Identified
+
+The Feb 5 investigation only tested **clear-screen sequences** (`\x1b[2J`, `\x1b[3J`, `\x1b[H`). These are handled correctly by xterm.js 5.5.0. However, the viewport-jump bug persists because of a **different class of sequences**: cursor-up (`\x1b[nA`) used for in-place redraws.
+
+Claude's TUI emits cursor-up sequences to do spinner/status updates:
+```
+\x1b[3A    ← cursor up 3 lines
+\x1b[2K    ← erase current line
+...new content...
+\x1b[3A    ← cursor up again to re-render
+```
+
+When xterm.js processes `\x1b[nA`, it moves the cursor up and **scrolls the viewport to keep the cursor visible**. If the cursor moves above the visible area, the viewport jumps up — and with Fix 3 (no scrollToBottom), nothing brings it back down.
+
+**Symptom:** During MCP tool calls (e.g., `send_message` which blocks), Claude's TUI redraws the "Kneading..." spinner with cursor-up sequences. The viewport gets stuck showing old content at the top of the terminal.
+
+### Why Fix 2's flicker was actually from cursor-up
+
+Re-analyzing Fix 2's "flicker": the `scrollToBottom()` in the write callback was fighting with cursor-up sequences mid-redraw. Each animation frame batch could contain:
+1. cursor-up (viewport jumps up) → 2. content rewrite → 3. callback fires → scrollToBottom (viewport jumps down)
+
+The "flicker" was this up-down bounce between frames — but it was actually the correct behavior being applied to both clear-screen (unnecessary) AND cursor-up (necessary). When clear-screen was ruled out, the baby (cursor-up fix) was thrown out with the bathwater.
+
+### Fix 4: Restore write callback scrollToBottom (Mar 15)
+
+**Hypothesis:** Fix 2 was correct for cursor-up sequences. The "flicker" it caused may now be reduced by the rAF write batching (commit `17dde09`, added after Fix 3). With batching, cursor-up + content rewrite are more likely to land in the same batch, so scrollToBottom in the callback fires after the full redraw cycle rather than between cursor-up and content.
+
+**Implementation:** Restore `term.write(combined, callback)` with `scrollToBottom()` when user was near bottom. Also restore for snapshot writes.
+
+**Status:** Testing.
+
+**Expected tradeoff:** May still show occasional single-frame viewport bounce during rapid redraws, but prevents the far worse "stuck at top for seconds/minutes" during MCP waits.
