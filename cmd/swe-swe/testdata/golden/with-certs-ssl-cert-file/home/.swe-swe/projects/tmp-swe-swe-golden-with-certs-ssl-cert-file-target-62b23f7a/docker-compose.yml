@@ -9,6 +9,7 @@ services:
       - ${WORKSPACE_DIR:-.}:/workspace
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
       - ./home:/home/app
+      - ./certs:/swe-swe/certs:ro
     working_dir: /workspace
     environment:
       - SWE_PORT=${SWE_PORT:-1977}
@@ -19,4 +20,6 @@ services:
       - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-}
     restart: unless-stopped

@@ -1061,6 +1061,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		if hostFile == "templates/host/docker-compose.yml" {
 			if config.DockerfileOnly {
 				// Generate minimal compose shim for dockerfile-only mode
+				certVolume := ""
+				certEnvVars := ""
+				if hasCerts {
+					certVolume = "\n      - ./certs:/swe-swe/certs:ro"
+					certEnvVars = "\n      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}\n      - SSL_CERT_FILE=${SSL_CERT_FILE:-}"
+				}
 				content = []byte(fmt.Sprintf(`services:
   swe-swe:
     build:
@@ -1071,7 +1077,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
     volumes:
       - ${WORKSPACE_DIR:-.}:/workspace
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
-      - ./home:/home/app
+      - ./home:/home/app%s
     working_dir: /workspace
     environment:
       - SWE_PORT=${SWE_PORT:-1977}
@@ -1081,9 +1087,9 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
       - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
-      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}%s
     restart: unless-stopped
-`))
+`, certVolume, certEnvVars))
 			} else {
 				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 			}
