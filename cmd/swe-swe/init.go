@@ -1061,23 +1061,40 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		if hostFile == "templates/host/docker-compose.yml" {
 			if config.DockerfileOnly {
 				// Generate minimal compose shim for dockerfile-only mode
+				// Conditional sections match the full compose template's swe-swe service
 				certVolume := ""
 				certEnvVars := ""
 				if hasCerts {
 					certVolume = "\n      - ./certs:/swe-swe/certs:ro"
 					certEnvVars = "\n      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}\n      - SSL_CERT_FILE=${SSL_CERT_FILE:-}"
 				}
+				reposDirValue := config.ReposDir
+				if reposDirValue == "" {
+					reposDirValue = "${WORKSPACE_DIR:-.}/.swe-swe/repos"
+				}
+				dockerVolume := ""
+				if config.WithDocker {
+					dockerVolume = "\n      - /var/run/docker.sock:/var/run/docker.sock"
+				}
 				content = []byte(fmt.Sprintf(`services:
   swe-swe:
     build:
       context: .
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"
     volumes:
       - ${WORKSPACE_DIR:-.}:/workspace
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
-      - ./home:/home/app%s
+      - %s:/repos
+      - ./home:/home/app%s%s
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          size: 100M
+          mode: 0777
     working_dir: /workspace
     environment:
       - SWE_PORT=${SWE_PORT:-1977}
@@ -1089,7 +1106,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}%s
     restart: unless-stopped
-`, certVolume, certEnvVars))
+`, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
 				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 			}

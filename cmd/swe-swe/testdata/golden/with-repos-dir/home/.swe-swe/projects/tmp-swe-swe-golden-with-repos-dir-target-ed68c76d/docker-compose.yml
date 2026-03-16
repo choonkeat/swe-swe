@@ -3,12 +3,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"
     volumes:
       - ${WORKSPACE_DIR:-.}:/workspace
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
+      - /data/repos:/repos
       - ./home:/home/app
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          size: 100M
+          mode: 0777
     working_dir: /workspace
     environment:
       - SWE_PORT=${SWE_PORT:-1977}
