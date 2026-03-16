@@ -263,6 +263,13 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					entrypoint := fmt.Sprintf("preview%d", port)
 					pp := previewProxyPort(port, proxyPortOffset)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-preview-%d", port)
+					// Probe router: no ForwardAuth, higher priority — Safari CORS fix
+					probeName := routerName + "-probe"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
@@ -270,9 +277,12 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, pp))
 					if isSSL {
 						if isLetsEncrypt {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}
@@ -287,6 +297,13 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					entrypoint := fmt.Sprintf("agentchat%d", acPort)
 					pp := agentChatProxyPort(acPort, proxyPortOffset)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-agentchat-%d", acPort)
+					// Probe router: no ForwardAuth, higher priority — Safari CORS fix
+					probeName := routerName + "-probe"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
@@ -294,9 +311,12 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, pp))
 					if isSSL {
 						if isLetsEncrypt {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}
@@ -331,6 +351,13 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					vp := vncPort(port)
 					entrypoint := fmt.Sprintf("vnc%d", vp)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-vnc-%d", vp)
+					// Probe router: no ForwardAuth, higher priority — Safari CORS fix
+					probeName := routerName + "-probe"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
@@ -338,9 +365,12 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, vp))
 					if isSSL {
 						if isLetsEncrypt {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}

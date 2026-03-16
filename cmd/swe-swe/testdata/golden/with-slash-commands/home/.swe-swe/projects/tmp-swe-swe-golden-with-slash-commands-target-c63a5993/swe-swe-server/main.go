@@ -1397,6 +1397,11 @@ const agentChatWaitingPage = `<!DOCTYPE html>
 // corsWrapper wraps an HTTP handler with CORS headers for cross-origin per-port
 // proxy access. The browser on :1977 probes per-port listeners (e.g., :23000)
 // which are cross-origin, so preflight and response headers are required.
+//
+// The /__probe__ path is handled inline: it returns CORS headers and
+// X-Agent-Reverse-Proxy without proxying. This path bypasses ForwardAuth
+// in Traefik (higher-priority router) so Safari's stricter cross-port
+// CORS+credentials handling doesn't cause a fallback to path-based mode.
 func corsWrapper(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
@@ -1406,6 +1411,12 @@ func corsWrapper(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// Lightweight reachability probe — no auth, no proxy, just CORS + marker header.
+		if r.URL.Path == "/__probe__" {
+			w.Header().Set("X-Agent-Reverse-Proxy", "1")
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		next.ServeHTTP(w, r)

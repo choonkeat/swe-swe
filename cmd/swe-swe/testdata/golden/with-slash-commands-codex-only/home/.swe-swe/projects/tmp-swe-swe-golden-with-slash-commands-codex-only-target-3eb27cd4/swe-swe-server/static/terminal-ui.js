@@ -1060,10 +1060,12 @@ class TerminalUI extends HTMLElement {
                             isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                             signal: this._agentChatProbeController.signal,
                         }).then(() => {
-                            // Phase 2: quick probe port-based URL to determine mode
+                            // Phase 2: quick probe port-based URL to determine mode.
+                            // Uses /__probe__ which bypasses ForwardAuth in Traefik — avoids
+                            // Safari's stricter cross-port CORS+credentials blocking.
                             let chosenUrl = acPathUrl;
                             if (acPortUrl) {
-                                return fetch(acPortUrl + '/', { method: 'GET', mode: 'cors', credentials: 'include' })
+                                return fetch(acPortUrl + '/__probe__', { method: 'GET', mode: 'cors' })
                                     .then(resp => {
                                         if (resp.headers.has('X-Agent-Reverse-Proxy')) {
                                             chosenUrl = acPortUrl;
@@ -3562,9 +3564,11 @@ class TerminalUI extends HTMLElement {
                 isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
             }).then(() => {
-                // Phase 2: try port-based if available
+                // Phase 2: try port-based if available.
+                // Uses /__probe__ which bypasses ForwardAuth in Traefik — avoids
+                // Safari's stricter cross-port CORS+credentials blocking.
                 if (portBasedBase && this._proxyMode !== 'path') {
-                    return fetch(portBasedBase + '/', { method: 'GET', mode: 'cors', credentials: 'include' })
+                    return fetch(portBasedBase + '/__probe__', { method: 'GET', mode: 'cors' })
                         .then(resp => {
                             if (resp.headers.has('X-Agent-Reverse-Proxy')) {
                                 this._proxyMode = 'port';
