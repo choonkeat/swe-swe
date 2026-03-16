@@ -926,7 +926,7 @@ class TerminalUI extends HTMLElement {
         // Show chunk progress in status bar for debugging
         if (totalChunks > 1) {
             const progress = getProgress(this.chunkAssemblerState);
-            this.showStatusNotification(`Receiving snapshot: ${progress.received}/${progress.total}`, 2000);
+            this.debugLog(`Receiving snapshot: ${progress.received}/${progress.total}`, 2000);
         }
 
         if (isComplete(this.chunkAssemblerState)) {
@@ -949,7 +949,7 @@ class TerminalUI extends HTMLElement {
         try {
             const decompressed = await this.decompressSnapshot(compressed);
             console.log(`DECOMPRESSED: ${compressed.length} -> ${decompressed.length} bytes`);
-            this.showStatusNotification(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
+            this.debugLog(`Snapshot loaded: ${decompressed.length} bytes`, 2000);
             this.term.write(decompressed, () => {
                 this.term.scrollToBottom();
             });
