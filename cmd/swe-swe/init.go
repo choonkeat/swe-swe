@@ -1076,6 +1076,25 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 				if config.WithDocker {
 					dockerVolume = "\n      - /var/run/docker.sock:/var/run/docker.sock"
 				}
+				// Build port mappings for browser-accessible proxy ports
+				var extraPorts string
+				if len(previewPortsRange) > 0 {
+					ppo := config.ProxyPortOffset
+					firstPreview := previewPortsRange[0]
+					lastPreview := previewPortsRange[len(previewPortsRange)-1]
+					firstAC := agentChatPortsRange[0]
+					lastAC := agentChatPortsRange[len(agentChatPortsRange)-1]
+					firstVNC := vncPort(firstPreview)
+					lastVNC := vncPort(lastPreview)
+					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", previewProxyPort(firstPreview, ppo), previewProxyPort(lastPreview, ppo), previewProxyPort(firstPreview, ppo), previewProxyPort(lastPreview, ppo))
+					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", agentChatProxyPort(firstAC, ppo), agentChatProxyPort(lastAC, ppo), agentChatProxyPort(firstAC, ppo), agentChatProxyPort(lastAC, ppo))
+					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo), vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo))
+				}
+				if len(publicPortsRange) > 0 {
+					firstPub := publicPortsRange[0]
+					lastPub := publicPortsRange[len(publicPortsRange)-1]
+					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", firstPub, lastPub, firstPub, lastPub)
+				}
 				content = []byte(fmt.Sprintf(`services:
   swe-swe:
     build:
@@ -1084,7 +1103,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"
+      - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"%s
     volumes:
       - ${WORKSPACE_DIR:-.}:/workspace
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
@@ -1106,7 +1125,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}%s
     restart: unless-stopped
-`, reposDirValue, certVolume, dockerVolume, certEnvVars))
+`, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
 				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
 			}

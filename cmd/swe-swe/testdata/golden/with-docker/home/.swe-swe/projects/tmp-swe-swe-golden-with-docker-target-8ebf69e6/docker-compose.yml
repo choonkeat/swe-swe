@@ -7,6 +7,10 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"
+      - "23000-23019:23000-23019"
+      - "24000-24019:24000-24019"
+      - "27000-27019:27000-27019"
+      - "5000-5019:5000-5019"
     volumes:
       - ${WORKSPACE_DIR:-.}:/workspace
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
