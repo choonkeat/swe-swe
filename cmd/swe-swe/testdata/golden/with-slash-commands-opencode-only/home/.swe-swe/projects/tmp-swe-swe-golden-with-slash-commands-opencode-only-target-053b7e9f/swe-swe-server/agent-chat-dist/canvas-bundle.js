@@ -25,7 +25,7 @@ var CanvasBundle = (() => {
     validateInstructions: () => validateInstructions
   });
 
-  // ../../agent-whiteboard/workspace/node_modules/roughjs/bundled/rough.esm.js
+  // ../../../../../repos/agent-whiteboard/workspace/node_modules/roughjs/bundled/rough.esm.js
   function t(t2, e2, s2) {
     if (t2 && t2.length) {
       const [n2, o2] = e2, a2 = Math.PI / 180 * s2, h2 = Math.cos(a2), r2 = Math.sin(a2);
@@ -1032,7 +1032,7 @@ var CanvasBundle = (() => {
   };
   var at = { canvas: (t2, e2) => new st(t2, e2), svg: (t2, e2) => new ot(t2, e2), generator: (t2) => new et(t2), newSeed: () => et.newSeed() };
 
-  // ../../agent-whiteboard/workspace/src/utils/math.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/utils/math.ts
   function lerp(a2, b2, t2) {
     return a2 + (b2 - a2) * t2;
   }
@@ -1101,13 +1101,13 @@ var CanvasBundle = (() => {
     return segments;
   }
 
-  // ../../agent-whiteboard/workspace/src/utils/easing.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/utils/easing.ts
   function easeOutCubic(t2) {
     const t1 = t2 - 1;
     return t1 * t1 * t1 + 1;
   }
 
-  // ../../agent-whiteboard/workspace/src/renderers/ProgressiveAnimator.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/renderers/ProgressiveAnimator.ts
   var ProgressiveAnimator = class _ProgressiveAnimator {
     /**
      * Animate a set of drawing ops onto the given canvas context.
@@ -1224,7 +1224,7 @@ var CanvasBundle = (() => {
     }
   };
 
-  // ../../agent-whiteboard/workspace/src/renderers/TextRenderer.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/renderers/TextRenderer.ts
   var TextRenderer = class _TextRenderer {
     static animate(ctx, text, x2, y2, options) {
       const { duration, font, fontSize, color } = options;
@@ -1270,7 +1270,7 @@ var CanvasBundle = (() => {
     }
   };
 
-  // ../../agent-whiteboard/workspace/src/renderers/RoughRenderer.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/renderers/RoughRenderer.ts
   var RoughRenderer = class {
     constructor(canvas, options = {}) {
       this.animationFrameId = null;
@@ -1543,7 +1543,7 @@ var CanvasBundle = (() => {
     }
   };
 
-  // ../../agent-whiteboard/workspace/src/InstructionQueue.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/InstructionQueue.ts
   var InstructionQueue = class {
     constructor(executor, onEmpty) {
       this.queue = [];
@@ -1595,7 +1595,7 @@ var CanvasBundle = (() => {
     }
   };
 
-  // ../../agent-whiteboard/workspace/src/AgentWhiteboard.ts
+  // ../../../../../repos/agent-whiteboard/workspace/src/AgentWhiteboard.ts
   var AgentWhiteboard = class {
     constructor(canvas, options = {}) {
       this.color = "#000000";
@@ -1759,7 +1759,7 @@ var CanvasBundle = (() => {
     }
   };
 
-  // ../../agent-whiteboard/workspace/mcp-client/validate-instructions.ts
+  // ../../../../../repos/agent-whiteboard/workspace/mcp-client/validate-instructions.ts
   var VALID_TYPES = /* @__PURE__ */ new Set([
     "moveTo",
     "lineTo",
