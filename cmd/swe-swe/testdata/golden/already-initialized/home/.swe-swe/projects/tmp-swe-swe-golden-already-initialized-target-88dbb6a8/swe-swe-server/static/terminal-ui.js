@@ -3092,12 +3092,6 @@ class TerminalUI extends HTMLElement {
             this._wantsPreviewOnConnect = true;
         }
 
-        // session=chat: show Agent Chat tab immediately (before probe succeeds)
-        if (new URLSearchParams(location.search).get('session') === 'chat') {
-            this.setAgentChatTabVisible(true);
-            this.switchLeftPanelTab('chat');
-            this.switchMobileNav('agent-chat');
-        }
     }
 
     // Check if viewport is wide enough for split-pane layout

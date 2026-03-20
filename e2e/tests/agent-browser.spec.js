@@ -21,9 +21,16 @@ test.describe('Agent Browser E2E', () => {
     const uuid = crypto.randomUUID();
     await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
 
-    // Wait for Agent Chat tab to become visible and click it
+    // Agent Chat tab should NOT be visible immediately (deferred until MCP probe succeeds)
     const chatTab = page.locator('button[data-left-tab="chat"]');
-    await expect(chatTab).toBeVisible({ timeout: 30_000 });
+    await expect(chatTab).toBeHidden({ timeout: 2_000 });
+
+    // Terminal should be the active view initially
+    const terminalEl = page.locator('.terminal-ui__terminal');
+    await expect(terminalEl).toBeVisible({ timeout: 5_000 });
+
+    // Wait for Agent Chat tab to become visible (after MCP probe succeeds)
+    await expect(chatTab).toBeVisible({ timeout: 60_000 });
     await chatTab.click();
 
     // Wait for the agent-chat iframe to load
