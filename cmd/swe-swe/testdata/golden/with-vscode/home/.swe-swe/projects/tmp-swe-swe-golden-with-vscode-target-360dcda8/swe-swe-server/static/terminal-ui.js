@@ -547,7 +547,7 @@ class TerminalUI extends HTMLElement {
             existingContainer.remove();
         }
 
-        // Build services list (filter out entries with null URLs — e.g. preview before sessionUUID arrives)
+        // Build services list (filter out entries with null URLs -- e.g. preview before sessionUUID arrives)
         const baseUrl = getBaseUrl(window.location);
         const serviceEntries = [
             { name: 'vscode', label: 'VSCode', url: buildVSCodeUrl(baseUrl, this.workDir) },
@@ -836,7 +836,7 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
-            // Parent session not found (e.g., after server reboot) — retry so
+            // Parent session not found (e.g., after server reboot) -- retry so
             // the parent tab has a chance to reconnect and recreate first.
             if (event.code === 4001) {
                 this.updateStatus('connecting', 'Waiting for parent session...');
@@ -1045,7 +1045,7 @@ class TerminalUI extends HTMLElement {
                     this.browserStarted = false;
                     this._browserViewReady = false;
                 }
-                // Probe agent chat proxy — two-phase: path-based first, then try port-based.
+                // Probe agent chat proxy -- two-phase: path-based first, then try port-based.
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
                     this._agentChatProbing = true;
@@ -1061,7 +1061,7 @@ class TerminalUI extends HTMLElement {
                             signal: this._agentChatProbeController.signal,
                         }).then(() => {
                             // Phase 2: quick probe port-based URL to determine mode.
-                            // Uses /__probe__ which bypasses ForwardAuth in Traefik — avoids
+                            // Uses /__probe__ which bypasses ForwardAuth in Traefik -- avoids
                             // Safari's stricter cross-port CORS+credentials blocking.
                             let chosenUrl = acPathUrl;
                             if (acPortUrl) {
@@ -1207,7 +1207,7 @@ class TerminalUI extends HTMLElement {
         assistantBadges.forEach(badge => {
             const name = (this.assistantName || this.assistant || 'CLAUDE').toUpperCase();
             if (this.yoloSupported) {
-                // Show toggle with mode label inside: "NAME [● normal]" or "NAME [yolo ●]"
+                // Show toggle with mode label inside: "NAME [* normal]" or "NAME [yolo *]"
                 const toggleClass = this.yoloMode ? 'active' : '';
                 const modeLabel = this.yoloMode ? 'yolo' : 'normal';
                 badge.innerHTML = `${name} <span class="badge-toggle ${toggleClass}">${modeLabel}</span>`;
@@ -1435,7 +1435,7 @@ class TerminalUI extends HTMLElement {
             backdrop.addEventListener('click', () => this.closeSettingsPanel());
         }
 
-        // Close on × button click
+        // Close on X button click
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.closeSettingsPanel());
         }
@@ -1507,7 +1507,7 @@ class TerminalUI extends HTMLElement {
 
     // Setup event listeners for the new header and navigation UI
     setupHeaderEventListeners() {
-        // Session name click → rename session
+        // Session name click -> rename session
         const sessionName = this.querySelector('.terminal-ui__session-name');
         if (sessionName) {
             sessionName.addEventListener('click', () => {
@@ -1515,7 +1515,7 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // Settings button → open settings panel
+        // Settings button -> open settings panel
         const settingsBtn = this.querySelector('.terminal-ui__settings-btn');
         if (settingsBtn) {
             settingsBtn.addEventListener('click', () => {
@@ -1588,7 +1588,7 @@ class TerminalUI extends HTMLElement {
 
         if (tab === 'preview') {
             if (this._pendingPreviewIframeSrc) {
-                // Preview probe already succeeded while on another tab — apply stashed URL
+                // Preview probe already succeeded while on another tab -- apply stashed URL
                 const pendingSrc = this._pendingPreviewIframeSrc;
                 this._pendingPreviewIframeSrc = null;
                 const iframe = this.querySelector('.terminal-ui__iframe');
@@ -1703,7 +1703,7 @@ class TerminalUI extends HTMLElement {
     }
 
     // Single source of truth for showing/hiding the Agent Chat tab in both
-    // desktop button and mobile dropdown — prevents them from desyncing.
+    // desktop button and mobile dropdown -- prevents them from desyncing.
     setAgentChatTabVisible(visible) {
         const display = visible ? '' : 'none';
         const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
@@ -2359,7 +2359,7 @@ class TerminalUI extends HTMLElement {
             'w': '\x17'
         };
 
-        // Main row key buttons (Esc, Tab, ⇧Tab)
+        // Main row key buttons (Esc, Tab, Shift+Tab)
         this.querySelectorAll('.mobile-keyboard [data-key]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -3015,7 +3015,7 @@ class TerminalUI extends HTMLElement {
             refreshBtn.addEventListener('click', () => this.refreshIframe());
         }
 
-        // Setup Back/Forward buttons — send navigate commands via debug WebSocket
+        // Setup Back/Forward buttons -- send navigate commands via debug WebSocket
         // since the iframe is on a different port (cross-origin)
         const backBtn = this.querySelector('.terminal-ui__iframe-back');
         const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
@@ -3048,7 +3048,7 @@ class TerminalUI extends HTMLElement {
                 const parsed = new URL(targetUrl);
                 const host = parsed.hostname;
                 if (host !== 'localhost' && host !== '127.0.0.1') {
-                    // External URLs can't load in iframe — open in new tab
+                    // External URLs can't load in iframe -- open in new tab
                     if (confirm('Open in new tab?\n\n' + targetUrl)) {
                         window.open(targetUrl, '_blank');
                     }
@@ -3058,7 +3058,7 @@ class TerminalUI extends HTMLElement {
                 }
                 navUrl = parsed.pathname + parsed.search + parsed.hash;
             } catch {
-                // Bare path like "/foo" — treat as localhost path
+                // Bare path like "/foo" -- treat as localhost path
                 navUrl = targetUrl.startsWith('/') ? targetUrl : '/' + targetUrl;
             }
 
@@ -3499,7 +3499,7 @@ class TerminalUI extends HTMLElement {
                 const host = parsed.hostname;
                 isExternal = host !== 'localhost' && host !== '127.0.0.1';
             } catch {
-                // Bare path like "/foo" — not external
+                // Bare path like "/foo" -- not external
             }
         }
 
@@ -3531,7 +3531,7 @@ class TerminalUI extends HTMLElement {
         const iframeSrc = base + '/__agent-reverse-proxy-debug__/shell?path=' + encodeURIComponent(path);
         this._lastUrlChangeUrl = base + path;
 
-        // URL bar shows only the path — the fixed prefix handles host:port.
+        // URL bar shows only the path -- the fixed prefix handles host:port.
         if (urlInput) {
             urlInput.value = path;
         }
@@ -3559,7 +3559,7 @@ class TerminalUI extends HTMLElement {
                 signal: this._previewProbeController.signal,
             }).then(() => {
                 // Phase 2: try port-based if available.
-                // Uses /__probe__ which bypasses ForwardAuth in Traefik — avoids
+                // Uses /__probe__ which bypasses ForwardAuth in Traefik -- avoids
                 // Safari's stricter cross-port CORS+credentials blocking.
                 if (portBasedBase && this._proxyMode !== 'path') {
                     return fetch(portBasedBase + '/__probe__', { method: 'GET', mode: 'cors' })
@@ -3595,7 +3595,7 @@ class TerminalUI extends HTMLElement {
                     }
                 };
             }).catch(() => {
-                // Exhausted or aborted — leave placeholder visible
+                // Exhausted or aborted -- leave placeholder visible
             });
         }
     }
@@ -3612,7 +3612,7 @@ class TerminalUI extends HTMLElement {
 
     /**
      * Reverse-map a proxy URL to the logical localhost:PORT URL.
-     * e.g., https://host/proxy/{uuid}/preview/dashboard?tab=1#s → http://localhost:3000/dashboard?tab=1#s
+     * e.g., https://host/proxy/{uuid}/preview/dashboard?tab=1#s -> http://localhost:3000/dashboard?tab=1#s
      */
     reverseMapProxyUrl(proxyUrl) {
         if (!this.previewPort) return proxyUrl;
@@ -3632,7 +3632,7 @@ class TerminalUI extends HTMLElement {
 
     /**
      * Extract just the path from a proxy URL.
-     * e.g., https://host/proxy/{uuid}/preview/dashboard?tab=1#s → /dashboard?tab=1#s
+     * e.g., https://host/proxy/{uuid}/preview/dashboard?tab=1#s -> /dashboard?tab=1#s
      */
     pathFromProxyUrl(proxyUrl) {
         try {
@@ -3701,7 +3701,7 @@ class TerminalUI extends HTMLElement {
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.t === 'urlchange' || msg.t === 'init') {
-                    // Proxy and shell page confirmed alive — hide placeholder
+                    // Proxy and shell page confirmed alive -- hide placeholder
                     if (this._previewWaiting && this.activeTab === 'preview') {
                         this._onPreviewReady();
                     }
@@ -3734,7 +3734,7 @@ class TerminalUI extends HTMLElement {
             const forwardBtn = this.querySelector('.terminal-ui__iframe-forward');
             if (backBtn) backBtn.disabled = true;
             if (forwardBtn) forwardBtn.disabled = true;
-            // Auto-reconnect — the proxy may not be up yet or may have restarted
+            // Auto-reconnect -- the proxy may not be up yet or may have restarted
             this._scheduleDebugWsReconnect();
         };
     }
