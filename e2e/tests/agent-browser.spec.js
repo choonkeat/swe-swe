@@ -33,7 +33,7 @@ test.describe('Agent Browser E2E', () => {
     await expect(chatTab).toBeVisible({ timeout: 60_000 });
 
     // Point-in-time check: when the tab first appears, the iframe should
-    // already show real chat content — NOT the "Waiting for Agent Chat" placeholder.
+    // already show real chat content -- NOT the "Waiting for Agent Chat" placeholder.
     // We use page.evaluate (not Playwright's auto-retrying expect) so we get
     // a snapshot of the DOM right now, without waiting/retrying.
     const iframeEl = await page.locator('.terminal-ui__agent-chat-iframe').elementHandle();
