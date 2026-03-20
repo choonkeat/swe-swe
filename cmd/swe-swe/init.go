@@ -101,7 +101,8 @@ type InitConfig struct {
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
-	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
+	DockerfileOnly      bool                `json:"-"`                      // computed: true when SSL=="no" && !WithVSCode
+	CLIVersion          string              `json:"cliVersion,omitempty"`
 }
 
 // slashCmdAgents are agents that support slash commands (md or toml format)
@@ -136,6 +137,7 @@ func (c *InitConfig) HasSlashAgents() bool {
 
 // saveInitConfig writes the init configuration to init.json
 func saveInitConfig(sweDir string, config InitConfig) error {
+	config.CLIVersion = Version
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal init config: %w", err)

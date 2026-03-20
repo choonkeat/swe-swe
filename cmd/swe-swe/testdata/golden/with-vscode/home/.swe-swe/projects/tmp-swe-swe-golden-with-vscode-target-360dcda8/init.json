@@ -17,5 +17,6 @@
   "hostUID": 1000,
   "hostGID": 1000,
   "proxyPortOffset": 20000,
-  "withVSCode": true
+  "withVSCode": true,
+  "cliVersion": "dev"
 }

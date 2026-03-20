@@ -1251,7 +1251,8 @@ func TestSaveLoadInitConfig(t *testing.T) {
 		t.Fatalf("Failed to load: %v", err)
 	}
 
-	// Verify
+	// Verify: saveInitConfig stamps CLIVersion, so adjust expected value
+	original.CLIVersion = Version
 	if !reflect.DeepEqual(original, loaded) {
 		t.Errorf("Save/Load mismatch:\noriginal: %+v\nloaded: %+v", original, loaded)
 	}
