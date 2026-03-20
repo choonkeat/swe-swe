@@ -31,6 +31,16 @@ test.describe('Agent Browser E2E', () => {
 
     // Wait for Agent Chat tab to become visible (after MCP probe succeeds)
     await expect(chatTab).toBeVisible({ timeout: 60_000 });
+
+    // Point-in-time check: when the tab first appears, the iframe should
+    // already show real chat content — NOT the "Waiting for Agent Chat" placeholder.
+    // We use page.evaluate (not Playwright's auto-retrying expect) so we get
+    // a snapshot of the DOM right now, without waiting/retrying.
+    const iframeEl = await page.locator('.terminal-ui__agent-chat-iframe').elementHandle();
+    const iframeContent = await iframeEl.contentFrame();
+    const bodyText = await iframeContent.evaluate(() => document.body.innerText);
+    expect(bodyText).toContain('[system] Connected');
+
     await chatTab.click();
 
     // Wait for the agent-chat iframe to load

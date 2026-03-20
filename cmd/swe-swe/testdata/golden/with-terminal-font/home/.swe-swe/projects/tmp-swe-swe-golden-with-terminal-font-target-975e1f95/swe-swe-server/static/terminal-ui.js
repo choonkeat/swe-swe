@@ -1057,7 +1057,7 @@ class TerminalUI extends HTMLElement {
                         probeUntilReady(acPathUrl + '/', {
                             method: 'GET',
                             maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
-                            isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
+                            isReady: (resp) => resp.ok && resp.headers.has('X-Agent-Reverse-Proxy'),
                             signal: this._agentChatProbeController.signal,
                         }).then(() => {
                             // Phase 2: quick probe port-based URL to determine mode.
