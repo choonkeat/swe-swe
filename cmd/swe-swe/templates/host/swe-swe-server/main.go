@@ -220,7 +220,7 @@ type AssistantConfig struct {
 // Encode() produces the canonical query string used by both the Go
 // templates and (mirrored in) the JS buildSessionPageUrl function.
 type SessionPageQuery struct {
-	Assistant   string // required — agent binary name
+	Assistant   string // required -- agent binary name
 	SessionMode string // "chat" or "terminal"; omit if terminal (default)
 	Name        string // display name (optional)
 	BranchName  string // git branch / worktree (optional)
@@ -1413,7 +1413,7 @@ func corsWrapper(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		// Lightweight reachability probe — no auth, no proxy, just CORS + marker header.
+		// Lightweight reachability probe -- no auth, no proxy, just CORS + marker header.
 		if r.URL.Path == "/__probe__" {
 			w.Header().Set("X-Agent-Reverse-Proxy", "1")
 			w.WriteHeader(http.StatusOK)
@@ -1485,7 +1485,7 @@ func processProxyResponse(w http.ResponseWriter, resp *http.Response, target *ur
 		if isHopByHopHeader(key) {
 			continue
 		}
-		// Strip X-Frame-Options — agent chat content is displayed in an iframe
+		// Strip X-Frame-Options -- agent chat content is displayed in an iframe
 		if strings.EqualFold(key, "X-Frame-Options") {
 			continue
 		}
@@ -1512,9 +1512,9 @@ func processProxyResponse(w http.ResponseWriter, resp *http.Response, target *ur
 // handleWebSocketRelay upgrades both sides to WebSocket and relays frames
 // between client and backend. Using gorilla/websocket on both sides gives
 // each proxy hop a proper WebSocket handshake, which is required for
-// multi-hop proxy chains (e.g. Cloudflare → cloudflared → Traefik).
+// multi-hop proxy chains (e.g. Cloudflare -> cloudflared -> Traefik).
 func handleWebSocketRelay(w http.ResponseWriter, r *http.Request, target *url.URL) {
-	// Dial backend FIRST — if it's down we can still return HTTP 502
+	// Dial backend FIRST -- if it's down we can still return HTTP 502
 	backendWsURL := fmt.Sprintf("ws://%s%s", target.Host, r.URL.RequestURI())
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	backendConn, _, err := dialer.Dial(backendWsURL, nil)
@@ -1535,9 +1535,9 @@ func handleWebSocketRelay(w http.ResponseWriter, r *http.Request, target *url.UR
 
 	// Bidirectional frame relay
 	errc := make(chan error, 2)
-	// backend → client
+	// backend -> client
 	go func() {
-		defer recoverGoroutine("WebSocket relay backend→client")
+		defer recoverGoroutine("WebSocket relay backend->client")
 		for {
 			mt, msg, err := backendConn.ReadMessage()
 			if err != nil {
@@ -1550,9 +1550,9 @@ func handleWebSocketRelay(w http.ResponseWriter, r *http.Request, target *url.UR
 			}
 		}
 	}()
-	// client → backend
+	// client -> backend
 	go func() {
-		defer recoverGoroutine("WebSocket relay client→backend")
+		defer recoverGoroutine("WebSocket relay client->backend")
 		for {
 			mt, msg, err := clientConn.ReadMessage()
 			if err != nil {
@@ -2240,7 +2240,7 @@ func deriveBranchName(sessionName string) string {
 		return ""
 	}
 
-	// Normalize unicode and remove diacritics (e.g., é → e)
+	// Normalize unicode and remove diacritics (e.g., e-acute -> e)
 	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 	result, _, _ := transform.String(t, sessionName)
 
@@ -2371,14 +2371,14 @@ func setupSweSweFiles(destDir string) error {
 					}
 				}
 				if len(servers) == 0 {
-					// Only had swe-swe servers — delete the file
+					// Only had swe-swe servers -- delete the file
 					os.Remove(mcpPath)
 					// Also remove baseline if it exists
 					baselinePath := filepath.Join(destDir, ".swe-swe", "baseline", ".mcp.json")
 					os.Remove(baselinePath)
 					log.Printf("Removed legacy .mcp.json (swe-swe servers moved to ~/.claude.json): %s", mcpPath)
 				} else {
-					// Has user-defined servers — rewrite without swe-swe-* entries
+					// Has user-defined servers -- rewrite without swe-swe-* entries
 					doc["mcpServers"] = servers
 					cleaned, _ := json.MarshalIndent(doc, "", "  ")
 					os.WriteFile(mcpPath, append(cleaned, '\n'), 0644)
@@ -2746,7 +2746,7 @@ func handleReposAPI(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := os.ReadDir(reposDir)
 	if err != nil {
-		// /repos/ doesn't exist or can't be read — return empty list
+		// /repos/ doesn't exist or can't be read -- return empty list
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"repos": repos,
@@ -3500,7 +3500,7 @@ func cleanupRecentRecordings() {
 	// Collect all recent (unkept) recordings grouped by agent
 	type recentRecording struct {
 		uuid  string
-		mtime time.Time // log file mtime — reflects last activity, not metadata timestamps
+		mtime time.Time // log file mtime -- reflects last activity, not metadata timestamps
 	}
 	recentByAgent := make(map[string][]recentRecording)
 
@@ -3546,7 +3546,7 @@ func cleanupRecentRecordings() {
 			continue
 		}
 
-		// Use log file mtime for age — it reflects the last write to the
+		// Use log file mtime for age -- it reflects the last write to the
 		// recording, so a long session that just ended won't be immediately
 		// eligible for cleanup (unlike EndedAt which may be unset on crash,
 		// falling back to StartedAt).
@@ -3609,7 +3609,7 @@ func cleanupRecentRecordings() {
 			continue
 		}
 		if strings.HasSuffix(name, ".log") {
-			continue // .log files are authoritative — never orphan-delete them
+			continue // .log files are authoritative -- never orphan-delete them
 		}
 
 		// Extract stem by removing "session-" prefix and any known suffix
@@ -3668,7 +3668,7 @@ func vncPortFromPreview(previewPort int) int {
 }
 
 // displayNumberFromPreview derives a unique X11 display number from a preview port.
-// Preview port 3000 → DISPLAY=:1, 3001 → :2, etc.
+// Preview port 3000 -> DISPLAY=:1, 3001 -> :2, etc.
 func displayNumberFromPreview(previewPort int) int {
 	return (previewPort - previewPortStart) + 1
 }
@@ -3765,7 +3765,7 @@ func startSessionBrowser(sess *Session) error {
 		return fmt.Errorf("failed to start noVNC proxy on port %d: %w", sess.VNCPort, err)
 	}
 	sess.BrowserPIDs = append(sess.BrowserPIDs, noVNCCmd.Process.Pid)
-	log.Printf("Started noVNC proxy on port %d → localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCCmd.Process.Pid, sess.UUID)
+	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCCmd.Process.Pid, sess.UUID)
 	go func() { noVNCCmd.Wait() }()
 
 	sess.BrowserStarted = true
@@ -4234,7 +4234,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionsMu.RUnlock()
 
 		// If parent was specified but not found (e.g., after server reboot),
-		// reject the connection so the client retries — the parent tab may
+		// reject the connection so the client retries -- the parent tab may
 		// reconnect shortly and recreate the parent session.
 		if !parentFound {
 			log.Printf("Parent session %s not found for child %s, rejecting (client will retry)", parentUUID, sessionUUID)
@@ -4866,7 +4866,7 @@ func loadEndedRecordings() []RecordingInfo {
 				rootLogs[parentUUID] = entry
 			}
 		} else {
-			// Child recording — classify by file type
+			// Child recording -- classify by file type
 			ci := children[parentUUID]
 			if ci == nil {
 				ci = &childInfo{}
@@ -5114,7 +5114,7 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 //   - (default): use streaming approach (fetch data via JS)
 // getSessionSummaryFromChat reads the last event from an agent-chat events JSONL file
 // and returns a summary line and status color.
-// summaryLine: "{who}: {message start}" — always starts from beginning, truncated by CSS.
+// summaryLine: "{who}: {message start}" -- always starts from beginning, truncated by CSS.
 // status: "green" if last event is agent message with quick_replies (waiting for user),
 //
 //	"red" if agent is busy or user message unanswered, "" if unknown.
@@ -5301,7 +5301,7 @@ func getSessionSummaryFromLog(recordingUUID string) string {
 			}
 		}
 		if len(trimmed) > 10 && wordChars*2 < len(trimmed) {
-			continue // too many non-word characters — likely garbled
+			continue // too many non-word characters -- likely garbled
 		}
 		// Skip lines that are too short to be meaningful
 		if len(trimmed) < 8 {
@@ -5543,7 +5543,7 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 // by traversing /proc. This catches processes in different process groups
 // (e.g., MCP servers spawned with detached: true by AI agents).
 func collectDescendantPIDs(rootPID int) []int {
-	// Build PPID → children map by scanning /proc
+	// Build PPID -> children map by scanning /proc
 	children := make(map[int][]int)
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -5601,7 +5601,7 @@ func killSessionProcessGroup(s *Session) {
 
 	pid := s.Cmd.Process.Pid
 
-	// Collect all descendant PIDs BEFORE killing — once the parent dies,
+	// Collect all descendant PIDs BEFORE killing -- once the parent dies,
 	// orphaned children get reparented to PID 1 and we lose the lineage.
 	descendants := collectDescendantPIDs(pid)
 
@@ -5664,7 +5664,7 @@ func startSignalMonitor() {
 	go func() {
 		for sig := range sigs {
 			// SIGURG (Go runtime goroutine preemption) and SIGCHLD (child exits)
-			// are extremely frequent and harmless — skip unless verbose.
+			// are extremely frequent and harmless -- skip unless verbose.
 			if !verbose && (sig == syscall.SIGURG || sig == syscall.SIGCHLD) {
 				continue
 			}
@@ -5697,7 +5697,7 @@ func probePort(port int) (bool, string) {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	client := &http.Client{
 		Timeout: 500 * time.Millisecond,
-		// Don't follow redirects — we just want the first response
+		// Don't follow redirects -- we just want the first response
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -5716,7 +5716,7 @@ func probePort(port int) (bool, string) {
 		}
 		return true, ""
 	}
-	// HTTP failed — try raw TCP to distinguish "not listening" from "not HTTP"
+	// HTTP failed -- try raw TCP to distinguish "not listening" from "not HTTP"
 	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
 	if err != nil {
 		return false, ""
@@ -5769,7 +5769,7 @@ func endSessionByUUID(sessionUUID string) error {
 	// group kill and the /proc descendant scan (e.g., double-forked daemons).
 	killProcessesOnPorts(sessionPorts)
 
-	// Now remove sessions from the map — ports are safe to reuse
+	// Now remove sessions from the map -- ports are safe to reuse
 	sessionsMu.Lock()
 	delete(sessions, sessionUUID)
 	for _, childUUID := range childUUIDs {
@@ -5840,7 +5840,7 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBrowserStartAPI handles POST /api/session/{uuid}/browser/start
-// Starts browser processes on demand. Idempotent — returns success if already started.
+// Starts browser processes on demand. Idempotent -- returns success if already started.
 func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -5919,7 +5919,7 @@ func killProcessesOnPorts(ports []int) {
 		return
 	}
 
-	targetInodes := make(map[string]int) // inode string → port
+	targetInodes := make(map[string]int) // inode string -> port
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 10 {
@@ -6342,7 +6342,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		}
 	})
 
-	// send_chat_message — proxy to agent-chat orchestrator
+	// send_chat_message -- proxy to agent-chat orchestrator
 	type sendChatArgs struct {
 		UUID string `json:"uuid" jsonschema:"Session UUID"`
 		Text string `json:"text" jsonschema:"Message text to send"`
@@ -6367,7 +6367,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil, nil
 	})
 
-	// get_chat_history — proxy to agent-chat orchestrator
+	// get_chat_history -- proxy to agent-chat orchestrator
 	type getChatArgs struct {
 		UUID   string `json:"uuid" jsonschema:"Session UUID"`
 		Cursor int64  `json:"cursor,omitempty" jsonschema:"Return events with seq > cursor. 0 returns all."`
