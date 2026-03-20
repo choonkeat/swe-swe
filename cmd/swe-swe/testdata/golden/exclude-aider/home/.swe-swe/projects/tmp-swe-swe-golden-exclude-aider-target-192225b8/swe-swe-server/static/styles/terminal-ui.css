@@ -1692,6 +1692,11 @@ terminal-ui.embedded-in-iframe .mobile-only {
     font-weight: 600;
 }
 
+.terminal-ui__chat-tab-loading {
+    font-style: italic;
+    opacity: 0.7;
+}
+
 /* === Agent Chat Container === */
 .terminal-ui__agent-chat {
     flex: 1;

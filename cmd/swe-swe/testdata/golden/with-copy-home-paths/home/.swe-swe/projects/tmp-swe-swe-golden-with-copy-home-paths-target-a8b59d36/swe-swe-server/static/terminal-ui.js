@@ -122,6 +122,15 @@ class TerminalUI extends HTMLElement {
                 }
             }
             this.render();
+
+            // For chat sessions, show the Agent Chat tab immediately with a
+            // loading indicator so users know something is happening while
+            // the MCP probe runs in the background.
+            if (new URLSearchParams(location.search).get('session') === 'chat') {
+                this.setAgentChatTabVisible(true);
+                this.startChatLoadingAnimation();
+            }
+
             // Detect if running inside an iframe (panel view) and hide status bar
             if (window.self !== window.top) {
                 this.classList.add('embedded-in-iframe');
@@ -191,6 +200,9 @@ class TerminalUI extends HTMLElement {
         }
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
+        }
+        if (this._chatLoadingTimer) {
+            clearInterval(this._chatLoadingTimer);
         }
         // Clean up chat message timeouts
         this.chatMessageTimeouts.forEach(timeout => clearTimeout(timeout));
@@ -322,7 +334,7 @@ class TerminalUI extends HTMLElement {
                                         <span class="terminal-ui__terminal-icon">>_</span> Agent Terminal
                                     </button>
                                     <button data-left-tab="chat" style="display: none;">
-                                        <span class="terminal-ui__chat-tab-icon">◯</span> Agent Chat
+                                        <span class="terminal-ui__chat-tab-icon">&#9711;</span> Agent Chat<span class="terminal-ui__chat-tab-loading" style="display: none;"> (Loading)</span>
                                     </button>
                                 </div>
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
@@ -1089,11 +1101,13 @@ class TerminalUI extends HTMLElement {
                                 chatIframe.onload = () => {
                                     const ph = this.querySelector('.terminal-ui__agent-chat-placeholder');
                                     if (ph) ph.classList.add('hidden');
+                                    // Loading complete -- remove loading indicator and activate tab
+                                    this.stopChatLoadingAnimation();
+                                    if (new URLSearchParams(location.search).get('session') === 'chat') {
+                                        this.switchLeftPanelTab('chat');
+                                        this.switchMobileNav('agent-chat');
+                                    }
                                 };
-                            }
-                            if (new URLSearchParams(location.search).get('session') === 'chat') {
-                                this.switchLeftPanelTab('chat');
-                                this.switchMobileNav('agent-chat');
                             }
                         }).catch(() => {
                             this._agentChatProbing = false;
@@ -1727,6 +1741,34 @@ class TerminalUI extends HTMLElement {
             mobileOpt.hidden = !visible;
             mobileOpt.disabled = !visible;
         }
+    }
+
+    // Animate the loading text on the Agent Chat tab: cycles through
+    // (Loading), (Loading.), (Loading..), (Loading...)
+    startChatLoadingAnimation() {
+        const loadingSpan = this.querySelector('.terminal-ui__chat-tab-loading');
+        if (loadingSpan) loadingSpan.style.display = '';
+        const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+        const baseDesktop = ' (Loading';
+        const baseMobile = 'Agent Chat (Loading';
+        const dots = ['', '.', '..', '...'];
+        let i = 0;
+        this._chatLoadingTimer = setInterval(() => {
+            i = (i + 1) % dots.length;
+            if (loadingSpan) loadingSpan.textContent = baseDesktop + dots[i] + ')';
+            if (mobileOpt) mobileOpt.textContent = baseMobile + dots[i] + ')';
+        }, 500);
+    }
+
+    stopChatLoadingAnimation() {
+        if (this._chatLoadingTimer) {
+            clearInterval(this._chatLoadingTimer);
+            this._chatLoadingTimer = null;
+        }
+        const loadingSpan = this.querySelector('.terminal-ui__chat-tab-loading');
+        if (loadingSpan) loadingSpan.style.display = 'none';
+        const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+        if (mobileOpt) mobileOpt.textContent = 'Agent Chat';
     }
 
     // Set username helper

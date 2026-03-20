@@ -21,27 +21,30 @@ test.describe('Agent Browser E2E', () => {
     const uuid = crypto.randomUUID();
     await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
 
-    // Agent Chat tab should NOT be visible immediately (deferred until MCP probe succeeds)
+    // Agent Chat tab should be visible immediately for ?session=chat,
+    // showing a loading indicator while the MCP probe runs.
     const chatTab = page.locator('button[data-left-tab="chat"]');
-    await expect(chatTab).toBeHidden({ timeout: 2_000 });
+    await expect(chatTab).toBeVisible({ timeout: 5_000 });
 
-    // Terminal should be the active view initially
+    // Tab should show loading text while probe is in progress
+    const loadingSpan = chatTab.locator('.terminal-ui__chat-tab-loading');
+    await expect(loadingSpan).toBeVisible({ timeout: 2_000 });
+
+    // Terminal should be the active view initially (chat tab not auto-activated)
     const terminalEl = page.locator('.terminal-ui__terminal');
     await expect(terminalEl).toBeVisible({ timeout: 5_000 });
 
-    // Wait for Agent Chat tab to become visible (after MCP probe succeeds)
-    await expect(chatTab).toBeVisible({ timeout: 60_000 });
+    // Wait for loading indicator to disappear (probe succeeded, iframe loaded)
+    await expect(loadingSpan).toBeHidden({ timeout: 60_000 });
 
-    // Point-in-time check: when the tab first appears, the iframe should
-    // already show real chat content -- NOT the "Waiting for Agent Chat" placeholder.
-    // We use page.evaluate (not Playwright's auto-retrying expect) so we get
-    // a snapshot of the DOM right now, without waiting/retrying.
+    // After loading completes, the tab should auto-activate
+    await expect(chatTab).toHaveClass(/active/, { timeout: 5_000 });
+
+    // The iframe should show real chat content
     const iframeEl = await page.locator('.terminal-ui__agent-chat-iframe').elementHandle();
     const iframeContent = await iframeEl.contentFrame();
     const bodyText = await iframeContent.evaluate(() => document.body.innerText);
     expect(bodyText).toContain('[system] Connected');
-
-    await chatTab.click();
 
     // Wait for the agent-chat iframe to load
     const chatIframe = page.frameLocator('.terminal-ui__agent-chat-iframe');
