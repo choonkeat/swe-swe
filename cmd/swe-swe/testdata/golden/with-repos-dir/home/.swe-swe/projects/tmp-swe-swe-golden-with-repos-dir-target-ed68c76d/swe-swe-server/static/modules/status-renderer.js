@@ -1,6 +1,6 @@
 /**
  * Pure HTML rendering functions for status bar.
- * Given state, return HTML string — no DOM manipulation.
+ * Given state, return HTML string -- no DOM manipulation.
  * @module status-renderer
  */
 

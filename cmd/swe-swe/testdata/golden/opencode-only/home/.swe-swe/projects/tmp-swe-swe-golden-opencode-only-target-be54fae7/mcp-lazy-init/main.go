@@ -118,7 +118,7 @@ func doInit(cfg config) error {
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	log.Printf("[mcp-lazy-init] init %s %s → %d (%v): %s", cfg.initMethod, cfg.initURL, resp.StatusCode, elapsed, string(respBody))
+	log.Printf("[mcp-lazy-init] init %s %s -> %d (%v): %s", cfg.initMethod, cfg.initURL, resp.StatusCode, elapsed, string(respBody))
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("init request returned %d: %s", resp.StatusCode, string(respBody))
@@ -149,7 +149,7 @@ func run(cfg config, stdin io.Reader, stdout io.Writer, stderr io.Writer) error 
 
 	var wg sync.WaitGroup
 
-	// stdout relay: subprocess → our stdout (transparent)
+	// stdout relay: subprocess -> our stdout (transparent)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -162,7 +162,7 @@ func run(cfg config, stdin io.Reader, stdout io.Writer, stderr io.Writer) error 
 		}
 	}()
 
-	// stdin relay: our stdin → subprocess (with init interception)
+	// stdin relay: our stdin -> subprocess (with init interception)
 	initDone := false
 	scanner := bufio.NewScanner(stdin)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max line
@@ -184,7 +184,7 @@ func run(cfg config, stdin io.Reader, stdout io.Writer, stderr io.Writer) error 
 		subStdin.Write([]byte("\n"))
 	}
 
-	// stdin closed — kill subprocess
+	// stdin closed -- kill subprocess
 	subStdin.Close()
 
 	// Wait for stdout relay to finish

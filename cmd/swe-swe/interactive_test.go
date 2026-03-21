@@ -8,7 +8,7 @@ import (
 )
 
 func TestPromptAgentsDefault(t *testing.T) {
-	input := "\n" // press Enter → use default
+	input := "\n" // press Enter -> use default
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var out bytes.Buffer
 
@@ -16,14 +16,14 @@ func TestPromptAgentsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// No detected agents → default is allAgents
+	// No detected agents -> default is allAgents
 	if len(agents) != len(allAgents) {
 		t.Errorf("expected all agents, got %v", agents)
 	}
 }
 
 func TestPromptAgentsDetected(t *testing.T) {
-	input := "\n" // press Enter → use detected
+	input := "\n" // press Enter -> use detected
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var out bytes.Buffer
 
@@ -100,7 +100,7 @@ func TestPromptAccessLocalOnly(t *testing.T) {
 }
 
 func TestPromptAccessSelfsignLocalhost(t *testing.T) {
-	// s then Enter → selfsign (localhost only)
+	// s then Enter -> selfsign (localhost only)
 	input := "s\n\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var out bytes.Buffer
@@ -115,7 +115,7 @@ func TestPromptAccessSelfsignLocalhost(t *testing.T) {
 }
 
 func TestPromptAccessSelfsignWithHost(t *testing.T) {
-	// s then hostname → selfsign@hostname
+	// s then hostname -> selfsign@hostname
 	input := "s\n192.168.1.100\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var out bytes.Buffer
@@ -148,7 +148,7 @@ func TestPromptAccessLetsencrypt(t *testing.T) {
 }
 
 func TestPromptAccessLetsencryptNoEmail(t *testing.T) {
-	// User provides hostname but empty email → falls back to "no"
+	// User provides hostname but empty email -> falls back to "no"
 	input := "l\nexample.com\n\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var out bytes.Buffer
@@ -163,7 +163,7 @@ func TestPromptAccessLetsencryptNoEmail(t *testing.T) {
 }
 
 func TestPromptAccessLetsencryptNoHostname(t *testing.T) {
-	// User chooses l but provides empty hostname → falls back to "no"
+	// User chooses l but provides empty hostname -> falls back to "no"
 	input := "l\n\n"
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	var out bytes.Buffer

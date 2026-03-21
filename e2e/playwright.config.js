@@ -9,7 +9,7 @@ export default defineConfig({
     timeout: 120_000, // 2 minutes for assertions (waiting for AI response)
   },
   retries: 0,
-  workers: 1, // sequential — tests share the server
+  workers: 1, // sequential -- tests share the server
   reporter: 'list',
   use: {
     baseURL,

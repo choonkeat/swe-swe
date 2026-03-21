@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## v2.17.0 - Agent Chat Loading, Stale Config Detection & ASCII Lint
+
+### Features
+
+- **Agent Chat loading indicator**: Agent Chat tab appears immediately with a loading spinner while waiting for the MCP server to become available
+- **Stale container config detection**: `swe-swe up` auto-detects when the container configuration is outdated and prompts to re-initialize
+- **CLI version tracking**: `cliVersion` field added to InitConfig for version compatibility checks
+- **ASCII-only source lint**: `make ascii-check` enforces ASCII-only source files with per-file character allowlist; `make ascii-fix` auto-replaces common accidental non-ASCII characters
+
+### Bug Fixes
+
+- **Agent Chat probe**: Require HTTP 200 from MCP health probe before activating Agent Chat tab (prevents premature tab activation on non-200 responses)
+- **Dockerfile-only compose shim**: Cert volume mounts, env vars, proxy port ranges, and full parity with compose template (v2.16.1-v2.16.3)
+
+### Documentation
+
+- ADR-0038: Hybrid cookie Secure flag (X-Forwarded-Proto auto-detection with explicit override)
+
 ## v2.16.0 - Dockerfile-Only Single-Container Mode
 
 ### Features

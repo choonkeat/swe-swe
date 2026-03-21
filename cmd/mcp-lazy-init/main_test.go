@@ -229,7 +229,7 @@ func TestRunNoToolsCall(t *testing.T) {
 		command:    []string{"cat"},
 	}
 
-	// Only initialize and tools/list — no tools/call
+	// Only initialize and tools/list -- no tools/call
 	messages := []map[string]interface{}{
 		{"jsonrpc": "2.0", "method": "initialize", "id": 1},
 		{"jsonrpc": "2.0", "method": "tools/list", "id": 2},

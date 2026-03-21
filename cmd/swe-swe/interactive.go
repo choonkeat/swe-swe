@@ -143,7 +143,7 @@ func promptAccess(scanner *bufio.Scanner, w io.Writer) (sslFlag, email string) {
 func runInteractiveInit(absPath string, metadataDir string, stdin io.Reader, stdout io.Writer) error {
 	scanner := bufio.NewScanner(stdin)
 
-	fmt.Fprintf(stdout, "\nStarting express setup — for advanced options, use `swe-swe init -h`\n\n")
+	fmt.Fprintf(stdout, "\nStarting express setup -- for advanced options, use `swe-swe init -h`\n\n")
 
 	// 1. Agents
 	detected := detectInstalledAgents()

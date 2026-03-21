@@ -144,7 +144,7 @@ func handleCertificatesAndEnv(sweDir, certsDir, projectName string) bool {
 			continue
 		}
 
-		fmt.Printf("Copied enterprise certificate: %s → %s\n", certPath, destCertPath)
+		fmt.Printf("Copied enterprise certificate: %s -> %s\n", certPath, destCertPath)
 
 		// Track certificate for .env file
 		certPaths = append(certPaths, certFilename)

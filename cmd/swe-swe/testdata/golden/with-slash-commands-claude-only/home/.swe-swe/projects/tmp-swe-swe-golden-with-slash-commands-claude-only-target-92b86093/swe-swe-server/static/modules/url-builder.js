@@ -125,7 +125,7 @@ export function buildPortBasedProxyUrl(location, previewProxyPort, targetURL) {
 
 /**
  * Build a session page URL with canonical query param ordering.
- * Mirrors Go SessionPageQuery.Encode() — keep both in sync.
+ * Mirrors Go SessionPageQuery.Encode() -- keep both in sync.
  *
  * @param {string} baseUrl - Base URL (e.g. "http://localhost:8080")
  * @param {string} sessionUUID - Session UUID for the path segment

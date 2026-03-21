@@ -409,7 +409,7 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 
 // setupEmbeddedAuth registers the login handler and wraps the default mux with auth middleware.
 // Returns the handler to use for the HTTP server.
-// If password is empty, returns nil (no auth needed — compose mode with Traefik handles it).
+// If password is empty, returns nil (no auth needed -- compose mode with Traefik handles it).
 func setupEmbeddedAuth(password string) http.Handler {
 	if password == "" {
 		return nil

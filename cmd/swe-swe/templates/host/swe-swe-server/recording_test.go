@@ -2279,7 +2279,7 @@ func TestChatPlaybackPage(t *testing.T) {
 }
 
 // ============================================================================
-// List Recordings API — child filtering Tests
+// List Recordings API -- child filtering Tests
 // ============================================================================
 
 func TestListRecordings_FiltersChildRecordings(t *testing.T) {

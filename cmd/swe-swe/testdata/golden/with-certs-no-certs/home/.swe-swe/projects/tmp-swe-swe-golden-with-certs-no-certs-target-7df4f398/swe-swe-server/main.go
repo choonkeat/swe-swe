@@ -1378,7 +1378,7 @@ const agentChatWaitingPage = `<!DOCTYPE html>
 <body>
     <div class="status">
         <span class="status-dot"></span>
-        <span>Waiting for Agent Chat…</span>
+        <span>Waiting for Agent Chat...</span>
     </div>
     <script>
         async function checkApp() {
@@ -5362,7 +5362,7 @@ func handleChatPlaybackPage(w http.ResponseWriter, r *http.Request, parentUUID s
 	if metaData, err := os.ReadFile(metaPattern); err == nil {
 		var meta RecordingMetadata
 		if json.Unmarshal(metaData, &meta) == nil && meta.Name != "" {
-			title = meta.Name + " — Chat"
+			title = meta.Name + " -- Chat"
 		}
 	}
 

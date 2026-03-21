@@ -455,7 +455,7 @@ func handleInit() {
 	statusBarFontFamily := fs.String("status-bar-font-family", "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", "Status bar font family")
 	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
 	publicPorts := fs.String("public-ports", "5000-5019", "Public (no-auth) port range (e.g., 5000-5019)")
-	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 → 23000 with offset 20000)")
+	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 -> 23000 with offset 20000)")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
@@ -594,7 +594,7 @@ func handleInit() {
 		log.Fatalf("Failed to create directory %q: %v", absPath, err)
 	}
 
-	// Get metadata directory — use flag override or auto-derive
+	// Get metadata directory -- use flag override or auto-derive
 	var sweDir string
 	if *metadataDirFlag != "" {
 		sweDir, err = filepath.Abs(*metadataDirFlag)
@@ -844,7 +844,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 					log.Fatalf("Failed to copy file %s to %s: %v", srcPath, destPath, err)
 				}
 			}
-			fmt.Printf("Copied %s → %s\n", srcPath, destPath)
+			fmt.Printf("Copied %s -> %s\n", srcPath, destPath)
 
 			// Set ownership to UID 1000 for the copied files
 			filepath.Walk(destPath, func(path string, info os.FileInfo, err error) error {
@@ -955,7 +955,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	// Walk embedded templates/host/ to discover all files automatically.
-	// New files are included by default — no whitelist to maintain.
+	// New files are included by default -- no whitelist to maintain.
 	var hostFiles []string
 	if err := iofs.WalkDir(assets, "templates/host", func(path string, d iofs.DirEntry, err error) error {
 		if err != nil {
@@ -964,7 +964,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		if d.IsDir() {
 			return nil
 		}
-		// Skip test files — not needed in production builds
+		// Skip test files -- not needed in production builds
 		if strings.HasSuffix(d.Name(), "_test.go") {
 			return nil
 		}
@@ -1027,13 +1027,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 			}
 		}
 
-		// Auth is now embedded in swe-swe-server — skip standalone auth service files
+		// Auth is now embedded in swe-swe-server -- skip standalone auth service files
 		if strings.HasPrefix(hostFile, "templates/host/auth/") {
 			continue
 		}
 
 		// Skip compose-only files when dockerfile-only mode is enabled
-		// (docker-compose.yml is NOT skipped — a minimal shim is generated instead)
+		// (docker-compose.yml is NOT skipped -- a minimal shim is generated instead)
 		if config.DockerfileOnly {
 			if hostFile == "templates/host/traefik-dynamic.yml" ||
 				hostFile == "templates/host/code-server/Dockerfile" ||
@@ -1231,7 +1231,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	if err := os.RemoveAll(containerTemplatesDir); err != nil {
 		log.Fatalf("Failed to clean container-templates directory: %v", err)
 	}
-	// Auth is now embedded in swe-swe-server — remove stale standalone auth directory from previous inits
+	// Auth is now embedded in swe-swe-server -- remove stale standalone auth directory from previous inits
 	authDir := filepath.Join(sweDir, "auth")
 	if err := os.RemoveAll(authDir); err != nil {
 		log.Fatalf("Failed to clean auth directory: %v", err)

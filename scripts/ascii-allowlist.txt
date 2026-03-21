@@ -1,0 +1,31 @@
+# Per-file Unicode allowlist for ascii-check.
+# Format: file-glob<TAB>allowed-characters
+# Lines starting with # are comments. Blank lines are ignored.
+# The check fails if a non-ASCII char appears in a file that either:
+#   (a) has no allowlist entry, or
+#   (b) has an entry but the char is not in the allowed set.
+#
+# To update: run `make ascii-check`, review the output, and add
+# legitimate characters here.
+
+# UI navigation icons and symbols
+terminal-ui.js	←↑→↓↻↗◀▶⚙◯⌂⇧⌥💬•×·
+terminal-ui.css	■✎
+selection.html	•⚙✨🛠🤖🧠🪿️
+combo-box.js	◯
+
+# Shell status indicators (echo output)
+entrypoint.sh	✓⚠✗
+templates.go	✓⚠
+
+# Prompt detection
+main.go	❯
+
+# Test comment
+main_test.go	⚠️
+
+# UTF-8 test data
+messages.test.js	日本語
+uuid.test.js	日本語中文
+proxy_integration_test.go	こんにちはمرحبا
+worktree_test.go	éüñíçöïâ

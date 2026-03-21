@@ -82,7 +82,7 @@
     pointer-events: none;
 }
 
-/* Touch devices: enable proxy, disable xterm touch — only when xterm is focused */
+/* Touch devices: enable proxy, disable xterm touch -- only when xterm is focused */
 @media (pointer: coarse) {
     .xterm-focused .touch-scroll-proxy {
         display: block;

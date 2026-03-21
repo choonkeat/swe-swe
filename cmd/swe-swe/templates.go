@@ -263,7 +263,7 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					entrypoint := fmt.Sprintf("preview%d", port)
 					pp := previewProxyPort(port, proxyPortOffset)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-preview-%d", port)
-					// Probe router: no ForwardAuth, higher priority — Safari CORS fix
+					// Probe router: no ForwardAuth, higher priority -- Safari CORS fix
 					probeName := routerName + "-probe"
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
@@ -297,7 +297,7 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					entrypoint := fmt.Sprintf("agentchat%d", acPort)
 					pp := agentChatProxyPort(acPort, proxyPortOffset)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-agentchat-%d", acPort)
-					// Probe router: no ForwardAuth, higher priority — Safari CORS fix
+					// Probe router: no ForwardAuth, higher priority -- Safari CORS fix
 					probeName := routerName + "-probe"
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
@@ -351,7 +351,7 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					vp := vncPort(port)
 					entrypoint := fmt.Sprintf("vnc%d", vp)
 					routerName := fmt.Sprintf("${PROJECT_NAME}-vnc-%d", vp)
-					// Probe router: no ForwardAuth, higher priority — Safari CORS fix
+					// Probe router: no ForwardAuth, higher priority -- Safari CORS fix
 					probeName := routerName + "-probe"
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
@@ -392,7 +392,7 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 			if strings.Contains(line, "{{DOMAIN}}") {
 				line = strings.ReplaceAll(line, "{{DOMAIN}}", domain)
 			}
-			// Handle VSCODE_SERVICES placeholder — generates vscode-proxy + code-server services or empty
+			// Handle VSCODE_SERVICES placeholder -- generates vscode-proxy + code-server services or empty
 			if strings.Contains(line, "{{VSCODE_SERVICES}}") {
 				if withVSCode {
 					var vscodeSslLabels string
@@ -523,13 +523,13 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.claude/commands/%s 2>/dev/null || true
     su -s /bin/bash app -c "cd /home/app/.claude/commands/%s && git pull" 2>/dev/null && \
-        echo -e "${GREEN}✓ Updated slash commands: %s (claude)${NC}" || \
+        echo -e "${GREEN}[ok] Updated slash commands: %s (claude)${NC}" || \
         echo -e "${YELLOW}⚠ Could not update slash commands: %s (claude)${NC}"
 elif [ -d "/tmp/slash-commands/%s" ]; then
     mkdir -p /home/app/.claude/commands
     cp -r /tmp/slash-commands/%s /home/app/.claude/commands/%s
     chown -R app:app /home/app/.claude/commands/%s
-    echo -e "${GREEN}✓ Installed slash commands: %s (claude)${NC}"
+    echo -e "${GREEN}[ok] Installed slash commands: %s (claude)${NC}"
 fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
 			}
 			// Codex
@@ -538,13 +538,13 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.codex/prompts/%s 2>/dev/null || true
     su -s /bin/bash app -c "cd /home/app/.codex/prompts/%s && git pull" 2>/dev/null && \
-        echo -e "${GREEN}✓ Updated slash commands: %s (codex)${NC}" || \
+        echo -e "${GREEN}[ok] Updated slash commands: %s (codex)${NC}" || \
         echo -e "${YELLOW}⚠ Could not update slash commands: %s (codex)${NC}"
 elif [ -d "/tmp/slash-commands/%s" ]; then
     mkdir -p /home/app/.codex/prompts
     cp -r /tmp/slash-commands/%s /home/app/.codex/prompts/%s
     chown -R app:app /home/app/.codex/prompts/%s
-    echo -e "${GREEN}✓ Installed slash commands: %s (codex)${NC}"
+    echo -e "${GREEN}[ok] Installed slash commands: %s (codex)${NC}"
 fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
 			}
 			// OpenCode
@@ -553,13 +553,13 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.config/opencode/command/%s 2>/dev/null || true
     su -s /bin/bash app -c "cd /home/app/.config/opencode/command/%s && git pull" 2>/dev/null && \
-        echo -e "${GREEN}✓ Updated slash commands: %s (opencode)${NC}" || \
+        echo -e "${GREEN}[ok] Updated slash commands: %s (opencode)${NC}" || \
         echo -e "${YELLOW}⚠ Could not update slash commands: %s (opencode)${NC}"
 elif [ -d "/tmp/slash-commands/%s" ]; then
     mkdir -p /home/app/.config/opencode/command
     cp -r /tmp/slash-commands/%s /home/app/.config/opencode/command/%s
     chown -R app:app /home/app/.config/opencode/command/%s
-    echo -e "${GREEN}✓ Installed slash commands: %s (opencode)${NC}"
+    echo -e "${GREEN}[ok] Installed slash commands: %s (opencode)${NC}"
 fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
 			}
 		}

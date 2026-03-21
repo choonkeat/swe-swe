@@ -107,7 +107,7 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 				displayDir = displayDir[len(sess.WorkDir)+1:]
 			}
 			if item.H != "" {
-				item.H = item.H + " — " + displayDir
+				item.H = item.H + " -- " + displayDir
 			} else {
 				item.H = displayDir
 			}
@@ -174,9 +174,9 @@ func projectCommandDir(assistant string, workDir string) string {
 // commands with their descriptions. Supports two layouts:
 //
 //	commands/
-//	  command.md            → V="command"           (flat, no namespace)
+//	  command.md            -> V="command"           (flat, no namespace)
 //	  namespace/
-//	    command.md          → V="namespace:command"  (namespaced)
+//	    command.md          -> V="namespace:command"  (namespaced)
 //
 // Returns items with H=description extracted from file content.
 func discoverSlashCommands(dir string, ext string) []autocompleteItem {

@@ -1,5 +1,5 @@
 /**
- * <combo-box> — minimal combobox web component.
+ * <combo-box> -- minimal combobox web component.
  * Forked from /repos/combobox/workspace/src/combo-box.js
  * Added CSS custom property support for dark theme theming.
  *

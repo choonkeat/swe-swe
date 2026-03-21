@@ -46,7 +46,7 @@ try {
   } else {
     console.error(
       `Could not find package ${pkgName}.\n` +
-        `Make sure it is installed — this usually means your platform is supported\n` +
+        `Make sure it is installed -- this usually means your platform is supported\n` +
         `but the optional dependency was not installed.\n\n` +
         `Try: npm install ${pkgName}\n` +
         `Or run: npx swe-swe`

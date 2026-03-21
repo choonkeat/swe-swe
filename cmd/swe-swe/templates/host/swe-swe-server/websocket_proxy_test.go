@@ -162,7 +162,7 @@ func TestWebSocketProxyBackendDown(t *testing.T) {
 	proxy := httptest.NewServer(proxyMux)
 	defer proxy.Close()
 
-	// Attempt WebSocket dial — should get an error, not hang
+	// Attempt WebSocket dial -- should get an error, not hang
 	wsURL := "ws" + strings.TrimPrefix(proxy.URL, "http") + "/"
 	dialer := websocket.Dialer{}
 	_, resp, err := dialer.Dial(wsURL, nil)

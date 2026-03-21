@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs
+.PHONY: build run stop test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix
 
 build: build-cli
 
@@ -18,7 +18,16 @@ stop:
 	if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "Stopped dev server (pid $$pid)"; \
 	else echo "No dev server running on :$(PORT)"; fi
 
-test: check-gomod-sync test-cli test-mcp-lazy-init test-server
+test: ascii-check check-gomod-sync test-cli test-mcp-lazy-init test-server
+
+# ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
+# See scripts/ascii-allowlist.txt for the per-file character allowlist
+ascii-check:
+	@bash scripts/ascii-check.sh
+
+# Auto-replace accidental non-ASCII characters (uses bash for $'...' hex escapes)
+ascii-fix:
+	@bash scripts/ascii-fix.sh
 
 test-cli:
 	go test -v ./cmd/swe-swe

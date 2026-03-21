@@ -16,13 +16,13 @@ NC='\033[0m' # No Color
 
 # Install certificates if mounted (must be root for this)
 if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/dev/null | wc -l)" -gt 0 ]; then
-    echo -e "${YELLOW}→ Installing enterprise certificates...${NC}"
+    echo -e "${YELLOW}-> Installing enterprise certificates...${NC}"
 
     # Copy PEM files to system CA certificate directory
     if cp /swe-swe/certs/*.pem /usr/local/share/ca-certificates/ 2>/dev/null; then
         # Update CA certificate bundle
         if update-ca-certificates; then
-            echo -e "${GREEN}✓ Enterprise certificates installed and trusted${NC}"
+            echo -e "${GREEN}[ok] Enterprise certificates installed and trusted${NC}"
         else
             echo -e "${YELLOW}⚠ Warning: update-ca-certificates failed, continuing anyway${NC}"
         fi
@@ -37,13 +37,13 @@ if [ -d "/home/app/.config/opencode/command/ck/.git" ]; then
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.config/opencode/command/ck 2>/dev/null || true
     su -s /bin/bash app -c "cd /home/app/.config/opencode/command/ck && git pull" 2>/dev/null && \
-        echo -e "${GREEN}✓ Updated slash commands: ck (opencode)${NC}" || \
+        echo -e "${GREEN}[ok] Updated slash commands: ck (opencode)${NC}" || \
         echo -e "${YELLOW}⚠ Could not update slash commands: ck (opencode)${NC}"
 elif [ -d "/tmp/slash-commands/ck" ]; then
     mkdir -p /home/app/.config/opencode/command
     cp -r /tmp/slash-commands/ck /home/app/.config/opencode/command/ck
     chown -R app:app /home/app/.config/opencode/command/ck
-    echo -e "${GREEN}✓ Installed slash commands: ck (opencode)${NC}"
+    echo -e "${GREEN}[ok] Installed slash commands: ck (opencode)${NC}"
 fi
 
 # Create OpenCode MCP configuration
@@ -76,7 +76,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
 }
 EOF
 chown -R app: /home/app/.config/opencode
-echo -e "${GREEN}✓ Created OpenCode MCP configuration${NC}"
+echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
 
 
@@ -93,7 +93,7 @@ cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
 curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
-echo "→ Preview: $URL" >&2
+echo "-> Preview: $URL" >&2
 SHIM
 chmod +x /home/app/.swe-swe/bin/swe-swe-open
 for name in xdg-open open x-www-browser www-browser sensible-browser; do
@@ -104,7 +104,7 @@ chown -R app: /home/app/.swe-swe/bin
 # Uses /etc/profile.d/ so login shells (terminal, codex) pick it up
 # after /etc/profile resets PATH.
 echo 'export PATH="/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
-echo -e "${GREEN}✓ Created open/xdg-open shims in .swe-swe/bin${NC}"
+echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
 
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling

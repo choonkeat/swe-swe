@@ -78,7 +78,7 @@ func handlePassthrough(command string, args []string) {
 	if _, err := os.Stat(sweDir); os.IsNotExist(err) {
 		if command == "up" {
 			// Auto-initialize via interactive prompts
-			fmt.Printf("Project not initialized at %s — starting interactive setup...\n\n", absPath)
+			fmt.Printf("Project not initialized at %s -- starting interactive setup...\n\n", absPath)
 			if err := runInteractiveInit(absPath, "", os.Stdin, os.Stdout); err != nil {
 				log.Fatalf("Interactive init failed: %v", err)
 			}

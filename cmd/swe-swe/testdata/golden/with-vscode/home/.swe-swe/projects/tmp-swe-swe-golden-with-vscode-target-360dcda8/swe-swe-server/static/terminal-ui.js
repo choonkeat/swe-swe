@@ -1633,7 +1633,7 @@ class TerminalUI extends HTMLElement {
                         const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
                         const placeholderText = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder-text');
                         if (placeholder) placeholder.classList.remove('hidden');
-                        if (placeholderText) placeholderText.textContent = 'Starting browser…';
+                        if (placeholderText) placeholderText.textContent = 'Starting browser...';
                         if (!this._browserViewProbing) {
                             this._browserViewProbing = true;
                             probeUntilReady(url, {

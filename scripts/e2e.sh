@@ -61,7 +61,7 @@ git config user.email "e2e@test.local"
 git config user.name "E2E Test"
 git commit -q --allow-empty -m "initial"
 
-# No SSL + no vscode → dockerfile-only mode auto-detected
+# No SSL + no vscode -> dockerfile-only mode auto-detected
 # Use non-default port ranges to avoid conflicts with the production stack
 HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init \
     --project-directory="$TEST_STACK_DIR" \

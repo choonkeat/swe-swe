@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# colors.sh — Display readable ANSI color pairs with sufficient contrast.
+# colors.sh -- Display readable ANSI color pairs with sufficient contrast.
 # Shows all fg/bg combinations from the 16 basic ANSI colors that meet
 # WCAG AA contrast ratio (>= 4.5:1), commonly used in TUI coding agents.
 
@@ -22,12 +22,12 @@ awk 'BEGIN {
     lum[i] = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl
   }
 
-  # ANSI escape code helpers: fg 0-7→30-37, 8-15→90-97; bg 0-7→40-47, 8-15→100-107
+  # ANSI escape code helpers: fg 0-7->30-37, 8-15->90-97; bg 0-7->40-47, 8-15->100-107
   min_ratio = 4.5
   count = 0
 
   printf "%-12s  %-12s  %5s  %-s\n", "FOREGROUND", "BACKGROUND", "RATIO", "SAMPLE"
-  for (k = 0; k < 72; k++) sep = sep "─"
+  for (k = 0; k < 72; k++) sep = sep "-"
   print sep
 
   for (fg = 1; fg <= 16; fg++) {

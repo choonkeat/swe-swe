@@ -11,7 +11,7 @@ LDFLAGS="-s -w -X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X mai
 
 echo "Building swe-swe v${VERSION}"
 
-# ── Cross-compile Go binary for each platform ────────────────────────────
+# -- Cross-compile Go binary for each platform ----------------------------
 TARGETS=(
   "linux   amd64  linux-x64"
   "linux   arm64  linux-arm64"
@@ -35,7 +35,7 @@ for target in "${TARGETS[@]}"; do
     bin_name="swe-swe.exe"
   fi
 
-  echo "→ Compiling ${goos}/${goarch}…"
+  echo "-> Compiling ${goos}/${goarch}..."
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
     go build -C "$REPO_ROOT" -trimpath -ldflags="$LDFLAGS" \
     -o "$bin_dir/$bin_name" ./cmd/swe-swe
@@ -65,7 +65,7 @@ for target in "${TARGETS[@]}"; do
 }
 PKGJSON
 
-  echo "  ✓ npm-platforms/${pkg_suffix} ($(du -h "$bin_dir/$bin_name" | cut -f1))"
+  echo "  [ok] npm-platforms/${pkg_suffix} ($(du -h "$bin_dir/$bin_name" | cut -f1))"
 done
 
 echo ""

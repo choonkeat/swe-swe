@@ -506,7 +506,7 @@
     });
 
     // Build session URL (shared by both start buttons).
-    // Mirrors url-builder.js:buildSessionPageUrl — keep param contract in sync.
+    // Mirrors url-builder.js:buildSessionPageUrl -- keep param contract in sync.
     function buildSessionUrl(sessionMode) {
         var p = new URLSearchParams();
         p.set('assistant', dialogState.selectedAgent);

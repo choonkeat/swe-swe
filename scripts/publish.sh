@@ -19,7 +19,7 @@ fi
 
 echo ""
 
-# ── 0. Verify versions match ─────────────────────────────────────────────
+# -- 0. Verify versions match ---------------------------------------------
 MAIN_VERSION=$(node -p "require('$REPO_ROOT/package.json').version")
 echo "Verifying version consistency (v${MAIN_VERSION})..."
 
@@ -60,21 +60,21 @@ fi
 echo "  All versions match: v${MAIN_VERSION}"
 echo ""
 
-# ── 1. Publish platform packages ─────────────────────────────────────────
+# -- 1. Publish platform packages -----------------------------------------
 PLATFORMS=(linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64)
 
 for platform in "${PLATFORMS[@]}"; do
   pkg_dir="$OUT_DIR/$platform"
   if [ ! -d "$pkg_dir" ]; then
-    echo "ERROR: Missing $pkg_dir — run scripts/build-platforms.sh first"
+    echo "ERROR: Missing $pkg_dir -- run scripts/build-platforms.sh first"
     exit 1
   fi
-  echo "→ Publishing @choonkeat/swe-swe-${platform}…"
+  echo "-> Publishing @choonkeat/swe-swe-${platform}..."
   npm publish "$pkg_dir" --access public $PUBLISH_ARGS
 done
 
-# ── 2. Publish the main package ───────────────────────────────────────────
-echo "→ Publishing swe-swe…"
+# -- 2. Publish the main package -------------------------------------------
+echo "-> Publishing swe-swe..."
 npm publish "$REPO_ROOT" --access public $PUBLISH_ARGS
 
 echo ""
