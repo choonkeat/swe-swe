@@ -9,6 +9,27 @@ import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, rese
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
+// Strip CSI 3J (\x1b[3J = clear scrollback buffer) from a Uint8Array.
+// Claude's TUI emits this during full-screen redraws, causing viewport jumps.
+// The sequence is 4 bytes: 0x1b, 0x5b, 0x33, 0x4a
+function stripCSI3J(data) {
+    // Fast path: scan for ESC byte first
+    if (data.indexOf(0x1b) === -1) return data;
+    const result = new Uint8Array(data.length);
+    let j = 0;
+    for (let i = 0; i < data.length; i++) {
+        if (i + 3 < data.length &&
+            data[i] === 0x1b && data[i+1] === 0x5b &&
+            data[i+2] === 0x33 && data[i+3] === 0x4a) {
+            i += 3; // skip the 4-byte sequence (loop increments i once more)
+            continue;
+        }
+        result[j++] = data[i];
+    }
+    if (j === data.length) return data; // nothing stripped, return original
+    return result.subarray(0, j);
+}
+
 class TerminalUI extends HTMLElement {
     constructor() {
         super();
@@ -893,27 +914,20 @@ class TerminalUI extends HTMLElement {
             requestAnimationFrame(() => {
                 // Combine all pending writes into one
                 const total = this.pendingWrites.reduce((sum, arr) => sum + arr.length, 0);
-                const combined = new Uint8Array(total);
+                let combined = new Uint8Array(total);
                 let offset = 0;
                 for (const arr of this.pendingWrites) {
                     combined.set(arr, offset);
                     offset += arr.length;
                 }
-                // Fix 4 (Mar 15): Restore write callback scrollToBottom.
-                // Cursor-up sequences (\x1b[nA) during Claude's spinner/status
-                // redraws move the viewport up. Without correction, the viewport
-                // gets stuck at the top during MCP waits. The rAF write batching
-                // reduces flicker vs the original Fix 2 since cursor-up + content
-                // are now coalesced into a single write.
-                const buffer = this.term.buffer.active;
-                const maxLine = buffer.length - this.term.rows;
-                const scrolledUp = maxLine - buffer.viewportY;
-                const wasNearBottom = scrolledUp < this.term.rows / 2;
-                this.term.write(combined, () => {
-                    if (wasNearBottom) {
-                        this.term.scrollToBottom();
-                    }
-                });
+                // Fix 5 (Mar 21): Strip CSI 3J (clear scrollback) to prevent
+                // viewport jump. Claude's TUI emits \x1b[3J during full-screen
+                // redraws, which clears the scrollback buffer and can cause the
+                // viewport to jump to the top. Stripping it preserves scrollback
+                // (bounded by scrollback limit) and lets xterm.js manage viewport
+                // position natively. See research/2026-02-05-xterm-scroll-flicker.md
+                combined = stripCSI3J(combined);
+                this.term.write(combined);
                 this.pendingWrites = null;
             });
         }
