@@ -1732,7 +1732,15 @@ class TerminalUI extends HTMLElement {
         // Focus always transfers -- whether tab switched via click or programmatically
         if (tab === 'chat') {
             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
-            if (chatIframe && chatIframe.contentWindow) chatIframe.contentWindow.focus();
+            if (chatIframe && chatIframe.contentWindow) {
+                chatIframe.contentWindow.focus();
+                try {
+                    const activeEl = chatIframe.contentWindow.document.activeElement;
+                    if (activeEl && activeEl !== chatIframe.contentWindow.document.body) {
+                        activeEl.focus();
+                    }
+                } catch (e) { /* cross-origin: ignore */ }
+            }
         } else {
             if (this.term) this.term.focus();
         }
