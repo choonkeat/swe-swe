@@ -1602,6 +1602,13 @@ class TerminalUI extends HTMLElement {
     switchPanelTab(tab) {
         if (tab === this.activeTab) return;
 
+        // Ensure iframe pane is visible (needed when called before pane is open)
+        const terminalUi = this.querySelector('.terminal-ui');
+        if (terminalUi) {
+            terminalUi.classList.add('iframe-visible');
+        }
+        this.applyPaneWidth();
+
         // Show/hide toolbar based on tab
         const iframePane = this.querySelector('.terminal-ui__iframe-pane');
         if (iframePane) {
@@ -1652,9 +1659,12 @@ class TerminalUI extends HTMLElement {
                             this._browserViewProbing = true;
                             probeUntilReady(url, {
                                 method: 'HEAD',
+                                mode: 'no-cors',
                                 maxAttempts: 15,
                                 baseDelay: 1000,
                                 maxDelay: 5000,
+                                // no-cors returns opaque response (status 0), not resp.ok
+                                isReady: (resp) => resp.type === 'opaque' || resp.ok,
                             }).then(() => {
                                 this._browserViewReady = true;
                                 this._browserViewProbing = false;
@@ -1684,6 +1694,9 @@ class TerminalUI extends HTMLElement {
         if (panelDropdown) {
             panelDropdown.value = tab;
         }
+
+        // Re-fit terminal after layout change
+        setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
     // Switch left panel between terminal and chat
