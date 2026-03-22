@@ -254,7 +254,10 @@ OpenCode uses the alternate screen buffer (standard for TUI apps like vim, htop,
 
 ### Fix 5: Strip CSI 3J + Remove Fix 4 (Mar 21, 2026)
 
-**Plan:**
+**Implementation:**
 1. Strip `\x1b[3J` from combined write buffer in `onTerminalData()` before passing to `term.write()`
 2. Remove Fix 4's `wasNearBottom` + `scrollToBottom()` write callback -- no longer needed if viewport doesn't jump
 3. Keep `scrollToBottom()` for snapshot reassembly (line 966) -- still needed for initial load
+
+**Status:** Implemented and accepted. See [ADR-0039](../docs/adr/0039-strip-csi3j-viewport-fix.md).
+**Result:** Stable -- viewport no longer jumps during TUI redraws (tested Mar 22).

@@ -61,3 +61,7 @@ Bad: ...
 | [033](0033-port-with-path-fallback-proxy.md) | Port-based proxy with path-based fallback | Accepted |
 | [034](0034-per-session-chrome-vnc.md) | Per-session Chrome/VNC | Accepted |
 | [035](0035-on-demand-browser-startup.md) | On-demand browser startup via mcp-lazy-init | Accepted |
+| [036](0036-vscode-opt-in.md) | VS Code (code-server) as opt-in flag | Accepted |
+| [037](0037-dockerfile-only-mode.md) | `--dockerfile-only` single-container mode | Accepted |
+| [038](0038-cookie-secure-flag.md) | Hybrid cookie secure flag | Accepted |
+| [039](0039-strip-csi3j-viewport-fix.md) | Strip CSI 3J to prevent xterm.js viewport jump | Accepted |
