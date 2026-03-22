@@ -1,18 +1,21 @@
 #!/bin/bash
-# Install swe-swe binary (pre-bundled by Packer from local ./dist/)
+# Install swe-swe launcher and fetch latest binary from npm registry
 set -euo pipefail
 
-echo "==> Installing swe-swe..."
+echo "==> Installing swe-swe launcher..."
 
-# Binary should already be copied by Packer file provisioner
+# Launcher script should already be copied by Packer file provisioner
 if [ ! -f /usr/local/bin/swe-swe ]; then
-    echo "ERROR: swe-swe binary not found at /usr/local/bin/swe-swe"
-    echo "This means Packer did not copy the binary from ./dist/"
-    echo "Ensure you ran 'make build' at the repo root before building with Packer"
+    echo "ERROR: swe-swe launcher not found at /usr/local/bin/swe-swe"
+    echo "This means Packer did not copy files/ to /"
     exit 1
 fi
 
 chmod +x /usr/local/bin/swe-swe
+
+# Pre-fetch the latest binary so the image ships with a cached copy
+echo "==> Fetching latest swe-swe binary from npm registry..."
+/usr/local/bin/swe-swe version || echo "WARNING: initial fetch failed, will retry on first boot"
 
 # Clone git repository if URL provided
 if [ -n "${GIT_CLONE_URL:-}" ]; then

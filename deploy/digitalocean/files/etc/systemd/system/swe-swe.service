@@ -9,6 +9,7 @@ Type=simple
 User=swe-swe
 Group=swe-swe
 EnvironmentFile=/etc/swe-swe/env
+Environment=SWE_SWE_AUTO_UPGRADE=1
 WorkingDirectory=/workspace
 ExecStartPre=/bin/bash -c 'test -d /workspace/.swe-swe || (echo "Workspace not initialized yet, retrying..."; exit 1)'
 ExecStart=/usr/local/bin/swe-swe up --project-directory /workspace

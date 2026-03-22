@@ -1,0 +1,93 @@
+#!/bin/sh
+# swe-swe launcher - fetches latest binary from npm registry, caches locally
+# Falls back to cached binary if network is unavailable
+set -eu
+
+CACHE_DIR="/var/cache/swe-swe"
+VERSION_FILE="$CACHE_DIR/version"
+BIN="$CACHE_DIR/swe-swe"
+PACKAGE_NAME="swe-swe"
+BIN_NAME="swe-swe"
+REGISTRY_URL="https://registry.npmjs.org/${PACKAGE_NAME}/latest"
+
+# Detect platform
+detect_platform() {
+    OS="$(uname -s)"
+    ARCH="$(uname -m)"
+
+    case "$OS" in
+        Linux)  NPM_OS="linux" ;;
+        Darwin) NPM_OS="darwin" ;;
+        *)      NPM_OS="" ;;
+    esac
+
+    case "$ARCH" in
+        x86_64|amd64)  NPM_ARCH="x64" ;;
+        arm64|aarch64) NPM_ARCH="arm64" ;;
+        *)             NPM_ARCH="" ;;
+    esac
+
+    if [ -z "$NPM_OS" ] || [ -z "$NPM_ARCH" ]; then
+        echo "Unsupported platform: ${OS}-${ARCH}" >&2
+        return 1
+    fi
+    PLATFORM="${NPM_OS}-${NPM_ARCH}"
+}
+
+# Try to fetch and cache the latest version
+update_cache() {
+    LATEST=$(curl -fsSL --connect-timeout 5 --max-time 15 "$REGISTRY_URL" 2>/dev/null \
+        | sed -n 's/.*"version":"\([^"]*\)".*/\1/p') || return 1
+
+    [ -n "$LATEST" ] || return 1
+
+    # Check if we already have this version
+    CURRENT=""
+    [ -f "$VERSION_FILE" ] && CURRENT=$(cat "$VERSION_FILE")
+    [ "$LATEST" = "$CURRENT" ] && return 0
+
+    echo "swe-swe: updating $CURRENT -> $LATEST ..." >&2
+
+    SCOPE_PKG="@choonkeat/${BIN_NAME}-${PLATFORM}"
+    PKG_BASE="${BIN_NAME}-${PLATFORM}"
+    TARBALL_URL="https://registry.npmjs.org/${SCOPE_PKG}/-/${PKG_BASE}-${LATEST}.tgz"
+
+    TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$TMPDIR"' EXIT
+
+    curl -fsSL --connect-timeout 10 --max-time 120 "$TARBALL_URL" -o "$TMPDIR/pkg.tgz" 2>/dev/null || return 1
+    tar xzf "$TMPDIR/pkg.tgz" -C "$TMPDIR" || return 1
+
+    BIN_SRC="$TMPDIR/package/bin/${BIN_NAME}"
+    [ -f "$BIN_SRC" ] || return 1
+
+    chmod +x "$BIN_SRC"
+    mkdir -p "$CACHE_DIR"
+    cp "$BIN_SRC" "$BIN"
+    echo "$LATEST" > "$VERSION_FILE"
+    echo "swe-swe: updated to $LATEST" >&2
+
+    rm -rf "$TMPDIR"
+    trap - EXIT
+}
+
+main() {
+    detect_platform || true
+    mkdir -p "$CACHE_DIR"
+
+    # Try to update (non-fatal on failure)
+    if [ -n "${PLATFORM:-}" ]; then
+        update_cache 2>/dev/null || true
+    fi
+
+    # Run the cached binary
+    if [ -x "$BIN" ]; then
+        exec "$BIN" "$@"
+    fi
+
+    echo "swe-swe: no cached binary available and update failed" >&2
+    echo "swe-swe: ensure network connectivity or manually install to $BIN" >&2
+    exit 1
+}
+
+main "$@"

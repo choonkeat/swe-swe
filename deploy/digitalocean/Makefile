@@ -5,7 +5,6 @@ build:
 	@echo "==> Checking prerequisites for DigitalOcean Packer build..."
 	@command -v packer >/dev/null 2>&1 || { echo "ERROR: packer not found"; echo "See deploy/digitalocean/DEVELOPER.md for installation instructions"; exit 1; }
 	@packer -version | grep -qE 'Packer v1\.(1[4-9]|[2-9][0-9])' || { echo "ERROR: packer version must be >= v1.14.0"; echo "See https://developer.hashicorp.com/packer/install"; exit 1; }
-	@test -f ../../dist/swe-swe.linux-amd64 || { echo "ERROR: binary not found at ../../dist/swe-swe.linux-amd64"; echo "Run 'make build' at repo root first"; exit 1; }
 	@test -f template.pkr.hcl || { echo "ERROR: Packer template not found"; exit 1; }
 	@test -n "$$DIGITALOCEAN_API_TOKEN" || { echo "ERROR: DIGITALOCEAN_API_TOKEN environment variable not set"; echo "See DEVELOPER.md for API token setup"; exit 1; }
 	@echo "✓ All prerequisites met"
@@ -46,9 +45,13 @@ build:
 	echo ""; \
 	echo "==> Available swe-swe init flags:"; \
 	echo ""; \
-	GOOS=$$(go env GOOS 2>/dev/null || uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/darwin/'); \
-	GOARCH=$$(go env GOARCH 2>/dev/null || uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/'); \
-	../../dist/swe-swe.$${GOOS}-$${GOARCH} init -h 2>&1; \
+	if command -v swe-swe >/dev/null 2>&1; then \
+		swe-swe init -h 2>&1; \
+	else \
+		GOOS=$$(go env GOOS 2>/dev/null || uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/darwin/'); \
+		GOARCH=$$(go env GOARCH 2>/dev/null || uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/'); \
+		../../dist/swe-swe.$${GOOS}-$${GOARCH} init -h 2>&1 || echo "(could not show init flags - swe-swe binary not found)"; \
+	fi; \
 	echo ""; \
 	if [ -z "$(INIT_FLAGS)" ]; then \
 		read -p "swe-swe init flags (default: --with-docker --ssl=selfsign): " INIT_FLAGS; \

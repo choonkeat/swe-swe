@@ -87,17 +87,10 @@ source "digitalocean" "swe-swe" {
 build {
   sources = ["source.digitalocean.swe-swe"]
 
-  # Copy files to be provisioned
+  # Copy files to be provisioned (includes launcher script at usr/local/bin/swe-swe)
   provisioner "file" {
     source      = "files/"
     destination = "/"
-  }
-
-  # Copy swe-swe binary (must be built locally with `make build` at repo root)
-  # For amd64 architecture
-  provisioner "file" {
-    source      = "${path.root}/../../dist/swe-swe.linux-amd64"
-    destination = "/usr/local/bin/swe-swe"
   }
 
   # Wait for cloud-init to complete before running provisioners
