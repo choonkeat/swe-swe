@@ -1688,47 +1688,53 @@ class TerminalUI extends HTMLElement {
 
     // Switch left panel between terminal and chat
     switchLeftPanelTab(tab) {
-        if (tab === this.leftPanelTab) return;
-        this.leftPanelTab = tab;
+        if (tab !== this.leftPanelTab) {
+            this.leftPanelTab = tab;
 
-        const terminalUi = this.querySelector('.terminal-ui');
-        const terminalEl = this.querySelector('.terminal-ui__terminal');
-        const chatEl = this.querySelector('.terminal-ui__agent-chat');
-        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
-        if (!terminalEl || !chatEl) return;
+            const terminalUi = this.querySelector('.terminal-ui');
+            const terminalEl = this.querySelector('.terminal-ui__terminal');
+            const chatEl = this.querySelector('.terminal-ui__agent-chat');
+            if (!terminalEl || !chatEl) return;
 
-        // xterm-focused: gate mobile keyboard + touch-scroll-proxy (desktop tab switch)
-        if (tab === 'terminal') {
-            terminalUi.classList.add('xterm-focused');
-        } else {
-            terminalUi.classList.remove('xterm-focused');
+            // xterm-focused: gate mobile keyboard + touch-scroll-proxy (desktop tab switch)
+            if (tab === 'terminal') {
+                terminalUi.classList.add('xterm-focused');
+            } else {
+                terminalUi.classList.remove('xterm-focused');
+            }
+
+            // Update left panel tab buttons
+            const buttons = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
+            buttons.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.leftTab === tab);
+            });
+
+            if (tab === 'chat') {
+                // Use visibility instead of display to preserve xterm scroll position
+                terminalEl.style.visibility = 'hidden';
+                terminalEl.style.position = 'absolute';
+                chatEl.style.display = 'flex';
+                // iframe src is set by the agent chat probe callback, not here
+            } else {
+                chatEl.style.display = 'none';
+                terminalEl.style.visibility = '';
+                terminalEl.style.position = '';
+                setTimeout(() => this.fitAndPreserveScroll(), 50);
+            }
+
+            // Sync mobile dropdown
+            const mobileSelect = this.querySelector('.terminal-ui__mobile-nav-select');
+            if (mobileSelect) {
+                mobileSelect.value = tab === 'chat' ? 'agent-chat' : 'agent-terminal';
+            }
         }
 
-        // Update left panel tab buttons
-        const buttons = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
-        buttons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.leftTab === tab);
-        });
-
+        // Focus always transfers -- whether tab switched via click or programmatically
         if (tab === 'chat') {
-            // Use visibility instead of display to preserve xterm scroll position
-            terminalEl.style.visibility = 'hidden';
-            terminalEl.style.position = 'absolute';
-            chatEl.style.display = 'flex';
-            // iframe src is set by the agent chat probe callback, not here
+            const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
             if (chatIframe && chatIframe.contentWindow) chatIframe.contentWindow.focus();
         } else {
-            chatEl.style.display = 'none';
-            terminalEl.style.visibility = '';
-            terminalEl.style.position = '';
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
             if (this.term) this.term.focus();
-        }
-
-        // Sync mobile dropdown
-        const mobileSelect = this.querySelector('.terminal-ui__mobile-nav-select');
-        if (mobileSelect) {
-            mobileSelect.value = tab === 'chat' ? 'agent-chat' : 'agent-terminal';
         }
     }
 
