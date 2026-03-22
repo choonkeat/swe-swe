@@ -170,6 +170,7 @@ EOF
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
 # Wrapper: auto-run 'goose configure' if no provider is configured
+mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
 #!/bin/bash
 GOOSE=/usr/local/bin/goose
