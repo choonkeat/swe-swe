@@ -1716,11 +1716,13 @@ class TerminalUI extends HTMLElement {
             terminalEl.style.position = 'absolute';
             chatEl.style.display = 'flex';
             // iframe src is set by the agent chat probe callback, not here
+            if (chatIframe && chatIframe.contentWindow) chatIframe.contentWindow.focus();
         } else {
             chatEl.style.display = 'none';
             terminalEl.style.visibility = '';
             terminalEl.style.position = '';
             setTimeout(() => this.fitAndPreserveScroll(), 50);
+            if (this.term) this.term.focus();
         }
 
         // Sync mobile dropdown
