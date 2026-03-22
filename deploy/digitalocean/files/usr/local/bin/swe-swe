@@ -6,9 +6,7 @@ set -eu
 CACHE_DIR="/var/cache/swe-swe"
 VERSION_FILE="$CACHE_DIR/version"
 BIN="$CACHE_DIR/swe-swe"
-PACKAGE_NAME="swe-swe"
 BIN_NAME="swe-swe"
-REGISTRY_URL="https://registry.npmjs.org/${PACKAGE_NAME}/latest"
 
 # Detect platform
 detect_platform() {
@@ -36,6 +34,10 @@ detect_platform() {
 
 # Try to fetch and cache the latest version
 update_cache() {
+    SCOPE_PKG="@choonkeat/${BIN_NAME}-${PLATFORM}"
+    PKG_BASE="${BIN_NAME}-${PLATFORM}"
+    REGISTRY_URL="https://registry.npmjs.org/${SCOPE_PKG}/latest"
+
     LATEST=$(curl -fsSL --connect-timeout 5 --max-time 15 "$REGISTRY_URL" 2>/dev/null \
         | sed -n 's/.*"version":"\([^"]*\)".*/\1/p') || return 1
 
@@ -48,8 +50,6 @@ update_cache() {
 
     echo "swe-swe: updating $CURRENT -> $LATEST ..." >&2
 
-    SCOPE_PKG="@choonkeat/${BIN_NAME}-${PLATFORM}"
-    PKG_BASE="${BIN_NAME}-${PLATFORM}"
     TARBALL_URL="https://registry.npmjs.org/${SCOPE_PKG}/-/${PKG_BASE}-${LATEST}.tgz"
 
     TMPDIR=$(mktemp -d)
@@ -77,7 +77,7 @@ main() {
 
     # Try to update (non-fatal on failure)
     if [ -n "${PLATFORM:-}" ]; then
-        update_cache 2>/dev/null || true
+        update_cache || true
     fi
 
     # Run the cached binary

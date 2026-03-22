@@ -13,9 +13,16 @@ fi
 
 chmod +x /usr/local/bin/swe-swe
 
-# Pre-fetch the latest binary so the image ships with a cached copy
+# Pre-fetch the latest binary so the image ships with a cached copy.
+# We run "swe-swe --help" which triggers the launcher's download logic,
+# then verify the cached binary exists.
 echo "==> Fetching latest swe-swe binary from npm registry..."
-/usr/local/bin/swe-swe version || echo "WARNING: initial fetch failed, will retry on first boot"
+/usr/local/bin/swe-swe --help >/dev/null 2>&1 || true
+if [ -x /var/cache/swe-swe/swe-swe ]; then
+    echo "==> Cached binary: $(/var/cache/swe-swe/swe-swe version 2>/dev/null || cat /var/cache/swe-swe/version)"
+else
+    echo "WARNING: initial fetch failed, will retry on first boot"
+fi
 
 # Clone git repository if URL provided
 if [ -n "${GIT_CLONE_URL:-}" ]; then
