@@ -187,6 +187,9 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN if ! getent group {{GID}} > /dev/null; then groupadd -K GID_MIN=20 -g {{GID}} app; fi && \
     useradd -m -K UID_MIN=100 -u {{UID}} -g {{GID}} -s /bin/bash app
 
+# Minimal shell prompt: just current directory basename + $
+RUN echo "PS1='\\W\\$ '" >> /etc/bash.bashrc
+
 # Entrypoint runs as root to install certificates,
 # then switches to app user to run swe-swe-server
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
