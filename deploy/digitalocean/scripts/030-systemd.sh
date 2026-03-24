@@ -22,6 +22,12 @@ mkdir -p /workspace
 chown swe-swe:swe-swe /workspace
 chmod 755 /workspace
 
+# Fix binary cache ownership so swe-swe user can auto-upgrade at runtime
+# (020-swe-swe.sh pre-fetches as root before this user exists)
+if [ -d /var/cache/swe-swe ]; then
+    chown -R swe-swe:swe-swe /var/cache/swe-swe
+fi
+
 # Add swe-swe user to docker group so it can access Docker socket
 # (Docker group is created by docker.sh script)
 usermod -aG docker swe-swe || true
