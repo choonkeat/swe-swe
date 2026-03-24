@@ -113,6 +113,25 @@ while [ $HEALTH_CHECK_ATTEMPTS -lt $HEALTH_CHECK_MAX ]; do
 done
 
 # Write Phase 2 MOTD: credentials file for MOTD display
+# Build upgrade instructions for non-letsencrypt setups
+UPGRADE_SECTION=""
+if [[ "$SWE_SWE_INIT_FLAGS" != *"letsencrypt"* ]]; then
+    UPGRADE_SECTION="
+  --- Upgrade to Let's Encrypt ---
+  1. Point your domain DNS A record to ${PUBLIC_IP}
+  2. As root, run:
+     sudo -u swe-swe HOME=/home/swe-swe swe-swe init \\
+       --project-directory /workspace \\
+       --previous-init-flags=reuse \\
+       --ssl=letsencrypt@YOUR_DOMAIN \\
+       --email=YOUR_EMAIL
+     sudo -u swe-swe HOME=/home/swe-swe swe-swe build \\
+       --project-directory /workspace
+  3. Restart the service:
+     systemctl restart swe-swe
+"
+fi
+
 cat > "$CONFIG_DIR/credentials" <<EOF
 ================================================================================
                          swe-swe is ready!
@@ -120,8 +139,7 @@ cat > "$CONFIG_DIR/credentials" <<EOF
 
   URL:      ${PROTOCOL}://${PUBLIC_IP}:1977
   Password: ${SWE_SWE_PASSWORD}
-
-================================================================================
+${UPGRADE_SECTION}================================================================================
 EOF
 chmod 644 "$CONFIG_DIR/credentials"
 
