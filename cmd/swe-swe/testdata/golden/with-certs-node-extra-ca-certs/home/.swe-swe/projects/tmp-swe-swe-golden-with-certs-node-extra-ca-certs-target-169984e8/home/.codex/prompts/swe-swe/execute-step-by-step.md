@@ -4,6 +4,8 @@ description: Execute pending steps in a task plan file with logging and verifica
 
 $ARGUMENTS
 
+**Progress reporting**: The user may not be watching your terminal. Use `send_progress` (non-blocking) to report status after each step completes and before starting a new one. Use `send_message` (blocking) when you need user input or hit a blocker. This keeps the chat UI informed even when terminal output is noisy.
+
 1. Do the next pending step in the task file.
     - for any test or verification that you are doing, log the expected-and-gotten, i.e.
         - before doing it, echo {hhmmss in localtime}, what will be done, and what to expect >> tasks/{task filename}-{phase}.log and git commit it

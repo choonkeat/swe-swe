@@ -20,7 +20,7 @@ Create a new agent session on a worktree branch and execute a task plan file in 
 4. **Wait 15 seconds** for the agent to initialize
 5. **Send input** to the new session using `send_session_input` MCP tool:
    - Text: `/swe-swe:execute-step-by-step {task file path}\n`
-6. **Report** the session UUID and branch name back to the user
+6. **Report back via chat UI**: Use `send_message` (not just terminal text) to tell the user the session UUID, branch name, and that work has started. The user cannot see your terminal output -- always communicate via `send_message` or `send_progress`.
 
 ## Example
 
