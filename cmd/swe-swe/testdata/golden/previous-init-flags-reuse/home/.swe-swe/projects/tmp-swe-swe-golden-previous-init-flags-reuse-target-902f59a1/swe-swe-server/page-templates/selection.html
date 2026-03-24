@@ -87,6 +87,10 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
+        .header__version {
+            opacity: 0.5;
+            text-transform: none;
+        }
 
         /* Main content */
         .main {
@@ -1341,7 +1345,7 @@
                 </div>
                 <div class="header__text">
                     <h1>swe-swe</h1>
-                    <p>Session Manager</p>
+                    <p>Session Manager{{if .Version}} <span class="header__version">{{.Version}}</span>{{end}}</p>
                 </div>
                 <button class="header__settings" id="settings-btn" title="Settings">
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

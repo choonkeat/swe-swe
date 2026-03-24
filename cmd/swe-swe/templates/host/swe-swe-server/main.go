@@ -1975,6 +1975,7 @@ func main() {
 				HasSSLCert           bool
 				Debug                bool
 				DefaultRepoUrl       string
+				Version              string
 			}{
 				Agents:               agents,
 				Recordings:           recordings,
@@ -1988,6 +1989,7 @@ func main() {
 				HasSSLCert:           hasSSLCert == nil,
 				Debug:                debugMode,
 				DefaultRepoUrl:       defaultRepoUrl,
+				Version:              Version + " (" + GitCommit + ")",
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
