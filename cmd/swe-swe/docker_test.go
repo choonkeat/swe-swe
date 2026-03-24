@@ -28,7 +28,7 @@ func TestCheckAndUpgrade(t *testing.T) {
 		}
 	})
 
-	t.Run("no upgrade when config has no version", func(t *testing.T) {
+	t.Run("upgrade triggered when config has no version", func(t *testing.T) {
 		Version = "1.2.3"
 		sweDir := t.TempDir()
 
@@ -36,6 +36,11 @@ func TestCheckAndUpgrade(t *testing.T) {
 		data, _ := json.Marshal(config)
 		os.WriteFile(filepath.Join(sweDir, "init.json"), data, 0644)
 
+		// Ensure SWE_SWE_AUTO_UPGRADE is not set
+		os.Unsetenv("SWE_SWE_AUTO_UPGRADE")
+
+		// In non-interactive mode (test runner), this should print a warning
+		// but not modify args (same as version mismatch without auto-upgrade)
 		args := []string{"--detach"}
 		result := checkAndUpgrade(sweDir, "/tmp/project", args)
 

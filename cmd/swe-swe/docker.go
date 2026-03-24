@@ -186,7 +186,7 @@ func checkAndUpgrade(sweDir, absPath string, remainingArgs []string) []string {
 	if err != nil {
 		return remainingArgs
 	}
-	if config.CLIVersion == "" || config.CLIVersion == Version {
+	if config.CLIVersion == Version {
 		return remainingArgs
 	}
 
