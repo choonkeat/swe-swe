@@ -1090,7 +1090,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 					lastVNC := vncPort(lastPreview)
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", previewProxyPort(firstPreview, ppo), previewProxyPort(lastPreview, ppo), previewProxyPort(firstPreview, ppo), previewProxyPort(lastPreview, ppo))
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", agentChatProxyPort(firstAC, ppo), agentChatProxyPort(lastAC, ppo), agentChatProxyPort(firstAC, ppo), agentChatProxyPort(lastAC, ppo))
-					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo), vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo))
+					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo), firstVNC, lastVNC)
 				}
 				if len(publicPortsRange) > 0 {
 					firstPub := publicPortsRange[0]
