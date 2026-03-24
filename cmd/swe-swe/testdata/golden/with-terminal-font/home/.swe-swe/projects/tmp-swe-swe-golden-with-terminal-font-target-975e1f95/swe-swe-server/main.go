@@ -2069,6 +2069,12 @@ func main() {
 			return
 		}
 
+		// VNC readiness probe (same-origin, avoids cross-origin opaque response issues)
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/vnc-ready") {
+			handleVNCReadyAPI(w, r)
+			return
+		}
+
 		// Recording playback page and raw session data
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
 			path := strings.TrimPrefix(r.URL.Path, "/recording/")
@@ -5890,6 +5896,52 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"started"}`))
+}
+
+// handleVNCReadyAPI handles GET /api/session/{uuid}/vnc-ready
+// Returns 200 if websockify is listening on the session's VNC port, 503 otherwise.
+// This is a same-origin probe endpoint so the client can check real status codes
+// instead of getting opaque responses from cross-origin no-cors requests.
+func handleVNCReadyAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/session/")
+	sessionUUID := strings.TrimSuffix(path, "/vnc-ready")
+
+	if sessionUUID == "" {
+		http.Error(w, "Missing session UUID", http.StatusBadRequest)
+		return
+	}
+
+	sessionsMu.RLock()
+	sess, exists := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	if sess.VNCPort == 0 {
+		http.Error(w, "VNC not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// TCP connect to websockify to check if it's listening
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", sess.VNCPort), 500*time.Millisecond)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"ready":false}`))
+		return
+	}
+	conn.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ready":true}`))
 }
 
 // killProcessesOnPorts finds and kills any processes listening on the given

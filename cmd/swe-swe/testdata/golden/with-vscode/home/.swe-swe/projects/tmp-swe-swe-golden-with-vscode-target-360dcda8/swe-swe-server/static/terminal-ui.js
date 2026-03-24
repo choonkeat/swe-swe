@@ -1650,21 +1650,21 @@ class TerminalUI extends HTMLElement {
                 case 'browser':
                     url = this.getBrowserViewUrl();
                     if (url && !this._browserViewReady) {
-                        // Probe websockify before loading iframe to avoid "Bad Gateway"
+                        // Probe VNC readiness via same-origin endpoint to get real status codes.
+                        // Direct cross-origin probes to the VNC port return opaque responses
+                        // (mode: 'no-cors'), making 502 Bad Gateway indistinguishable from 200.
                         const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
                         const placeholderText = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder-text');
                         if (placeholder) placeholder.classList.remove('hidden');
                         if (placeholderText) placeholderText.textContent = 'Starting browser...';
                         if (!this._browserViewProbing) {
                             this._browserViewProbing = true;
-                            probeUntilReady(url, {
-                                method: 'HEAD',
-                                mode: 'no-cors',
-                                maxAttempts: 15,
+                            const probeUrl = `${baseUrl}/api/session/${this.uuid}/vnc-ready`;
+                            probeUntilReady(probeUrl, {
+                                method: 'GET',
+                                maxAttempts: 30,
                                 baseDelay: 1000,
                                 maxDelay: 5000,
-                                // no-cors returns opaque response (status 0), not resp.ok
-                                isReady: (resp) => resp.type === 'opaque' || resp.ok,
                             }).then(() => {
                                 this._browserViewReady = true;
                                 this._browserViewProbing = false;
