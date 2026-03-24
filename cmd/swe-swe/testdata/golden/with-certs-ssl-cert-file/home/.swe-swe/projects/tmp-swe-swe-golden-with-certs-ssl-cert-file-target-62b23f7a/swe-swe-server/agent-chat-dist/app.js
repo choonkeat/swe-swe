@@ -1958,7 +1958,7 @@ document.getElementById('btn-download').addEventListener('click', function () {
     + '});'
     + '})(btns[i]);}'
     + '})();'
-    + '</script></body></html>';
+    + '</' + 'script></body></html>';
 
   var blob = new Blob([html], { type: 'text/html' });
   var url = URL.createObjectURL(blob);
