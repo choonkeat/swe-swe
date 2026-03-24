@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## v2.18.0 - VNC Readiness Probe, Chat Recording Fix & Version Display
+
+### Features
+
+- **Version in Session Manager header**: Homepage now shows version + commit hash (e.g. "Session Manager 2.18.0 (abc1234)") for quick identification of running version
+- **Minimal shell prompt**: Container shells use `\W\$ ` prompt (just directory basename) instead of verbose Debian default
+
+### Bug Fixes
+
+- **Agent View "Bad Gateway"**: VNC readiness probe now uses a same-origin `/api/session/{uuid}/vnc-ready` endpoint instead of cross-origin `no-cors` requests that couldn't distinguish 502 from 200 (ADR-0040)
+- **Chat recording playback**: Fix raw JS source showing instead of rendered chat UI -- a literal `</script>` in app.js prematurely closed the inlined script tag
+- **Auto-upgrade on DigitalOcean**: Fix `/var/cache/swe-swe` ownership so the `swe-swe` user can auto-upgrade the cached binary (was root-owned from Packer build)
+
+### Documentation
+
+- ADR-0040: Same-origin VNC readiness probe
+
 ## v2.17.0 - Agent Chat Loading, Stale Config Detection & ASCII Lint
 
 ### Features
