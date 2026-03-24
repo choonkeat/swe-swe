@@ -121,9 +121,9 @@ http://{Droplet-IP}:1977
 Enter the password from the MOTD or credentials file.
 
 **Available interfaces**:
-- **Dashboard**: Main swe-swe interface
-- **VS Code**: `http://{Droplet-IP}:1977/vscode` — Browser-based code editor
-- **Chrome Browser**: `http://{Droplet-IP}:1977/chrome` — Browser screencast viewer
+- **Session Manager**: Create and manage agent sessions
+- **Agent Chat**: Chat with your AI agent
+- **Agent View**: Watch the agent's browser in real-time
 
 ### SSH Access
 
@@ -139,10 +139,9 @@ The droplet includes:
 - **OS**: Ubuntu 24.04 LTS
 - **Runtime**: Docker + Docker Compose
 - **Services**:
-  - swe-swe AI development environment
-  - VS Code server
-  - Chrome browser screencast
-  - Systemd service for auto-start
+  - swe-swe AI development environment (single container)
+  - Per-session browser with VNC viewer
+  - Systemd service for auto-start and auto-upgrade
 
 ## Troubleshooting
 

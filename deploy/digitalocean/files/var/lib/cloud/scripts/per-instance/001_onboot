@@ -121,11 +121,6 @@ cat > "$CONFIG_DIR/credentials" <<EOF
   URL:      ${PROTOCOL}://${PUBLIC_IP}:1977
   Password: ${SWE_SWE_PASSWORD}
 
-  Services:
-    - Main UI:    ${PROTOCOL}://${PUBLIC_IP}:1977
-    - VS Code:    ${PROTOCOL}://${PUBLIC_IP}:1977/vscode
-    - Chrome VNC: ${PROTOCOL}://${PUBLIC_IP}:1977/chrome
-
 ================================================================================
 EOF
 chmod 644 "$CONFIG_DIR/credentials"

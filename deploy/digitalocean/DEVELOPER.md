@@ -130,10 +130,9 @@ docker ps
 - [ ] MOTD displays URL and password on SSH login
 - [ ] `http://<IP>:1977` shows login page
 - [ ] Password authentication works
-- [ ] `http://<IP>:1977/vscode` loads VS Code
-- [ ] `http://<IP>:1977/chrome` loads Chrome VNC
+- [ ] Can create and join a session
 - [ ] `systemctl status swe-swe` shows active
-- [ ] `docker ps` shows 5+ containers
+- [ ] `docker ps` shows running containers
 
 ## Image Validation
 
