@@ -476,31 +476,43 @@ func detectYoloMode(cmd string) bool {
 	return false
 }
 
-func buildSessionEnv(previewPort, agentChatPort, publicPort, cdpPort, vncPort int, theme, workDir, sessionMode string) []string {
+// SessionEnvParams holds the parameters for building a session's environment variables.
+type SessionEnvParams struct {
+	PreviewPort   int
+	AgentChatPort int
+	PublicPort    int
+	CDPPort       int
+	VNCPort       int
+	Theme         string
+	WorkDir       string
+	SessionMode   string
+}
+
+func buildSessionEnv(p SessionEnvParams) []string {
 	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT")
 	env = append(env,
 		"TERM=xterm-256color",
-		fmt.Sprintf("PORT=%d", previewPort),
-		fmt.Sprintf("AGENT_CHAT_PORT=%d", agentChatPort),
-		fmt.Sprintf("PUBLIC_PORT=%d", publicPort),
-		fmt.Sprintf("BROWSER_CDP_PORT=%d", cdpPort),
-		fmt.Sprintf("BROWSER_VNC_PORT=%d", vncPort),
+		fmt.Sprintf("PORT=%d", p.PreviewPort),
+		fmt.Sprintf("AGENT_CHAT_PORT=%d", p.AgentChatPort),
+		fmt.Sprintf("PUBLIC_PORT=%d", p.PublicPort),
+		fmt.Sprintf("BROWSER_CDP_PORT=%d", p.CDPPort),
+		fmt.Sprintf("BROWSER_VNC_PORT=%d", p.VNCPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
 	// Disable agent chat sidecar for non-chat sessions
-	if sessionMode != "chat" {
+	if p.SessionMode != "chat" {
 		env = append(env, "AGENT_CHAT_DISABLE=1")
 	}
 	// Set COLORFGBG so CLI tools (vim, bat, ls --color, etc.) adapt to background
-	if theme == "light" {
+	if p.Theme == "light" {
 		env = append(env, "COLORFGBG=0;15") // dark-on-light
 	} else {
 		env = append(env, "COLORFGBG=15;0") // light-on-dark
 	}
 	// Append user-defined vars from swe-swe/env (last so they take precedence)
-	if workDir != "" {
-		env = append(env, loadEnvFile(filepath.Join(workDir, "swe-swe", "env"))...)
+	if p.WorkDir != "" {
+		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, "swe-swe", "env"))...)
 	}
 	return env
 }
@@ -1103,7 +1115,16 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
 
 	cmd := exec.Command(cmdName, cmdArgs...)
-	cmd.Env = buildSessionEnv(s.PreviewPort, s.AgentChatPort, s.PublicPort, s.CDPPort, s.VNCPort, s.Theme, s.WorkDir, s.SessionMode)
+	cmd.Env = buildSessionEnv(SessionEnvParams{
+		PreviewPort:   s.PreviewPort,
+		AgentChatPort: s.AgentChatPort,
+		PublicPort:    s.PublicPort,
+		CDPPort:       s.CDPPort,
+		VNCPort:       s.VNCPort,
+		Theme:         s.Theme,
+		WorkDir:       s.WorkDir,
+		SessionMode:   s.SessionMode,
+	})
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}
@@ -3978,7 +3999,16 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
 	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
 
-	env := buildSessionEnv(previewPort, acPort, pubPort, cdpPort, vncPort, p.Theme, workDir, p.SessionMode)
+	env := buildSessionEnv(SessionEnvParams{
+		PreviewPort:   previewPort,
+		AgentChatPort: acPort,
+		PublicPort:    pubPort,
+		CDPPort:       cdpPort,
+		VNCPort:       vncPort,
+		Theme:         p.Theme,
+		WorkDir:       workDir,
+		SessionMode:   p.SessionMode,
+	})
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", p.UUID))
 	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", mcpAuthKey))
 
