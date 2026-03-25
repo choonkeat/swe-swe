@@ -15,21 +15,25 @@ async function login(page) {
 }
 
 // Helper: create session and wait for port info via WebSocket status message
-async function createSessionAndGetPorts(page) {
+// Use session=chat to get agentChatProxyPort (server only sends it for chat sessions)
+async function createSessionAndGetPorts(page, { chatMode = false } = {}) {
   const uuid = crypto.randomUUID();
-  await page.goto(`/session/${uuid}?assistant=opencode`);
+  const qs = chatMode ? '?assistant=opencode&session=chat' : '?assistant=opencode';
+  await page.goto(`/session/${uuid}${qs}`);
 
   // Wait for the terminal UI to receive port info via WebSocket
   // terminal-ui.js stores the instance at window.terminalUI (line 190)
-  const ports = await page.waitForFunction(() => {
+  const ports = await page.waitForFunction((wantChat) => {
     const ui = window.terminalUI;
     if (!ui || !ui.previewProxyPort) return null;
+    // For chat mode, wait until agentChatProxyPort is set too
+    if (wantChat && !ui.agentChatProxyPort) return null;
     return {
       previewProxyPort: ui.previewProxyPort,
       vncProxyPort: ui.vncProxyPort,
       agentChatProxyPort: ui.agentChatProxyPort || null,
     };
-  }, { timeout: 30_000 });
+  }, chatMode, { timeout: 60_000 });
 
   return ports.jsonValue();
 }
@@ -105,14 +109,9 @@ test.describe('Port Connectivity', () => {
   });
 
   test('agent chat proxy port responds', async ({ page }) => {
-    const ports = await createSessionAndGetPorts(page);
-
-    // agentChatProxyPort may be null if the agent does not support chat
-    if (!ports.agentChatProxyPort) {
-      console.log('Agent chat proxy port not available (agent may not support chat), skipping');
-      test.skip();
-      return;
-    }
+    // Use chatMode to get agentChatProxyPort (server only sends it for session=chat)
+    const ports = await createSessionAndGetPorts(page, { chatMode: true });
+    expect(ports.agentChatProxyPort).toBeTruthy();
 
     console.log(`Testing agent chat proxy port: ${ports.agentChatProxyPort}`);
     const resp = await fetchPortWithRetry(page, ports.agentChatProxyPort, '/', 5);

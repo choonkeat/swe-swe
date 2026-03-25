@@ -11,3 +11,9 @@
 015735   compose mode: 2/3 passed (preview proxy 23000 OK, VNC proxy 27001 OK, agent-chat skipped)
 015735   login.spec.js still passes on both modes (no regression)
 015735 Phase 2 COMPLETE: port connectivity tests verified on both modes
+021552 Fix: agent chat test was missing ?session=chat query param
+021552   Root cause: server only sends agentChatProxyPort for session=chat mode sessions (main.go:760)
+021552   Fix: createSessionAndGetPorts() now accepts chatMode option, agent chat test uses it
+021552   Re-verified on both modes: 3/3 pass (preview, VNC, agent chat all OK)
+021552   simple mode: preview 23000, VNC 27001, agent-chat 24002
+021552   compose mode: preview 23000, VNC 27001, agent-chat 24002
