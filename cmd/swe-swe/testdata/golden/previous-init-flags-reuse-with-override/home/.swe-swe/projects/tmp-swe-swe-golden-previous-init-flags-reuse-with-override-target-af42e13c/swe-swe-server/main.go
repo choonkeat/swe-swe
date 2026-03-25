@@ -6568,6 +6568,16 @@ func callAgentChatOrchestrator(port int, toolName string, args any) (string, err
 			Message string `json:"message"`
 		} `json:"error,omitempty"`
 	}
+	// If response is SSE-formatted (e.g., "event: message\ndata: {...}"),
+	// extract the JSON payload from the data line before unmarshalling.
+	if bytes.HasPrefix(respBody, []byte("event:")) {
+		for _, line := range bytes.Split(respBody, []byte("\n")) {
+			if bytes.HasPrefix(line, []byte("data: ")) {
+				respBody = bytes.TrimPrefix(line, []byte("data: "))
+				break
+			}
+		}
+	}
 	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
 		return "", fmt.Errorf("parse response: %w (body: %s)", err, string(respBody))
 	}
