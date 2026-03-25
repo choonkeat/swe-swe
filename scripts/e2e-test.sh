@@ -46,10 +46,16 @@ test_mode() {
     cd "$E2E_DIR"
     npm install --silent 2>/dev/null
 
+    local rc=0
     PORT="$port" \
     SWE_SWE_PASSWORD="$password" \
     E2E_BASE_URL="http://${host_ip}:${port}" \
-        npx playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}"
+        npx playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}" || rc=$?
+
+    if [[ "$rc" -ne 0 ]]; then
+        echo "=== e2e-${mode}: FAILED (exit $rc) ==="
+        return "$rc"
+    fi
 
     echo "=== e2e-${mode}: PASSED ==="
 }

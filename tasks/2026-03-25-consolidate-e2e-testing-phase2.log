@@ -17,3 +17,10 @@
 021552   Re-verified on both modes: 3/3 pass (preview, VNC, agent chat all OK)
 021552   simple mode: preview 23000, VNC 27001, agent-chat 24002
 021552   compose mode: preview 23000, VNC 27001, agent-chat 24002
+023404 Full make test-e2e run revealed:
+023404   1. Agent chat test timed out on compose mode - Traefik rate limiter (5 avg, 10 burst per min) hit by multiple test logins
+023404   2. e2e-test.sh "PASSED" printed even on failure due to set -e disabled in || context
+023404 Fixes:
+023404   1. Consolidated ports.spec.js into single test (1 login + 1 chat session) to avoid rate limiting
+023404   2. Fixed e2e-test.sh to capture exit code explicitly with || rc=$?
+023404 Final make test-e2e: 5/5 simple PASSED, 5/5 compose PASSED (all green)

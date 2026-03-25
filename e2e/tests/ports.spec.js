@@ -14,32 +14,30 @@ async function login(page) {
   ]);
 }
 
-// Helper: create session and wait for port info via WebSocket status message
-// Use session=chat to get agentChatProxyPort (server only sends it for chat sessions)
-async function createSessionAndGetPorts(page, { chatMode = false } = {}) {
+// Helper: create a chat session and wait for all port info via WebSocket
+async function createChatSessionAndGetPorts(page) {
   const uuid = crypto.randomUUID();
-  const qs = chatMode ? '?assistant=opencode&session=chat' : '?assistant=opencode';
-  await page.goto(`/session/${uuid}${qs}`);
+  await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
 
   // Wait for the terminal UI to receive port info via WebSocket
   // terminal-ui.js stores the instance at window.terminalUI (line 190)
-  const ports = await page.waitForFunction((wantChat) => {
+  // Use session=chat so agentChatProxyPort is included
+  const ports = await page.waitForFunction(() => {
     const ui = window.terminalUI;
     if (!ui || !ui.previewProxyPort) return null;
-    // For chat mode, wait until agentChatProxyPort is set too
-    if (wantChat && !ui.agentChatProxyPort) return null;
+    if (!ui.agentChatProxyPort) return null;
     return {
       previewProxyPort: ui.previewProxyPort,
       vncProxyPort: ui.vncProxyPort,
-      agentChatProxyPort: ui.agentChatProxyPort || null,
+      agentChatProxyPort: ui.agentChatProxyPort,
+      sessionUUID: ui.sessionUUID,
     };
-  }, chatMode, { timeout: 60_000 });
+  }, { timeout: 60_000 });
 
   return ports.jsonValue();
 }
 
 // Helper: fetch a port with retries (proxy servers may take a moment to start)
-// Uses server-side fetch via the base URL to avoid browser CORS/connectivity issues
 async function fetchPortWithRetry(page, port, path, maxRetries) {
   const url = new URL(BASE_URL);
   const targetUrl = `${url.protocol}//${url.hostname}:${port}${path}`;
@@ -68,54 +66,38 @@ async function fetchPortWithRetry(page, port, path, maxRetries) {
   return { status: 0, ok: false, error: 'all retries exhausted', port, targetUrl };
 }
 
+// Single test that verifies all proxy ports from one session.
+// Uses one login + one session to avoid Traefik rate limiting in compose mode.
 test.describe('Port Connectivity', () => {
-  test.beforeEach(async ({ page }) => {
+  test('preview, VNC, and agent chat proxy ports respond', async ({ page }) => {
     await login(page);
-  });
+    const ports = await createChatSessionAndGetPorts(page);
 
-  test('preview proxy port responds', async ({ page }) => {
-    const ports = await createSessionAndGetPorts(page);
+    // --- Preview proxy ---
     expect(ports.previewProxyPort).toBeTruthy();
     console.log(`Testing preview proxy port: ${ports.previewProxyPort}`);
+    const previewResp = await fetchPortWithRetry(page, ports.previewProxyPort, '/', 5);
+    console.log(`Preview proxy port ${previewResp.port}: ok=${previewResp.ok}, status=${previewResp.status}, type=${previewResp.type}`);
+    expect(previewResp.ok).toBe(true);
 
-    // Fetch the preview proxy port -- 502 Bad Gateway is OK (means proxy is
-    // running but no backend yet). Any HTTP response means the port is alive.
-    // With no-cors mode, an opaque response (type=opaque, status=0) also means success.
-    const resp = await fetchPortWithRetry(page, ports.previewProxyPort, '/', 5);
-    console.log(`Preview proxy port ${resp.port}: ok=${resp.ok}, status=${resp.status}, type=${resp.type}`);
-    expect(resp.ok).toBe(true);
-  });
-
-  test('VNC proxy port responds after browser start', async ({ page }) => {
-    const ports = await createSessionAndGetPorts(page);
+    // --- VNC proxy (needs browser started first) ---
     expect(ports.vncProxyPort).toBeTruthy();
     console.log(`Testing VNC proxy port: ${ports.vncProxyPort}`);
-
-    // VNC proxy (websockify) only starts after the session browser is started.
-    // Trigger browser start via the API endpoint.
-    const uuid = await page.evaluate(() => window.terminalUI?.sessionUUID);
     const url = new URL(BASE_URL);
     await page.evaluate(async (startUrl) => {
       await fetch(startUrl, { method: 'POST', credentials: 'include' });
-    }, `${url.origin}/start-browser/${uuid}`);
-
-    // Wait a moment for Xvfb + x11vnc + websockify to start
+    }, `${url.origin}/start-browser/${ports.sessionUUID}`);
     await page.waitForTimeout(3000);
 
-    // VNC proxy should serve vnc_lite.html (or at least accept connections)
-    const resp = await fetchPortWithRetry(page, ports.vncProxyPort, '/vnc_lite.html', 5);
-    console.log(`VNC proxy port ${resp.port}: ok=${resp.ok}, status=${resp.status}, type=${resp.type}`);
-    expect(resp.ok).toBe(true);
-  });
+    const vncResp = await fetchPortWithRetry(page, ports.vncProxyPort, '/vnc_lite.html', 5);
+    console.log(`VNC proxy port ${vncResp.port}: ok=${vncResp.ok}, status=${vncResp.status}, type=${vncResp.type}`);
+    expect(vncResp.ok).toBe(true);
 
-  test('agent chat proxy port responds', async ({ page }) => {
-    // Use chatMode to get agentChatProxyPort (server only sends it for session=chat)
-    const ports = await createSessionAndGetPorts(page, { chatMode: true });
+    // --- Agent chat proxy ---
     expect(ports.agentChatProxyPort).toBeTruthy();
-
     console.log(`Testing agent chat proxy port: ${ports.agentChatProxyPort}`);
-    const resp = await fetchPortWithRetry(page, ports.agentChatProxyPort, '/', 5);
-    console.log(`Agent chat proxy port ${resp.port}: ok=${resp.ok}, status=${resp.status}, type=${resp.type}`);
-    expect(resp.ok).toBe(true);
+    const chatResp = await fetchPortWithRetry(page, ports.agentChatProxyPort, '/', 5);
+    console.log(`Agent chat proxy port ${chatResp.port}: ok=${chatResp.ok}, status=${chatResp.status}, type=${chatResp.type}`);
+    expect(chatResp.ok).toBe(true);
   });
 });
