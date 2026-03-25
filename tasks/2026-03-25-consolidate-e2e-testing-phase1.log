@@ -1,0 +1,6 @@
+014338 BEGIN Phase 1: Refactor e2e scripts into composable pieces
+014338 Step 1.1: Create scripts/e2e-up.sh - will create the unified up script accepting simple|compose mode
+014338 Expected: script created, builds CLI, inits project in /workspace/tmp/e2e-{mode}/, starts container, health check passes
+014550 Step 1.1-1.4: Scripts created (e2e-up.sh, e2e-down.sh, e2e-test.sh), Makefile updated, e2e-legacy.sh preserved
+014550 Step 1.1 verification: will run `make e2e-up-simple` then visit http://host.docker.internal:9780/ via MCP browser
+014550 Expected: login page loads (HTTP 200/302 redirect to /swe-swe-auth/login)

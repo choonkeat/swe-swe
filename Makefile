@@ -1,4 +1,4 @@
-.PHONY: build run stop test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix
+.PHONY: build run stop test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down
 
 build: build-cli
 
@@ -78,10 +78,36 @@ check-gomod-sync:
 	if [ $$failed -ne 0 ]; then exit 1; fi
 	@echo "go.mod.txt in sync with go.mod"
 
-# End-to-end tests using Playwright against a real container build (dockerfile-only mode)
-# Builds CLI, generates project, builds container, runs tests, tears down
-test-e2e:
+# Legacy e2e (dockerfile-only mode, monolithic script)
+test-e2e-legacy:
 	./scripts/e2e.sh $(E2E_ARGS)
+
+# --- Composable e2e targets ---
+# Usage: make e2e-up-simple   -> bring up simple (dockerfile-only) mode
+#        make e2e-up-compose  -> bring up compose (Traefik) mode
+#        make e2e-test        -> run playwright tests against all running modes
+#        make e2e-down        -> tear down all running modes
+#        make test-e2e        -> full sequential flow: up, test, down for each mode
+
+e2e-up-simple:
+	./scripts/e2e-up.sh simple
+
+e2e-up-compose:
+	./scripts/e2e-up.sh compose
+
+e2e-test:
+	./scripts/e2e-test.sh $(E2E_ARGS)
+
+e2e-down:
+	./scripts/e2e-down.sh
+
+test-e2e:
+	./scripts/e2e-up.sh simple
+	./scripts/e2e-test.sh simple $(E2E_ARGS) || (./scripts/e2e-down.sh simple; exit 1)
+	./scripts/e2e-down.sh simple
+	./scripts/e2e-up.sh compose
+	./scripts/e2e-test.sh compose $(E2E_ARGS) || (./scripts/e2e-down.sh compose; exit 1)
+	./scripts/e2e-down.sh compose
 
 clean:
 	rm -rf ./dist
