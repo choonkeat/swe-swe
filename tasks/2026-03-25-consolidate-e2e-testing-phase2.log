@@ -1,0 +1,13 @@
+015255 BEGIN Phase 2: Add port connectivity tests
+015255 Step 2.1: Created e2e/tests/ports.spec.js with 3 tests: preview proxy, VNC proxy, agent chat proxy
+015255 Tests read port info from window.terminalUI (set by terminal-ui.js WebSocket status handler)
+015255 Step 2.2: Will run make e2e-up-simple && e2e-test against ports.spec.js
+015255 Expected: all 3 port tests pass (or agent-chat skips if opencode doesn't support chat)
+015735 Step 2.2 verification:
+015735   First attempt: preview and VNC tests failed due to browser fetch using default cors mode (ERR_NETWORK)
+015735   Fix: switched to mode:'no-cors' for fetch, added retry helper, added browser start trigger for VNC test
+015735   Second attempt: PASSED on both modes
+015735   simple mode: 2/3 passed (preview proxy 23003 OK, VNC proxy 27004 OK, agent-chat skipped - opencode has no chat)
+015735   compose mode: 2/3 passed (preview proxy 23000 OK, VNC proxy 27001 OK, agent-chat skipped)
+015735   login.spec.js still passes on both modes (no regression)
+015735 Phase 2 COMPLETE: port connectivity tests verified on both modes

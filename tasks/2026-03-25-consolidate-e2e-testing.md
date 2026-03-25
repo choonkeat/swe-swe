@@ -81,7 +81,7 @@ Split the monolithic e2e.sh into standalone up/test/down scripts. Add Makefile t
 
 ---
 
-## Phase 2: Add port connectivity tests
+## Phase 2: Add port connectivity tests [DONE]
 
 ### What it achieves
 New Playwright tests that verify VNC and preview port mappings work correctly. These would have caught today's VNC port bug.
