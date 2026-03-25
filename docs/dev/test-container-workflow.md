@@ -1,6 +1,8 @@
 # Test Container Workflow
 
-> **For dockerfile-only mode (the default):** Use `make test-e2e` instead. It builds a real container and runs Playwright e2e tests against it. See [swe-swe-server-workflow.md](swe-swe-server-workflow.md#e2e-tests-real-container) for details.
+> **DEPRECATED**: This workflow is superseded by the unified e2e framework. Use `make e2e-up-compose` for compose mode testing and `make e2e-up-simple` for dockerfile-only mode. See [swe-swe-server-workflow.md](swe-swe-server-workflow.md#e2e-tests-real-container) for full documentation.
+>
+> The scripts in `scripts/test-container/` are kept temporarily for reference but will be removed in a future cleanup.
 
 This workflow enables testing swe-swe **compose-mode** container builds (with SSL/Traefik) without affecting the development container.
 

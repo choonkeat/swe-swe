@@ -109,7 +109,7 @@ New Playwright tests that verify VNC and preview port mappings work correctly. T
 
 ---
 
-## Phase 3: Consolidate documentation
+## Phase 3: Consolidate documentation [DONE]
 
 ### What it achieves
 Single source of truth for testing, remove stale scripts.

@@ -67,35 +67,69 @@ make test-server   # Server template tests only
 
 ### E2E Tests (Real Container)
 
-E2E tests build a real container in dockerfile-only mode and run Playwright tests against it. This tests the full stack: Dockerfile, entrypoint, server binary, MCP configs, auth, and agent interactions.
+E2E tests build real containers and run Playwright tests against them. This tests the full stack: Dockerfile, entrypoint, server binary, MCP configs, auth, port mappings, and agent interactions.
+
+Two modes are supported:
+- **simple** (dockerfile-only): single container, no Traefik, port 9780
+- **compose** (Traefik): swe-swe + Traefik reverse proxy, port 9770
+
+#### Composable Targets (Recommended)
 
 ```bash
-# Run all e2e tests
+# Bring up one mode at a time
+make e2e-up-simple       # Start simple mode (port 9780)
+make e2e-up-compose      # Start compose mode (port 9770)
+
+# Run tests against running mode(s)
+make e2e-test            # Test all running modes
+./scripts/e2e-test.sh simple tests/login.spec.js  # Specific test + mode
+
+# Tear down
+make e2e-down            # Tear down all modes
+
+# Full sequential run (up, test, down for each mode)
 make test-e2e
-
-# Run specific test file
-./scripts/e2e.sh tests/login.spec.js
-
-# Run with custom port
-E2E_PORT=9790 ./scripts/e2e.sh
 ```
 
-**What `make test-e2e` does:**
-1. Builds the CLI (`make build-cli`)
-2. Runs `swe-swe init` in `./tmp/e2e/` (auto-detects dockerfile-only mode)
-3. Builds the Docker image via `docker compose build`
-4. Starts the container via `docker compose up`
-5. Runs Playwright tests against the real container
-6. Tears down the container
+#### Manual Testing Workflow
 
-**Test files:**
-- `e2e/tests/login.spec.js` — Auth flow (login page, wrong password, correct password)
-- `e2e/tests/agent-browser.spec.js` — Full chain: chat → OpenCode → Playwright MCP → browser start → screenshot
+```bash
+# 1. Start the mode you want to test
+make e2e-up-simple
 
-**Why real containers?** The e2e tests have already caught 3 bugs that only manifest in the actual container:
+# 2. Browse via MCP browser
+#    Simple: http://host.docker.internal:9780/
+#    Compose: http://host.docker.internal:9770/
+
+# 3. When done
+make e2e-down
+```
+
+#### What `make test-e2e` does (sequential):
+1. Builds CLI, inits simple mode project, builds + starts container
+2. Runs Playwright tests against simple mode
+3. Tears down simple mode
+4. Repeats steps 1-3 for compose mode
+
+#### Test Files
+- `e2e/tests/login.spec.js` -- Auth flow (login page, wrong password, correct password)
+- `e2e/tests/ports.spec.js` -- Port connectivity (preview proxy, VNC proxy, agent chat proxy)
+- `e2e/tests/agent-browser.spec.js` -- Full chain: chat -> OpenCode -> Playwright MCP -> browser -> screenshot
+
+#### Port Assignments
+
+| Mode | SWE_PORT | Preview Ports | Agent Chat | VNC | Public |
+|------|----------|---------------|------------|-----|--------|
+| simple | 9780 | 3200-3219 (ext: 23200-23219) | 4200-4219 (ext: 24200-24219) | 7200-7219 (ext: 27200-27219) | 5200-5219 |
+| compose | 9770 | 3100-3119 (ext: 23100-23119) | 4100-4119 (ext: 24100-24119) | 7100-7119 (ext: 27100-27119) | 5100-5119 |
+
+These avoid conflicts with the production stack (default 3000-3019 / 23000-23019).
+
+**Why real containers?** The e2e tests have already caught 4+ bugs that only manifest in the actual container:
 - `SWE_PORT` not passed to container environment
 - Host env vars overriding `.env` in compose
 - Hardcoded port 9898 in MCP configs (breaks when `SWE_PORT` differs)
+- VNC port mapping broken in no-SSL mode
 
 ## Makefile Targets
 
@@ -109,7 +143,16 @@ E2E_PORT=9790 ./scripts/e2e.sh
 - Reports whether server was running or not
 
 ### `make test-e2e`
-- Runs `./scripts/e2e.sh` — full container build + Playwright tests
+- Runs sequential e2e: up simple, test, down, up compose, test, down
+
+### `make e2e-up-simple` / `make e2e-up-compose`
+- Bring up a single e2e mode for manual or automated testing
+
+### `make e2e-test`
+- Run Playwright tests against all running e2e modes
+
+### `make e2e-down`
+- Tear down all running e2e modes
 
 ## Server Flags
 

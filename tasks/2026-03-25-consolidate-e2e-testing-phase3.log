@@ -1,0 +1,11 @@
+015914 BEGIN Phase 3: Consolidate documentation
+015914 Step 3.1: Updated docs/dev/swe-swe-server-workflow.md
+015914   - Replaced monolithic e2e section with composable targets (e2e-up-simple, e2e-up-compose, e2e-test, e2e-down)
+015914   - Added manual testing workflow (up, browse, down)
+015914   - Added port assignments table
+015914   - Added ports.spec.js to test files list
+015914   - Updated Makefile targets section with new targets
+015914 Step 3.2: Updated docs/dev/test-container-workflow.md
+015914   - Added deprecation notice pointing to new unified e2e framework
+015914   - Kept old content for reference
+015914 Phase 3 COMPLETE: documentation consolidated
