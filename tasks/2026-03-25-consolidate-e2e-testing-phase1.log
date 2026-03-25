@@ -4,3 +4,15 @@
 014550 Step 1.1-1.4: Scripts created (e2e-up.sh, e2e-down.sh, e2e-test.sh), Makefile updated, e2e-legacy.sh preserved
 014550 Step 1.1 verification: will run `make e2e-up-simple` then visit http://host.docker.internal:9780/ via MCP browser
 014550 Expected: login page loads (HTTP 200/302 redirect to /swe-swe-auth/login)
+014659 Step 1.1 verification PASSED: simple mode - navigated to http://host.docker.internal:9780/, got redirect to /swe-swe-auth/login, login page with name/password fields and Login button rendered correctly
+014659 Step 1.5 verification: will run `make e2e-up-compose` then visit http://host.docker.internal:9770/ via MCP browser
+014659 Expected: login page loads through Traefik (HTTP 200/302 redirect to /swe-swe-auth/login)
+014853 Step 1.5 verification PASSED: compose mode - navigated to http://host.docker.internal:9770/, got redirect to /swe-swe-auth/login through Traefik, login page rendered correctly
+014853 Note: first compose attempt failed due to stale test container from previous run using port 5100-5119. Cleaned up old container, retry succeeded.
+014853 Next: run e2e-test against compose mode (already up), then bring up simple mode and test that too
+014853 Expected: login.spec.js passes against both modes (3 tests each)
+015023 Playwright tests PASSED on both modes:
+015023   compose mode: 3/3 login.spec.js tests passed (3.6s)
+015023   simple mode: 3/3 login.spec.js tests passed (5.9s)
+015023 e2e-down cleaned up both modes successfully
+015023 Phase 1 COMPLETE: all steps (1.1-1.5) verified and passing

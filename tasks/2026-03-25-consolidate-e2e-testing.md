@@ -23,7 +23,7 @@ Use `--with-vscode` flag during `swe-swe init` to trigger compose mode (with Tra
 
 ---
 
-## Phase 1: Refactor e2e scripts into composable pieces
+## Phase 1: Refactor e2e scripts into composable pieces [DONE]
 
 ### What it achieves
 Split the monolithic e2e.sh into standalone up/test/down scripts. Add Makefile targets. Verify each manually.
