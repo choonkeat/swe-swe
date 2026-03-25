@@ -3829,22 +3829,33 @@ func findAvailablePortQuintuple() (int, int, int, int, int, error) {
 	return 0, 0, 0, 0, 0, fmt.Errorf("no available port quintuple in preview range %d-%d", previewPortStart, previewPortEnd)
 }
 
+// SessionParams holds the parameters for creating or retrieving a session.
+// Using a struct avoids positional string parameter confusion.
+type SessionParams struct {
+	UUID                string // session UUID (required)
+	Assistant           string // key from availableAssistants (e.g., "claude", "gemini", "custom")
+	Name                string // display name (optional, can be empty)
+	Branch              string // used for worktree creation (optional, separate from display name)
+	WorkDir             string // working directory for the session (empty = use server cwd)
+	RepoPath            string // base repo for worktree creation (empty = /workspace)
+	ParentUUID          string // parent session UUID (for child sessions)
+	ParentName          string // parent session name
+	ParentRecordingUUID string // parent recording UUID
+	Theme               string // terminal theme
+	SessionMode         string // "terminal" or "chat"
+}
+
 // getOrCreateSession returns an existing session or creates a new one
-// The assistant parameter is the key from availableAssistants (e.g., "claude", "gemini", "custom")
-// The name parameter sets the display name (optional, can be empty)
-// The branch parameter is used for worktree creation (optional, separate from display name)
-// The workDir parameter sets the working directory for the session (empty = use server cwd)
-// The repoPath parameter sets the base repo for worktree creation (empty = /workspace)
-func getOrCreateSession(sessionUUID string, assistant string, name string, branch string, workDir string, repoPath string, parentUUID string, parentName string, parentRecordingUUID string, theme string, sessionMode string) (*Session, bool, error) {
+func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
-	if sess, ok := sessions[sessionUUID]; ok {
+	if sess, ok := sessions[p.UUID]; ok {
 		// Check if the session's process has exited - clean up and create fresh session
 		if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
-			log.Printf("Cleaning up dead session on reconnect: %s (exit code=%d)", sessionUUID, sess.Cmd.ProcessState.ExitCode())
+			log.Printf("Cleaning up dead session on reconnect: %s (exit code=%d)", p.UUID, sess.Cmd.ProcessState.ExitCode())
 			sess.Close()
-			delete(sessions, sessionUUID)
+			delete(sessions, p.UUID)
 			// Fall through to create a new session
 		} else {
 			return sess, false, nil // existing session
@@ -3855,14 +3866,14 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	var cfg AssistantConfig
 	var found bool
 	for _, a := range availableAssistants {
-		if a.Binary == assistant {
+		if a.Binary == p.Assistant {
 			cfg = a
 			found = true
 			break
 		}
 	}
 	if !found {
-		return nil, false, fmt.Errorf("unknown assistant: %s", assistant)
+		return nil, false, fmt.Errorf("unknown assistant: %s", p.Assistant)
 	}
 
 	// Ensure recordings directory exists
@@ -3871,20 +3882,21 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 
 	// Determine working directory and create worktree if needed
+	workDir := p.WorkDir
 	if workDir == "" {
 		// If repoPath provided, use it as base; otherwise default to /workspace
-		baseRepo := repoPath
+		baseRepo := p.RepoPath
 		if baseRepo == "" {
 			baseRepo = "/workspace"
 		}
 
 		// If branch is provided, create/use worktree
-		if branch != "" {
+		if p.Branch != "" {
 			// Use createWorktreeInRepo which supports both /workspace and external repos
 			var err error
-			workDir, err = createWorktreeInRepo(baseRepo, branch)
+			workDir, err = createWorktreeInRepo(baseRepo, p.Branch)
 			if err != nil {
-				log.Printf("Warning: failed to create worktree for branch %s in %s: %v", branch, baseRepo, err)
+				log.Printf("Warning: failed to create worktree for branch %s in %s: %v", p.Branch, baseRepo, err)
 				// Fall back to base repo without worktree
 				workDir = baseRepo
 			}
@@ -3899,8 +3911,8 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	var pubPort int
 	var cdpPort int
 	var vncPort int
-	if parentUUID != "" {
-		if parentSess, ok := sessions[parentUUID]; ok {
+	if p.ParentUUID != "" {
+		if parentSess, ok := sessions[p.ParentUUID]; ok {
 			previewPort = parentSess.PreviewPort
 			acPort = parentSess.AgentChatPort
 			pubPort = parentSess.PublicPort
@@ -3917,8 +3929,9 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	}
 
 	// Inherit name from parent session if this is a shell session with a parent
-	if name == "" && parentName != "" && assistant == "shell" {
-		name = parentName + " (Terminal)"
+	name := p.Name
+	if name == "" && p.ParentName != "" && p.Assistant == "shell" {
+		name = p.ParentName + " (Terminal)"
 		log.Printf("Shell session inheriting name from parent: %s", name)
 	}
 
@@ -3934,11 +3947,11 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	// Generate recording UUID and compute filename prefix
 	recordingUUID := uuid.New().String()
-	recPrefix := recordingPrefix(parentRecordingUUID, recordingUUID)
+	recPrefix := recordingPrefix(p.ParentRecordingUUID, recordingUUID)
 
 	// Determine recording type
 	var recType string
-	if parentUUID != "" {
+	if p.ParentUUID != "" {
 		recType = "terminal"
 	} else {
 		recType = "agent"
@@ -3946,10 +3959,10 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	// For shell assistant, resolve $SHELL at runtime
 	shellCmdToUse := cfg.ShellCmd
-	if sessionMode == "chat" && cfg.YoloShellCmd != "" {
+	if p.SessionMode == "chat" && cfg.YoloShellCmd != "" {
 		shellCmdToUse = cfg.YoloShellCmd
 	}
-	if assistant == "shell" {
+	if p.Assistant == "shell" {
 		userShell := os.Getenv("SHELL")
 		if userShell == "" {
 			userShell = "bash"
@@ -3965,13 +3978,13 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
 	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
 
-	env := buildSessionEnv(previewPort, acPort, pubPort, cdpPort, vncPort, theme, workDir, sessionMode)
-	env = append(env, fmt.Sprintf("SESSION_UUID=%s", sessionUUID))
+	env := buildSessionEnv(previewPort, acPort, pubPort, cdpPort, vncPort, p.Theme, workDir, p.SessionMode)
+	env = append(env, fmt.Sprintf("SESSION_UUID=%s", p.UUID))
 	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", mcpAuthKey))
 
 	// Set up chat event log recording for chat sessions
 	var chatRecordingUUID string
-	if sessionMode == "chat" {
+	if p.SessionMode == "chat" {
 		chatRecordingUUID = uuid.New().String()
 		chatPrefix := recordingPrefix(recordingUUID, chatRecordingUUID)
 		chatLogPath := fmt.Sprintf("%s/%s.events.jsonl", recordingsDir, chatPrefix)
@@ -3984,7 +3997,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	// but we keep the context/cancel infrastructure for graceful shutdown coordination.
 	var agentChatCmd *exec.Cmd
 	var sessionCancel context.CancelFunc
-	if sessionMode == "chat" {
+	if p.SessionMode == "chat" {
 		_, sessionCancel = context.WithCancel(serverCtx)
 	}
 
@@ -4011,11 +4024,11 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 
 	now := time.Now()
 	sess := &Session{
-		UUID:            sessionUUID,
+		UUID:            p.UUID,
 		Name:            name,
-		BranchName:      branch,
+		BranchName:      p.Branch,
 		WorkDir:         workDir,
-		Assistant:       assistant,
+		Assistant:       p.Assistant,
 		AssistantConfig: cfg,
 		Cmd:             cmd,
 		PTY:             ptmx,
@@ -4028,25 +4041,25 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		ringBuf:         make([]byte, RingBufferSize),
 		RecordingUUID:   recordingUUID,
 		RecordingPrefix: recPrefix,
-		ParentUUID:      parentUUID,
+		ParentUUID:      p.ParentUUID,
 		PreviewPort:     previewPort,
 		AgentChatPort:   acPort,
 		PublicPort:      pubPort,
 		CDPPort:         cdpPort,
 		VNCPort:         vncPort,
-		Theme:           theme,
+		Theme:           p.Theme,
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
 		agentChatCancel: sessionCancel,
-		SessionMode:     sessionMode,
+		SessionMode:     p.SessionMode,
 		Metadata: &RecordingMetadata{
 			UUID:          recordingUUID,
 			Name:          name,
 			Agent:         cfg.Name,
 			AgentBinary:   cfg.Binary,
 			RecordingType: recType,
-			SessionMode:   sessionMode,
-			BranchName:    branch,
+			SessionMode:   p.SessionMode,
+			BranchName:    p.Branch,
 			StartedAt:     now,
 			Command:       append([]string{cmdName}, cmdArgs...),
 			MaxCols:       80, // Default starting size
@@ -4054,7 +4067,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			WorkDir:       workDir,
 		},
 	}
-	sessions[sessionUUID] = sess
+	sessions[p.UUID] = sess
 
 	// Create per-session preview proxy hosted inside swe-swe-server.
 	// Two instances share a DebugHub: path-based (with basePath prefix for URL
@@ -4062,14 +4075,14 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	previewTarget := &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", previewPort)}
 	sharedHub := agentproxy.NewDebugHub()
 	previewProxy, err := agentproxy.New(agentproxy.Config{
-		BasePath:    "/proxy/" + sessionUUID + "/preview",
+		BasePath:    "/proxy/" + sess.UUID + "/preview",
 		Target:      previewTarget,
 		ToolPrefix:  "preview",
 		ThemeCookie: "swe-swe-theme",
 		Hub:         sharedHub,
 	})
 	if err != nil {
-		log.Printf("Warning: failed to create preview proxy for session %s: %v", sessionUUID, err)
+		log.Printf("Warning: failed to create preview proxy for session %s: %v", sess.UUID, err)
 	} else {
 		mcpSrv := mcp.NewServer(&mcp.Implementation{
 			Name:    "swe-swe-preview",
@@ -4079,12 +4092,12 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 		previewProxy.RegisterResources(mcpSrv)
 
 		sessMux := http.NewServeMux()
-		sessMux.Handle("/proxy/"+sessionUUID+"/preview/mcp", previewProxy.MCPHandler(mcpSrv))
-		sessMux.Handle("/proxy/"+sessionUUID+"/preview/", previewProxy)
+		sessMux.Handle("/proxy/"+sess.UUID+"/preview/mcp", previewProxy.MCPHandler(mcpSrv))
+		sessMux.Handle("/proxy/"+sess.UUID+"/preview/", previewProxy)
 		// Agent chat proxy route (same-origin, path-based)
 		acTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", acPort))
-		sessMux.Handle("/proxy/"+sessionUUID+"/agentchat/", http.StripPrefix(
-			"/proxy/"+sessionUUID+"/agentchat",
+		sessMux.Handle("/proxy/"+sess.UUID+"/agentchat/", http.StripPrefix(
+			"/proxy/"+sess.UUID+"/agentchat",
 			agentChatProxyHandler(acTarget),
 		))
 		sess.PreviewProxy = previewProxy
@@ -4105,15 +4118,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			Handler: corsWrapper(portPreviewProxy),
 		}
 		go func() {
-			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sessionUUID))
+			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sess.UUID))
 			ln, err := net.Listen("tcp", previewSrv.Addr)
 			if err != nil {
-				log.Printf("Session %s: preview proxy port %d unavailable: %v", sessionUUID, previewPP, err)
+				log.Printf("Session %s: preview proxy port %d unavailable: %v", sess.UUID, previewPP, err)
 				return
 			}
-			log.Printf("Session %s: preview proxy listening on :%d", sessionUUID, previewPP)
+			log.Printf("Session %s: preview proxy listening on :%d", sess.UUID, previewPP)
 			if err := previewSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: preview proxy server error: %v", sessionUUID, err)
+				log.Printf("Session %s: preview proxy server error: %v", sess.UUID, err)
 			}
 		}()
 		sess.PreviewProxyServer = previewSrv
@@ -4124,15 +4137,15 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 			Handler: corsWrapper(agentChatProxyHandler(acTarget)),
 		}
 		go func() {
-			defer recoverGoroutine(fmt.Sprintf("agent chat proxy for session %s", sessionUUID))
+			defer recoverGoroutine(fmt.Sprintf("agent chat proxy for session %s", sess.UUID))
 			ln, err := net.Listen("tcp", acSrv.Addr)
 			if err != nil {
-				log.Printf("Session %s: agent chat proxy port %d unavailable: %v", sessionUUID, acPP, err)
+				log.Printf("Session %s: agent chat proxy port %d unavailable: %v", sess.UUID, acPP, err)
 				return
 			}
-			log.Printf("Session %s: agent chat proxy listening on :%d", sessionUUID, acPP)
+			log.Printf("Session %s: agent chat proxy listening on :%d", sess.UUID, acPP)
 			if err := acSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: agent chat proxy server error: %v", sessionUUID, err)
+				log.Printf("Session %s: agent chat proxy server error: %v", sess.UUID, err)
 			}
 		}()
 		sess.AgentChatProxyServer = acSrv
@@ -4168,7 +4181,7 @@ func getOrCreateSession(sessionUUID string, assistant string, name string, branc
 	// (triggered by mcp-lazy-init on first Playwright MCP tool call).
 	// Child sessions share the parent's browser.
 
-	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sessionUUID, cfg.Name, cmd.Process.Pid, recordingUUID)
+	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sess.UUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
 }
 
@@ -4261,7 +4274,19 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionMode = "terminal" // default
 	}
 
-	sess, isNew, err := getOrCreateSession(sessionUUID, assistant, sessionName, branchParam, workDir, pwd, parentUUID, parentName, parentRecordingUUID, theme, sessionMode)
+	sess, isNew, err := getOrCreateSession(SessionParams{
+		UUID:                sessionUUID,
+		Assistant:           assistant,
+		Name:                sessionName,
+		Branch:              branchParam,
+		WorkDir:             workDir,
+		RepoPath:            pwd,
+		ParentUUID:          parentUUID,
+		ParentName:          parentName,
+		ParentRecordingUUID: parentRecordingUUID,
+		Theme:               theme,
+		SessionMode:         sessionMode,
+	})
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
@@ -6105,8 +6130,14 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			return nil, nil, fmt.Errorf("assistant is required")
 		}
 		sessionUUID := uuid.New().String()
-		sess, _, err := getOrCreateSession(sessionUUID, args.Assistant, args.Name, args.Branch,
-			args.RepoPath, "", "", "", "", "", "chat")
+		sess, _, err := getOrCreateSession(SessionParams{
+			UUID:        sessionUUID,
+			Assistant:   args.Assistant,
+			Name:        args.Name,
+			Branch:      args.Branch,
+			RepoPath:    args.RepoPath,
+			SessionMode: "chat",
+		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create session: %w", err)
 		}
