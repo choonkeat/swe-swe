@@ -190,8 +190,19 @@ RUN if ! getent group {{GID}} > /dev/null; then groupadd -K GID_MIN=20 -g {{GID}
 # Minimal shell prompt: just current directory basename + $
 RUN echo "PS1='\\W\\$ '" >> /etc/bash.bashrc
 
-# Entrypoint runs as root to install certificates,
+# Prepend .swe-swe/bin to PATH so shims (xdg-open, etc.) override system commands.
+# Uses /etc/profile.d/ so login shells (terminal, codex) pick it up
+# after /etc/profile resets PATH.
+RUN echo 'export PATH="/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
+
+# {{IF NO_DOCKER}}
+# Run as non-root user (entrypoint handles setup without privilege escalation)
+USER app
+# {{ENDIF}}
+# {{IF DOCKER}}
+# Entrypoint runs as root to configure Docker socket permissions,
 # then switches to app user to run swe-swe-server
+# {{ENDIF}}
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Default working directory (entrypoint will cd to /workspace for the server)

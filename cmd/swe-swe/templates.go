@@ -69,6 +69,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = !hasCerts
 			case "DOCKER":
 				skip = !withDocker
+			case "NO_DOCKER":
+				skip = withDocker
 			case "SLASH_COMMANDS":
 				skip = !hasSlashCommands
 			}
@@ -517,50 +519,39 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
 	if hasSlashCommands {
 		var copyLines []string
 		for _, repo := range slashCommands {
+			// Helper: generate slash command copy block for an agent
+			genSlashBlock := func(agentName, configDir, subDir string) string {
+				pullCmd := fmt.Sprintf(`(cd %s/%s && git pull) 2>/dev/null`, configDir, repo.Alias)
+				if withDocker {
+					pullCmd = fmt.Sprintf(`su -s /bin/bash app -c "cd %s/%s && git pull" 2>/dev/null`, configDir, repo.Alias)
+				}
+				chownLine := ""
+				if withDocker {
+					chownLine = fmt.Sprintf("\n    chown -R app:app %s/%s", configDir, repo.Alias)
+				}
+				return fmt.Sprintf(`if [ -d "%s/%s/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory %s/%s 2>/dev/null || true
+    %s && \
+        echo -e "${GREEN}[ok] Updated slash commands: %s (%s)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: %s (%s)${NC}"
+elif [ -d "/tmp/slash-commands/%s" ]; then
+    mkdir -p %s
+    cp -r /tmp/slash-commands/%s %s/%s%s
+    echo -e "${GREEN}[ok] Installed slash commands: %s (%s)${NC}"
+fi`, configDir, repo.Alias, configDir, repo.Alias, pullCmd, repo.Alias, agentName, repo.Alias, agentName, repo.Alias, configDir, repo.Alias, configDir, repo.Alias, chownLine, repo.Alias, agentName)
+			}
 			// Claude
 			if hasAgent("claude") {
-				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/home/app/.claude/commands/%s/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.claude/commands/%s 2>/dev/null || true
-    su -s /bin/bash app -c "cd /home/app/.claude/commands/%s && git pull" 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: %s (claude)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: %s (claude)${NC}"
-elif [ -d "/tmp/slash-commands/%s" ]; then
-    mkdir -p /home/app/.claude/commands
-    cp -r /tmp/slash-commands/%s /home/app/.claude/commands/%s
-    chown -R app:app /home/app/.claude/commands/%s
-    echo -e "${GREEN}[ok] Installed slash commands: %s (claude)${NC}"
-fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+				copyLines = append(copyLines, genSlashBlock("claude", "/home/app/.claude/commands", repo.Alias))
 			}
 			// Codex
 			if hasAgent("codex") {
-				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/home/app/.codex/prompts/%s/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.codex/prompts/%s 2>/dev/null || true
-    su -s /bin/bash app -c "cd /home/app/.codex/prompts/%s && git pull" 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: %s (codex)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: %s (codex)${NC}"
-elif [ -d "/tmp/slash-commands/%s" ]; then
-    mkdir -p /home/app/.codex/prompts
-    cp -r /tmp/slash-commands/%s /home/app/.codex/prompts/%s
-    chown -R app:app /home/app/.codex/prompts/%s
-    echo -e "${GREEN}[ok] Installed slash commands: %s (codex)${NC}"
-fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+				copyLines = append(copyLines, genSlashBlock("codex", "/home/app/.codex/prompts", repo.Alias))
 			}
 			// OpenCode
 			if hasAgent("opencode") {
-				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "/home/app/.config/opencode/command/%s/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.config/opencode/command/%s 2>/dev/null || true
-    su -s /bin/bash app -c "cd /home/app/.config/opencode/command/%s && git pull" 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: %s (opencode)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: %s (opencode)${NC}"
-elif [ -d "/tmp/slash-commands/%s" ]; then
-    mkdir -p /home/app/.config/opencode/command
-    cp -r /tmp/slash-commands/%s /home/app/.config/opencode/command/%s
-    chown -R app:app /home/app/.config/opencode/command/%s
-    echo -e "${GREEN}[ok] Installed slash commands: %s (opencode)${NC}"
-fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias))
+				copyLines = append(copyLines, genSlashBlock("opencode", "/home/app/.config/opencode/command", repo.Alias))
 			}
 		}
 		slashCommandsCopy = strings.Join(copyLines, "\n")
@@ -576,6 +567,10 @@ fi`, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, repo.Alias, rep
 		// Handle conditional markers
 		if strings.Contains(trimmed, "{{IF DOCKER}}") {
 			skip = !withDocker
+			continue
+		}
+		if strings.Contains(trimmed, "{{IF NO_DOCKER}}") {
+			skip = withDocker
 			continue
 		}
 		if strings.Contains(trimmed, "{{IF SLASH_COMMANDS}}") {

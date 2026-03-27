@@ -2,34 +2,15 @@
 set -e
 trap 'echo -e "\n\033[0;31m✗ Entrypoint failed at line $LINENO (exit code $?)\033[0m" >&2' ERR
 
-# Enterprise Certificate Installation Entrypoint
-# This script installs enterprise certificates into the system trust store
-# (as root) before starting the main swe-swe-server process (as app user).
-#
-# Usage: This is automatically called when the container starts.
-# The original CMD follows after certificate installation completes.
+# Container Entrypoint
+# Configures MCP servers and agent tools, then starts swe-swe-server.
+# In DOCKER mode, runs as root for socket permissions, then drops to app user.
+# In non-DOCKER mode, runs directly as app user.
 
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
-
-# Install certificates if mounted (must be root for this)
-if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/dev/null | wc -l)" -gt 0 ]; then
-    echo -e "${YELLOW}-> Installing enterprise certificates...${NC}"
-
-    # Copy PEM files to system CA certificate directory
-    if cp /swe-swe/certs/*.pem /usr/local/share/ca-certificates/ 2>/dev/null; then
-        # Update CA certificate bundle
-        if update-ca-certificates; then
-            echo -e "${GREEN}[ok] Enterprise certificates installed and trusted${NC}"
-        else
-            echo -e "${YELLOW}⚠ Warning: update-ca-certificates failed, continuing anyway${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠ Warning: No certificates to install${NC}"
-    fi
-fi
 
 
 
@@ -62,12 +43,25 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   }
 }
 EOF
-chown -R app: /home/app/.config/opencode
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
+echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 
+echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 
+echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
+# Wrapper: auto-run 'goose configure' if no provider is configured
+mkdir -p /home/app/.swe-swe/bin
+cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
+#!/bin/bash
+GOOSE=/usr/local/bin/goose
+$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
+GOOSE_WRAPPER
+chmod +x /home/app/.swe-swe/bin/goose
+echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
+claude_mcp_setup
+echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 
 # Resolve internal server port (SWE_PORT for dockerfile-only mode, 9898 for compose mode)
 SWE_SERVER_PORT="${SWE_PORT:-9898}"
@@ -86,13 +80,8 @@ chmod +x /home/app/.swe-swe/bin/swe-swe-open
 for name in xdg-open open x-www-browser www-browser sensible-browser; do
     ln -sf swe-swe-open /home/app/.swe-swe/bin/$name
 done
-chown -R app: /home/app/.swe-swe/bin
-# Prepend .swe-swe/bin to PATH so shims override system commands.
-# Uses /etc/profile.d/ so login shells (terminal, codex) pick it up
-# after /etc/profile resets PATH.
-echo 'export PATH="/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
 echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
 
-# Switch to app user and execute the original command
-# Use exec to replace this process, preserving signal handling
-exec su -s /bin/bash app -c "cd /workspace && exec $*"
+# Execute the original command directly (already running as app user)
+cd /workspace
+exec "$@"

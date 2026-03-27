@@ -2,62 +2,42 @@
 set -e
 trap 'echo -e "\n\033[0;31m✗ Entrypoint failed at line $LINENO (exit code $?)\033[0m" >&2' ERR
 
-# Enterprise Certificate Installation Entrypoint
-# This script installs enterprise certificates into the system trust store
-# (as root) before starting the main swe-swe-server process (as app user).
-#
-# Usage: This is automatically called when the container starts.
-# The original CMD follows after certificate installation completes.
+# Container Entrypoint
+# Configures MCP servers and agent tools, then starts swe-swe-server.
+# In DOCKER mode, runs as root for socket permissions, then drops to app user.
+# In non-DOCKER mode, runs directly as app user.
 
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Install certificates if mounted (must be root for this)
-if [ -d /swe-swe/certs ] && [ "$(find /swe-swe/certs -type f -name '*.pem' 2>/dev/null | wc -l)" -gt 0 ]; then
-    echo -e "${YELLOW}-> Installing enterprise certificates...${NC}"
-
-    # Copy PEM files to system CA certificate directory
-    if cp /swe-swe/certs/*.pem /usr/local/share/ca-certificates/ 2>/dev/null; then
-        # Update CA certificate bundle
-        if update-ca-certificates; then
-            echo -e "${GREEN}[ok] Enterprise certificates installed and trusted${NC}"
-        else
-            echo -e "${YELLOW}⚠ Warning: update-ca-certificates failed, continuing anyway${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠ Warning: No certificates to install${NC}"
-    fi
-fi
-
 
 # Copy slash commands to agent directories
 if [ -d "/home/app/.claude/commands/ck/.git" ]; then
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.claude/commands/ck 2>/dev/null || true
-    su -s /bin/bash app -c "cd /home/app/.claude/commands/ck && git pull" 2>/dev/null && \
+    (cd /home/app/.claude/commands/ck && git pull) 2>/dev/null && \
         echo -e "${GREEN}[ok] Updated slash commands: ck (claude)${NC}" || \
         echo -e "${YELLOW}⚠ Could not update slash commands: ck (claude)${NC}"
 elif [ -d "/tmp/slash-commands/ck" ]; then
     mkdir -p /home/app/.claude/commands
     cp -r /tmp/slash-commands/ck /home/app/.claude/commands/ck
-    chown -R app:app /home/app/.claude/commands/ck
     echo -e "${GREEN}[ok] Installed slash commands: ck (claude)${NC}"
 fi
 if [ -d "/home/app/.codex/prompts/ck/.git" ]; then
     # Try to pull updates (best effort)
     git config --global --add safe.directory /home/app/.codex/prompts/ck 2>/dev/null || true
-    su -s /bin/bash app -c "cd /home/app/.codex/prompts/ck && git pull" 2>/dev/null && \
+    (cd /home/app/.codex/prompts/ck && git pull) 2>/dev/null && \
         echo -e "${GREEN}[ok] Updated slash commands: ck (codex)${NC}" || \
         echo -e "${YELLOW}⚠ Could not update slash commands: ck (codex)${NC}"
 elif [ -d "/tmp/slash-commands/ck" ]; then
     mkdir -p /home/app/.codex/prompts
     cp -r /tmp/slash-commands/ck /home/app/.codex/prompts/ck
-    chown -R app:app /home/app/.codex/prompts/ck
     echo -e "${GREEN}[ok] Installed slash commands: ck (codex)${NC}"
 fi
 
+echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
 # Create Codex MCP configuration (TOML format)
 mkdir -p /home/app/.codex
@@ -82,28 +62,38 @@ args = ["-y", "@choonkeat/agent-whiteboard"]
 command = "sh"
 args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
 EOF
-chown -R app: /home/app/.codex
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 
+echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 
+echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
+# Wrapper: auto-run 'goose configure' if no provider is configured
+mkdir -p /home/app/.swe-swe/bin
+cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
+#!/bin/bash
+GOOSE=/usr/local/bin/goose
+$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
+GOOSE_WRAPPER
+chmod +x /home/app/.swe-swe/bin/goose
+echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
-# Must run as app user so config goes to /home/app/.claude.json (not /root/)
 # Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
-su -s /bin/bash app -c '
+claude_mcp_setup() {
   unset CLAUDECODE
   claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
   claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
   claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
   claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
   claude mcp remove --scope user swe-swe 2>/dev/null || true
-  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c '"'"'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'"'"'
-  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c '"'"'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'"'"'
-  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp'"'"'
+  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
+  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp'
   claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
-  claude mcp add --scope user --transport stdio swe-swe -- sh -c '"'"'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'"'"'
-'
+  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
+}
+claude_mcp_setup
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 
 # Resolve internal server port (SWE_PORT for dockerfile-only mode, 9898 for compose mode)
@@ -123,13 +113,8 @@ chmod +x /home/app/.swe-swe/bin/swe-swe-open
 for name in xdg-open open x-www-browser www-browser sensible-browser; do
     ln -sf swe-swe-open /home/app/.swe-swe/bin/$name
 done
-chown -R app: /home/app/.swe-swe/bin
-# Prepend .swe-swe/bin to PATH so shims override system commands.
-# Uses /etc/profile.d/ so login shells (terminal, codex) pick it up
-# after /etc/profile resets PATH.
-echo 'export PATH="/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
 echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
 
-# Switch to app user and execute the original command
-# Use exec to replace this process, preserving signal handling
-exec su -s /bin/bash app -c "cd /workspace && exec $*"
+# Execute the original command directly (already running as app user)
+cd /workspace
+exec "$@"
