@@ -557,6 +557,40 @@ fi`, configDir, repo.Alias, configDir, repo.Alias, pullCmd, repo.Alias, agentNam
 		slashCommandsCopy = strings.Join(copyLines, "\n")
 	}
 
+	// Generate chown lines (only needed when running as root in DOCKER mode)
+	chownOpencode := ""
+	chownCodex := ""
+	chownGemini := ""
+	chownGoose := ""
+	if withDocker {
+		chownOpencode = "chown -R app: /home/app/.config/opencode"
+		chownCodex = "chown -R app: /home/app/.codex"
+		chownGemini = "chown -R app: /home/app/.gemini"
+		chownGoose = "chown -R app: /home/app/.config/goose"
+	}
+
+	// Generate Claude MCP setup block (varies by docker mode)
+	claudeMCPSetup := `claude_mcp_setup() {
+  unset CLAUDECODE
+  claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
+  claude mcp remove --scope user swe-swe 2>/dev/null || true
+  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
+  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp'
+  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
+  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
+}
+`
+	if withDocker {
+		claudeMCPSetup += `# Run as app user so config goes to /home/app/.claude.json (not /root/)
+su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
+	} else {
+		claudeMCPSetup += `claude_mcp_setup`
+	}
+
 	lines := strings.Split(content, "\n")
 	var result []string
 	skip := false
@@ -607,6 +641,25 @@ fi`, configDir, repo.Alias, configDir, repo.Alias, pullCmd, repo.Alias, agentNam
 			if slashCommandsCopy != "" {
 				line = strings.ReplaceAll(line, "{{SLASH_COMMANDS_COPY}}", slashCommandsCopy)
 			}
+		}
+
+		// Handle CLAUDE_MCP_SETUP placeholder
+		if strings.Contains(line, "{{CLAUDE_MCP_SETUP}}") {
+			line = strings.ReplaceAll(line, "{{CLAUDE_MCP_SETUP}}", claudeMCPSetup)
+		}
+
+		// Handle chown placeholders (empty string when non-DOCKER)
+		if strings.Contains(line, "{{CHOWN_OPENCODE}}") {
+			line = strings.ReplaceAll(line, "{{CHOWN_OPENCODE}}", chownOpencode)
+		}
+		if strings.Contains(line, "{{CHOWN_CODEX}}") {
+			line = strings.ReplaceAll(line, "{{CHOWN_CODEX}}", chownCodex)
+		}
+		if strings.Contains(line, "{{CHOWN_GEMINI}}") {
+			line = strings.ReplaceAll(line, "{{CHOWN_GEMINI}}", chownGemini)
+		}
+		if strings.Contains(line, "{{CHOWN_GOOSE}}") {
+			line = strings.ReplaceAll(line, "{{CHOWN_GOOSE}}", chownGoose)
 		}
 
 		if !skip {

@@ -14,7 +14,6 @@ NC='\033[0m' # No Color
 
 
 
-echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
 # Create Codex MCP configuration (TOML format)
 mkdir -p /home/app/.codex
@@ -39,6 +38,7 @@ args = ["-y", "@choonkeat/agent-whiteboard"]
 command = "sh"
 args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
 EOF
+
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 
 # Create Gemini MCP configuration
@@ -69,18 +69,9 @@ cat > /home/app/.gemini/settings.json << 'EOF'
   }
 }
 EOF
+
 echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 
-echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
-# Wrapper: auto-run 'goose configure' if no provider is configured
-mkdir -p /home/app/.swe-swe/bin
-cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
-#!/bin/bash
-GOOSE=/usr/local/bin/goose
-$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
-GOOSE_WRAPPER
-chmod +x /home/app/.swe-swe/bin/goose
-echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
@@ -121,5 +112,6 @@ done
 echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
 
 # Execute the original command directly (already running as app user)
+# Use sh -c to expand shell variables in CMD arguments (e.g. ${SWE_PORT:-1977})
 cd /workspace
-exec "$@"
+exec sh -c "$*"

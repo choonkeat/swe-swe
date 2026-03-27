@@ -34,14 +34,14 @@ teardown_mode() {
 }
 
 if [[ -n "$MODE" ]]; then
-    if [[ "$MODE" != "simple" && "$MODE" != "compose" ]]; then
-        echo "Usage: $0 [simple|compose]"
+    if [[ "$MODE" != "simple" && "$MODE" != "compose" && "$MODE" != "docker" ]]; then
+        echo "Usage: $0 [simple|compose|docker]"
         exit 1
     fi
     teardown_mode "$MODE"
 else
     # Tear down all
-    for m in simple compose; do
+    for m in simple compose docker; do
         teardown_mode "$m"
     done
 fi

@@ -60,9 +60,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   }
 }
 EOF
-# {{IF DOCKER}}
-chown -R app: /home/app/.config/opencode
-# {{ENDIF}}
+{{CHOWN_OPENCODE}}
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 # {{ENDIF}}
 
@@ -90,9 +88,7 @@ args = ["-y", "@choonkeat/agent-whiteboard"]
 command = "sh"
 args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
 EOF
-# {{IF DOCKER}}
-chown -R app: /home/app/.codex
-# {{ENDIF}}
+{{CHOWN_CODEX}}
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 # {{ENDIF}}
 
@@ -125,9 +121,7 @@ cat > /home/app/.gemini/settings.json << 'EOF'
   }
 }
 EOF
-# {{IF DOCKER}}
-chown -R app: /home/app/.gemini
-# {{ENDIF}}
+{{CHOWN_GEMINI}}
 echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 # {{ENDIF}}
 
@@ -167,9 +161,7 @@ extensions:
       - "-c"
       - "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"
 EOF
-# {{IF DOCKER}}
-chown -R app: /home/app/.config/goose
-# {{ENDIF}}
+{{CHOWN_GOOSE}}
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
 # Wrapper: auto-run 'goose configure' if no provider is configured
 mkdir -p /home/app/.swe-swe/bin
@@ -186,26 +178,7 @@ echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
 # Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
-claude_mcp_setup() {
-  unset CLAUDECODE
-  claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
-  claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
-  claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
-  claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
-  claude mcp remove --scope user swe-swe 2>/dev/null || true
-  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
-  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
-  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp'
-  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
-  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
-}
-# {{IF DOCKER}}
-# Run as app user so config goes to /home/app/.claude.json (not /root/)
-su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"
-# {{ENDIF}}
-# {{IF NO_DOCKER}}
-claude_mcp_setup
-# {{ENDIF}}
+{{CLAUDE_MCP_SETUP}}
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 # {{ENDIF}}
 
@@ -236,6 +209,7 @@ exec su -s /bin/bash app -c "cd /workspace && exec $*"
 # {{ENDIF}}
 # {{IF NO_DOCKER}}
 # Execute the original command directly (already running as app user)
+# Use sh -c to expand shell variables in CMD arguments (e.g. ${SWE_PORT:-1977})
 cd /workspace
-exec "$@"
+exec sh -c "$*"
 # {{ENDIF}}

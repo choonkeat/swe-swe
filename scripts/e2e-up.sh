@@ -3,14 +3,15 @@ set -euo pipefail
 
 # Bring up an e2e test environment in the specified mode.
 #
-# Usage: ./scripts/e2e-up.sh <simple|compose>
+# Usage: ./scripts/e2e-up.sh <simple|compose|docker>
 #
 # simple  - dockerfile-only mode (no Traefik), port 9780
 # compose - Traefik compose mode (--with-vscode, skip vscode/chrome), port 9770
+# docker  - with Docker socket access (--with-docker), port 9760
 
 MODE="${1:-}"
-if [[ "$MODE" != "simple" && "$MODE" != "compose" ]]; then
-    echo "Usage: $0 <simple|compose>"
+if [[ "$MODE" != "simple" && "$MODE" != "compose" && "$MODE" != "docker" ]]; then
+    echo "Usage: $0 <simple|compose|docker>"
     exit 1
 fi
 
@@ -24,6 +25,11 @@ if [[ "$MODE" == "simple" ]]; then
     PREVIEW_PORTS="3200-3219"
     PUBLIC_PORTS="5200-5219"
     INIT_EXTRA_FLAGS=""
+elif [[ "$MODE" == "docker" ]]; then
+    E2E_PORT=9760
+    PREVIEW_PORTS="3300-3319"
+    PUBLIC_PORTS="5300-5319"
+    INIT_EXTRA_FLAGS="--with-docker"
 else
     E2E_PORT=9770
     PREVIEW_PORTS="3100-3119"
@@ -112,6 +118,18 @@ services:
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
       - ${HOST_PROJECT_PATH}home:/home/app
 EOF
+elif [[ "$MODE" == "docker" ]]; then
+    cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
+# Auto-generated for sibling-container e2e testing (docker mode)
+services:
+  swe-swe:
+    environment:
+      - SWE_SWE_PASSWORD=${E2E_PASSWORD}
+    volumes:
+      - ${HOST_TEST_STACK_DIR}:/workspace
+      - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
+      - ${HOST_PROJECT_PATH}home:/home/app
+EOF
 else
     cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
 # Auto-generated for sibling-container e2e testing (compose mode)
@@ -141,11 +159,11 @@ docker compose build
 
 # --- Phase 5: Start container ---
 echo "--- Starting container ---"
-if [[ "$MODE" == "simple" ]]; then
-    docker compose up -d
-else
+if [[ "$MODE" == "compose" ]]; then
     # Only start swe-swe + traefik to save memory (skip vscode, chrome, etc.)
     docker compose up -d swe-swe traefik
+else
+    docker compose up -d
 fi
 
 # Wait for server to be ready

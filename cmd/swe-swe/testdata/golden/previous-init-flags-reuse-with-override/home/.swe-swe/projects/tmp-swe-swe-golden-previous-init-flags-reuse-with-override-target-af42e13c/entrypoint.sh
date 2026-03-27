@@ -24,26 +24,9 @@ if [ -S /var/run/docker.sock ]; then
 fi
 
 
-chown -R app: /home/app/.config/opencode
-echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
-chown -R app: /home/app/.codex
-echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 
-chown -R app: /home/app/.gemini
-echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 
-chown -R app: /home/app/.config/goose
-echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
-# Wrapper: auto-run 'goose configure' if no provider is configured
-mkdir -p /home/app/.swe-swe/bin
-cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
-#!/bin/bash
-GOOSE=/usr/local/bin/goose
-$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
-GOOSE_WRAPPER
-chmod +x /home/app/.swe-swe/bin/goose
-echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json

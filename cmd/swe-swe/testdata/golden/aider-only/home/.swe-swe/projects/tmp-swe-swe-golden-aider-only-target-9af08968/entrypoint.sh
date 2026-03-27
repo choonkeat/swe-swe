@@ -14,25 +14,10 @@ NC='\033[0m' # No Color
 
 
 
-echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
-echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 
-echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 
-echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
-# Wrapper: auto-run 'goose configure' if no provider is configured
-mkdir -p /home/app/.swe-swe/bin
-cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
-#!/bin/bash
-GOOSE=/usr/local/bin/goose
-$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
-GOOSE_WRAPPER
-chmod +x /home/app/.swe-swe/bin/goose
-echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
-claude_mcp_setup
-echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 
 # Resolve internal server port (SWE_PORT for dockerfile-only mode, 9898 for compose mode)
 SWE_SERVER_PORT="${SWE_PORT:-9898}"
@@ -54,5 +39,6 @@ done
 echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
 
 # Execute the original command directly (already running as app user)
+# Use sh -c to expand shell variables in CMD arguments (e.g. ${SWE_PORT:-1977})
 cd /workspace
-exec "$@"
+exec sh -c "$*"

@@ -3,12 +3,13 @@ set -euo pipefail
 
 # Run Playwright e2e tests against running e2e environment(s).
 #
-# Usage: ./scripts/e2e-test.sh [simple|compose] [playwright-args...]
+# Usage: ./scripts/e2e-test.sh [simple|compose|docker] [playwright-args...]
 #
 # If mode given, tests that mode only.
 # If no mode given, tests all running e2e environments.
 #
 # Extra arguments are passed to `npx playwright test`.
+# Runs docker system prune before and after tests to prevent disk exhaustion.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
@@ -18,7 +19,7 @@ MODE="${1:-}"
 PLAYWRIGHT_ARGS=()
 
 # If first arg is a known mode, shift it off; otherwise test all
-if [[ "$MODE" == "simple" || "$MODE" == "compose" ]]; then
+if [[ "$MODE" == "simple" || "$MODE" == "compose" || "$MODE" == "docker" ]]; then
     shift
     PLAYWRIGHT_ARGS=("$@")
 else
@@ -60,15 +61,23 @@ test_mode() {
     echo "=== e2e-${mode}: PASSED ==="
 }
 
+# Prune unused Docker resources to prevent disk exhaustion
+echo "--- Pruning Docker resources ---"
+docker system prune -f 2>/dev/null || true
+
 FAILED=0
 
 if [[ -n "$MODE" ]]; then
     test_mode "$MODE" || FAILED=1
 else
-    for m in simple compose; do
+    for m in simple compose docker; do
         test_mode "$m" || FAILED=1
     done
 fi
+
+# Prune again after tests
+echo "--- Pruning Docker resources ---"
+docker system prune -f 2>/dev/null || true
 
 if [[ "$FAILED" -ne 0 ]]; then
     echo "=== e2e-test: SOME TESTS FAILED ==="
