@@ -3503,13 +3503,13 @@ func sessionReaper() {
 
 // Constants for recording cleanup
 const (
-	maxRecentRecordingsPerAgent = 5
-	recentRecordingMaxAge       = 48 * time.Hour
+	recentRecordingMaxAge = 14 * 24 * time.Hour
 )
 
-// cleanupRecentRecordings deletes old/excess recent recordings (those without KeptAt set)
-// For each agent, keeps only the most recent maxRecentRecordingsPerAgent recordings
-// and deletes any unkept recordings older than recentRecordingMaxAge
+// cleanupRecentRecordings deletes old recent recordings (those without KeptAt set).
+// Expiry is based on EndedAt from metadata -- recordings are only eligible for
+// deletion recentRecordingMaxAge after the session ends. Active sessions (EndedAt
+// unset) are never deleted.
 func cleanupRecentRecordings() {
 	entries, err := os.ReadDir(recordingsDir)
 	if err != nil {
@@ -3526,12 +3526,7 @@ func cleanupRecentRecordings() {
 	}
 	sessionsMu.RUnlock()
 
-	// Collect all recent (unkept) recordings grouped by agent
-	type recentRecording struct {
-		uuid  string
-		mtime time.Time // log file mtime -- reflects last activity, not metadata timestamps
-	}
-	recentByAgent := make(map[string][]recentRecording)
+	now := time.Now()
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -3575,56 +3570,25 @@ func cleanupRecentRecordings() {
 			continue
 		}
 
-		// Use log file mtime for age -- it reflects the last write to the
-		// recording, so a long session that just ended won't be immediately
-		// eligible for cleanup (unlike EndedAt which may be unset on crash,
-		// falling back to StartedAt).
-		logPath := recordingsDir + "/session-" + uuid + ".log"
-		logInfo, err := os.Stat(logPath)
-		if err != nil {
-			continue
+		// Skip recordings that haven't ended yet (active session without
+		// a live process -- e.g. crash). Use log file mtime as fallback
+		// so crashed sessions still get cleaned up eventually.
+		var endTime time.Time
+		if meta.EndedAt != nil {
+			endTime = *meta.EndedAt
+		} else {
+			logPath := recordingsDir + "/session-" + uuid + ".log"
+			logInfo, err := os.Stat(logPath)
+			if err != nil {
+				continue
+			}
+			endTime = logInfo.ModTime()
 		}
-		mtime := logInfo.ModTime()
 
-		agent := meta.Agent
-		if agent == "" {
-			agent = "unknown"
-		}
-		// Map display name to binary name
-		agent = agentNameToBinary(agent)
-
-		recentByAgent[agent] = append(recentByAgent[agent], recentRecording{
-			uuid:  uuid,
-			mtime: mtime,
-		})
-	}
-
-	// For each agent, delete old/excess recordings
-	now := time.Now()
-	for agent, recordings := range recentByAgent {
-		// Sort by mtime descending (newest first)
-		sort.Slice(recordings, func(i, j int) bool {
-			return recordings[i].mtime.After(recordings[j].mtime)
-		})
-
-		for i, rec := range recordings {
-			shouldDelete := false
-
-			// Delete if beyond the per-agent limit
-			if i >= maxRecentRecordingsPerAgent {
-				shouldDelete = true
-			}
-
-			// Delete if older than max age (based on log file mtime)
-			if now.Sub(rec.mtime) > recentRecordingMaxAge {
-				shouldDelete = true
-			}
-
-			if shouldDelete {
-				deleteRecordingFiles(rec.uuid)
-				log.Printf("Auto-deleted recent recording %s (agent=%s, age=%v, position=%d)",
-					rec.uuid[:8], agent, now.Sub(rec.mtime).Round(time.Minute), i+1)
-			}
+		if now.Sub(endTime) > recentRecordingMaxAge {
+			deleteRecordingFiles(uuid)
+			log.Printf("Auto-deleted recent recording %s (agent=%s, age=%v)",
+				uuid[:8], meta.Agent, now.Sub(endTime).Round(time.Minute))
 		}
 	}
 
@@ -5018,25 +4982,25 @@ func loadEndedRecordings() []RecordingInfo {
 			info.AgentBadgeClass = agentBadgeClass(info.Agent)
 		}
 
-		// Calculate ExpiresIn for non-kept recordings based on log file mtime
+		// Calculate ExpiresIn for non-kept recordings based on EndedAt
+		// (info.EndedAt is already set from metadata or fallback above)
 		if !info.IsKept {
-			logPath := recordingsDir + "/session-" + ruuid + ".log"
-			var logMtime time.Time
-			if logStat, err := os.Stat(logPath); err == nil {
-				logMtime = logStat.ModTime()
-			} else {
-				logMtime = info.EndedAt
-			}
-			remaining := recentRecordingMaxAge - time.Since(logMtime)
+			remaining := recentRecordingMaxAge - time.Since(info.EndedAt)
 			if remaining > 0 {
-				hours := int(remaining.Hours())
-				mins := int(remaining.Minutes()) % 60
-				if hours > 0 {
+				days := int(remaining.Hours()) / 24
+				hours := int(remaining.Hours()) % 24
+				if days > 0 {
+					info.ExpiresIn = fmt.Sprintf("%dd%dh", days, hours)
+				} else if hours > 0 {
+					mins := int(remaining.Minutes()) % 60
 					info.ExpiresIn = fmt.Sprintf("%dh%dm", hours, mins)
-				} else if mins < 1 {
-					info.ExpiresIn = "<1m"
 				} else {
-					info.ExpiresIn = fmt.Sprintf("%dm", mins)
+					mins := int(remaining.Minutes())
+					if mins < 1 {
+						info.ExpiresIn = "<1m"
+					} else {
+						info.ExpiresIn = fmt.Sprintf("%dm", mins)
+					}
 				}
 			} else {
 				info.ExpiresIn = "soon"

@@ -1779,11 +1779,11 @@ func TestKeepRecording_AlreadyKept(t *testing.T) {
 func TestCleanupRecentRecordings_DeletesOldUnkept(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create a recording with log file mtime older than 48 hours
+	// Create a recording that ended more than 14 days ago
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	startedAt := time.Now().Add(-50 * time.Hour)
-	endedAt := time.Now().Add(-49 * time.Hour)
-	logMtime := time.Now().Add(-49 * time.Hour) // 49 hours ago
+	startedAt := time.Now().Add(-15 * 24 * time.Hour)
+	endedAt := time.Now().Add(-15*24*time.Hour + time.Hour)
+	logMtime := endedAt
 
 	h.createRecordingFiles(testUUID, recordingOpts{
 		logMtime: &logMtime,
@@ -1812,12 +1812,12 @@ func TestCleanupRecentRecordings_DeletesOldUnkept(t *testing.T) {
 func TestCleanupRecentRecordings_KeepsKeptRecordings(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create a kept recording with log mtime older than 48 hours
+	// Create a kept recording that ended more than 14 days ago
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	startedAt := time.Now().Add(-50 * time.Hour)
-	endedAt := time.Now().Add(-49 * time.Hour)
-	keptAt := time.Now().Add(-48 * time.Hour)
-	logMtime := time.Now().Add(-49 * time.Hour)
+	startedAt := time.Now().Add(-15 * 24 * time.Hour)
+	endedAt := time.Now().Add(-15*24*time.Hour + time.Hour)
+	keptAt := time.Now().Add(-15*24*time.Hour + 2*time.Hour)
+	logMtime := endedAt
 
 	h.createRecordingFiles(testUUID, recordingOpts{
 		logMtime: &logMtime,
@@ -1842,7 +1842,7 @@ func TestCleanupRecentRecordings_KeepsKeptRecordings(t *testing.T) {
 func TestCleanupRecentRecordings_KeepsRecentUnkept(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create a recent recording (log mtime less than 48 hours old)
+	// Create a recent recording (ended less than 14 days ago)
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	startedAt := time.Now().Add(-2 * time.Hour)
 	endedAt := time.Now().Add(-1 * time.Hour)
@@ -1867,123 +1867,58 @@ func TestCleanupRecentRecordings_KeepsRecentUnkept(t *testing.T) {
 	}
 }
 
-func TestCleanupRecentRecordings_DeletesBeyondLimit(t *testing.T) {
+func TestCleanupRecentRecordings_UsesEndedAtNotLogMtime(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create 7 recent recordings for the same agent
-	// All are recent (< 48 hours), but we exceed the limit of 5
-	uuids := []string{
-		"aaaaaaaa-0001-0000-0000-000000000001",
-		"aaaaaaaa-0002-0000-0000-000000000002",
-		"aaaaaaaa-0003-0000-0000-000000000003",
-		"aaaaaaaa-0004-0000-0000-000000000004",
-		"aaaaaaaa-0005-0000-0000-000000000005",
-		"aaaaaaaa-0006-0000-0000-000000000006",
-		"aaaaaaaa-0007-0000-0000-000000000007",
-	}
+	// Create a recording where EndedAt is recent but log mtime is old.
+	// Should NOT be deleted (expiry is based on EndedAt).
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	startedAt := time.Now().Add(-20 * 24 * time.Hour)
+	endedAt := time.Now().Add(-1 * time.Hour)
+	logMtime := time.Now().Add(-20 * 24 * time.Hour) // old mtime
 
-	for i, uuid := range uuids {
-		// Create recordings with different ages (all recent, within 48h)
-		endedAt := time.Now().Add(-time.Duration(i+1) * time.Minute)
-		logMtime := endedAt // log mtime matches ended time
-		h.createRecordingFiles(uuid, recordingOpts{
-			logMtime: &logMtime,
-			metadata: &RecordingMetadata{
-				UUID:      uuid,
-				Name:      "Session " + string(rune('A'+i)),
-				Agent:     "claude",
-				StartedAt: endedAt.Add(-5 * time.Minute),
-				EndedAt:   &endedAt,
-			},
-		})
-	}
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logMtime: &logMtime,
+		metadata: &RecordingMetadata{
+			UUID:      testUUID,
+			Name:      "Long Running Session",
+			Agent:     "claude",
+			StartedAt: startedAt,
+			EndedAt:   &endedAt,
+		},
+	})
 
 	cleanupRecentRecordings()
 
-	// Count remaining recordings
-	remaining := 0
-	for _, uuid := range uuids {
-		if h.recordingFileExists(uuid, ".log") {
-			remaining++
-		}
-	}
-
-	if remaining != maxRecentRecordingsPerAgent {
-		t.Errorf("expected %d recordings to remain, got %d", maxRecentRecordingsPerAgent, remaining)
-	}
-
-	// Verify the newest 5 are kept (oldest 2 deleted)
-	for i, uuid := range uuids {
-		if i < maxRecentRecordingsPerAgent {
-			if !h.recordingFileExists(uuid, ".log") {
-				t.Errorf("recording %s (position %d) should have been kept", uuid[:8], i+1)
-			}
-		} else {
-			if h.recordingFileExists(uuid, ".log") {
-				t.Errorf("recording %s (position %d) should have been deleted", uuid[:8], i+1)
-			}
-		}
+	if !h.recordingFileExists(testUUID, ".log") {
+		t.Error("recording with recent EndedAt should NOT have been deleted despite old log mtime")
 	}
 }
 
-func TestCleanupRecentRecordings_LimitPerAgent(t *testing.T) {
+func TestCleanupRecentRecordings_NoEndedAtFallsBackToLogMtime(t *testing.T) {
 	h := newTestHelper(t)
 
-	// Create 3 recordings for claude and 3 for aider
-	// All recent, none should be deleted (within limit per agent)
-	claudeUUIDs := []string{
-		"cccccccc-0001-0000-0000-000000000001",
-		"cccccccc-0002-0000-0000-000000000002",
-		"cccccccc-0003-0000-0000-000000000003",
-	}
-	aiderUUIDs := []string{
-		"aaaaaaaa-0001-0000-0000-000000000001",
-		"aaaaaaaa-0002-0000-0000-000000000002",
-		"aaaaaaaa-0003-0000-0000-000000000003",
-	}
+	// Create a recording without EndedAt (crashed session) with old log mtime.
+	// Should be deleted based on log mtime fallback.
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	startedAt := time.Now().Add(-15 * 24 * time.Hour)
+	logMtime := time.Now().Add(-15 * 24 * time.Hour)
 
-	for i, uuid := range claudeUUIDs {
-		endedAt := time.Now().Add(-time.Duration(i+1) * time.Minute)
-		logMtime := endedAt
-		h.createRecordingFiles(uuid, recordingOpts{
-			logMtime: &logMtime,
-			metadata: &RecordingMetadata{
-				UUID:      uuid,
-				Name:      "Claude Session",
-				Agent:     "claude",
-				StartedAt: endedAt.Add(-5 * time.Minute),
-				EndedAt:   &endedAt,
-			},
-		})
-	}
-
-	for i, uuid := range aiderUUIDs {
-		endedAt := time.Now().Add(-time.Duration(i+1) * time.Minute)
-		logMtime := endedAt
-		h.createRecordingFiles(uuid, recordingOpts{
-			logMtime: &logMtime,
-			metadata: &RecordingMetadata{
-				UUID:      uuid,
-				Name:      "Aider Session",
-				Agent:     "aider",
-				StartedAt: endedAt.Add(-5 * time.Minute),
-				EndedAt:   &endedAt,
-			},
-		})
-	}
+	h.createRecordingFiles(testUUID, recordingOpts{
+		logMtime: &logMtime,
+		metadata: &RecordingMetadata{
+			UUID:      testUUID,
+			Name:      "Crashed Session",
+			Agent:     "claude",
+			StartedAt: startedAt,
+			// EndedAt intentionally nil
+		},
+	})
 
 	cleanupRecentRecordings()
 
-	// All 6 recordings should still exist (3 per agent, limit is 5)
-	for _, uuid := range claudeUUIDs {
-		if !h.recordingFileExists(uuid, ".log") {
-			t.Errorf("claude recording %s should NOT have been deleted", uuid[:8])
-		}
-	}
-	for _, uuid := range aiderUUIDs {
-		if !h.recordingFileExists(uuid, ".log") {
-			t.Errorf("aider recording %s should NOT have been deleted", uuid[:8])
-		}
+	if h.recordingFileExists(testUUID, ".log") {
+		t.Error("crashed recording with old log mtime should have been deleted")
 	}
 }
 
