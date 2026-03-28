@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## v2.19.0 - Non-Root Containers, Recording TTL & E2E Testing
+
+### Features
+
+- **Non-root containers**: Non-DOCKER container variants now run as `USER app` instead of root, with build-time PATH shim and template conditionals for chown/su/exec. DOCKER variants still boot as root for socket permissions then drop to app user
+- **Chat progress reporting**: Worktree and step-by-step skills now report progress to the chat UI
+- **Composable e2e scripts**: New `e2e-up.sh`, `e2e-test.sh`, `e2e-down.sh` scripts with port connectivity tests and docker e2e mode
+- **Let's Encrypt MOTD**: DigitalOcean SSH MOTD now shows Let's Encrypt upgrade steps
+
+### Bug Fixes
+
+- **Recording expiry**: Base recording expiry on `EndedAt` instead of creation time, bump TTL to 14 days, remove per-agent cap
+- **Template nesting**: Fix template nesting bug and shell expansion in non-root CMD
+- **SSE response handling**: Handle SSE-formatted responses in `callAgentChatOrchestrator`
+- **Agent View VNC**: Fix broken VNC in no-SSL mode due to wrong port mapping in docker-compose
+- **Auto-upgrade trigger**: Trigger auto-upgrade for configs with empty `cliVersion`
+
+### Refactoring
+
+- Use `SessionEnvParams` struct for `buildSessionEnv`
+- Use `SessionParams` struct for `getOrCreateSession`
+
+### Documentation
+
+- Consolidate e2e testing documentation into composable scripts with port connectivity tests
+- Update DigitalOcean deploy MOTD and docs
+
 ## v2.18.0 - VNC Readiness Probe, Chat Recording Fix & Version Display
 
 ### Features
