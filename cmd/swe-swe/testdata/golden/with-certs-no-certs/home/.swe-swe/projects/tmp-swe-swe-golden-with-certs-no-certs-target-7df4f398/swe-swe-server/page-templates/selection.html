@@ -1459,6 +1459,8 @@
                                 <span class="recording-card__dot">•</span>
                                 <span class="agent-badge agent-badge--{{.AgentBadgeClass}}">{{if .Agent}}{{.Agent}}{{else}}Unknown{{end}}</span>
                                 <span class="recording-card__dot">•</span>
+                                <span>{{.SizeHuman}}</span>
+                                <span class="recording-card__dot">•</span>
                                 <span class="recording-card__status {{if .IsKept}}recording-card__status--saved{{else}}recording-card__status--expires{{end}}">
                                     {{if .IsKept}}Saved{{else}}Expires in {{.ExpiresIn}}{{end}}
                                 </span>

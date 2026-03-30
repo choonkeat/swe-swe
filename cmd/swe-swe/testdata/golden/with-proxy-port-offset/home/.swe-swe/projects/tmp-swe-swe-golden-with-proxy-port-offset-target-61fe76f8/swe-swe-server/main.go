@@ -4775,6 +4775,7 @@ type RecordingInfo struct {
 	HasTerminal     bool       // has a terminal .log child recording
 	ChatUUID        string     // child UUID for chat playback URL
 	TerminalUUIDs   []string   // child UUIDs for terminal playback
+	SizeHuman       string           // human-readable total size ("2.4 GB")
 	SummaryLine     string           // one-line summary from last chat event
 	RestartUUID     string           // fresh UUID for "restart" link
 	Query           SessionPageQuery // params to restart a similar session
@@ -4819,6 +4820,25 @@ func formatTimeAgo(t time.Time) string {
 	return fmt.Sprintf("%d days ago", days)
 }
 
+// formatSizeHuman returns a human-readable file size string
+func formatSizeHuman(bytes int64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+	switch {
+	case bytes >= gb:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(gb))
+	case bytes >= mb:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
+	case bytes >= kb:
+		return fmt.Sprintf("%.0f KB", float64(bytes)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
+
 // loadEndedRecordings returns a list of ended recordings for the homepage.
 // Child recordings (terminal, chat) are grouped into their parent's RecordingInfo.
 func loadEndedRecordings() []RecordingInfo {
@@ -4844,8 +4864,9 @@ func loadEndedRecordings() []RecordingInfo {
 		chatUUID      string
 		terminalUUIDs []string
 	}
-	children := make(map[string]*childInfo) // parentUUID -> child info
+	children := make(map[string]*childInfo)  // parentUUID -> child info
 	rootLogs := make(map[string]os.DirEntry) // uuid -> dir entry for .log files
+	rootSizes := make(map[string]int64)      // parentUUID -> total bytes
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -4887,6 +4908,11 @@ func loadEndedRecordings() []RecordingInfo {
 			continue
 		}
 
+		// Accumulate file size for the parent recording
+		if fi, err := entry.Info(); err == nil {
+			rootSizes[parentUUID] += fi.Size()
+		}
+
 		if childUUID == "" {
 			// Root recording
 			if fileType == "log" {
@@ -4926,6 +4952,7 @@ func loadEndedRecordings() []RecordingInfo {
 			UUID:        ruuid,
 			UUIDShort:   uuidShort,
 			RestartUUID: uuid.New().String(),
+			SizeHuman:   formatSizeHuman(rootSizes[ruuid]),
 		}
 
 		// Attach child info
