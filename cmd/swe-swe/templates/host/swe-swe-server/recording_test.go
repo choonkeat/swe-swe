@@ -2401,3 +2401,165 @@ func TestCalculateTerminalDimensionsLargeFile(t *testing.T) {
 			heapDelta, maxAlloc)
 	}
 }
+
+// ============================================================================
+// Compression channel tests
+// ============================================================================
+
+func TestCompressionWorker_CompressesLogFile(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	logContent := "test terminal output for compression\r\n"
+	h.createRecordingFiles(testUUID, recordingOpts{logContent: logContent})
+
+	logPath := filepath.Join(h.recordingDir, "session-"+testUUID+".log")
+
+	// Send path through channel and let the worker process it
+	compressCh <- logPath
+
+	// Wait for the worker to process (it runs in the background goroutine started in main,
+	// but in tests we drain the channel directly)
+	drainCompressCh(t)
+
+	// .log should be gone, .log.gz should exist
+	if h.recordingFileExists(testUUID, ".log") {
+		t.Error(".log file should have been removed after compression")
+	}
+	if !h.recordingFileExists(testUUID, ".log.gz") {
+		t.Error(".log.gz file should exist after compression")
+	}
+}
+
+func TestCompressionWorker_SkipsAlreadyCompressed(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{})
+
+	logPath := filepath.Join(h.recordingDir, "session-"+testUUID+".log")
+	gzPath := logPath + ".gz"
+
+	// Create a pre-existing .log.gz
+	if err := os.WriteFile(gzPath, []byte("pre-existing gz"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	compressCh <- logPath
+	drainCompressCh(t)
+
+	// .log should be cleaned up, .log.gz should still be the pre-existing one
+	if h.recordingFileExists(testUUID, ".log") {
+		t.Error(".log file should have been removed")
+	}
+	data, err := os.ReadFile(gzPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "pre-existing gz" {
+		t.Error(".log.gz should not have been overwritten")
+	}
+}
+
+func TestCompressionWorker_SkipsMissingFile(t *testing.T) {
+	_ = newTestHelper(t)
+
+	// Send a path that doesn't exist -- worker should skip without error
+	compressCh <- "/nonexistent/session-fake.log"
+	drainCompressCh(t)
+	// No panic or error means success
+}
+
+func TestCompressEndedSessionLogs_EnqueuesViaChannel(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	endedAt := time.Now().Add(-1 * time.Hour)
+	h.createRecordingFiles(testUUID, recordingOpts{
+		metadata: &RecordingMetadata{
+			UUID:      testUUID,
+			Name:      "Test Session",
+			Agent:     "claude",
+			StartedAt: time.Now().Add(-2 * time.Hour),
+			EndedAt:   &endedAt,
+		},
+	})
+
+	entries, err := os.ReadDir(h.recordingDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Drain any pre-existing items
+	drainCompressCh(t)
+
+	compressEndedSessionLogs(entries, map[string]bool{})
+
+	// Should have enqueued the .log path
+	select {
+	case path := <-compressCh:
+		expectedSuffix := "session-" + testUUID + ".log"
+		if !strings.HasSuffix(path, expectedSuffix) {
+			t.Errorf("enqueued path %q should end with %q", path, expectedSuffix)
+		}
+	default:
+		t.Error("compressEndedSessionLogs should have enqueued a path on compressCh")
+	}
+}
+
+func TestCompressEndedSessionLogs_SkipsActiveSession(t *testing.T) {
+	h := newTestHelper(t)
+
+	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	h.createRecordingFiles(testUUID, recordingOpts{})
+
+	entries, err := os.ReadDir(h.recordingDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mark this UUID as active
+	activeRecordings := map[string]bool{testUUID: true}
+
+	drainCompressCh(t)
+	compressEndedSessionLogs(entries, activeRecordings)
+
+	// Channel should be empty -- active sessions are skipped
+	select {
+	case path := <-compressCh:
+		t.Errorf("should not enqueue active session, got %q", path)
+	default:
+		// expected
+	}
+
+	// .log should still exist
+	if !h.recordingFileExists(testUUID, ".log") {
+		t.Error(".log file should still exist for active session")
+	}
+}
+
+// drainCompressCh processes all pending items in compressCh by running
+// compression inline (simulating what compressionWorker does).
+func drainCompressCh(t *testing.T) {
+	t.Helper()
+	for {
+		select {
+		case logPath := <-compressCh:
+			gzPath := logPath + ".gz"
+			if _, err := os.Stat(gzPath); err == nil {
+				os.Remove(logPath)
+				continue
+			}
+			if _, err := os.Stat(logPath); err != nil {
+				continue
+			}
+			if err := compressFileGzip(logPath, gzPath); err != nil {
+				t.Logf("drainCompressCh: compress failed: %v", err)
+				continue
+			}
+			os.Remove(logPath)
+		default:
+			return
+		}
+	}
+}

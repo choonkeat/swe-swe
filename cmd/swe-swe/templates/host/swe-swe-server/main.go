@@ -1780,8 +1780,9 @@ func main() {
 		w.Write([]byte(result))
 	})
 
-	// Start session reaper
+	// Start session reaper and compression worker
 	go sessionReaper()
+	go compressionWorker()
 
 	// Global MCP orchestration server
 	orchMCPSrv := mcp.NewServer(&mcp.Implementation{
@@ -3521,6 +3522,12 @@ const (
 	recentRecordingMaxAge = 14 * 24 * time.Hour
 )
 
+// compressCh receives .log file paths that should be gzip-compressed.
+// Both endSessionByUUID (prompt) and the scheduler (safety net) send paths
+// through this channel; a single compressionWorker goroutine consumes it,
+// ensuring no concurrent compression of the same file.
+var compressCh = make(chan string, 256)
+
 // cleanupRecentRecordings compresses ended session logs and deletes old recordings.
 // Compression: .log files from ended sessions are gzip-compressed to .log.gz, then
 // the original .log is removed. This runs lazily (every minute via sessionReaper)
@@ -3651,8 +3658,9 @@ func cleanupRecentRecordings() {
 	}
 }
 
-// compressEndedSessionLogs compresses .log files from ended sessions to .log.gz.
+// compressEndedSessionLogs enqueues .log files from ended sessions for compression.
 // Skips active sessions and files that already have a .log.gz counterpart.
+// Actual compression is performed by compressionWorker via compressCh.
 func compressEndedSessionLogs(entries []os.DirEntry, activeRecordings map[string]bool) {
 	for _, entry := range entries {
 		name := entry.Name()
@@ -3676,22 +3684,20 @@ func compressEndedSessionLogs(entries []os.DirEntry, activeRecordings map[string
 		}
 
 		logPath := recordingsDir + "/" + name
-		gzPath := logPath + ".gz"
 
 		// Skip if already compressed
+		gzPath := logPath + ".gz"
 		if _, err := os.Stat(gzPath); err == nil {
-			// .log.gz exists; remove the uncompressed .log
 			os.Remove(logPath)
 			continue
 		}
 
-		// Compress in-place: .log -> .log.gz, then remove .log
-		if err := compressFileGzip(logPath, gzPath); err != nil {
-			log.Printf("Failed to compress %s: %v", name, err)
-			continue
+		// Enqueue for compression by the worker
+		select {
+		case compressCh <- logPath:
+		default:
+			// Channel full; worker will catch it on the next scheduler tick
 		}
-		os.Remove(logPath)
-		log.Printf("Compressed recording %s", name)
 	}
 }
 
@@ -3728,6 +3734,31 @@ func compressFileGzip(src, dst string) error {
 	}
 
 	return os.Rename(tmp, dst)
+}
+
+// compressionWorker is the single consumer of compressCh. It compresses each
+// .log file to .log.gz, then removes the original. Safe to receive duplicates:
+// already-compressed or missing files are skipped.
+func compressionWorker() {
+	for logPath := range compressCh {
+		gzPath := logPath + ".gz"
+
+		// Skip if already compressed or source gone
+		if _, err := os.Stat(gzPath); err == nil {
+			os.Remove(logPath)
+			continue
+		}
+		if _, err := os.Stat(logPath); err != nil {
+			continue
+		}
+
+		if err := compressFileGzip(logPath, gzPath); err != nil {
+			log.Printf("Failed to compress %s: %v", filepath.Base(logPath), err)
+			continue
+		}
+		os.Remove(logPath)
+		log.Printf("Compressed recording %s", filepath.Base(logPath))
+	}
 }
 
 // deleteRecordingFiles removes all files for a recording and its children.
@@ -6166,6 +6197,26 @@ func endSessionByUUID(sessionUUID string) error {
 		delete(sessions, childUUID)
 	}
 	sessionsMu.Unlock()
+
+	// Enqueue recording logs for prompt compression.
+	// The parent session's log is session-{recUUID}.log; child logs are
+	// session-{parentRecUUID}-{childRecUUID}.log.
+	if session.RecordingUUID != "" {
+		parentLogPath := fmt.Sprintf("%s/session-%s.log", recordingsDir, session.RecordingUUID)
+		select {
+		case compressCh <- parentLogPath:
+		default:
+		}
+		for _, child := range childSessions {
+			if child.RecordingUUID != "" {
+				childLogPath := fmt.Sprintf("%s/session-%s-%s.log", recordingsDir, session.RecordingUUID, child.RecordingUUID)
+				select {
+				case compressCh <- childLogPath:
+				default:
+				}
+			}
+		}
+	}
 
 	return nil
 }
