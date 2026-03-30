@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -5093,38 +5094,82 @@ type TerminalDimensions struct {
 	Rows uint32 // Terminal rows (from cursor positions and line count)
 }
 
+// cursorPosRegex matches ESC[row;colH cursor position sequences.
+// Compiled once to avoid per-call overhead.
+var cursorPosRegex = regexp.MustCompile(`\x1b\[(\d+);(\d+)H`)
+
+// isScriptHeader returns true for lines added by the `script` command at the top.
+func isScriptHeader(line string) bool {
+	return strings.HasPrefix(line, "Script started on") || strings.HasPrefix(line, "Command:")
+}
+
+// isScriptFooter returns true for lines added by the `script` command at the bottom.
+func isScriptFooter(line string) bool {
+	return strings.HasPrefix(line, "Saving session") ||
+		strings.HasPrefix(line, "Command exit status") ||
+		strings.HasPrefix(line, "Script done on")
+}
+
 // calculateTerminalDimensions analyzes session.log content to calculate dimensions.
-// This replicates the embedded mode's JavaScript calculation:
+// Streams the file line-by-line to avoid reading huge recordings into memory.
 //   - Cols: min(max(maxLineLength, 80), 240)
-//   - Rows: max(maxCursorRow, lineCount, 24)
+//   - Rows: max(maxCursorRow, lineCount, 24), capped at 10000
 func calculateTerminalDimensions(logPath string) TerminalDimensions {
-	content, err := os.ReadFile(logPath)
+	f, err := os.Open(logPath)
 	if err != nil {
-		return TerminalDimensions{Cols: 240, Rows: 24} // defaults
+		return TerminalDimensions{Cols: 240, Rows: 24}
 	}
+	defer f.Close()
 
-	// Strip metadata (same as embedded mode)
-	stripped := recordtui.StripMetadata(string(content))
-
-	// Parse cursor position sequences: ESC[row;colH
-	// This finds the maximum row used by cursor positioning
 	maxUsedRow := uint32(1)
-	cursorPosRegex := regexp.MustCompile(`\x1b\[(\d+);(\d+)H`)
-	matches := cursorPosRegex.FindAllStringSubmatch(stripped, -1)
-	for _, match := range matches {
-		if len(match) >= 2 {
-			var row int
-			fmt.Sscanf(match[1], "%d", &row)
-			if row > 0 && uint32(row) > maxUsedRow {
-				maxUsedRow = uint32(row)
+	lineCount := uint32(0)
+	maxLineLength := 0
+	inHeader := true
+	footerLines := uint32(0)
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // up to 1MB per line
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip script header lines at the start
+		if inHeader && isScriptHeader(line) {
+			continue
+		}
+		inHeader = false
+
+		// Track trailing footer lines to subtract later
+		if isScriptFooter(line) || (footerLines > 0 && strings.TrimSpace(line) == "") {
+			footerLines++
+		} else {
+			footerLines = 0
+		}
+
+		lineCount++
+
+		if len(line) > maxLineLength {
+			maxLineLength = len(line)
+		}
+
+		for _, match := range cursorPosRegex.FindAllStringSubmatch(line, -1) {
+			if len(match) >= 2 {
+				var row int
+				fmt.Sscanf(match[1], "%d", &row)
+				if row > 0 && uint32(row) > maxUsedRow {
+					maxUsedRow = uint32(row)
+				}
 			}
 		}
 	}
 
-	// Count newlines as fallback minimum height
-	lineCount := uint32(strings.Count(stripped, "\n") + 1)
+	// Subtract footer lines from count
+	if footerLines > 0 && lineCount >= footerLines {
+		lineCount -= footerLines
+	}
+	if lineCount == 0 {
+		lineCount = 1
+	}
 
-	// Calculate rows: max(maxUsedRow, lineCount, 24)
 	rows := maxUsedRow
 	if lineCount > rows {
 		rows = lineCount
@@ -5132,26 +5177,11 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 	if rows < 24 {
 		rows = 24
 	}
-
-	// Cap at reasonable maximum to avoid huge pages from logs with many newlines
-	// 10000 rows is plenty for any reasonable terminal session
-	// The streaming template uses large scrollback (1M) so no content is lost
 	const maxRows = uint32(10000)
 	if rows > maxRows {
 		rows = maxRows
 	}
 
-	// Calculate cols from max line length
-	normalized := strings.ReplaceAll(stripped, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-	lines := strings.Split(normalized, "\n")
-	maxLineLength := 0
-	for _, line := range lines {
-		if len(line) > maxLineLength {
-			maxLineLength = len(line)
-		}
-	}
-	// Clamp to 80-240 range
 	cols := maxLineLength
 	if cols < 80 {
 		cols = 80
