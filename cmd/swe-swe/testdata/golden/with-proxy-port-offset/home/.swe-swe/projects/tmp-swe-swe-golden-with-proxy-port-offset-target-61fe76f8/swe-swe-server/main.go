@@ -270,6 +270,7 @@ type SessionInfo struct {
 	Query       SessionPageQuery
 	SummaryLine   string // One-line summary: "{who}: {message}" from last chat event or terminal
 	SummaryStatus string // "green" (waiting for user) or "red" (agent busy) or "" (unknown)
+	MemoryUsage   string // Human-readable RSS of session process tree (e.g. "1.2 GB")
 }
 
 // formatDuration returns a human-readable duration string
@@ -1827,6 +1828,7 @@ func main() {
 				recordingUUID string
 				sessionMode  string
 				sess         *Session
+				pid          int // root PID for memory tracking
 			}
 			var summaryInputs []sessionSummaryInput
 
@@ -1861,12 +1863,17 @@ func main() {
 				}
 				idx := len(sessionsByAssistant[sess.Assistant])
 				sessionsByAssistant[sess.Assistant] = append(sessionsByAssistant[sess.Assistant], info)
+				var pid int
+				if sess.Cmd != nil && sess.Cmd.Process != nil {
+					pid = sess.Cmd.Process.Pid
+				}
 				summaryInputs = append(summaryInputs, sessionSummaryInput{
 					assistant:     sess.Assistant,
 					index:         idx,
 					recordingUUID: sess.RecordingUUID,
 					sessionMode:   sess.SessionMode,
 					sess:          sess,
+					pid:           pid,
 				})
 			}
 			sessionsMu.RUnlock()
@@ -1886,6 +1893,12 @@ func main() {
 				}
 				sessionsByAssistant[si.assistant][si.index].SummaryLine = summaryLine
 				sessionsByAssistant[si.assistant][si.index].SummaryStatus = status
+				if si.pid > 0 {
+					rss := getProcessTreeRSS(si.pid)
+					if rss > 0 {
+						sessionsByAssistant[si.assistant][si.index].MemoryUsage = formatBytes(rss)
+					}
+				}
 			}
 
 			// Sort sessions within each assistant by CreatedAt desc (most recent first)
@@ -3834,6 +3847,13 @@ type SessionParams struct {
 
 // getOrCreateSession returns an existing session or creates a new one
 func getOrCreateSession(p SessionParams) (*Session, bool, error) {
+	// Memory guard: check before acquiring lock (avoid deadlock with getMaxSessionRSS)
+	if p.ParentUUID == "" { // only guard top-level sessions, not child sessions
+		if err := checkMemoryForNewSession(); err != nil {
+			return nil, false, err
+		}
+	}
+
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 
@@ -5673,6 +5693,105 @@ func collectDescendantPIDs(rootPID int) []int {
 		queue = append(queue, children[pid]...)
 	}
 	return result
+}
+
+// getProcessTreeRSS returns the total RSS (in bytes) of a process and all its descendants.
+func getProcessTreeRSS(rootPID int) int64 {
+	pids := append([]int{rootPID}, collectDescendantPIDs(rootPID)...)
+	var totalRSS int64
+	pageSize := int64(os.Getpagesize())
+	for _, pid := range pids {
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/statm", pid))
+		if err != nil {
+			continue
+		}
+		fields := strings.Fields(string(data))
+		if len(fields) < 2 {
+			continue
+		}
+		// fields[1] is RSS in pages
+		rssPages, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		totalRSS += rssPages * pageSize
+	}
+	return totalRSS
+}
+
+// getAvailableMemory returns MemAvailable from /proc/meminfo in bytes.
+func getAvailableMemory() int64 {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "MemAvailable:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				kb, err := strconv.ParseInt(fields[1], 10, 64)
+				if err == nil {
+					return kb * 1024
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// getMaxSessionRSS returns the RSS of the largest active session (in bytes).
+func getMaxSessionRSS() int64 {
+	sessionsMu.RLock()
+	defer sessionsMu.RUnlock()
+	var maxRSS int64
+	for _, sess := range sessions {
+		if sess.Cmd == nil || sess.Cmd.Process == nil {
+			continue
+		}
+		rss := getProcessTreeRSS(sess.Cmd.Process.Pid)
+		if rss > maxRSS {
+			maxRSS = rss
+		}
+	}
+	return maxRSS
+}
+
+// checkMemoryForNewSession returns an error if there isn't enough memory
+// to safely start a new session. Uses the largest active session's RSS as
+// the expected footprint for the new session.
+func checkMemoryForNewSession() error {
+	avail := getAvailableMemory()
+	if avail == 0 {
+		return nil // can't determine, allow
+	}
+	maxRSS := getMaxSessionRSS()
+	if maxRSS == 0 {
+		return nil // no active sessions, allow
+	}
+	if maxRSS > avail {
+		return fmt.Errorf("insufficient memory: largest session uses %s but only %s available",
+			formatBytes(maxRSS), formatBytes(avail))
+	}
+	return nil
+}
+
+// formatBytes formats bytes as a human-readable string (e.g. "1.5 GB").
+func formatBytes(b int64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+	)
+	switch {
+	case b >= GB:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(GB))
+	case b >= MB:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(MB))
+	case b >= KB:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // killSessionProcessGroup sends SIGTERM to the session's entire process group,

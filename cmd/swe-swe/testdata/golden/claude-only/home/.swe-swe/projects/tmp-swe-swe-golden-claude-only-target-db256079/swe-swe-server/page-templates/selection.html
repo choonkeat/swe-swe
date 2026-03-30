@@ -1419,6 +1419,13 @@
                                 </svg>
                                 {{.DurationStr}}
                             </span>
+                            {{if .MemoryUsage}}<span class="session-card__meta-item" title="Process tree RSS">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="4" y="2" width="16" height="20" rx="2" stroke="currentColor" stroke-width="2"/>
+                                    <path d="M8 10H16M8 14H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                </svg>
+                                {{.MemoryUsage}}
+                            </span>{{end}}
                         </div>
                         <div class="session-card__actions">
                             <a href="/session/{{.UUID}}?{{.Query.Encode}}" class="btn-join">
