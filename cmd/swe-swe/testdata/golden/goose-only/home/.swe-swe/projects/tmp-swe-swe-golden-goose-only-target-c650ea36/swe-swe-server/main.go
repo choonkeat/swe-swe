@@ -5541,36 +5541,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Check render mode query parameter
-	renderMode := r.URL.Query().Get("render")
-
-	if renderMode == "embedded" {
-		// Embedded approach - read file, embed content in HTML
-		content, err := os.ReadFile(logPath)
-		if err != nil {
-			http.Error(w, "Failed to read recording", http.StatusInternalServerError)
-			return
-		}
-		// Strip metadata and neutralize clear sequences
-		stripped := recordtui.StripMetadata(string(content))
-		html, err := recordtui.RenderHTML([]recordtui.Frame{
-			{Timestamp: 0, Content: stripped},
-		}, recordtui.Options{
-			Title: name,
-			FooterLink: recordtui.FooterLink{
-				Text: "swe-swe",
-				URL:  "https://github.com/choonkeat/swe-swe",
-			},
-		})
-		if err != nil {
-			http.Error(w, "Failed to render playback", http.StatusInternalServerError)
-			return
-		}
-		w.Write([]byte(html))
-		return
-	}
-
-	// Default: streaming approach
+	// Streaming approach (embedded mode removed to avoid reading entire log into memory)
 	var cols uint16
 	if metadata != nil && metadata.PlaybackCols > 0 {
 		cols = metadata.PlaybackCols
@@ -5609,16 +5580,22 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		MaxRows: maxRows,
 	}
 
-	// Build TOC from timing + input files if available
+	// Build TOC from timing + input files if available.
+	// Skip TOC for large recordings (>50MB) to avoid reading the entire
+	// session log into memory. The recording still plays fine without TOC.
+	const maxTOCLogSize = 50 * 1024 * 1024 // 50MB
 	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
 	inputPath := recordingsDir + "/session-" + recordingUUID + ".input"
-	timingFile, err := os.Open(timingPath)
-	if err == nil {
-		defer timingFile.Close()
-		inputBytes, err := os.ReadFile(inputPath)
+	logInfo, _ := os.Stat(logPath)
+	if logInfo != nil && logInfo.Size() <= maxTOCLogSize {
+		timingFile, err := os.Open(timingPath)
 		if err == nil {
-			sessionBytes, _ := os.ReadFile(logPath)
-			opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionBytes)
+			defer timingFile.Close()
+			inputBytes, err := os.ReadFile(inputPath)
+			if err == nil {
+				sessionBytes, _ := os.ReadFile(logPath)
+				opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionBytes)
+			}
 		}
 	}
 

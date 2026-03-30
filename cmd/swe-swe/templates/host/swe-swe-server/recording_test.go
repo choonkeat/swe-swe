@@ -1219,7 +1219,7 @@ func TestPlaybackPage_StreamingHTML_Default(t *testing.T) {
 	}
 }
 
-func TestPlaybackPage_EmbeddedHTML_WithQueryParam(t *testing.T) {
+func TestPlaybackPage_EmbeddedQueryParamIgnored(t *testing.T) {
 	h := newTestHelper(t)
 
 	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -1238,7 +1238,7 @@ func TestPlaybackPage_EmbeddedHTML_WithQueryParam(t *testing.T) {
 	server := h.createTestServer()
 	defer server.Close()
 
-	// ?render=embedded should use embedded HTML
+	// ?render=embedded is now ignored; streaming mode is always used
 	resp, err := http.Get(server.URL + "/recording/" + testUUID + "?render=embedded")
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -1255,14 +1255,12 @@ func TestPlaybackPage_EmbeddedHTML_WithQueryParam(t *testing.T) {
 	}
 	html := string(body)
 
-	// Should use xterm.js for rendering
+	// Should use streaming mode (fetches data via JS, no embedded framesBase64)
 	if !strings.Contains(html, "xterm") {
 		t.Error("expected playback page to use xterm.js")
 	}
-
-	// Embedded HTML should have base64-encoded frame data (framesBase64)
-	if !strings.Contains(html, "framesBase64") {
-		t.Error("expected embedded HTML to have framesBase64 data")
+	if strings.Contains(html, "framesBase64") {
+		t.Error("embedded mode should be removed; expected streaming mode without framesBase64")
 	}
 }
 
