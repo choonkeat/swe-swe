@@ -13,7 +13,7 @@ require github.com/creack/pty v1.1.24
 require github.com/choonkeat/agent-reverse-proxy v0.2.9
 
 require (
-	github.com/choonkeat/record-tui v0.0.0-20260205110608-50a056b1f4d0
+	github.com/choonkeat/record-tui v0.0.0-20260205110855-586499666aa5
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 )
 
