@@ -5580,21 +5580,20 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		MaxRows: maxRows,
 	}
 
-	// Build TOC from timing + input files if available.
-	// Skip TOC for large recordings (>50MB) to avoid reading the entire
-	// session log into memory. The recording still plays fine without TOC.
-	const maxTOCLogSize = 50 * 1024 * 1024 // 50MB
+	// Build TOC from timing + input + session log files if available.
+	// Uses streaming BuildTOCFromReader to avoid reading the entire session
+	// log into memory (recordings can be hundreds of MB).
 	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
 	inputPath := recordingsDir + "/session-" + recordingUUID + ".input"
-	logInfo, _ := os.Stat(logPath)
-	if logInfo != nil && logInfo.Size() <= maxTOCLogSize {
-		timingFile, err := os.Open(timingPath)
+	timingFile, err := os.Open(timingPath)
+	if err == nil {
+		defer timingFile.Close()
+		inputBytes, err := os.ReadFile(inputPath)
 		if err == nil {
-			defer timingFile.Close()
-			inputBytes, err := os.ReadFile(inputPath)
+			sessionFile, err := os.Open(logPath)
 			if err == nil {
-				sessionBytes, _ := os.ReadFile(logPath)
-				opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionBytes)
+				defer sessionFile.Close()
+				opts.TOC = recordtui.BuildTOCFromReader(timingFile, inputBytes, sessionFile)
 			}
 		}
 	}

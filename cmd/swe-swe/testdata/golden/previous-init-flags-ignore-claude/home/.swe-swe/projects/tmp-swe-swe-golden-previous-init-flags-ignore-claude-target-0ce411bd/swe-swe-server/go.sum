@@ -1,7 +1,7 @@
 github.com/choonkeat/agent-reverse-proxy v0.2.9 h1:+N6rRiiknRu8qVfhniF/Nucof5orOsPbMa7UFGcxftA=
 github.com/choonkeat/agent-reverse-proxy v0.2.9/go.mod h1:waNsHvUsH/Qasw/seMXm51wlEShu/ou6jqyYN/UpX5E=
-github.com/choonkeat/record-tui v0.0.0-20260205110033-eb39b14056e8 h1:nZf6P5qzU921FkePE4rkSSYuSqWHiDFQEt6WfjHkQas=
-github.com/choonkeat/record-tui v0.0.0-20260205110033-eb39b14056e8/go.mod h1:5m6D3AXCzW1Rf3lmI1UEy7NFElYDxWXw8hWzwktrejY=
+github.com/choonkeat/record-tui v0.0.0-20260205110608-50a056b1f4d0 h1:Kvfn2zhVG70IykRRsFWA55B/yK/bWAzb5toRqbv7eq8=
+github.com/choonkeat/record-tui v0.0.0-20260205110608-50a056b1f4d0/go.mod h1:5m6D3AXCzW1Rf3lmI1UEy7NFElYDxWXw8hWzwktrejY=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/golang-jwt/jwt/v5 v5.2.2 h1:Rl4B7itRWVtYIHFrSNd7vhTiz9UpLdi6gZhZ3wEeDy8=
