@@ -1,22 +1,8 @@
-.PHONY: build run stop test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down
+.PHONY: build test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down
 
 build: build-cli
 
-RUN_ARGS ?=
-PORT ?= 3000
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
-run:
-	@cp cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt cmd/swe-swe/templates/host/swe-swe-server/go.mod
-	@cp cmd/swe-swe/templates/host/swe-swe-server/go.sum.txt cmd/swe-swe/templates/host/swe-swe-server/go.sum
-	@mkdir -p $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs $(SERVER_TEMPLATE)/container-templates/swe-swe
-	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* $(SERVER_TEMPLATE)/container-templates/.swe-swe/docs/
-	@cp $(CONTAINER_TEMPLATES)/swe-swe/setup $(SERVER_TEMPLATE)/container-templates/swe-swe/
-	cd cmd/swe-swe/templates/host/swe-swe-server && go run . -addr :$(PORT) $(RUN_ARGS)
-
-stop:
-	@pid=$$(ps aux | grep '[e]xe/main.*-addr :$(PORT)' | awk '{print $$2}' | head -1); \
-	if [ -n "$$pid" ]; then kill $$pid 2>/dev/null && echo "Stopped dev server (pid $$pid)"; \
-	else echo "No dev server running on :$(PORT)"; fi
 
 test: ascii-check check-gomod-sync test-cli test-mcp-lazy-init test-server
 

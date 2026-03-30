@@ -14,27 +14,22 @@ cmd/swe-swe/templates/host/swe-swe-server/
 └── *_test.go            # Tests
 ```
 
-## Quick Start (Dev Server)
+## Quick Start (E2E Testing)
+
+Use the e2e framework to test with a real container (processes templates, builds binary):
 
 ```bash
 # From /workspace root directory
 cd /workspace
 
-# Start dev server (background, with logs)
-make run > /tmp/server.log 2>&1 &
+# Bring up simple (dockerfile-only) mode on port 9780
+make e2e-up-simple
 
-# View startup logs
-cat /tmp/server.log
+# Test via MCP browser: http://host.docker.internal:9780/
 
-# Stop dev server
-make stop
+# Tear down when done
+make e2e-down
 ```
-
-**Note**: First run downloads Go dependencies, which may take a moment.
-
-The dev server runs on `$PORT` (set by the container, typically 3002). Access it via:
-- **MCP Browser**: `http://swe-swe:$PORT`
-- **App Preview**: The preview tab in the session UI
 
 ## Development Cycle
 
@@ -42,19 +37,18 @@ The dev server runs on `$PORT` (set by the container, typically 3002). Access it
 # 1. Edit server code
 vim cmd/swe-swe/templates/host/swe-swe-server/main.go
 
-# 2. Stop previous server
-make stop
+# 2. Rebuild and bring up test container
+make e2e-down
+make e2e-up-simple
 
-# 3. Start dev server (background with logs)
-make run > /tmp/server.log 2>&1 &
+# 3. Test via MCP browser: http://host.docker.internal:9780/
 
-# 4. Verify server started
-cat /tmp/server.log
-
-# 5. Test via MCP browser or App Preview
-
-# 6. Repeat from step 1
+# 4. Repeat from step 1
 ```
+
+> **Note**: Do NOT use `go run` directly on the template source -- static files
+> contain `{{placeholders}}` that are only replaced at `swe-swe init` time.
+> The e2e framework handles this correctly.
 
 ## Testing
 
@@ -133,15 +127,6 @@ These avoid conflicts with the production stack (default 3000-3019 / 23000-23019
 
 ## Makefile Targets
 
-### `make run`
-- Copies `go.mod.txt` → `go.mod` and `go.sum.txt` → `go.sum`
-- Runs `go run main.go -addr :$PORT`
-- Uses the `PORT` env var (set by the container); falls back to 3000 if unset
-
-### `make stop`
-- Finds and kills the dev server process
-- Reports whether server was running or not
-
 ### `make test-e2e`
 - Runs sequential e2e: up simple, test, down, up compose, test, down
 
@@ -213,28 +198,15 @@ The `?preview` query param:
 
 ## Differences from Production
 
-| Aspect | Dev Server | Production (dockerfile-only) | Production (compose) |
-|--------|------------|------------------------------|----------------------|
-| Port | `$PORT` (3002) | `SWE_PORT` (default 1977) | 9898 (internal) |
-| Auth | Uses `SWE_SWE_PASSWORD` env | Same | Same |
-| Build | `go run` (JIT compile) | Pre-compiled binary in container | Same |
-| MCP | Not available | Full MCP stack via entrypoint | Same |
-| Browser | Not available | Xvfb/Chrome/VNC per session | Same |
+| Aspect | E2E Test (simple) | Production (dockerfile-only) | Production (compose) |
+|--------|-------------------|------------------------------|----------------------|
+| Port | 9780 | `SWE_PORT` (default 1977) | 9898 (internal) |
+| Auth | Default `changeme` | `SWE_SWE_PASSWORD` | Same |
+| Build | Pre-compiled binary in container | Same | Same |
+| MCP | Full MCP stack via entrypoint | Same | Same |
+| Browser | Xvfb/Chrome/VNC per session | Same | Same |
 
 ## Troubleshooting
-
-### Server won't start
-Check if something else is using the port:
-```bash
-curl -s http://localhost:$PORT/ && echo "Port in use"
-```
-
-### Can't stop server
-Find and kill manually:
-```bash
-ps aux | grep 'exe/main.*-addr'
-kill <pid>
-```
 
 ### MCP browser can't reach server
 Verify network connectivity:

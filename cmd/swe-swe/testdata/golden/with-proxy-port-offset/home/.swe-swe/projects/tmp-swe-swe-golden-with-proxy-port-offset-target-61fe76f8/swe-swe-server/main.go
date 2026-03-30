@@ -4718,8 +4718,17 @@ func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []
 	// 2. Start gzip in background reading from the FIFO, writing to .log.gz
 	// 3. Run script with -O pointing to the FIFO
 	// 4. After script exits, wait for gzip to finish and clean up the FIFO
+	//
+	// The trap ensures that when SIGTERM arrives (session end), we forward it
+	// to the script process, then wait for gzip to flush. Without this, bash
+	// exits immediately on SIGTERM and gzip never finishes writing.
+	//
+	// setsid isolates gzip from the session's process group so it survives
+	// the group-wide SIGTERM sent by killSessionProcessGroup. Once script
+	// exits (closing the FIFO write end), gzip reads the remaining data,
+	// flushes, and exits naturally.
 	wrapperScript := fmt.Sprintf(
-		`rm -f %[1]q; mkfifo %[1]q; gzip > %[2]q < %[1]q & GZ_PID=$!; script -q -f -T %[3]q -I %[4]q -O %[1]q -c %[5]q; EXIT=$?; wait $GZ_PID 2>/dev/null; rm -f %[1]q; exit $EXIT`,
+		`rm -f %[1]q; mkfifo %[1]q; setsid sh -c 'gzip > %[2]q < %[1]q' & GZ_PID=$!; SCRIPT_PID=; trap 'kill $SCRIPT_PID 2>/dev/null; wait $SCRIPT_PID 2>/dev/null; wait $GZ_PID 2>/dev/null; rm -f %[1]q; exit 143' TERM; script -q -f -T %[3]q -I %[4]q -O %[1]q -c %[5]q & SCRIPT_PID=$!; wait $SCRIPT_PID 2>/dev/null; EXIT=$?; wait $GZ_PID 2>/dev/null; rm -f %[1]q; exit $EXIT`,
 		logPipePath, logGzPath, timingPath, inputPath, fullCmd,
 	)
 
