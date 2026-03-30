@@ -54,6 +54,8 @@ github.com/choonkeat/record-tui v0.0.0-20260205110608-50a056b1f4d0 h1:Kvfn2zhVG7
 github.com/choonkeat/record-tui v0.0.0-20260205110608-50a056b1f4d0/go.mod h1:5m6D3AXCzW1Rf3lmI1UEy7NFElYDxWXw8hWzwktrejY=
 github.com/choonkeat/record-tui v0.0.0-20260205110855-586499666aa5 h1:ivSZ9OpuzXMUyn1NchFB93Aha2nMENLoTsr61wrvayg=
 github.com/choonkeat/record-tui v0.0.0-20260205110855-586499666aa5/go.mod h1:5m6D3AXCzW1Rf3lmI1UEy7NFElYDxWXw8hWzwktrejY=
+github.com/choonkeat/record-tui v0.0.0-20260205110941-c7dc1578c7fd h1:WWdiOn3B+paghqwNyjLl5blEViBvRYwyto8CeOpibsI=
+github.com/choonkeat/record-tui v0.0.0-20260205110941-c7dc1578c7fd/go.mod h1:5m6D3AXCzW1Rf3lmI1UEy7NFElYDxWXw8hWzwktrejY=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=

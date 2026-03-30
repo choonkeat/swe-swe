@@ -5581,7 +5581,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 	}
 
 	// Build TOC from timing + input + session log files if available.
-	// Uses streaming BuildTOCFromReader to avoid reading the entire session
+	// Uses streaming BuildTOC to avoid reading the entire session
 	// log into memory (recordings can be hundreds of MB).
 	timingPath := recordingsDir + "/session-" + recordingUUID + ".timing"
 	inputPath := recordingsDir + "/session-" + recordingUUID + ".input"
@@ -5593,7 +5593,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 			sessionFile, err := os.Open(logPath)
 			if err == nil {
 				defer sessionFile.Close()
-				opts.TOC = recordtui.BuildTOCFromReader(timingFile, inputBytes, sessionFile)
+				opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionFile)
 			}
 		}
 	}
