@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -2343,4 +2345,61 @@ func TestCalculateTerminalDimensions(t *testing.T) {
 				result.Cols, result.Rows)
 		}
 	})
+}
+
+// TestCalculateTerminalDimensionsLargeFile verifies that streaming handles
+// large recording files with bounded memory (no os.ReadFile of the whole file).
+func TestCalculateTerminalDimensionsLargeFile(t *testing.T) {
+	// Create a 10MB recording file (representative of a long session)
+	tmpFile, err := os.CreateTemp("", "session-large-*.log")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write script header
+	tmpFile.WriteString("Script started on 2026-01-12 06:41:43+00:00\n")
+
+	// Write ~10MB of terminal output with cursor sequences on their own lines
+	line := strings.Repeat("x", 120) + "\n"
+	for i := 0; i < 80000; i++ {
+		tmpFile.WriteString(line)
+		if i%1000 == 0 {
+			// Cursor position sequences on separate lines
+			fmt.Fprintf(tmpFile, "\x1b[%d;1H\n", i%50+1)
+		}
+	}
+
+	// Write script footer
+	tmpFile.WriteString("Script done on 2026-01-12 07:41:43+00:00\n")
+	tmpFile.Close()
+
+	// Measure memory before
+	var memBefore runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&memBefore)
+
+	result := calculateTerminalDimensions(tmpFile.Name())
+
+	// Measure memory after
+	var memAfter runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&memAfter)
+
+	// Verify correct dimensions
+	if result.Cols != 120 {
+		t.Errorf("Cols = %d, want 120", result.Cols)
+	}
+	if result.Rows != 10000 {
+		t.Errorf("Rows = %d, want 10000 (capped)", result.Rows)
+	}
+
+	// Verify bounded memory: streaming should use <5MB for a 10MB file.
+	// The old os.ReadFile approach would allocate ~30MB+ (file + string + regex matches + split lines).
+	heapDelta := int64(memAfter.TotalAlloc) - int64(memBefore.TotalAlloc)
+	const maxAlloc = 20 * 1024 * 1024 // 20MB ceiling (generous; streaming uses ~10MB for scanner buffers + line copies)
+	if heapDelta > maxAlloc {
+		t.Errorf("calculateTerminalDimensions allocated %d bytes for 10MB file, want < %d (streaming should be bounded)",
+			heapDelta, maxAlloc)
+	}
 }
