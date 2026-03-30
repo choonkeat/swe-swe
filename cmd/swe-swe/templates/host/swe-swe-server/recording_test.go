@@ -1833,8 +1833,8 @@ func TestCleanupRecentRecordings_KeepsKeptRecordings(t *testing.T) {
 
 	cleanupRecentRecordings()
 
-	// Verify file still exists
-	if !h.recordingFileExists(testUUID, ".log") {
+	// Verify recording still exists (may be compressed to .log.gz by cleanup)
+	if !h.recordingFileExists(testUUID, ".log") && !h.recordingFileExists(testUUID, ".log.gz") {
 		t.Error("kept recording should NOT have been deleted")
 	}
 }
@@ -1861,8 +1861,8 @@ func TestCleanupRecentRecordings_KeepsRecentUnkept(t *testing.T) {
 
 	cleanupRecentRecordings()
 
-	// Verify file still exists
-	if !h.recordingFileExists(testUUID, ".log") {
+	// Verify recording still exists (may be compressed to .log.gz by cleanup)
+	if !h.recordingFileExists(testUUID, ".log") && !h.recordingFileExists(testUUID, ".log.gz") {
 		t.Error("recent unkept recording should NOT have been deleted")
 	}
 }
@@ -1890,7 +1890,7 @@ func TestCleanupRecentRecordings_UsesEndedAtNotLogMtime(t *testing.T) {
 
 	cleanupRecentRecordings()
 
-	if !h.recordingFileExists(testUUID, ".log") {
+	if !h.recordingFileExists(testUUID, ".log") && !h.recordingFileExists(testUUID, ".log.gz") {
 		t.Error("recording with recent EndedAt should NOT have been deleted despite old log mtime")
 	}
 }

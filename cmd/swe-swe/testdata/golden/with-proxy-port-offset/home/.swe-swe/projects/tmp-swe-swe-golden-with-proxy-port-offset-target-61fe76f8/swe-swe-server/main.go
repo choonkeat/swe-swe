@@ -3521,10 +3521,11 @@ const (
 	recentRecordingMaxAge = 14 * 24 * time.Hour
 )
 
-// cleanupRecentRecordings deletes old recent recordings (those without KeptAt set).
-// Expiry is based on EndedAt from metadata -- recordings are only eligible for
-// deletion recentRecordingMaxAge after the session ends. Active sessions (EndedAt
-// unset) are never deleted.
+// cleanupRecentRecordings compresses ended session logs and deletes old recordings.
+// Compression: .log files from ended sessions are gzip-compressed to .log.gz, then
+// the original .log is removed. This runs lazily (every minute via sessionReaper)
+// rather than at session end, avoiding delays during endSession.
+// Expiry: recordings without KeptAt are deleted recentRecordingMaxAge after EndedAt.
 func cleanupRecentRecordings() {
 	entries, err := os.ReadDir(recordingsDir)
 	if err != nil {
@@ -3540,6 +3541,9 @@ func cleanupRecentRecordings() {
 		}
 	}
 	sessionsMu.RUnlock()
+
+	// Compress .log files from ended sessions to .log.gz
+	compressEndedSessionLogs(entries, activeRecordings)
 
 	now := time.Now()
 
@@ -3622,10 +3626,6 @@ func cleanupRecentRecordings() {
 		if strings.HasSuffix(name, ".log") || strings.HasSuffix(name, ".log.gz") {
 			continue // .log/.log.gz files are authoritative -- never orphan-delete them
 		}
-		if strings.HasSuffix(name, ".log.pipe") {
-			continue // skip FIFO pipes used during active recording
-		}
-
 		// Extract stem by removing "session-" prefix and any known suffix
 		stem := strings.TrimPrefix(name, "session-")
 		for _, suffix := range []string{".timing", ".input", ".metadata.json", ".events.jsonl"} {
@@ -3649,6 +3649,85 @@ func cleanupRecentRecordings() {
 	if orphanCount > 0 {
 		log.Printf("Cleaned up %d orphaned recording files (no corresponding .log)", orphanCount)
 	}
+}
+
+// compressEndedSessionLogs compresses .log files from ended sessions to .log.gz.
+// Skips active sessions and files that already have a .log.gz counterpart.
+func compressEndedSessionLogs(entries []os.DirEntry, activeRecordings map[string]bool) {
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		// Skip .log.gz files (they end with .log but also match .log.gz -- handled by HasSuffix)
+		if strings.HasSuffix(name, ".log.gz") {
+			continue
+		}
+
+		stem := strings.TrimPrefix(name, "session-")
+		stem = strings.TrimSuffix(stem, ".log")
+
+		parentUUID, _, ok := parseRecordingFilename(stem)
+		if !ok {
+			continue
+		}
+		if activeRecordings[parentUUID] {
+			continue
+		}
+
+		logPath := recordingsDir + "/" + name
+		gzPath := logPath + ".gz"
+
+		// Skip if already compressed
+		if _, err := os.Stat(gzPath); err == nil {
+			// .log.gz exists; remove the uncompressed .log
+			os.Remove(logPath)
+			continue
+		}
+
+		// Compress in-place: .log -> .log.gz, then remove .log
+		if err := compressFileGzip(logPath, gzPath); err != nil {
+			log.Printf("Failed to compress %s: %v", name, err)
+			continue
+		}
+		os.Remove(logPath)
+		log.Printf("Compressed recording %s", name)
+	}
+}
+
+// compressFileGzip compresses src to dst using gzip. Writes to a temp file first
+// to avoid partial .log.gz files if interrupted.
+func compressFileGzip(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	tmp := dst + ".tmp"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	gz := gzip.NewWriter(out)
+	if _, err := io.Copy(gz, in); err != nil {
+		gz.Close()
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := gz.Close(); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	return os.Rename(tmp, dst)
 }
 
 // deleteRecordingFiles removes all files for a recording and its children.
@@ -4697,10 +4776,11 @@ func parseRecordingFilename(stem string) (parentUUID, childUUID string, ok bool)
 // Returns the new command name and arguments to record terminal output and timing.
 // The prefix is the filename stem (e.g. "session-{uuid}" or "session-{parent}-{child}").
 //
-// Terminal output is compressed in real-time using a named pipe (FIFO) and gzip,
-// producing a .log.gz file instead of a plain .log file. This reduces disk usage
-// by ~100x since the Claude Code TUI generates highly repetitive screen redraws.
-// The timing and input files remain uncompressed (they are small).
+// Terminal output is written uncompressed to a .log file. Compression to .log.gz
+// happens lazily in the cleanup scheduler (cleanupRecentRecordings) after the
+// session ends. This avoids the complexity and reliability issues of real-time
+// gzip via FIFO (gzip buffers output internally and only flushes on EOF, which
+// conflicts with session termination via SIGKILL).
 func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []string) {
 	// Build the full command string for script -c
 	fullCmd := cmdName
@@ -4708,33 +4788,13 @@ func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []
 		fullCmd += " " + strings.Join(cmdArgs, " ")
 	}
 
-	logGzPath := fmt.Sprintf("%s/%s.log.gz", recordingsDir, prefix)
-	logPipePath := fmt.Sprintf("%s/%s.log.pipe", recordingsDir, prefix)
+	logPath := fmt.Sprintf("%s/%s.log", recordingsDir, prefix)
 	timingPath := fmt.Sprintf("%s/%s.timing", recordingsDir, prefix)
 	inputPath := fmt.Sprintf("%s/%s.input", recordingsDir, prefix)
 
-	// Use a named pipe (FIFO) to compress terminal output in real-time:
-	// 1. Create a FIFO at .log.pipe
-	// 2. Start gzip in background reading from the FIFO, writing to .log.gz
-	// 3. Run script with -O pointing to the FIFO
-	// 4. After script exits, wait for gzip to finish and clean up the FIFO
-	//
-	// The trap ensures that when SIGTERM arrives (session end), we forward it
-	// to the script process, then wait for gzip to flush. Without this, bash
-	// exits immediately on SIGTERM and gzip never finishes writing.
-	//
-	// setsid isolates gzip from the session's process group so it survives
-	// the group-wide SIGTERM sent by killSessionProcessGroup. Once script
-	// exits (closing the FIFO write end), gzip reads the remaining data,
-	// flushes, and exits naturally.
-	// Run script in the foreground so it inherits stdin from the PTY.
-	// If script is backgrounded (& + wait), bash owns the foreground and
-	// stdin never reaches script, breaking interactive input for TUI apps
-	// like Claude Code. gzip runs in the background via setsid and exits
-	// naturally when script closes the FIFO write end.
 	wrapperScript := fmt.Sprintf(
-		`rm -f %[1]q; mkfifo %[1]q; setsid sh -c 'gzip > %[2]q < %[1]q' & GZ_PID=$!; trap 'rm -f %[1]q' EXIT; script -q -f -T %[3]q -I %[4]q -O %[1]q -c %[5]q; EXIT=$?; wait $GZ_PID 2>/dev/null; exit $EXIT`,
-		logPipePath, logGzPath, timingPath, inputPath, fullCmd,
+		`script -q -f -T %[1]q -I %[2]q -O %[3]q -c %[4]q`,
+		timingPath, inputPath, logPath, fullCmd,
 	)
 
 	return "bash", []string{"-c", wrapperScript}
