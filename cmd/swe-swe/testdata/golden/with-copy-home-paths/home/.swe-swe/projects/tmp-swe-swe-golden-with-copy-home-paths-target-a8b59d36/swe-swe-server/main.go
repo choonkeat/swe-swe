@@ -3592,7 +3592,10 @@ func cleanupRecentRecordings() {
 		if meta.EndedAt != nil {
 			endTime = *meta.EndedAt
 		} else {
-			logPath := recordingsDir + "/session-" + uuid + ".log"
+			logPath := resolveLogPath("session-" + uuid)
+			if logPath == "" {
+				continue
+			}
 			logInfo, err := os.Stat(logPath)
 			if err != nil {
 				continue
@@ -3616,8 +3619,11 @@ func cleanupRecentRecordings() {
 		if !strings.HasPrefix(name, "session-") || entry.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(name, ".log") {
-			continue // .log files are authoritative -- never orphan-delete them
+		if strings.HasSuffix(name, ".log") || strings.HasSuffix(name, ".log.gz") {
+			continue // .log/.log.gz files are authoritative -- never orphan-delete them
+		}
+		if strings.HasSuffix(name, ".log.pipe") {
+			continue // skip FIFO pipes used during active recording
 		}
 
 		// Extract stem by removing "session-" prefix and any known suffix
@@ -3633,7 +3639,7 @@ func cleanupRecentRecordings() {
 		if activeRecordings[parentUUID] {
 			continue
 		}
-		if _, err := os.Stat(recordingsDir + "/session-" + parentUUID + ".log"); err == nil {
+		if resolveLogPath("session-"+parentUUID) != "" {
 			continue
 		}
 
@@ -3648,7 +3654,7 @@ func cleanupRecentRecordings() {
 // deleteRecordingFiles removes all files for a recording and its children.
 func deleteRecordingFiles(recUUID string) {
 	// Delete parent files
-	suffixes := []string{".log", ".timing", ".input", ".metadata.json"}
+	suffixes := []string{".log", ".log.gz", ".log.pipe", ".timing", ".input", ".metadata.json"}
 	for _, suffix := range suffixes {
 		os.Remove(recordingsDir + "/session-" + recUUID + suffix)
 	}
@@ -4630,12 +4636,14 @@ func (s *Session) saveMetadata() error {
 
 	// Calculate playback dimensions when session ends (only once)
 	if metadata.EndedAt != nil && metadata.PlaybackCols == 0 {
-		logPath := fmt.Sprintf("%s/%s.log", recordingsDir, recPrefix)
-		dims := calculateTerminalDimensions(logPath)
-		s.mu.Lock()
-		s.Metadata.PlaybackCols = dims.Cols
-		s.Metadata.PlaybackRows = dims.Rows
-		s.mu.Unlock()
+		logPath := resolveLogPath(recPrefix)
+		if logPath != "" {
+			dims := calculateTerminalDimensions(logPath)
+			s.mu.Lock()
+			s.Metadata.PlaybackCols = dims.Cols
+			s.Metadata.PlaybackRows = dims.Rows
+			s.mu.Unlock()
+		}
 	}
 
 	path := fmt.Sprintf("%s/%s.metadata.json", recordingsDir, recPrefix)
@@ -4685,9 +4693,14 @@ func parseRecordingFilename(stem string) (parentUUID, childUUID string, ok bool)
 	}
 }
 
-// wrapWithScript wraps a command with the Linux script command for recording
+// wrapWithScript wraps a command with the Linux script command for recording.
 // Returns the new command name and arguments to record terminal output and timing.
 // The prefix is the filename stem (e.g. "session-{uuid}" or "session-{parent}-{child}").
+//
+// Terminal output is compressed in real-time using a named pipe (FIFO) and gzip,
+// producing a .log.gz file instead of a plain .log file. This reduces disk usage
+// by ~100x since the Claude Code TUI generates highly repetitive screen redraws.
+// The timing and input files remain uncompressed (they are small).
 func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []string) {
 	// Build the full command string for script -c
 	fullCmd := cmdName
@@ -4695,18 +4708,76 @@ func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []
 		fullCmd += " " + strings.Join(cmdArgs, " ")
 	}
 
-	logPath := fmt.Sprintf("%s/%s.log", recordingsDir, prefix)
+	logGzPath := fmt.Sprintf("%s/%s.log.gz", recordingsDir, prefix)
+	logPipePath := fmt.Sprintf("%s/%s.log.pipe", recordingsDir, prefix)
 	timingPath := fmt.Sprintf("%s/%s.timing", recordingsDir, prefix)
 	inputPath := fmt.Sprintf("%s/%s.input", recordingsDir, prefix)
 
-	// script -q (quiet) -f (flush) -T timing -I input -O output -c "command"
-	return "script", []string{
-		"-q", "-f",
-		"-T", timingPath,
-		"-I", inputPath,
-		"-O", logPath,
-		"-c", fullCmd,
+	// Use a named pipe (FIFO) to compress terminal output in real-time:
+	// 1. Create a FIFO at .log.pipe
+	// 2. Start gzip in background reading from the FIFO, writing to .log.gz
+	// 3. Run script with -O pointing to the FIFO
+	// 4. After script exits, wait for gzip to finish and clean up the FIFO
+	wrapperScript := fmt.Sprintf(
+		`rm -f %[1]q; mkfifo %[1]q; gzip > %[2]q < %[1]q & GZ_PID=$!; script -q -f -T %[3]q -I %[4]q -O %[1]q -c %[5]q; EXIT=$?; wait $GZ_PID 2>/dev/null; rm -f %[1]q; exit $EXIT`,
+		logPipePath, logGzPath, timingPath, inputPath, fullCmd,
+	)
+
+	return "bash", []string{"-c", wrapperScript}
+}
+
+// resolveLogPath returns the path to a recording's log file, checking for both
+// compressed (.log.gz) and uncompressed (.log) variants. Prefers .log.gz.
+// Returns empty string if neither exists.
+func resolveLogPath(prefix string) string {
+	gzPath := fmt.Sprintf("%s/%s.log.gz", recordingsDir, prefix)
+	if _, err := os.Stat(gzPath); err == nil {
+		return gzPath
 	}
+	plainPath := fmt.Sprintf("%s/%s.log", recordingsDir, prefix)
+	if _, err := os.Stat(plainPath); err == nil {
+		return plainPath
+	}
+	return ""
+}
+
+// openLogReader opens a log file for reading, transparently decompressing gzip.
+// Returns a ReadCloser that must be closed by the caller.
+func openLogReader(path string) (io.ReadCloser, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check for gzip magic bytes
+	header := make([]byte, 2)
+	n, err := f.Read(header)
+	if err != nil || n < 2 {
+		f.Seek(0, io.SeekStart)
+		return f, nil
+	}
+	f.Seek(0, io.SeekStart)
+
+	if header[0] == 0x1f && header[1] == 0x8b {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			f.Close()
+			return nil, err
+		}
+		return &gzipReadCloser{gz: gz, f: f}, nil
+	}
+	return f, nil
+}
+
+type gzipReadCloser struct {
+	gz *gzip.Reader
+	f  *os.File
+}
+
+func (g *gzipReadCloser) Read(p []byte) (int, error) { return g.gz.Read(p) }
+func (g *gzipReadCloser) Close() error {
+	g.gz.Close()
+	return g.f.Close()
 }
 
 // sanitizeFilename removes path components and validates the filename
@@ -4912,9 +4983,14 @@ func loadEndedRecordings() []RecordingInfo {
 		case strings.HasSuffix(rest, ".metadata.json"):
 			stem = strings.TrimSuffix(rest, ".metadata.json")
 			fileType = "metadata"
+		case strings.HasSuffix(rest, ".log.gz"):
+			stem = strings.TrimSuffix(rest, ".log.gz")
+			fileType = "log"
 		case strings.HasSuffix(rest, ".log"):
 			stem = strings.TrimSuffix(rest, ".log")
 			fileType = "log"
+		case strings.HasSuffix(rest, ".log.pipe"):
+			continue // skip FIFO pipes used during recording
 		case strings.HasSuffix(rest, ".timing"):
 			stem = strings.TrimSuffix(rest, ".timing")
 			fileType = "timing"
@@ -5135,11 +5211,12 @@ func isScriptFooter(line string) bool {
 //   - Cols: min(max(maxLineLength, 80), 240)
 //   - Rows: max(maxCursorRow, lineCount, 24), capped at 10000
 func calculateTerminalDimensions(logPath string) TerminalDimensions {
-	f, err := os.Open(logPath)
+	rc, err := openLogReader(logPath)
 	if err != nil {
 		return TerminalDimensions{Cols: 240, Rows: 24}
 	}
-	defer f.Close()
+	defer rc.Close()
+	f := rc // use the reader (works for both plain and gzip)
 
 	maxUsedRow := uint32(1)
 	lineCount := uint32(0)
@@ -5353,7 +5430,40 @@ var orphanedAnsiParamsRe = regexp.MustCompile(`(?:^|[^a-zA-Z0-9])[0-9]+(?:;[0-9]
 // strips ANSI escape sequences, and returns the last non-empty line as a summary.
 // Used as a fallback when no chat events are available.
 func getSessionSummaryFromLog(recordingUUID string) string {
-	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
+	logPath := resolveLogPath("session-" + recordingUUID)
+	if logPath == "" {
+		return ""
+	}
+
+	// For compressed files, read the tail via decompression (compressed files
+	// can't be seeked, so we read through and keep the last 8KB)
+	if strings.HasSuffix(logPath, ".log.gz") {
+		rc, err := openLogReader(logPath)
+		if err != nil {
+			return ""
+		}
+		defer rc.Close()
+
+		// Stream through keeping only the last 8KB
+		buf := make([]byte, 8192)
+		ring := make([]byte, 0, 8192)
+		for {
+			n, err := rc.Read(buf)
+			if n > 0 {
+				ring = append(ring, buf[:n]...)
+				if len(ring) > 8192 {
+					ring = ring[len(ring)-8192:]
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+		buf = ring
+		return extractSummaryFromBytes(buf)
+	}
+
+	// For plain .log files, seek to the tail directly
 	f, err := os.Open(logPath)
 	if err != nil {
 		return ""
@@ -5376,6 +5486,11 @@ func getSessionSummaryFromLog(recordingUUID string) string {
 		return ""
 	}
 
+	return extractSummaryFromBytes(buf)
+}
+
+// extractSummaryFromBytes extracts a summary line from raw log bytes (tail of file).
+func extractSummaryFromBytes(buf []byte) string {
 	// Strip ANSI escape sequences
 	clean := ansiEscapeRe.ReplaceAll(buf, nil)
 
@@ -5512,9 +5627,9 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		return
 	}
 
-	// Check if recording exists
-	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
-	if _, err := os.Stat(logPath); err != nil {
+	// Check if recording exists (supports both .log and .log.gz)
+	logPath := resolveLogPath("session-" + recordingUUID)
+	if logPath == "" {
 		http.Error(w, "Recording not found", http.StatusNotFound)
 		return
 	}
@@ -5590,10 +5705,10 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 		defer timingFile.Close()
 		inputBytes, err := os.ReadFile(inputPath)
 		if err == nil {
-			sessionFile, err := os.Open(logPath)
+			sessionReader, err := openLogReader(logPath)
 			if err == nil {
-				defer sessionFile.Close()
-				opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionFile)
+				defer sessionReader.Close()
+				opts.TOC = recordtui.BuildTOC(timingFile, inputBytes, sessionReader)
 			}
 		}
 	}
@@ -5609,6 +5724,7 @@ func handleRecordingPage(w http.ResponseWriter, r *http.Request, recordingUUID s
 // handleRecordingSessionLog serves raw session.log for streaming playback.
 // The streaming JS cleaner handles header/footer stripping and clear sequence
 // neutralization - this keeps JS as the single source of truth for streaming mode.
+// Supports both plain .log and compressed .log.gz files (decompresses on the fly).
 func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recordingUUID string) {
 	// Validate UUID format
 	if len(recordingUUID) < 32 {
@@ -5616,8 +5732,28 @@ func handleRecordingSessionLog(w http.ResponseWriter, r *http.Request, recording
 		return
 	}
 
-	logPath := recordingsDir + "/session-" + recordingUUID + ".log"
-	http.ServeFile(w, r, logPath)
+	logPath := resolveLogPath("session-" + recordingUUID)
+	if logPath == "" {
+		http.Error(w, "Recording not found", http.StatusNotFound)
+		return
+	}
+
+	// For plain .log files, serve directly (supports range requests)
+	if !strings.HasSuffix(logPath, ".gz") {
+		http.ServeFile(w, r, logPath)
+		return
+	}
+
+	// For .log.gz files, decompress and stream
+	rc, err := openLogReader(logPath)
+	if err != nil {
+		http.Error(w, "Cannot read recording", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	io.Copy(w, rc)
 }
 
 // collectDescendantPIDs returns all descendant PIDs of the given root PID
@@ -6806,6 +6942,9 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		case strings.HasSuffix(rest, ".events.jsonl"):
 			stem = strings.TrimSuffix(rest, ".events.jsonl")
 			fileType = "events"
+		case strings.HasSuffix(rest, ".log.gz"):
+			stem = strings.TrimSuffix(rest, ".log.gz")
+			fileType = "log"
 		case strings.HasSuffix(rest, ".log"):
 			stem = strings.TrimSuffix(rest, ".log")
 			fileType = "log"
@@ -6830,20 +6969,27 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Second pass: find root recordings by looking for .log files with single UUID
+	// Second pass: find root recordings by looking for .log or .log.gz files with single UUID
 	recordings := make([]RecordingListItem, 0)
+	seenUUIDs := make(map[string]bool) // deduplicate if both .log and .log.gz exist
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".log") {
+		if !strings.HasPrefix(name, "session-") {
 			continue
 		}
 
-		// Extract UUID from filename: session-{uuid}.log
+		// Extract UUID from filename: session-{uuid}.log or session-{uuid}.log.gz
 		stem := strings.TrimPrefix(name, "session-")
-		stem = strings.TrimSuffix(stem, ".log")
+		if strings.HasSuffix(stem, ".log.gz") {
+			stem = strings.TrimSuffix(stem, ".log.gz")
+		} else if strings.HasSuffix(stem, ".log") {
+			stem = strings.TrimSuffix(stem, ".log")
+		} else {
+			continue
+		}
 
 		// Only process root recordings
 		parentUUID, childUUID, ok := parseRecordingFilename(stem)
@@ -6851,6 +6997,12 @@ func handleListRecordings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		recUUID := parentUUID
+
+		// Skip if we've already seen this UUID (dedup .log and .log.gz)
+		if seenUUIDs[recUUID] {
+			continue
+		}
+		seenUUIDs[recUUID] = true
 
 		// Get file info
 		info, err := entry.Info()
@@ -6923,9 +7075,9 @@ func handleDeleteRecording(w http.ResponseWriter, r *http.Request, uuid string) 
 	sessionsMu.RUnlock()
 
 	// Check if recording exists before deleting
-	logPath := recordingsDir + "/session-" + uuid + ".log"
+	logPath := resolveLogPath("session-" + uuid)
 	metaPath := recordingsDir + "/session-" + uuid + ".metadata.json"
-	if _, err1 := os.Stat(logPath); err1 != nil {
+	if logPath == "" {
 		if _, err2 := os.Stat(metaPath); err2 != nil {
 			http.Error(w, "Recording not found", http.StatusNotFound)
 			return
@@ -7066,10 +7218,10 @@ func handleRenameRecording(w http.ResponseWriter, r *http.Request, uuid string) 
 
 // handleDownloadRecording creates a zip archive of the recording files (including children)
 func handleDownloadRecording(w http.ResponseWriter, r *http.Request, uuid string) {
-	logPath := recordingsDir + "/session-" + uuid + ".log"
+	logPath := resolveLogPath("session-" + uuid)
 
 	// Check if log file exists
-	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+	if logPath == "" {
 		http.Error(w, "Recording not found", http.StatusNotFound)
 		return
 	}
@@ -7078,12 +7230,13 @@ func handleDownloadRecording(w http.ResponseWriter, r *http.Request, uuid string
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
 
-	// Add parent files
+	// Add parent files (include both .log and .log.gz variants)
 	parentFiles := []struct {
 		path string
 		name string
 	}{
 		{recordingsDir + "/session-" + uuid + ".log", "session.log"},
+		{recordingsDir + "/session-" + uuid + ".log.gz", "session.log.gz"},
 		{recordingsDir + "/session-" + uuid + ".timing", "session.timing"},
 		{recordingsDir + "/session-" + uuid + ".metadata.json", "session.metadata.json"},
 	}
