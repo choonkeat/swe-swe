@@ -4727,8 +4727,13 @@ func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []
 	// the group-wide SIGTERM sent by killSessionProcessGroup. Once script
 	// exits (closing the FIFO write end), gzip reads the remaining data,
 	// flushes, and exits naturally.
+	// Run script in the foreground so it inherits stdin from the PTY.
+	// If script is backgrounded (& + wait), bash owns the foreground and
+	// stdin never reaches script, breaking interactive input for TUI apps
+	// like Claude Code. gzip runs in the background via setsid and exits
+	// naturally when script closes the FIFO write end.
 	wrapperScript := fmt.Sprintf(
-		`rm -f %[1]q; mkfifo %[1]q; setsid sh -c 'gzip > %[2]q < %[1]q' & GZ_PID=$!; SCRIPT_PID=; trap 'kill $SCRIPT_PID 2>/dev/null; wait $SCRIPT_PID 2>/dev/null; wait $GZ_PID 2>/dev/null; rm -f %[1]q; exit 143' TERM; script -q -f -T %[3]q -I %[4]q -O %[1]q -c %[5]q & SCRIPT_PID=$!; wait $SCRIPT_PID 2>/dev/null; EXIT=$?; wait $GZ_PID 2>/dev/null; rm -f %[1]q; exit $EXIT`,
+		`rm -f %[1]q; mkfifo %[1]q; setsid sh -c 'gzip > %[2]q < %[1]q' & GZ_PID=$!; trap 'rm -f %[1]q' EXIT; script -q -f -T %[3]q -I %[4]q -O %[1]q -c %[5]q; EXIT=$?; wait $GZ_PID 2>/dev/null; exit $EXIT`,
 		logPipePath, logGzPath, timingPath, inputPath, fullCmd,
 	)
 
