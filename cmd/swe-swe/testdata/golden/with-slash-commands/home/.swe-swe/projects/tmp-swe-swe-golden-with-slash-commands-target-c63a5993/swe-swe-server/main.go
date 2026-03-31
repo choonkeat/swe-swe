@@ -3953,7 +3953,7 @@ type SessionParams struct {
 	Name                string // display name (optional, can be empty)
 	Branch              string // used for worktree creation (optional, separate from display name)
 	WorkDir             string // working directory for the session (empty = use server cwd)
-	RepoPath            string // base repo for worktree creation (empty = /workspace)
+	RepoPath            string // base repo for worktree creation (required for MCP create_session)
 	ParentUUID          string // parent session UUID (for child sessions)
 	ParentName          string // parent session name
 	ParentRecordingUUID string // parent recording UUID
@@ -6528,7 +6528,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		Assistant string `json:"assistant" jsonschema:"Agent binary name (e.g. claude, gemini)"`
 		Name      string `json:"name,omitempty" jsonschema:"Session display name"`
 		Branch    string `json:"branch,omitempty" jsonschema:"Git branch to create worktree for"`
-		RepoPath  string `json:"repo_path,omitempty" jsonschema:"Repository path (default /workspace)"`
+		RepoPath  string `json:"repo_path" jsonschema:"required,Repository path for worktree creation"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_session",
@@ -6536,6 +6536,9 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, any, error) {
 		if args.Assistant == "" {
 			return nil, nil, fmt.Errorf("assistant is required")
+		}
+		if args.RepoPath == "" {
+			return nil, nil, fmt.Errorf("repo_path is required")
 		}
 		sessionUUID := uuid.New().String()
 		sess, _, err := getOrCreateSession(SessionParams{
