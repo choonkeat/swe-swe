@@ -18,6 +18,7 @@
 - **Interactive TUI stdin**: Run script in foreground so stdin reaches interactive TUI apps (e.g. Claude Code)
 - **Gzip flush on session end**: Fix gzip recording flush ensuring data is written before process cleanup
 - **Deferred compression**: Moved log compression from real-time FIFO pipeline to cleanup scheduler to avoid 0-byte files caused by gzip buffering + SIGKILL race (ADR-0041)
+- **create_session default repo_path**: `repo_path` is now required in the MCP `create_session` tool -- previously defaulted silently to `/workspace`, causing sessions to use the wrong repository
 
 ### Internal
 
