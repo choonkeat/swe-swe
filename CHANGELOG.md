@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## v2.20.0 - Recording Compression, Memory Safety & Streaming Playback
+
+### Features
+
+- **Gzip-compressed terminal recordings**: Recordings are compressed after session end by the cleanup scheduler, achieving ~100x size reduction for large sessions (ADR-0041)
+- **Channel-based prompt compression**: Session-end prompt compression now uses a channel-based approach instead of inline processing
+- **Memory guard on session creation**: Reject new sessions when server RSS is too high; per-session RSS shown on homepage
+- **Recording file size on homepage**: Homepage now displays recording file sizes for each session
+- **pprof endpoint**: Added `/debug/pprof` endpoint for memory leak diagnosis
+
+### Bug Fixes
+
+- **OOM on large recordings**: `calculateTerminalDimensions` now streams the recording log instead of loading it entirely into memory
+- **Embedded recording mode removed**: Removed embedded recording mode and capped TOC entries for large logs to prevent memory issues
+- **Streaming TOC**: Switched to `BuildTOCFromReader` streaming API for table-of-contents generation
+- **Interactive TUI stdin**: Run script in foreground so stdin reaches interactive TUI apps (e.g. Claude Code)
+- **Gzip flush on session end**: Fix gzip recording flush ensuring data is written before process cleanup
+- **Deferred compression**: Moved log compression from real-time FIFO pipeline to cleanup scheduler to avoid 0-byte files caused by gzip buffering + SIGKILL race (ADR-0041)
+
+### Internal
+
+- Bump `record-tui` dependency to streaming-only `BuildTOC` API
+- Remove broken `make run` target
+
+### Documentation
+
+- ADR-0041: Deferred log compression
+
 ## v2.19.0 - Non-Root Containers, Recording TTL & E2E Testing
 
 ### Features
