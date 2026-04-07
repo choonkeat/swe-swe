@@ -799,6 +799,11 @@ class TerminalUI extends HTMLElement {
         if (sessionParam) {
             url += '&session=' + encodeURIComponent(sessionParam);
         }
+        // Forward extra_args param from page URL to WebSocket URL (extra CLI flags appended to agent command)
+        const extraArgsParam = new URLSearchParams(location.search).get('extra_args');
+        if (extraArgsParam) {
+            url += '&extra_args=' + encodeURIComponent(extraArgsParam);
+        }
         // Forward current theme to server so shell env (COLORFGBG) matches
         const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
         url += '&theme=' + encodeURIComponent(currentTheme);
