@@ -35,7 +35,7 @@
     // prefill the extra-args field with these (rule (c) -- only if the field
     // is empty or still matches a previous prefill, so user edits are kept).
     var AGENT_EXTRA_ARGS_PREFILL = {
-        claude: '--channels server:agent-chat'
+        claude: '--dangerously-load-development-channels server:swe-swe-agent-chat'
     };
 
     var dialogState = {
