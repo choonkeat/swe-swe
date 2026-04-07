@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -77,6 +78,31 @@ func TestSessionPageQueryEncodeExtraArgs(t *testing.T) {
 	}
 	if !contains(encoded, want2) {
 		t.Errorf("encoded %q missing %q", encoded, want2)
+	}
+}
+
+// TestAgentArgvThroughWrapWithScript covers the full chain that actually
+// reaches the kernel: buildAgentArgv -> wrapWithScript. The unit test for
+// buildAgentArgv alone is misleading because wrapWithScript immediately
+// re-flattens the slice into a single string fed to bash -c "script ... -c ...",
+// so the slice discipline buildAgentArgv enforces is lost.
+func TestAgentArgvThroughWrapWithScript(t *testing.T) {
+	// Override recordingsDir so the test does not depend on /workspace.
+	old := recordingsDir
+	recordingsDir = "/tmp"
+	defer func() { recordingsDir = old }()
+
+	cn, ca := buildAgentArgv("claude --dangerously-skip-permissions", "--channels server:agent-chat")
+	cn, ca = wrapWithScript(cn, ca, "session-test")
+	if cn != "bash" {
+		t.Fatalf("wrapper cmd: got %q, want bash", cn)
+	}
+	if len(ca) != 2 || ca[0] != "-c" {
+		t.Fatalf("wrapper args shape: got %#v, want [-c <script>]", ca)
+	}
+	want := `claude --dangerously-skip-permissions --channels server:agent-chat`
+	if !strings.Contains(ca[1], want) {
+		t.Fatalf("extra args missing from wrapper script:\n  got: %s\n  want substring: %s", ca[1], want)
 	}
 }
 
