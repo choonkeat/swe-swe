@@ -29,6 +29,14 @@
     var envHint = document.getElementById('new-session-env-hint');
     var whereCombo = document.getElementById('where-combo');
     var branchCombo = document.getElementById('branch-combo');
+    var extraArgsInput = document.getElementById('new-session-extra-args');
+
+    // Per-agent default extra CLI flags. When the user selects an agent we
+    // prefill the extra-args field with these (rule (c) -- only if the field
+    // is empty or still matches a previous prefill, so user edits are kept).
+    var AGENT_EXTRA_ARGS_PREFILL = {
+        claude: '--channels server:agent-chat'
+    };
 
     var dialogState = {
         sessionUUID: '',
@@ -41,8 +49,24 @@
         isNewProject: false,
         projectName: '',
         sessionColor: '',
-        whereKey: ''
+        whereKey: '',
+        extraArgs: '',
+        lastExtraArgsPrefill: '' // last value we auto-filled into extraArgsInput
     };
+
+    // Apply prefill rule (c): set the extra-args field for the given agent
+    // ONLY if the field is empty or its current value exactly matches the
+    // previous auto-prefill (i.e. the user has not customized it).
+    function applyExtraArgsPrefill(agent) {
+        var nextPrefill = AGENT_EXTRA_ARGS_PREFILL[agent] || '';
+        var current = extraArgsInput.value;
+        var canOverwrite = current === '' || current === dialogState.lastExtraArgsPrefill;
+        if (canOverwrite) {
+            extraArgsInput.value = nextPrefill;
+            dialogState.extraArgs = nextPrefill;
+            dialogState.lastExtraArgsPrefill = nextPrefill;
+        }
+    }
 
     var REPO_HISTORY_KEY = 'swe-swe-repo-history';
 
@@ -128,6 +152,9 @@
         dialogState.projectName = '';
         dialogState.sessionColor = '';
         dialogState.whereKey = '';
+        dialogState.extraArgs = '';
+        dialogState.lastExtraArgsPrefill = '';
+        if (extraArgsInput) extraArgsInput.value = '';
 
         // Reset color picker
         if (window.sweSweTheme) {
@@ -191,6 +218,7 @@
                     radio.checked = true;
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
+                    applyExtraArgsPrefill(dialogState.preSelectedAgent);
                     startTerminalBtn.disabled = false; startChatBtn.disabled = false;
                 }
             }
@@ -218,6 +246,7 @@
                     radio.checked = true;
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
+                    applyExtraArgsPrefill(dialogState.preSelectedAgent);
                     startTerminalBtn.disabled = false; startChatBtn.disabled = false;
                 }
             }
@@ -488,9 +517,16 @@
         if (radio) {
             radio.checked = true;
             dialogState.selectedAgent = radio.value;
+            applyExtraArgsPrefill(radio.value);
             startTerminalBtn.disabled = false; startChatBtn.disabled = false;
         }
     }
+
+    // Track manual edits to the extra-args field so applyExtraArgsPrefill
+    // knows the user has customized it and stops auto-overwriting.
+    extraArgsInput.addEventListener('input', function() {
+        dialogState.extraArgs = extraArgsInput.value;
+    });
 
     agentsContainer.addEventListener('click', function(e) {
         selectAgent(e.target.closest('.dialog__agent'));
@@ -520,6 +556,7 @@
             p.set('pwd', dialogState.repoPath);
         }
         if (dialogState.debug) p.set('debug', '1');
+        if (dialogState.extraArgs) p.set('extra_args', dialogState.extraArgs);
 
         // color is CSS-only (not read by server), append after canonical params
         if (dialogState.sessionColor) {

@@ -229,6 +229,7 @@ type SessionPageQuery struct {
 	WorkDir     string // working directory; omit if "/workspace" (default)
 	ParentUUID  string // parent session UUID (shell sub-sessions)
 	Debug       bool   // debug UI flag
+	ExtraArgs   string // extra CLI flags appended to the agent command (optional)
 }
 
 // Encode returns a URL-encoded query string (without leading "?").
@@ -256,6 +257,9 @@ func (q SessionPageQuery) Encode() template.URL {
 	}
 	if q.Debug {
 		v.Set("debug", "1")
+	}
+	if q.ExtraArgs != "" {
+		v.Set("extra_args", q.ExtraArgs)
 	}
 	return template.URL(v.Encode())
 }
@@ -318,6 +322,7 @@ type RecordingMetadata struct {
 	PlaybackCols uint16     `json:"playback_cols,omitempty"` // Content-based cols for playback (calculated at session end)
 	PlaybackRows uint32     `json:"playback_rows,omitempty"` // Content-based rows for playback (calculated at session end)
 	WorkDir      string     `json:"work_dir,omitempty"`      // Working directory for VS Code links in playback
+	ExtraArgs    string     `json:"extra_args,omitempty"`    // Extra CLI flags appended to the agent command (for restart)
 }
 
 // Visitor represents a client that joined the session
@@ -401,6 +406,7 @@ type Session struct {
 	Name            string // User-assigned session name (optional)
 	BranchName      string // Git branch name for this session's worktree (derived from Name)
 	WorkDir         string // Working directory for the session (empty = server cwd)
+	ExtraArgs       string // Extra CLI flags appended to the agent command (for restart)
 	Assistant       string // The assistant key (e.g., "claude", "gemini", "custom")
 	AssistantConfig AssistantConfig
 	Cmd             *exec.Cmd
@@ -1860,6 +1866,7 @@ func main() {
 						WorkDir:     sess.WorkDir,
 						ParentUUID:  sess.ParentUUID,
 						Debug:       debugMode,
+						ExtraArgs:   sess.ExtraArgs,
 					},
 				}
 				idx := len(sessionsByAssistant[sess.Assistant])
@@ -3959,6 +3966,7 @@ type SessionParams struct {
 	ParentRecordingUUID string // parent recording UUID
 	Theme               string // terminal theme
 	SessionMode         string // "terminal" or "chat"
+	ExtraArgs           string // extra CLI flags appended to the agent command (whitespace-split)
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -4094,8 +4102,12 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		log.Printf("Shell session: using %s", shellCmdToUse)
 	}
 
-	// Create new session with PTY using assistant's shell command
-	cmdName, cmdArgs := parseCommand(shellCmdToUse)
+	// Create new session with PTY using assistant's shell command, plus any
+	// extra CLI flags the user supplied (e.g. --channels server:agent-chat).
+	cmdName, cmdArgs := buildAgentArgv(shellCmdToUse, p.ExtraArgs)
+	if p.ExtraArgs != "" {
+		log.Printf("Session %s: extra CLI args: %s", p.UUID, p.ExtraArgs)
+	}
 
 	// Wrap with script for recording
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
@@ -4160,6 +4172,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		Name:            name,
 		BranchName:      p.Branch,
 		WorkDir:         workDir,
+		ExtraArgs:       p.ExtraArgs,
 		Assistant:       p.Assistant,
 		AssistantConfig: cfg,
 		Cmd:             cmd,
@@ -4197,6 +4210,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			MaxCols:       80, // Default starting size
 			MaxRows:       24,
 			WorkDir:       workDir,
+			ExtraArgs:     p.ExtraArgs,
 		},
 	}
 	sessions[p.UUID] = sess
@@ -4406,6 +4420,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		sessionMode = "terminal" // default
 	}
 
+	// Optional extra CLI flags appended to the agent invocation (e.g. "--channels server:agent-chat")
+	extraArgs := r.URL.Query().Get("extra_args")
+
 	sess, isNew, err := getOrCreateSession(SessionParams{
 		UUID:                sessionUUID,
 		Assistant:           assistant,
@@ -4418,6 +4435,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		ParentRecordingUUID: parentRecordingUUID,
 		Theme:               theme,
 		SessionMode:         sessionMode,
+		ExtraArgs:           extraArgs,
 	})
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
@@ -4720,6 +4738,18 @@ func parseCommand(cmdStr string) (string, []string) {
 		return cmdStr, nil
 	}
 	return parts[0], parts[1:]
+}
+
+// buildAgentArgv parses the assistant shell command and appends optional
+// extra CLI flags supplied by the user (e.g. "--channels server:agent-chat").
+// Both inputs are whitespace-split; quoted args with spaces are not supported.
+// Pure function -- no PTY, no env -- intended to be unit tested.
+func buildAgentArgv(shellCmd, extraArgs string) (string, []string) {
+	cmdName, cmdArgs := parseCommand(shellCmd)
+	if extra := strings.Fields(extraArgs); len(extra) > 0 {
+		cmdArgs = append(cmdArgs, extra...)
+	}
+	return cmdName, cmdArgs
 }
 
 // recordingsDir is the directory where terminal recordings are stored
@@ -5199,6 +5229,7 @@ func loadEndedRecordings() []RecordingInfo {
 					Name:        meta.Name,
 					BranchName:  meta.BranchName,
 					WorkDir:     meta.WorkDir,
+					ExtraArgs:   meta.ExtraArgs,
 				}
 			}
 		} else {
@@ -6529,6 +6560,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		Name      string `json:"name,omitempty" jsonschema:"Session display name"`
 		Branch    string `json:"branch,omitempty" jsonschema:"Git branch to create worktree for"`
 		RepoPath  string `json:"repo_path" jsonschema:"required,Repository path for worktree creation"`
+		ExtraArgs string `json:"extra_args,omitempty" jsonschema:"Extra CLI flags appended to the agent command, e.g. --channels server:agent-chat"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_session",
@@ -6548,6 +6580,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			Branch:      args.Branch,
 			RepoPath:    args.RepoPath,
 			SessionMode: "chat",
+			ExtraArgs:   args.ExtraArgs,
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create session: %w", err)
