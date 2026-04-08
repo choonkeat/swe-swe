@@ -67,6 +67,17 @@ window.addEventListener('scroll', function () {
   isUserScrolledUp = distFromBottom > threshold;
 });
 
+// Auto-focus chat input when window/iframe regains focus
+function focusChatInput() {
+  if (chatInput && !chatInput.disabled && !chatInput.readOnly) {
+    chatInput.focus();
+  }
+}
+window.addEventListener('focus', focusChatInput);
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) focusChatInput();
+});
+
 function scrollToBottom(force) {
   if (!force && isUserScrolledUp) return;
   window.scrollTo(0, document.documentElement.scrollHeight);
@@ -158,8 +169,14 @@ function renderMarkdown(text) {
     var cls = lang ? ' class="language-' + lang + '"' : '';
     return '<pre><code' + cls + '>' + highlighted + '</code></pre>';
   });
-  // Inline code (same line only to prevent dangling backtick eating content)
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // Inline code (same line only to prevent dangling backtick eating content).
+  // Stash code spans behind placeholders so later inline rules (bold/italic/links)
+  // don't mangle their contents — per CommonMark, code span text is literal.
+  var codeSpans = [];
+  html = html.replace(/`([^`\n]+)`/g, function(_, content) {
+    var idx = codeSpans.push('<code>' + content + '</code>') - 1;
+    return '\u0000CODE' + idx + '\u0000';
+  });
   // Tables
   html = html.replace(/(\|[^\n]+\|\n\|[-:| ]+\|\n(?:\|[^\n]+\|\n?)+)/g, function(block) {
     var lines = block.trim().split('\n');
@@ -231,6 +248,10 @@ function renderMarkdown(text) {
   html = html.replace(/(<\/(h[1-6]|hr|ul|ol|li|pre|table|thead|tbody|tr|th|td|blockquote)>)\n*/g, '$1');
   // Newlines
   html = html.replace(/\n/g, '<br>');
+  // Restore stashed inline code spans
+  html = html.replace(/\u0000CODE(\d+)\u0000/g, function(_, idx) {
+    return codeSpans[parseInt(idx, 10)];
+  });
   return html;
 }
 
@@ -877,10 +898,13 @@ function acNormalizeAll(items) {
 }
 
 // Check if option fuzzy-matches query (all query chars appear in order).
+// Matches against both the main value and hint label.
 function acFuzzyMatch(option, query) {
   if (!query) return true;
   var qi = 0;
-  var lo = (typeof option === 'string' ? option : option.v).toLowerCase();
+  var v = typeof option === 'string' ? option : option.v;
+  var h = (typeof option === 'string' ? '' : option.h) || '';
+  var lo = (h ? v + ' ' + h : v).toLowerCase();
   var lq = query.toLowerCase();
   for (var i = 0; i < lo.length && qi < lq.length; i++) {
     if (lo[i] === lq[qi]) qi++;
@@ -910,7 +934,10 @@ function acFetch(trigger, query) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ trigger: trigger, query: query })
-  }).then(function(r) { return r.json(); })
+  }).then(function(r) {
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t || ('HTTP ' + r.status)); });
+      return r.json();
+    })
     .then(function(data) {
       // Support structured {results, info} or plain array.
       var raw = Array.isArray(data) ? data : (data.results || []);
@@ -929,7 +956,11 @@ function acFetch(trigger, query) {
         }
       }
     })
-    .catch(function() { acHide(); });
+    .catch(function(err) {
+      if (acVisible || acTriggerPos >= 0) {
+        acShowStatus('Error: ' + (err.message || 'failed to load'));
+      }
+    });
 }
 
 chatInput.addEventListener('input', function () {
@@ -1958,6 +1989,12 @@ document.getElementById('btn-download').addEventListener('click', function () {
     + '});'
     + '})(btns[i]);}'
     + '})();'
+    // IMPORTANT: keep the closing </script> literal SPLIT. When this app.js
+    // is inlined into an outer <script>...</script> block by a host page
+    // (e.g. swe-swe playback), the HTML parser scans for the literal byte
+    // sequence "</script" regardless of JS string context, and would
+    // prematurely terminate the outer script tag. The split survives both
+    // external-script loading and inline embedding.
     + '</' + 'script></body></html>';
 
   var blob = new Blob([html], { type: 'text/html' });
@@ -1975,10 +2012,11 @@ document.getElementById('btn-download').addEventListener('click', function () {
 // --- Playback mode ---
 
 function startPlaybackMode(url) {
-  // Hide interactive elements
+  // Hide interactive elements (but keep btn-download visible — recordings are
+  // exportable too, and the export logic walks the same DOM that playback
+  // populates).
   document.getElementById('input-bar').style.display = 'none';
   document.getElementById('quick-replies').style.display = 'none';
-  document.getElementById('btn-download').style.display = 'none';
   setStatus('connected');
 
   fetch(url)

@@ -5737,15 +5737,27 @@ func handleChatPlaybackPage(w http.ResponseWriter, r *http.Request, parentUUID s
   <div id="app">
     <div id="chat">
       <div id="chat-header">
-        <button id="btn-download" style="display:none"></button>
+        <div id="voice-controls" hidden>
+          <select id="voice-select"></select>
+        </div>
+        <button id="btn-download" title="Export chat as HTML"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M4.5 7.5 8 11l3.5-3.5M3 13h10"/></svg></button>
       </div>
-      <div id="messages"></div>
-      <div id="quick-replies"></div>
-      <div id="input-bar">
-        <span id="status-dot"></span>
-        <textarea id="chat-input" rows="1" placeholder="Type a message..." disabled></textarea>
-        <button id="btn-send" disabled>Send</button>
+      <div id="messages">
+        <div id="quick-replies"></div>
       </div>
+      <div id="chat-footer" hidden>
+        <div id="input-bar">
+          <button id="btn-attach" title="Attach files" disabled></button>
+          <button id="btn-voice" title="Toggle voice mode"></button>
+          <div id="input-container">
+            <textarea id="chat-input" rows="1" placeholder="Type a message..." disabled></textarea>
+            <div id="file-staging"></div>
+            <div id="autocomplete-dropdown"></div>
+          </div>
+          <button id="btn-send" disabled>Send</button>
+        </div>
+      </div>
+      <input type="file" id="file-picker" multiple hidden>
     </div>
   </div>
   <script>var THEME_COOKIE_NAME = "swe-swe-theme"; var AGENT_CHAT_DEFER_STARTUP = true;</script>
