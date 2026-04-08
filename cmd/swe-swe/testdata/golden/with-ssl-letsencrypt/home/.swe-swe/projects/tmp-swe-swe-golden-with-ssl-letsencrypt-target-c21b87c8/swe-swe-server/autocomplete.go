@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -117,6 +118,7 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 
 	if req.Query != "" {
 		items = filterAutocomplete(items, req.Query)
+		sortAutocomplete(items, req.Query)
 	}
 	if items == nil {
 		items = []autocompleteItem{}
@@ -310,4 +312,49 @@ func fuzzyMatch(s, query string) bool {
 		}
 	}
 	return qi == len(query)
+}
+
+// sortAutocomplete stably sorts items by match quality against the query,
+// best-first. Matching is performed against item.V only, matching
+// filterAutocomplete. Ties preserve the discovery order (stable sort).
+//
+// Tiers (from best to worst):
+//
+//	3  value equals query
+//	2  value has query as a prefix
+//	1  value contains query as a contiguous substring
+//	0  value only fuzzy-matches (non-contiguous)
+//
+// Within a tier, shorter values rank higher (closer match) and, for the
+// substring tier, earlier match positions rank higher.
+func sortAutocomplete(items []autocompleteItem, query string) {
+	if len(items) < 2 || query == "" {
+		return
+	}
+	q := strings.ToLower(query)
+	score := func(v string) (tier, subPos, length int) {
+		lv := strings.ToLower(v)
+		length = len(v)
+		if lv == q {
+			return 3, 0, length
+		}
+		if strings.HasPrefix(lv, q) {
+			return 2, 0, length
+		}
+		if idx := strings.Index(lv, q); idx >= 0 {
+			return 1, idx, length
+		}
+		return 0, 0, length
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		ti, pi, li := score(items[i].V)
+		tj, pj, lj := score(items[j].V)
+		if ti != tj {
+			return ti > tj
+		}
+		if pi != pj {
+			return pi < pj
+		}
+		return li < lj
+	})
 }

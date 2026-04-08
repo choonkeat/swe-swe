@@ -402,6 +402,71 @@ func TestExtractDescription(t *testing.T) {
 	})
 }
 
+func TestSortAutocomplete(t *testing.T) {
+	t.Run("contiguous substring outranks fuzzy", func(t *testing.T) {
+		items := []autocompleteItem{
+			{V: "swe-swe:debug-preview-page"},
+			{V: "tdspec:serve"},
+			{V: "swe-swe:reboot"},
+		}
+		sortAutocomplete(items, "reboo")
+		if items[0].V != "swe-swe:reboot" {
+			t.Errorf("expected swe-swe:reboot first, got %q (full order: %v)", items[0].V, itemVs(items))
+		}
+	})
+
+	t.Run("prefix outranks substring", func(t *testing.T) {
+		items := []autocompleteItem{
+			{V: "swe-swe:reboot"},
+			{V: "reboot"},
+		}
+		sortAutocomplete(items, "reb")
+		if items[0].V != "reboot" {
+			t.Errorf("expected reboot first (prefix), got %q", items[0].V)
+		}
+	})
+
+	t.Run("exact match outranks prefix", func(t *testing.T) {
+		items := []autocompleteItem{
+			{V: "reboot-now"},
+			{V: "reboot"},
+		}
+		sortAutocomplete(items, "reboot")
+		if items[0].V != "reboot" {
+			t.Errorf("expected exact match reboot first, got %q", items[0].V)
+		}
+	})
+
+	t.Run("stable within tier", func(t *testing.T) {
+		items := []autocompleteItem{
+			{V: "foo:reboot"}, // substring tier, pos 4
+			{V: "reboot:a"},   // prefix tier
+			{V: "reboot:b"},   // prefix tier, same length
+		}
+		sortAutocomplete(items, "reb")
+		// Both prefix-tier items have equal length, stable order keeps a before b.
+		if items[0].V != "reboot:a" || items[1].V != "reboot:b" {
+			t.Errorf("stable sort broken: %v", itemVs(items))
+		}
+	})
+
+	t.Run("empty query is a no-op", func(t *testing.T) {
+		items := []autocompleteItem{{V: "b"}, {V: "a"}}
+		sortAutocomplete(items, "")
+		if items[0].V != "b" || items[1].V != "a" {
+			t.Errorf("empty query should not reorder, got %v", itemVs(items))
+		}
+	})
+}
+
+func itemVs(items []autocompleteItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.V
+	}
+	return out
+}
+
 // helpers
 
 func mkdirAll(t *testing.T, path string) {
