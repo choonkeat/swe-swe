@@ -6908,17 +6908,48 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		sessionsMu.RLock()
 		sess, exists := sessions[args.UUID]
 		sessionsMu.RUnlock()
-		if !exists {
+		if exists && sess.AgentChatPort != 0 {
+			result, err := callAgentChatOrchestrator(sess.AgentChatPort, "get_chat_history", map[string]int64{"cursor": args.Cursor})
+			if err != nil {
+				return nil, nil, fmt.Errorf("agent chat error: %w", err)
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil, nil
+		}
+		// Fallback: read chat events from the ended recording's .events.jsonl.
+		// This lets get_chat_history work for sessions shown in list_recordings
+		// (hasChat: true) after they've ended.
+		path := findChatEventsFile(args.UUID)
+		if path == "" {
+			if exists {
+				return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
+			}
 			return nil, nil, fmt.Errorf("session not found")
 		}
-		if sess.AgentChatPort == 0 {
-			return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
-		}
-		result, err := callAgentChatOrchestrator(sess.AgentChatPort, "get_chat_history", map[string]int64{"cursor": args.Cursor})
+		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, nil, fmt.Errorf("agent chat error: %w", err)
+			return nil, nil, fmt.Errorf("read chat events: %w", err)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil, nil
+		events := []json.RawMessage{}
+		for _, line := range bytes.Split(data, []byte("\n")) {
+			line = bytes.TrimSpace(line)
+			if len(line) == 0 {
+				continue
+			}
+			if args.Cursor > 0 {
+				var hdr struct {
+					Seq int64 `json:"seq"`
+				}
+				if err := json.Unmarshal(line, &hdr); err == nil && hdr.Seq <= args.Cursor {
+					continue
+				}
+			}
+			events = append(events, json.RawMessage(append([]byte(nil), line...)))
+		}
+		out, err := json.Marshal(events)
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal events: %w", err)
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(out)}}}, nil, nil
 	})
 
 	return nil
