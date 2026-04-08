@@ -287,7 +287,9 @@ func extractTOMLDescription(content string) string {
 }
 
 // filterAutocomplete filters autocomplete items by fuzzy matching the query
-// against the value (case-insensitive, greedy left-to-right).
+// against the value OR the hint (case-insensitive, greedy left-to-right).
+// Hint matches are kept so users can discover commands by description text;
+// sortAutocomplete then ranks value matches above hint-only matches.
 func filterAutocomplete(items []autocompleteItem, query string) []autocompleteItem {
 	if query == "" {
 		return items
@@ -295,7 +297,8 @@ func filterAutocomplete(items []autocompleteItem, query string) []autocompleteIt
 	query = strings.ToLower(query)
 	var result []autocompleteItem
 	for _, item := range items {
-		if fuzzyMatch(strings.ToLower(item.V), query) {
+		if fuzzyMatch(strings.ToLower(item.V), query) ||
+			(item.H != "" && fuzzyMatch(strings.ToLower(item.H), query)) {
 			result = append(result, item)
 		}
 	}
@@ -315,40 +318,56 @@ func fuzzyMatch(s, query string) bool {
 }
 
 // sortAutocomplete stably sorts items by match quality against the query,
-// best-first. Matching is performed against item.V only, matching
-// filterAutocomplete. Ties preserve the discovery order (stable sort).
+// best-first. Matching is performed against item.V first and, only if no
+// value match exists, falls back to item.H. All value-match tiers rank
+// strictly above all hint-match tiers, so hint-only matches are a
+// discovery aid that never outrank a real value hit.
 //
 // Tiers (from best to worst):
 //
-//	3  value equals query
-//	2  value has query as a prefix
-//	1  value contains query as a contiguous substring
-//	0  value only fuzzy-matches (non-contiguous)
+//	5  value equals query
+//	4  value has query as a prefix
+//	3  value contains query as a contiguous substring
+//	2  value only fuzzy-matches (non-contiguous)
+//	1  hint contains query as a contiguous substring
+//	0  hint only fuzzy-matches (non-contiguous)
 //
-// Within a tier, shorter values rank higher (closer match) and, for the
-// substring tier, earlier match positions rank higher.
+// Within a tier, shorter values rank higher (closer match) and, for
+// substring tiers, earlier match positions rank higher.
 func sortAutocomplete(items []autocompleteItem, query string) {
 	if len(items) < 2 || query == "" {
 		return
 	}
 	q := strings.ToLower(query)
-	score := func(v string) (tier, subPos, length int) {
-		lv := strings.ToLower(v)
-		length = len(v)
+	score := func(it autocompleteItem) (tier, subPos, length int) {
+		lv := strings.ToLower(it.V)
+		length = len(it.V)
+		// Value tiers
 		if lv == q {
-			return 3, 0, length
+			return 5, 0, length
 		}
 		if strings.HasPrefix(lv, q) {
-			return 2, 0, length
+			return 4, 0, length
 		}
 		if idx := strings.Index(lv, q); idx >= 0 {
+			return 3, idx, length
+		}
+		if fuzzyMatch(lv, q) {
+			return 2, 0, length
+		}
+		// Hint tiers
+		if it.H == "" {
+			return 0, 0, length
+		}
+		lh := strings.ToLower(it.H)
+		if idx := strings.Index(lh, q); idx >= 0 {
 			return 1, idx, length
 		}
 		return 0, 0, length
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		ti, pi, li := score(items[i].V)
-		tj, pj, lj := score(items[j].V)
+		ti, pi, li := score(items[i])
+		tj, pj, lj := score(items[j])
 		if ti != tj {
 			return ti > tj
 		}

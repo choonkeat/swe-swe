@@ -450,6 +450,34 @@ func TestSortAutocomplete(t *testing.T) {
 		}
 	})
 
+	t.Run("value fuzzy outranks hint match", func(t *testing.T) {
+		items := []autocompleteItem{
+			// Hint fuzzy-matches "reboo" (r-e-b-o-o in order), value does not.
+			{V: "swe-swe:debug-preview-page", H: "Inspect App Preview page content — use instead of browser tools for preview"},
+			// Value contains "reboo" as a contiguous substring.
+			{V: "swe-swe:reboot"},
+		}
+		sortAutocomplete(items, "reboo")
+		if items[0].V != "swe-swe:reboot" {
+			t.Errorf("expected swe-swe:reboot first, got %q (order: %v)", items[0].V, itemVs(items))
+		}
+	})
+
+	t.Run("hint match is kept when no value match exists", func(t *testing.T) {
+		items := []autocompleteItem{
+			{V: "unrelated", H: "nothing here"},
+			{V: "tdspec:docs", H: "Generate browsable HTML for tdspec modules"},
+		}
+		got := filterAutocomplete(items, "browsab")
+		if len(got) != 1 || got[0].V != "tdspec:docs" {
+			t.Errorf("expected hint-only match to survive filter, got %v", itemVs(got))
+		}
+		sortAutocomplete(got, "browsab")
+		if got[0].V != "tdspec:docs" {
+			t.Errorf("unexpected order: %v", itemVs(got))
+		}
+	})
+
 	t.Run("empty query is a no-op", func(t *testing.T) {
 		items := []autocompleteItem{{V: "b"}, {V: "a"}}
 		sortAutocomplete(items, "")
