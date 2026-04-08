@@ -453,7 +453,7 @@ func TestSortAutocomplete(t *testing.T) {
 	t.Run("value fuzzy outranks hint match", func(t *testing.T) {
 		items := []autocompleteItem{
 			// Hint fuzzy-matches "reboo" (r-e-b-o-o in order), value does not.
-			{V: "swe-swe:debug-preview-page", H: "Inspect App Preview page content — use instead of browser tools for preview"},
+			{V: "swe-swe:debug-preview-page", H: "Inspect App Preview page content -- use instead of browser tools for preview"},
 			// Value contains "reboo" as a contiguous substring.
 			{V: "swe-swe:reboot"},
 		}
@@ -479,7 +479,7 @@ func TestSortAutocomplete(t *testing.T) {
 	})
 
 	t.Run("longer consecutive run beats sparser earlier match within fuzzy tier", func(t *testing.T) {
-		// Query "reboo", both candidates are tier 2 (value fuzzy — neither
+		// Query "reboo", both candidates are tier 2 (value fuzzy -- neither
 		// contains "reboo" as a contiguous substring):
 		//   - "reboXo"    has a 4-char run "rebo" (longestRun=4).
 		//   - "rXeXbXoXo" has every query char separated (longestRun=1).

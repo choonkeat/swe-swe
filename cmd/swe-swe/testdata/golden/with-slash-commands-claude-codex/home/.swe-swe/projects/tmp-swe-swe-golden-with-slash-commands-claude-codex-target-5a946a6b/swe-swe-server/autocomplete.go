@@ -323,7 +323,7 @@ func fuzzyMatch(s, query string) bool {
 //   - ok          = true if every query character was matched.
 //   - longestRun  = length of the longest run of query characters that
 //     happened to land on consecutive positions in s. This rewards
-//     candidates where the query appears as a tight block — e.g. query
+//     candidates where the query appears as a tight block -- e.g. query
 //     "reboo" produces longestRun=5 for "swe-swe:reboot" but only 2 for
 //     a scattered match.
 //   - span        = last matched position minus first matched position + 1.
@@ -376,7 +376,7 @@ func fuzzyMetrics(s, query string) (ok bool, longestRun, span int) {
 //
 // Within a tier, ranking is by (longestRun desc, span asc, length asc).
 // longestRun is the longest block of query characters that landed on
-// consecutive positions in the matched field — a candidate where "reboo"
+// consecutive positions in the matched field -- a candidate where "reboo"
 // appears as a tight 5-char run beats one where the same 5 characters are
 // sparsely scattered, even if the sparse match starts earlier. span is
 // the distance from the first to the last matched character, so tighter
