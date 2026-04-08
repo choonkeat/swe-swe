@@ -478,6 +478,23 @@ func TestSortAutocomplete(t *testing.T) {
 		}
 	})
 
+	t.Run("longer consecutive run beats sparser earlier match within fuzzy tier", func(t *testing.T) {
+		// Query "reboo", both candidates are tier 2 (value fuzzy — neither
+		// contains "reboo" as a contiguous substring):
+		//   - "reboXo"    has a 4-char run "rebo" (longestRun=4).
+		//   - "rXeXbXoXo" has every query char separated (longestRun=1).
+		// The tight 4-char run must win even though the sparse candidate
+		// also starts with 'r' at position 0.
+		items := []autocompleteItem{
+			{V: "rXeXbXoXo"}, // sparse
+			{V: "reboXo"},    // tight run of 4
+		}
+		sortAutocomplete(items, "reboo")
+		if items[0].V != "reboXo" {
+			t.Errorf("expected reboXo first (run=4), got %q (order: %v)", items[0].V, itemVs(items))
+		}
+	})
+
 	t.Run("empty query is a no-op", func(t *testing.T) {
 		items := []autocompleteItem{{V: "b"}, {V: "a"}}
 		sortAutocomplete(items, "")

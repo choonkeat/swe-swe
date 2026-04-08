@@ -317,63 +317,117 @@ func fuzzyMatch(s, query string) bool {
 	return qi == len(query)
 }
 
+// fuzzyMetrics performs a greedy left-to-right fuzzy match of query against s
+// and returns (ok, longestRun, span) where:
+//
+//   - ok          = true if every query character was matched.
+//   - longestRun  = length of the longest run of query characters that
+//     happened to land on consecutive positions in s. This rewards
+//     candidates where the query appears as a tight block — e.g. query
+//     "reboo" produces longestRun=5 for "swe-swe:reboot" but only 2 for
+//     a scattered match.
+//   - span        = last matched position minus first matched position + 1.
+//     A tighter span means the match is concentrated.
+//
+// Callers should prefer larger longestRun first, then smaller span.
+func fuzzyMetrics(s, query string) (ok bool, longestRun, span int) {
+	qi := 0
+	first := -1
+	prevPos := -2
+	curRun := 0
+	for i := 0; i < len(s) && qi < len(query); i++ {
+		if s[i] == query[qi] {
+			if first < 0 {
+				first = i
+			}
+			if i == prevPos+1 {
+				curRun++
+			} else {
+				curRun = 1
+			}
+			if curRun > longestRun {
+				longestRun = curRun
+			}
+			prevPos = i
+			qi++
+		}
+	}
+	if qi == len(query) {
+		ok = true
+		span = prevPos - first + 1
+	}
+	return
+}
+
 // sortAutocomplete stably sorts items by match quality against the query,
 // best-first. Matching is performed against item.V first and, only if no
 // value match exists, falls back to item.H. All value-match tiers rank
-// strictly above all hint-match tiers, so hint-only matches are a
-// discovery aid that never outrank a real value hit.
+// strictly above all hint-match tiers, so a hint-only match is a discovery
+// aid that never outranks a real value hit.
 //
 // Tiers (from best to worst):
 //
 //	5  value equals query
 //	4  value has query as a prefix
 //	3  value contains query as a contiguous substring
-//	2  value only fuzzy-matches (non-contiguous)
+//	2  value fuzzy-matches (non-contiguous)
 //	1  hint contains query as a contiguous substring
-//	0  hint only fuzzy-matches (non-contiguous)
+//	0  hint fuzzy-matches only
 //
-// Within a tier, shorter values rank higher (closer match) and, for
-// substring tiers, earlier match positions rank higher.
+// Within a tier, ranking is by (longestRun desc, span asc, length asc).
+// longestRun is the longest block of query characters that landed on
+// consecutive positions in the matched field — a candidate where "reboo"
+// appears as a tight 5-char run beats one where the same 5 characters are
+// sparsely scattered, even if the sparse match starts earlier. span is
+// the distance from the first to the last matched character, so tighter
+// matches win ties. Overall field length is only the final fallback.
 func sortAutocomplete(items []autocompleteItem, query string) {
 	if len(items) < 2 || query == "" {
 		return
 	}
 	q := strings.ToLower(query)
-	score := func(it autocompleteItem) (tier, subPos, length int) {
+	qLen := len(q)
+	score := func(it autocompleteItem) (tier, longestRun, span, length int) {
 		lv := strings.ToLower(it.V)
 		length = len(it.V)
 		// Value tiers
 		if lv == q {
-			return 5, 0, length
+			return 5, qLen, qLen, length
 		}
 		if strings.HasPrefix(lv, q) {
-			return 4, 0, length
+			return 4, qLen, qLen, length
 		}
-		if idx := strings.Index(lv, q); idx >= 0 {
-			return 3, idx, length
+		if strings.Contains(lv, q) {
+			return 3, qLen, qLen, length
 		}
-		if fuzzyMatch(lv, q) {
-			return 2, 0, length
+		if ok, run, sp := fuzzyMetrics(lv, q); ok {
+			return 2, run, sp, length
 		}
 		// Hint tiers
 		if it.H == "" {
-			return 0, 0, length
+			return 0, 0, 0, length
 		}
 		lh := strings.ToLower(it.H)
-		if idx := strings.Index(lh, q); idx >= 0 {
-			return 1, idx, length
+		if strings.Contains(lh, q) {
+			return 1, qLen, qLen, length
 		}
-		return 0, 0, length
+		if ok, run, sp := fuzzyMetrics(lh, q); ok {
+			return 0, run, sp, length
+		}
+		return 0, 0, 0, length
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		ti, pi, li := score(items[i])
-		tj, pj, lj := score(items[j])
+		ti, ri, si, li := score(items[i])
+		tj, rj, sj, lj := score(items[j])
 		if ti != tj {
 			return ti > tj
 		}
-		if pi != pj {
-			return pi < pj
+		if ri != rj {
+			return ri > rj // longer run first
 		}
-		return li < lj
+		if si != sj {
+			return si < sj // tighter span first
+		}
+		return li < lj // shorter length as final fallback
 	})
 }
