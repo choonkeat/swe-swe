@@ -809,11 +809,12 @@ function acShow(options, query) {
     div.className = 'ac-option';
     div.dataset.index = i;
     div.dataset.value = opt.v;
-    div.innerHTML = acHighlight(opt.v, query);
+    var hl = acHighlightCombined(opt.v, opt.h, query);
+    div.innerHTML = hl.valueHtml;
     if (opt.h) {
       var hint = document.createElement('span');
       hint.className = 'ac-hint';
-      hint.textContent = opt.h;
+      hint.innerHTML = hl.hintHtml;
       div.appendChild(hint);
     }
     acDropdown.appendChild(div);
@@ -879,6 +880,26 @@ function acHighlight(option, query) {
   return result;
 }
 
+// Highlight matched chars in EITHER the value or the hint, never split.
+// Mirrors acFuzzyMatch's strict in-value-OR-in-hint match rule. Prefer the
+// value side when value alone satisfies the query so the user's eye lands
+// on a strong match first; otherwise highlight in the hint. Both halves
+// are HTML-escaped per character (XSS-safe).
+function acHighlightCombined(value, hint, query) {
+  if (!query) {
+    return { valueHtml: escapeHTML(value), hintHtml: escapeHTML(hint || '') };
+  }
+  var lq = query.toLowerCase();
+  if (acIsSubsequence(value.toLowerCase(), lq)) {
+    return { valueHtml: acHighlight(value, query), hintHtml: escapeHTML(hint || '') };
+  }
+  if (hint && acIsSubsequence(hint.toLowerCase(), lq)) {
+    return { valueHtml: escapeHTML(value), hintHtml: acHighlight(hint, query) };
+  }
+  // Defensive: filter step should have removed non-matching items already.
+  return { valueHtml: escapeHTML(value), hintHtml: escapeHTML(hint || '') };
+}
+
 function escapeHTML(s) {
   var div = document.createElement('div');
   div.textContent = s;
@@ -898,18 +919,26 @@ function acNormalizeAll(items) {
 }
 
 // Check if option fuzzy-matches query (all query chars appear in order).
-// Matches against both the main value and hint label.
+// Strict: the query must be a subsequence of the value, OR a subsequence of
+// the hint — never split across both. Splitting causes confusing matches
+// where you can't tell why a row was returned.
 function acFuzzyMatch(option, query) {
   if (!query) return true;
-  var qi = 0;
   var v = typeof option === 'string' ? option : option.v;
   var h = (typeof option === 'string' ? '' : option.h) || '';
-  var lo = (h ? v + ' ' + h : v).toLowerCase();
   var lq = query.toLowerCase();
-  for (var i = 0; i < lo.length && qi < lq.length; i++) {
-    if (lo[i] === lq[qi]) qi++;
+  return acIsSubsequence(v.toLowerCase(), lq) ||
+    (h !== '' && acIsSubsequence(h.toLowerCase(), lq));
+}
+
+// Returns true if every character of `query` appears in `text` in order,
+// greedy left-to-right. Both inputs must already be lowercased.
+function acIsSubsequence(text, query) {
+  var qi = 0;
+  for (var i = 0; i < text.length && qi < query.length; i++) {
+    if (text[i] === query[qi]) qi++;
   }
-  return qi === lq.length;
+  return qi === query.length;
 }
 
 function acFetch(trigger, query) {
