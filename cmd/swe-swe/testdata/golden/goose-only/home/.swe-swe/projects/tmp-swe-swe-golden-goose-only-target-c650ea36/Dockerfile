@@ -36,6 +36,10 @@ RUN apt-get update && apt-get install -y \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
+# Ensure consistent UTF-8 locale across all sessions
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 
 
 
