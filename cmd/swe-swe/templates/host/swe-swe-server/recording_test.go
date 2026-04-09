@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1417,6 +1418,186 @@ func TestPlaybackPage_WithoutMetadata_ShowsUUIDShort(t *testing.T) {
 // TestPlaybackPage_BackLink removed - record-tui's static HTML doesn't include navigation
 
 // ============================================================================
+// Phase 5b: Corrupt Metadata Tolerance Tests
+// ============================================================================
+
+func TestLoadEndedRecordings_TolerantOfCorruptMetadata(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	// Create recording files with a .log (required) but NO structured metadata
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	// Write corrupt JSON to the metadata file (simulating the race condition
+	// where a shorter saveMetadata overwrites a longer one without O_TRUNC)
+	metadataPath := filepath.Join(h.recordingDir, "session-"+recordingUUID+".metadata.json")
+	corrupt := `{"uuid":"` + recordingUUID + `","agent":"Claude","name":"My Session"}LEFTOVER_GARBAGE`
+	if err := os.WriteFile(metadataPath, []byte(corrupt), 0644); err != nil {
+		t.Fatalf("failed to write corrupt metadata: %v", err)
+	}
+
+	recordings := loadEndedRecordings()
+
+	if len(recordings) != 1 {
+		t.Fatalf("expected 1 recording despite corrupt metadata, got %d", len(recordings))
+	}
+
+	rec := recordings[0]
+	if rec.UUID != recordingUUID {
+		t.Errorf("expected UUID %s, got %s", recordingUUID, rec.UUID)
+	}
+	// Should fall back to default agent so it shows on the homepage
+	if rec.Agent != "Claude" {
+		t.Errorf("expected Agent fallback to 'Claude', got %q", rec.Agent)
+	}
+	// EndedAt should be populated from log file mtime (not zero)
+	if rec.EndedAt.IsZero() {
+		t.Error("expected EndedAt to be populated from log mtime fallback")
+	}
+}
+
+func TestLoadEndedRecordings_MissingMetadata(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	// Create recording files with a .log but NO metadata.json at all
+	h.createRecordingFiles(recordingUUID, recordingOpts{})
+
+	recordings := loadEndedRecordings()
+
+	if len(recordings) != 1 {
+		t.Fatalf("expected 1 recording with no metadata, got %d", len(recordings))
+	}
+
+	rec := recordings[0]
+	if rec.Agent != "Claude" {
+		t.Errorf("expected Agent fallback to 'Claude', got %q", rec.Agent)
+	}
+	if rec.EndedAt.IsZero() {
+		t.Error("expected EndedAt from log mtime, got zero")
+	}
+}
+
+func TestQuarantineCorruptMetadata_RenamesBadFiles(t *testing.T) {
+	h := newTestHelper(t)
+
+	goodUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	badUUID := "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+
+	// Good metadata
+	goodMeta := `{"uuid":"` + goodUUID + `","agent":"Claude"}`
+	goodPath := filepath.Join(h.recordingDir, "session-"+goodUUID+".metadata.json")
+	os.WriteFile(goodPath, []byte(goodMeta), 0644)
+
+	// Corrupt metadata (trailing garbage from race)
+	badMeta := `{"uuid":"` + badUUID + `","agent":"Claude"}GARBAGE_TAIL`
+	badPath := filepath.Join(h.recordingDir, "session-"+badUUID+".metadata.json")
+	os.WriteFile(badPath, []byte(badMeta), 0644)
+
+	// Stale .tmp file from interrupted atomic write
+	tmpPath := filepath.Join(h.recordingDir, "session-"+goodUUID+".metadata.json.tmp")
+	os.WriteFile(tmpPath, []byte("partial"), 0644)
+
+	quarantineCorruptMetadata()
+
+	// Good metadata should remain
+	if _, err := os.Stat(goodPath); err != nil {
+		t.Error("good metadata should not be touched")
+	}
+
+	// Bad metadata should be renamed to .corrupt
+	if _, err := os.Stat(badPath); err == nil {
+		t.Error("corrupt metadata should have been renamed")
+	}
+	corruptPath := badPath + ".corrupt"
+	if _, err := os.Stat(corruptPath); err != nil {
+		t.Error("corrupt metadata should exist at .corrupt path")
+	}
+
+	// .tmp file should be removed
+	if _, err := os.Stat(tmpPath); err == nil {
+		t.Error("stale .tmp file should have been removed")
+	}
+}
+
+func TestQuarantineCorruptMetadata_CleansUpOldCorruptFiles(t *testing.T) {
+	h := newTestHelper(t)
+
+	uuid := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	// Create a .corrupt file older than recentRecordingMaxAge (14 days)
+	corruptPath := filepath.Join(h.recordingDir, "session-"+uuid+".metadata.json.corrupt")
+	os.WriteFile(corruptPath, []byte("old corrupt data"), 0644)
+	oldTime := time.Now().Add(-15 * 24 * time.Hour) // 15 days ago
+	os.Chtimes(corruptPath, oldTime, oldTime)
+
+	quarantineCorruptMetadata()
+
+	// Stale .corrupt file should be deleted
+	if _, err := os.Stat(corruptPath); err == nil {
+		t.Error("stale .corrupt file older than recentRecordingMaxAge should have been removed")
+	}
+}
+
+func TestSaveMetadata_ConcurrentWritesProduceValidJSON(t *testing.T) {
+	h := newTestHelper(t)
+
+	recordingUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+	// Create the .log file so resolveLogPath doesn't interfere
+	logPath := filepath.Join(h.recordingDir, "session-"+recordingUUID+".log")
+	os.WriteFile(logPath, []byte("test log"), 0644)
+
+	sess := &Session{
+		UUID:            "session-test",
+		RecordingUUID:   recordingUUID,
+		RecordingPrefix: "session-" + recordingUUID,
+		Metadata: &RecordingMetadata{
+			UUID:  recordingUUID,
+			Agent: "Claude",
+			Name:  "Test Session",
+		},
+		wsClients:     make(map[*SafeConn]bool),
+		wsClientSizes: make(map[*SafeConn]TermSize),
+	}
+
+	// Fire 50 concurrent saveMetadata calls, each appending a visitor
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			sess.mu.Lock()
+			sess.Metadata.Visitors = append(sess.Metadata.Visitors, Visitor{
+				JoinedAt: time.Now(),
+				IP:       fmt.Sprintf("10.0.0.%d:1234", n),
+			})
+			sess.mu.Unlock()
+			sess.saveMetadata()
+		}(i)
+	}
+	wg.Wait()
+
+	// Read the final metadata and verify it's valid JSON
+	metaPath := filepath.Join(h.recordingDir, "session-"+recordingUUID+".metadata.json")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("failed to read metadata after concurrent writes: %v", err)
+	}
+
+	var meta RecordingMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("metadata is corrupt after 50 concurrent saveMetadata calls: %v\ncontents:\n%s", err, string(data))
+	}
+
+	// Should have exactly 50 visitors (all appended, though order may vary)
+	if len(meta.Visitors) != 50 {
+		t.Errorf("expected 50 visitors, got %d", len(meta.Visitors))
+	}
+}
+
 // Phase 6: Homepage Recording Display Tests (loadEndedRecordings, loadEndedRecordingsByAgent)
 // ============================================================================
 

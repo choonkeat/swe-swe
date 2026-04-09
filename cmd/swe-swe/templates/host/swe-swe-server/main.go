@@ -428,6 +428,7 @@ type Session struct {
 	RecordingUUID   string             // UUID for recording files (separate from session UUID for restarts)
 	RecordingPrefix string             // Filename prefix: "session-{uuid}" or "session-{parent}-{child}"
 	Metadata        *RecordingMetadata // Recording metadata (saved on name change or visitor join)
+	metadataMu      sync.Mutex         // serializes saveMetadata writes (atomic temp+rename below isn't enough on its own)
 	// Parent session relationship
 	ParentUUID  string // UUID of parent session (for shell sessions opened from agent sessions)
 	PreviewPort   int // App preview target port for this session
@@ -1786,6 +1787,11 @@ func main() {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		w.Write([]byte(result))
 	})
+
+	// One-shot recovery scan: rename any unparseable metadata.json to
+	// .corrupt so they stop hiding their recordings on the homepage. Also
+	// reaps stale .tmp files left by an interrupted atomic write.
+	quarantineCorruptMetadata()
 
 	// Start session reaper and compression worker
 	go sessionReaper()
@@ -4847,6 +4853,15 @@ func ensureRecordingsDir() error {
 // Only writes if metadata exists (name was set or visitor joined)
 // When session has ended, also calculates playback dimensions from content.
 func (s *Session) saveMetadata() error {
+	// Serialize concurrent saveMetadata calls on the same session. Without this,
+	// two goroutines (e.g. simultaneous WebSocket reconnects) can race on
+	// os.WriteFile: a longer prior write followed by a shorter rewrite leaves
+	// trailing garbage from the longer write, producing valid-JSON-followed-by-
+	// junk that breaks json.Unmarshal in loadEndedRecordings and makes the
+	// recording disappear from the homepage.
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
+
 	s.mu.RLock()
 	metadata := s.Metadata
 	recPrefix := s.RecordingPrefix
@@ -4873,7 +4888,77 @@ func (s *Session) saveMetadata() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	// Atomic write: temp file + rename. Prevents readers from ever seeing a
+	// half-written or stale-tail metadata.json.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// quarantineCorruptMetadata scans the recordings directory at startup, renames
+// any *.metadata.json that fails json.Unmarshal to *.metadata.json.corrupt, and
+// removes any leftover *.metadata.json.tmp files from a prior interrupted
+// atomic write. Logged so the operator can see what was touched. Recordings
+// whose metadata is quarantined will fall through loadEndedRecordings' mtime
+// fallback path and remain visible on the homepage.
+func quarantineCorruptMetadata() {
+	entries, err := os.ReadDir(recordingsDir)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	var corrupt, tmps, stale int
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		// Clean up stale .tmp files from interrupted atomic writes
+		if strings.HasPrefix(name, "session-") && strings.HasSuffix(name, ".metadata.json.tmp") {
+			path := recordingsDir + "/" + name
+			if err := os.Remove(path); err == nil {
+				tmps++
+			}
+			continue
+		}
+		// Clean up old .corrupt files past TTL (same as recording expiry)
+		if strings.HasPrefix(name, "session-") && strings.HasSuffix(name, ".metadata.json.corrupt") {
+			path := recordingsDir + "/" + name
+			if fi, err := entry.Info(); err == nil && now.Sub(fi.ModTime()) > recentRecordingMaxAge {
+				if err := os.Remove(path); err == nil {
+					stale++
+				}
+			}
+			continue
+		}
+		if !strings.HasPrefix(name, "session-") || !strings.HasSuffix(name, ".metadata.json") {
+			continue
+		}
+		path := recordingsDir + "/" + name
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if len(data) == 0 {
+			continue // tolerate empty placeholders, loadEndedRecordings handles them
+		}
+		var probe RecordingMetadata
+		if err := json.Unmarshal(data, &probe); err == nil {
+			continue
+		}
+		dst := path + ".corrupt"
+		if err := os.Rename(path, dst); err != nil {
+			log.Printf("quarantineCorruptMetadata: failed to rename %s: %v", name, err)
+			continue
+		}
+		corrupt++
+		log.Printf("quarantineCorruptMetadata: quarantined %s -> %s", name, filepath.Base(dst))
+	}
+	if corrupt > 0 || tmps > 0 || stale > 0 {
+		log.Printf("quarantineCorruptMetadata: corrupt=%d tmp_removed=%d stale_corrupt_removed=%d", corrupt, tmps, stale)
+	}
 }
 
 // recordingPrefix returns the filename prefix for a recording.
@@ -5308,9 +5393,11 @@ func loadEndedRecordings() []RecordingInfo {
 
 		// Load metadata if exists
 		metadataPath := recordingsDir + "/session-" + ruuid + ".metadata.json"
+		metaParsed := false
 		if metaData, err := os.ReadFile(metadataPath); err == nil {
 			var meta RecordingMetadata
-			if json.Unmarshal(metaData, &meta) == nil {
+			if uerr := json.Unmarshal(metaData, &meta); uerr == nil {
+				metaParsed = true
 				info.Name = meta.Name
 				info.Agent = meta.Agent
 				info.AgentBadgeClass = agentBadgeClass(meta.Agent)
@@ -5340,13 +5427,23 @@ func loadEndedRecordings() []RecordingInfo {
 				// Prefer the cached summary if it was extracted at end-of-session.
 				// This avoids decompressing the entire .log.gz on every homepage render.
 				info.SummaryLine = meta.SummaryLine
+			} else {
+				log.Printf("loadEndedRecordings: corrupt metadata for %s: %v (falling back to mtime)", ruuid[:8], uerr)
 			}
-		} else {
-			// No metadata, use file modification time
+		}
+		if !metaParsed {
+			// No metadata file, or it failed to parse. Fall back to log file
+			// mtime so the recording still appears on the homepage instead of
+			// silently vanishing. Default the agent to "claude" so the
+			// recording lands in a visible bucket -- homepage rendering only
+			// queries availableAssistants by binary name, and an empty agent
+			// would otherwise be bucketed under "" and never shown.
 			if fileInfo, err := entry.Info(); err == nil {
 				info.EndedAt = fileInfo.ModTime()
 				info.EndedAgo = formatTimeAgo(fileInfo.ModTime())
 			}
+			info.Agent = "Claude"
+			info.AgentBadgeClass = agentBadgeClass("Claude")
 		}
 		if info.AgentBadgeClass == "" {
 			info.AgentBadgeClass = agentBadgeClass(info.Agent)
