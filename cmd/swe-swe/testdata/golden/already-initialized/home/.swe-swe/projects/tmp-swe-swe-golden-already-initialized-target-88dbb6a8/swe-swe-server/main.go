@@ -323,6 +323,7 @@ type RecordingMetadata struct {
 	PlaybackRows uint32     `json:"playback_rows,omitempty"` // Content-based rows for playback (calculated at session end)
 	WorkDir      string     `json:"work_dir,omitempty"`      // Working directory for VS Code links in playback
 	ExtraArgs    string     `json:"extra_args,omitempty"`    // Extra CLI flags appended to the agent command (for restart)
+	SummaryLine  string     `json:"summary_line,omitempty"`  // Cached one-line summary extracted from .log tail before compression (avoids per-request gzip decompression on the homepage)
 }
 
 // Visitor represents a client that joined the session
@@ -3763,8 +3764,80 @@ func compressionWorker() {
 			log.Printf("Failed to compress %s: %v", filepath.Base(logPath), err)
 			continue
 		}
+		// Cache one-line summary in metadata.json BEFORE removing the plain .log,
+		// so the homepage never needs to decompress .log.gz to render. Only do this
+		// for root recordings (no "-child-" segment) — children don't have their
+		// own metadata.json.
+		cacheRootRecordingSummary(logPath)
 		os.Remove(logPath)
 		log.Printf("Compressed recording %s", filepath.Base(logPath))
+	}
+}
+
+// cacheRootRecordingSummary extracts the tail-of-log summary from a still-uncompressed
+// root recording .log file and writes it into the sibling metadata.json under
+// "summary_line". Best-effort: any error is logged and ignored. Skips child recordings
+// (which encode the parent UUID + "-child-" + child UUID in the filename).
+func cacheRootRecordingSummary(logPath string) {
+	base := filepath.Base(logPath)
+	if !strings.HasPrefix(base, "session-") || !strings.HasSuffix(base, ".log") {
+		return
+	}
+	stem := strings.TrimSuffix(strings.TrimPrefix(base, "session-"), ".log")
+	parentUUID, childUUID, ok := parseRecordingFilename(stem)
+	if !ok || childUUID != "" {
+		return // not a root recording — children have no metadata.json of their own
+	}
+	uuidStr := parentUUID
+
+	// Read the last 8 KB of the plain .log via seek (cheap, no decompression).
+	f, err := os.Open(logPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return
+	}
+	readSize := int64(8192)
+	if fi.Size() < readSize {
+		readSize = fi.Size()
+	}
+	buf := make([]byte, readSize)
+	if _, err := f.ReadAt(buf, fi.Size()-readSize); err != nil && err != io.EOF {
+		return
+	}
+	summary := extractSummaryFromBytes(buf)
+	if summary == "" {
+		return
+	}
+
+	metadataPath := recordingsDir + "/session-" + uuidStr + ".metadata.json"
+	metaBytes, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return
+	}
+	// Round-trip through a generic map so we don't drop unknown fields written
+	// by older or newer server versions.
+	var m map[string]interface{}
+	if err := json.Unmarshal(metaBytes, &m); err != nil {
+		return
+	}
+	if existing, _ := m["summary_line"].(string); existing != "" {
+		return
+	}
+	m["summary_line"] = summary
+	out, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := metadataPath + ".tmp"
+	if err := os.WriteFile(tmp, out, 0644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, metadataPath); err != nil {
+		os.Remove(tmp)
 	}
 }
 
@@ -4876,8 +4949,22 @@ func resolveLogPath(prefix string) string {
 	return ""
 }
 
+// gzipDecompressSem bounds the number of concurrent gzip decompressions of
+// recording logs. Each in-flight reader holds a slot until Close. Without this
+// bound, N concurrent recording fetches spawn N parallel gzip decoders, which
+// can spike CPU/load. Sized to NumCPU (min 2) so we use available cores but
+// don't oversubscribe.
+var gzipDecompressSem = func() chan struct{} {
+	n := runtime.NumCPU()
+	if n < 2 {
+		n = 2
+	}
+	return make(chan struct{}, n)
+}()
+
 // openLogReader opens a log file for reading, transparently decompressing gzip.
-// Returns a ReadCloser that must be closed by the caller.
+// Returns a ReadCloser that must be closed by the caller. For gzip files, this
+// blocks until a slot in gzipDecompressSem is available.
 func openLogReader(path string) (io.ReadCloser, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -4894,8 +4981,11 @@ func openLogReader(path string) (io.ReadCloser, error) {
 	f.Seek(0, io.SeekStart)
 
 	if header[0] == 0x1f && header[1] == 0x8b {
+		// Acquire a decompression slot. Released by gzipReadCloser.Close.
+		gzipDecompressSem <- struct{}{}
 		gz, err := gzip.NewReader(f)
 		if err != nil {
+			<-gzipDecompressSem
 			f.Close()
 			return nil, err
 		}
@@ -4905,14 +4995,21 @@ func openLogReader(path string) (io.ReadCloser, error) {
 }
 
 type gzipReadCloser struct {
-	gz *gzip.Reader
-	f  *os.File
+	gz     *gzip.Reader
+	f      *os.File
+	closed bool
 }
 
 func (g *gzipReadCloser) Read(p []byte) (int, error) { return g.gz.Read(p) }
 func (g *gzipReadCloser) Close() error {
+	if g.closed {
+		return nil
+	}
+	g.closed = true
 	g.gz.Close()
-	return g.f.Close()
+	err := g.f.Close()
+	<-gzipDecompressSem
+	return err
 }
 
 // sanitizeFilename removes path components and validates the filename
@@ -5231,6 +5328,9 @@ func loadEndedRecordings() []RecordingInfo {
 					WorkDir:     meta.WorkDir,
 					ExtraArgs:   meta.ExtraArgs,
 				}
+				// Prefer the cached summary if it was extracted at end-of-session.
+				// This avoids decompressing the entire .log.gz on every homepage render.
+				info.SummaryLine = meta.SummaryLine
 			}
 		} else {
 			// No metadata, use file modification time
@@ -5269,12 +5369,20 @@ func loadEndedRecordings() []RecordingInfo {
 		}
 
 		// Extract summary from chat events (if available), fall back to agent terminal log
-		if info.HasChat {
+		if info.SummaryLine == "" && info.HasChat {
 			summaryLine, _ := getSessionSummaryFromChat(ruuid)
 			info.SummaryLine = summaryLine
 		}
 		if info.SummaryLine == "" {
-			info.SummaryLine = getSessionSummaryFromLog(ruuid)
+			// Only attempt the log-tail fallback for plain .log files; .log.gz
+			// would require full-file decompression (gzip is not seekable) and
+			// would block the homepage for minutes on a busy host. The compression
+			// worker now caches summary_line into metadata.json before gzipping,
+			// so the .log.gz path should normally never be hit here.
+			logPath := resolveLogPath("session-" + ruuid)
+			if logPath != "" && !strings.HasSuffix(logPath, ".log.gz") {
+				info.SummaryLine = getSessionSummaryFromLog(ruuid)
+			}
 		}
 
 		recordings = append(recordings, info)
