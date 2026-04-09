@@ -48,7 +48,7 @@ func main() {
 	}
 
 	// Build a set of files in the directory for quick lookup of "is the plain
-	// .log still here?" — that's our "active session" guard.
+	// .log still here?" -- that's our "active session" guard.
 	present := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -98,17 +98,33 @@ func main() {
 			skipped++
 			continue
 		}
-		if existing, _ := m["summary_line"].(string); existing != "" {
+		existing, _ := m["summary_line"].(string)
+
+		// Prefer the agent-chat events JSONL when present: it captures the
+		// actual last user/agent message, whereas the terminal tail is noisy
+		// TUI output. Fall back to any already-cached summary_line, then to
+		// decompressing the .log.gz tail.
+		var summary string
+		if chatSummary := chatSummaryForUUID(*dir, stem); chatSummary != "" {
+			if chatSummary == existing {
+				skipped++
+				continue
+			}
+			summary = chatSummary
+		} else if existing != "" {
+			// Already populated and no chat events to override with -- keep it
+			// and skip the expensive gzip decompression. Re-runs are fast.
 			skipped++
 			continue
-		}
-
-		gzPath := filepath.Join(*dir, name)
-		summary, err := tailSummaryFromGzip(gzPath)
-		if err != nil {
-			log.Printf("FAIL %s: %v", name, err)
-			failed++
-			continue
+		} else {
+			gzPath := filepath.Join(*dir, name)
+			s, err := tailSummaryFromGzip(gzPath)
+			if err != nil {
+				log.Printf("FAIL %s: %v", name, err)
+				failed++
+				continue
+			}
+			summary = s
 		}
 		if summary == "" {
 			log.Printf("EMPTY %s (no usable tail line)", name)
@@ -147,6 +163,56 @@ func main() {
 
 	fmt.Printf("\nDone in %s. processed=%d updated=%d skipped=%d failed=%d\n",
 		time.Since(start), processed, updated, skipped, failed)
+}
+
+// chatSummaryForUUID looks for an agent-chat events JSONL file
+// (session-<uuid>-*.events.jsonl) next to the recording and, if present,
+// returns a "{Who}: {text}" summary built from its last event. Mirrors the
+// server's getSessionSummaryFromChat logic. Returns "" if no events file
+// exists or the tail can't be parsed.
+func chatSummaryForUUID(dir, uuidStr string) string {
+	matches, err := filepath.Glob(filepath.Join(dir, "session-"+uuidStr+"-*.events.jsonl"))
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	path := matches[0]
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || fi.Size() == 0 {
+		return ""
+	}
+	readSize := int64(4096)
+	if fi.Size() < readSize {
+		readSize = fi.Size()
+	}
+	buf := make([]byte, readSize)
+	if _, err := f.ReadAt(buf, fi.Size()-readSize); err != nil && err != io.EOF {
+		return ""
+	}
+	lines := bytes.Split(bytes.TrimRight(buf, "\n"), []byte("\n"))
+	if len(lines) == 0 {
+		return ""
+	}
+	lastLine := lines[len(lines)-1]
+	var event struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(lastLine, &event); err != nil {
+		return ""
+	}
+	switch event.Type {
+	case "userMessage":
+		return "You: " + sanitizeSummaryText(event.Text)
+	case "draw":
+		return "Agent: [diagram]"
+	default:
+		return "Agent: " + sanitizeSummaryText(event.Text)
+	}
 }
 
 // tailSummaryFromGzip streams the gzip-compressed file, retains only the last

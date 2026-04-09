@@ -3808,10 +3808,7 @@ func cacheRootRecordingSummary(logPath string) {
 	if _, err := f.ReadAt(buf, fi.Size()-readSize); err != nil && err != io.EOF {
 		return
 	}
-	summary := extractSummaryFromBytes(buf)
-	if summary == "" {
-		return
-	}
+	terminalSummary := extractSummaryFromBytes(buf)
 
 	metadataPath := recordingsDir + "/session-" + uuidStr + ".metadata.json"
 	metaBytes, err := os.ReadFile(metadataPath)
@@ -3824,7 +3821,19 @@ func cacheRootRecordingSummary(logPath string) {
 	if err := json.Unmarshal(metaBytes, &m); err != nil {
 		return
 	}
-	if existing, _ := m["summary_line"].(string); existing != "" {
+
+	// Prefer the agent-chat events JSONL if present: it captures the actual
+	// last user/agent message, whereas the terminal tail is noisy TUI output.
+	// Fall back to any already-cached summary_line, then to the terminal tail.
+	var summary string
+	if chatSummary, _ := getSessionSummaryFromChat(uuidStr); chatSummary != "" {
+		summary = chatSummary
+	} else if existing, _ := m["summary_line"].(string); existing != "" {
+		return
+	} else {
+		summary = terminalSummary
+	}
+	if summary == "" {
 		return
 	}
 	m["summary_line"] = summary
