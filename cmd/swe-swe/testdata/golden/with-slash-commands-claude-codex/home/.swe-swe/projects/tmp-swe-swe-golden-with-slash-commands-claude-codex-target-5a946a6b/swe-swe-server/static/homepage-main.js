@@ -29,13 +29,33 @@
     }
 })();
 
+function setButtonLoading(button, loading) {
+    if (!button) return;
+    if (loading) {
+        button.classList.add('is-loading');
+        button.setAttribute('aria-busy', 'true');
+        if ('disabled' in button) { button.disabled = true; }
+    } else {
+        button.classList.remove('is-loading');
+        button.removeAttribute('aria-busy');
+        if ('disabled' in button) { button.disabled = false; }
+    }
+}
+
 function endSession(uuid, button) {
     var publicPort = parseInt(button.dataset.publicPort, 10) || 0;
     checkPublicPortAndEndSession({
         uuid: uuid,
         publicPort: publicPort,
+        onStart: function() {
+            setButtonLoading(button, true);
+        },
         onSuccess: function() {
             window.location.reload();
+        },
+        onError: function(msg) {
+            setButtonLoading(button, false);
+            alert(msg);
         }
     });
 }
@@ -140,6 +160,14 @@ document.addEventListener('DOMContentLoaded', function() {
             openNewSessionDialog('', uuid, debug);
         });
     }
+
+    // Join Session anchor: show loading spinner while navigation begins
+    document.addEventListener('click', function(e) {
+        var join = e.target.closest('.btn-join');
+        if (join && !join.classList.contains('is-loading')) {
+            setButtonLoading(join, true);
+        }
+    });
 
     // Event delegation for session and recording actions
     document.addEventListener('click', function(e) {

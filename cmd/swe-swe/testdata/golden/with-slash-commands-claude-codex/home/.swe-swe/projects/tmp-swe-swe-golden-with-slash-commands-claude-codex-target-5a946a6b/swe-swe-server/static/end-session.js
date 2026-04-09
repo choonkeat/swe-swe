@@ -14,6 +14,7 @@ function checkPublicPortAndEndSession(opts) {
     var uuid = opts.uuid;
     var onSuccess = opts.onSuccess;
     var onError = opts.onError || function(msg) { alert(msg); };
+    var onStart = opts.onStart;
 
     if (!uuid) {
         onSuccess();
@@ -24,6 +25,7 @@ function checkPublicPortAndEndSession(opts) {
         return;
     }
 
+    if (onStart) { onStart(); }
     doEndSession(uuid, null, onSuccess, onError);
 }
 

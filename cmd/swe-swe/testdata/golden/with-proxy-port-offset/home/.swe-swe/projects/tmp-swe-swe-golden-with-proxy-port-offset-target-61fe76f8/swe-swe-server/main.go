@@ -3766,7 +3766,7 @@ func compressionWorker() {
 		}
 		// Cache one-line summary in metadata.json BEFORE removing the plain .log,
 		// so the homepage never needs to decompress .log.gz to render. Only do this
-		// for root recordings (no "-child-" segment) — children don't have their
+		// for root recordings (no "-child-" segment) -- children don't have their
 		// own metadata.json.
 		cacheRootRecordingSummary(logPath)
 		os.Remove(logPath)
@@ -3786,7 +3786,7 @@ func cacheRootRecordingSummary(logPath string) {
 	stem := strings.TrimSuffix(strings.TrimPrefix(base, "session-"), ".log")
 	parentUUID, childUUID, ok := parseRecordingFilename(stem)
 	if !ok || childUUID != "" {
-		return // not a root recording — children have no metadata.json of their own
+		return // not a root recording -- children have no metadata.json of their own
 	}
 	uuidStr := parentUUID
 

@@ -2018,12 +2018,14 @@ document.getElementById('btn-download').addEventListener('click', function () {
     + '});'
     + '})(btns[i]);}'
     + '})();'
-    // IMPORTANT: keep the closing </script> literal SPLIT. When this app.js
-    // is inlined into an outer <script>...</script> block by a host page
+    // IMPORTANT: keep the closing script tag literal SPLIT (see line below).
+    // When this app.js is inlined into an outer script block by a host page
     // (e.g. swe-swe playback), the HTML parser scans for the literal byte
-    // sequence "</script" regardless of JS string context, and would
-    // prematurely terminate the outer script tag. The split survives both
-    // external-script loading and inline embedding.
+    // sequence "<" + "/" + "script" regardless of JS string or comment
+    // context, and would prematurely terminate the outer script tag. The
+    // split survives both external-script loading and inline embedding.
+    // NOTE: this comment must NOT contain the literal closing-tag bytes
+    // either, otherwise it self-defeats when inlined.
     + '</' + 'script></body></html>';
 
   var blob = new Blob([html], { type: 'text/html' });

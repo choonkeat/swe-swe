@@ -364,6 +364,40 @@
             background: rgba(239, 68, 68, 0.1);
         }
 
+        /* Loading state for action buttons (Join Session, End, etc.) */
+        .btn-join.is-loading,
+        .btn-end.is-loading {
+            position: relative;
+            pointer-events: none;
+            opacity: 0.7;
+            color: transparent !important;
+        }
+        .btn-join.is-loading svg {
+            visibility: hidden;
+        }
+        .btn-join.is-loading::after,
+        .btn-end.is-loading::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            margin-top: -8px;
+            margin-left: -8px;
+            border-radius: 50%;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            color: var(--accent-light);
+            animation: btn-spin 0.7s linear infinite;
+        }
+        .btn-end.is-loading::after {
+            color: var(--text-secondary);
+        }
+        @keyframes btn-spin {
+            to { transform: rotate(360deg); }
+        }
+
         /* Recordings section */
         .recordings-section {
             margin-bottom: 40px;
