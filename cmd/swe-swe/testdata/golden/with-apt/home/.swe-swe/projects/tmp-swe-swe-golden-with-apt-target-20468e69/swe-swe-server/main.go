@@ -961,15 +961,12 @@ func (s *Session) Close() {
 	}
 	s.wsClients = make(map[*SafeConn]bool)
 
-	// Kill the process group and close PTY
-	if s.Cmd != nil && s.Cmd.Process != nil {
-		pid := s.Cmd.Process.Pid
-		// Kill entire process group to clean up child processes
-		log.Printf("[KILL] Session.Close: sending SIGKILL to process group -%d (server pid=%d)", pid, os.Getpid())
-		syscall.Kill(-pid, syscall.SIGKILL)
-		// Wait to reap the zombie process
-		s.Cmd.Wait()
-	}
+	// Kill the full process tree (including children in different PGIDs,
+	// e.g. claude creates its own process group).  Reuse the same
+	// descendant-aware kill that endSessionByUUID uses.
+	s.mu.Unlock()
+	killSessionProcessGroup(s)
+	s.mu.Lock()
 	if s.PTY != nil {
 		s.PTY.Close()
 	}
@@ -2250,6 +2247,7 @@ func main() {
 	// Start signal monitor and heartbeat for crash forensics
 	startSignalMonitor()
 	startHeartbeat()
+	startSubreaper()
 
 	// Signal-aware shutdown: cancel serverCtx on SIGINT/SIGTERM
 	var serverCancel context.CancelFunc
@@ -6276,6 +6274,10 @@ func killSessionProcessGroup(s *Session) {
 	if s.Cmd == nil || s.Cmd.Process == nil {
 		return
 	}
+	// Already reaped (e.g. called from both endSessionByUUID and Close).
+	if s.Cmd.ProcessState != nil {
+		return
+	}
 
 	pid := s.Cmd.Process.Pid
 
@@ -6350,6 +6352,37 @@ func startSignalMonitor() {
 		}
 	}()
 	log.Printf("[SIGNAL] monitor started for pid=%d (verbose=%v)", os.Getpid(), verbose)
+}
+
+// startSubreaper marks this process as a subreaper so orphaned descendants
+// are reparented to us instead of PID 1.  A background goroutine calls
+// waitpid(-1, WNOHANG) on every SIGCHLD to reap zombie children that were
+// not tracked by any Session (e.g., processes that escaped the SID kill or
+// children of children that exited between our kill scan and their parent's
+// death).  This is a safety net -- primary cleanup is in Session.Close().
+func startSubreaper() {
+	// PR_SET_CHILD_SUBREAPER = 36
+	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, 36, 1, 0); errno != 0 {
+		log.Printf("[SUBREAPER] prctl(PR_SET_CHILD_SUBREAPER) failed: %v", errno)
+		return
+	}
+	log.Printf("[SUBREAPER] enabled for pid=%d -- orphaned children will be reparented here", os.Getpid())
+
+	sigch := make(chan os.Signal, 32)
+	signal.Notify(sigch, syscall.SIGCHLD)
+	go func() {
+		for range sigch {
+			// Reap all available zombie children (non-blocking).
+			for {
+				var ws syscall.WaitStatus
+				pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
+				if pid <= 0 || err != nil {
+					break
+				}
+				log.Printf("[SUBREAPER] reaped orphan pid=%d exit=%d signal=%v", pid, ws.ExitStatus(), ws.Signal())
+			}
+		}
+	}()
 }
 
 // startHeartbeat writes the current timestamp to /tmp/swe-swe-heartbeat every
