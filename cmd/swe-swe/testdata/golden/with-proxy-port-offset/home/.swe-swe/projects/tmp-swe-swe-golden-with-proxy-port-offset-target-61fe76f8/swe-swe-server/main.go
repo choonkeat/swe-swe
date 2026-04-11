@@ -1108,7 +1108,9 @@ func (s *Session) RestartProcess(cmdStr string) error {
 
 	// Wait on old process to reap zombie
 	if s.Cmd != nil && s.Cmd.Process != nil {
+		oldPID := s.Cmd.Process.Pid
 		s.Cmd.Wait()
+		untrackPid(oldPID)
 	}
 
 	// Close old PTY
@@ -1149,6 +1151,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
+	trackPid(cmd.Process.Pid)
 	s.Cmd = cmd
 	s.PTY = ptmx
 	s.lastActive = time.Now()
@@ -1195,12 +1198,17 @@ func (s *Session) startPTYReader() {
 				// Wait on the process to reap the zombie and get exit status
 				exitCode := 0
 				if cmd != nil {
+					ptyPID := 0
+					if cmd.Process != nil {
+						ptyPID = cmd.Process.Pid
+					}
 					if err := cmd.Wait(); err != nil {
 						// Wait returns error for non-zero exit
 						if exitErr, ok := err.(*exec.ExitError); ok {
 							exitCode = exitErr.ExitCode()
 						}
 					}
+					untrackPid(ptyPID)
 				}
 
 				// Check for pending replacement (e.g., from YOLO toggle)
@@ -3923,9 +3931,20 @@ func startSessionBrowser(sess *Session) error {
 	if err := xvfbCmd.Start(); err != nil {
 		return fmt.Errorf("failed to start Xvfb on display %s: %w", displayStr, err)
 	}
-	sess.BrowserPIDs = append(sess.BrowserPIDs, xvfbCmd.Process.Pid)
-	log.Printf("Started Xvfb on display %s (PID %d) for session %s", displayStr, xvfbCmd.Process.Pid, sess.UUID)
-	go func() { xvfbCmd.Wait() }()
+	xvfbPID := xvfbCmd.Process.Pid
+	trackPid(xvfbPID)
+	sess.BrowserPIDs = append(sess.BrowserPIDs, xvfbPID)
+	log.Printf("Started Xvfb on display %s (PID %d) for session %s", displayStr, xvfbPID, sess.UUID)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("Xvfb wait (PID %d, session %s)", xvfbPID, sess.UUID))
+		defer untrackPid(xvfbPID)
+		err := xvfbCmd.Wait()
+		if err != nil {
+			log.Printf("Xvfb exited with error (PID %d, session %s): %v", xvfbPID, sess.UUID, err)
+		} else {
+			log.Printf("Xvfb exited normally (PID %d, session %s)", xvfbPID, sess.UUID)
+		}
+	}()
 
 	// Wait briefly for Xvfb to initialize
 	time.Sleep(500 * time.Millisecond)
@@ -3958,10 +3977,13 @@ func startSessionBrowser(sess *Session) error {
 		stopSessionBrowser(sess)
 		return fmt.Errorf("failed to start Chromium on CDP port %d: %w", sess.CDPPort, err)
 	}
-	sess.BrowserPIDs = append(sess.BrowserPIDs, chromeCmd.Process.Pid)
 	chromePID := chromeCmd.Process.Pid
+	trackPid(chromePID)
+	sess.BrowserPIDs = append(sess.BrowserPIDs, chromePID)
 	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for session %s", sess.CDPPort, displayStr, chromePID, sess.UUID)
 	go func() {
+		defer recoverGoroutine(fmt.Sprintf("Chromium wait (PID %d, session %s)", chromePID, sess.UUID))
+		defer untrackPid(chromePID)
 		err := chromeCmd.Wait()
 		if err != nil {
 			log.Printf("Chromium exited with error (PID %d, session %s): %v", chromePID, sess.UUID, err)
@@ -3988,9 +4010,20 @@ func startSessionBrowser(sess *Session) error {
 		stopSessionBrowser(sess)
 		return fmt.Errorf("failed to start x11vnc on port %d: %w", x11vncInternalPort, err)
 	}
-	sess.BrowserPIDs = append(sess.BrowserPIDs, x11vncCmd.Process.Pid)
-	log.Printf("Started x11vnc on port %d, display %s (PID %d) for session %s", x11vncInternalPort, displayStr, x11vncCmd.Process.Pid, sess.UUID)
-	go func() { x11vncCmd.Wait() }()
+	x11vncPID := x11vncCmd.Process.Pid
+	trackPid(x11vncPID)
+	sess.BrowserPIDs = append(sess.BrowserPIDs, x11vncPID)
+	log.Printf("Started x11vnc on port %d, display %s (PID %d) for session %s", x11vncInternalPort, displayStr, x11vncPID, sess.UUID)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("x11vnc wait (PID %d, session %s)", x11vncPID, sess.UUID))
+		defer untrackPid(x11vncPID)
+		err := x11vncCmd.Wait()
+		if err != nil {
+			log.Printf("x11vnc exited with error (PID %d, session %s): %v", x11vncPID, sess.UUID, err)
+		} else {
+			log.Printf("x11vnc exited normally (PID %d, session %s)", x11vncPID, sess.UUID)
+		}
+	}()
 
 	// 4. Start noVNC (websockify) proxy on the session's VNC port
 	// Bridges WebSocket (VNCPort) to raw VNC (x11vncInternalPort)
@@ -4003,9 +4036,20 @@ func startSessionBrowser(sess *Session) error {
 		stopSessionBrowser(sess)
 		return fmt.Errorf("failed to start noVNC proxy on port %d: %w", sess.VNCPort, err)
 	}
-	sess.BrowserPIDs = append(sess.BrowserPIDs, noVNCCmd.Process.Pid)
-	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCCmd.Process.Pid, sess.UUID)
-	go func() { noVNCCmd.Wait() }()
+	noVNCPID := noVNCCmd.Process.Pid
+	trackPid(noVNCPID)
+	sess.BrowserPIDs = append(sess.BrowserPIDs, noVNCPID)
+	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCPID, sess.UUID)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("noVNC wait (PID %d, session %s)", noVNCPID, sess.UUID))
+		defer untrackPid(noVNCPID)
+		err := noVNCCmd.Wait()
+		if err != nil {
+			log.Printf("noVNC exited with error (PID %d, session %s): %v", noVNCPID, sess.UUID, err)
+		} else {
+			log.Printf("noVNC exited normally (PID %d, session %s)", noVNCPID, sess.UUID)
+		}
+	}()
 
 	sess.BrowserStarted = true
 	return nil
@@ -4270,6 +4314,8 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		}
 		return nil, false, err
 	}
+
+	trackPid(cmd.Process.Pid)
 
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
@@ -6331,6 +6377,7 @@ func killSessionProcessGroup(s *Session) {
 		}
 		s.Cmd.Wait()
 	}
+	untrackPid(pid)
 
 	// Kill any descendant processes that escaped the process group.
 	// These may be in a different PGID (e.g., detached MCP servers)
@@ -6377,12 +6424,12 @@ func startSignalMonitor() {
 }
 
 // startSubreaper marks this process as a subreaper so orphaned descendants
-// are reparented to us instead of PID 1.  Reaping is intentionally left to
-// the Go runtime / per-Session cmd.Wait() callers -- a wildcard
-// waitpid(-1) handler here would race with every cmd.Wait() in the server
-// (PTY reader, killSessionProcessGroup, browser supervisors), causing
-// cmd.Wait() to return ECHILD with ProcessState unset.  Untracked orphans
-// will be picked up by the next descendant scan in killSessionProcessGroup.
+// are reparented to us instead of PID 1, then starts the orphan reaper goroutine
+// (see reaper.go) to keep zombies from accumulating.  The reaper polls /proc
+// instead of using SIGCHLD and skips pids in trackedPids, so it cannot race
+// with the per-Session cmd.Wait() callers (PTY reader, killSessionProcessGroup,
+// browser supervisors) -- those callers must call trackPid right after
+// cmd.Start() and untrackPid right after cmd.Wait() returns.
 func startSubreaper() {
 	// PR_SET_CHILD_SUBREAPER = 36
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, 36, 1, 0); errno != 0 {
@@ -6390,6 +6437,7 @@ func startSubreaper() {
 		return
 	}
 	log.Printf("[SUBREAPER] enabled for pid=%d -- orphaned children will be reparented here", os.Getpid())
+	startOrphanReaper()
 }
 
 // startHeartbeat writes the current timestamp to /tmp/swe-swe-heartbeat every
