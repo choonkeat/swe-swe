@@ -202,7 +202,7 @@ func TestGenerateContainerScript(t *testing.T) {
 	scriptFile := filepath.Join(tmpDir, "make")
 
 	// Generate script
-	err = generateContainerScript(scriptFile, "make")
+	err = generateContainerScript(scriptFile, "make", defaultContainerProxyDirProject)
 	if err != nil {
 		t.Fatalf("generateContainerScript failed: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestGenerateContainerScript_Content(t *testing.T) {
 	scriptFile := filepath.Join(tmpDir, "echo")
 
 	// Generate script
-	err = generateContainerScript(scriptFile, "echo")
+	err = generateContainerScript(scriptFile, "echo", defaultContainerProxyDirProject)
 	if err != nil {
 		t.Fatalf("generateContainerScript failed: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestGenerateContainerScript_Cleanup(t *testing.T) {
 	scriptFile := filepath.Join(tmpDir, "make")
 
 	// Generate script
-	err = generateContainerScript(scriptFile, "make")
+	err = generateContainerScript(scriptFile, "make", defaultContainerProxyDirProject)
 	if err != nil {
 		t.Fatalf("generateContainerScript failed: %v", err)
 	}
