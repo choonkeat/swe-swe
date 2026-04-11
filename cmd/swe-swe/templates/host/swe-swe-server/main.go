@@ -2267,14 +2267,28 @@ func main() {
 		defer recoverGoroutine("shutdown handler")
 		<-serverCtx.Done()
 		log.Println("Shutting down server...")
-		// Close all sessions (kills processes)
+		// Close all sessions in parallel.  Each Session.Close routes through
+		// killSessionProcessGroup which has a SIGTERM grace period of up to
+		// 3 seconds; closing serially under sessionsMu would gate every
+		// session on the previous one and turn shutdown into N*3 seconds.
 		sessionsMu.Lock()
+		toClose := make([]*Session, 0, len(sessions))
 		for uuid, sess := range sessions {
 			log.Printf("Closing session %s on shutdown", uuid)
-			sess.Close()
+			toClose = append(toClose, sess)
 			delete(sessions, uuid)
 		}
 		sessionsMu.Unlock()
+		var closeWG sync.WaitGroup
+		for _, sess := range toClose {
+			closeWG.Add(1)
+			go func(s *Session) {
+				defer closeWG.Done()
+				defer recoverGoroutine(fmt.Sprintf("shutdown close session %s", s.UUID))
+				s.Close()
+			}(sess)
+		}
+		closeWG.Wait()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)
@@ -3513,16 +3527,24 @@ func sessionReaper() {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		// Two-phase: collect exited sessions under the lock, then call
+		// Close() outside it.  killSessionProcessGroup can block for up
+		// to 3 seconds (SIGTERM grace), and holding sessionsMu that long
+		// would stall every session list/create request.
 		sessionsMu.Lock()
+		var toReap []*Session
 		for uuid, sess := range sessions {
 			// Only clean up sessions where the process has exited
 			if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
 				log.Printf("Session cleaned up (process exited): %s", uuid)
-				sess.Close()
+				toReap = append(toReap, sess)
 				delete(sessions, uuid)
 			}
 		}
 		sessionsMu.Unlock()
+		for _, s := range toReap {
+			s.Close()
+		}
 
 		// Clean up old recent recordings
 		cleanupRecentRecordings()
@@ -6355,11 +6377,12 @@ func startSignalMonitor() {
 }
 
 // startSubreaper marks this process as a subreaper so orphaned descendants
-// are reparented to us instead of PID 1.  A background goroutine calls
-// waitpid(-1, WNOHANG) on every SIGCHLD to reap zombie children that were
-// not tracked by any Session (e.g., processes that escaped the SID kill or
-// children of children that exited between our kill scan and their parent's
-// death).  This is a safety net -- primary cleanup is in Session.Close().
+// are reparented to us instead of PID 1.  Reaping is intentionally left to
+// the Go runtime / per-Session cmd.Wait() callers -- a wildcard
+// waitpid(-1) handler here would race with every cmd.Wait() in the server
+// (PTY reader, killSessionProcessGroup, browser supervisors), causing
+// cmd.Wait() to return ECHILD with ProcessState unset.  Untracked orphans
+// will be picked up by the next descendant scan in killSessionProcessGroup.
 func startSubreaper() {
 	// PR_SET_CHILD_SUBREAPER = 36
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, 36, 1, 0); errno != 0 {
@@ -6367,22 +6390,6 @@ func startSubreaper() {
 		return
 	}
 	log.Printf("[SUBREAPER] enabled for pid=%d -- orphaned children will be reparented here", os.Getpid())
-
-	sigch := make(chan os.Signal, 32)
-	signal.Notify(sigch, syscall.SIGCHLD)
-	go func() {
-		for range sigch {
-			// Reap all available zombie children (non-blocking).
-			for {
-				var ws syscall.WaitStatus
-				pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
-				if pid <= 0 || err != nil {
-					break
-				}
-				log.Printf("[SUBREAPER] reaped orphan pid=%d exit=%d signal=%v", pid, ws.ExitStatus(), ws.Signal())
-			}
-		}
-	}()
 }
 
 // startHeartbeat writes the current timestamp to /tmp/swe-swe-heartbeat every
