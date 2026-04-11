@@ -72,21 +72,28 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect commands from system-level and project-level directories
+	// Collect commands from project-level and system-level directories.
+	// Project-level commands come FIRST so they appear ahead of system
+	// commands in the unranked (empty-query) order. For non-empty queries
+	// sortAutocomplete reorders by match quality and this build order is
+	// only a stable-sort tiebreaker, but for the empty-query case (and any
+	// caller that displays results without re-ranking, e.g. the client-side
+	// cache-extension path in agent-chat's app.js) this gives project-
+	// specific commands the prominence users expect.
 	type sourced struct {
 		item autocompleteItem
 		dir  string
 	}
 	var all []sourced
-	if systemDir != "" {
-		for _, item := range discoverSlashCommands(systemDir, ext) {
-			all = append(all, sourced{item, systemDir})
-		}
-	}
 	projectDir := projectCommandDir(sess.Assistant, sess.WorkDir)
 	if projectDir != "" && projectDir != systemDir {
 		for _, item := range discoverSlashCommands(projectDir, ext) {
 			all = append(all, sourced{item, projectDir})
+		}
+	}
+	if systemDir != "" {
+		for _, item := range discoverSlashCommands(systemDir, ext) {
+			all = append(all, sourced{item, systemDir})
 		}
 	}
 
@@ -116,10 +123,8 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	if req.Query != "" {
-		items = filterAutocomplete(items, req.Query)
-		sortAutocomplete(items, req.Query)
-	}
+	items = filterAutocomplete(items, req.Query)
+	sortAutocomplete(items, req.Query)
 	if items == nil {
 		items = []autocompleteItem{}
 	}
