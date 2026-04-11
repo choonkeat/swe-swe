@@ -194,10 +194,14 @@ RUN if ! getent group {{GID}} > /dev/null; then groupadd -K GID_MIN=20 -g {{GID}
 # Minimal shell prompt: just current directory basename + $
 RUN echo "PS1='\\W\\$ '" >> /etc/bash.bashrc
 
-# Prepend .swe-swe/bin to PATH so shims (xdg-open, etc.) override system commands.
+# Prepend proxy + bin dirs to PATH.
+# - /workspace/.swe-swe/proxy: project-tier `swe-swe proxy <cmd>` scripts
+#   (host writes them; container sees them via the /workspace bind mount).
+# - /home/app/.swe-swe/bin: stack shims (xdg-open, goose wrapper, etc.).
+# Project tier is listed first so a project-defined proxy can override a shim.
 # Uses /etc/profile.d/ so login shells (terminal, codex) pick it up
 # after /etc/profile resets PATH.
-RUN echo 'export PATH="/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
+RUN echo 'export PATH="/workspace/.swe-swe/proxy:/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
 
 # {{IF NO_DOCKER}}
 # Run as non-root user (entrypoint handles setup without privilege escalation)
