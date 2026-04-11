@@ -44,6 +44,48 @@ func TestIntegration_BasicFlow(t *testing.T) {
 	}
 }
 
+// TestIntegration_GlobalFlag tests the --global tier end-to-end. The daemon
+// is launched with HOME pointed at a temp dir, so it writes its script and
+// proxy files to <tmpDir>/.swe-swe/proxy and we can drive a normal request
+// through them just like the project-tier flow.
+func TestIntegration_GlobalFlag(t *testing.T) {
+	skipIfNotLinux(t)
+	helper := newProxyTestHelperGlobal(t, "echo")
+	defer helper.cleanup()
+
+	helper.startProxy()
+
+	// The script should have been generated at the tmpDir-rooted "global"
+	// proxy dir (mirroring $HOME/.swe-swe/proxy/echo).
+	if _, err := os.Stat(helper.scriptPath); err != nil {
+		t.Fatalf("expected --global script at %s: %v", helper.scriptPath, err)
+	}
+
+	// Verify the script bakes in the absolute global PROXY_DIR default.
+	// Project-tier scripts default to ".swe-swe/proxy" (CWD-relative);
+	// global-tier scripts must default to /home/app/.swe-swe/proxy because
+	// they may be invoked from any CWD inside the container.
+	content, err := os.ReadFile(helper.scriptPath)
+	if err != nil {
+		t.Fatalf("failed to read script: %v", err)
+	}
+	if !strings.Contains(string(content), `PROXY_DIR="${PROXY_DIR:-/home/app/.swe-swe/proxy}"`) {
+		t.Errorf("--global script missing absolute default PROXY_DIR; got:\n%s", content)
+	}
+
+	// End-to-end: submit a request and verify the response round-trips.
+	stdout, stderr, exitCode := helper.runContainerScript("hello", "global")
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", exitCode)
+	}
+	if got := strings.TrimSpace(stdout); got != "hello global" {
+		t.Errorf("expected stdout 'hello global', got %q", got)
+	}
+	if stderr != "" {
+		t.Errorf("expected empty stderr, got %q", stderr)
+	}
+}
+
 // TestIntegration_ExitCodePropagation tests that non-zero exit codes are passed through.
 func TestIntegration_ExitCodePropagation(t *testing.T) {
 	skipIfNotLinux(t)
@@ -329,6 +371,10 @@ type proxyTestHelper struct {
 	proxyDir   string
 	scriptPath string
 	proxyCmd   *exec.Cmd
+	// global, when true, runs `swe-swe proxy --global <command>` with HOME
+	// pointed at tmpDir so the daemon writes to <tmpDir>/.swe-swe/proxy
+	// without depending on the test process's CWD.
+	global bool
 }
 
 func newProxyTestHelper(t *testing.T, command string) *proxyTestHelper {
@@ -352,6 +398,17 @@ func newProxyTestHelper(t *testing.T, command string) *proxyTestHelper {
 		proxyDir:   proxyDir,
 		scriptPath: filepath.Join(proxyDir, command),
 	}
+}
+
+// newProxyTestHelperGlobal returns a helper that exercises the --global tier.
+// HOME is overridden to tmpDir so the daemon's $HOME/.swe-swe/proxy resolves
+// to <tmpDir>/.swe-swe/proxy, which lets us reuse the same scriptPath layout
+// as the project tier helper without polluting the developer's real home.
+func newProxyTestHelperGlobal(t *testing.T, command string) *proxyTestHelper {
+	t.Helper()
+	h := newProxyTestHelper(t, command)
+	h.global = true
+	return h
 }
 
 func (h *proxyTestHelper) cleanup() {
@@ -394,8 +451,26 @@ func (h *proxyTestHelper) startProxy() {
 		h.t.Skip("swe-swe binary not found, run 'make build' first")
 	}
 
-	h.proxyCmd = exec.Command(binaryPath, "proxy", h.command)
+	args := []string{"proxy"}
+	if h.global {
+		args = append(args, "--global")
+	}
+	args = append(args, h.command)
+	h.proxyCmd = exec.Command(binaryPath, args...)
 	h.proxyCmd.Dir = h.tmpDir
+	if h.global {
+		// Override HOME so the daemon writes to <tmpDir>/.swe-swe/proxy.
+		// We rebuild Env from scratch (rather than appending) so a stale HOME
+		// from os.Environ() can't shadow our override on linux.
+		env := os.Environ()
+		filtered := env[:0]
+		for _, kv := range env {
+			if !strings.HasPrefix(kv, "HOME=") {
+				filtered = append(filtered, kv)
+			}
+		}
+		h.proxyCmd.Env = append(filtered, "HOME="+h.tmpDir)
+	}
 	h.proxyCmd.Stdout = os.Stdout
 	h.proxyCmd.Stderr = os.Stderr
 

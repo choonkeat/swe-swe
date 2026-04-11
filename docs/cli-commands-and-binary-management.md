@@ -182,14 +182,23 @@ swe-swe list
 # Removed 1 stale project(s)
 ```
 
-#### `swe-swe proxy <command>`
+#### `swe-swe proxy [--global] <command>`
 
 **Purpose:** Create a file-based proxy that allows containers to execute host commands with real-time stdout/stderr streaming.
 
+**Tiers:**
+
+| Flag | Daemon writes to | Container sees at | Scope |
+|------|------------------|-------------------|-------|
+| (none) — project tier | `$PWD/.swe-swe/proxy/<command>` | `/workspace/.swe-swe/proxy/<command>` | Per-project; lives in the repo, can be team-shared via git |
+| `--global` — global tier | `$HOME/.swe-swe/proxy/<command>` | `/home/app/.swe-swe/proxy/<command>` | Per-host; visible across every project's container |
+
+The container's PATH is `/workspace/.swe-swe/proxy:/home/app/.swe-swe/proxy:/home/app/.swe-swe/bin:$PATH`, so a project-tier proxy overrides a global-tier one of the same name, which in turn overrides the stack shims.
+
 **What it does:**
-1. Creates `.swe-swe/proxy/` directory if needed
+1. Creates the proxy directory (project tier or `$HOME/.swe-swe/proxy`) if needed
 2. Checks for existing proxy (via PID file) to prevent duplicates
-3. Generates a container script at `.swe-swe/proxy/<command>`
+3. Generates a container script at `<proxy-dir>/<command>` with the matching default `PROXY_DIR` baked in
 4. Watches for `.req` files using fsnotify
 5. Executes commands and streams output to `.stdout`/`.stderr` files
 6. Writes `.exit` file to signal completion
@@ -209,30 +218,36 @@ swe-swe list
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PROXY_TIMEOUT` | 300 | Timeout in seconds for container script |
-| `PROXY_DIR` | `.swe-swe/proxy` | Override proxy directory path |
+| `PROXY_DIR` | `.swe-swe/proxy` (project) or `/home/app/.swe-swe/proxy` (global) | Override proxy directory path inside the container script |
 
 **Examples:**
 ```bash
-# Start proxy for make command
+# Project-tier: start a proxy for 'make' from inside a project dir
+cd /repos/myapp
 swe-swe proxy make
-# [proxy] Listening for 'make' commands... (Ctrl+C to stop)
+# In the container, just type:
+make build TARGET=hello
 
-# In container: run make with arguments
-.swe-swe/proxy/make build TARGET=hello
+# Global-tier: start a proxy for 'gh' visible to every project's container
+swe-swe proxy --global gh
+# In any project's container:
+gh pr list
 
 # Multiple proxies (separate terminals)
-swe-swe proxy make
-swe-swe proxy docker
-swe-swe proxy npm
+swe-swe proxy make            # project-tier
+swe-swe proxy --global gh     # global-tier
+swe-swe proxy --global docker # global-tier
 ```
 
 **When to use:**
 - Commands that must run on the host (e.g., Docker, make with host-specific config)
 - Commands that need access to host resources not available in container
 - Build systems that depend on host environment
+- `--global` for tools you want available in *every* project (`gh`, `docker`, ...) without rerunning the daemon per project
 
 **Requirements:**
 - Container needs `inotify-tools` for efficient file watching (falls back to polling)
+- For `--global`: the stack mounts `${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy` automatically; the daemon `mkdir`s the host dir on first run.
 
 ### Docker Compose Pass-through Commands
 
