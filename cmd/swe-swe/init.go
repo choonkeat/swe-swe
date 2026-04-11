@@ -1111,6 +1111,8 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
       - %s:/repos
       - ./home:/home/app%s%s
+      # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects)
+      - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
       - type: tmpfs
         target: /workspace/.swe-swe/uploads
         tmpfs:

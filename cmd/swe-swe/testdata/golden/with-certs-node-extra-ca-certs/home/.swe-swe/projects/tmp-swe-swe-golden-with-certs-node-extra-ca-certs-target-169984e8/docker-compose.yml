@@ -17,6 +17,8 @@ services:
       - ${WORKSPACE_DIR:-.}/.swe-swe/repos:/repos
       - ./home:/home/app
       - ./certs:/swe-swe/certs:ro
+      # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects)
+      - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
       - type: tmpfs
         target: /workspace/.swe-swe/uploads
         tmpfs:

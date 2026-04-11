@@ -139,6 +139,10 @@ services:
       - {{REPOS_DIR}}:/repos
       # Mount persistent home for auth/config storage
       - ./home:/home/app
+      # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects).
+      # Sub-mount layered on top of ./home:/home/app so the host's $HOME/.swe-swe/proxy
+      # is visible inside the container regardless of which project the daemon ran from.
+      - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
 # {{IF SELFSIGN}}

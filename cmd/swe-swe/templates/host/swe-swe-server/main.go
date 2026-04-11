@@ -509,7 +509,7 @@ func buildSessionEnv(p SessionEnvParams) []string {
 		fmt.Sprintf("BROWSER_CDP_PORT=%d", p.CDPPort),
 		fmt.Sprintf("BROWSER_VNC_PORT=%d", p.VNCPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
-		"PATH=/workspace/.swe-swe/proxy:/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
+		"PATH=/workspace/.swe-swe/proxy:/home/app/.swe-swe/proxy:/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
 	)
 	// Disable agent chat sidecar for non-chat sessions
 	if p.SessionMode != "chat" {
