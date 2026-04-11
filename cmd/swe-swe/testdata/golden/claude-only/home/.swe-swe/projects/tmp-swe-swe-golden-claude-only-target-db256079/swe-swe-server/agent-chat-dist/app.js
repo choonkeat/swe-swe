@@ -941,16 +941,85 @@ function acIsSubsequence(text, query) {
   return qi === query.length;
 }
 
+// Mirrors server-side fuzzyMetrics in autocomplete.go. Returns
+// {ok, longestRun, span} for a greedy left-to-right subsequence match
+// of `query` in `s`. Both inputs assumed already lowercased.
+function acFuzzyMetrics(s, query) {
+  var qi = 0, first = -1, prevPos = -2, curRun = 0, longestRun = 0;
+  for (var i = 0; i < s.length && qi < query.length; i++) {
+    if (s.charCodeAt(i) === query.charCodeAt(qi)) {
+      if (first < 0) first = i;
+      curRun = (i === prevPos + 1) ? curRun + 1 : 1;
+      if (curRun > longestRun) longestRun = curRun;
+      prevPos = i;
+      qi++;
+    }
+  }
+  if (qi === query.length) {
+    return { ok: true, longestRun: longestRun, span: prevPos - first + 1 };
+  }
+  return { ok: false, longestRun: 0, span: 0 };
+}
+
+// Mirrors server-side sortAutocomplete in autocomplete.go. Stable
+// in-place sort by (tier desc, longestRun desc, span asc, length asc).
+// Tiers:
+//   5  value equals query
+//   4  value has query as a prefix
+//   3  value contains query as a contiguous substring
+//   2  value fuzzy-matches (non-contiguous)
+//   1  hint contains query as a contiguous substring
+//   0  hint fuzzy-matches only
+function acSortByQuery(items, query) {
+  if (items.length < 2 || !query) return;
+  var q = query.toLowerCase();
+  var qLen = q.length;
+  function score(it) {
+    var v = (typeof it === 'string') ? it : (it.v || '');
+    var h = (typeof it === 'string') ? '' : (it.h || '');
+    var lv = v.toLowerCase();
+    var length = v.length;
+    if (lv === q)              return [5, qLen, qLen, length];
+    if (lv.indexOf(q) === 0)   return [4, qLen, qLen, length];
+    if (lv.indexOf(q) >= 0)    return [3, qLen, qLen, length];
+    var mv = acFuzzyMetrics(lv, q);
+    if (mv.ok)                 return [2, mv.longestRun, mv.span, length];
+    if (h === '')              return [0, 0, 0, length];
+    var lh = h.toLowerCase();
+    if (lh.indexOf(q) >= 0)    return [1, qLen, qLen, length];
+    var mh = acFuzzyMetrics(lh, q);
+    if (mh.ok)                 return [0, mh.longestRun, mh.span, length];
+    return [0, 0, 0, length];
+  }
+  // Decorate-sort-undecorate so score() runs O(n) not O(n log n).
+  var decorated = items.map(function(it, i) { return { it: it, s: score(it), i: i }; });
+  decorated.sort(function(a, b) {
+    if (a.s[0] !== b.s[0]) return b.s[0] - a.s[0]; // tier desc
+    if (a.s[1] !== b.s[1]) return b.s[1] - a.s[1]; // longestRun desc
+    if (a.s[2] !== b.s[2]) return a.s[2] - b.s[2]; // span asc
+    if (a.s[3] !== b.s[3]) return a.s[3] - b.s[3]; // length asc
+    return a.i - b.i;                              // stable
+  });
+  for (var i = 0; i < decorated.length; i++) items[i] = decorated[i].it;
+}
+
 function acFetch(trigger, query) {
   // Check cache: if query extends the cached query, filter client-side.
-  // Skip cache if the cached results were empty or if the server indicated
-  // there are more results beyond the returned set (has_more). In large
-  // directories the server truncates results, so re-querying with a more
-  // specific query may yield better matches.
-  if (acCache && acCache.trigger === trigger && acCache.results.length > 0 && !acCache.hasMore && query.indexOf(acCache.query) === 0) {
+  // Skip cache if the cached results were empty, if the server indicated
+  // there are more results beyond the returned set (has_more), or if the
+  // cached query is empty. An empty-query cache is returned in
+  // provider/discovery order (server-side sortAutocomplete only runs for
+  // non-empty queries), so filtering it client-side would preserve that
+  // unranked order. Forcing a real fetch on the first keystroke after the
+  // trigger seeds the cache with a properly-ranked result set.
+  if (acCache && acCache.query !== '' && acCache.trigger === trigger && acCache.results.length > 0 && !acCache.hasMore && query.indexOf(acCache.query) === 0) {
     var filtered = acCache.results.filter(function(opt) {
       return acFuzzyMatch(opt, query);
     });
+    // Re-rank for the extended query. Even though the cache was seeded
+    // in ranked order for acCache.query, that order was computed against
+    // a shorter query — extending it can change tier and tiebreakers.
+    acSortByQuery(filtered, query);
     if (acTriggerPos >= 0) {
       acShow(filtered, query);
     }
@@ -1008,8 +1077,10 @@ chatInput.addEventListener('input', function () {
   acTriggerChar = trigger.char;
 
   // No debounce needed for cache hits (client-side filtering is instant).
+  // Must mirror the guard in acFetch — specifically, an empty cached query
+  // is not a cache hit, because the empty-query response is unranked.
   var triggerCh = trigger.char;
-  if (acCache && acCache.trigger === triggerCh && acCache.results.length > 0 && !acCache.hasMore && trigger.query.indexOf(acCache.query) === 0) {
+  if (acCache && acCache.query !== '' && acCache.trigger === triggerCh && acCache.results.length > 0 && !acCache.hasMore && trigger.query.indexOf(acCache.query) === 0) {
     acFetch(triggerCh, trigger.query);
     return;
   }
