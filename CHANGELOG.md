@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.21.1 - copyDir Skips Sockets
+
+### Bug Fixes
+
+- **`--copy-home-paths` init crash**: `copyDir` no longer aborts with `"operation not supported on socket"` when it encounters Unix domain sockets (e.g. `~/.ssh/agent/*.agent.*` from macOS SSH agents). Sockets, FIFOs, and device nodes are now skipped with a warning; symlinks are preserved as symlinks instead of dereferenced
+
 ## v2.21.0 - Global Proxy, Zombie Fix & Workspace Cleanup
 
 ### Features

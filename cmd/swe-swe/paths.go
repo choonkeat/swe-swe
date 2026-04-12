@@ -96,14 +96,37 @@ func copyDir(src, dst string) error {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
 
-		if entry.IsDir() {
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case info.IsDir():
 			if err := copyDir(srcPath, dstPath); err != nil {
 				return err
 			}
-		} else {
+		case info.Mode().IsRegular():
 			if err := copyFile(srcPath, dstPath); err != nil {
 				return err
 			}
+		case info.Mode()&os.ModeSymlink != 0:
+			// Recreate the symlink as-is. Targets that don't exist in the
+			// container are harmless broken symlinks; preserving them is
+			// usually what the user wants (e.g. .ssh/config -> ../dotfiles/...).
+			target, err := os.Readlink(srcPath)
+			if err != nil {
+				fmt.Printf("Warning: cannot read symlink %s: %v, skipping\n", srcPath, err)
+				continue
+			}
+			if err := os.Symlink(target, dstPath); err != nil {
+				fmt.Printf("Warning: cannot create symlink %s -> %s: %v, skipping\n", dstPath, target, err)
+			}
+		default:
+			// Skip sockets, FIFOs, device nodes, etc. They cannot be copied
+			// as regular files and are almost never what the user wants
+			// (e.g. ~/.ssh/agent/*.agent.* SSH agent sockets).
+			fmt.Printf("Skipping non-regular file: %s (mode=%v)\n", srcPath, info.Mode())
 		}
 	}
 
