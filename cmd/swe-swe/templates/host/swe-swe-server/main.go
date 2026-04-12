@@ -521,9 +521,9 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	} else {
 		env = append(env, "COLORFGBG=15;0") // light-on-dark
 	}
-	// Append user-defined vars from swe-swe/env (last so they take precedence)
+	// Append user-defined vars from .swe-swe/env (last so they take precedence)
 	if p.WorkDir != "" {
-		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, "swe-swe", "env"))...)
+		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, ".swe-swe", "env"))...)
 	}
 	return env
 }
@@ -2475,6 +2475,25 @@ func setupSweSweFiles(destDir string) error {
 		}
 	}
 
+	// One-shot migration: swe-swe/env -> .swe-swe/env. Earlier versions of
+	// swe-swe stored per-workspace env vars in swe-swe/env (which violated the
+	// "swe-swe/ is for @-mentionable agent commands only" convention). The new
+	// home is .swe-swe/env. If only the old path exists, rename it in place so
+	// existing workspaces self-heal on the next session prepare.
+	oldEnvPath := filepath.Join(destDir, "swe-swe", "env")
+	newEnvPath := filepath.Join(destDir, ".swe-swe", "env")
+	if _, err := os.Stat(newEnvPath); os.IsNotExist(err) {
+		if _, err := os.Stat(oldEnvPath); err == nil {
+			if mkErr := os.MkdirAll(filepath.Dir(newEnvPath), 0755); mkErr == nil {
+				if rnErr := os.Rename(oldEnvPath, newEnvPath); rnErr == nil {
+					log.Printf("Migrated env file: %s -> %s", oldEnvPath, newEnvPath)
+				} else {
+					log.Printf("Warning: failed to migrate %s -> %s: %v", oldEnvPath, newEnvPath, rnErr)
+				}
+			}
+		}
+	}
+
 	return fs.WalkDir(containerTemplatesFS, "container-templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -3175,8 +3194,8 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 		"isWorkspace": isWorkspace,
 	}
 
-	// Check if swe-swe/env exists
-	if _, err := os.Stat(filepath.Join(workDir, "swe-swe", "env")); err == nil {
+	// Check if .swe-swe/env exists
+	if _, err := os.Stat(filepath.Join(workDir, ".swe-swe", "env")); err == nil {
 		response["hasEnvFile"] = true
 	}
 
@@ -3274,7 +3293,7 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		"path":        repoPath,
 		"isWorkspace": false,
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, "swe-swe", "env")); err == nil {
+	if _, err := os.Stat(filepath.Join(repoPath, ".swe-swe", "env")); err == nil {
 		resp["hasEnvFile"] = true
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -3362,7 +3381,7 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		"isWorkspace": false,
 		"isNew":       true,
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, "swe-swe", "env")); err == nil {
+	if _, err := os.Stat(filepath.Join(repoPath, ".swe-swe", "env")); err == nil {
 		resp["hasEnvFile"] = true
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -36,11 +36,11 @@ Help the user configure their development environment conversationally.
    - See `.swe-swe/docs/browser-automation.md` for MCP browser details
 
 5. **Custom environment variables**
-   - Check if `swe-swe/env` already exists
+   - Check if `.swe-swe/env` already exists
    - If yes: show current contents, ask if user wants to modify
    - If no: ask "Do you need any custom environment variables for your sessions?"
    - Show example: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
-   - If yes: collect KEY=value pairs (one per line), write to `swe-swe/env`
+   - If yes: collect KEY=value pairs (one per line), write to `.swe-swe/env`
    - If no: skip
 
 6. **Update .swe-swe/docs/AGENTS.md**
@@ -49,5 +49,3 @@ Help the user configure their development environment conversationally.
 ## Style
 
 Be conversational. Ask one thing at a time. Skip what's already configured.
-
-Note: If your agent doesn't support slash commands, use `@swe-swe/setup` instead.

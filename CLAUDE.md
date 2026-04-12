@@ -34,7 +34,7 @@ Use a two-commit TDD approach:
 Inside the container's `/workspace/`:
 
 - **`swe-swe/`** — Agent commands only. All files here are `@`-mentionable.
-- **`.swe-swe/`** — Internal. Only subdirectories (no loose files): `docs/`, `uploads/`, etc.
+- **`.swe-swe/`** — Internal. Subdirectories (`docs/`, `uploads/`, etc.) plus one explicit loose file: **`.swe-swe/env`** (per-workspace env vars sourced by swe-swe-server and `/etc/profile.d/zz-swe-swe-env.sh`). Do not add other loose files here.
 
 ## Browser / Manual testing
 

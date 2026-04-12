@@ -360,9 +360,9 @@
 
             // Show env file hint
             if (data.hasEnvFile) {
-                envHint.innerHTML = 'Loading environment from <code>swe-swe/env</code>';
+                envHint.innerHTML = 'Loading environment from <code>.swe-swe/env</code>';
             } else {
-                envHint.innerHTML = 'Tip: set custom env vars in <code>swe-swe/env</code>';
+                envHint.innerHTML = 'Tip: set custom env vars in <code>.swe-swe/env</code>';
             }
             envHint.style.display = 'block';
 
