@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## v2.21.0 - Global Proxy, Zombie Fix & Workspace Cleanup
+
+### Features
+
+- **Global-tier proxy (`swe-swe proxy --global`)**: Proxy commands are now available in a global tier (`$HOME/.swe-swe/proxy/`) visible across every project's container, in addition to the existing per-project tier. Project-tier overrides global-tier by PATH order
+- **Extra CLI flags per session**: Sessions can now receive additional CLI flags (e.g. `--channels server:agent-chat`) via `extra_args` query parameter or MCP `create_session` tool
+- **UTF-8 locale in containers**: Containers now set `LANG=C.UTF-8` and `LC_ALL=C.UTF-8` by default, fixing Unicode rendering in agent output
+- **Slash-command autocomplete ranking**: Autocomplete results are ranked by match quality (run length), with project-level commands ranked ahead of system commands
+
+### Bug Fixes
+
+- **Zombie process accumulation**: `Session.Close` now kills the full process tree instead of just the leader, preventing zombie buildup across session restarts
+- **Recording metadata corruption**: Fix race that could corrupt recording metadata, hiding recordings from the homepage
+- **Recording summary quality**: Summary generation now prefers agent-chat events JSONL over terminal log tail, and caches the result in `metadata.json` to avoid per-request gzip decompression
+- **Login shell env vars**: `.swe-swe/env` is now applied in login shells via `/etc/profile.d/zz-swe-swe-env.sh` with `set -a`, so PATH and other vars survive Debian's `/etc/profile` PATH reset
+- **Autocomplete matching**: Fix value-or-hint matching to never split across fields; rank by run length instead of earlier match position
+- **`get_chat_history` fallback**: MCP tool now falls back to ended recordings when the live session has no chat history
+- **Claude extra args**: Fix default Claude extra args prefill and forwarding from page URL to WebSocket URL
+- **Session shutdown**: Parallelize session shutdown and replace racy SIGCHLD wildcard reaper with a targeted orphan reaper
+- **Prepared workspaces**: Drop empty `container-templates` wrapper directory from prepared workspaces
+
+### Refactoring
+
+- **Drop `swe-swe/` scaffolding**: Remove the workspace `swe-swe/` directory convention (setup script, agent MOTD). Agent docs moved to `.swe-swe/docs/`. Legacy `swe-swe/` directories are automatically removed on next session prepare
+- **Workspace env migration**: Env file moved from `swe-swe/env` to `.swe-swe/env`. Server auto-renames the old path on next session prepare for backward compatibility
+
+### Internal
+
+- Bump Go base images to 1.24
+- Agent-chat: playback UI parity, markdown rendering fixes, export script-tag safety
+- ASCII-fix non-ASCII characters in autocomplete comments
+
 ## v2.20.0 - Recording Compression, Memory Safety & Streaming Playback
 
 ### Features

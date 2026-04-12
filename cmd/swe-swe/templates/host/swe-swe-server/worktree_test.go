@@ -398,7 +398,7 @@ func TestEnsureSweSweFiles(t *testing.T) {
 			expectedSymlinked: []string{".swe-swe"},
 		},
 		{
-			name: "swe-swe directory symlinked",
+			name: "swe-swe directory not symlinked (legacy, removed from match list)",
 			files: map[string]struct {
 				content string
 				tracked bool
@@ -407,7 +407,7 @@ func TestEnsureSweSweFiles(t *testing.T) {
 			}{
 				"swe-swe/setup": {content: "#!/bin/bash", tracked: false},
 			},
-			expectedSymlinked: []string{"swe-swe"},
+			expectedSymlinked: []string{},
 		},
 		{
 			name: "mixed scenario",

@@ -2454,6 +2454,18 @@ func setupSweSweFiles(destDir string) error {
 		}
 	}
 
+	// Clean up legacy swe-swe/ directory. Older versions created swe-swe/setup
+	// and swe-swe/env in workspaces. The scaffolding has been removed and env
+	// migrated above, so remove the directory if it exists.
+	legacyDir := filepath.Join(destDir, "swe-swe")
+	if _, err := os.Stat(legacyDir); err == nil {
+		if err := os.RemoveAll(legacyDir); err != nil {
+			log.Printf("Warning: failed to remove legacy swe-swe/ directory: %v", err)
+		} else {
+			log.Printf("Removed legacy swe-swe/ directory: %s", legacyDir)
+		}
+	}
+
 	return fs.WalkDir(containerTemplatesFS, "container-templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -2521,7 +2533,7 @@ func isTrackedInGit(repoDir, relativePath string) bool {
 }
 
 // ensureSweSweFiles symlinks swe-swe files from the base repo into a worktree.
-// Processes: dotfiles (except .git), CLAUDE.md, AGENTS.md, and swe-swe/ directory.
+// Processes: dotfiles (except .git), CLAUDE.md, and AGENTS.md.
 // Skips entries tracked in git (worktree already has them) and entries that already exist at destination.
 // All entries (files and directories) are symlinked using absolute paths.
 func ensureSweSweFiles(srcDir, destDir string) error {
@@ -2538,7 +2550,7 @@ func ensureSweSweFiles(srcDir, destDir string) error {
 		shouldProcess := false
 		if strings.HasPrefix(name, ".") {
 			shouldProcess = true
-		} else if name == "CLAUDE.md" || name == "AGENTS.md" || name == "swe-swe" {
+		} else if name == "CLAUDE.md" || name == "AGENTS.md" {
 			shouldProcess = true
 		}
 		if !shouldProcess {

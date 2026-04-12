@@ -111,6 +111,11 @@ func TestSetupSweSweFilesMigratesEnvFile(t *testing.T) {
 	if want := "PATH=/usr/local/go/bin:$PATH\n"; string(got) != want {
 		t.Errorf("migrated .swe-swe/env content: got %q, want %q", got, want)
 	}
+
+	// Legacy swe-swe/ directory should be removed after migration.
+	if _, err := os.Stat(filepath.Join(destDir, "swe-swe")); err == nil {
+		t.Errorf("legacy swe-swe/ directory still exists; expected cleanup to remove it")
+	}
 }
 
 // TestSetupSweSweFilesNoEnvMigrationWhenNewExists verifies the migration is
@@ -147,12 +152,31 @@ func TestSetupSweSweFilesNoEnvMigrationWhenNewExists(t *testing.T) {
 		t.Errorf(".swe-swe/env was clobbered: got %q, want %q", got, "NEW=1\n")
 	}
 
-	// Old path is left in place (migration is only a rename when new is missing).
-	got, err = os.ReadFile(oldPath)
-	if err != nil {
-		t.Fatalf("read swe-swe/env: %v", err)
+	// Legacy swe-swe/ directory should be removed even when migration is skipped.
+	if _, err := os.Stat(filepath.Join(destDir, "swe-swe")); err == nil {
+		t.Errorf("legacy swe-swe/ directory still exists; expected cleanup to remove it")
 	}
-	if string(got) != "OLD=1\n" {
-		t.Errorf("swe-swe/env was unexpectedly modified: got %q, want %q", got, "OLD=1\n")
+}
+
+// TestSetupSweSweFilesRemovesLegacyDir verifies that a legacy swe-swe/
+// directory containing setup and other files is fully removed on prepare.
+func TestSetupSweSweFilesRemovesLegacyDir(t *testing.T) {
+	destDir := t.TempDir()
+
+	// Seed a legacy swe-swe/ directory with a setup script.
+	legacyDir := filepath.Join(destDir, "swe-swe")
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatalf("seed mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "setup"), []byte("#!/bin/bash\necho hello\n"), 0755); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	if err := setupSweSweFiles(destDir); err != nil {
+		t.Fatalf("setupSweSweFiles: %v", err)
+	}
+
+	if _, err := os.Stat(legacyDir); err == nil {
+		t.Errorf("legacy swe-swe/ directory still exists; expected cleanup to remove it")
 	}
 }
