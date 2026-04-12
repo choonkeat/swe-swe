@@ -120,6 +120,25 @@ RUN echo "PS1='\\W\\$ '" >> /etc/bash.bashrc
 # after /etc/profile resets PATH.
 RUN echo 'export PATH="/workspace/.swe-swe/proxy:/home/app/.swe-swe/proxy:/home/app/.swe-swe/bin:$PATH"' > /etc/profile.d/swe-swe-path.sh
 
+# Auto-load per-workspace env from $PWD/swe-swe/env at login time.
+# Login shells (e.g. the right-side "Terminal" tab Shell session, which runs
+# `bash -l`) source /etc/profile, which resets PATH to the Debian default.
+# That clobbers any PATH override that swe-swe-server already injected via
+# the swe-swe/env file. Re-applying it here, after swe-swe-path.sh and after
+# /etc/profile's PATH reset, makes user PATH overrides survive in login shells.
+# The `zz-` prefix ensures this runs last in /etc/profile.d/, so user values
+# can prepend onto everything else.
+# NOTE: this file is sourced by bash, so values containing spaces or shell
+# metacharacters must be quoted (e.g. MSG="hello world"). swe-swe-server's
+# Go-side loadEnvFile uses a dumber KEY=VALUE parser; for portability, keep
+# swe-swe/env contents to simple `KEY=value` and `KEY=$OTHER:value` forms.
+RUN printf '%s\n' \
+    'if [ -f "$PWD/swe-swe/env" ]; then' \
+    '    set -a' \
+    '    . "$PWD/swe-swe/env"' \
+    '    set +a' \
+    'fi' > /etc/profile.d/zz-swe-swe-env.sh
+
 # Run as non-root user (entrypoint handles setup without privilege escalation)
 USER app
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

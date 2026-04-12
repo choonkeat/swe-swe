@@ -71,7 +71,7 @@ And in your project directory:
 | File | Purpose |
 |------|---------|
 | `.swe-swe/` | Internal directory for certs, proxy scripts, and uploads |
-| `swe-swe/env` | Environment file sourced inside the container |
+| `swe-swe/env` | Environment file sourced inside the container — see [swe-swe/env](#swe-sweenv) below |
 
 Saved init flags are stored in `$HOME/.swe-swe/projects/{sanitized-path}/init.json` and can be reapplied with `--previous-init-flags=reuse`.
 
@@ -87,6 +87,34 @@ Each session gets these environment variables automatically:
 | `SESSION_UUID` | Unique session identifier | `a1b2c3...` |
 
 The `PUBLIC_PORT` is accessible externally without authentication, unlike `PORT` and `AGENT_CHAT_PORT` which are behind ForwardAuth. Use it for webhooks, public APIs, or shareable preview URLs that don't require login.
+
+### swe-swe/env
+
+Drop a `swe-swe/env` file at the root of your workspace to set per-project environment variables. The file is read in two complementary places:
+
+1. **Agent processes** (Codex, Claude, Gemini, Goose, etc.): swe-swe-server's `loadEnvFile` parses the file as `KEY=VALUE` lines and merges entries into the agent process's environment via `execve`. `$VAR` and `${VAR}` references are expanded against the parent server's env.
+2. **Login shells** (the right-side "Terminal" tab Shell session, plus any `bash -l` you spawn manually): `/etc/profile.d/zz-swe-swe-env.sh` sources the same file with `set -a`. This is required because `bash -l` sources `/etc/profile`, which on Debian unconditionally resets `PATH` — without this re-application, any `PATH=...` line in `swe-swe/env` would be silently clobbered for login shells.
+
+**Format rules** (kept narrow so both parsers agree):
+
+- One `KEY=value` per line.
+- Lines starting with `#` and blank lines are ignored.
+- `$VAR` / `${VAR}` references are expanded.
+- Values containing spaces or shell metacharacters **must be quoted** (`MSG="hello world"`) — the bash sourcing path requires it.
+- No `export` prefix needed; both paths handle export automatically.
+
+**Example:**
+
+```
+# Add Go to PATH for both the agent and the Terminal tab
+PATH=/usr/local/go/bin:$PATH
+
+# API keys for whatever the agent calls out to
+OPENAI_API_KEY=sk-...
+DATABASE_URL=postgres://localhost/myapp
+```
+
+The file is read at session start. To pick up changes, end and restart the session.
 
 ## Runtime
 
