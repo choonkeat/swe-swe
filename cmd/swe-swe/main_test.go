@@ -807,41 +807,13 @@ func TestGoldenFiles(t *testing.T) {
 				}
 			}
 
-			// Check swe-swe/setup exists only for variants with non-slash agents
-			// (aider, goose, or default which includes both)
-			sweSweSetup := filepath.Join(goldenDir, "target", "swe-swe", "setup")
-			hasNonSlashAgents := strings.Contains(v.name, "aider") ||
-				strings.Contains(v.name, "goose") ||
-				v.name == "default" ||
-				v.name == "exclude-aider" ||
-				v.name == "with-apt" ||
-				v.name == "with-npm" ||
-				v.name == "with-both-packages" ||
-				v.name == "with-ssl-selfsign" ||
-				v.name == "with-ssl-letsencrypt" ||
-				v.name == "with-ssl-letsencrypt-staging" ||
-				v.name == "with-certs-no-certs" ||
-				v.name == "with-certs-node-extra-ca-certs" ||
-				v.name == "with-certs-ssl-cert-file" ||
-				v.name == "with-copy-home-paths" ||
-				v.name == "with-terminal-font" ||
-				v.name == "with-status-bar-font" ||
-				v.name == "with-slash-commands" ||
-				v.name == "with-slash-commands-multi" ||
-				v.name == "with-slash-commands-no-alias" ||
-				v.name == "with-docker" ||
-				v.name == "with-repos-dir" ||
-				v.name == "with-proxy-port-offset" ||
-				v.name == "with-vscode"
-			if hasNonSlashAgents {
-				if _, err := os.Stat(sweSweSetup); err != nil {
-					t.Errorf("Target file missing (expected for variant with non-slash agents): %s", sweSweSetup)
-				}
-			} else {
-				// Slash-command-only variants should NOT have swe-swe/setup
-				if _, err := os.Stat(sweSweSetup); err == nil {
-					t.Errorf("Target file should NOT exist for slash-command-only variant: %s", sweSweSetup)
-				}
+			// swe-swe/setup is no longer created in any variant: file-mention
+			// slash commands were removed entirely, so the workspace never gets
+			// a `swe-swe/` directory from swe-swe init. Only `.swe-swe/` is
+			// created, keeping the workspace root clean.
+			sweSweDir := filepath.Join(goldenDir, "target", "swe-swe")
+			if _, err := os.Stat(sweSweDir); err == nil {
+				t.Errorf("swe-swe/ directory should not exist in target (only .swe-swe/ is expected): %s", sweSweDir)
 			}
 		})
 	}

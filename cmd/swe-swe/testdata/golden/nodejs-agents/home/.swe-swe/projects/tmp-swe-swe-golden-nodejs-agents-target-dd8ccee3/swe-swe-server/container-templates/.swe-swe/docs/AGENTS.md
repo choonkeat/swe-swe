@@ -2,11 +2,15 @@
 
 ## Commands
 
+Slash-command agents (Claude, Codex, Gemini, OpenCode) get these as `/swe-swe:<name>`:
+
 | Command | Description |
 |---------|-------------|
 | `setup` | Configure git, SSH, testing, credentials |
 | `debug-preview-page` | Debug web apps using the App Preview debug channel |
 | `update-swe-swe` | Update workspace swe-swe files after a version upgrade |
+
+Agents without slash-command support (Goose, Aider) do not see these commands.
 
 ## Current Setup
 

@@ -105,36 +105,6 @@ type InitConfig struct {
 	CLIVersion          string              `json:"cliVersion,omitempty"`
 }
 
-// slashCmdAgents are agents that support slash commands (md or toml format)
-var slashCmdAgents = map[string]bool{
-	"claude":   true,
-	"codex":    true,
-	"opencode": true,
-	"gemini":   true,
-}
-
-// HasNonSlashAgents returns true if any enabled agent requires file-based commands
-// (Goose, Aider, or any unknown agent)
-func (c *InitConfig) HasNonSlashAgents() bool {
-	for _, agent := range c.Agents {
-		if !slashCmdAgents[agent] {
-			return true
-		}
-	}
-	return false
-}
-
-// HasSlashAgents returns true if any enabled agent supports slash commands
-// (Claude, Codex, OpenCode, or Gemini)
-func (c *InitConfig) HasSlashAgents() bool {
-	for _, agent := range c.Agents {
-		if slashCmdAgents[agent] {
-			return true
-		}
-	}
-	return false
-}
-
 // saveInitConfig writes the init configuration to init.json
 func saveInitConfig(sweDir string, config InitConfig) error {
 	config.CLIVersion = Version
@@ -980,12 +950,6 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		"templates/container/.swe-swe/docs/browser-automation.md",
 	}
 
-	// Only include swe-swe/setup for agents that don't support slash commands
-	// (Goose, Aider, or any unknown agent). Slash-command agents get /swe-swe:setup instead.
-	if config.HasNonSlashAgents() {
-		containerFiles = append(containerFiles, "templates/container/swe-swe/setup")
-	}
-
 	if config.WithDocker {
 		containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
 	}
@@ -1243,7 +1207,6 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		"templates/container/.swe-swe/docs/browser-automation.md",
 		"templates/container/.swe-swe/docs/app-preview.md",
 		"templates/container/.swe-swe/docs/docker.md",
-		"templates/container/swe-swe/setup",
 	}
 	for _, tmplFile := range allContainerTemplates {
 		content, err := assets.ReadFile(tmplFile)

@@ -143,10 +143,6 @@ func ansiCyan(s string) string   { return "\033[0;36m" + s + "\033[0m" }
 func ansiDim(s string) string    { return "\033[2m" + s + "\033[0m" }
 func ansiYellow(s string) string { return "\033[0;33m" + s + "\033[0m" }
 
-// MOTDGracePeriod is how long to buffer input after displaying MOTD
-// This gives users time to read the MOTD before the shell starts receiving input
-const MOTDGracePeriod = 3 * time.Second
-
 // dsrQuery is the Device Status Report escape sequence that terminals
 // use to query cursor position. Applications (like Codex CLI via crossterm)
 // send this and expect a response of the form \x1b[{row};{col}R.
@@ -201,8 +197,7 @@ type SlashCommandFormat string
 const (
 	SlashCmdMD   SlashCommandFormat = "md"   // Markdown format (Claude, Codex, OpenCode)
 	SlashCmdTOML SlashCommandFormat = "toml" // TOML format (Gemini)
-	SlashCmdFile SlashCommandFormat = "file" // File mention (Goose, Aider)
-	SlashCmdNone SlashCommandFormat = ""     // No commands (Shell)
+	SlashCmdNone SlashCommandFormat = ""     // No commands (Shell, Goose, Aider)
 )
 
 // AssistantConfig holds the configuration for an AI coding assistant
@@ -372,7 +367,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "GOOSE_MODE=auto goose session -r",
 		Binary:          "goose",
 		Homepage:        true,
-		SlashCmdFormat:  SlashCmdFile,
+		SlashCmdFormat:  SlashCmdNone,
 	},
 	{
 		Name:            "Aider",
@@ -382,7 +377,7 @@ var assistantConfigs = []AssistantConfig{
 		YoloRestartCmd:  "aider --yes-always --restore-chat-history",
 		Binary:          "aider",
 		Homepage:        true,
-		SlashCmdFormat:  SlashCmdFile,
+		SlashCmdFormat:  SlashCmdNone,
 	},
 	{
 		Name:            "OpenCode",
@@ -439,10 +434,6 @@ type Session struct {
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
 	BrowserStarted bool   // Whether browser processes have been started
-	// Input buffering during MOTD grace period
-	inputBuffer   [][]byte // buffered input during grace period
-	inputBufferMu sync.Mutex
-	graceUntil    time.Time // buffer input until this time
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -618,41 +609,10 @@ func (s *Session) RemoveClient(conn *SafeConn) {
 	go s.BroadcastStatus()
 }
 
-// WriteInputOrBuffer writes data to PTY immediately, or buffers it during grace period
-// Returns true if data was written/buffered successfully
-func (s *Session) WriteInputOrBuffer(data []byte) error {
-	s.inputBufferMu.Lock()
-	defer s.inputBufferMu.Unlock()
-
-	// During grace period, buffer the input
-	if time.Now().Before(s.graceUntil) {
-		// Make a copy since data slice may be reused
-		dataCopy := make([]byte, len(data))
-		copy(dataCopy, data)
-		s.inputBuffer = append(s.inputBuffer, dataCopy)
-		return nil
-	}
-
-	// Grace period over - flush any buffered input first
-	if len(s.inputBuffer) > 0 {
-		for _, buffered := range s.inputBuffer {
-			if _, err := s.PTY.Write(buffered); err != nil {
-				return err
-			}
-		}
-		s.inputBuffer = nil
-	}
-
-	// Write current input
+// WriteInput writes data directly to the session PTY.
+func (s *Session) WriteInput(data []byte) error {
 	_, err := s.PTY.Write(data)
 	return err
-}
-
-// SetGracePeriod sets the input buffering grace period
-func (s *Session) SetGracePeriod(d time.Duration) {
-	s.inputBufferMu.Lock()
-	defer s.inputBufferMu.Unlock()
-	s.graceUntil = time.Now().Add(d)
 }
 
 // UpdateClientSize updates a client's terminal size and recalculates the PTY size
@@ -2440,7 +2400,7 @@ func dumpContainerTemplates(destDir string) error {
 }
 
 // setupSweSweFiles writes embedded container template files into destDir.
-// Used to provision swe-swe files (.swe-swe/docs/*, swe-swe/setup)
+// Used to provision swe-swe files (.swe-swe/docs/*)
 // into cloned repos and new projects that weren't set up by swe-swe init.
 // Idempotent: skips files that already exist.
 // Also cleans up legacy .mcp.json files (MCP config moved to ~/.claude.json).
@@ -2550,91 +2510,6 @@ func setupSweSweFiles(destDir string) error {
 
 		return nil
 	})
-}
-
-// generateMOTD creates the terminal MOTD displaying available swe-swe commands
-func generateMOTD(workDir, branchName string, cfg AssistantConfig) string {
-	// Shell sessions don't need MOTD - they're not AI agents
-	if cfg.SlashCmdFormat == SlashCmdNone {
-		return ""
-	}
-
-	// Determine the workspace directory
-	wsDir := "/workspace"
-	if workDir != "" && strings.HasPrefix(workDir, worktreeDir) {
-		wsDir = workDir
-	}
-
-	// Determine command invocation syntax based on agent's slash command support
-	var tipText, setupCmd string
-	var isSlashCmd bool
-	switch cfg.SlashCmdFormat {
-	case SlashCmdMD, SlashCmdTOML:
-		// Slash-command agents use /swe-swe:cmd
-		tipText = "Tip: type /swe-swe to see commands available"
-		setupCmd = "/swe-swe:setup"
-		isSlashCmd = true
-	case SlashCmdFile:
-		// File-mention agents use @swe-swe/cmd
-		tipText = "Tip: @swe-swe to see available commands"
-		setupCmd = "@swe-swe/setup"
-		isSlashCmd = false
-	default:
-		return "" // Safety: unknown format gets no MOTD
-	}
-
-	// For slash-command agents, we don't need the /workspace/swe-swe directory
-	// since commands are installed in agent-specific directories
-	sweSweDir := wsDir + "/swe-swe"
-
-	// Check if swe-swe directory exists (required for file-mention agents)
-	entries, err := os.ReadDir(sweSweDir)
-	if err != nil && !isSlashCmd {
-		return "" // No swe-swe directory and no slash command support - no MOTD
-	}
-
-	// For slash-command agents, always show MOTD (commands are in home directory)
-	// For file-mention agents, check if command files exist
-	hasCommands := isSlashCmd
-	hasSetup := isSlashCmd // Slash-command agents always have bundled setup
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			hasCommands = true
-			if entry.Name() == "setup" {
-				hasSetup = true
-			}
-		}
-	}
-
-	if !hasCommands {
-		return ""
-	}
-
-	// Check if setup has been completed (swe-swe snippet in CLAUDE.md or AGENTS.md)
-	setupDone := false
-	for _, filename := range []string{"CLAUDE.md", "AGENTS.md"} {
-		content, err := os.ReadFile(wsDir + "/" + filename)
-		if err == nil && strings.Contains(string(content), ".swe-swe/docs/AGENTS.md") {
-			setupDone = true
-			break
-		}
-	}
-
-	// Format the MOTD (use \r\n for proper terminal line endings)
-	var sb strings.Builder
-	sb.WriteString("\r\n")
-	sb.WriteString(ansiDim(tipText) + "\r\n")
-
-	// Show "Try this" only if setup exists and hasn't been done
-	if hasSetup && !setupDone {
-		sb.WriteString(ansiDim("Try this:") + " " + ansiCyan(setupCmd) + "\r\n")
-	}
-
-	sb.WriteString("\r\n")
-	return sb.String()
 }
 
 // isTrackedInGit checks if a file is tracked in git
@@ -3284,7 +3159,7 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		}
 	}
 
-	// Set up swe-swe files (.swe-swe/docs/*, swe-swe/setup) and clean up legacy .mcp.json
+	// Set up swe-swe files (.swe-swe/docs/*) and clean up legacy .mcp.json
 	if err := setupSweSweFiles(repoPath); err != nil {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
@@ -3371,7 +3246,7 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 		// Non-fatal: the repo still works, just without an initial commit
 	}
 
-	// Set up swe-swe files (.swe-swe/docs/*, swe-swe/setup) and clean up legacy .mcp.json
+	// Set up swe-swe files (.swe-swe/docs/*) and clean up legacy .mcp.json
 	if err := setupSweSweFiles(repoPath); err != nil {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
@@ -4655,21 +4530,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 
 	// If this is a new session, start the PTY reader goroutine
 	if isNew {
-		// Display MOTD with available swe-swe commands (for human user discoverability)
-		// Send directly to websocket (not PTY) so ANSI escape codes are properly interpreted
-		motd := generateMOTD(sess.WorkDir, sess.BranchName, sess.AssistantConfig)
-		if motd != "" {
-			motdBytes := []byte(motd)
-			// Write to VT and ring buffer so joining clients see it too
-			sess.vtMu.Lock()
-			sess.vt.Write(motdBytes)
-			sess.writeToRing(motdBytes)
-			sess.vtMu.Unlock()
-			// Send to first client
-			conn.WriteMessage(websocket.BinaryMessage, motdBytes)
-			// Buffer input during grace period so MOTD stays visible
-			sess.SetGracePeriod(MOTDGracePeriod)
-		}
 		sess.startPTYReader()
 	} else {
 		// Send ring buffer (scrollback history) first, then VT snapshot
@@ -4904,14 +4764,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 
 			// Send the file path to PTY - Claude Code will detect it and read from disk
 			absFilePath := filePath
-			if err := sess.WriteInputOrBuffer([]byte(absFilePath)); err != nil {
+			if err := sess.WriteInput([]byte(absFilePath)); err != nil {
 				log.Printf("PTY write error for uploaded file path: %v", err)
 			}
 			continue
 		}
 
-		// Regular terminal input (buffered during MOTD grace period)
-		if err := sess.WriteInputOrBuffer(data); err != nil {
+		// Regular terminal input
+		if err := sess.WriteInput(data); err != nil {
 			log.Printf("PTY write error: %v", err)
 			break
 		}
@@ -7029,13 +6889,13 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		text := strings.TrimRight(args.Text, "\r\n")
 		hasTrailingNewline := len(text) < len(args.Text)
 		if text != "" {
-			if err := sess.WriteInputOrBuffer([]byte(text)); err != nil {
+			if err := sess.WriteInput([]byte(text)); err != nil {
 				return nil, nil, fmt.Errorf("write failed: %w", err)
 			}
 		}
 		if hasTrailingNewline {
 			time.Sleep(300 * time.Millisecond)
-			if err := sess.WriteInputOrBuffer([]byte{'\r'}); err != nil {
+			if err := sess.WriteInput([]byte{'\r'}); err != nil {
 				return nil, nil, fmt.Errorf("write failed: %w", err)
 			}
 		}

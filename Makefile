@@ -29,9 +29,8 @@ test-server:
 	@rm -rf /tmp/swe-swe-server-test
 	@mkdir -p /tmp/swe-swe-server-test
 	@cp -r $(SERVER_TEMPLATE)/* /tmp/swe-swe-server-test/
-	@mkdir -p /tmp/swe-swe-server-test/container-templates/.swe-swe/docs /tmp/swe-swe-server-test/container-templates/swe-swe
+	@mkdir -p /tmp/swe-swe-server-test/container-templates/.swe-swe/docs
 	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* /tmp/swe-swe-server-test/container-templates/.swe-swe/docs/
-	@cp $(CONTAINER_TEMPLATES)/swe-swe/setup /tmp/swe-swe-server-test/container-templates/swe-swe/
 	@mv /tmp/swe-swe-server-test/go.mod.txt /tmp/swe-swe-server-test/go.mod
 	@mv /tmp/swe-swe-server-test/go.sum.txt /tmp/swe-swe-server-test/go.sum
 	cd /tmp/swe-swe-server-test && go mod tidy && go test -v $(TEST_SERVER_ARGS) ./...
