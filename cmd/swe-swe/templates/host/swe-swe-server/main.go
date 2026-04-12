@@ -2402,9 +2402,17 @@ func dumpContainerTemplates(destDir string) error {
 			return err
 		}
 
+		// Skip the root entry. fs.WalkDir invokes the walker with
+		// path == "container-templates" (no trailing slash) for the root,
+		// which TrimPrefix below leaves unchanged. Without this guard the
+		// walker would create an empty <destDir>/container-templates/ wrapper.
+		if path == "container-templates" {
+			return nil
+		}
+
 		relPath := strings.TrimPrefix(path, "container-templates/")
 		if relPath == "" || relPath == "." {
-			return nil // skip root
+			return nil // skip root (defensive: handled above)
 		}
 
 		destPath := filepath.Join(destDir, relPath)
@@ -2472,9 +2480,17 @@ func setupSweSweFiles(destDir string) error {
 			return err
 		}
 
+		// Skip the root entry. fs.WalkDir invokes the walker with
+		// path == "container-templates" (no trailing slash) for the root,
+		// which TrimPrefix below leaves unchanged. Without this guard the
+		// walker would create an empty <destDir>/container-templates/ wrapper.
+		if path == "container-templates" {
+			return nil
+		}
+
 		relPath := strings.TrimPrefix(path, "container-templates/")
 		if relPath == "" || relPath == "." {
-			return nil // skip root
+			return nil // skip root (defensive: handled above)
 		}
 
 		destPath := filepath.Join(destDir, relPath)
