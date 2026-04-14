@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.21.2 - `.swe-swe/env` $VAR Expansion Fix
+
+### Bug Fixes
+
+- **`.swe-swe/env` `PATH=/x:$PATH` broke MCP servers**: `loadEnvFile` now expands `$VAR` references against the session env being built, not against the server's env. Previously, a line like `PATH=/usr/local/go/bin:$PATH` in `.swe-swe/env` would expand `$PATH` against the server's PATH (which lacks the swe-swe bin prefixes), silently dropping `/home/app/.swe-swe/bin` from the session PATH. `agent-chat`, `agent-whiteboard`, and related MCP servers then resolved to wrong binaries or failed to start, leaving Agent Chat stuck in "Loading" state
+
 ## v2.21.1 - copyDir Skips Sockets
 
 ### Bug Fixes

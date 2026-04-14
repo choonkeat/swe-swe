@@ -512,14 +512,41 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	} else {
 		env = append(env, "COLORFGBG=15;0") // light-on-dark
 	}
-	// Append user-defined vars from .swe-swe/env (last so they take precedence)
+	// Append user-defined vars from .swe-swe/env (last so they take precedence).
+	// Expand $VAR references against the session env built above, so a line like
+	// PATH=/usr/local/go/bin:$PATH prepends to the SESSION PATH (which includes
+	// /home/app/.swe-swe/bin) rather than the server's PATH (which does not).
+	// Without this, such a line would silently drop the swe-swe PATH prefixes,
+	// causing `agent-chat`, `agent-whiteboard`, etc. to resolve to the wrong
+	// binary (or fail to resolve) and MCP servers to fail to start.
 	if p.WorkDir != "" {
-		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, ".swe-swe", "env"))...)
+		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, ".swe-swe", "env"), envLookup(env))...)
 	}
 	return env
 }
 
-func loadEnvFile(path string) []string {
+// envLookup returns a function that looks up a key in the given KEY=VALUE
+// slice, falling back to os.Getenv if not found. Used to expand $VAR
+// references in .swe-swe/env against the session env being built, not the
+// server's env.
+func envLookup(env []string) func(string) string {
+	return func(k string) string {
+		prefix := k + "="
+		// Iterate in reverse so later (appended) values override earlier ones,
+		// matching the semantics of exec: the last KEY=VALUE wins.
+		for i := len(env) - 1; i >= 0; i-- {
+			if strings.HasPrefix(env[i], prefix) {
+				return env[i][len(prefix):]
+			}
+		}
+		return os.Getenv(k)
+	}
+}
+
+func loadEnvFile(path string, lookup func(string) string) []string {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -536,7 +563,7 @@ func loadEnvFile(path string) []string {
 				if v, ok := local[k]; ok {
 					return v
 				}
-				return os.Getenv(k)
+				return lookup(k)
 			})
 			local[key] = val
 			entries = append(entries, key+"="+val)
