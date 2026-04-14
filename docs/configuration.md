@@ -38,6 +38,7 @@ Init Options:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SWE_SWE_PASSWORD` | Authentication password for all services | `changeme` |
+| `SWE_SWE_AUTO_UPGRADE` | When set to any non-empty value, `swe-swe up` skips the "Upgrade? [y/N]" prompt if the CLI version is newer than the stored container config. It regenerates config with saved flags (`init --previous-init-flags=reuse`) and auto-injects `--build`. Used by the systemd unit in `deploy/digitalocean/` so remote hosts self-upgrade. | unset |
 | `SWE_PORT` | External port | `1977` |
 | `ANTHROPIC_API_KEY` | Claude API key (passed through automatically) | — |
 | `OPENAI_API_KEY` | OpenAI API key for Codex (uncomment in docker-compose.yml) | — |

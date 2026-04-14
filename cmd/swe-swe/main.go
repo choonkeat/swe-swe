@@ -108,8 +108,11 @@ Examples:
 
 Environment Variables:
   SWE_SWE_PASSWORD                       Authentication password (defaults to changeme)
+  SWE_SWE_AUTO_UPGRADE                   Non-interactive: auto-regenerate config and add --build
+                                         when CLI version is newer than container config
   NODE_EXTRA_CA_CERTS                    Enterprise CA certificate path (auto-copied during init)
   SSL_CERT_FILE                          SSL certificate file path (auto-copied during init)
+  NODE_EXTRA_CA_CERTS_BUNDLE             CA certificate bundle path (auto-copied during init)
 
 Requires: Docker with Compose plugin (docker compose) or standalone docker-compose
 `)
