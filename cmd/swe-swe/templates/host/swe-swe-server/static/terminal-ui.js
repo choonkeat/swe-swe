@@ -2612,6 +2612,11 @@ class TerminalUI extends HTMLElement {
                     setTimeout(() => this.sendKey('\r'), 300);
                 }, 300);
             }
+            // When user confirms "clear context" in Agent Chat, run /clear
+            if (e.data && e.data.type === 'agent-chat-clear') {
+                this.sendKey('/clear');
+                setTimeout(() => this.sendKey('\r'), 300);
+            }
         });
 
         // Status bar click: reconnect when disconnected, open settings when connected
