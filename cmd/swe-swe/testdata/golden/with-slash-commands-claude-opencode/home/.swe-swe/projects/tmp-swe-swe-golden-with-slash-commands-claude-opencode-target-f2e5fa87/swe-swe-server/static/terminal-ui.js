@@ -2603,14 +2603,21 @@ class TerminalUI extends HTMLElement {
                 this.sendKey('\r');
             }
             // When user says Stop/Cancel in Agent Chat, send Esc Esc to abort
-            // the current tool, then nudge agent to check_messages
+            // the current tool, then type the supplied text (e.g. a nudge or
+            // a slash-command like /clear). Falls back to the default nudge
+            // if the sender did not supply text (legacy agent-chat clients).
             if (e.data && e.data.type === 'agent-chat-interrupt') {
                 this.sendKey('\x1b');
                 this.sendKey('\x1b');
                 setTimeout(() => {
-                    this.sendKey('check_messages; i sent u a chat message');
+                    this.sendKey(e.data.text || 'check_messages; i sent u a chat message');
                     setTimeout(() => this.sendKey('\r'), 300);
                 }, 300);
+            }
+            // When user confirms "clear context" in Agent Chat, run /clear
+            if (e.data && e.data.type === 'agent-chat-clear') {
+                this.sendKey('/clear');
+                setTimeout(() => this.sendKey('\r'), 300);
             }
         });
 
