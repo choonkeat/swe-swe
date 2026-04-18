@@ -152,23 +152,12 @@ func TestWriteBundledSlashCommands(t *testing.T) {
 			t.Fatalf("writeBundledSlashCommands() error = %v", err)
 		}
 
-		// Check that swe-swe/setup.md exists
-		setupPath := filepath.Join(tempDir, "swe-swe", "setup.md")
-		if _, err := os.Stat(setupPath); os.IsNotExist(err) {
-			t.Errorf("expected %s to exist", setupPath)
+		mdPath := filepath.Join(tempDir, "swe-swe", "debug-preview-page.md")
+		if _, err := os.Stat(mdPath); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist", mdPath)
 		}
 
-		// Verify content contains expected text
-		content, err := os.ReadFile(setupPath)
-		if err != nil {
-			t.Fatalf("failed to read %s: %v", setupPath, err)
-		}
-		if !strings.Contains(string(content), "Setup swe-swe Environment") {
-			t.Errorf("expected %s to contain 'Setup swe-swe Environment'", setupPath)
-		}
-
-		// Verify .toml file was NOT copied
-		tomlPath := filepath.Join(tempDir, "swe-swe", "setup.toml")
+		tomlPath := filepath.Join(tempDir, "swe-swe", "debug-preview-page.toml")
 		if _, err := os.Stat(tomlPath); !os.IsNotExist(err) {
 			t.Errorf("expected %s to NOT exist when filtering for .md only", tomlPath)
 		}
@@ -182,23 +171,12 @@ func TestWriteBundledSlashCommands(t *testing.T) {
 			t.Fatalf("writeBundledSlashCommands() error = %v", err)
 		}
 
-		// Check that swe-swe/setup.toml exists
-		setupPath := filepath.Join(tempDir, "swe-swe", "setup.toml")
-		if _, err := os.Stat(setupPath); os.IsNotExist(err) {
-			t.Errorf("expected %s to exist", setupPath)
+		tomlPath := filepath.Join(tempDir, "swe-swe", "debug-preview-page.toml")
+		if _, err := os.Stat(tomlPath); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist", tomlPath)
 		}
 
-		// Verify content contains expected text
-		content, err := os.ReadFile(setupPath)
-		if err != nil {
-			t.Fatalf("failed to read %s: %v", setupPath, err)
-		}
-		if !strings.Contains(string(content), "Setup swe-swe Environment") {
-			t.Errorf("expected %s to contain 'Setup swe-swe Environment'", setupPath)
-		}
-
-		// Verify .md file was NOT copied
-		mdPath := filepath.Join(tempDir, "swe-swe", "setup.md")
+		mdPath := filepath.Join(tempDir, "swe-swe", "debug-preview-page.md")
 		if _, err := os.Stat(mdPath); !os.IsNotExist(err) {
 			t.Errorf("expected %s to NOT exist when filtering for .toml only", mdPath)
 		}

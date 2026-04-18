@@ -1206,7 +1206,9 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		"templates/container/.swe-swe/docs/AGENTS.md",
 		"templates/container/.swe-swe/docs/browser-automation.md",
 		"templates/container/.swe-swe/docs/app-preview.md",
-		"templates/container/.swe-swe/docs/docker.md",
+	}
+	if config.WithDocker {
+		allContainerTemplates = append(allContainerTemplates, "templates/container/.swe-swe/docs/docker.md")
 	}
 	for _, tmplFile := range allContainerTemplates {
 		content, err := assets.ReadFile(tmplFile)
