@@ -2623,6 +2623,53 @@ func ensureSweSweFiles(srcDir, destDir string) error {
 	return nil
 }
 
+// agentContextIncludeLine is upserted into the assistant's primary context file
+// so every agent is pointed at the standard environment documentation.
+const agentContextIncludeLine = "See .swe-swe/docs/AGENTS.md (if it exists) for context of this current environment"
+
+// upsertAgentDocInclude appends agentContextIncludeLine to the assistant's primary
+// context file (CLAUDE.md for claude, AGENTS.md for other agents) if it's not already
+// present. No-op for shell/custom/unknown assistants or an empty workDir.
+func upsertAgentDocInclude(workDir, assistant string) error {
+	if workDir == "" {
+		return nil
+	}
+	var target string
+	switch assistant {
+	case "claude":
+		target = "CLAUDE.md"
+	case "gemini", "codex", "aider", "goose", "opencode":
+		target = "AGENTS.md"
+	default:
+		return nil
+	}
+
+	path := filepath.Join(workDir, target)
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSpace(line) == agentContextIncludeLine {
+			return nil
+		}
+	}
+
+	var b bytes.Buffer
+	b.Write(existing)
+	if len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\n")) {
+		b.WriteByte('\n')
+	}
+	b.WriteString(agentContextIncludeLine)
+	b.WriteByte('\n')
+
+	if err := os.WriteFile(path, b.Bytes(), 0644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
 // getGitRoot returns the root directory of the git repository
 func getGitRoot() (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -4136,6 +4183,10 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			// No branch specified, use base repo directly
 			workDir = baseRepo
 		}
+	}
+
+	if err := upsertAgentDocInclude(workDir, p.Assistant); err != nil {
+		log.Printf("Warning: failed to upsert agent doc include in %s: %v", workDir, err)
 	}
 
 	var previewPort int
