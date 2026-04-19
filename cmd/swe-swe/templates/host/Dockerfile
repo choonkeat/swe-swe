@@ -107,6 +107,12 @@ RUN mkdir -p /var/lib/tailscale && \
     chown {{UID}}:{{GID}} /var/lib/tailscale && \
     chmod 700 /var/lib/tailscale
 
+# Convenience alias so bare `tailscale` targets the non-default socket path
+# that tailscaled uses (socket lives in the state dir because tailscaled runs
+# as the app user and /var/run/tailscale is root-owned).
+RUN echo 'alias tailscale="tailscale --socket=/var/lib/tailscale/tailscaled.sock"' \
+    > /etc/profile.d/swe-swe-tailscale.sh
+
 # {{IF APT_PACKAGES}}
 # Install user-specified packages
 RUN apt-get update && apt-get install -y \
