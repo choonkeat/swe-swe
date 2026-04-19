@@ -3372,6 +3372,7 @@ class TerminalUI extends HTMLElement {
         const terminalWrapper = this.querySelector('.terminal-ui__terminal-wrapper');
         const splitPane = this.querySelector('.terminal-ui__split-pane');
         const iframePane = this.querySelector('.terminal-ui__iframe-pane');
+        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
         if (!resizer || !terminalWrapper || !splitPane) return;
 
         let isDragging = false;
@@ -3427,8 +3428,10 @@ class TerminalUI extends HTMLElement {
             resizer.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
-            // Disable iframe pointer events during drag to prevent mouse capture
+            // Disable iframe pointer events during drag so mouse movement
+            // that strays over either iframe doesn't get captured and stall the drag
             if (iframePane) iframePane.style.pointerEvents = 'none';
+            if (chatIframe) chatIframe.style.pointerEvents = 'none';
             // Show tooltips
             const containerWidth = splitPane.offsetWidth;
             const resizerWidth = resizer.offsetWidth;
@@ -3477,6 +3480,7 @@ class TerminalUI extends HTMLElement {
             document.body.style.userSelect = '';
             // Re-enable iframe pointer events
             if (iframePane) iframePane.style.pointerEvents = '';
+            if (chatIframe) chatIframe.style.pointerEvents = '';
             hideTooltips();
             this.savePaneWidth();
             // Trigger terminal resize and notify backend
