@@ -96,6 +96,9 @@ RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_
 # Install OpenCode CLI (https://github.com/anomalyco/opencode)
 RUN npm install -g opencode-ai
 
+# Install Pi coding agent (https://shittycodingagent.ai)
+RUN npm install -g @mariozechner/pi-coding-agent
+
 # Install user-specified npm packages
 RUN npm install -g typescript
 

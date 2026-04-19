@@ -4,7 +4,8 @@
     "gemini",
     "codex",
     "goose",
-    "opencode"
+    "opencode",
+    "pi"
   ],
   "ssl": "no",
   "previewPorts": "3000-3019",

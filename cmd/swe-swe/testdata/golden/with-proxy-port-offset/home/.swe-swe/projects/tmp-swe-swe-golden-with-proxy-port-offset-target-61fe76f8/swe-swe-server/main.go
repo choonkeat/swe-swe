@@ -390,6 +390,16 @@ var assistantConfigs = []AssistantConfig{
 		SlashCmdFormat:  SlashCmdMD,
 	},
 	{
+		Name:            "Pi",
+		ShellCmd:        "pi",
+		ShellRestartCmd: "pi --continue",
+		YoloShellCmd:    "", // YOLO mode not supported
+		YoloRestartCmd:  "", // YOLO mode not supported
+		Binary:          "pi",
+		Homepage:        true,
+		SlashCmdFormat:  SlashCmdMD,
+	},
+	{
 		Name:     "Shell",
 		Binary:   "shell",
 		Homepage: false, // Hidden from homepage, accessed via status bar link

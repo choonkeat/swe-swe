@@ -47,6 +47,17 @@ elif [ -d "/tmp/slash-commands/ck" ]; then
     cp -r /tmp/slash-commands/ck /home/app/.config/opencode/command/ck
     echo -e "${GREEN}[ok] Installed slash commands: ck (opencode)${NC}"
 fi
+if [ -d "/home/app/.pi/agent/prompts/ck/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.pi/agent/prompts/ck 2>/dev/null || true
+    (cd /home/app/.pi/agent/prompts/ck && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated slash commands: ck (pi)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: ck (pi)${NC}"
+elif [ -d "/tmp/slash-commands/ck" ]; then
+    mkdir -p /home/app/.pi/agent/prompts
+    cp -r /tmp/slash-commands/ck /home/app/.pi/agent/prompts/ck
+    echo -e "${GREEN}[ok] Installed slash commands: ck (pi)${NC}"
+fi
 
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array

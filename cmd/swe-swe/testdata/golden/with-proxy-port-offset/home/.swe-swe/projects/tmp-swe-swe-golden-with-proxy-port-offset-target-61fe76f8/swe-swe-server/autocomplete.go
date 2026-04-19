@@ -145,6 +145,8 @@ func slashCommandDirForAgent(assistant string, format SlashCommandFormat) (dir s
 		return "/home/app/.config/opencode/command", "md"
 	case "gemini":
 		return "/home/app/.gemini/commands", "toml"
+	case "pi":
+		return "/home/app/.pi/agent/prompts", "md"
 	default:
 		if format == SlashCmdMD {
 			return "", "md"
@@ -172,6 +174,8 @@ func projectCommandDir(assistant string, workDir string) string {
 		return filepath.Join(workDir, ".opencode", "command")
 	case "gemini":
 		return filepath.Join(workDir, ".gemini", "commands")
+	case "pi":
+		return filepath.Join(workDir, ".pi", "prompts")
 	default:
 		return ""
 	}

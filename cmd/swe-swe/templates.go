@@ -17,11 +17,11 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 	// Check if we need Python (only for aider)
 	needsPython := hasAgent("aider")
 
-	// Check if we need Node.js (claude, gemini, codex, opencode, or playwright)
-	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex") || hasAgent("opencode")
+	// Check if we need Node.js (claude, gemini, codex, opencode, pi, or playwright)
+	needsNodeJS := hasAgent("claude") || hasAgent("gemini") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi")
 
-	// Check if we have slash commands for supported agents (claude, codex, or opencode)
-	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode"))
+	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
+	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi"))
 
 	// Generate slash commands clone lines
 	var slashCommandsClone string
@@ -61,6 +61,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = !hasAgent("goose")
 			case "OPENCODE":
 				skip = !hasAgent("opencode")
+			case "PI":
+				skip = !hasAgent("pi")
 			case "APT_PACKAGES":
 				skip = aptPackages == ""
 			case "NPM_PACKAGES":
@@ -511,8 +513,8 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
 		return agentInList(agent, agents)
 	}
 
-	// Check if we have slash commands for supported agents (claude, codex, or opencode)
-	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode"))
+	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
+	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi"))
 
 	// Generate slash commands copy lines
 	var slashCommandsCopy string
@@ -552,6 +554,10 @@ fi`, configDir, repo.Alias, configDir, repo.Alias, pullCmd, repo.Alias, agentNam
 			// OpenCode
 			if hasAgent("opencode") {
 				copyLines = append(copyLines, genSlashBlock("opencode", "/home/app/.config/opencode/command", repo.Alias))
+			}
+			// Pi
+			if hasAgent("pi") {
+				copyLines = append(copyLines, genSlashBlock("pi", "/home/app/.pi/agent/prompts", repo.Alias))
 			}
 		}
 		slashCommandsCopy = strings.Join(copyLines, "\n")

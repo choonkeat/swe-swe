@@ -5,7 +5,8 @@
     "codex",
     "aider",
     "goose",
-    "opencode"
+    "opencode",
+    "pi"
   ],
   "withDocker": true,
   "ssl": "no",

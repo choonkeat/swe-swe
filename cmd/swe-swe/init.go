@@ -71,7 +71,7 @@ func writeBundledSlashCommands(destDir string, ext string) error {
 	})
 }
 // allAgents lists all available AI agents that can be installed
-var allAgents = []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}
+var allAgents = []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}
 
 // SlashCommandsRepo represents a git repository to clone for slash commands
 type SlashCommandsRepo struct {
@@ -407,7 +407,7 @@ func parseSSLFlagValue(ssl string) (mode, host, domain string, err error) {
 func handleInit() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := fs.String("project-directory", ".", "Project directory to initialize")
-	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose,opencode) or 'all'")
+	agentsFlag := fs.String("agents", "", "Comma-separated list of agents to include (claude,gemini,codex,aider,goose,opencode,pi) or 'all'")
 	excludeFlag := fs.String("exclude-agents", "", "Comma-separated list of agents to exclude")
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
@@ -827,7 +827,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	}
 
 	// Write bundled slash commands to agent-specific directories
-	// .md files go to Claude, Codex, and OpenCode directories
+	// .md files go to Claude, Codex, OpenCode, and Pi directories
 	// .toml files go to Gemini directory
 	slashCmdAgentDirs := []struct {
 		dir string
@@ -837,6 +837,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		{filepath.Join(homeDir, ".codex", "prompts"), ".md"},
 		{filepath.Join(homeDir, ".config", "opencode", "command"), ".md"},
 		{filepath.Join(homeDir, ".gemini", "commands"), ".toml"},
+		{filepath.Join(homeDir, ".pi", "agent", "prompts"), ".md"},
 	}
 	for _, agent := range slashCmdAgentDirs {
 		if err := writeBundledSlashCommands(agent.dir, agent.ext); err != nil {

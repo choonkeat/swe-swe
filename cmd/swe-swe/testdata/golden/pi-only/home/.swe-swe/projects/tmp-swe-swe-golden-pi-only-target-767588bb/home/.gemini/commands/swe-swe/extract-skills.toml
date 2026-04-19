@@ -1,0 +1,93 @@
+description = "Extract skills from task runner (Makefile, package.json, etc.)"
+
+prompt = """
+# Extract Skills from Task Runner
+
+Scan this repo's task runner configs and generate slash command (skill) files from them.
+
+## Step 1: Detect Task Runners
+
+Look for these files in the repo root:
+
+- `Makefile` / `GNUmakefile` / `makefile`
+- `package.json` (the `"scripts"` section)
+- `Taskfile.yml` / `Taskfile.yaml`
+- `Cargo.toml` (if it uses `cargo-make` or has `[package.metadata.scripts]`)
+- `justfile`
+- `dodo.py` (pydoit)
+- `Rakefile`
+
+Report which runners you found and confirm with the user before proceeding.
+
+## Step 2: Extract Targets
+
+For each detected runner, list every target/script. For each target capture:
+
+- **Name** — the target name (e.g. `build`, `test:unit`)
+- **Description** — from comments, help text, or `description` fields
+- **Variables / flags** — any environment variables, Make variables (`$(VAR)`), or CLI flags that modify execution
+- **Dependencies** — other targets it depends on
+
+## Step 3: Triage
+
+Skip targets that are clearly internal plumbing:
+
+- `_`-prefixed targets
+- `pre` / `post` lifecycle scripts (npm)
+- Targets whose only purpose is to call other targets (pure aggregators)
+- Dotfiles targets (`.PHONY`, `.DEFAULT`, etc.)
+
+When unsure whether a target is user-facing, **ask the user**.
+
+Present the filtered list and get confirmation before generating files.
+
+## Step 4: Generate Slash Commands
+
+For each approved target, create **two files** in `swe-swe/commands/<runner>/`:
+
+### Markdown (`.md`) — for Claude / Codex / OpenCode
+
+```markdown
+---
+description: <one-line description>
+---
+
+Run the `<runner> <target>` command.
+
+<document any variables/flags as named arguments with defaults>
+```
+
+### TOML (`.toml`) — for Gemini
+
+```toml
+description = "<one-line description>"
+
+prompt = \\\"\\\"\\\"
+Run the `<runner> <target>` command.
+
+<document any variables/flags as named arguments with defaults>
+\\\"\\\"\\\"
+```
+
+### Naming conventions
+
+- Namespace under the runner: `make/build.md`, `npm/test-unit.md`
+- Convert colons and dots to hyphens: `test:unit` → `test-unit`
+- Keep names lowercase
+
+### Important rules
+
+- Each skill should **invoke the task runner target** (e.g. `make build`, `npm run test`), NOT replicate the shell commands inside the target
+- If a target accepts variables (e.g. `make deploy ENV=prod`), document them as named arguments with their defaults
+- Keep descriptions concise — one line
+
+## Step 5: Confirm and Write
+
+Show the user the full list of files that will be created, then write them.
+
+## Style
+
+Be conversational. Present findings at each step and ask for confirmation before proceeding to the next. Skip runners the user doesn't care about.
+
+Note: If your agent doesn't support slash commands, use `@swe-swe/extract-skills` instead.
+"""

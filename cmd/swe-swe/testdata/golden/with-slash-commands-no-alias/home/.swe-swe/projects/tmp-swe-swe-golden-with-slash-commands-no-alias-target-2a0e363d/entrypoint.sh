@@ -47,6 +47,17 @@ elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
     cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.config/opencode/command/choonkeat/slash-commands
     echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (opencode)${NC}"
 fi
+if [ -d "/home/app/.pi/agent/prompts/choonkeat/slash-commands/.git" ]; then
+    # Try to pull updates (best effort)
+    git config --global --add safe.directory /home/app/.pi/agent/prompts/choonkeat/slash-commands 2>/dev/null || true
+    (cd /home/app/.pi/agent/prompts/choonkeat/slash-commands && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated slash commands: choonkeat/slash-commands (pi)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (pi)${NC}"
+elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
+    mkdir -p /home/app/.pi/agent/prompts
+    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.pi/agent/prompts/choonkeat/slash-commands
+    echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (pi)${NC}"
+fi
 
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array

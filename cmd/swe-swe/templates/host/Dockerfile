@@ -137,6 +137,11 @@ RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_
 RUN npm install -g opencode-ai
 # {{ENDIF}}
 
+# {{IF PI}}
+# Install Pi coding agent (https://shittycodingagent.ai)
+RUN npm install -g @mariozechner/pi-coding-agent
+# {{ENDIF}}
+
 # {{IF NPM_PACKAGES}}
 # Install user-specified npm packages
 RUN npm install -g {{NPM_PACKAGES}}

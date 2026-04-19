@@ -1,0 +1,36 @@
+services:
+  swe-swe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${SWE_PORT:-1977}:${SWE_PORT:-1977}"
+      - "23000-23019:23000-23019"
+      - "24000-24019:24000-24019"
+      - "27000-27019:7000-7019"
+      - "5000-5019:5000-5019"
+    volumes:
+      - ${WORKSPACE_DIR:-.}:/workspace
+      - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
+      - ${WORKSPACE_DIR:-.}/.swe-swe/repos:/repos
+      - ./home:/home/app
+      # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects)
+      - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          size: 100M
+          mode: 0777
+    working_dir: /workspace
+    environment:
+      - SWE_PORT=${SWE_PORT:-1977}
+      - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
+      - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
+      - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
+      - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
+      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+    restart: unless-stopped

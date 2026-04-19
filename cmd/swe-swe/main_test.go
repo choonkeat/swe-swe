@@ -505,13 +505,13 @@ func TestResolveAgents(t *testing.T) {
 		wantLen int
 		wantErr bool
 	}{
-		{"", "", 6, false},                         // default: all agents
-		{"all", "", 6, false},                      // explicit all
+		{"", "", 7, false},                         // default: all agents
+		{"all", "", 7, false},                      // explicit all
 		{"claude", "", 1, false},                   // single agent
 		{"claude,gemini", "", 2, false},            // multiple agents
-		{"", "aider", 5, false},                    // exclude one
-		{"", "aider,goose", 4, false},              // exclude multiple
-		{"all", "aider", 5, false},                 // all minus exclude
+		{"", "aider", 6, false},                    // exclude one
+		{"", "aider,goose", 5, false},              // exclude multiple
+		{"all", "aider", 6, false},                 // all minus exclude
 		{"claude,gemini,aider", "aider", 2, false}, // include then exclude
 		{"invalid", "", 0, true},                   // invalid agent
 		{"", "invalid", 0, true},                   // invalid exclude
@@ -654,6 +654,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"aider-only", []string{"--agents", "aider"}},
 		{"goose-only", []string{"--agents", "goose"}},
 		{"opencode-only", []string{"--agents", "opencode"}},
+		{"pi-only", []string{"--agents", "pi"}},
 		{"nodejs-agents", []string{"--agents", "claude,gemini,codex"}},
 		{"exclude-aider", []string{"--exclude-agents", "aider"}},
 		{"with-apt", []string{"--apt-get-install", "vim,curl"}},
@@ -666,6 +667,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-slash-commands-no-alias", []string{"--agents", "all", "--with-slash-commands", "https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-claude-codex", []string{"--agents", "claude,codex", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-opencode-only", []string{"--agents", "opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-slash-commands-pi-only", []string{"--agents", "pi", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-claude-opencode", []string{"--agents", "claude,opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-ssl-selfsign", []string{"--ssl", "selfsign"}},
 		{"with-ssl-letsencrypt", []string{"--ssl", "letsencrypt@google.com", "--email", "admin@example.com"}},
@@ -807,28 +809,30 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		withDocker    bool
 		slashCommands []SlashCommandsRepo
 	}{
-		{"default", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
+		{"default", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
 		{"claude-only", []string{"claude"}, "", "", false, nil},
 		{"aider-only", []string{"aider"}, "", "", false, nil},
 		{"goose-only", []string{"goose"}, "", "", false, nil},
 		{"opencode-only", []string{"opencode"}, "", "", false, nil},
+		{"pi-only", []string{"pi"}, "", "", false, nil},
 		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", "", false, nil},
-		{"exclude-aider", []string{"claude", "gemini", "codex", "goose", "opencode"}, "", "", false, nil},
-		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "vim curl", "", false, nil},
-		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "typescript", false, nil},
-		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "vim", "typescript", false, nil},
-		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", true, nil},
-		{"with-slash-commands", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-multi", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}, {Alias: "org/team-cmds", URL: "https://github.com/org/team-cmds.git"}}},
+		{"exclude-aider", []string{"claude", "gemini", "codex", "goose", "opencode", "pi"}, "", "", false, nil},
+		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "vim curl", "", false, nil},
+		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "typescript", false, nil},
+		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "vim", "typescript", false, nil},
+		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", true, nil},
+		{"with-slash-commands", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-multi", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}, {Alias: "org/team-cmds", URL: "https://github.com/org/team-cmds.git"}}},
 		{"with-slash-commands-claude-only", []string{"claude"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-codex-only", []string{"codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-no-alias", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-no-alias", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-claude-codex", []string{"claude", "codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-opencode-only", []string{"opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
+		{"with-slash-commands-pi-only", []string{"pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
 		{"with-slash-commands-claude-opencode", []string{"claude", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-ssl-selfsign", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
-		{"with-ssl-letsencrypt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
-		{"with-ssl-letsencrypt-staging", []string{"claude", "gemini", "codex", "aider", "goose", "opencode"}, "", "", false, nil},
+		{"with-ssl-selfsign", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
+		{"with-ssl-letsencrypt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
+		{"with-ssl-letsencrypt-staging", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
 	}
 
 	// Read the template
