@@ -50,6 +50,35 @@ func TestAuthVerifyCookieMalformed(t *testing.T) {
 	}
 }
 
+func TestResolveCookieSecure(t *testing.T) {
+	cases := []struct {
+		name          string
+		xfp           string
+		envVar        string
+		wantSecure    bool
+	}{
+		{"proxy says https", "https", "", true},
+		{"proxy says http", "http", "", false},
+		{"proxy header wins over env=true (tailnet bypass of TLS proxy)", "http", "true", false},
+		{"proxy header wins over env=false", "https", "false", true},
+		{"no proxy, env=true", "", "true", true},
+		{"no proxy, env=false", "", "false", false},
+		{"no proxy, no env -- default insecure", "", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SWE_COOKIE_SECURE", tc.envVar)
+			req := httptest.NewRequest("POST", "/swe-swe-auth/login", nil)
+			if tc.xfp != "" {
+				req.Header.Set("X-Forwarded-Proto", tc.xfp)
+			}
+			if got := resolveCookieSecure(req); got != tc.wantSecure {
+				t.Errorf("resolveCookieSecure: got %v, want %v", got, tc.wantSecure)
+			}
+		})
+	}
+}
+
 func TestAuthMiddlewareRedirectsUnauthenticated(t *testing.T) {
 	secret := "test-password"
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

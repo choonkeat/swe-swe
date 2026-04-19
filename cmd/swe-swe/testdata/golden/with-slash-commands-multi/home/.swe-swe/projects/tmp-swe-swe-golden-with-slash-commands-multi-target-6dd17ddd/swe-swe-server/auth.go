@@ -276,6 +276,23 @@ func authLoginHandler(password string) http.HandlerFunc {
 	}
 }
 
+// resolveCookieSecure decides the Secure flag for the session cookie.
+// Prefer per-request X-Forwarded-Proto set by a fronting proxy (Traefik,
+// Fly, Railway) so requests that bypass the proxy -- e.g. a direct hit on
+// the swe-swe-server HTTP port over Tailscale -- correctly issue non-Secure
+// cookies. Fall back to SWE_COOKIE_SECURE only when no proxy sets the
+// header (rare PaaS that terminates TLS without forwarded headers, or a
+// user fronting the server with custom TLS that omits the header).
+func resolveCookieSecure(r *http.Request) bool {
+	if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
+		return p == "https"
+	}
+	if v := os.Getenv("SWE_COOKIE_SECURE"); v != "" {
+		return v == "true"
+	}
+	return false
+}
+
 // authLoginPostHandler validates password, sets cookie, and redirects.
 func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string) {
 	if err := r.ParseForm(); err != nil {
@@ -316,14 +333,6 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		return
 	}
 
-	// Secure flag: explicit env var takes priority, otherwise auto-detect from proxy headers
-	// (PaaS platforms like Fly/Railway set X-Forwarded-Proto: https)
-	isSecure := false
-	if v := os.Getenv("SWE_COOKIE_SECURE"); v != "" {
-		isSecure = v == "true"
-	} else {
-		isSecure = r.Header.Get("X-Forwarded-Proto") == "https"
-	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    authSignCookie(secret),
@@ -331,7 +340,7 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		MaxAge:   authCookieMaxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecure,
+		Secure:   resolveCookieSecure(r),
 	})
 
 	// Redirect to original URL or home

@@ -17,7 +17,7 @@ This doc explains *why* it works, the operational steps, and the gotchas.
 | Docker port mapping | Compose: `"${SWE_PORT:-1977}:7000"`. Dockerfile-only: `"${SWE_PORT:-1977}:${SWE_PORT:-1977}"`. Preview/agent-chat/VNC ports: `"%d:%d"`. No IP prefix anywhere. | Docker binds to `0.0.0.0` by default → tailnet peers reach the host port directly. |
 | WebSocket Origin check | `CheckOrigin: func(r *http.Request) bool { return true }` (`main.go:85`). | Any hostname (including `*.ts.net`) is accepted. |
 | Frontend URL building | Uses `window.location.host` for WS and port-based proxy URLs (`terminal-ui.js:776`, etc.). | Browser's hostname is reused — Tailscale FQDN works. |
-| Auth cookie flags | `SameSite=Lax`; `Secure` auto-set from `X-Forwarded-Proto: https` or explicit `SWE_COOKIE_SECURE` (`auth.go:319-326`). | Plain HTTP over Tailscale → cookie isn't Secure (correct). HTTPS via `tailscale serve` → becomes Secure (correct). |
+| Auth cookie flags | `SameSite=Lax`; `Secure` auto-set from `X-Forwarded-Proto` when present, falling back to `SWE_COOKIE_SECURE` only when no proxy header arrives (`resolveCookieSecure` in `auth.go`). | Direct HTTP to swe-swe-server over Tailscale (bypassing Traefik) → header absent, env-var fallback applies; on compose-SSL that fallback is `true`, so unset `SWE_COOKIE_SECURE` for the container or front the port with `tailscale serve` so the header is set and cookies become Secure naturally. |
 | Per-session proxy ports | `SWE_PREVIEW_PORTS=3000-3019`, `SWE_AGENT_CHAT_PORTS=4000-4019`, `SWE_PUBLIC_PORTS=5000-5019`, `SWE_VNC_PORTS=7000-7019`. All bound on the host. | Each is reachable as `tailnet-host:<port>`. |
 
 Net result: **the only work is operational.** No code, no env-var additions, no allowlist edits.

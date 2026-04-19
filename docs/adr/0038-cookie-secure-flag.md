@@ -19,27 +19,32 @@ Additionally, browsers enforce HSTS across ports — visiting `https://example.c
 
 ## Decision
 
-Use a hybrid approach with explicit override and proxy auto-detection:
+Prefer per-request proxy detection, fall back to an env-var override when no proxy header is present:
 
 ```go
-if v := os.Getenv("SWE_COOKIE_SECURE"); v != "" {
-    isSecure = v == "true"
-} else {
-    isSecure = r.Header.Get("X-Forwarded-Proto") == "https"
+if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
+    return p == "https"
 }
+if v := os.Getenv("SWE_COOKIE_SECURE"); v != "" {
+    return v == "true"
+}
+return false
 ```
+
+The precedence was inverted on 2026-04-19: the env-var override previously won unconditionally, which broke direct Tailscale hits on the swe-swe-server HTTP port (bypassing Traefik). With the header taking priority, each request gets the correct Secure flag for its actual transport; the env var is a fallback for deployments where no proxy sets the header.
 
 ### How each mode sets the flag
 
 | Mode | `SWE_COOKIE_SECURE` | `X-Forwarded-Proto` | Cookie Secure |
 |------|---------------------|---------------------|---------------|
-| Compose with SSL | `true` (set in compose env) | `https` (Traefik) | Yes |
+| Compose with SSL, via Traefik | `true` (set in compose env, now redundant) | `https` (Traefik) | Yes |
+| Compose with SSL, direct HTTP to swe-swe-server (e.g. Tailscale) | `true` (ignored, header is absent → falls through) | absent | No (correct for plain HTTP) |
 | PaaS (Fly/Railway) | not set | `https` (platform proxy) | Yes (auto) |
 | Local no-SSL | not set | absent | No |
 
 ### Init-time configuration
 
-- `docker-compose.yml` template sets `SWE_COOKIE_SECURE=true` inside `{{IF SSL}}` blocks
+- `docker-compose.yml` template sets `SWE_COOKIE_SECURE=true` inside `{{IF SSL}}` blocks -- now mostly redundant since Traefik always sets `X-Forwarded-Proto`, but retained as a belt-and-braces signal for custom proxy setups that drop the header
 - Dockerfile-only mode does not set the env var (relies on proxy auto-detection or explicit user override)
 
 ## Consequences
