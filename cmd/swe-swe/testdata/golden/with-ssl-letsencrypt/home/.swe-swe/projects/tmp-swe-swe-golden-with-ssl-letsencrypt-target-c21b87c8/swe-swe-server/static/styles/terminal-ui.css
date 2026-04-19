@@ -1712,6 +1712,90 @@ terminal-ui.embedded-in-iframe .mobile-only {
     border: none;
 }
 
+/* === Left Panel Vertical Split (chat on top, terminal on bottom) === */
+.terminal-ui__left-resizer {
+    display: none;
+    height: 6px;
+    background: var(--accent-10);
+    cursor: row-resize;
+    flex-shrink: 0;
+    position: relative;
+    transition: background 0.2s, height 0.15s;
+    align-items: center;
+    padding: 0 12px;
+    user-select: none;
+    z-index: 12;
+}
+
+.terminal-ui__left-resizer:hover,
+.terminal-ui__left-resizer.dragging {
+    background: var(--accent-20);
+}
+
+.terminal-ui__left-resizer::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 2px;
+    background: var(--accent-30);
+    border-radius: 1px;
+}
+
+.terminal-ui__left-resizer-label {
+    display: none;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    gap: 6px;
+    align-items: center;
+}
+
+.terminal-ui.left-split-mode .terminal-ui__left-resizer {
+    display: flex;
+}
+
+.terminal-ui.left-split-mode .terminal-ui__panel-header.desktop-only {
+    display: none;
+}
+
+.terminal-ui.left-split-mode .terminal-ui__agent-chat {
+    display: flex !important;
+    visibility: visible !important;
+    position: relative !important;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.terminal-ui.left-split-mode .terminal-ui__terminal {
+    display: block;
+    visibility: visible !important;
+    position: relative !important;
+    flex: 0 0 auto;
+    height: var(--left-terminal-height, 20%);
+    min-height: 0;
+}
+
+/* Collapsed state: terminal hidden, resizer becomes a labeled strip */
+.terminal-ui.left-split-collapsed .terminal-ui__left-resizer {
+    height: 24px;
+    cursor: pointer;
+}
+
+.terminal-ui.left-split-collapsed .terminal-ui__left-resizer::after {
+    display: none;
+}
+
+.terminal-ui.left-split-collapsed .terminal-ui__left-resizer-label {
+    display: inline-flex;
+}
+
+.terminal-ui.left-split-collapsed .terminal-ui__terminal {
+    display: none !important;
+}
+
 /* === Responsive: Desktop-only / Mobile-only === */
 .desktop-only {
     display: inline-flex;
@@ -1783,6 +1867,17 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
     .terminal-ui__left-panel-tabs {
         display: none;
+    }
+
+    /* Mobile: disable vertical split entirely. JS removes .left-split-mode
+       below 640px, but these rules are a safety net if the class lingers. */
+    .terminal-ui.left-split-mode .terminal-ui__left-resizer {
+        display: none;
+    }
+
+    .terminal-ui.left-split-mode .terminal-ui__agent-chat,
+    .terminal-ui.left-split-mode .terminal-ui__terminal {
+        flex: 1 1 auto;
     }
 }
 

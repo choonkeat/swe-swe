@@ -89,6 +89,10 @@ class TerminalUI extends HTMLElement {
         this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
         // Left panel tab state
         this.leftPanelTab = 'terminal'; // 'terminal' | 'chat'
+        // Left panel vertical split state (desktop, when chat is available)
+        this.leftPanelTerminalHeight = 20; // percentage reserved for terminal (bottom)
+        this.leftPanelCollapsed = false;   // terminal collapsed to a strip
+        this.leftSplitDesktopMin = 640;    // matches CSS @media breakpoint
         // Split-pane constants for desktop detection
         this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
         this.RESIZER_WIDTH = 8;     // width of the resizer handle
@@ -360,7 +364,6 @@ class TerminalUI extends HTMLElement {
                                 </div>
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
                             </div>
-                            <div class="terminal-ui__terminal"></div>
                             <div class="terminal-ui__agent-chat" style="display: none;">
                                 <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
                                     <div class="terminal-ui__iframe-placeholder-status">
@@ -374,6 +377,12 @@ class TerminalUI extends HTMLElement {
                                         allow="microphone; autoplay; speech-synthesis">
                                 </iframe>
                             </div>
+                            <div class="terminal-ui__left-resizer">
+                                <span class="terminal-ui__left-resizer-label">
+                                    <span class="terminal-ui__terminal-icon">&gt;_</span> Agent Terminal
+                                </span>
+                            </div>
+                            <div class="terminal-ui__terminal"></div>
                             <div class="terminal-ui__drop-overlay">
                                 <div class="terminal-ui__drop-icon">+</div>
                                 <div>Drop file to paste contents</div>
@@ -1777,6 +1786,9 @@ class TerminalUI extends HTMLElement {
             mobileOpt.hidden = !visible;
             mobileOpt.disabled = !visible;
         }
+        // Re-evaluate vertical split -- enables on desktop once chat is loaded,
+        // disables if chat goes away.
+        this.updateLeftSplitForViewport();
     }
 
     // Show/hide the Agent View tab (desktop button + mobile dropdown option).
@@ -3093,6 +3105,13 @@ class TerminalUI extends HTMLElement {
         // Setup resizer drag functionality
         this.setupResizer();
 
+        // Left panel vertical split (activated when agent chat becomes available)
+        this.loadSavedLeftPanelState();
+        this.applyLeftTerminalHeight();
+        this.setupLeftPanelResizer();
+        this.updateLeftSplitForViewport();
+        window.addEventListener('resize', () => this.updateLeftSplitForViewport());
+
         this.updatePreviewBaseUrl();
 
         // Setup iframe navigation buttons
@@ -3420,6 +3439,8 @@ class TerminalUI extends HTMLElement {
             });
         };
 
+        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
+
         const onMouseDown = (e) => {
             isDragging = true;
             startX = e.clientX || e.touches?.[0]?.clientX || 0;
@@ -3427,8 +3448,10 @@ class TerminalUI extends HTMLElement {
             resizer.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
-            // Disable iframe pointer events during drag to prevent mouse capture
+            // Disable iframe pointer events during drag so the iframe doesn't
+            // capture the mouse (iframes swallow mousemove from the parent).
             if (iframePane) iframePane.style.pointerEvents = 'none';
+            if (chatIframe) chatIframe.style.pointerEvents = 'none';
             // Show tooltips
             const containerWidth = splitPane.offsetWidth;
             const resizerWidth = resizer.offsetWidth;
@@ -3477,6 +3500,7 @@ class TerminalUI extends HTMLElement {
             document.body.style.userSelect = '';
             // Re-enable iframe pointer events
             if (iframePane) iframePane.style.pointerEvents = '';
+            if (chatIframe) chatIframe.style.pointerEvents = '';
             hideTooltips();
             this.savePaneWidth();
             // Trigger terminal resize and notify backend
@@ -3526,6 +3550,205 @@ class TerminalUI extends HTMLElement {
         } catch (e) {
             console.warn('[TerminalUI] Could not save pane width:', e);
         }
+    }
+
+    // === Left panel vertical split (chat on top, terminal on bottom) ===
+
+    loadSavedLeftPanelState() {
+        try {
+            const savedHeight = localStorage.getItem('swe-swe-left-terminal-height');
+            if (savedHeight) {
+                const h = parseFloat(savedHeight);
+                if (!isNaN(h) && h >= 5 && h <= 90) {
+                    this.leftPanelTerminalHeight = h;
+                }
+            }
+            this.leftPanelCollapsed = localStorage.getItem('swe-swe-left-collapsed') === '1';
+        } catch (e) {
+            console.warn('[TerminalUI] Could not load left panel state:', e);
+        }
+    }
+
+    saveLeftPanelState() {
+        try {
+            localStorage.setItem('swe-swe-left-terminal-height', this.leftPanelTerminalHeight.toString());
+            localStorage.setItem('swe-swe-left-collapsed', this.leftPanelCollapsed ? '1' : '0');
+        } catch (e) {
+            console.warn('[TerminalUI] Could not save left panel state:', e);
+        }
+    }
+
+    applyLeftTerminalHeight() {
+        const terminalUi = this.querySelector('.terminal-ui');
+        if (!terminalUi) return;
+        terminalUi.style.setProperty('--left-terminal-height', this.leftPanelTerminalHeight + '%');
+        terminalUi.classList.toggle('left-split-collapsed', this.leftPanelCollapsed);
+    }
+
+    // Enable/disable the vertical split based on chat-tab visibility + viewport.
+    updateLeftSplitForViewport() {
+        const terminalUi = this.querySelector('.terminal-ui');
+        if (!terminalUi) return;
+        const wideEnough = window.innerWidth >= this.leftSplitDesktopMin;
+        const chatBtn = this.querySelector('button[data-left-tab="chat"]');
+        const chatTabVisible = !!chatBtn && chatBtn.style.display !== 'none';
+        const shouldSplit = wideEnough && chatTabVisible;
+
+        if (shouldSplit && !terminalUi.classList.contains('left-split-mode')) {
+            // Entering split mode: clear any inline styles that tab switching may have set
+            const terminalEl = this.querySelector('.terminal-ui__terminal');
+            const chatEl = this.querySelector('.terminal-ui__agent-chat');
+            if (terminalEl) {
+                terminalEl.style.visibility = '';
+                terminalEl.style.position = '';
+            }
+            if (chatEl) chatEl.style.display = '';
+            // xterm-focused gates mobile keyboard + touch-scroll-proxy; don't
+            // claim focus in split mode since both panels are visible.
+            terminalUi.classList.remove('xterm-focused');
+            terminalUi.classList.add('left-split-mode');
+            this.applyLeftTerminalHeight();
+            // Re-fit the terminal to its new smaller height
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        } else if (!shouldSplit && terminalUi.classList.contains('left-split-mode')) {
+            // Leaving split mode (e.g. viewport shrank to mobile). Drop the
+            // mode classes, then re-apply the saved tab so inline display
+            // styles match what tab-switching would have set.
+            terminalUi.classList.remove('left-split-mode', 'left-split-collapsed');
+            terminalUi.style.removeProperty('--left-terminal-height');
+            const terminalEl = this.querySelector('.terminal-ui__terminal');
+            const chatEl = this.querySelector('.terminal-ui__agent-chat');
+            if (this.leftPanelTab === 'chat') {
+                if (terminalEl) {
+                    terminalEl.style.visibility = 'hidden';
+                    terminalEl.style.position = 'absolute';
+                }
+                if (chatEl) chatEl.style.display = 'flex';
+            } else {
+                if (chatEl) chatEl.style.display = 'none';
+                if (terminalEl) {
+                    terminalEl.style.visibility = '';
+                    terminalEl.style.position = '';
+                }
+            }
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        }
+    }
+
+    setupLeftPanelResizer() {
+        const resizer = this.querySelector('.terminal-ui__left-resizer');
+        const wrapper = this.querySelector('.terminal-ui__terminal-wrapper');
+        const chatEl = this.querySelector('.terminal-ui__agent-chat');
+        if (!resizer || !wrapper || !chatEl) return;
+
+        let isDragging = false;
+        let startY = 0;
+        let startHeightPx = 0;
+        let fitPending = false;
+
+        // Snap targets (terminal percentage of the wrapper) + collapse threshold
+        const snapPoints = [20, 40, 60];
+        const snapThreshold = 2;
+        const collapseThresholdPct = 5;
+
+        const throttledFit = () => {
+            if (fitPending || !this.fitAddon) return;
+            fitPending = true;
+            requestAnimationFrame(() => {
+                try { this.fitAddon.fit(); } catch (e) { /* ignore */ }
+                this.sendResize();
+                fitPending = false;
+            });
+        };
+
+        const getContainerHeight = () => {
+            const chatRect = chatEl.getBoundingClientRect();
+            const terminalEl = this.querySelector('.terminal-ui__terminal');
+            const termRect = terminalEl ? terminalEl.getBoundingClientRect() : { height: 0 };
+            const resizerRect = resizer.getBoundingClientRect();
+            return chatRect.height + termRect.height + resizerRect.height;
+        };
+
+        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
+        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
+        const terminalEl = this.querySelector('.terminal-ui__terminal');
+
+        const onMouseDown = (e) => {
+            // If collapsed, clicking the strip restores it instead of dragging
+            if (this.leftPanelCollapsed) {
+                this.leftPanelCollapsed = false;
+                if (this.leftPanelTerminalHeight < 10) this.leftPanelTerminalHeight = 20;
+                this.applyLeftTerminalHeight();
+                this.saveLeftPanelState();
+                setTimeout(() => this.fitAndPreserveScroll(), 50);
+                e.preventDefault();
+                return;
+            }
+            isDragging = true;
+            startY = e.clientY || e.touches?.[0]?.clientY || 0;
+            startHeightPx = terminalEl ? terminalEl.offsetHeight : 0;
+            resizer.classList.add('dragging');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            // Block iframes and the xterm from capturing the mouse during drag
+            if (chatIframe) chatIframe.style.pointerEvents = 'none';
+            if (iframePane) iframePane.style.pointerEvents = 'none';
+            if (terminalEl) terminalEl.style.pointerEvents = 'none';
+            e.preventDefault();
+        };
+
+        const onMouseMove = (e) => {
+            if (!isDragging) return;
+            const clientY = e.clientY || e.touches?.[0]?.clientY || 0;
+            const delta = startY - clientY; // up = positive = grow terminal
+            const containerHeight = getContainerHeight();
+            if (containerHeight <= 0) return;
+
+            let newHeightPx = Math.max(0, startHeightPx + delta);
+            let pct = (newHeightPx / containerHeight) * 100;
+
+            // Snap
+            for (const snap of snapPoints) {
+                if (Math.abs(pct - snap) < snapThreshold) { pct = snap; break; }
+            }
+            // Clamp
+            pct = Math.max(0, Math.min(80, pct));
+
+            const collapsed = pct < collapseThresholdPct;
+            this.leftPanelCollapsed = collapsed;
+            if (!collapsed) this.leftPanelTerminalHeight = pct;
+            this.applyLeftTerminalHeight();
+            throttledFit();
+        };
+
+        const onMouseUp = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            if (chatIframe) chatIframe.style.pointerEvents = '';
+            if (iframePane) iframePane.style.pointerEvents = '';
+            if (terminalEl) terminalEl.style.pointerEvents = '';
+            this.saveLeftPanelState();
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        };
+
+        // Double-click resets to default 20% / uncollapsed
+        resizer.addEventListener('dblclick', () => {
+            this.leftPanelCollapsed = false;
+            this.leftPanelTerminalHeight = 20;
+            this.applyLeftTerminalHeight();
+            this.saveLeftPanelState();
+            setTimeout(() => this.fitAndPreserveScroll(), 50);
+        });
+
+        resizer.addEventListener('mousedown', onMouseDown);
+        resizer.addEventListener('touchstart', onMouseDown, { passive: false });
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('touchmove', onMouseMove, { passive: false });
+        document.addEventListener('mouseup', onMouseUp);
+        document.addEventListener('touchend', onMouseUp);
     }
 
     /**
