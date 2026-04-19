@@ -74,3 +74,4 @@ See `docs/dev/host-security-audit.md` for quick checks (SSH, fail2ban, ports, fi
 **Fix:** Shared package-level `var agentChatClient` with `MaxIdleConnsPerHost: 10` and `IdleConnTimeout: 90s`. Never create per-request `http.Transport` instances — always reuse a shared client.
 
 **Rule:** Do not create `&http.Transport{}` inside request handlers. Use a package-level or struct-level `http.Client` with a shared Transport.
+See .swe-swe/docs/AGENTS.md (if it exists) for context of this current environment
