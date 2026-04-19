@@ -27,11 +27,24 @@ bash .swe-swe/pre-restart.sh
 # 2. Stop any test containers
 docker compose -p swe-swe-test down -t 10 2>/dev/null || true
 
-# 3. Stop the chrome container (it doesn't always respond to compose down)
+# 3. Gracefully end all OTHER active swe-swe sessions
+# Your own session is identified by the SESSION_UUID env var. Ending it mid-sequence
+# kills the reboot, so skip it. For every other session returned by list_sessions,
+# call end_session so the swe-swe-server can flush PTYs / close WebSockets cleanly
+# instead of being hard-killed by the compose down.
+#
+# From an agent driving the reboot (e.g. via MCP):
+#   - list: mcp__swe-swe__list_sessions
+#   - end:  mcp__swe-swe__end_session(uuid=...) for each uuid != $SESSION_UUID
+#
+# Skipping this step is not fatal — the compose down will still tear them down —
+# but other users/agents will see an abrupt disconnect instead of a clean shutdown.
+
+# 4. Stop the chrome container (it doesn't always respond to compose down)
 # Replace <project-name> with your actual compose project name (visible in `docker ps`)
 docker stop -t 10 <project-name>-chrome-1
 
-# 4. Bring down the rest of the stack (we're all going offline here, including agent)
+# 5. Bring down the rest of the stack (we're all going offline here, including agent)
 docker compose -p <project-name> down -t 20
 ```
 
