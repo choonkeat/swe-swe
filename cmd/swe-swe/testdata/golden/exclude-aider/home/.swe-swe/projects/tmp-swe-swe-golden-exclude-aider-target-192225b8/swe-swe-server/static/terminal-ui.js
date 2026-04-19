@@ -360,7 +360,12 @@ class TerminalUI extends HTMLElement {
                                 </div>
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
                             </div>
-                            <div class="terminal-ui__terminal"></div>
+                            <div class="terminal-ui__terminal">
+                                <div class="terminal-ui__drop-overlay">
+                                    <div class="terminal-ui__drop-icon">+</div>
+                                    <div>Drop file to paste contents</div>
+                                </div>
+                            </div>
                             <div class="terminal-ui__agent-chat" style="display: none;">
                                 <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
                                     <div class="terminal-ui__iframe-placeholder-status">
@@ -373,10 +378,6 @@ class TerminalUI extends HTMLElement {
                                         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
                                         allow="microphone; autoplay; speech-synthesis">
                                 </iframe>
-                            </div>
-                            <div class="terminal-ui__drop-overlay">
-                                <div class="terminal-ui__drop-icon">+</div>
-                                <div>Drop file to paste contents</div>
                             </div>
                             <div class="terminal-ui__upload-overlay">
                                 <div class="terminal-ui__upload-spinner"></div>
@@ -2838,7 +2839,9 @@ class TerminalUI extends HTMLElement {
     }
 
     setupFileDrop() {
-        const container = this.querySelector('.terminal-ui__terminal-wrapper');
+        // Scope drag/drop to the xterm pane only, so drops on Agent Chat
+        // (which has its own scoped drop zone) don't get captured here.
+        const container = this.querySelector('.terminal-ui__terminal');
         const overlay = this.querySelector('.terminal-ui__drop-overlay');
         let dragCounter = 0;
 

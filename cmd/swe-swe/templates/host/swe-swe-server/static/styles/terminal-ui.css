@@ -29,7 +29,9 @@
     width: 100%;
     overflow: hidden;
     transition: opacity 0.3s ease, transform 0.1s ease-out;
-    /* Position is controlled by JS for keyboard handling */
+    /* Position is controlled by JS for keyboard handling;
+       relative here so .terminal-ui__drop-overlay can be inset:0 scoped to this pane. */
+    position: relative;
 }
 
 .terminal-ui__terminal.disconnected {
