@@ -1243,8 +1243,10 @@ services:
     environment:
       # Auth password (activates embedded auth middleware)
       - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
-      # Set Secure flag on auth cookies (HTTPS via Traefik)
-      - SWE_COOKIE_SECURE=true
+      # SWE_COOKIE_SECURE is no longer set here: swe-swe-server now derives
+      # the cookie Secure flag from X-Forwarded-Proto per request (Traefik
+      # sets it to https; direct HTTP hits on the backend -- e.g. Tailscale
+      # to the bare container port -- correctly get a non-Secure cookie).
       # Pass through API keys from host environment (set as env vars or in .env file)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       # - GEMINI_API_KEY=${GEMINI_API_KEY:-}

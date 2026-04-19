@@ -37,14 +37,15 @@ The precedence was inverted on 2026-04-19: the env-var override previously won u
 
 | Mode | `SWE_COOKIE_SECURE` | `X-Forwarded-Proto` | Cookie Secure |
 |------|---------------------|---------------------|---------------|
-| Compose with SSL, via Traefik | `true` (set in compose env, now redundant) | `https` (Traefik) | Yes |
-| Compose with SSL, direct HTTP to swe-swe-server (e.g. Tailscale) | `true` (ignored, header is absent → falls through) | absent | No (correct for plain HTTP) |
+| Compose with SSL, via Traefik | not set | `https` (Traefik) | Yes (auto) |
+| Compose with SSL, direct HTTP to swe-swe-server (e.g. Tailscale bypass) | not set | absent | No (correct for plain HTTP) |
 | PaaS (Fly/Railway) | not set | `https` (platform proxy) | Yes (auto) |
 | Local no-SSL | not set | absent | No |
+| Custom TLS front that omits `X-Forwarded-Proto` | user sets `true` manually | absent | Yes (via fallback) |
 
 ### Init-time configuration
 
-- `docker-compose.yml` template sets `SWE_COOKIE_SECURE=true` inside `{{IF SSL}}` blocks -- now mostly redundant since Traefik always sets `X-Forwarded-Proto`, but retained as a belt-and-braces signal for custom proxy setups that drop the header
+- `docker-compose.yml` template no longer sets `SWE_COOKIE_SECURE` -- Traefik's `X-Forwarded-Proto: https` is sufficient, and setting it forced Secure cookies even on requests that bypassed Traefik (breaking Tailscale access)
 - Dockerfile-only mode does not set the env var (relies on proxy auto-detection or explicit user override)
 
 ## Consequences
