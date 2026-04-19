@@ -1263,6 +1263,14 @@ services:
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       # Container-internal port range for VNC browser view (per-session)
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+      # PaaS-style public port (triggers landing/health server on this port
+      # when set and different from SWE_PORT); see www/swe-swe-tailscale.md
+      - PORT=${PORT:-}
+      # Tailscale bootstrap -- dormant unless TS_AUTHKEY is set
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_HOSTNAME:-}
+      - TS_STATE_DIR=${TS_STATE_DIR:-}
+      - TS_DISABLE=${TS_DISABLE:-}
     restart: unless-stopped
 
 networks:

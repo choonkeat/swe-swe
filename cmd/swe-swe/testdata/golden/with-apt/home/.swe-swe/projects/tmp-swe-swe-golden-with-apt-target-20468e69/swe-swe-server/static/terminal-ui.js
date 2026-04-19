@@ -88,11 +88,10 @@ class TerminalUI extends HTMLElement {
         this.iframePaneWidth = 50; // percentage
         this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
         // Left panel tab state
-        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat'
-        // Left panel vertical split state (desktop, when chat is available)
-        this.leftPanelTerminalHeight = 20; // percentage reserved for terminal (bottom)
+        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat' | 'split-chat-terminal' | 'split-terminal-chat'
+        // Left panel vertical split state (applies only when a split tab is active)
+        this.leftPanelTerminalHeight = 20; // percentage reserved for terminal
         this.leftPanelCollapsed = false;   // terminal collapsed to a strip
-        this.leftSplitDesktopMin = 640;    // matches CSS @media breakpoint
         // Split-pane constants for desktop detection
         this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
         this.RESIZER_WIDTH = 8;     // width of the resizer handle
@@ -360,6 +359,12 @@ class TerminalUI extends HTMLElement {
                                     </button>
                                     <button data-left-tab="chat" style="display: none;">
                                         <span class="terminal-ui__chat-tab-icon">&#9711;</span> Agent Chat<span class="terminal-ui__chat-tab-loading" style="display: none;"> (Loading)</span>
+                                    </button>
+                                    <button data-left-tab="split-chat-terminal" style="display: none;">
+                                        <span class="terminal-ui__chat-tab-icon">&#9711;</span> Chat + <span class="terminal-ui__terminal-icon">>_</span>
+                                    </button>
+                                    <button data-left-tab="split-terminal-chat" style="display: none;">
+                                        <span class="terminal-ui__terminal-icon">>_</span> + <span class="terminal-ui__chat-tab-icon">&#9711;</span> Chat
                                     </button>
                                 </div>
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
@@ -1713,8 +1718,10 @@ class TerminalUI extends HTMLElement {
         setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
-    // Switch left panel between terminal and chat
+    // Switch left panel between terminal / chat / two split orderings
     switchLeftPanelTab(tab) {
+        const isSplit = tab === 'split-chat-terminal' || tab === 'split-terminal-chat';
+
         if (tab !== this.leftPanelTab) {
             this.leftPanelTab = tab;
 
@@ -1723,12 +1730,17 @@ class TerminalUI extends HTMLElement {
             const chatEl = this.querySelector('.terminal-ui__agent-chat');
             if (!terminalEl || !chatEl) return;
 
-            // xterm-focused: gate mobile keyboard + touch-scroll-proxy (desktop tab switch)
+            // xterm-focused gates mobile keyboard + touch-scroll-proxy. In split
+            // mode both panes are visible so the terminal should not claim it.
             if (tab === 'terminal') {
                 terminalUi.classList.add('xterm-focused');
             } else {
                 terminalUi.classList.remove('xterm-focused');
             }
+
+            // Apply split-mode classes.
+            terminalUi.classList.toggle('left-split-mode', isSplit);
+            terminalUi.classList.toggle('left-split-reversed', tab === 'split-terminal-chat');
 
             // Update left panel tab buttons
             const buttons = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
@@ -1736,7 +1748,15 @@ class TerminalUI extends HTMLElement {
                 btn.classList.toggle('active', btn.dataset.leftTab === tab);
             });
 
-            if (tab === 'chat') {
+            if (isSplit) {
+                // Both panes visible: clear any inline display/visibility set by
+                // prior single-pane tab switches. CSS (.left-split-mode) takes over.
+                terminalEl.style.visibility = '';
+                terminalEl.style.position = '';
+                chatEl.style.display = '';
+                this.applyLeftTerminalHeight();
+                setTimeout(() => this.fitAndPreserveScroll(), 50);
+            } else if (tab === 'chat') {
                 // Use visibility instead of display to preserve xterm scroll position
                 terminalEl.style.visibility = 'hidden';
                 terminalEl.style.position = 'absolute';
@@ -1749,14 +1769,17 @@ class TerminalUI extends HTMLElement {
                 setTimeout(() => this.fitAndPreserveScroll(), 50);
             }
 
-            // Sync mobile dropdown
+            // Sync mobile dropdown (split tabs don't exist on mobile -- fall back to terminal).
             const mobileSelect = this.querySelector('.terminal-ui__mobile-nav-select');
             if (mobileSelect) {
                 mobileSelect.value = tab === 'chat' ? 'agent-chat' : 'agent-terminal';
             }
+
+            this.saveLeftPanelState();
         }
 
-        // Focus always transfers -- whether tab switched via click or programmatically
+        // Focus transfer: chat tab focuses chat iframe; terminal-only tab focuses
+        // xterm; split tabs leave focus wherever the user clicks.
         if (tab === 'chat') {
             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
             if (chatIframe && chatIframe.contentWindow) {
@@ -1768,17 +1791,19 @@ class TerminalUI extends HTMLElement {
                     }
                 } catch (e) { /* cross-origin: ignore */ }
             }
-        } else {
+        } else if (tab === 'terminal') {
             if (this.term) this.term.focus();
         }
     }
 
-    // Single source of truth for showing/hiding the Agent Chat tab in both
-    // desktop button and mobile dropdown -- prevents them from desyncing.
+    // Single source of truth for showing/hiding all chat-dependent left tabs
+    // (Chat, Chat+Terminal, Terminal+Chat) and the mobile dropdown entry.
     setAgentChatTabVisible(visible) {
         const display = visible ? '' : 'none';
-        const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
-        if (desktopBtn) desktopBtn.style.display = display;
+        const chatDeps = this.querySelectorAll(
+            'button[data-left-tab="chat"], button[data-left-tab="split-chat-terminal"], button[data-left-tab="split-terminal-chat"]'
+        );
+        chatDeps.forEach(btn => { btn.style.display = display; });
         // iOS Safari ignores display:none on <option> in native pickers;
         // use hidden+disabled attributes which Safari does respect.
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
@@ -1786,9 +1811,13 @@ class TerminalUI extends HTMLElement {
             mobileOpt.hidden = !visible;
             mobileOpt.disabled = !visible;
         }
-        // Re-evaluate vertical split -- enables on desktop once chat is loaded,
-        // disables if chat goes away.
-        this.updateLeftSplitForViewport();
+        if (visible) {
+            // Chat just became available -- re-apply a persisted split/chat tab if any.
+            this.restoreLeftPanelTab();
+        } else if (this.leftPanelTab !== 'terminal' && this.leftPanelTab !== 'chat') {
+            // Chat went away while a split tab was active -- drop back to terminal.
+            this.switchLeftPanelTab('terminal');
+        }
     }
 
     // Show/hide the Agent View tab (desktop button + mobile dropdown option).
@@ -3105,12 +3134,11 @@ class TerminalUI extends HTMLElement {
         // Setup resizer drag functionality
         this.setupResizer();
 
-        // Left panel vertical split (activated when agent chat becomes available)
+        // Left panel vertical split (activated when user picks a split tab)
         this.loadSavedLeftPanelState();
         this.applyLeftTerminalHeight();
         this.setupLeftPanelResizer();
-        this.updateLeftSplitForViewport();
-        window.addEventListener('resize', () => this.updateLeftSplitForViewport());
+        this.restoreLeftPanelTab();
 
         this.updatePreviewBaseUrl();
 
@@ -3564,6 +3592,11 @@ class TerminalUI extends HTMLElement {
                 }
             }
             this.leftPanelCollapsed = localStorage.getItem('swe-swe-left-collapsed') === '1';
+            const savedTab = localStorage.getItem('swe-swe-left-tab');
+            const validTabs = ['terminal', 'chat', 'split-chat-terminal', 'split-terminal-chat'];
+            if (savedTab && validTabs.includes(savedTab)) {
+                this.leftPanelTab = savedTab;
+            }
         } catch (e) {
             console.warn('[TerminalUI] Could not load left panel state:', e);
         }
@@ -3573,6 +3606,9 @@ class TerminalUI extends HTMLElement {
         try {
             localStorage.setItem('swe-swe-left-terminal-height', this.leftPanelTerminalHeight.toString());
             localStorage.setItem('swe-swe-left-collapsed', this.leftPanelCollapsed ? '1' : '0');
+            if (this.leftPanelTab) {
+                localStorage.setItem('swe-swe-left-tab', this.leftPanelTab);
+            }
         } catch (e) {
             console.warn('[TerminalUI] Could not save left panel state:', e);
         }
@@ -3585,54 +3621,17 @@ class TerminalUI extends HTMLElement {
         terminalUi.classList.toggle('left-split-collapsed', this.leftPanelCollapsed);
     }
 
-    // Enable/disable the vertical split based on chat-tab visibility + viewport.
-    updateLeftSplitForViewport() {
-        const terminalUi = this.querySelector('.terminal-ui');
-        if (!terminalUi) return;
-        const wideEnough = window.innerWidth >= this.leftSplitDesktopMin;
+    // Re-apply a persisted left-tab selection after mount.
+    restoreLeftPanelTab() {
+        const tab = this.leftPanelTab;
+        if (!tab || tab === 'terminal') return;
+        // Split tabs depend on chat being available; only apply them if the
+        // Chat button has been revealed (setAgentChatTabVisible true).
         const chatBtn = this.querySelector('button[data-left-tab="chat"]');
-        const chatTabVisible = !!chatBtn && chatBtn.style.display !== 'none';
-        const shouldSplit = wideEnough && chatTabVisible;
-
-        if (shouldSplit && !terminalUi.classList.contains('left-split-mode')) {
-            // Entering split mode: clear any inline styles that tab switching may have set
-            const terminalEl = this.querySelector('.terminal-ui__terminal');
-            const chatEl = this.querySelector('.terminal-ui__agent-chat');
-            if (terminalEl) {
-                terminalEl.style.visibility = '';
-                terminalEl.style.position = '';
-            }
-            if (chatEl) chatEl.style.display = '';
-            // xterm-focused gates mobile keyboard + touch-scroll-proxy; don't
-            // claim focus in split mode since both panels are visible.
-            terminalUi.classList.remove('xterm-focused');
-            terminalUi.classList.add('left-split-mode');
-            this.applyLeftTerminalHeight();
-            // Re-fit the terminal to its new smaller height
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
-        } else if (!shouldSplit && terminalUi.classList.contains('left-split-mode')) {
-            // Leaving split mode (e.g. viewport shrank to mobile). Drop the
-            // mode classes, then re-apply the saved tab so inline display
-            // styles match what tab-switching would have set.
-            terminalUi.classList.remove('left-split-mode', 'left-split-collapsed');
-            terminalUi.style.removeProperty('--left-terminal-height');
-            const terminalEl = this.querySelector('.terminal-ui__terminal');
-            const chatEl = this.querySelector('.terminal-ui__agent-chat');
-            if (this.leftPanelTab === 'chat') {
-                if (terminalEl) {
-                    terminalEl.style.visibility = 'hidden';
-                    terminalEl.style.position = 'absolute';
-                }
-                if (chatEl) chatEl.style.display = 'flex';
-            } else {
-                if (chatEl) chatEl.style.display = 'none';
-                if (terminalEl) {
-                    terminalEl.style.visibility = '';
-                    terminalEl.style.position = '';
-                }
-            }
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
-        }
+        const chatReady = !!chatBtn && chatBtn.style.display !== 'none';
+        if (!chatReady) return;
+        this.leftPanelTab = 'terminal'; // force switchLeftPanelTab to run its body
+        this.switchLeftPanelTab(tab);
     }
 
     setupLeftPanelResizer() {
@@ -3700,7 +3699,11 @@ class TerminalUI extends HTMLElement {
         const onMouseMove = (e) => {
             if (!isDragging) return;
             const clientY = e.clientY || e.touches?.[0]?.clientY || 0;
-            const delta = startY - clientY; // up = positive = grow terminal
+            // Dragging the resizer TOWARD the terminal shrinks it; AWAY grows it.
+            // In reversed mode (terminal on top) the terminal is above the resizer,
+            // so an upward drag (positive startY - clientY) shrinks it instead.
+            const reversed = this.querySelector('.terminal-ui.left-split-reversed');
+            const delta = reversed ? (clientY - startY) : (startY - clientY);
             const containerHeight = getContainerHeight();
             if (containerHeight <= 0) return;
 

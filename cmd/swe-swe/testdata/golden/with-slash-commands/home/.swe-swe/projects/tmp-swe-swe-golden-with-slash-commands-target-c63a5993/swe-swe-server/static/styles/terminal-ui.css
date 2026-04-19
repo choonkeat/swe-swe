@@ -1757,8 +1757,19 @@ terminal-ui.embedded-in-iframe .mobile-only {
     display: flex;
 }
 
-.terminal-ui.left-split-mode .terminal-ui__panel-header.desktop-only {
-    display: none;
+/* Reversed split (Terminal on top, Chat on bottom) flips visual order via
+   flex `order` without touching the DOM. The panel header stays at order:0
+   so the tab strip remains at the top. */
+.terminal-ui.left-split-mode.left-split-reversed .terminal-ui__terminal {
+    order: 1;
+}
+
+.terminal-ui.left-split-mode.left-split-reversed .terminal-ui__left-resizer {
+    order: 2;
+}
+
+.terminal-ui.left-split-mode.left-split-reversed .terminal-ui__agent-chat {
+    order: 3;
 }
 
 .terminal-ui.left-split-mode .terminal-ui__agent-chat {
