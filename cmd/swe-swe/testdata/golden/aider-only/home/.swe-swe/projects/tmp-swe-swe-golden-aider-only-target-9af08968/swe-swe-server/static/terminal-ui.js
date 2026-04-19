@@ -88,10 +88,7 @@ class TerminalUI extends HTMLElement {
         this.iframePaneWidth = 50; // percentage
         this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
         // Left panel tab state
-        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat' | 'split-chat-terminal' | 'split-terminal-chat'
-        // Left panel vertical split state (applies only when a split tab is active)
-        this.leftPanelTerminalHeight = 20; // percentage reserved for terminal
-        this.leftPanelCollapsed = false;   // terminal collapsed to a strip
+        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat'
         // Split-pane constants for desktop detection
         this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
         this.RESIZER_WIDTH = 8;     // width of the resizer handle
@@ -360,15 +357,10 @@ class TerminalUI extends HTMLElement {
                                     <button data-left-tab="chat" style="display: none;">
                                         <span class="terminal-ui__chat-tab-icon">&#9711;</span> Agent Chat<span class="terminal-ui__chat-tab-loading" style="display: none;"> (Loading)</span>
                                     </button>
-                                    <button data-left-tab="split-chat-terminal" style="display: none;">
-                                        <span class="terminal-ui__chat-tab-icon">&#9711;</span> Chat + <span class="terminal-ui__terminal-icon">>_</span>
-                                    </button>
-                                    <button data-left-tab="split-terminal-chat" style="display: none;">
-                                        <span class="terminal-ui__terminal-icon">>_</span> + <span class="terminal-ui__chat-tab-icon">&#9711;</span> Chat
-                                    </button>
                                 </div>
                                 <span class="terminal-ui__assistant-badge">CLAUDE</span>
                             </div>
+                            <div class="terminal-ui__terminal"></div>
                             <div class="terminal-ui__agent-chat" style="display: none;">
                                 <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
                                     <div class="terminal-ui__iframe-placeholder-status">
@@ -382,12 +374,6 @@ class TerminalUI extends HTMLElement {
                                         allow="microphone; autoplay; speech-synthesis">
                                 </iframe>
                             </div>
-                            <div class="terminal-ui__left-resizer">
-                                <span class="terminal-ui__left-resizer-label">
-                                    <span class="terminal-ui__terminal-icon">&gt;_</span> Agent Terminal
-                                </span>
-                            </div>
-                            <div class="terminal-ui__terminal"></div>
                             <div class="terminal-ui__drop-overlay">
                                 <div class="terminal-ui__drop-icon">+</div>
                                 <div>Drop file to paste contents</div>
@@ -1718,10 +1704,8 @@ class TerminalUI extends HTMLElement {
         setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
-    // Switch left panel between terminal / chat / two split orderings
+    // Switch left panel between terminal and chat
     switchLeftPanelTab(tab) {
-        const isSplit = tab === 'split-chat-terminal' || tab === 'split-terminal-chat';
-
         if (tab !== this.leftPanelTab) {
             this.leftPanelTab = tab;
 
@@ -1730,17 +1714,12 @@ class TerminalUI extends HTMLElement {
             const chatEl = this.querySelector('.terminal-ui__agent-chat');
             if (!terminalEl || !chatEl) return;
 
-            // xterm-focused gates mobile keyboard + touch-scroll-proxy. In split
-            // mode both panes are visible so the terminal should not claim it.
+            // xterm-focused: gate mobile keyboard + touch-scroll-proxy (desktop tab switch)
             if (tab === 'terminal') {
                 terminalUi.classList.add('xterm-focused');
             } else {
                 terminalUi.classList.remove('xterm-focused');
             }
-
-            // Apply split-mode classes.
-            terminalUi.classList.toggle('left-split-mode', isSplit);
-            terminalUi.classList.toggle('left-split-reversed', tab === 'split-terminal-chat');
 
             // Update left panel tab buttons
             const buttons = this.querySelectorAll('.terminal-ui__left-panel-tabs button');
@@ -1748,15 +1727,7 @@ class TerminalUI extends HTMLElement {
                 btn.classList.toggle('active', btn.dataset.leftTab === tab);
             });
 
-            if (isSplit) {
-                // Both panes visible: clear any inline display/visibility set by
-                // prior single-pane tab switches. CSS (.left-split-mode) takes over.
-                terminalEl.style.visibility = '';
-                terminalEl.style.position = '';
-                chatEl.style.display = '';
-                this.applyLeftTerminalHeight();
-                setTimeout(() => this.fitAndPreserveScroll(), 50);
-            } else if (tab === 'chat') {
+            if (tab === 'chat') {
                 // Use visibility instead of display to preserve xterm scroll position
                 terminalEl.style.visibility = 'hidden';
                 terminalEl.style.position = 'absolute';
@@ -1769,17 +1740,14 @@ class TerminalUI extends HTMLElement {
                 setTimeout(() => this.fitAndPreserveScroll(), 50);
             }
 
-            // Sync mobile dropdown (split tabs don't exist on mobile -- fall back to terminal).
+            // Sync mobile dropdown
             const mobileSelect = this.querySelector('.terminal-ui__mobile-nav-select');
             if (mobileSelect) {
                 mobileSelect.value = tab === 'chat' ? 'agent-chat' : 'agent-terminal';
             }
-
-            this.saveLeftPanelState();
         }
 
-        // Focus transfer: chat tab focuses chat iframe; terminal-only tab focuses
-        // xterm; split tabs leave focus wherever the user clicks.
+        // Focus always transfers -- whether tab switched via click or programmatically
         if (tab === 'chat') {
             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
             if (chatIframe && chatIframe.contentWindow) {
@@ -1791,32 +1759,23 @@ class TerminalUI extends HTMLElement {
                     }
                 } catch (e) { /* cross-origin: ignore */ }
             }
-        } else if (tab === 'terminal') {
+        } else {
             if (this.term) this.term.focus();
         }
     }
 
-    // Single source of truth for showing/hiding all chat-dependent left tabs
-    // (Chat, Chat+Terminal, Terminal+Chat) and the mobile dropdown entry.
+    // Single source of truth for showing/hiding the Agent Chat tab in both
+    // desktop button and mobile dropdown -- prevents them from desyncing.
     setAgentChatTabVisible(visible) {
         const display = visible ? '' : 'none';
-        const chatDeps = this.querySelectorAll(
-            'button[data-left-tab="chat"], button[data-left-tab="split-chat-terminal"], button[data-left-tab="split-terminal-chat"]'
-        );
-        chatDeps.forEach(btn => { btn.style.display = display; });
+        const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
+        if (desktopBtn) desktopBtn.style.display = display;
         // iOS Safari ignores display:none on <option> in native pickers;
         // use hidden+disabled attributes which Safari does respect.
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
         if (mobileOpt) {
             mobileOpt.hidden = !visible;
             mobileOpt.disabled = !visible;
-        }
-        if (visible) {
-            // Chat just became available -- re-apply a persisted split/chat tab if any.
-            this.restoreLeftPanelTab();
-        } else if (this.leftPanelTab !== 'terminal' && this.leftPanelTab !== 'chat') {
-            // Chat went away while a split tab was active -- drop back to terminal.
-            this.switchLeftPanelTab('terminal');
         }
     }
 
@@ -3134,12 +3093,6 @@ class TerminalUI extends HTMLElement {
         // Setup resizer drag functionality
         this.setupResizer();
 
-        // Left panel vertical split (activated when user picks a split tab)
-        this.loadSavedLeftPanelState();
-        this.applyLeftTerminalHeight();
-        this.setupLeftPanelResizer();
-        this.restoreLeftPanelTab();
-
         this.updatePreviewBaseUrl();
 
         // Setup iframe navigation buttons
@@ -3467,8 +3420,6 @@ class TerminalUI extends HTMLElement {
             });
         };
 
-        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
-
         const onMouseDown = (e) => {
             isDragging = true;
             startX = e.clientX || e.touches?.[0]?.clientX || 0;
@@ -3476,10 +3427,8 @@ class TerminalUI extends HTMLElement {
             resizer.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
-            // Disable iframe pointer events during drag so the iframe doesn't
-            // capture the mouse (iframes swallow mousemove from the parent).
+            // Disable iframe pointer events during drag to prevent mouse capture
             if (iframePane) iframePane.style.pointerEvents = 'none';
-            if (chatIframe) chatIframe.style.pointerEvents = 'none';
             // Show tooltips
             const containerWidth = splitPane.offsetWidth;
             const resizerWidth = resizer.offsetWidth;
@@ -3528,7 +3477,6 @@ class TerminalUI extends HTMLElement {
             document.body.style.userSelect = '';
             // Re-enable iframe pointer events
             if (iframePane) iframePane.style.pointerEvents = '';
-            if (chatIframe) chatIframe.style.pointerEvents = '';
             hideTooltips();
             this.savePaneWidth();
             // Trigger terminal resize and notify backend
@@ -3578,180 +3526,6 @@ class TerminalUI extends HTMLElement {
         } catch (e) {
             console.warn('[TerminalUI] Could not save pane width:', e);
         }
-    }
-
-    // === Left panel vertical split (chat on top, terminal on bottom) ===
-
-    loadSavedLeftPanelState() {
-        try {
-            const savedHeight = localStorage.getItem('swe-swe-left-terminal-height');
-            if (savedHeight) {
-                const h = parseFloat(savedHeight);
-                if (!isNaN(h) && h >= 5 && h <= 90) {
-                    this.leftPanelTerminalHeight = h;
-                }
-            }
-            this.leftPanelCollapsed = localStorage.getItem('swe-swe-left-collapsed') === '1';
-            const savedTab = localStorage.getItem('swe-swe-left-tab');
-            const validTabs = ['terminal', 'chat', 'split-chat-terminal', 'split-terminal-chat'];
-            if (savedTab && validTabs.includes(savedTab)) {
-                this.leftPanelTab = savedTab;
-            }
-        } catch (e) {
-            console.warn('[TerminalUI] Could not load left panel state:', e);
-        }
-    }
-
-    saveLeftPanelState() {
-        try {
-            localStorage.setItem('swe-swe-left-terminal-height', this.leftPanelTerminalHeight.toString());
-            localStorage.setItem('swe-swe-left-collapsed', this.leftPanelCollapsed ? '1' : '0');
-            if (this.leftPanelTab) {
-                localStorage.setItem('swe-swe-left-tab', this.leftPanelTab);
-            }
-        } catch (e) {
-            console.warn('[TerminalUI] Could not save left panel state:', e);
-        }
-    }
-
-    applyLeftTerminalHeight() {
-        const terminalUi = this.querySelector('.terminal-ui');
-        if (!terminalUi) return;
-        terminalUi.style.setProperty('--left-terminal-height', this.leftPanelTerminalHeight + '%');
-        terminalUi.classList.toggle('left-split-collapsed', this.leftPanelCollapsed);
-    }
-
-    // Re-apply a persisted left-tab selection after mount.
-    restoreLeftPanelTab() {
-        const tab = this.leftPanelTab;
-        if (!tab || tab === 'terminal') return;
-        // Split tabs depend on chat being available; only apply them if the
-        // Chat button has been revealed (setAgentChatTabVisible true).
-        const chatBtn = this.querySelector('button[data-left-tab="chat"]');
-        const chatReady = !!chatBtn && chatBtn.style.display !== 'none';
-        if (!chatReady) return;
-        this.leftPanelTab = 'terminal'; // force switchLeftPanelTab to run its body
-        this.switchLeftPanelTab(tab);
-    }
-
-    setupLeftPanelResizer() {
-        const resizer = this.querySelector('.terminal-ui__left-resizer');
-        const wrapper = this.querySelector('.terminal-ui__terminal-wrapper');
-        const chatEl = this.querySelector('.terminal-ui__agent-chat');
-        if (!resizer || !wrapper || !chatEl) return;
-
-        let isDragging = false;
-        let startY = 0;
-        let startHeightPx = 0;
-        let fitPending = false;
-
-        // Snap targets (terminal percentage of the wrapper) + collapse threshold
-        const snapPoints = [20, 40, 60];
-        const snapThreshold = 2;
-        const collapseThresholdPct = 5;
-
-        const throttledFit = () => {
-            if (fitPending || !this.fitAddon) return;
-            fitPending = true;
-            requestAnimationFrame(() => {
-                try { this.fitAddon.fit(); } catch (e) { /* ignore */ }
-                this.sendResize();
-                fitPending = false;
-            });
-        };
-
-        const getContainerHeight = () => {
-            const chatRect = chatEl.getBoundingClientRect();
-            const terminalEl = this.querySelector('.terminal-ui__terminal');
-            const termRect = terminalEl ? terminalEl.getBoundingClientRect() : { height: 0 };
-            const resizerRect = resizer.getBoundingClientRect();
-            return chatRect.height + termRect.height + resizerRect.height;
-        };
-
-        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
-        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
-        const terminalEl = this.querySelector('.terminal-ui__terminal');
-
-        const onMouseDown = (e) => {
-            // If collapsed, clicking the strip restores it instead of dragging
-            if (this.leftPanelCollapsed) {
-                this.leftPanelCollapsed = false;
-                if (this.leftPanelTerminalHeight < 10) this.leftPanelTerminalHeight = 20;
-                this.applyLeftTerminalHeight();
-                this.saveLeftPanelState();
-                setTimeout(() => this.fitAndPreserveScroll(), 50);
-                e.preventDefault();
-                return;
-            }
-            isDragging = true;
-            startY = e.clientY || e.touches?.[0]?.clientY || 0;
-            startHeightPx = terminalEl ? terminalEl.offsetHeight : 0;
-            resizer.classList.add('dragging');
-            document.body.style.cursor = 'row-resize';
-            document.body.style.userSelect = 'none';
-            // Block iframes and the xterm from capturing the mouse during drag
-            if (chatIframe) chatIframe.style.pointerEvents = 'none';
-            if (iframePane) iframePane.style.pointerEvents = 'none';
-            if (terminalEl) terminalEl.style.pointerEvents = 'none';
-            e.preventDefault();
-        };
-
-        const onMouseMove = (e) => {
-            if (!isDragging) return;
-            const clientY = e.clientY || e.touches?.[0]?.clientY || 0;
-            // Dragging the resizer TOWARD the terminal shrinks it; AWAY grows it.
-            // In reversed mode (terminal on top) the terminal is above the resizer,
-            // so an upward drag (positive startY - clientY) shrinks it instead.
-            const reversed = this.querySelector('.terminal-ui.left-split-reversed');
-            const delta = reversed ? (clientY - startY) : (startY - clientY);
-            const containerHeight = getContainerHeight();
-            if (containerHeight <= 0) return;
-
-            let newHeightPx = Math.max(0, startHeightPx + delta);
-            let pct = (newHeightPx / containerHeight) * 100;
-
-            // Snap
-            for (const snap of snapPoints) {
-                if (Math.abs(pct - snap) < snapThreshold) { pct = snap; break; }
-            }
-            // Clamp
-            pct = Math.max(0, Math.min(80, pct));
-
-            const collapsed = pct < collapseThresholdPct;
-            this.leftPanelCollapsed = collapsed;
-            if (!collapsed) this.leftPanelTerminalHeight = pct;
-            this.applyLeftTerminalHeight();
-            throttledFit();
-        };
-
-        const onMouseUp = () => {
-            if (!isDragging) return;
-            isDragging = false;
-            resizer.classList.remove('dragging');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            if (chatIframe) chatIframe.style.pointerEvents = '';
-            if (iframePane) iframePane.style.pointerEvents = '';
-            if (terminalEl) terminalEl.style.pointerEvents = '';
-            this.saveLeftPanelState();
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
-        };
-
-        // Double-click resets to default 20% / uncollapsed
-        resizer.addEventListener('dblclick', () => {
-            this.leftPanelCollapsed = false;
-            this.leftPanelTerminalHeight = 20;
-            this.applyLeftTerminalHeight();
-            this.saveLeftPanelState();
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
-        });
-
-        resizer.addEventListener('mousedown', onMouseDown);
-        resizer.addEventListener('touchstart', onMouseDown, { passive: false });
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('touchmove', onMouseMove, { passive: false });
-        document.addEventListener('mouseup', onMouseUp);
-        document.addEventListener('touchend', onMouseUp);
     }
 
     /**
