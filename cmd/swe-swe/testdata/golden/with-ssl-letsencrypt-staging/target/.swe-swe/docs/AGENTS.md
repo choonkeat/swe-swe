@@ -2,7 +2,7 @@
 
 ## Commands
 
-Slash-command agents (Claude, Codex, Gemini, OpenCode) get these as `/swe-swe:<name>`:
+Slash-command agents (Claude, Codex, Gemini, OpenCode, Pi) get these as `/swe-swe:<name>`:
 
 | Command | Description |
 |---------|-------------|

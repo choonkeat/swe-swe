@@ -1631,12 +1631,19 @@ func singleJoiningSlash(a, b string) string {
 }
 
 func main() {
-	addr := flag.String("addr", ":9898", "Listen address")
+	// addr defaults to empty so resolveListenAddr can distinguish "user passed
+	// --addr" from "fell through to default".  The Dockerfile CMD always
+	// passes -addr explicitly, so compose mode is unaffected.
+	addr := flag.String("addr", "", "Listen address (overrides SWE_PORT/PORT; default :9898)")
 	version := flag.Bool("version", false, "Show version and exit")
 	dumpTemplates := flag.String("dump-container-templates", "", "Dump all container templates to directory and exit")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
+	tsAuthKey := flag.String("tailscale-authkey", "", "Tailscale auth key (env: TS_AUTHKEY); when set, tailscaled is spawned and joined to the tailnet")
+	tsHostname := flag.String("tailscale-hostname", "", "Tailscale hostname to advertise (env: TS_HOSTNAME)")
+	tsStateDir := flag.String("tailscale-state-dir", "", "Tailscale state directory (env: TS_STATE_DIR; default /var/lib/tailscale)")
+	tsDisable := flag.Bool("tailscale-disable", false, "Disable Tailscale bootstrap even if TS_AUTHKEY is set (env: TS_DISABLE=1)")
 	flag.Parse()
 
 	// Override preview port range from environment (set by docker-compose)
@@ -2239,14 +2246,23 @@ func main() {
 		staticHandler.ServeHTTP(w, r)
 	})
 
+	// Resolve which port swe-swe itself binds and whether a landing server
+	// needs to cover a separate PaaS-facing $PORT (see tailscale.go for the
+	// decision rule).
+	listenAddr, landingAddr := resolveListenAddr(*addr, os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+	tsCfg := resolveTailscaleConfig(*tsAuthKey, *tsHostname, *tsStateDir, *tsDisable)
+
 	log.Printf("swe-swe-server v%s", Version)
-	log.Printf("Starting server on %s", *addr)
+	log.Printf("Starting server on %s", listenAddr)
 	log.Printf("  shell: %s", shellCmd)
 	if shellRestartCmd != shellCmd {
 		log.Printf("  shell-restart: %s", shellRestartCmd)
 	}
 	if workingDir != "" {
 		log.Printf("  working-directory: %s", workingDir)
+	}
+	if landingAddr != "" {
+		log.Printf("  landing server: %s", landingAddr)
 	}
 
 	// Start signal monitor and heartbeat for crash forensics
@@ -2259,6 +2275,12 @@ func main() {
 	serverCtx, serverCancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer serverCancel()
 
+	// Tailscale bootstrap -- dormant unless TS_AUTHKEY is set.
+	startTailscale(serverCtx, tsCfg)
+
+	// Landing/health server on $PORT, if separate from the swe-swe listener.
+	startLandingServer(serverCtx, landingAddr, listenAddr, tsCfg)
+
 	// Set up embedded auth if SWE_SWE_PASSWORD is set (dockerfile-only mode).
 	// In compose mode, Traefik + auth service handle authentication externally.
 	var handler http.Handler
@@ -2267,7 +2289,7 @@ func main() {
 		log.Printf("Embedded auth enabled (SWE_SWE_PASSWORD set)")
 	}
 
-	srv := &http.Server{Addr: *addr, Handler: handler}
+	srv := &http.Server{Addr: listenAddr, Handler: handler}
 	go func() {
 		defer recoverGoroutine("shutdown handler")
 		<-serverCtx.Done()

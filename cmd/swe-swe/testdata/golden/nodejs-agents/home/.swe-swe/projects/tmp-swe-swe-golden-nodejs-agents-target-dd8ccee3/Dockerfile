@@ -63,6 +63,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Override default noVNC viewer with custom version (adds View only / Interactive toggle)
 COPY swe-swe-server/static/vnc_lite.html /usr/share/novnc/vnc_lite.html
 
+# Install Tailscale (static binaries, no apt repo).  Dormant unless
+# TS_AUTHKEY is set at runtime; see www/swe-swe-tailscale.md.
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
