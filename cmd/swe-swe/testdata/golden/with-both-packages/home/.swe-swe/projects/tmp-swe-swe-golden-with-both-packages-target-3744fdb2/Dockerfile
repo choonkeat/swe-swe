@@ -72,6 +72,16 @@ COPY swe-swe-server/static/vnc_lite.html /usr/share/novnc/vnc_lite.html
 # TS_AUTHKEY is set at runtime; see www/swe-swe-tailscale.md.
 RUN curl -fsSL https://tailscale.com/install.sh | sh
 
+# Pre-create the default tailscale state directory and hand ownership to the
+# app user.  Without this, tailscaled bootstrapping fails with "permission
+# denied" the first time TS_AUTHKEY is set, because /var/lib/tailscale is
+# created by the tailscale package owned by root.  Users who mount a PaaS
+# volume at this path still get their volume's contents (the mount shadows
+# the baked-in dir).
+RUN mkdir -p /var/lib/tailscale && \
+    chown 1000:1000 /var/lib/tailscale && \
+    chmod 700 /var/lib/tailscale
+
 # Install user-specified packages
 RUN apt-get update && apt-get install -y \
     vim \

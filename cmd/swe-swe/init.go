@@ -1092,7 +1092,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
       - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
-      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}%s
+      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+      - PORT=${PORT:-}
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_HOSTNAME:-}
+      - TS_STATE_DIR=${TS_STATE_DIR:-}
+      - TS_DISABLE=${TS_DISABLE:-}%s
     restart: unless-stopped
 `, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
