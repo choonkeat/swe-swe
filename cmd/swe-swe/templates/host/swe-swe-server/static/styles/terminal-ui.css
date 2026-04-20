@@ -1971,6 +1971,41 @@ terminal-ui.embedded-in-iframe .mobile-only {
     display: flex;
 }
 
+/* Preset picker (header, desktop-only). Icon-row of tiny grid diagrams;
+   click to switch preset (reloads the page, persists via localStorage). */
+.terminal-ui__preset-picker {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+}
+
+.terminal-ui__preset-btn {
+    width: 24px;
+    height: 24px;
+    padding: 3px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.terminal-ui__preset-btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-color: var(--border-primary);
+}
+
+.terminal-ui__preset-btn.active {
+    background: var(--accent-primary, #7c3aed);
+    color: #fff;
+    border-color: var(--accent-primary, #7c3aed);
+}
+
 /* Mobile: collapse grid to single column; use data-mobile-active to pick
    which pane-host is visible. Preserves the existing mobile nav UX. */
 @media (max-width: 639px) {

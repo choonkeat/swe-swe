@@ -30,19 +30,31 @@ function stripCSI3J(data) {
     return result.subarray(0, j);
 }
 
-// Preset definitions: slot ids and default pane assignments per preset.
+// Preset definitions: slot ids, default pane assignments, and a small SVG
+// icon describing the grid layout. The icon's rects describe cells laid out
+// on a 12x12 viewBox so buttons can render a mini-diagram of the layout.
 // CSS (terminal-ui.css) owns the grid-template-areas for each preset id via
 // `.terminal-ui__workspace[data-preset="..."]` selectors.
+// Order matters -- it's the display order in the preset picker.
 const LAYOUT_PRESETS = {
-    classic:      { slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' } },
-    single:       { slots: ['a'],                defaults: { a: 'preview' } },
-    'two-row':    { slots: ['a', 'b'],           defaults: { a: 'preview',        b: 'agent-terminal' } },
-    'l-bigR':     { slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' } },
-    'stacked-R':  { slots: ['a', 'b', 'c'],      defaults: { a: 'agent-terminal', b: 'preview',        c: 'agent-chat' } },
-    'stacked-L':  { slots: ['a', 'b', 'c'],      defaults: { a: 'agent-terminal', b: 'agent-chat',     c: 'preview' } },
-    't-splitBot': { slots: ['a', 'b', 'c'],      defaults: { a: 'preview',        b: 'agent-terminal', c: 'agent-chat' } },
-    quadrants:    { slots: ['a', 'b', 'c', 'd'], defaults: { a: 'agent-terminal', b: 'preview',        c: 'agent-chat', d: 'shell' } },
+    classic:      { label: 'Classic',       slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' },                                         icon: [[0,0,1,2], [1,0,1,2]] },
+    single:       { label: 'Single',        slots: ['a'],                defaults: { a: 'preview' },                                                              icon: [[0,0,2,2]] },
+    'two-row':    { label: '2-row',         slots: ['a', 'b'],           defaults: { a: 'preview',        b: 'agent-terminal' },                                  icon: [[0,0,2,1], [0,1,2,1]] },
+    'l-bigR':     { label: 'L + big R',     slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' },                                         icon: [[0,0,1,2], [1,0,2,2]] },
+    'stacked-R':  { label: 'Big L, stk R',  slots: ['a', 'b', 'c'],      defaults: { a: 'agent-terminal', b: 'preview',        c: 'agent-chat' },                 icon: [[0,0,2,2], [2,0,1,1], [2,1,1,1]] },
+    'stacked-L':  { label: 'Stk L, big R',  slots: ['a', 'b', 'c'],      defaults: { a: 'agent-terminal', b: 'agent-chat',     c: 'preview' },                    icon: [[0,0,1,1], [0,1,1,1], [1,0,2,2]] },
+    't-splitBot': { label: 'T + split bot', slots: ['a', 'b', 'c'],      defaults: { a: 'preview',        b: 'agent-terminal', c: 'agent-chat' },                 icon: [[0,0,2,1], [0,1,1,1], [1,1,1,1]] },
+    quadrants:    { label: 'Quadrants',     slots: ['a', 'b', 'c', 'd'], defaults: { a: 'agent-terminal', b: 'preview',        c: 'agent-chat', d: 'shell' },     icon: [[0,0,1,1], [1,0,1,1], [0,1,1,1], [1,1,1,1]] },
 };
+
+// Build a tiny SVG showing the preset's grid cells on a 12x12 viewBox.
+// rects: array of [x, y, w, h] in 1-unit-per-column form (same as mock.html).
+function buildPresetIcon(rects) {
+    const cells = rects.map(([x, y, w, h]) =>
+        `<rect x="${x*6+1}" y="${y*6+1}" width="${w*6-2}" height="${h*6-2}" rx="1" fill="currentColor" opacity="0.75"/>`
+    ).join('');
+    return `<svg width="14" height="14" viewBox="0 0 13 13" aria-hidden="true">${cells}</svg>`;
+}
 
 // Display order for slot tab bars (same in every slot).
 const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'vscode', 'shell', 'browser'];
@@ -394,6 +406,8 @@ class TerminalUI extends HTMLElement {
                     </div>
                     <div class="terminal-ui__header-right">
                         <span class="terminal-ui__viewers desktop-only"></span>
+                        <!-- Preset picker: rendered dynamically from LAYOUT_PRESETS. -->
+                        <div class="terminal-ui__preset-picker desktop-only"></div>
                         <button class="terminal-ui__chat-btn desktop-only" title="Chat with viewers" style="display: none;">
                             <span class="terminal-ui__chat-icon">💬</span>
                             <span class="terminal-ui__chat-badge" style="display: none;">0</span>
@@ -3161,6 +3175,9 @@ class TerminalUI extends HTMLElement {
         const preset = LAYOUT_PRESETS[this.preset] || LAYOUT_PRESETS.classic;
         workspace.dataset.preset = this.preset;
 
+        // Header preset picker (one button per preset; active highlighted).
+        this._renderPresetPicker();
+
         // Render slot frames (tab bars) for the active preset.
         this._renderSlotFrames(preset);
 
@@ -3279,6 +3296,40 @@ class TerminalUI extends HTMLElement {
                 // agent-terminal, agent-chat -- pre-mounted; no URL kick needed.
                 break;
         }
+    }
+
+    // Change preset: merge overlapping slot assignments (per TASK.md:
+    // "When preset changes, carry over slot assignments where slot IDs
+    // overlap; fill new slots with the preset's defaults"), persist,
+    // reload.
+    changePreset(newPresetId) {
+        const newPreset = LAYOUT_PRESETS[newPresetId];
+        if (!newPreset) return;
+        if (newPresetId === this.preset) return;
+        const newActiveBySlot = {};
+        newPreset.slots.forEach(slotId => {
+            newActiveBySlot[slotId] = this.activeBySlot[slotId] || newPreset.defaults[slotId];
+        });
+        saveLayoutState({ preset: newPresetId, activeBySlot: newActiveBySlot });
+        window.location.reload();
+    }
+
+    // Render the preset picker icon row in the header.
+    _renderPresetPicker() {
+        const container = this.querySelector('.terminal-ui__preset-picker');
+        if (!container) return;
+        container.innerHTML = '';
+        Object.entries(LAYOUT_PRESETS).forEach(([presetId, spec]) => {
+            const btn = document.createElement('button');
+            btn.className = 'terminal-ui__preset-btn';
+            btn.type = 'button';
+            btn.dataset.preset = presetId;
+            btn.title = spec.label;
+            if (presetId === this.preset) btn.classList.add('active');
+            btn.innerHTML = buildPresetIcon(spec.icon);
+            btn.addEventListener('click', () => this.changePreset(presetId));
+            container.appendChild(btn);
+        });
     }
 
     // Render slot frames (tab bars) for the active preset. Each slot-frame
