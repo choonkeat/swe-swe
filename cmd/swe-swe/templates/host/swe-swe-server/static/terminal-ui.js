@@ -87,6 +87,9 @@ class TerminalUI extends HTMLElement {
         // Split-pane UI state
         this.iframePaneWidth = 50; // percentage
         this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
+        // Tracks which right-pane iframes have had their src set at least once.
+        // Used to skip reloads when switching back to an already-initialized pane.
+        this._paneLoaded = new Set();
         // Left panel tab state
         this.leftPanelTab = 'terminal'; // 'terminal' | 'chat'
         // Split-pane constants for desktop detection
@@ -414,13 +417,42 @@ class TerminalUI extends HTMLElement {
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
                             <div class="terminal-ui__iframe-container">
-                                <div class="terminal-ui__iframe-placeholder">
-                                    <div class="terminal-ui__iframe-placeholder-status">
-                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to preview...</span>
+                                <div class="terminal-ui__iframe-slot" data-pane="preview">
+                                    <div class="terminal-ui__iframe-placeholder">
+                                        <div class="terminal-ui__iframe-placeholder-status">
+                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                            <span class="terminal-ui__iframe-placeholder-text">Connecting to preview...</span>
+                                        </div>
                                     </div>
+                                    <iframe class="terminal-ui__iframe" data-pane="preview" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                                 </div>
-                                <iframe class="terminal-ui__iframe" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                                <div class="terminal-ui__iframe-slot" data-pane="vscode" hidden>
+                                    <div class="terminal-ui__iframe-placeholder hidden">
+                                        <div class="terminal-ui__iframe-placeholder-status">
+                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                            <span class="terminal-ui__iframe-placeholder-text">Loading Code...</span>
+                                        </div>
+                                    </div>
+                                    <iframe class="terminal-ui__iframe" data-pane="vscode" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                                </div>
+                                <div class="terminal-ui__iframe-slot" data-pane="shell" hidden>
+                                    <div class="terminal-ui__iframe-placeholder hidden">
+                                        <div class="terminal-ui__iframe-placeholder-status">
+                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                            <span class="terminal-ui__iframe-placeholder-text">Loading terminal...</span>
+                                        </div>
+                                    </div>
+                                    <iframe class="terminal-ui__iframe" data-pane="shell" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                                </div>
+                                <div class="terminal-ui__iframe-slot" data-pane="browser" hidden>
+                                    <div class="terminal-ui__iframe-placeholder hidden">
+                                        <div class="terminal-ui__iframe-placeholder-status">
+                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                            <span class="terminal-ui__iframe-placeholder-text">Starting browser...</span>
+                                        </div>
+                                    </div>
+                                    <iframe class="terminal-ui__iframe" data-pane="browser" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1626,22 +1658,26 @@ class TerminalUI extends HTMLElement {
         }
 
         this.activeTab = tab;
+        this._showPaneSlot(tab);
 
         if (tab === 'preview') {
             if (this._pendingPreviewIframeSrc) {
                 // Preview probe already succeeded while on another tab -- apply stashed URL
                 const pendingSrc = this._pendingPreviewIframeSrc;
                 this._pendingPreviewIframeSrc = null;
-                const iframe = this.querySelector('.terminal-ui__iframe');
+                const iframe = this._iframeFor('preview');
                 if (iframe) {
                     iframe.src = pendingSrc;
                     iframe.onload = () => {
                         if (this._previewWaiting) this._onPreviewReady();
                     };
                 }
-            } else {
+                this._paneLoaded.add('preview');
+            } else if (!this._paneLoaded.has('preview')) {
+                this._paneLoaded.add('preview');
                 this.setPreviewURL(null);
             }
+            // else: already loaded -- state is preserved, just showing the slot
         } else {
             const baseUrl = getBaseUrl(window.location);
             let url;
@@ -1659,8 +1695,8 @@ class TerminalUI extends HTMLElement {
                         // Probe VNC readiness via same-origin endpoint to get real status codes.
                         // Direct cross-origin probes to the VNC port return opaque responses
                         // (mode: 'no-cors'), making 502 Bad Gateway indistinguishable from 200.
-                        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
-                        const placeholderText = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder-text');
+                        const placeholder = this._placeholderFor('browser');
+                        const placeholderText = placeholder ? placeholder.querySelector('.terminal-ui__iframe-placeholder-text') : null;
                         if (placeholder) placeholder.classList.remove('hidden');
                         if (placeholderText) placeholderText.textContent = 'Starting browser...';
                         if (!this._browserViewProbing) {
@@ -1675,7 +1711,7 @@ class TerminalUI extends HTMLElement {
                                 this._browserViewReady = true;
                                 this._browserViewProbing = false;
                                 if (this.activeTab === 'browser') {
-                                    this.setIframeUrl(this.getBrowserViewUrl());
+                                    this.setIframeUrl(this.getBrowserViewUrl(), 'browser');
                                 }
                             }).catch(() => {
                                 this._browserViewProbing = false;
@@ -1690,7 +1726,7 @@ class TerminalUI extends HTMLElement {
                 default:
                     return;
             }
-            this.setIframeUrl(url);
+            this.setIframeUrl(url, tab);
         }
 
         this.updateActiveTabIndicator();
@@ -3061,6 +3097,38 @@ class TerminalUI extends HTMLElement {
     }
 
     // === Split-Pane UI Methods ===
+
+    // Per-pane iframe lookups: each pane ("preview", "vscode", "shell", "browser")
+    // has its own <iframe> and placeholder, all mounted at once and toggled via
+    // the [hidden] attribute on the slot wrapper. This preserves state across
+    // tab switches -- src is set once per pane and not reset.
+    _iframeFor(pane) {
+        if (!pane) return null;
+        return this.querySelector(`.terminal-ui__iframe[data-pane="${pane}"]`);
+    }
+
+    _slotFor(pane) {
+        if (!pane) return null;
+        return this.querySelector(`.terminal-ui__iframe-slot[data-pane="${pane}"]`);
+    }
+
+    _placeholderFor(pane) {
+        const slot = this._slotFor(pane);
+        return slot ? slot.querySelector('.terminal-ui__iframe-placeholder') : null;
+    }
+
+    _showPaneSlot(pane) {
+        this.querySelectorAll('.terminal-ui__iframe-slot').forEach(el => {
+            el.hidden = (el.dataset.pane !== pane);
+        });
+    }
+
+    _hideAllPaneSlots() {
+        this.querySelectorAll('.terminal-ui__iframe-slot').forEach(el => {
+            el.hidden = true;
+        });
+    }
+
     getBrowserViewUrl() {
         if (!this.vncProxyPort) return null;
         const loc = window.location;
@@ -3085,9 +3153,10 @@ class TerminalUI extends HTMLElement {
         // The iframe pane starts hidden (terminal at 100% width)
         // Phase 2 will add toggle behavior via service link clicks
 
-        const iframe = this.querySelector('.terminal-ui__iframe');
-        if (!iframe) {
-            return; // Split-pane structure not present
+        // Probe for the preview iframe; its absence means the split-pane
+        // structure isn't mounted in this variant.
+        if (!this._iframeFor('preview')) {
+            return;
         }
 
         // Load saved pane width (will be applied when iframe is shown)
@@ -3230,31 +3299,33 @@ class TerminalUI extends HTMLElement {
     // Open iframe pane with specified tab content
     openIframePane(tab, url) {
         const terminalUi = this.querySelector('.terminal-ui');
-        const iframe = this.querySelector('.terminal-ui__iframe');
         const iframePane = this.querySelector('.terminal-ui__iframe-pane');
-        if (!terminalUi || !iframe) return;
+        if (!terminalUi || !iframePane) return;
 
         // Add class to show iframe pane
         terminalUi.classList.add('iframe-visible');
 
         // Show/hide toolbar based on tab (only preview gets toolbar)
-        if (iframePane) {
-            if (tab === 'preview') {
-                iframePane.classList.add('show-toolbar');
-            } else {
-                iframePane.classList.remove('show-toolbar');
-            }
+        if (tab === 'preview') {
+            iframePane.classList.add('show-toolbar');
+        } else {
+            iframePane.classList.remove('show-toolbar');
         }
 
         // Apply saved pane width
         this.applyPaneWidth();
 
-        // Update iframe src
+        // Update active tab state and reveal its slot
         this.activeTab = tab;
+        this._showPaneSlot(tab);
+
+        // Load or navigate the pane's iframe
         if (tab === 'preview') {
+            this._paneLoaded.add('preview');
             this.setPreviewURL(url); // url is targetURL or null
         } else {
-            this.setIframeUrl(url);
+            this._paneLoaded.add(tab);
+            this.setIframeUrl(url, tab);
         }
         this.updateActiveTabIndicator();
 
@@ -3262,17 +3333,15 @@ class TerminalUI extends HTMLElement {
         setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
-    // Close iframe pane and return to 100% terminal
+    // Close iframe pane and return to 100% terminal.
+    // Panes stay mounted (not reset to about:blank) so state survives re-opening.
     closeIframePane() {
         const terminalUi = this.querySelector('.terminal-ui');
-        const iframe = this.querySelector('.terminal-ui__iframe');
         if (!terminalUi) return;
 
-        // Stop iframe content to save memory
-        if (iframe) {
-            iframe.onload = null;
-            iframe.src = 'about:blank';
-        }
+        // Hide all pane slots; leave their iframes mounted so state (scroll,
+        // form inputs, code-server session, xterm-over-iframe buffer) persists.
+        this._hideAllPaneSlots();
 
         // Remove class to hide iframe pane
         terminalUi.classList.remove('iframe-visible');
@@ -3540,7 +3609,7 @@ class TerminalUI extends HTMLElement {
      */
     _onPreviewReady() {
         this._previewWaiting = false;
-        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
+        const placeholder = this._placeholderFor('preview');
         if (placeholder) placeholder.classList.add('hidden');
     }
 
@@ -3548,11 +3617,19 @@ class TerminalUI extends HTMLElement {
      * Reload the preview iframe (used when proxy comes up after being down).
      */
     _reloadPreviewIframe() {
-        const iframe = this.querySelector('.terminal-ui__iframe');
+        const iframe = this._iframeFor('preview');
         if (iframe && iframe.src) iframe.src = iframe.src;
     }
 
-    setIframeUrl(url) {
+    /**
+     * Set iframe src for a specific pane (shell / vscode / browser).
+     * Idempotent: does nothing if the iframe is already at the requested URL,
+     * which preserves pane state across tab switches.
+     *
+     * Does NOT touch the URL bar -- that's owned by setPreviewURL, since the
+     * toolbar is only visible for the preview pane.
+     */
+    setIframeUrl(url, pane = this.activeTab) {
         // Validate URL
         try {
             new URL(url);
@@ -3561,28 +3638,22 @@ class TerminalUI extends HTMLElement {
             return;
         }
 
-        const iframe = this.querySelector('.terminal-ui__iframe');
-        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
-        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
+        const iframe = this._iframeFor(pane);
+        const placeholder = this._placeholderFor(pane);
+        if (!iframe) return;
 
-        if (urlInput) {
-            // Show full URL in input field
-            urlInput.value = url;
-            urlInput.title = url;
+        // State-preservation: skip reload if iframe already at this exact URL.
+        if (iframe.getAttribute('src') === url) return;
+
+        if (placeholder) {
+            placeholder.classList.remove('hidden');
         }
 
-        if (iframe) {
-            // Show placeholder while loading
-            if (placeholder) {
-                placeholder.classList.remove('hidden');
-            }
+        iframe.onload = () => {
+            if (placeholder) placeholder.classList.add('hidden');
+        };
 
-            iframe.onload = () => {
-                if (placeholder) placeholder.classList.add('hidden');
-            };
-
-            iframe.src = url;
-        }
+        iframe.src = url;
     }
 
     /**
@@ -3592,8 +3663,8 @@ class TerminalUI extends HTMLElement {
      */
     setPreviewURL(targetURL, iframePath = null) {
         const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
-        const iframe = this.querySelector('.terminal-ui__iframe');
-        const placeholder = this.querySelector('.terminal-ui__iframe-container .terminal-ui__iframe-placeholder');
+        const iframe = this._iframeFor('preview');
+        const placeholder = this._placeholderFor('preview');
 
         // Determine if targetURL is external (non-localhost)
         let isExternal = false;
@@ -3708,8 +3779,8 @@ class TerminalUI extends HTMLElement {
         if (this._debugWs?.readyState === WebSocket.OPEN) {
             this._debugWs.send(JSON.stringify({ t: 'reload' }));
         } else {
-            // Fallback: force reload by resetting src
-            const iframe = this.querySelector('.terminal-ui__iframe');
+            // Fallback: force reload of the currently active pane's iframe.
+            const iframe = this._iframeFor(this.activeTab);
             if (iframe && iframe.src) iframe.src = iframe.src;
         }
     }

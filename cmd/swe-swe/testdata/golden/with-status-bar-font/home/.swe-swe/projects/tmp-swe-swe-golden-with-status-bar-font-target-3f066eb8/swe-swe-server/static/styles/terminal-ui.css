@@ -1158,6 +1158,17 @@ terminal-ui.embedded-in-iframe .mobile-only {
     min-height: 0;
 }
 
+/* Per-pane slot wrapper: all panes stay mounted; only the active one is not [hidden].
+   This preserves iframe state (scroll, xterm buffer, forms) across tab switches. */
+.terminal-ui__iframe-slot {
+    position: absolute;
+    inset: 0;
+}
+
+.terminal-ui__iframe-slot[hidden] {
+    display: none;
+}
+
 .terminal-ui__iframe {
     width: 100%;
     height: 100%;
