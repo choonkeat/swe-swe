@@ -30,6 +30,63 @@ function stripCSI3J(data) {
     return result.subarray(0, j);
 }
 
+// Preset definitions: slot ids and default pane assignments per preset.
+// CSS (terminal-ui.css) owns the grid-template-areas for each preset id via
+// `.terminal-ui__workspace[data-preset="..."]` selectors.
+const LAYOUT_PRESETS = {
+    classic:      { slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' } },
+    single:       { slots: ['a'],                defaults: { a: 'preview' } },
+    'two-row':    { slots: ['a', 'b'],           defaults: { a: 'preview',        b: 'agent-terminal' } },
+    'l-bigR':     { slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' } },
+    'stacked-R':  { slots: ['a', 'b', 'c'],      defaults: { a: 'agent-terminal', b: 'preview',        c: 'agent-chat' } },
+    'stacked-L':  { slots: ['a', 'b', 'c'],      defaults: { a: 'agent-terminal', b: 'agent-chat',     c: 'preview' } },
+    't-splitBot': { slots: ['a', 'b', 'c'],      defaults: { a: 'preview',        b: 'agent-terminal', c: 'agent-chat' } },
+    quadrants:    { slots: ['a', 'b', 'c', 'd'], defaults: { a: 'agent-terminal', b: 'preview',        c: 'agent-chat', d: 'shell' } },
+};
+
+// Display order for slot tab bars (same in every slot).
+const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'vscode', 'shell', 'browser'];
+
+// Human-readable labels for slot tab bar buttons.
+const PANE_LABELS = {
+    'agent-terminal': 'Agent Terminal',
+    'agent-chat':     'Agent Chat',
+    'preview':        'Preview',
+    'vscode':         'Code',
+    'shell':          'Terminal',
+    'browser':        'Agent View',
+};
+
+// Subset of panes that render iframes. Used by the "legacy activeTab" mirror
+// so pre-preset code (setPreviewURL, refreshIframe, VNC probe) can find the
+// current right-side iframe without knowing about slots.
+const IFRAME_PANES_PRIORITY = ['preview', 'vscode', 'shell', 'browser'];
+
+const LAYOUT_STATE_KEY = 'swe-swe-layout-v1';
+
+// Layout state persistence. Shape: { preset: string, activeBySlot: {[slot]: pane} }
+// On parse failure or missing preset, fall back to the classic defaults.
+function loadLayoutState() {
+    try {
+        const s = JSON.parse(localStorage.getItem(LAYOUT_STATE_KEY));
+        if (s && s.preset && LAYOUT_PRESETS[s.preset] && s.activeBySlot) {
+            // Keep only slots valid for the saved preset; fill missing with defaults.
+            const preset = LAYOUT_PRESETS[s.preset];
+            const activeBySlot = {};
+            preset.slots.forEach(slotId => {
+                activeBySlot[slotId] = s.activeBySlot[slotId] || preset.defaults[slotId];
+            });
+            return { preset: s.preset, activeBySlot };
+        }
+    } catch (e) { /* fall through */ }
+    return { preset: 'classic', activeBySlot: { ...LAYOUT_PRESETS.classic.defaults } };
+}
+
+function saveLayoutState(state) {
+    try { localStorage.setItem(LAYOUT_STATE_KEY, JSON.stringify(state)); }
+    catch (e) { /* out of quota / disabled -- layout is session-only */ }
+}
+
 class TerminalUI extends HTMLElement {
     constructor() {
         super();
@@ -84,17 +141,28 @@ class TerminalUI extends HTMLElement {
         this.outputIdleThreshold = 2000; // ms
         // Process exit state - prevents reconnection after session ends
         this.processExited = false;
-        // Split-pane UI state
-        this.iframePaneWidth = 50; // percentage
-        this.activeTab = null; // null | 'shell' | 'vscode' | 'preview' | 'browser'
+        // Preset-driven workspace state. `preset` is one of the LAYOUT_PRESETS ids
+        // (classic, single, two-row, l-bigR, stacked-R, stacked-L, t-splitBot,
+        // quadrants). `activeBySlot` maps slot id (a/b/c/d) -> pane id
+        // (agent-terminal / agent-chat / preview / vscode / shell / browser).
+        // Loaded from localStorage; falls back to classic defaults on missing/
+        // invalid state. See terminal-ui.css for the grid-template-areas per preset.
+        const _layoutState = loadLayoutState();
+        this.preset = _layoutState.preset;
+        this.activeBySlot = _layoutState.activeBySlot;
+        // Legacy mirror of the right-slot assignment -- some pre-preset call
+        // sites (setPreviewURL, refreshIframe, browser VNC probe) still reference
+        // it. Reflects whichever pane is active in slot b (or the first iframe
+        // pane in any other slot in more complex presets).
+        this.activeTab = 'preview';
         // Tracks which right-pane iframes have had their src set at least once.
         // Used to skip reloads when switching back to an already-initialized pane.
         this._paneLoaded = new Set();
-        // Left panel tab state
-        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat'
+        // Preset state legacy mirror for compat with existing mobile logic.
+        this.leftPanelTab = 'terminal'; // 'terminal' | 'chat' -- mobile only
         // Split-pane constants for desktop detection
-        this.MIN_PANEL_WIDTH = 360; // minimum width for terminal or iframe pane
-        this.RESIZER_WIDTH = 8;     // width of the resizer handle
+        this.MIN_PANEL_WIDTH = 360; // minimum width for a slot
+        this.RESIZER_WIDTH = 8;     // historical; no longer used with the grid
         // Mobile view state
         this.mobileActiveView = 'terminal'; // 'terminal' | 'workspace'
     }
@@ -347,40 +415,22 @@ class TerminalUI extends HTMLElement {
                     <span class="terminal-ui__assistant-badge">CLAUDE</span>
                 </div>
 
-                <!-- Main Content -->
+                <!-- Main Content: preset-driven workspace grid.
+                     All 6 panes mount into stable pane-hosts at startup and never
+                     reparent; their grid-area is reassigned when the preset or
+                     slot assignments change. Slot frames (tab bars) overlay the
+                     pane-hosts in the same grid cell via z-index + padding. -->
                 <div class="terminal-ui__main-content">
-                    <div class="terminal-ui__split-pane">
-                        <div class="terminal-ui__terminal-wrapper">
-                            <!-- Left Panel Header (desktop) -->
-                            <div class="terminal-ui__panel-header desktop-only">
-                                <div class="terminal-ui__left-panel-tabs">
-                                    <button data-left-tab="terminal" class="active">
-                                        <span class="terminal-ui__terminal-icon">>_</span> Agent Terminal
-                                    </button>
-                                    <button data-left-tab="chat" style="display: none;">
-                                        <span class="terminal-ui__chat-tab-icon">&#9711;</span> Agent Chat<span class="terminal-ui__chat-tab-loading" style="display: none;"> (Loading)</span>
-                                    </button>
-                                </div>
-                                <span class="terminal-ui__assistant-badge">CLAUDE</span>
-                            </div>
+                    <div class="terminal-ui__workspace" data-preset="classic">
+                        <!-- Slot frames are rendered dynamically by JS. -->
+
+                        <!-- Agent Terminal pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="agent-terminal">
                             <div class="terminal-ui__terminal">
                                 <div class="terminal-ui__drop-overlay">
                                     <div class="terminal-ui__drop-icon">+</div>
                                     <div>Drop file to paste contents</div>
                                 </div>
-                            </div>
-                            <div class="terminal-ui__agent-chat" style="display: none;">
-                                <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
-                                    <div class="terminal-ui__iframe-placeholder-status">
-                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to chat...</span>
-                                    </div>
-                                </div>
-                                <iframe class="terminal-ui__agent-chat-iframe"
-                                        src="about:blank"
-                                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-                                        allow="microphone; autoplay; speech-synthesis">
-                                </iframe>
                             </div>
                             <div class="terminal-ui__upload-overlay">
                                 <div class="terminal-ui__upload-spinner"></div>
@@ -393,17 +443,26 @@ class TerminalUI extends HTMLElement {
                                 <div class="scroll-spacer"></div>
                             </div>
                         </div>
-                        <div class="terminal-ui__resizer"></div>
-                        <div class="terminal-ui__iframe-pane">
-                            <!-- Right Panel Header (desktop) -->
-                            <div class="terminal-ui__panel-header desktop-only">
-                                <div class="terminal-ui__panel-tabs">
-                                    <button data-tab="preview" class="active">Preview</button>
-                                    <button data-tab="vscode" style="{{VSCODE_TAB_STYLE}}">Code</button>
-                                    <button data-tab="shell">Terminal</button>
-                                    <button data-tab="browser" style="display: none;">Agent View</button>
+
+                        <!-- Agent Chat pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="agent-chat" hidden>
+                            <div class="terminal-ui__agent-chat">
+                                <div class="terminal-ui__iframe-placeholder terminal-ui__agent-chat-placeholder">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to chat...</span>
+                                    </div>
                                 </div>
+                                <iframe class="terminal-ui__agent-chat-iframe"
+                                        src="about:blank"
+                                        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+                                        allow="microphone; autoplay; speech-synthesis">
+                                </iframe>
                             </div>
+                        </div>
+
+                        <!-- App Preview pane-host (includes preview-only URL bar) -->
+                        <div class="terminal-ui__pane-host terminal-ui__pane-host--preview" data-pane="preview">
                             <div class="terminal-ui__iframe-location">
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-home" title="Home">⌂</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-back" title="Back" disabled>◀</button>
@@ -416,43 +475,53 @@ class TerminalUI extends HTMLElement {
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
-                            <div class="terminal-ui__iframe-container">
-                                <div class="terminal-ui__iframe-slot" data-pane="preview">
-                                    <div class="terminal-ui__iframe-placeholder">
-                                        <div class="terminal-ui__iframe-placeholder-status">
-                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                            <span class="terminal-ui__iframe-placeholder-text">Connecting to preview...</span>
-                                        </div>
+                            <div class="terminal-ui__iframe-slot" data-pane="preview">
+                                <div class="terminal-ui__iframe-placeholder">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to preview...</span>
                                     </div>
-                                    <iframe class="terminal-ui__iframe" data-pane="preview" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                                 </div>
-                                <div class="terminal-ui__iframe-slot" data-pane="vscode" hidden>
-                                    <div class="terminal-ui__iframe-placeholder hidden">
-                                        <div class="terminal-ui__iframe-placeholder-status">
-                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                            <span class="terminal-ui__iframe-placeholder-text">Loading Code...</span>
-                                        </div>
+                                <iframe class="terminal-ui__iframe" data-pane="preview" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                            </div>
+                        </div>
+
+                        <!-- Code (code-server) pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="vscode" hidden>
+                            <div class="terminal-ui__iframe-slot" data-pane="vscode">
+                                <div class="terminal-ui__iframe-placeholder hidden">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Loading Code...</span>
                                     </div>
-                                    <iframe class="terminal-ui__iframe" data-pane="vscode" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                                 </div>
-                                <div class="terminal-ui__iframe-slot" data-pane="shell" hidden>
-                                    <div class="terminal-ui__iframe-placeholder hidden">
-                                        <div class="terminal-ui__iframe-placeholder-status">
-                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                            <span class="terminal-ui__iframe-placeholder-text">Loading terminal...</span>
-                                        </div>
+                                <iframe class="terminal-ui__iframe" data-pane="vscode" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                            </div>
+                        </div>
+
+                        <!-- Terminal (interactive shell) pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="shell" hidden>
+                            <div class="terminal-ui__iframe-slot" data-pane="shell">
+                                <div class="terminal-ui__iframe-placeholder hidden">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Loading terminal...</span>
                                     </div>
-                                    <iframe class="terminal-ui__iframe" data-pane="shell" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                                 </div>
-                                <div class="terminal-ui__iframe-slot" data-pane="browser" hidden>
-                                    <div class="terminal-ui__iframe-placeholder hidden">
-                                        <div class="terminal-ui__iframe-placeholder-status">
-                                            <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                            <span class="terminal-ui__iframe-placeholder-text">Starting browser...</span>
-                                        </div>
+                                <iframe class="terminal-ui__iframe" data-pane="shell" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                            </div>
+                        </div>
+
+                        <!-- Agent View (VNC) pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="browser" hidden>
+                            <div class="terminal-ui__iframe-slot" data-pane="browser">
+                                <div class="terminal-ui__iframe-placeholder hidden">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Starting browser...</span>
                                     </div>
-                                    <iframe class="terminal-ui__iframe" data-pane="browser" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                                 </div>
+                                <iframe class="terminal-ui__iframe" data-pane="browser" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                             </div>
                         </div>
                     </div>
@@ -1640,23 +1709,6 @@ class TerminalUI extends HTMLElement {
     switchPanelTab(tab) {
         if (tab === this.activeTab) return;
 
-        // Ensure iframe pane is visible (needed when called before pane is open)
-        const terminalUi = this.querySelector('.terminal-ui');
-        if (terminalUi) {
-            terminalUi.classList.add('iframe-visible');
-        }
-        this.applyPaneWidth();
-
-        // Show/hide toolbar based on tab
-        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
-        if (iframePane) {
-            if (tab === 'preview') {
-                iframePane.classList.add('show-toolbar');
-            } else {
-                iframePane.classList.remove('show-toolbar');
-            }
-        }
-
         this.activeTab = tab;
         this._showPaneSlot(tab);
 
@@ -1801,12 +1853,14 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Single source of truth for showing/hiding the Agent Chat tab in both
-    // desktop button and mobile dropdown -- prevents them from desyncing.
+    // Single source of truth for showing/hiding the Agent Chat tab across
+    // every slot tab bar and the mobile dropdown -- prevents them from
+    // desyncing once the chat probe resolves mid-session.
     setAgentChatTabVisible(visible) {
-        const display = visible ? '' : 'none';
-        const desktopBtn = this.querySelector('button[data-left-tab="chat"]');
-        if (desktopBtn) desktopBtn.style.display = display;
+        this._agentChatAvailable = !!visible;
+        this.querySelectorAll('.terminal-ui__slot-tab[data-pane="agent-chat"]').forEach(btn => {
+            btn.hidden = !visible;
+        });
         // iOS Safari ignores display:none on <option> in native pickers;
         // use hidden+disabled attributes which Safari does respect.
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
@@ -1816,11 +1870,11 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Show/hide the Agent View tab (desktop button + mobile dropdown option).
+    // Show/hide the Agent View tab (slot tab bars + mobile dropdown option).
     setAgentViewTabVisible(visible) {
-        const display = visible ? '' : 'none';
-        const desktopBtn = this.querySelector('button[data-tab="browser"]');
-        if (desktopBtn) desktopBtn.style.display = display;
+        this.querySelectorAll('.terminal-ui__slot-tab[data-pane="browser"]').forEach(btn => {
+            btn.hidden = !visible;
+        });
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="browser"]');
         if (mobileOpt) {
             mobileOpt.hidden = !visible;
@@ -3096,6 +3150,200 @@ class TerminalUI extends HTMLElement {
         processNext();
     }
 
+    // === Preset grid methods ===
+
+    // Apply the current preset + slot assignments to the DOM. Safe to call
+    // repeatedly; idempotent when state is unchanged.
+    applyPreset() {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+
+        const preset = LAYOUT_PRESETS[this.preset] || LAYOUT_PRESETS.classic;
+        workspace.dataset.preset = this.preset;
+
+        // Render slot frames (tab bars) for the active preset.
+        this._renderSlotFrames(preset);
+
+        // Assign each pane-host to its slot grid-area, or hide it.
+        const paneHosts = this.querySelectorAll('.terminal-ui__pane-host');
+        paneHosts.forEach(host => {
+            const paneId = host.dataset.pane;
+            const slotId = this._slotForPane(paneId);
+            if (slotId) {
+                host.style.gridArea = slotId;
+                host.hidden = false;
+                host.dataset.slot = slotId;
+            } else {
+                host.style.gridArea = '';
+                host.hidden = true;
+                delete host.dataset.slot;
+            }
+        });
+
+        // Keep legacy activeTab in sync for pre-preset code paths.
+        this._syncLegacyActiveTab();
+
+        // Trigger initial iframe load for each iframe-capable pane that's in a
+        // slot. preview is a no-op here until BroadcastStatus sets sessionUUID;
+        // the existing _wantsPreviewOnConnect flow handles that case.
+        for (const paneId of Object.values(this.activeBySlot)) {
+            this._loadPaneIfNeeded(paneId);
+        }
+
+        // Refit xterm if agent-terminal is now visible in a slot.
+        setTimeout(() => this.fitAndPreserveScroll(), 50);
+    }
+
+    // Which slot (if any) currently hosts this pane.
+    _slotForPane(paneId) {
+        for (const [s, p] of Object.entries(this.activeBySlot)) {
+            if (p === paneId) return s;
+        }
+        return null;
+    }
+
+    // Assign a pane to a slot. Persists the change and reloads the page --
+    // per product decision, layout changes don't need live state preservation
+    // (reload is an acceptable UX cost; keeps the code simple). Swap logic
+    // keeps multi-slot presets from going partially empty.
+    assignPaneToSlot(paneId, slotId) {
+        if (this.activeBySlot[slotId] === paneId) return;
+        const oldPaneId = this.activeBySlot[slotId];
+        const otherSlot = this._slotForPane(paneId);
+        if (otherSlot && otherSlot !== slotId) {
+            this.activeBySlot[otherSlot] = oldPaneId;
+        }
+        this.activeBySlot[slotId] = paneId;
+        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        window.location.reload();
+    }
+
+    // Lazy-load an iframe pane the first time it becomes active. Agent-terminal
+    // and agent-chat are already mounted and don't need URL kicks.
+    _loadPaneIfNeeded(paneId) {
+        if (this._paneLoaded.has(paneId)) return;
+        const baseUrl = getBaseUrl(window.location);
+        switch (paneId) {
+            case 'preview':
+                this._paneLoaded.add('preview');
+                this.setPreviewURL(null);
+                break;
+            case 'vscode':
+                this._paneLoaded.add('vscode');
+                this.setIframeUrl(buildVSCodeUrl(baseUrl, this.workDir), 'vscode');
+                break;
+            case 'shell': {
+                this._paneLoaded.add('shell');
+                const shellUUID = deriveShellUUID(this.uuid);
+                const url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
+                this.setIframeUrl(url, 'shell');
+                break;
+            }
+            case 'browser': {
+                const url = this.getBrowserViewUrl();
+                if (!url) return;
+                if (this._browserViewReady) {
+                    this._paneLoaded.add('browser');
+                    this.setIframeUrl(url, 'browser');
+                    return;
+                }
+                // VNC readiness probe -- see the original browser path in
+                // switchPanelTab for rationale (cross-origin probes return
+                // opaque responses).
+                const placeholder = this._placeholderFor('browser');
+                const placeholderText = placeholder ? placeholder.querySelector('.terminal-ui__iframe-placeholder-text') : null;
+                if (placeholder) placeholder.classList.remove('hidden');
+                if (placeholderText) placeholderText.textContent = 'Starting browser...';
+                if (!this._browserViewProbing) {
+                    this._browserViewProbing = true;
+                    const probeUrl = `${baseUrl}/api/session/${this.uuid}/vnc-ready`;
+                    probeUntilReady(probeUrl, {
+                        method: 'GET',
+                        maxAttempts: 30,
+                        baseDelay: 1000,
+                        maxDelay: 5000,
+                    }).then(() => {
+                        this._browserViewReady = true;
+                        this._browserViewProbing = false;
+                        if (this._slotForPane('browser')) {
+                            this._paneLoaded.add('browser');
+                            this.setIframeUrl(this.getBrowserViewUrl(), 'browser');
+                        }
+                    }).catch(() => {
+                        this._browserViewProbing = false;
+                    });
+                }
+                break;
+            }
+            default:
+                // agent-terminal, agent-chat -- pre-mounted; no URL kick needed.
+                break;
+        }
+    }
+
+    // Render slot frames (tab bars) for the active preset. Each slot-frame
+    // overlays its pane-host in the same grid cell (z-index + pointer-events
+    // scoping keep the pane-host clickable beneath the tab buttons).
+    _renderSlotFrames(preset) {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+        // Remove any stale slot frames.
+        workspace.querySelectorAll('.terminal-ui__slot-frame').forEach(el => el.remove());
+        // Build one per slot in the active preset.
+        preset.slots.forEach(slotId => {
+            const frame = document.createElement('div');
+            frame.className = 'terminal-ui__slot-frame';
+            frame.dataset.slot = slotId;
+            frame.style.gridArea = slotId;
+            frame.appendChild(this._buildSlotTabBar(slotId));
+            workspace.appendChild(frame);
+        });
+    }
+
+    // Build one slot's tab bar: all 6 panes in PANES_IN_ORDER order. Tabs for
+    // features that aren't available this session (agent-chat, vscode, browser)
+    // are marked hidden; setAgentChatTabVisible / setAgentViewTabVisible flip
+    // their visibility when the respective probe succeeds.
+    _buildSlotTabBar(slotId) {
+        const bar = document.createElement('div');
+        bar.className = 'terminal-ui__slot-tab-bar';
+        bar.dataset.slot = slotId;
+        const activePaneId = this.activeBySlot[slotId];
+        PANES_IN_ORDER.forEach(paneId => {
+            const btn = document.createElement('button');
+            btn.className = 'terminal-ui__slot-tab';
+            btn.dataset.pane = paneId;
+            if (paneId === activePaneId) btn.classList.add('active');
+            btn.textContent = PANE_LABELS[paneId] || paneId;
+            // Hide features that aren't known available yet. Probes flip these on.
+            if (paneId === 'agent-chat' && !this._agentChatAvailable) btn.hidden = true;
+            if (paneId === 'browser' && !this.vncProxyPort) btn.hidden = true;
+            if (paneId === 'vscode' && !this._vscodeEnabled()) btn.hidden = true;
+            btn.addEventListener('click', () => this.assignPaneToSlot(paneId, slotId));
+            bar.appendChild(btn);
+        });
+        return bar;
+    }
+
+    // vscode (code-server) is only shown when the init variant asks for it.
+    // The server-rendered mobile <option> uses a Go-template placeholder that
+    // collapses to empty-string (enabled) or `hidden disabled` (disabled), so
+    // we mirror that signal here.
+    _vscodeEnabled() {
+        const opt = this.querySelector('.terminal-ui__mobile-nav-select option[value="vscode"]');
+        if (!opt) return false;
+        return !(opt.hidden || opt.disabled);
+    }
+
+    // Mirror the first iframe-capable pane into this.activeTab so pre-preset
+    // call sites (setPreviewURL, refreshIframe, browser probe) keep working.
+    _syncLegacyActiveTab() {
+        for (const pane of IFRAME_PANES_PRIORITY) {
+            if (this._slotForPane(pane)) { this.activeTab = pane; return; }
+        }
+        this.activeTab = null;
+    }
+
     // === Split-Pane UI Methods ===
 
     // Per-pane iframe lookups: each pane ("preview", "vscode", "shell", "browser")
@@ -3158,6 +3406,9 @@ class TerminalUI extends HTMLElement {
         if (!this._iframeFor('preview')) {
             return;
         }
+
+        // Render the preset grid (tab bars + pane-host slot assignments).
+        this.applyPreset();
 
         // Load saved pane width (will be applied when iframe is shown)
         this.loadSavedPaneWidth();
