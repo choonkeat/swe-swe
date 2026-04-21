@@ -1196,6 +1196,7 @@ class TerminalUI extends HTMLElement {
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
                     this._agentChatProbing = true;
+                    this._rerenderSlotTabs();
                     const acPathUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
                     const acPortUrl = buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
                     if (acPathUrl) {
@@ -1246,6 +1247,7 @@ class TerminalUI extends HTMLElement {
                             }
                         }).catch(() => {
                             this._agentChatProbing = false;
+                            this._rerenderSlotTabs();
                         });
                     }
                 }
@@ -1867,14 +1869,12 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Single source of truth for showing/hiding the Agent Chat tab across
-    // every slot tab bar and the mobile dropdown -- prevents them from
-    // desyncing once the chat probe resolves mid-session.
+    // Single source of truth for the Agent Chat tab availability. Flips the
+    // internal flag, re-renders every slot tab bar so chat appears as a valid
+    // replace-option, and syncs the mobile dropdown.
     setAgentChatTabVisible(visible) {
         this._agentChatAvailable = !!visible;
-        this.querySelectorAll('.terminal-ui__slot-tab[data-pane="agent-chat"]').forEach(btn => {
-            btn.hidden = !visible;
-        });
+        this._rerenderSlotTabs();
         // iOS Safari ignores display:none on <option> in native pickers;
         // use hidden+disabled attributes which Safari does respect.
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
@@ -1886,9 +1886,7 @@ class TerminalUI extends HTMLElement {
 
     // Show/hide the Agent View tab (slot tab bars + mobile dropdown option).
     setAgentViewTabVisible(visible) {
-        this.querySelectorAll('.terminal-ui__slot-tab[data-pane="browser"]').forEach(btn => {
-            btn.hidden = !visible;
-        });
+        this._rerenderSlotTabs();
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="browser"]');
         if (mobileOpt) {
             mobileOpt.hidden = !visible;
@@ -3351,38 +3349,118 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Build one slot's tab bar. Shows:
-    //   - this slot's currently-active pane (as the "active" label);
-    //   - panes that are NOT currently in any other slot (clickable to swap in).
-    // Panes that live in another slot are hidden here -- we never show the same
-    // pane in two tab bars, so a user always sees unambiguously where each
-    // pane lives.
+    // Build one slot's tab bar. Shows only this slot's active pane plus a "+"
+    // button to replace it. The "+" opens a popover listing every pane that
+    // isn't currently in another slot (the "dumping ground"). This avoids
+    // duplicating pane names across slot tab bars -- each pane name appears
+    // in at most one place.
     _buildSlotTabBar(slotId) {
         const bar = document.createElement('div');
         bar.className = 'terminal-ui__slot-tab-bar';
         bar.dataset.slot = slotId;
         const activePaneId = this.activeBySlot[slotId];
-        const panesInOtherSlots = new Set(
-            Object.entries(this.activeBySlot)
-                .filter(([s]) => s !== slotId)
-                .map(([, p]) => p)
-        );
-        PANES_IN_ORDER.forEach(paneId => {
-            const btn = document.createElement('button');
-            btn.className = 'terminal-ui__slot-tab';
-            btn.dataset.pane = paneId;
-            if (paneId === activePaneId) btn.classList.add('active');
-            btn.textContent = PANE_LABELS[paneId] || paneId;
-            // Hide if this pane is already shown in a different slot.
-            if (panesInOtherSlots.has(paneId)) btn.hidden = true;
-            // Hide features that aren't known available yet. Probes flip these on.
-            if (paneId === 'agent-chat' && !this._agentChatAvailable) btn.hidden = true;
-            if (paneId === 'browser' && !this.vncProxyPort) btn.hidden = true;
-            if (paneId === 'vscode' && !this._vscodeEnabled()) btn.hidden = true;
-            btn.addEventListener('click', () => this.assignPaneToSlot(paneId, slotId));
-            bar.appendChild(btn);
-        });
+
+        // Always render the slot's active pane label so the slot is never
+        // unlabeled. If the pane isn't "known" (e.g. agent-chat when no chat
+        // probe ever started), render it dimmed so the user can still see
+        // what the slot was configured to show.
+        if (activePaneId) {
+            const activeBtn = document.createElement('button');
+            activeBtn.className = 'terminal-ui__slot-tab active';
+            activeBtn.dataset.pane = activePaneId;
+            activeBtn.type = 'button';
+            activeBtn.textContent = this._paneTabLabel(activePaneId);
+            if (!this._isPaneKnown(activePaneId)) {
+                activeBtn.classList.add('unavailable');
+            }
+            // Clicking the active tab is a no-op (assignPaneToSlot bails on
+            // same-slot same-pane), but keep the handler for consistency.
+            activeBtn.addEventListener('click', () => this.assignPaneToSlot(activePaneId, slotId));
+            bar.appendChild(activeBtn);
+        }
+
+        // "+" opens a popover listing panes that aren't in any slot.
+        const panesInSlots = new Set(Object.values(this.activeBySlot));
+        const unassigned = PANES_IN_ORDER.filter(p => !panesInSlots.has(p) && this._isPaneKnown(p));
+        if (unassigned.length > 0) {
+            const addBtn = document.createElement('button');
+            addBtn.className = 'terminal-ui__slot-add';
+            addBtn.type = 'button';
+            addBtn.title = 'Replace with...';
+            addBtn.textContent = '+';
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._showSlotReplaceMenu(slotId, unassigned, addBtn);
+            });
+            bar.appendChild(addBtn);
+        }
+
         return bar;
+    }
+
+    // Returns the display label for a pane tab, appending "(Loading)" for
+    // agent-chat while its probe is in flight so the user knows chat is
+    // coming.
+    _paneTabLabel(paneId) {
+        let label = PANE_LABELS[paneId] || paneId;
+        if (paneId === 'agent-chat' && !this._agentChatAvailable && this._agentChatProbing) {
+            label += ' (Loading)';
+        }
+        return label;
+    }
+
+    // A pane is "known" and can appear in tab bars if it's available or being
+    // probed. agent-terminal / preview / shell are always known.
+    _isPaneKnown(paneId) {
+        if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing;
+        if (paneId === 'browser') return !!this.vncProxyPort;
+        if (paneId === 'vscode') return this._vscodeEnabled();
+        return true;
+    }
+
+    // Show a small popover anchored to the slot's "+" button listing each
+    // unassigned pane. Clicking one replaces this slot's current pane.
+    _showSlotReplaceMenu(slotId, unassigned, anchor) {
+        const existing = document.querySelector('.terminal-ui__slot-replace-menu');
+        if (existing) existing.remove();
+
+        const menu = document.createElement('div');
+        menu.className = 'terminal-ui__slot-replace-menu';
+        const rect = anchor.getBoundingClientRect();
+        menu.style.position = 'fixed';
+        menu.style.top = `${Math.round(rect.bottom + 2)}px`;
+        menu.style.left = `${Math.round(rect.left)}px`;
+
+        unassigned.forEach(paneId => {
+            const item = document.createElement('button');
+            item.className = 'terminal-ui__slot-replace-item';
+            item.type = 'button';
+            item.textContent = this._paneTabLabel(paneId);
+            item.addEventListener('click', () => {
+                menu.remove();
+                this.assignPaneToSlot(paneId, slotId);
+            });
+            menu.appendChild(item);
+        });
+
+        document.body.appendChild(menu);
+        // Dismiss on any outside click.
+        const dismiss = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('mousedown', dismiss, true);
+            }
+        };
+        setTimeout(() => document.addEventListener('mousedown', dismiss, true), 0);
+    }
+
+    // Re-render slot frames + header picker. Useful when probe state changes
+    // (chat/vnc/vscode becoming available mid-session).
+    _rerenderSlotTabs() {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+        const preset = LAYOUT_PRESETS[this.preset] || LAYOUT_PRESETS.classic;
+        this._renderSlotFrames(preset);
     }
 
     // vscode (code-server) is only shown when the init variant asks for it.

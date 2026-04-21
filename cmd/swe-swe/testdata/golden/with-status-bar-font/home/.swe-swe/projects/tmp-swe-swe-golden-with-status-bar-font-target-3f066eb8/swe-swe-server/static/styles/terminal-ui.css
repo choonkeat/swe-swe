@@ -1936,6 +1936,65 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .terminal-ui__slot-tab[hidden] { display: none; }
 
+/* Unavailable: the slot's configured pane can't render right now (e.g.
+   agent-chat before its probe starts). Keep the label visible so users
+   know the slot is intentionally waiting for that pane. */
+.terminal-ui__slot-tab.unavailable {
+    opacity: 0.55;
+    font-style: italic;
+}
+
+/* "+" add/replace button: opens a popover listing panes not in any slot. */
+.terminal-ui__slot-add {
+    padding: 6px 10px;
+    font-size: 14px;
+    font-family: inherit;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    line-height: 1;
+}
+
+.terminal-ui__slot-add:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-color: var(--border-primary);
+}
+
+/* Popover menu shown when the "+" button is clicked. */
+.terminal-ui__slot-replace-menu {
+    position: fixed;
+    z-index: 10000;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: 4px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    min-width: 160px;
+    max-width: 260px;
+}
+
+.terminal-ui__slot-replace-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.terminal-ui__slot-replace-item:hover {
+    background: var(--bg-elevated);
+}
+
 /* Pane-host: holds one pane's content. grid-area is assigned by JS at render
    time (matches the active slot for this pane). */
 .terminal-ui__pane-host {
