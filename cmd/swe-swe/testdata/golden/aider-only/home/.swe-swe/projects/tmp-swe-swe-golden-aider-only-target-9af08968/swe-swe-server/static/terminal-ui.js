@@ -258,11 +258,12 @@ class TerminalUI extends HTMLElement {
             }
             this.render();
 
-            // For chat sessions, show the Agent Chat tab immediately with a
-            // loading indicator so users know something is happening while
-            // the MCP probe runs in the background.
+            // For chat sessions, drop Agent Chat into its preset home slot
+            // immediately (marked as "known" so the tab shows the (Loading)
+            // label via _isPaneKnown while the probe runs).
             if (new URLSearchParams(location.search).get('session') === 'chat') {
-                this.setAgentChatTabVisible(true);
+                this._agentChatProbing = true; // gate _isPaneKnown until real probe resolves
+                this.autoAddPaneToHome('agent-chat');
                 this.startChatLoadingAnimation();
             }
 
@@ -1214,11 +1215,13 @@ class TerminalUI extends HTMLElement {
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
-                // Show/hide Agent View tab based on browser state
+                // Browser (CDP chrome) just came online -- show the Agent View
+                // tab and auto-add it to its preset-defined home slot (same
+                // spirit as the old "open right panel" auto-switch).
                 if (msg.browserStarted && !this.browserStarted) {
                     this.browserStarted = true;
                     this.setAgentViewTabVisible(true);
-                    this.switchPanelTab('browser');
+                    this.autoAddPaneToHome('browser');
                 } else if (!this.browserStarted) {
                     this.browserStarted = false;
                     this._browserViewReady = false;
@@ -3307,6 +3310,36 @@ class TerminalUI extends HTMLElement {
     // Back-compat adapter: some older call sites still say "assignPaneToSlot".
     // Now that means "add + activate".
     assignPaneToSlot(paneId, slotId) {
+        this.addPaneToSlot(slotId, paneId);
+    }
+
+    // Return the slot id where a pane should "live" in the current preset.
+    // Priority:
+    //   1. Preset's defaults declares the pane explicitly -> use that slot.
+    //   2. Chat-like panes (agent-terminal/agent-chat) share the slot that
+    //      holds agent-terminal in defaults ("old left panel").
+    //   3. Iframe-like panes (preview/vscode/shell/browser) share the slot
+    //      that holds preview in defaults ("old right panel").
+    //   4. Fall back to the preset's first slot.
+    _paneHome(paneId) {
+        const preset = LAYOUT_PRESETS[this.preset] || LAYOUT_PRESETS.classic;
+        for (const [slotId, defaultPane] of Object.entries(preset.defaults)) {
+            if (defaultPane === paneId) return slotId;
+        }
+        const isChatLike = (paneId === 'agent-terminal' || paneId === 'agent-chat');
+        const companion = isChatLike ? 'agent-terminal' : 'preview';
+        for (const [slotId, defaultPane] of Object.entries(preset.defaults)) {
+            if (defaultPane === companion) return slotId;
+        }
+        return preset.slots[0];
+    }
+
+    // Add a pane to its preset-defined home slot and activate it. Used for
+    // auto-open paths: `?session=chat` (Agent Chat) and browserStarted
+    // (Agent View from playwright CDP lazy-load).
+    autoAddPaneToHome(paneId) {
+        const slotId = this._paneHome(paneId);
+        if (!slotId) return;
         this.addPaneToSlot(slotId, paneId);
     }
 
