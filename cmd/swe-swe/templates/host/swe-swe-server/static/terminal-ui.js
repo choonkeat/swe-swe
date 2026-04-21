@@ -260,10 +260,15 @@ class TerminalUI extends HTMLElement {
 
             // For chat sessions, drop Agent Chat into its preset home slot
             // immediately (marked as "known" so the tab shows the (Loading)
-            // label via _isPaneKnown while the probe runs).
+            // label via _isPaneKnown while the probe runs). activate:false so
+            // Agent Terminal keeps initial focus -- probe success handler
+            // below flips the active tab to chat once the iframe is usable.
+            // _agentChatPending gates _isPaneKnown / (Loading) label;
+            // _agentChatProbing is reserved for the in-flight probe so the
+            // WS-init probe at line 1231 can run.
             if (new URLSearchParams(location.search).get('session') === 'chat') {
-                this._agentChatProbing = true; // gate _isPaneKnown until real probe resolves
-                this.autoAddPaneToHome('agent-chat');
+                this._agentChatPending = true;
+                this.autoAddPaneToHome('agent-chat', { activate: false });
                 this.startChatLoadingAnimation();
             }
 
@@ -1264,6 +1269,7 @@ class TerminalUI extends HTMLElement {
                         }).then((chosenUrl) => {
                             this._agentChatAvailable = true;
                             this._agentChatProbing = false;
+                            this._agentChatPending = false;
                             this.setAgentChatTabVisible(true);
                             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                             if (chatIframe) {
@@ -1274,6 +1280,12 @@ class TerminalUI extends HTMLElement {
                                     // Loading complete -- remove loading indicator and activate tab
                                     this.stopChatLoadingAnimation();
                                     if (new URLSearchParams(location.search).get('session') === 'chat') {
+                                        // Slot-model activation: page-load auto-add used
+                                        // activate:false to keep Agent Terminal focused
+                                        // while the probe ran; now the iframe is usable,
+                                        // flip the slot's active tab to Agent Chat.
+                                        const chatSlot = this._slotForPane('agent-chat');
+                                        if (chatSlot) this.setActiveInSlot(chatSlot, 'agent-chat');
                                         this.switchLeftPanelTab('chat');
                                         this.switchMobileNav('agent-chat');
                                     }
@@ -1281,6 +1293,7 @@ class TerminalUI extends HTMLElement {
                             }
                         }).catch(() => {
                             this._agentChatProbing = false;
+                            this._agentChatPending = false;
                             this._rerenderSlotTabs();
                         });
                     }
@@ -1296,15 +1309,24 @@ class TerminalUI extends HTMLElement {
                 if (this.previewPort && this.previewBaseUrl !== prevPreviewBaseUrl) {
                     this.connectDebugWebSocket();
                 }
-                // Open preview for first time once we have previewPort
-                if (this._wantsPreviewOnConnect && this.previewPort) {
-                    this._wantsPreviewOnConnect = false;
-                    setTimeout(() => this.openIframePane('preview', null), 100);
-                }
-                // Refresh iframe if port changed while preview is active
-                else if (this.previewBaseUrl !== prevPreviewBaseUrl && this.activeTab === 'preview') {
-                    const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
-                    this.setPreviewURL(currentTarget);
+                // Load preview once we have sessionUUID + previewPort. applyPreset()
+                // runs at page load and calls _loadPaneIfNeeded('preview') before the
+                // WS init arrives; setPreviewURL(null) silently bails out then because
+                // sessionUUID is null. Retry here with the now-known session so the
+                // iframe src actually gets set and the "Connecting to preview..."
+                // placeholder clears.
+                if (this.previewPort && this.sessionUUID && this._slotForPane('preview')) {
+                    const previewIframe = this._iframeFor('preview');
+                    const previewSrc = previewIframe ? previewIframe.getAttribute('src') : null;
+                    if (!previewSrc) {
+                        this._wantsPreviewOnConnect = false;
+                        this._paneLoaded.add('preview');
+                        setTimeout(() => this.setPreviewURL(null), 100);
+                    } else if (this.previewBaseUrl !== prevPreviewBaseUrl && this.activeTab === 'preview') {
+                        // Port changed while preview is active -- refresh with current target.
+                        const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
+                        this.setPreviewURL(currentTarget);
+                    }
                 }
                 // YOLO mode state
                 this.yoloMode = msg.yoloMode || false;
@@ -3269,10 +3291,12 @@ class TerminalUI extends HTMLElement {
         this._loadPaneIfNeeded(paneId);
     }
 
-    // Add a pane as a new tab in a slot and activate it. If the pane already
-    // lives in another slot, it's removed from there first (a pane lives in
-    // exactly one slot's tab list).
-    addPaneToSlot(slotId, paneId) {
+    // Add a pane as a new tab in a slot. If the pane already lives in another
+    // slot, it's removed from there first (a pane lives in exactly one slot's
+    // tab list). `activate` (default true) controls whether the newly-added
+    // pane becomes the active tab; pass false for page-load auto-adds that
+    // shouldn't steal focus from the slot's preset default.
+    addPaneToSlot(slotId, paneId, { activate = true } = {}) {
         const target = this.activeBySlot[slotId];
         if (!target) return;
         // Remove from any other slot to keep the "one pane, one slot" rule.
@@ -3286,10 +3310,10 @@ class TerminalUI extends HTMLElement {
             }
         }
         if (!target.tabs.includes(paneId)) target.tabs.push(paneId);
-        target.active = paneId;
+        if (activate || !target.active) target.active = paneId;
         saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
         this.applyPreset();
-        this._loadPaneIfNeeded(paneId);
+        if (target.active === paneId) this._loadPaneIfNeeded(paneId);
     }
 
     // Remove a tab from a slot (x button on the tab). Pane becomes unassigned
@@ -3334,13 +3358,15 @@ class TerminalUI extends HTMLElement {
         return preset.slots[0];
     }
 
-    // Add a pane to its preset-defined home slot and activate it. Used for
-    // auto-open paths: `?session=chat` (Agent Chat) and browserStarted
-    // (Agent View from playwright CDP lazy-load).
-    autoAddPaneToHome(paneId) {
+    // Add a pane to its preset-defined home slot. Used for auto-open paths:
+    // `?session=chat` (Agent Chat, activate=false so Agent Terminal keeps
+    // initial focus while chat probe runs) and browserStarted (Agent View
+    // from playwright CDP lazy-load, activate=true since it fires on user
+    // action and should take focus).
+    autoAddPaneToHome(paneId, { activate = true } = {}) {
         const slotId = this._paneHome(paneId);
         if (!slotId) return;
-        this.addPaneToSlot(slotId, paneId);
+        this.addPaneToSlot(slotId, paneId, { activate });
     }
 
     // Lazy-load an iframe pane the first time it becomes active. Agent-terminal
@@ -3350,6 +3376,10 @@ class TerminalUI extends HTMLElement {
         const baseUrl = getBaseUrl(window.location);
         switch (paneId) {
             case 'preview':
+                // Defer if sessionUUID hasn't arrived yet -- the WS init handler
+                // will call us again once it does. Marking as loaded prematurely
+                // would silently drop the load (setPreviewURL bails on null base).
+                if (!this.sessionUUID) return;
                 this._paneLoaded.add('preview');
                 this.setPreviewURL(null);
                 break;
@@ -3525,7 +3555,7 @@ class TerminalUI extends HTMLElement {
     // coming.
     _paneTabLabel(paneId) {
         let label = PANE_LABELS[paneId] || paneId;
-        if (paneId === 'agent-chat' && !this._agentChatAvailable && this._agentChatProbing) {
+        if (paneId === 'agent-chat' && !this._agentChatAvailable && (this._agentChatProbing || this._agentChatPending)) {
             label += ' (Loading)';
         }
         return label;
@@ -3534,7 +3564,7 @@ class TerminalUI extends HTMLElement {
     // A pane is "known" and can appear in tab bars if it's available or being
     // probed. agent-terminal / preview / shell are always known.
     _isPaneKnown(paneId) {
-        if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing;
+        if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing || !!this._agentChatPending;
         if (paneId === 'browser') return !!this.vncProxyPort;
         if (paneId === 'vscode') return this._vscodeEnabled();
         return true;
