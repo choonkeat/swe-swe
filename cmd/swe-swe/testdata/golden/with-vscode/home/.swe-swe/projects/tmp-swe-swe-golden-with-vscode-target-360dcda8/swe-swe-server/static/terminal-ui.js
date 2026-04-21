@@ -76,22 +76,53 @@ const IFRAME_PANES_PRIORITY = ['preview', 'vscode', 'shell', 'browser'];
 
 const LAYOUT_STATE_KEY = 'swe-swe-layout-v1';
 
-// Layout state persistence. Shape: { preset: string, activeBySlot: {[slot]: pane} }
+// Build a fresh slot-state object (one tab, active) from a pane id.
+function slotStateForPane(paneId) {
+    return { tabs: [paneId], active: paneId };
+}
+
+// Build the activeBySlot map for a preset using its defaults.
+function defaultActiveBySlot(preset) {
+    const result = {};
+    preset.slots.forEach(slotId => {
+        result[slotId] = slotStateForPane(preset.defaults[slotId]);
+    });
+    return result;
+}
+
+// Normalize a slot value from localStorage into {tabs, active} shape.
+// Accepts the legacy string shape and either field being missing.
+function normalizeSlotState(value, fallbackPaneId) {
+    if (typeof value === 'string') return slotStateForPane(value);
+    if (value && Array.isArray(value.tabs) && value.tabs.length > 0) {
+        const active = value.active && value.tabs.includes(value.active)
+            ? value.active : value.tabs[0];
+        return { tabs: [...value.tabs], active };
+    }
+    return slotStateForPane(fallbackPaneId);
+}
+
+// Layout state persistence. Shape:
+//   { preset: string, activeBySlot: {[slot]: {tabs: string[], active: string}} }
+// Legacy shape (v1 initial release) stored pane strings directly in
+// activeBySlot[slot]; normalizeSlotState handles the migration on read.
 // On parse failure or missing preset, fall back to the classic defaults.
 function loadLayoutState() {
     try {
         const s = JSON.parse(localStorage.getItem(LAYOUT_STATE_KEY));
         if (s && s.preset && LAYOUT_PRESETS[s.preset] && s.activeBySlot) {
-            // Keep only slots valid for the saved preset; fill missing with defaults.
             const preset = LAYOUT_PRESETS[s.preset];
             const activeBySlot = {};
             preset.slots.forEach(slotId => {
-                activeBySlot[slotId] = s.activeBySlot[slotId] || preset.defaults[slotId];
+                activeBySlot[slotId] = normalizeSlotState(
+                    s.activeBySlot[slotId],
+                    preset.defaults[slotId]
+                );
             });
             return { preset: s.preset, activeBySlot };
         }
     } catch (e) { /* fall through */ }
-    return { preset: 'classic', activeBySlot: { ...LAYOUT_PRESETS.classic.defaults } };
+    return { preset: 'classic', activeBySlot: defaultActiveBySlot(LAYOUT_PRESETS.classic) };
 }
 
 function saveLayoutState(state) {
@@ -3179,11 +3210,17 @@ class TerminalUI extends HTMLElement {
         // Render slot frames (tab bars) for the active preset.
         this._renderSlotFrames(preset);
 
-        // Assign each pane-host to its slot grid-area, or hide it.
+        // Assign each pane-host to its slot grid-area if this pane is the
+        // active tab for some slot. Panes that are in a slot's tabs list but
+        // not active stay mounted but hidden.
+        const activePaneBySlot = {};
+        for (const [slotId, state] of Object.entries(this.activeBySlot)) {
+            if (state && state.active) activePaneBySlot[state.active] = slotId;
+        }
         const paneHosts = this.querySelectorAll('.terminal-ui__pane-host');
         paneHosts.forEach(host => {
             const paneId = host.dataset.pane;
-            const slotId = this._slotForPane(paneId);
+            const slotId = activePaneBySlot[paneId];
             if (slotId) {
                 host.style.gridArea = slotId;
                 host.hidden = false;
@@ -3198,39 +3235,79 @@ class TerminalUI extends HTMLElement {
         // Keep legacy activeTab in sync for pre-preset code paths.
         this._syncLegacyActiveTab();
 
-        // Trigger initial iframe load for each iframe-capable pane that's in a
-        // slot. preview is a no-op here until BroadcastStatus sets sessionUUID;
-        // the existing _wantsPreviewOnConnect flow handles that case.
-        for (const paneId of Object.values(this.activeBySlot)) {
-            this._loadPaneIfNeeded(paneId);
+        // Trigger initial iframe load for each active pane in a slot. Non-active
+        // tabs stay lazy until their tab is activated.
+        for (const state of Object.values(this.activeBySlot)) {
+            if (state && state.active) this._loadPaneIfNeeded(state.active);
         }
 
         // Refit xterm if agent-terminal is now visible in a slot.
         setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
 
-    // Which slot (if any) currently hosts this pane.
+    // Which slot (if any) currently has this pane in its tab list.
     _slotForPane(paneId) {
-        for (const [s, p] of Object.entries(this.activeBySlot)) {
-            if (p === paneId) return s;
+        for (const [slotId, state] of Object.entries(this.activeBySlot)) {
+            if (state && state.tabs && state.tabs.includes(paneId)) return slotId;
         }
         return null;
     }
 
-    // Assign a pane to a slot. Persists the change and reloads the page --
-    // per product decision, layout changes don't need live state preservation
-    // (reload is an acceptable UX cost; keeps the code simple). Swap logic
-    // keeps multi-slot presets from going partially empty.
-    assignPaneToSlot(paneId, slotId) {
-        if (this.activeBySlot[slotId] === paneId) return;
-        const oldPaneId = this.activeBySlot[slotId];
-        const otherSlot = this._slotForPane(paneId);
-        if (otherSlot && otherSlot !== slotId) {
-            this.activeBySlot[otherSlot] = oldPaneId;
-        }
-        this.activeBySlot[slotId] = paneId;
+    // Activate a tab that's already in a slot's tab list. Live -- no reload.
+    // Just re-applies the preset so the now-active pane swaps into the slot's
+    // grid cell and the previously-active one is hidden.
+    setActiveInSlot(slotId, paneId) {
+        const state = this.activeBySlot[slotId];
+        if (!state || !state.tabs.includes(paneId)) return;
+        if (state.active === paneId) return;
+        state.active = paneId;
         saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
-        window.location.reload();
+        this.applyPreset();
+        this._loadPaneIfNeeded(paneId);
+    }
+
+    // Add a pane as a new tab in a slot and activate it. If the pane already
+    // lives in another slot, it's removed from there first (a pane lives in
+    // exactly one slot's tab list).
+    addPaneToSlot(slotId, paneId) {
+        const target = this.activeBySlot[slotId];
+        if (!target) return;
+        // Remove from any other slot to keep the "one pane, one slot" rule.
+        for (const [sid, st] of Object.entries(this.activeBySlot)) {
+            if (sid === slotId || !st || !st.tabs) continue;
+            const idx = st.tabs.indexOf(paneId);
+            if (idx < 0) continue;
+            st.tabs.splice(idx, 1);
+            if (st.active === paneId) {
+                st.active = st.tabs[Math.min(idx, st.tabs.length - 1)] || null;
+            }
+        }
+        if (!target.tabs.includes(paneId)) target.tabs.push(paneId);
+        target.active = paneId;
+        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        this.applyPreset();
+        this._loadPaneIfNeeded(paneId);
+    }
+
+    // Remove a tab from a slot (x button on the tab). Pane becomes unassigned
+    // (reappears in other slots' "+" popovers). Live -- no reload.
+    removeTabFromSlot(slotId, paneId) {
+        const state = this.activeBySlot[slotId];
+        if (!state || !state.tabs) return;
+        const idx = state.tabs.indexOf(paneId);
+        if (idx < 0) return;
+        state.tabs.splice(idx, 1);
+        if (state.active === paneId) {
+            state.active = state.tabs[Math.min(idx, state.tabs.length - 1)] || null;
+        }
+        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        this.applyPreset();
+    }
+
+    // Back-compat adapter: some older call sites still say "assignPaneToSlot".
+    // Now that means "add + activate".
+    assignPaneToSlot(paneId, slotId) {
+        this.addPaneToSlot(slotId, paneId);
     }
 
     // Lazy-load an iframe pane the first time it becomes active. Agent-terminal
@@ -3299,14 +3376,16 @@ class TerminalUI extends HTMLElement {
     // Change preset: merge overlapping slot assignments (per TASK.md:
     // "When preset changes, carry over slot assignments where slot IDs
     // overlap; fill new slots with the preset's defaults"), persist,
-    // reload.
+    // reload. Slot tab lists carry over intact; new slots get a single tab
+    // from the preset's default.
     changePreset(newPresetId) {
         const newPreset = LAYOUT_PRESETS[newPresetId];
         if (!newPreset) return;
         if (newPresetId === this.preset) return;
         const newActiveBySlot = {};
         newPreset.slots.forEach(slotId => {
-            newActiveBySlot[slotId] = this.activeBySlot[slotId] || newPreset.defaults[slotId];
+            newActiveBySlot[slotId] = this.activeBySlot[slotId]
+                || slotStateForPane(newPreset.defaults[slotId]);
         });
         saveLayoutState({ preset: newPresetId, activeBySlot: newActiveBySlot });
         window.location.reload();
@@ -3349,44 +3428,54 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Build one slot's tab bar. Shows only this slot's active pane plus a "+"
-    // button to replace it. The "+" opens a popover listing every pane that
-    // isn't currently in another slot (the "dumping ground"). This avoids
-    // duplicating pane names across slot tab bars -- each pane name appears
-    // in at most one place.
+    // Build one slot's tab bar. Each pane in the slot's `tabs` list renders
+    // as a tab (active one highlighted), with an "x" to close it. A "+" at
+    // the end opens a popover of panes not in any slot (dumping ground);
+    // clicking adds a new tab to this slot and activates it.
     _buildSlotTabBar(slotId) {
         const bar = document.createElement('div');
         bar.className = 'terminal-ui__slot-tab-bar';
         bar.dataset.slot = slotId;
-        const activePaneId = this.activeBySlot[slotId];
+        const state = this.activeBySlot[slotId] || { tabs: [], active: null };
 
-        // Always render the slot's active pane label so the slot is never
-        // unlabeled. If the pane isn't "known" (e.g. agent-chat when no chat
-        // probe ever started), render it dimmed so the user can still see
-        // what the slot was configured to show.
-        if (activePaneId) {
-            const activeBtn = document.createElement('button');
-            activeBtn.className = 'terminal-ui__slot-tab active';
-            activeBtn.dataset.pane = activePaneId;
-            activeBtn.type = 'button';
-            activeBtn.textContent = this._paneTabLabel(activePaneId);
-            if (!this._isPaneKnown(activePaneId)) {
-                activeBtn.classList.add('unavailable');
-            }
-            // Clicking the active tab is a no-op (assignPaneToSlot bails on
-            // same-slot same-pane), but keep the handler for consistency.
-            activeBtn.addEventListener('click', () => this.assignPaneToSlot(activePaneId, slotId));
-            bar.appendChild(activeBtn);
+        (state.tabs || []).forEach(paneId => {
+            const btn = document.createElement('button');
+            btn.className = 'terminal-ui__slot-tab';
+            btn.dataset.pane = paneId;
+            btn.type = 'button';
+            if (paneId === state.active) btn.classList.add('active');
+            if (!this._isPaneKnown(paneId)) btn.classList.add('unavailable');
+
+            const label = document.createElement('span');
+            label.className = 'terminal-ui__slot-tab-label';
+            label.textContent = this._paneTabLabel(paneId);
+            btn.appendChild(label);
+
+            const close = document.createElement('span');
+            close.className = 'terminal-ui__slot-tab-close';
+            close.textContent = '\u00D7';
+            close.title = 'Remove tab';
+            close.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.removeTabFromSlot(slotId, paneId);
+            });
+            btn.appendChild(close);
+
+            btn.addEventListener('click', () => this.setActiveInSlot(slotId, paneId));
+            bar.appendChild(btn);
+        });
+
+        // "+" opens a popover of panes not in any slot's tab list.
+        const panesInAnySlot = new Set();
+        for (const st of Object.values(this.activeBySlot)) {
+            if (st && st.tabs) for (const p of st.tabs) panesInAnySlot.add(p);
         }
-
-        // "+" opens a popover listing panes that aren't in any slot.
-        const panesInSlots = new Set(Object.values(this.activeBySlot));
-        const unassigned = PANES_IN_ORDER.filter(p => !panesInSlots.has(p) && this._isPaneKnown(p));
+        const unassigned = PANES_IN_ORDER.filter(p => !panesInAnySlot.has(p) && this._isPaneKnown(p));
         if (unassigned.length > 0) {
             const addBtn = document.createElement('button');
             addBtn.className = 'terminal-ui__slot-add';
             addBtn.type = 'button';
-            addBtn.title = 'Replace with...';
+            addBtn.title = 'Add tab';
             addBtn.textContent = '+';
             addBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
