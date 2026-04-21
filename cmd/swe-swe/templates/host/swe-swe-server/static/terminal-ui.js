@@ -3351,21 +3351,30 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Build one slot's tab bar: all 6 panes in PANES_IN_ORDER order. Tabs for
-    // features that aren't available this session (agent-chat, vscode, browser)
-    // are marked hidden; setAgentChatTabVisible / setAgentViewTabVisible flip
-    // their visibility when the respective probe succeeds.
+    // Build one slot's tab bar. Shows:
+    //   - this slot's currently-active pane (as the "active" label);
+    //   - panes that are NOT currently in any other slot (clickable to swap in).
+    // Panes that live in another slot are hidden here -- we never show the same
+    // pane in two tab bars, so a user always sees unambiguously where each
+    // pane lives.
     _buildSlotTabBar(slotId) {
         const bar = document.createElement('div');
         bar.className = 'terminal-ui__slot-tab-bar';
         bar.dataset.slot = slotId;
         const activePaneId = this.activeBySlot[slotId];
+        const panesInOtherSlots = new Set(
+            Object.entries(this.activeBySlot)
+                .filter(([s]) => s !== slotId)
+                .map(([, p]) => p)
+        );
         PANES_IN_ORDER.forEach(paneId => {
             const btn = document.createElement('button');
             btn.className = 'terminal-ui__slot-tab';
             btn.dataset.pane = paneId;
             if (paneId === activePaneId) btn.classList.add('active');
             btn.textContent = PANE_LABELS[paneId] || paneId;
+            // Hide if this pane is already shown in a different slot.
+            if (panesInOtherSlots.has(paneId)) btn.hidden = true;
             // Hide features that aren't known available yet. Probes flip these on.
             if (paneId === 'agent-chat' && !this._agentChatAvailable) btn.hidden = true;
             if (paneId === 'browser' && !this.vncProxyPort) btn.hidden = true;
