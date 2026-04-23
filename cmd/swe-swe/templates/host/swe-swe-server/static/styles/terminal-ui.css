@@ -1778,19 +1778,11 @@ terminal-ui.embedded-in-iframe .mobile-only {
         padding: 4px 8px;
     }
 
-    /* Mobile view switching */
-    .terminal-ui.mobile-view-workspace .terminal-ui__terminal-wrapper {
-        display: none;
-    }
-
-    .terminal-ui.mobile-view-workspace .terminal-ui__iframe-pane {
-        display: flex !important;
-        flex: 1;
-    }
-
-    .terminal-ui.mobile-view-terminal .terminal-ui__iframe-pane {
-        display: none !important;
-    }
+    /* Mobile pane-host visibility lives at the bottom of this file
+       (@media max-width 639px), keyed off `data-mobile-active` which
+       switchMobileNav() sets. The .terminal-ui__terminal-wrapper and
+       .terminal-ui__iframe-pane classes that used to live here were
+       removed during the preset-grid rewrite. */
 
     /* Hide panel tabs on mobile - navigation handled by mobile-nav-select */
     .terminal-ui__panel-tabs {

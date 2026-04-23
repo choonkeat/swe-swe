@@ -3723,6 +3723,19 @@ class TerminalUI extends HTMLElement {
         // Render the preset grid (tab bars + pane-host slot assignments).
         this.applyPreset();
 
+        // Initialize mobile-nav state so the `data-mobile-active` pane-host
+        // attribute is set from page load. Without this the mobile viewport
+        // shows all pane-hosts display:none until the user changes the
+        // dropdown. Harmless on desktop (the attribute doesn't participate in
+        // desktop grid layout).
+        const mobileSel = this.querySelector('.terminal-ui__mobile-nav-select');
+        if (mobileSel) {
+            const initialMobilePane = new URLSearchParams(location.search).get('session') === 'chat'
+                ? 'agent-chat'
+                : (mobileSel.value || 'agent-terminal');
+            this.switchMobileNav(initialMobilePane);
+        }
+
         // Load saved pane width (will be applied when iframe is shown)
         this.loadSavedPaneWidth();
 
@@ -3942,9 +3955,25 @@ class TerminalUI extends HTMLElement {
 
     }
 
-    // Switch mobile navigation (unified dropdown: agent-terminal + workspace panels)
+    // Switch mobile navigation (unified dropdown). The mobile CSS in
+    // terminal-ui.css:2094 hides all pane-hosts by default and reveals the
+    // one carrying the `data-mobile-active` attribute; mirror that here.
+    // Slot state (activeBySlot) is intentionally ignored on mobile -- the
+    // dropdown is the source of truth for which single pane is visible.
     switchMobileNav(value) {
         const terminalUi = this.querySelector('.terminal-ui');
+
+        // Mobile visibility: set data-mobile-active on the matching pane-host,
+        // strip it from every other pane-host. Lazy-load the iframe if this is
+        // the first time this pane is being shown.
+        this.querySelectorAll('.terminal-ui__pane-host').forEach(host => {
+            if (host.dataset.pane === value) {
+                host.dataset.mobileActive = '';
+            } else {
+                delete host.dataset.mobileActive;
+            }
+        });
+        this._loadPaneIfNeeded(value);
 
         // xterm-focused: only when agent-terminal is the active panel
         // Gates mobile keyboard and touch-scroll-proxy to avoid blocking other panels
@@ -3954,28 +3983,22 @@ class TerminalUI extends HTMLElement {
             terminalUi.classList.remove('xterm-focused');
         }
 
-        if (value === 'agent-chat') {
-            // Show left pane (chat), hide iframe
-            terminalUi.classList.remove('mobile-view-workspace');
-            terminalUi.classList.add('mobile-view-terminal');
-            this.mobileActiveView = 'terminal';
-            this.switchLeftPanelTab('chat');
-            return;
-        }
         if (value === 'agent-terminal') {
-            // Show terminal, hide iframe
-            terminalUi.classList.remove('mobile-view-workspace');
-            terminalUi.classList.add('mobile-view-terminal');
             this.mobileActiveView = 'terminal';
-            this.switchLeftPanelTab('terminal');
             setTimeout(() => this.fitAndPreserveScroll(), 50);
+        } else if (value === 'agent-chat') {
+            this.mobileActiveView = 'terminal';
         } else {
-            // Show iframe, hide terminal
-            terminalUi.classList.remove('mobile-view-terminal');
-            terminalUi.classList.add('mobile-view-workspace');
             this.mobileActiveView = 'workspace';
-            this.switchPanelTab(value); // Reuse existing logic for panel switching
         }
+        // Keep the legacy class in sync for any css that still reads it.
+        terminalUi.classList.toggle('mobile-view-terminal', this.mobileActiveView === 'terminal');
+        terminalUi.classList.toggle('mobile-view-workspace', this.mobileActiveView === 'workspace');
+
+        // Sync the dropdown in case this was called programmatically (e.g. the
+        // WS-init probe-success handler calls switchMobileNav('agent-chat')).
+        const sel = this.querySelector('.terminal-ui__mobile-nav-select');
+        if (sel && sel.value !== value) sel.value = value;
     }
 
     // Switch between terminal and workspace views on mobile (legacy method, kept for compatibility)
