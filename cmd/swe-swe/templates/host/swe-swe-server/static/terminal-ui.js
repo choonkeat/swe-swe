@@ -3334,7 +3334,12 @@ class TerminalUI extends HTMLElement {
     // tab list). `activate` (default true) controls whether the newly-added
     // pane becomes the active tab; pass false for page-load auto-adds that
     // shouldn't steal focus from the slot's preset default.
-    addPaneToSlot(slotId, paneId, { activate = true } = {}) {
+    // `persist` (default true) controls whether the result is written to
+    // localStorage. Pass {persist:false} for ephemeral auto-open paths (e.g.
+    // browserStarted auto-adding Agent View, or session=chat pre-probe) so
+    // the user's next visit isn't primed with an auto-opened pane they never
+    // actually asked for.
+    addPaneToSlot(slotId, paneId, { activate = true, persist = true } = {}) {
         const target = this.activeBySlot[slotId];
         if (!target) return;
         // Remove from any other slot to keep the "one pane, one slot" rule.
@@ -3349,7 +3354,9 @@ class TerminalUI extends HTMLElement {
         }
         if (!target.tabs.includes(paneId)) target.tabs.push(paneId);
         if (activate || !target.active) target.active = paneId;
-        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        if (persist) {
+            saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        }
         this.applyPreset();
         if (target.active === paneId) this._loadPaneIfNeeded(paneId);
     }
@@ -3401,10 +3408,15 @@ class TerminalUI extends HTMLElement {
     // initial focus while chat probe runs) and browserStarted (Agent View
     // from playwright CDP lazy-load, activate=true since it fires on user
     // action and should take focus).
-    autoAddPaneToHome(paneId, { activate = true } = {}) {
+    //
+    // persist:false by default -- auto-opens are session-driven, not user
+    // intent; we don't want to leave Agent View (or any auto-opened pane)
+    // baked into localStorage so the NEXT session re-opens it even if the
+    // browser/chat proxy isn't running.
+    autoAddPaneToHome(paneId, { activate = true, persist = false } = {}) {
         const slotId = this._paneHome(paneId);
         if (!slotId) return;
-        this.addPaneToSlot(slotId, paneId, { activate });
+        this.addPaneToSlot(slotId, paneId, { activate, persist });
     }
 
     // Lazy-load an iframe pane the first time it becomes active. Agent-terminal

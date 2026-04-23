@@ -82,17 +82,21 @@ test.describe('terminal-ui tab switching', () => {
         && ui.activeBySlot?.a?.active === 'agent-chat';
     });
 
-    // Inspect what's actually in localStorage. The tabs list WAS legitimately
-    // extended by autoAddPaneToHome (that persist is fine -- keeps the tab in
-    // the bar), but the `active` pointer must still be agent-terminal.
+    // Inspect what's actually in localStorage. Auto-opens (both the tabs
+    // addition from autoAddPaneToHome and the probe-success active flip) are
+    // now persist:false -- session-driven state shouldn't prime future
+    // visits. localStorage should either be absent entirely (fresh user with
+    // no manual layout actions) or have active:'agent-terminal' with
+    // agent-chat absent from the tabs list.
     const saved = await page.evaluate(() => {
       const raw = localStorage.getItem('swe-swe-layout-v1');
       return raw ? JSON.parse(raw) : null;
     });
 
-    expect(saved).toBeTruthy();
-    expect(saved.activeBySlot?.a?.tabs).toContain('agent-chat');
-    expect(saved.activeBySlot?.a?.active).toBe('agent-terminal');
+    if (saved) {
+      expect(saved.activeBySlot?.a?.tabs || []).not.toContain('agent-chat');
+      expect(saved.activeBySlot?.a?.active).toBe('agent-terminal');
+    }
 
     // Now reload with session=chat and verify that during the probe window,
     // Agent Terminal is the active tab (not agent-chat from a stale save).
@@ -127,7 +131,51 @@ test.describe('terminal-ui tab switching', () => {
       const raw = localStorage.getItem('swe-swe-layout-v1');
       return raw ? JSON.parse(raw) : null;
     });
-    expect(savedAfterReload.activeBySlot?.a?.active).toBe('agent-terminal');
+    if (savedAfterReload) {
+      expect(savedAfterReload.activeBySlot?.a?.active).toBe('agent-terminal');
+      expect(savedAfterReload.activeBySlot?.a?.tabs || []).not.toContain('agent-chat');
+    }
+  });
+
+  test('browserStarted auto-open must not persist Agent View as active for next session', async ({ page }) => {
+    // Regression: when the server reported browserStarted, autoAddPaneToHome
+    // added Agent View to the slot and persisted the change to localStorage
+    // with active:'browser'. A subsequent session (even one where the
+    // browser never starts) restored Agent View as the active tab on first
+    // paint, leaving users stuck on a "Starting browser..." placeholder or
+    // a stale browser view they never opened.
+    //
+    // Auto-opens driven by session runtime state should be ephemeral;
+    // only manual user tab actions persist.
+    const uuid = crypto.randomUUID();
+    await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.activeBySlot);
+
+    // Drive the auto-open code path directly: this is what the WS-init
+    // msg.browserStarted branch does on line ~1243.
+    await page.evaluate(() => {
+      window.terminalUI.autoAddPaneToHome('browser');
+    });
+
+    // In-memory: browser is now in slot b as the active tab.
+    const inMemory = await page.evaluate(() => ({
+      slotB_tabs: window.terminalUI.activeBySlot?.b?.tabs,
+      slotB_active: window.terminalUI.activeBySlot?.b?.active,
+    }));
+    expect(inMemory.slotB_tabs).toContain('browser');
+    expect(inMemory.slotB_active).toBe('browser');
+
+    // But localStorage must NOT have been updated with browser as active.
+    // Either absent entirely (fresh user) or active still at its
+    // preset default (preview).
+    const saved = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-layout-v1');
+      return raw ? JSON.parse(raw) : null;
+    });
+    if (saved) {
+      expect(saved.activeBySlot?.b?.active).not.toBe('browser');
+      expect(saved.activeBySlot?.b?.tabs || []).not.toContain('browser');
+    }
   });
 
   test('plain ?session=terminal: no Agent Chat tab appears', async ({ page }) => {
