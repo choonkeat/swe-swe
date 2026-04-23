@@ -13,8 +13,12 @@ async function login(page) {
 }
 
 // Wait until window.terminalUI exists and reports a given property via predicate.
+// 60s default: on isolated runs the MCP probe completes in ~12-15s, but when
+// run after heavier tests (agent-browser.spec.js exercising the full MCP
+// server workflow) the probe can stretch past 30s, flaking the assertion.
+// 60s keeps the full suite stable without hiding real regressions.
 async function waitForUi(page, predicate) {
-  return page.waitForFunction(predicate, null, { timeout: 30_000 });
+  return page.waitForFunction(predicate, null, { timeout: 60_000 });
 }
 
 async function openChatSession(page) {

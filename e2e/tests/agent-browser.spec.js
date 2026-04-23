@@ -21,23 +21,29 @@ test.describe('Agent Browser E2E', () => {
     const uuid = crypto.randomUUID();
     await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
 
-    // Agent Chat tab should be visible immediately for ?session=chat,
-    // showing a loading indicator while the MCP probe runs.
-    const chatTab = page.locator('button[data-left-tab="chat"]');
+    // Agent Chat tab should appear immediately for ?session=chat. The
+    // preset-grid rewrite (commit 033e4b05b) replaced the old
+    // data-left-tab="chat" button with a per-slot tab element; the probe
+    // state is reflected in the label (a braille spinner char while
+    // probing, resolving to just "Agent Chat" when ready).
+    const chatTab = page.locator('.terminal-ui__slot-tab[data-pane="agent-chat"]');
     await expect(chatTab).toBeVisible({ timeout: 5_000 });
 
-    // Tab should show loading text while probe is in progress
-    const loadingSpan = chatTab.locator('.terminal-ui__chat-tab-loading');
-    await expect(loadingSpan).toBeVisible({ timeout: 2_000 });
-
-    // Terminal should be the active view initially (chat tab not auto-activated)
+    // Terminal should be the active view initially (chat tab does not
+    // auto-activate until the probe succeeds).
     const terminalEl = page.locator('.terminal-ui__terminal');
     await expect(terminalEl).toBeVisible({ timeout: 5_000 });
 
-    // Wait for loading indicator to disappear (probe succeeded, iframe loaded)
-    await expect(loadingSpan).toBeHidden({ timeout: 60_000 });
+    // Wait for the probe to complete. _agentChatAvailable flips to true
+    // when Phase 1 + Phase 2 finish, and the iframe onload handler
+    // activates the Agent Chat slot tab.
+    await page.waitForFunction(
+      () => window.terminalUI && window.terminalUI._agentChatAvailable === true,
+      null,
+      { timeout: 60_000 }
+    );
 
-    // After loading completes, the tab should auto-activate
+    // After loading completes, the tab should auto-activate.
     await expect(chatTab).toHaveClass(/active/, { timeout: 5_000 });
 
     // The iframe should show real chat content
