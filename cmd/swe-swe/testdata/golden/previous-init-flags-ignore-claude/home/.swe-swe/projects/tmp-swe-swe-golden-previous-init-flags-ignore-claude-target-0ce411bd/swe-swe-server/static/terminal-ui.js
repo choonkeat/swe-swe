@@ -1298,8 +1298,11 @@ class TerminalUI extends HTMLElement {
                                         // activate:false to keep Agent Terminal focused
                                         // while the probe ran; now the iframe is usable,
                                         // flip the slot's active tab to Agent Chat.
+                                        // persist:false -- treat this flip as ephemeral
+                                        // session intent so it doesn't leave agent-chat
+                                        // baked into localStorage for the next visit.
                                         const chatSlot = this._slotForPane('agent-chat');
-                                        if (chatSlot) this.setActiveInSlot(chatSlot, 'agent-chat');
+                                        if (chatSlot) this.setActiveInSlot(chatSlot, 'agent-chat', { persist: false });
                                         this.switchLeftPanelTab('chat');
                                         this.switchMobileNav('agent-chat');
                                     }
@@ -3307,12 +3310,21 @@ class TerminalUI extends HTMLElement {
     // Activate a tab that's already in a slot's tab list. Live -- no reload.
     // Just re-applies the preset so the now-active pane swaps into the slot's
     // grid cell and the previously-active one is hidden.
-    setActiveInSlot(slotId, paneId) {
+    //
+    // `persist` (default true) controls whether the change is written to
+    // localStorage. Pass {persist:false} for ephemeral auto-activations (e.g.
+    // the ?session=chat probe-success flip) so they don't pollute the user's
+    // saved layout -- otherwise the next visit re-opens with agent-chat
+    // already active, defeating the "Agent Terminal stays active during
+    // probe" behavior.
+    setActiveInSlot(slotId, paneId, { persist = true } = {}) {
         const state = this.activeBySlot[slotId];
         if (!state || !state.tabs.includes(paneId)) return;
         if (state.active === paneId) return;
         state.active = paneId;
-        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        if (persist) {
+            saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        }
         this.applyPreset();
         this._loadPaneIfNeeded(paneId);
     }

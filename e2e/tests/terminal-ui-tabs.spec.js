@@ -67,6 +67,69 @@ test.describe('terminal-ui tab switching', () => {
     expect(post.chatTabLabel).toBe('Agent Chat');
   });
 
+  test('?session=chat: probe-success flip does NOT persist to localStorage (next visit finds Agent Terminal active)', async ({ page }) => {
+    // Regression: the session=chat auto-activation used to write
+    // active:'agent-chat' to localStorage, so the NEXT page load
+    // restored agent-chat as active and it flashed "Connecting to chat..."
+    // before the probe ran -- defeating the "Agent Terminal during probe"
+    // behavior. Probe-success flip must be ephemeral.
+    await openChatSession(page);
+
+    // Wait for the probe to complete and the in-memory flip to land.
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return ui && ui._agentChatAvailable === true
+        && ui.activeBySlot?.a?.active === 'agent-chat';
+    });
+
+    // Inspect what's actually in localStorage. The tabs list WAS legitimately
+    // extended by autoAddPaneToHome (that persist is fine -- keeps the tab in
+    // the bar), but the `active` pointer must still be agent-terminal.
+    const saved = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-layout-v1');
+      return raw ? JSON.parse(raw) : null;
+    });
+
+    expect(saved).toBeTruthy();
+    expect(saved.activeBySlot?.a?.tabs).toContain('agent-chat');
+    expect(saved.activeBySlot?.a?.active).toBe('agent-terminal');
+
+    // Now reload with session=chat and verify that during the probe window,
+    // Agent Terminal is the active tab (not agent-chat from a stale save).
+    await page.reload();
+
+    // As soon as the custom element boots, before the probe completes, the
+    // slot active should be agent-terminal. Assert before _agentChatAvailable
+    // flips true.
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return ui && ui.activeBySlot?.a?.tabs?.includes('agent-chat');
+    });
+    const duringProbe = await page.evaluate(() => {
+      const ui = window.terminalUI;
+      return {
+        slotA_active: ui.activeBySlot?.a?.active,
+        available: ui._agentChatAvailable,
+      };
+    });
+    // The probe MAY complete before we observe; that's fine. What we care
+    // about is that pre-probe it was agent-terminal, not agent-chat. If
+    // available is already true, we've raced past the probe window -- the
+    // prior assertion on saved.active already covered the persistence bug.
+    if (duringProbe.available === false || duringProbe.available === undefined) {
+      expect(duringProbe.slotA_active).toBe('agent-terminal');
+    }
+
+    // After probe, agent-chat is active in memory -- still not persisted.
+    await waitForUi(page, () => window.terminalUI?._agentChatAvailable === true
+      && window.terminalUI?.activeBySlot?.a?.active === 'agent-chat');
+    const savedAfterReload = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-layout-v1');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(savedAfterReload.activeBySlot?.a?.active).toBe('agent-terminal');
+  });
+
   test('plain ?session=terminal: no Agent Chat tab appears', async ({ page }) => {
     await openTerminalSession(page);
 
