@@ -69,6 +69,15 @@ const PANE_LABELS = {
     'browser':        'Agent View',
 };
 
+// Braille spinner frames for the Agent Chat tab loading indicator.
+// \u escapes to satisfy `make ascii-check`; codepoints are from the
+// Braille Patterns block (U+2800-U+28FF) -- the classic 10-frame
+// clockwise-rotation spinner (matches cli-spinners "dots").
+const CHAT_LOADING_FRAMES = [
+    '\u280B', '\u2819', '\u2839', '\u2838', '\u283C',
+    '\u2834', '\u2826', '\u2827', '\u2807', '\u280F',
+];
+
 // Subset of panes that render iframes. Used by the "legacy activeTab" mirror
 // so pre-preset code (setPreviewURL, refreshIframe, VNC probe) can find the
 // current right-side iframe without knowing about slots.
@@ -1950,21 +1959,21 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Animate the loading text on the Agent Chat tab: cycles through
-    // (Loading), (Loading.), (Loading..), (Loading...)
+    // Advance the braille spinner on every Agent Chat tab label + the mobile
+    // nav option. Cheaper than _rerenderSlotTabs() each tick: we only mutate
+    // the label span's textContent, not the whole tab bar DOM.
     startChatLoadingAnimation() {
-        const loadingSpan = this.querySelector('.terminal-ui__chat-tab-loading');
-        if (loadingSpan) loadingSpan.style.display = '';
-        const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
-        const baseDesktop = ' (Loading';
-        const baseMobile = 'Agent Chat (Loading';
-        const dots = ['', '.', '..', '...'];
-        let i = 0;
-        this._chatLoadingTimer = setInterval(() => {
-            i = (i + 1) % dots.length;
-            if (loadingSpan) loadingSpan.textContent = baseDesktop + dots[i] + ')';
-            if (mobileOpt) mobileOpt.textContent = baseMobile + dots[i] + ')';
-        }, 500);
+        this._chatLoadingFrame = 0;
+        const tick = () => {
+            this._chatLoadingFrame = (this._chatLoadingFrame + 1) % CHAT_LOADING_FRAMES.length;
+            const label = this._paneTabLabel('agent-chat');
+            this.querySelectorAll('.terminal-ui__slot-tab[data-pane="agent-chat"] .terminal-ui__slot-tab-label').forEach(el => {
+                el.textContent = label;
+            });
+            const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
+            if (mobileOpt) mobileOpt.textContent = label;
+        };
+        this._chatLoadingTimer = setInterval(tick, 100);
     }
 
     stopChatLoadingAnimation() {
@@ -1972,8 +1981,11 @@ class TerminalUI extends HTMLElement {
             clearInterval(this._chatLoadingTimer);
             this._chatLoadingTimer = null;
         }
-        const loadingSpan = this.querySelector('.terminal-ui__chat-tab-loading');
-        if (loadingSpan) loadingSpan.style.display = 'none';
+        this._chatLoadingFrame = 0;
+        // Now that _agentChatAvailable is true (or _agentChat{Probing,Pending}
+        // are both false on probe failure), _paneTabLabel drops the spinner
+        // automatically -- rerender so any tab bar instances catch up.
+        this._rerenderSlotTabs();
         const mobileOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="agent-chat"]');
         if (mobileOpt) mobileOpt.textContent = 'Agent Chat';
     }
@@ -3550,13 +3562,15 @@ class TerminalUI extends HTMLElement {
         return bar;
     }
 
-    // Returns the display label for a pane tab, appending "(Loading)" for
-    // agent-chat while its probe is in flight so the user knows chat is
-    // coming.
+    // Returns the display label for a pane tab. For agent-chat during its
+    // probe, appends a braille spinner frame (driven by
+    // startChatLoadingAnimation ticking _chatLoadingFrame) so the user sees
+    // the tab "working" without the static "(Loading)" noise.
     _paneTabLabel(paneId) {
         let label = PANE_LABELS[paneId] || paneId;
         if (paneId === 'agent-chat' && !this._agentChatAvailable && (this._agentChatProbing || this._agentChatPending)) {
-            label += ' (Loading)';
+            const frame = CHAT_LOADING_FRAMES[(this._chatLoadingFrame || 0) % CHAT_LOADING_FRAMES.length];
+            label += ' ' + frame;
         }
         return label;
     }
