@@ -423,6 +423,53 @@ test.describe('terminal-ui tab switching', () => {
     expect(saved.preset).toBe('quadrants');
   });
 
+  test('slot "+" popover menu uses the app font stack, not browser default', async ({ page }) => {
+    // Regression: the slot-add popover is appended to document.body (to
+    // escape the slot's overflow/stacking context). Since the terminal-ui
+    // custom element sets font-family on itself (not on body), the
+    // portaled menu inherited the browser default -- the user saw the
+    // "Terminal" menu item rendered in a mismatched serif-ish font.
+    //
+    // Fix: set font-family explicitly on .terminal-ui__slot-replace-menu.
+    await openChatSession(page);
+
+    // Wait for the layout to render. The "+" button lives on the slot
+    // tab bar; click whichever slot has one unassigned pane available so
+    // the popover actually has items.
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return ui && ui.querySelector('.terminal-ui__slot-add');
+    });
+
+    const addBtn = page.locator('.terminal-ui__slot-add').first();
+    await addBtn.click();
+    await page.locator('.terminal-ui__slot-replace-menu').waitFor({ state: 'visible' });
+
+    const fonts = await page.evaluate(() => {
+      const menu = document.querySelector('.terminal-ui__slot-replace-menu');
+      const firstItem = menu?.querySelector('.terminal-ui__slot-replace-item');
+      const refTab = document.querySelector('terminal-ui .terminal-ui__slot-tab');
+      return {
+        menuFamily: menu ? getComputedStyle(menu).fontFamily : null,
+        itemFamily: firstItem ? getComputedStyle(firstItem).fontFamily : null,
+        refTabFamily: refTab ? getComputedStyle(refTab).fontFamily : null,
+      };
+    });
+
+    // The popover menu's font stack must include 'Inter' (or at least the
+    // Apple / BlinkMacSystemFont fallbacks) so it visually matches the
+    // rest of the UI -- NOT the browser default (serif / Times).
+    expect(fonts.menuFamily || '').toMatch(/Inter|-apple-system|BlinkMacSystemFont/i);
+    expect(fonts.itemFamily || '').toMatch(/Inter|-apple-system|BlinkMacSystemFont/i);
+    // Items (which are font-family:inherit) should match the menu.
+    expect(fonts.itemFamily).toBe(fonts.menuFamily);
+    // And sanity: a slot-tab button (same font expectation) resolves to the
+    // same family stack.
+    if (fonts.refTabFamily) {
+      expect(fonts.menuFamily).toBe(fonts.refTabFamily);
+    }
+  });
+
   test('preview iframe loads without getting stuck on "Connecting..." placeholder', async ({ page }) => {
     await openChatSession(page);
 

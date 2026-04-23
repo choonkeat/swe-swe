@@ -1987,7 +1987,10 @@ terminal-ui.embedded-in-iframe .mobile-only {
     border-color: var(--border-primary);
 }
 
-/* Popover menu shown when the "+" button is clicked. */
+/* Popover menu shown when the "+" button is clicked. It's appended to
+   document.body (so it can escape the slot's overflow / stacking context),
+   which means it can't inherit the terminal-ui element's font stack --
+   set it explicitly here so the menu items match the rest of the UI. */
 .terminal-ui__slot-replace-menu {
     position: fixed;
     z-index: 10000;
@@ -1998,6 +2001,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
     min-width: 160px;
     max-width: 260px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .terminal-ui__slot-replace-item {
