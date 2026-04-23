@@ -358,6 +358,71 @@ test.describe('terminal-ui tab switching', () => {
     expect(afterPreview.previewHost_computed_display).not.toBe('none');
   });
 
+  test('assistant=shell renders single-slot agent-terminal, no nested tab bars', async ({ page }) => {
+    // Regression: the Terminal (shell) pane's iframe URL is
+    // /session/<shellUUID>?assistant=shell -- loading the full terminal-ui
+    // element inside an iframe. Before the fix, it rehydrated the user's
+    // multi-slot preset from localStorage, so the inner iframe showed
+    // Preview / Agent View / Terminal tabs. Clicking the inner Terminal
+    // recursed infinitely.
+    //
+    // Fix: in shell mode, force preset=single with only agent-terminal in
+    // slot a, and do not persist. CSS hides slot-frame in embedded-iframe
+    // mode as a defense-in-depth so any embedded rendering has no visible
+    // tab chrome.
+
+    // First persist a non-default multi-slot preset in this origin's
+    // localStorage so we can confirm the shell-mode override wins.
+    await page.goto('/swe-swe-auth/login');
+    // (login already happened in beforeEach; just visit origin to access localStorage)
+    await page.evaluate(() => {
+      localStorage.setItem('swe-swe-layout-v1', JSON.stringify({
+        preset: 'quadrants',
+        activeBySlot: {
+          a: { tabs: ['agent-terminal'], active: 'agent-terminal' },
+          b: { tabs: ['preview', 'browser'], active: 'browser' },
+          c: { tabs: ['agent-chat'], active: 'agent-chat' },
+          d: { tabs: ['shell'], active: 'shell' },
+        },
+      }));
+    });
+
+    // Now load the shell URL directly. This is what the Terminal pane's
+    // iframe loads.
+    const shellUUID = crypto.randomUUID();
+    await page.goto(`/session/${shellUUID}?assistant=shell&parent=${crypto.randomUUID()}`);
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.activeBySlot);
+
+    const state = await page.evaluate(() => {
+      const ui = window.terminalUI;
+      return {
+        preset: ui.preset,
+        slots: Object.keys(ui.activeBySlot || {}),
+        slotA_tabs: ui.activeBySlot?.a?.tabs,
+        slotA_active: ui.activeBySlot?.a?.active,
+        // Count slot-tab-bars actually rendered in the DOM.
+        tabBars: ui.querySelectorAll('.terminal-ui__slot-tab-bar').length,
+        // Count iframes for iframe-capable panes that shouldn't be mounted
+        // in shell mode (shell pane itself would recurse; Preview / Agent View
+        // aren't useful inside a shell iframe either).
+        shellIframesInDom: ui.querySelectorAll('.terminal-ui__pane-host[data-pane="shell"]:not([hidden]) iframe, .terminal-ui__pane-host[data-pane="browser"]:not([hidden]) iframe, .terminal-ui__pane-host[data-pane="preview"]:not([hidden]) iframe').length,
+      };
+    });
+
+    expect(state.preset).toBe('single');
+    expect(state.slots).toEqual(['a']);
+    expect(state.slotA_tabs).toEqual(['agent-terminal']);
+    expect(state.slotA_active).toBe('agent-terminal');
+    // Zero visible iframes for iframe-capable panes -- nothing to recurse.
+    expect(state.shellIframesInDom).toBe(0);
+
+    // Outer localStorage must not have been rewritten by the shell-mode
+    // override -- the quadrants preset we set up-front should still be
+    // there (the user's "real" preset for the main session).
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('swe-swe-layout-v1')));
+    expect(saved.preset).toBe('quadrants');
+  });
+
   test('preview iframe loads without getting stuck on "Connecting..." placeholder', async ({ page }) => {
     await openChatSession(page);
 

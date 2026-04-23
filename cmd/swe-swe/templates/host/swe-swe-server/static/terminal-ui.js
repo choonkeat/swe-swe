@@ -265,6 +265,21 @@ class TerminalUI extends HTMLElement {
                     console.warn('[TerminalUI] Could not save username:', e);
                 }
             }
+
+            // Shell sessions render inside the Terminal pane iframe, so the URL
+            // is /session/<shellUUID>?assistant=shell -- which reloads the full
+            // terminal-ui custom element. Without an override, the embedded view
+            // rehydrates whatever preset + slot state the user's localStorage
+            // holds, which includes tab bars for Preview / Agent View / Terminal
+            // -- and clicking that inner Terminal recurses, producing the
+            // infinite-nesting view. Force single-slot agent-terminal in shell
+            // mode and do NOT persist (so localStorage, which belongs to the
+            // outer session, is untouched).
+            if (this.assistant === 'shell') {
+                this.preset = 'single';
+                this.activeBySlot = { a: { tabs: ['agent-terminal'], active: 'agent-terminal' } };
+            }
+
             this.render();
 
             // For chat sessions, drop Agent Chat into its preset home slot
