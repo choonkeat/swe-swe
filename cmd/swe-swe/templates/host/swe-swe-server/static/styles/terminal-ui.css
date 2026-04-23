@@ -2050,6 +2050,27 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 /* Preset picker (header, desktop-only). Icon-row of tiny grid diagrams;
    click to switch preset (reloads the page, persists via localStorage). */
+.terminal-ui__preset-picker-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.terminal-ui__preset-picker-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.terminal-ui__header-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border-primary);
+}
+
 .terminal-ui__preset-picker {
     display: flex;
     gap: 2px;

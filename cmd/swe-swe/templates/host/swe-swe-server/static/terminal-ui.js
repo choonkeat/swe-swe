@@ -452,8 +452,13 @@ class TerminalUI extends HTMLElement {
                     </div>
                     <div class="terminal-ui__header-right">
                         <span class="terminal-ui__viewers desktop-only"></span>
-                        <!-- Preset picker: rendered dynamically from LAYOUT_PRESETS. -->
-                        <div class="terminal-ui__preset-picker desktop-only"></div>
+                        <!-- Labeled group so the preset bunch reads as one
+                             thing and doesn't visually bleed into the gear. -->
+                        <div class="terminal-ui__preset-picker-group desktop-only">
+                            <span class="terminal-ui__preset-picker-label">Layout</span>
+                            <div class="terminal-ui__preset-picker"></div>
+                        </div>
+                        <div class="terminal-ui__header-sep desktop-only" aria-hidden="true"></div>
                         <button class="terminal-ui__chat-btn desktop-only" title="Chat with viewers" style="display: none;">
                             <span class="terminal-ui__chat-icon">💬</span>
                             <span class="terminal-ui__chat-badge" style="display: none;">0</span>
