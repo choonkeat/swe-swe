@@ -1897,18 +1897,13 @@ class TerminalUI extends HTMLElement {
                 btn.classList.toggle('active', btn.dataset.leftTab === tab);
             });
 
-            if (tab === 'chat') {
-                // Use visibility instead of display to preserve xterm scroll position
-                terminalEl.style.visibility = 'hidden';
-                terminalEl.style.position = 'absolute';
-                chatEl.style.display = 'flex';
-                // iframe src is set by the agent chat probe callback, not here
-            } else {
-                chatEl.style.display = 'none';
-                terminalEl.style.visibility = '';
-                terminalEl.style.position = '';
-                setTimeout(() => this.fitAndPreserveScroll(), 50);
-            }
+            // Visibility is handled by the preset-grid pane-host `hidden`
+            // attribute (see applyPreset) -- this function used to also set
+            // inline `visibility:hidden` / `position:absolute` on the inner
+            // .terminal-ui__terminal, but those styles survived slot-tab
+            // switches (which go through setActiveInSlot, not this method),
+            // leaving Agent Terminal blank after the first chat activation.
+            if (tab === 'terminal') setTimeout(() => this.fitAndPreserveScroll(), 50);
 
             // Sync mobile dropdown
             const mobileSelect = this.querySelector('.terminal-ui__mobile-nav-select');
@@ -3268,6 +3263,20 @@ class TerminalUI extends HTMLElement {
                 delete host.dataset.slot;
             }
         });
+
+        // Clear legacy inline styles on the inner left-panel elements that
+        // pre-preset switchLeftPanelTab used to write. Stale styles would
+        // leave Agent Terminal blank (visibility:hidden) after the first
+        // chat activation because slot-tab switches bypass that function.
+        const termInner = this.querySelector('.terminal-ui__terminal');
+        if (termInner) {
+            termInner.style.visibility = '';
+            termInner.style.position = '';
+        }
+        const chatInner = this.querySelector('.terminal-ui__agent-chat');
+        if (chatInner) {
+            chatInner.style.display = '';
+        }
 
         // Keep legacy activeTab in sync for pre-preset code paths.
         this._syncLegacyActiveTab();
