@@ -535,6 +535,74 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	return env
 }
 
+// attachBrokerFD wires a per-session broker socket onto cmd.ExtraFiles so the
+// child shell inherits it as fd 3, advertised to the child via SWE_SWE_BROKER_FD.
+//
+// Background: research/2026-04-25-per-session-git-credentials.md. The credential
+// broker channel will eventually serve git-credential helper requests over this
+// fd. For now (PoC phase), brokerEcho replies with {sid, ts, echoed} so we can
+// verify fd inheritance reaches grandchildren (script -> bash -> git -> helper).
+//
+// Fail-open: any error here is logged and the function returns silently. The
+// caller proceeds to pty.Start as if no broker were attached. Returns a
+// cleanup func to call after pty.Start (or on its failure) to release the
+// parent's copy of the child end of the socketpair.
+func attachBrokerFD(cmd *exec.Cmd, sid string) func() {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		log.Printf("broker socketpair failed for sid=%s: %v (continuing without)", sid, err)
+		return func() {}
+	}
+
+	childFile := os.NewFile(uintptr(fds[1]), "broker-child")
+	serverFile := os.NewFile(uintptr(fds[0]), "broker-server")
+	serverConn, err := net.FileConn(serverFile)
+	serverFile.Close() // FileConn dups; safe to close the wrapper either way
+	if err != nil {
+		childFile.Close()
+		log.Printf("broker FileConn failed for sid=%s: %v (continuing without)", sid, err)
+		return func() {}
+	}
+
+	cmd.ExtraFiles = append(cmd.ExtraFiles, childFile)
+	cmd.Env = append(cmd.Env, "SWE_SWE_BROKER_FD=3")
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("broker goroutine panicked for sid=%s: %v", sid, r)
+			}
+		}()
+		defer serverConn.Close()
+		brokerEcho(sid, serverConn)
+	}()
+
+	return func() { childFile.Close() }
+}
+
+// brokerEcho is the PoC handler for the credential broker channel. It accepts
+// JSON requests on conn and replies with {sid, ts, echoed} so we can verify
+// fd inheritance through the spawn chain. Replaced with real credential
+// lookup in a later phase.
+func brokerEcho(sid string, conn net.Conn) {
+	dec := json.NewDecoder(conn)
+	enc := json.NewEncoder(conn)
+	for {
+		var req map[string]any
+		if err := dec.Decode(&req); err != nil {
+			return
+		}
+		resp := map[string]any{
+			"sid":    sid,
+			"ts":     time.Now().Unix(),
+			"echoed": req,
+		}
+		if err := enc.Encode(resp); err != nil {
+			return
+		}
+	}
+}
+
 // envLookup returns a function that looks up a key in the given KEY=VALUE
 // slice, falling back to os.Getenv if not found. Used to expand $VAR
 // references in .swe-swe/env against the session env being built, not the
@@ -1136,11 +1204,16 @@ func (s *Session) RestartProcess(cmdStr string) error {
 		cmd.Dir = s.WorkDir
 	}
 
+	// Attach per-session credential broker channel as fd 3.
+	// Fail-open: errors here never block session start.
+	closeBrokerChild := attachBrokerFD(cmd, s.UUID)
+
 	// Note: pty.Start sets Setsid=true which creates a new session AND process group,
 	// so kill(-pid, sig) still works for process group cleanup. Don't set Setpgid here
 	// because Setpgid + Setsid conflict (setpgid makes process a group leader, then
 	// setsid fails with EPERM).
 	ptmx, err := pty.Start(cmd)
+	closeBrokerChild()
 	if err != nil {
 		return err
 	}
@@ -4335,11 +4408,16 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		cmd.Dir = workDir
 	}
 
+	// Attach per-session credential broker channel as fd 3.
+	// Fail-open: errors here never block session start.
+	closeBrokerChild := attachBrokerFD(cmd, p.UUID)
+
 	// Note: pty.Start sets Setsid=true which creates a new session AND process group,
 	// so kill(-pid, sig) still works for process group cleanup. Don't set Setpgid here
 	// because Setpgid + Setsid conflict (setpgid makes process a group leader, then
 	// setsid fails with EPERM).
 	ptmx, err := pty.Start(cmd)
+	closeBrokerChild()
 	if err != nil {
 		if sessionCancel != nil {
 			sessionCancel()

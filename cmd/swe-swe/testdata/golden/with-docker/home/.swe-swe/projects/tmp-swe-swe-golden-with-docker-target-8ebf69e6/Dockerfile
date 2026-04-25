@@ -18,6 +18,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server .
 COPY mcp-lazy-init/main.go /build-mcp-lazy-init/main.go
 RUN cd /build-mcp-lazy-init && go mod init mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
 
+# Build swe-swe-broker-probe (per-session credential broker probe, stdlib only).
+# See research/2026-04-25-per-session-git-credentials.md.
+COPY swe-swe-broker-probe/main.go /build-broker-probe/main.go
+RUN cd /build-broker-probe && go mod init swe-swe-broker-probe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-broker-probe/swe-swe-broker-probe .
+
 # Stage 2: Main development environment
 FROM golang:1.24-bookworm
 
@@ -147,6 +152,7 @@ RUN ARCH="$(dpkg --print-architecture)" && \
 # Copy swe-swe-server and mcp-lazy-init binaries from builder stage
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
 COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
+COPY --from=server-builder /build-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
