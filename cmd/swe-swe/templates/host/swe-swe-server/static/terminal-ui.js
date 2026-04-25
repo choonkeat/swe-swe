@@ -202,6 +202,21 @@ class TerminalUI extends HTMLElement {
         const _layoutState = loadLayoutState();
         this.preset = _layoutState.preset;
         this.activeBySlot = _layoutState.activeBySlot;
+        // Agent Chat readiness depends on the agent process running in Agent
+        // Terminal (the chat backend doesn't start until the agent has gotten
+        // past any blocking prompts -- e.g. the swe-swe-agent-chat
+        // --dangerously-load-development-channels confirm screen). If saved
+        // state restored active:'agent-chat' for a slot that also holds
+        // agent-terminal, swap to terminal in-memory only so the user
+        // actually sees what may need their input. The chat probe-success
+        // handler later flips back to agent-chat (persist:false) once the
+        // iframe is loadable. localStorage is untouched, so the user's
+        // saved preference survives across the override.
+        for (const slot of Object.values(this.activeBySlot)) {
+            if (slot && slot.active === 'agent-chat' && Array.isArray(slot.tabs) && slot.tabs.includes('agent-terminal')) {
+                slot.active = 'agent-terminal';
+            }
+        }
         // Legacy mirror of the right-slot assignment -- some pre-preset call
         // sites (setPreviewURL, refreshIframe, browser VNC probe) still reference
         // it. Reflects whichever pane is active in slot b (or the first iframe

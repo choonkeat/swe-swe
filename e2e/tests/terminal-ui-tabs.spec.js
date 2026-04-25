@@ -141,6 +141,76 @@ test.describe('terminal-ui tab switching', () => {
     }
   });
 
+  test('stale localStorage active:agent-chat is overridden to agent-terminal at boot', async ({ page }) => {
+    // Regression: even with the persist:false fixes, a user's localStorage
+    // could carry active:'agent-chat' from a prior manual click. On reload,
+    // the page painted with Agent Chat already active and showing the
+    // "Connecting to chat..." placeholder while the probe was still in
+    // flight -- and the agent process in Agent Terminal was often blocked
+    // on a prompt the user had no way to see.
+    //
+    // Fix: at boot, if a slot's saved active is agent-chat AND the same
+    // slot has agent-terminal in its tabs, override to agent-terminal in
+    // memory. Saved preference is untouched. The probe-success handler
+    // flips back to agent-chat (persist:false) once chat is loadable.
+    const uuid = crypto.randomUUID();
+
+    // Pre-seed localStorage with active:'agent-chat' before the page boots
+    // its custom element. We need to be at the same origin for localStorage
+    // to apply -- the login in beforeEach already put us there.
+    await page.goto('/'); // any same-origin URL is fine
+    await page.evaluate(() => {
+      localStorage.setItem('swe-swe-layout-v1', JSON.stringify({
+        preset: 'classic',
+        activeBySlot: {
+          a: { tabs: ['agent-terminal', 'agent-chat'], active: 'agent-chat' },
+          b: { tabs: ['preview'], active: 'preview' },
+        },
+      }));
+    });
+
+    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.activeBySlot);
+
+    // Boot-time override should have demoted slot a's active to agent-terminal
+    // BEFORE the probe completes. Inspect right after the element mounts.
+    const atBoot = await page.evaluate(() => {
+      const ui = window.terminalUI;
+      return {
+        slotA_active: ui.activeBySlot?.a?.active,
+        slotA_tabs: ui.activeBySlot?.a?.tabs,
+        available: ui._agentChatAvailable,
+      };
+    });
+    // If we observed before the probe completed, agent-terminal is active.
+    // If the probe was instant (warm container), the post-probe flip already
+    // landed us on agent-chat -- that's fine; the saved-state assertion
+    // below covers the persistence guarantee.
+    if (atBoot.available !== true) {
+      expect(atBoot.slotA_active).toBe('agent-terminal');
+    }
+    expect(atBoot.slotA_tabs).toContain('agent-chat');
+
+    // Saved preference must NOT have been rewritten by the override -- the
+    // user's stored intent (active:'agent-chat') is preserved.
+    const saved = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-layout-v1');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(saved?.activeBySlot?.a?.active).toBe('agent-chat');
+
+    // After probe success, the in-memory active flips to agent-chat via the
+    // probe-success handler (persist:false). localStorage still says
+    // agent-chat (unchanged from our seed).
+    await waitForUi(page, () => window.terminalUI?._agentChatAvailable === true
+      && window.terminalUI?.activeBySlot?.a?.active === 'agent-chat');
+    const savedAfter = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-layout-v1');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(savedAfter?.activeBySlot?.a?.active).toBe('agent-chat');
+  });
+
   test('browserStarted auto-open must not persist Agent View as active for next session', async ({ page }) => {
     // Regression: when the server reported browserStarted, autoAddPaneToHome
     // added Agent View to the slot and persisted the change to localStorage
