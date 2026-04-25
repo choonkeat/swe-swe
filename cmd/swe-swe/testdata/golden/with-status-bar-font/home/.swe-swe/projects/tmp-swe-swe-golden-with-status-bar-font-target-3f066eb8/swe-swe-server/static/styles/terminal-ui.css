@@ -988,70 +988,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     width: 50%;
 }
 
-.terminal-ui__resizer {
-    display: none;
-    width: 6px;
-    background: var(--accent-10);
-    cursor: col-resize;
-    flex-shrink: 0;
-    position: relative;
-    transition: background 0.2s;
-}
-
-.terminal-ui__resizer:hover,
-.terminal-ui__resizer.dragging {
-    background: var(--accent-20);
-}
-
-.terminal-ui__resizer::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 2px;
-    height: 30px;
-    background: var(--accent-30);
-    border-radius: 1px;
-}
-
-.terminal-ui.iframe-visible .terminal-ui__resizer {
-    display: block;
-}
-
-/* Resize tooltips shown during drag */
-.terminal-ui__resize-tooltip {
-    position: absolute;
-    top: 50%;
-    padding: 3px 8px;
-    background: rgba(0, 0, 0, 0.8);
-    color: #e2e8f0;
-    font-size: 11px;
-    font-family: var(--font-mono);
-    border-radius: 4px;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
-}
-
-.terminal-ui__resize-tooltip.visible {
-    opacity: 1;
-}
-
-.terminal-ui__resize-tooltip--left {
-    right: 100%;
-    transform: translateY(-50%);
-    margin-right: 8px;
-}
-
-.terminal-ui__resize-tooltip--right {
-    left: 100%;
-    transform: translateY(-50%);
-    margin-left: 8px;
-}
-
 .terminal-ui__iframe-pane {
     display: none;
     flex: 1;
@@ -1231,9 +1167,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     .terminal-ui.iframe-visible .terminal-ui__terminal-wrapper {
         width: 100% !important;
         flex: 1;
-    }
-    .terminal-ui.iframe-visible .terminal-ui__resizer {
-        display: none;
     }
     .terminal-ui.iframe-visible .terminal-ui__iframe-pane {
         display: none;
@@ -1875,15 +1808,82 @@ terminal-ui.embedded-in-iframe .mobile-only {
     position: relative;
 }
 
-/* Preset grid templates. Each slot id (a/b/c/d) becomes a named grid area. */
-.terminal-ui__workspace[data-preset="classic"]     { grid-template: "a b" / 1fr 1fr; }
+/* Preset grid templates. Each slot id (a/b/c/d) becomes a named grid area.
+   Track sizes are CSS variables so JS-driven gutter drags can override them
+   per-preset (defaults match the original 1fr/2fr ratios). */
+.terminal-ui__workspace[data-preset="classic"]     { grid-template: "a b" / var(--col-1, 1fr) var(--col-2, 1fr); }
 .terminal-ui__workspace[data-preset="single"]      { grid-template: "a"; }
-.terminal-ui__workspace[data-preset="two-row"]     { grid-template: "a" 1fr "b" 1fr / 1fr; }
-.terminal-ui__workspace[data-preset="l-bigR"]      { grid-template: "a b" / 1fr 2fr; }
-.terminal-ui__workspace[data-preset="stacked-R"]   { grid-template: "a b" "a c" / 2fr 1fr; }
-.terminal-ui__workspace[data-preset="stacked-L"]   { grid-template: "a c" "b c" / 1fr 2fr; }
-.terminal-ui__workspace[data-preset="t-splitBot"]  { grid-template: "a a" 1fr "b c" 1fr / 1fr 1fr; }
-.terminal-ui__workspace[data-preset="quadrants"]   { grid-template: "a b" "c d" / 1fr 1fr; }
+.terminal-ui__workspace[data-preset="two-row"]     { grid-template: "a" var(--row-1, 1fr) "b" var(--row-2, 1fr) / 1fr; }
+.terminal-ui__workspace[data-preset="l-bigR"]      { grid-template: "a b" / var(--col-1, 1fr) var(--col-2, 2fr); }
+.terminal-ui__workspace[data-preset="stacked-R"]   { grid-template: "a b" var(--row-1, 1fr) "a c" var(--row-2, 1fr) / var(--col-1, 2fr) var(--col-2, 1fr); }
+.terminal-ui__workspace[data-preset="stacked-L"]   { grid-template: "a c" var(--row-1, 1fr) "b c" var(--row-2, 1fr) / var(--col-1, 1fr) var(--col-2, 2fr); }
+.terminal-ui__workspace[data-preset="t-splitBot"]  { grid-template: "a a" var(--row-1, 1fr) "b c" var(--row-2, 1fr) / var(--col-1, 1fr) var(--col-2, 1fr); }
+.terminal-ui__workspace[data-preset="quadrants"]   { grid-template: "a b" var(--row-1, 1fr) "c d" var(--row-2, 1fr) / var(--col-1, 1fr) var(--col-2, 1fr); }
+
+/* Gutters: absolutely-positioned overlay strips between grid tracks. JS
+   computes their position from the actual slot frame bounding rects (so
+   they track the grid even when fr units resolve to non-equal sizes), and
+   handles drag-to-resize by overwriting the --col-N / --row-N variables.
+   Double-click resets to the preset default. Visual style matches the
+   legacy flexbox split-pane resizer: subtle accent tint at rest, brighter
+   on hover/drag, with a small centered handle bar. */
+.terminal-ui__gutter {
+    position: absolute;
+    z-index: 5;
+    background: var(--accent-10);
+    transition: background 0.2s;
+    user-select: none;
+    touch-action: none;
+}
+.terminal-ui__gutter--col {
+    width: 6px;
+    cursor: col-resize;
+    transform: translateX(-50%);
+}
+.terminal-ui__gutter--row {
+    height: 6px;
+    cursor: row-resize;
+    transform: translateY(-50%);
+}
+.terminal-ui__gutter:hover,
+.terminal-ui__gutter.dragging {
+    background: var(--accent-20);
+}
+.terminal-ui__gutter::after {
+    content: '';
+    position: absolute;
+    background: var(--accent-30);
+    border-radius: 1px;
+}
+.terminal-ui__gutter--col::after {
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px; height: 30px;
+}
+.terminal-ui__gutter--row::after {
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px; height: 2px;
+}
+.terminal-ui__gutter-tooltip {
+    position: absolute;
+    padding: 3px 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #e2e8f0;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+}
+.terminal-ui__gutter-tooltip.visible { opacity: 1; }
+/* Hide gutters on narrow viewports where the workspace stacks differently. */
+@media (max-width: 768px) {
+    .terminal-ui__gutter { display: none; }
+}
 
 /* Slot frame: wraps the tab bar for one slot. Overlaid on the pane-host. */
 .terminal-ui__slot-frame {

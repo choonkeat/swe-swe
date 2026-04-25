@@ -83,6 +83,32 @@ const CHAT_LOADING_FRAMES = [
 // current right-side iframe without knowing about slots.
 const IFRAME_PANES_PRIORITY = ['preview', 'vscode', 'shell', 'browser'];
 
+// Per-preset gutter spec. Each gutter sits on the boundary between two
+// adjacent slots (`between`) and lets the user drag-resize that boundary.
+// Position + perpendicular span are derived from slot bounding rects: by
+// default the union of `between` slots, but `spanRange` overrides this
+// when the gutter actually controls more cells than the two it sits
+// between (e.g. quadrants col-gutter resizes both rows because cols are
+// shared, so we want it visually spanning the full workspace height).
+const PRESET_GUTTERS = {
+    classic:      { cols: [{ between: ['a', 'b'] }] },
+    single:       {},
+    'two-row':    { rows: [{ between: ['a', 'b'] }] },
+    'l-bigR':     { cols: [{ between: ['a', 'b'] }] },
+    'stacked-R':  { cols: [{ between: ['a', 'b'] }],
+                    rows: [{ between: ['b', 'c'] }] },
+    'stacked-L':  { cols: [{ between: ['a', 'c'] }],
+                    rows: [{ between: ['a', 'b'] }] },
+    't-splitBot': { rows: [{ between: ['a', 'b'] }],
+                    cols: [{ between: ['b', 'c'] }] },
+    quadrants:    { cols: [{ between: ['a', 'b'], spanRange: ['a', 'c'] }],
+                    rows: [{ between: ['a', 'c'], spanRange: ['a', 'b'] }] },
+};
+
+// Minimum px width/height a pane keeps during gutter drag. Matches the
+// legacy MIN_PANEL_WIDTH used by the now-defunct flexbox split-pane.
+const GUTTER_MIN_PX = 200;
+
 const LAYOUT_STATE_KEY = 'swe-swe-layout-v1';
 
 // Build a fresh slot-state object (one tab, active) from a pane id.
@@ -111,10 +137,36 @@ function normalizeSlotState(value, fallbackPaneId) {
     return slotStateForPane(fallbackPaneId);
 }
 
+// Normalize a sizesByPreset map from localStorage. Drops entries for
+// unknown presets and keeps only well-formed [num, num] arrays so a
+// corrupt entry can't break grid-template later.
+function normalizeSizesByPreset(value) {
+    const result = {};
+    if (!value || typeof value !== 'object') return result;
+    for (const [presetId, sizes] of Object.entries(value)) {
+        if (!LAYOUT_PRESETS[presetId] || !sizes || typeof sizes !== 'object') continue;
+        const entry = {};
+        if (Array.isArray(sizes.cols) && sizes.cols.length === 2
+            && sizes.cols.every(n => typeof n === 'number' && isFinite(n) && n > 0)) {
+            entry.cols = [sizes.cols[0], sizes.cols[1]];
+        }
+        if (Array.isArray(sizes.rows) && sizes.rows.length === 2
+            && sizes.rows.every(n => typeof n === 'number' && isFinite(n) && n > 0)) {
+            entry.rows = [sizes.rows[0], sizes.rows[1]];
+        }
+        if (entry.cols || entry.rows) result[presetId] = entry;
+    }
+    return result;
+}
+
 // Layout state persistence. Shape:
-//   { preset: string, activeBySlot: {[slot]: {tabs: string[], active: string}} }
+//   { preset: string,
+//     activeBySlot: {[slot]: {tabs: string[], active: string}},
+//     sizesByPreset: {[preset]: {cols?: [n,n], rows?: [n,n]}} }
 // Legacy shape (v1 initial release) stored pane strings directly in
 // activeBySlot[slot]; normalizeSlotState handles the migration on read.
+// sizesByPreset was added later -- absence is normal and means "use the
+// preset's default fr ratios from CSS".
 // On parse failure or missing preset, fall back to the classic defaults.
 function loadLayoutState() {
     try {
@@ -128,10 +180,18 @@ function loadLayoutState() {
                     preset.defaults[slotId]
                 );
             });
-            return { preset: s.preset, activeBySlot };
+            return {
+                preset: s.preset,
+                activeBySlot,
+                sizesByPreset: normalizeSizesByPreset(s.sizesByPreset),
+            };
         }
     } catch (e) { /* fall through */ }
-    return { preset: 'classic', activeBySlot: defaultActiveBySlot(LAYOUT_PRESETS.classic) };
+    return {
+        preset: 'classic',
+        activeBySlot: defaultActiveBySlot(LAYOUT_PRESETS.classic),
+        sizesByPreset: {},
+    };
 }
 
 function saveLayoutState(state) {
@@ -202,6 +262,11 @@ class TerminalUI extends HTMLElement {
         const _layoutState = loadLayoutState();
         this.preset = _layoutState.preset;
         this.activeBySlot = _layoutState.activeBySlot;
+        // Per-preset overrides for grid track sizes (set by gutter drags).
+        // Shape: { [presetId]: { cols?: [n,n], rows?: [n,n] } }. Numbers are
+        // fr ratios -- e.g. cols: [45, 55] means `45fr 55fr`. Empty by
+        // default; entries are added/removed as the user drags/dblclicks.
+        this.sizesByPreset = _layoutState.sizesByPreset || {};
         // Agent Chat readiness depends on the agent process running in Agent
         // Terminal (the chat backend doesn't start until the agent has gotten
         // past any blocking prompts -- e.g. the swe-swe-agent-chat
@@ -227,9 +292,9 @@ class TerminalUI extends HTMLElement {
         this._paneLoaded = new Set();
         // Preset state legacy mirror for compat with existing mobile logic.
         this.leftPanelTab = 'terminal'; // 'terminal' | 'chat' -- mobile only
-        // Split-pane constants for desktop detection
-        this.MIN_PANEL_WIDTH = 360; // minimum width for a slot
-        this.RESIZER_WIDTH = 8;     // historical; no longer used with the grid
+        // Minimum width per slot used by canShowSplitPane() to decide
+        // whether the desktop split layout fits in the current viewport.
+        this.MIN_PANEL_WIDTH = 360;
         // Mobile view state
         this.mobileActiveView = 'terminal'; // 'terminal' | 'workspace'
     }
@@ -2760,6 +2825,7 @@ class TerminalUI extends HTMLElement {
             // Window resize
             this._resizeHandler = () => {
                 this.fitAndPreserveScroll();
+                this._positionGutters();
             };
             window.addEventListener('resize', this._resizeHandler);
 
@@ -3280,6 +3346,12 @@ class TerminalUI extends HTMLElement {
         // Render slot frames (tab bars) for the active preset.
         this._renderSlotFrames(preset);
 
+        // Apply persisted track-size overrides so the grid cells already
+        // resolve to the user's saved widths/heights before pane-hosts are
+        // attached. Gutter positioning happens AFTER pane-host assignment
+        // because it reads pane-host bounding rects to place itself.
+        this._applySizes();
+
         // Assign each pane-host to its slot grid-area if this pane is the
         // active tab for some slot. Panes that are in a slot's tabs list but
         // not active stay mounted but hidden.
@@ -3325,6 +3397,13 @@ class TerminalUI extends HTMLElement {
             if (state && state.active) this._loadPaneIfNeeded(state.active);
         }
 
+        // Render gutters AFTER pane-host gridArea assignment so positioning
+        // can read the correct cell rects. Positioning still goes through
+        // one rAF because grid layout flushes asynchronously after style
+        // mutations.
+        this._renderGutters();
+        requestAnimationFrame(() => this._positionGutters());
+
         // Refit xterm if agent-terminal is now visible in a slot.
         setTimeout(() => this.fitAndPreserveScroll(), 50);
     }
@@ -3353,7 +3432,7 @@ class TerminalUI extends HTMLElement {
         if (state.active === paneId) return;
         state.active = paneId;
         if (persist) {
-            saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+            saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot, sizesByPreset: this.sizesByPreset });
         }
         this.applyPreset();
         this._loadPaneIfNeeded(paneId);
@@ -3385,7 +3464,7 @@ class TerminalUI extends HTMLElement {
         if (!target.tabs.includes(paneId)) target.tabs.push(paneId);
         if (activate || !target.active) target.active = paneId;
         if (persist) {
-            saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+            saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot, sizesByPreset: this.sizesByPreset });
         }
         this.applyPreset();
         if (target.active === paneId) this._loadPaneIfNeeded(paneId);
@@ -3402,8 +3481,29 @@ class TerminalUI extends HTMLElement {
         if (state.active === paneId) {
             state.active = state.tabs[Math.min(idx, state.tabs.length - 1)] || null;
         }
-        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot });
+        saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot, sizesByPreset: this.sizesByPreset });
         this.applyPreset();
+    }
+
+    // Persist a single gutter-resized track. Called from the gutter drag end
+    // handler. `axis` is 'cols' or 'rows'. Pass `sizes === null` (e.g. on
+    // dblclick reset) to clear the entry; the preset then falls back to the
+    // default fr ratios baked into terminal-ui.css.
+    _persistGutterSize(presetId, axis, sizes) {
+        const cur = this.sizesByPreset[presetId] || {};
+        if (sizes === null) {
+            delete cur[axis];
+            if (!cur.cols && !cur.rows) delete this.sizesByPreset[presetId];
+            else this.sizesByPreset[presetId] = cur;
+        } else {
+            cur[axis] = sizes;
+            this.sizesByPreset[presetId] = cur;
+        }
+        saveLayoutState({
+            preset: this.preset,
+            activeBySlot: this.activeBySlot,
+            sizesByPreset: this.sizesByPreset,
+        });
     }
 
     // Back-compat adapter: some older call sites still say "assignPaneToSlot".
@@ -3530,7 +3630,7 @@ class TerminalUI extends HTMLElement {
             newActiveBySlot[slotId] = this.activeBySlot[slotId]
                 || slotStateForPane(newPreset.defaults[slotId]);
         });
-        saveLayoutState({ preset: newPresetId, activeBySlot: newActiveBySlot });
+        saveLayoutState({ preset: newPresetId, activeBySlot: newActiveBySlot, sizesByPreset: this.sizesByPreset });
         window.location.reload();
     }
 
@@ -3568,6 +3668,225 @@ class TerminalUI extends HTMLElement {
             frame.style.gridArea = slotId;
             frame.appendChild(this._buildSlotTabBar(slotId));
             workspace.appendChild(frame);
+        });
+    }
+
+    // Apply persisted track-size overrides for the current preset by writing
+    // CSS variables on the workspace. Variables not set fall back to the
+    // defaults baked into terminal-ui.css (--col-1: 1fr, etc.).
+    _applySizes() {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+        // Clear any prior inline overrides so a freshly-reset preset reverts
+        // cleanly to its CSS default.
+        ['--col-1', '--col-2', '--row-1', '--row-2'].forEach(v => {
+            workspace.style.removeProperty(v);
+        });
+        const sizes = this.sizesByPreset[this.preset];
+        if (!sizes) return;
+        if (sizes.cols) {
+            workspace.style.setProperty('--col-1', `${sizes.cols[0]}fr`);
+            workspace.style.setProperty('--col-2', `${sizes.cols[1]}fr`);
+        }
+        if (sizes.rows) {
+            workspace.style.setProperty('--row-1', `${sizes.rows[0]}fr`);
+            workspace.style.setProperty('--row-2', `${sizes.rows[1]}fr`);
+        }
+    }
+
+    // (Re)render gutters for the active preset. Gutters are absolutely-
+    // positioned overlay strips between adjacent slots; their geometry is
+    // derived from the slot-frame bounding rects so we don't have to know
+    // the current fr-resolved track sizes. Safe to call repeatedly --
+    // existing gutters are torn down first.
+    _renderGutters() {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+        workspace.querySelectorAll('.terminal-ui__gutter').forEach(el => el.remove());
+        const spec = PRESET_GUTTERS[this.preset];
+        if (!spec) return;
+        (spec.cols || []).forEach(g => this._mountGutter(workspace, 'cols', g));
+        (spec.rows || []).forEach(g => this._mountGutter(workspace, 'rows', g));
+        this._positionGutters();
+    }
+
+    _mountGutter(workspace, axis, g) {
+        const el = document.createElement('div');
+        el.className = `terminal-ui__gutter terminal-ui__gutter--${axis === 'cols' ? 'col' : 'row'}`;
+        el.dataset.axis = axis;
+        el.dataset.between = g.between.join(',');
+        // spanRange = slots whose union rect defines the perpendicular span
+        // (defaults to `between` slots). See PRESET_GUTTERS for rationale.
+        el.dataset.span = (g.spanRange || g.between).join(',');
+        el.title = axis === 'cols' ? 'Drag to resize columns (double-click to reset)'
+                                   : 'Drag to resize rows (double-click to reset)';
+        workspace.appendChild(el);
+        this._setupGutterDrag(el, axis, g);
+    }
+
+    // Position every gutter element using the bounding rects of the two
+    // slots it separates. Slot-frame rects are unusable here because
+    // align-self:start shrinks them to the tab-bar; pane-hosts (when their
+    // active tab is mounted) fill the cell and have data-slot set. If a
+    // slot has no active pane-host, we fall back to the workspace's full
+    // dimensions for that slot (the gutter still works for the other slot).
+    // Safe to call on resize, preset apply, or after a drag completes.
+    _positionGutters() {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+        const wsRect = workspace.getBoundingClientRect();
+        const slotRect = (slotId) => {
+            const host = workspace.querySelector(`.terminal-ui__pane-host[data-slot="${slotId}"]`);
+            if (host) return host.getBoundingClientRect();
+            return wsRect;
+        };
+        const gutters = workspace.querySelectorAll('.terminal-ui__gutter');
+        gutters.forEach(g => {
+            // Position uses `between` slots (those adjacent to the boundary
+            // line). Span uses `span` slots (which may extend further when
+            // the gutter actually controls more cells, e.g. quadrants).
+            const [slotA, slotB] = g.dataset.between.split(',');
+            const spanIds = (g.dataset.span || g.dataset.between).split(',');
+            const a = slotRect(slotA);
+            const b = slotRect(slotB);
+            const spanRects = spanIds.map(slotRect);
+            if (g.dataset.axis === 'cols') {
+                const x = ((a.right + b.left) / 2) - wsRect.left;
+                const top = Math.min(...spanRects.map(r => r.top)) - wsRect.top;
+                const bot = Math.max(...spanRects.map(r => r.bottom)) - wsRect.top;
+                g.style.left = `${x}px`;
+                g.style.top = `${top}px`;
+                g.style.height = `${bot - top}px`;
+            } else {
+                const y = ((a.bottom + b.top) / 2) - wsRect.top;
+                const left = Math.min(...spanRects.map(r => r.left)) - wsRect.left;
+                const right = Math.max(...spanRects.map(r => r.right)) - wsRect.left;
+                g.style.top = `${y}px`;
+                g.style.left = `${left}px`;
+                g.style.width = `${right - left}px`;
+            }
+        });
+    }
+
+    // Wire pointer drag on a single gutter. On move, rewrites the affected
+    // CSS variable pair (--col-1/--col-2 or --row-1/--row-2) using fr units
+    // computed from pixel deltas, so the grid resolves to the new ratio.
+    // On release, persists the ratio to localStorage. Double-click resets.
+    _setupGutterDrag(gutter, axis, gSpec) {
+        const workspace = gutter.parentElement;
+        const isCol = axis === 'cols';
+        const varA = isCol ? '--col-1' : '--row-1';
+        const varB = isCol ? '--col-2' : '--row-2';
+        const slotA = gSpec.between[0];
+        const slotB = gSpec.between[1];
+
+        // Tooltip showing live px sizes during drag.
+        const tooltip = document.createElement('div');
+        tooltip.className = 'terminal-ui__gutter-tooltip';
+        gutter.appendChild(tooltip);
+
+        const getSlotRects = () => {
+            // Use pane-host (cell-filling) rects rather than slot-frame
+            // (tab-bar-only because of align-self:start). Both slots must
+            // currently have an active pane mounted for accurate drag math.
+            const aHost = workspace.querySelector(`.terminal-ui__pane-host[data-slot="${slotA}"]`);
+            const bHost = workspace.querySelector(`.terminal-ui__pane-host[data-slot="${slotB}"]`);
+            return aHost && bHost
+                ? { a: aHost.getBoundingClientRect(), b: bHost.getBoundingClientRect() }
+                : null;
+        };
+
+        let dragging = false;
+        let startCoord = 0;       // initial pointer x or y
+        let startSizeA = 0;       // initial slot A size in px (along drag axis)
+        let totalSize = 0;        // sum of A + B sizes (drag axis)
+
+        const onPointerMove = (e) => {
+            if (!dragging) return;
+            const coord = isCol ? e.clientX : e.clientY;
+            const delta = coord - startCoord;
+            let newA = startSizeA + delta;
+            const minA = GUTTER_MIN_PX;
+            const minB = GUTTER_MIN_PX;
+            newA = Math.max(minA, Math.min(totalSize - minB, newA));
+            const newB = totalSize - newA;
+            // Use fr units (ratios) so the grid stays responsive on resize.
+            workspace.style.setProperty(varA, `${newA}fr`);
+            workspace.style.setProperty(varB, `${newB}fr`);
+            this._positionGutters();
+            tooltip.textContent = `${Math.round(newA)}px / ${Math.round(newB)}px`;
+        };
+
+        const onPointerUp = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            gutter.classList.remove('dragging');
+            tooltip.classList.remove('visible');
+            document.body.style.cursor = '';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            // Restore iframe pointer events so subsequent clicks land normally.
+            this._setIframePointerEvents('');
+            // Persist the final ratio. Read back the resolved sizes so we
+            // store the actual fr ratios that produced this layout.
+            const rects = getSlotRects();
+            if (!rects) return;
+            const a = isCol ? rects.a.width  : rects.a.height;
+            const b = isCol ? rects.b.width  : rects.b.height;
+            this._persistGutterSize(this.preset, axis, [a, b]);
+            // Notify terminal so xterm refits to its new pane size.
+            if (typeof this.fitAndPreserveScroll === 'function') {
+                try { this.fitAndPreserveScroll(); } catch (e) { /* ignore */ }
+            }
+        };
+
+        const onPointerDown = (e) => {
+            // Ignore non-primary buttons; allow touch (e.button is 0).
+            if (e.button !== undefined && e.button !== 0) return;
+            const rects = getSlotRects();
+            if (!rects) return;
+            dragging = true;
+            startCoord = isCol ? e.clientX : e.clientY;
+            startSizeA = isCol ? rects.a.width  : rects.a.height;
+            const sizeB  = isCol ? rects.b.width  : rects.b.height;
+            totalSize = startSizeA + sizeB;
+            gutter.classList.add('dragging');
+            document.body.style.cursor = isCol ? 'col-resize' : 'row-resize';
+            // Position and show tooltip near gutter center.
+            tooltip.textContent = `${Math.round(startSizeA)}px / ${Math.round(sizeB)}px`;
+            if (isCol) { tooltip.style.left = '12px'; tooltip.style.top = '50%'; tooltip.style.transform = 'translateY(-50%)'; }
+            else       { tooltip.style.top = '12px'; tooltip.style.left = '50%'; tooltip.style.transform = 'translateX(-50%)'; }
+            tooltip.classList.add('visible');
+            // Disable iframe pointer events so the drag isn't interrupted when
+            // the cursor crosses an iframe (iframes capture pointer events).
+            this._setIframePointerEvents('none');
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            e.preventDefault();
+        };
+
+        gutter.addEventListener('pointerdown', onPointerDown);
+        gutter.addEventListener('dblclick', () => {
+            // Reset this axis to the preset's CSS default and persist removal.
+            workspace.style.removeProperty(varA);
+            workspace.style.removeProperty(varB);
+            this._persistGutterSize(this.preset, axis, null);
+            this._positionGutters();
+            if (typeof this.fitAndPreserveScroll === 'function') {
+                try { this.fitAndPreserveScroll(); } catch (e) { /* ignore */ }
+            }
+        });
+    }
+
+    // Toggle pointer-events on every iframe inside the workspace. Used during
+    // gutter drag so a moving cursor that crosses an iframe doesn't get
+    // captured (iframes are separate event targets that swallow pointer
+    // events from the parent document otherwise).
+    _setIframePointerEvents(value) {
+        const workspace = this.querySelector('.terminal-ui__workspace');
+        if (!workspace) return;
+        workspace.querySelectorAll('iframe').forEach(f => {
+            f.style.pointerEvents = value;
         });
     }
 
@@ -3795,12 +4114,6 @@ class TerminalUI extends HTMLElement {
             this.switchMobileNav(initialMobilePane);
         }
 
-        // Load saved pane width (will be applied when iframe is shown)
-        this.loadSavedPaneWidth();
-
-        // Setup resizer drag functionality
-        this.setupResizer();
-
         this.updatePreviewBaseUrl();
 
         // Setup iframe navigation buttons
@@ -3899,11 +4212,9 @@ class TerminalUI extends HTMLElement {
 
     }
 
-    // Check if viewport is wide enough for split-pane layout
+    // Check if viewport is wide enough for two side-by-side panels.
     canShowSplitPane() {
-        // Need room for two panels plus resizer
-        const minWidth = (this.MIN_PANEL_WIDTH * 2) + this.RESIZER_WIDTH;
-        return window.innerWidth >= minWidth;
+        return window.innerWidth >= this.MIN_PANEL_WIDTH * 2;
     }
 
     // Check if this is a regular left-click without modifier keys
@@ -3947,9 +4258,6 @@ class TerminalUI extends HTMLElement {
         } else {
             iframePane.classList.remove('show-toolbar');
         }
-
-        // Apply saved pane width
-        this.applyPaneWidth();
 
         // Update active tab state and reveal its slot
         this.activeTab = tab;
@@ -4082,171 +4390,6 @@ class TerminalUI extends HTMLElement {
             this.activeTab = 'preview';
             this.setPreviewURL(null);
             this.updateActiveTabIndicator();
-        }
-    }
-
-    setupResizer() {
-        const resizer = this.querySelector('.terminal-ui__resizer');
-        const terminalWrapper = this.querySelector('.terminal-ui__terminal-wrapper');
-        const splitPane = this.querySelector('.terminal-ui__split-pane');
-        const iframePane = this.querySelector('.terminal-ui__iframe-pane');
-        const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
-        if (!resizer || !terminalWrapper || !splitPane) return;
-
-        let isDragging = false;
-        let startX = 0;
-        let startWidth = 0;
-        let fitPending = false;
-
-        // Snap configuration
-        const snapPoints = [20, 50, 80]; // left-pane percentage snap targets
-        const snapThreshold = 2; // snap within 2% of a snap point
-
-        // Create tooltip elements for left and right pane size indicators
-        const leftTooltip = document.createElement('div');
-        leftTooltip.className = 'terminal-ui__resize-tooltip terminal-ui__resize-tooltip--left';
-        const rightTooltip = document.createElement('div');
-        rightTooltip.className = 'terminal-ui__resize-tooltip terminal-ui__resize-tooltip--right';
-        resizer.appendChild(leftTooltip);
-        resizer.appendChild(rightTooltip);
-
-        const updateTooltips = (leftPct, containerWidth, resizerWidth) => {
-            const leftPx = Math.round(containerWidth * leftPct / 100);
-            const rightPx = Math.round(containerWidth - leftPx - resizerWidth);
-            const rightPct = 100 - leftPct;
-            leftTooltip.textContent = `${leftPx}px (${Math.round(leftPct)}%)`;
-            rightTooltip.textContent = `${rightPx}px (${Math.round(rightPct)}%)`;
-        };
-
-        const showTooltips = () => {
-            leftTooltip.classList.add('visible');
-            rightTooltip.classList.add('visible');
-        };
-
-        const hideTooltips = () => {
-            leftTooltip.classList.remove('visible');
-            rightTooltip.classList.remove('visible');
-        };
-
-        // Throttled fit to avoid excessive reflows during drag
-        const throttledFit = () => {
-            if (fitPending || !this.fitAddon) return;
-            fitPending = true;
-            requestAnimationFrame(() => {
-                this.fitAddon.fit();
-                this.sendResize(); // Notify backend of new size
-                fitPending = false;
-            });
-        };
-
-        const onMouseDown = (e) => {
-            isDragging = true;
-            startX = e.clientX || e.touches?.[0]?.clientX || 0;
-            startWidth = terminalWrapper.offsetWidth;
-            resizer.classList.add('dragging');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            // Disable iframe pointer events during drag so mouse movement
-            // that strays over either iframe doesn't get captured and stall the drag
-            if (iframePane) iframePane.style.pointerEvents = 'none';
-            if (chatIframe) chatIframe.style.pointerEvents = 'none';
-            // Show tooltips
-            const containerWidth = splitPane.offsetWidth;
-            const resizerWidth = resizer.offsetWidth;
-            const leftPct = 100 - this.iframePaneWidth;
-            updateTooltips(leftPct, containerWidth, resizerWidth);
-            showTooltips();
-            e.preventDefault();
-        };
-
-        const onMouseMove = (e) => {
-            if (!isDragging) return;
-            const clientX = e.clientX || e.touches?.[0]?.clientX || 0;
-            const delta = clientX - startX;
-            const containerWidth = splitPane.offsetWidth;
-            const resizerWidth = resizer.offsetWidth;
-            const minWidth = 150;
-
-            let newWidth = startWidth + delta;
-            // Enforce minimum widths
-            newWidth = Math.max(minWidth, newWidth);
-            newWidth = Math.min(containerWidth - resizerWidth - minWidth, newWidth);
-
-            // Convert to left-pane percentage
-            let leftPct = newWidth / containerWidth * 100;
-
-            // Snap to nearby snap points
-            for (const snap of snapPoints) {
-                if (Math.abs(leftPct - snap) < snapThreshold) {
-                    leftPct = snap;
-                    break;
-                }
-            }
-
-            this.iframePaneWidth = 100 - leftPct;
-            this.applyPaneWidth();
-            updateTooltips(leftPct, containerWidth, resizerWidth);
-            // Live-fit terminal during drag
-            throttledFit();
-        };
-
-        const onMouseUp = () => {
-            if (!isDragging) return;
-            isDragging = false;
-            resizer.classList.remove('dragging');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            // Re-enable iframe pointer events
-            if (iframePane) iframePane.style.pointerEvents = '';
-            if (chatIframe) chatIframe.style.pointerEvents = '';
-            hideTooltips();
-            this.savePaneWidth();
-            // Trigger terminal resize and notify backend
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
-        };
-
-        // Double-click to reset to 50/50
-        resizer.addEventListener('dblclick', () => {
-            this.iframePaneWidth = 50;
-            this.applyPaneWidth();
-            this.savePaneWidth();
-            setTimeout(() => this.fitAndPreserveScroll(), 50);
-        });
-
-        resizer.addEventListener('mousedown', onMouseDown);
-        resizer.addEventListener('touchstart', onMouseDown, { passive: false });
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('touchmove', onMouseMove, { passive: false });
-        document.addEventListener('mouseup', onMouseUp);
-        document.addEventListener('touchend', onMouseUp);
-    }
-
-    applyPaneWidth() {
-        const terminalWrapper = this.querySelector('.terminal-ui__terminal-wrapper');
-        if (terminalWrapper) {
-            terminalWrapper.style.width = (100 - this.iframePaneWidth) + '%';
-        }
-    }
-
-    loadSavedPaneWidth() {
-        try {
-            const saved = localStorage.getItem('swe-swe-iframe-width');
-            if (saved) {
-                const width = parseFloat(saved);
-                if (!isNaN(width) && width >= 10 && width <= 90) {
-                    this.iframePaneWidth = width;
-                }
-            }
-        } catch (e) {
-            console.warn('[TerminalUI] Could not load pane width:', e);
-        }
-    }
-
-    savePaneWidth() {
-        try {
-            localStorage.setItem('swe-swe-iframe-width', this.iframePaneWidth.toString());
-        } catch (e) {
-            console.warn('[TerminalUI] Could not save pane width:', e);
         }
     }
 
