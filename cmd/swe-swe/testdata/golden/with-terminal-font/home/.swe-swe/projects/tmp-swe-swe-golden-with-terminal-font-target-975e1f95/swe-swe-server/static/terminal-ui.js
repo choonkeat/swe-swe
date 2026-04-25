@@ -1485,14 +1485,7 @@ class TerminalUI extends HTMLElement {
             return;
         }
 
-        // Show standard confirmation dialog (same for worktree and non-worktree sessions)
-        const message = exitCode === 0
-            ? 'The session has ended successfully.\n\nReturn to the home page to start a new session?'
-            : `The session ended with exit code ${exitCode}.\n\nReturn to the home page to start a new session?`;
-
-        if (confirm(message)) {
-            window.location.href = '/' + getDebugQueryString(this.debugMode);
-        }
+        window.location.href = '/' + getDebugQueryString(this.debugMode);
     }
 
     updateStatusInfo() {
