@@ -19,14 +19,25 @@ import "sync"
 type CredentialBag struct {
 	Username string // HTTPS basic-auth username (defaults to "x-access-token" when served if empty)
 	Token    string // HTTPS basic-auth password / PAT (the secret)
-	GitName  string // git author/committer name
-	GitEmail string // git author/committer email
+}
+
+// AuthorIdent is the git commit identity for a session. Lives at the
+// session level (not per-host) since author identity isn't host-specific.
+type AuthorIdent struct {
+	Name  string
+	Email string
 }
 
 var (
 	// sessionCreds[sid][host] -> CredentialBag
 	sessionCreds   = map[string]map[string]CredentialBag{}
 	sessionCredsMu sync.RWMutex
+
+	// sessionAuthor[sid] -> AuthorIdent. Written by the WS set_credentials
+	// handler; consumed by writeSessionGitconfig to populate the per-session
+	// GIT_CONFIG_GLOBAL file.
+	sessionAuthor   = map[string]AuthorIdent{}
+	sessionAuthorMu sync.RWMutex
 )
 
 func setCredential(sid, host string, c CredentialBag) {
@@ -57,8 +68,32 @@ func clearSessionCredentials(sid string) {
 		return
 	}
 	sessionCredsMu.Lock()
-	defer sessionCredsMu.Unlock()
 	delete(sessionCreds, sid)
+	sessionCredsMu.Unlock()
+
+	sessionAuthorMu.Lock()
+	delete(sessionAuthor, sid)
+	sessionAuthorMu.Unlock()
+}
+
+func setAuthor(sid string, ident AuthorIdent) {
+	if sid == "" {
+		return
+	}
+	sessionAuthorMu.Lock()
+	defer sessionAuthorMu.Unlock()
+	if ident.Name == "" && ident.Email == "" {
+		delete(sessionAuthor, sid)
+		return
+	}
+	sessionAuthor[sid] = ident
+}
+
+func getAuthor(sid string) (AuthorIdent, bool) {
+	sessionAuthorMu.RLock()
+	defer sessionAuthorMu.RUnlock()
+	a, ok := sessionAuthor[sid]
+	return a, ok
 }
 
 // listCredentialHosts returns the hosts for which sid has credentials.

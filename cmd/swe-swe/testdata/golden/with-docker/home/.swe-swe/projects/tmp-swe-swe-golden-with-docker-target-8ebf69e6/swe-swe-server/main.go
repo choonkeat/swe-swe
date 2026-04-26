@@ -498,6 +498,7 @@ type SessionEnvParams struct {
 	Theme         string
 	WorkDir       string
 	SessionMode   string
+	SID           string // session UUID; used to scope GIT_CONFIG_GLOBAL per-session
 }
 
 func buildSessionEnv(p SessionEnvParams) []string {
@@ -521,6 +522,19 @@ func buildSessionEnv(p SessionEnvParams) []string {
 		"GIT_CONFIG_KEY_0=credential.helper",
 		"GIT_CONFIG_VALUE_0=swe-swe",
 	)
+	// Per-session GIT_CONFIG_GLOBAL: a sid-scoped gitconfig file that
+	// includes the user's ~/.gitconfig as a baseline and overrides
+	// [user] name/email when the session has a saved author identity.
+	// Server-side writes (by writeSessionGitconfig) take effect on the
+	// next git invocation in the session, no shell restart needed.
+	if p.SID != "" {
+		path, err := ensureSessionGitconfig(p.SID)
+		if err != nil {
+			log.Printf("Session %s: ensureSessionGitconfig failed: %v (per-session author identity disabled)", p.SID, err)
+		} else {
+			env = append(env, "GIT_CONFIG_GLOBAL="+path)
+		}
+	}
 	// Disable agent chat sidecar for non-chat sessions
 	if p.SessionMode != "chat" {
 		env = append(env, "AGENT_CHAT_DISABLE=1")
@@ -1141,6 +1155,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 		Theme:         s.Theme,
 		WorkDir:       s.WorkDir,
 		SessionMode:   s.SessionMode,
+		SID:           s.UUID,
 	})
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
@@ -4319,6 +4334,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		Theme:         p.Theme,
 		WorkDir:       workDir,
 		SessionMode:   p.SessionMode,
+		SID:           p.UUID,
 	})
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", p.UUID))
 	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", mcpAuthKey))
@@ -4864,9 +4880,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				setCredential(sess.UUID, host, CredentialBag{
 					Username: strings.TrimSpace(payload.Username),
 					Token:    payload.Token,
-					GitName:  strings.TrimSpace(payload.Name),
-					GitEmail: strings.TrimSpace(payload.Email),
 				})
+				setAuthor(sess.UUID, AuthorIdent{
+					Name:  strings.TrimSpace(payload.Name),
+					Email: strings.TrimSpace(payload.Email),
+				})
+				if err := writeSessionGitconfig(sess.UUID); err != nil {
+					log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
+				}
 				log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
 				if err := conn.WriteJSON(map[string]any{
 					"type":  "credentials_stored",
@@ -6445,6 +6466,7 @@ func killSessionProcessGroup(s *Session) {
 	untrackPid(pid)
 	unregisterSessionPid(pid)
 	clearSessionCredentials(s.UUID)
+	removeSessionGitconfig(s.UUID)
 
 	// Kill any descendant processes that escaped the process group.
 	// These may be in a different PGID (e.g., detached MCP servers)
