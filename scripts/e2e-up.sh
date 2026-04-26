@@ -105,6 +105,14 @@ SWE_SWE_PASSWORD=$E2E_PASSWORD
 WORKSPACE_DIR=$HOST_TEST_STACK_DIR
 EOF
 
+# Optional: pass through SWE_PUBLIC_HOSTNAME for tunnel-mode e2e runs.
+# When unset (typical), the frontend stays in port-based mode (no behavior
+# change). When set (e.g. SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com), the
+# frontend builds cross-port URLs as {port}.{hostname}; tunnel.spec.js
+# asserts that shape. Page won't actually load (DNS is fake) but iframe src
+# is the assertion target.
+SWE_PUBLIC_HOSTNAME_PASSTHROUGH="${SWE_PUBLIC_HOSTNAME:-}"
+
 # Create docker-compose.override.yml with host path translation
 if [[ "$MODE" == "simple" ]]; then
     cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
@@ -113,6 +121,7 @@ services:
   swe-swe:
     environment:
       - SWE_SWE_PASSWORD=${E2E_PASSWORD}
+      - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME_PASSTHROUGH}
     volumes:
       - ${HOST_TEST_STACK_DIR}:/workspace
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees

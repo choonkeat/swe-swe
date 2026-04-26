@@ -51,6 +51,7 @@ test_mode() {
     PORT="$port" \
     SWE_SWE_PASSWORD="$password" \
     E2E_BASE_URL="http://${host_ip}:${port}" \
+    SWE_PUBLIC_HOSTNAME="${SWE_PUBLIC_HOSTNAME:-}" \
         npx playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}" || rc=$?
 
     if [[ "$rc" -ne 0 ]]; then
