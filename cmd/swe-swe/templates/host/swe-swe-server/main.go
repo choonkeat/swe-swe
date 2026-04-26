@@ -114,10 +114,30 @@ var (
 	proxyPortOffset    = 20000
 )
 
+// serverPublicHostname is the public hostname swe-swe is reachable at when
+// running behind a reverse tunnel (e.g. "abc-tunnel.example.com"). When set,
+// the frontend builds cross-port URLs as "{port}.{publicHostname}" instead
+// of using proxy-port offsets. Empty in legacy mode (no tunnel).
+//
+// Resolved once in main() from the --public-hostname flag and the
+// SWE_PUBLIC_HOSTNAME env var; copied onto each Session at creation so
+// BroadcastStatus can include it in the WebSocket status payload.
+var serverPublicHostname string
+
 func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 func cdpProxyPort(port int) int        { return proxyPortOffset + port }
 func vncProxyPort(port int) int        { return proxyPortOffset + port }
+
+// resolvePublicHostname picks the public hostname for swe-swe's tunnel-mode
+// frontend URL templating. CLI flag wins over env var; both empty means
+// tunnel mode is off. Mirrors the resolveListenAddr pattern in tailscale.go.
+func resolvePublicHostname(flagPublicHostname, envPublicHostname string) string {
+	if flagPublicHostname != "" {
+		return flagPublicHostname
+	}
+	return envPublicHostname
+}
 
 // agentChatClient is a shared HTTP client for the agent chat reverse proxy.
 // Using a single client avoids leaking http.Transport instances (each with its
@@ -458,6 +478,10 @@ type Session struct {
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
 	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
+	// Tunnel-mode public hostname (copied from serverPublicHostname at session
+	// creation). Empty in legacy mode. Emitted in BroadcastStatus so the
+	// frontend can branch URL builders on its presence.
+	PublicHostname string
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -783,12 +807,11 @@ func (s *Session) Broadcast(data []byte) {
 	}
 }
 
-// BroadcastStatus sends current session status (viewers, PTY size, assistant) to all clients
-func (s *Session) BroadcastStatus() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	rows, cols := s.calculateMinSize()
+// buildStatusPayload returns the map sent over the WebSocket as a session
+// status frame. Pure function over Session state plus the WS-client count
+// passed in (caller already holds s.mu); extracted from BroadcastStatus so
+// unit tests can assert the JSON shape without spinning up real clients.
+func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]interface{} {
 	uuidShort := s.UUID
 	if len(s.UUID) >= 5 {
 		uuidShort = s.UUID[:5]
@@ -804,29 +827,40 @@ func (s *Session) BroadcastStatus() {
 		agentChatPort = s.AgentChatPort
 	}
 	status := map[string]interface{}{
-		"type":               "status",
-		"sessionUUID":        s.UUID,
-		"viewers":            len(s.wsClients),
-		"cols":               cols,
-		"rows":               rows,
-		"assistant":          s.AssistantConfig.Name,
-		"sessionName":        s.Name,
-		"uuidShort":          uuidShort,
-		"workDir":            workDir,
-		"previewPort":        s.PreviewPort,
-		"agentChatPort":      agentChatPort,
-		"previewProxyPort":   previewProxyPort(s.PreviewPort),
-		"publicPort":         s.PublicPort,
-		"cdpPort":            s.CDPPort,
-		"vncPort":            s.VNCPort,
-		"vncProxyPort":       vncProxyPort(s.VNCPort),
-		"yoloMode":           s.yoloMode,
-		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
-		"browserStarted":     s.BrowserStarted,
+		"type":             "status",
+		"sessionUUID":      s.UUID,
+		"viewers":          viewers,
+		"cols":             cols,
+		"rows":             rows,
+		"assistant":        s.AssistantConfig.Name,
+		"sessionName":      s.Name,
+		"uuidShort":        uuidShort,
+		"workDir":          workDir,
+		"previewPort":      s.PreviewPort,
+		"agentChatPort":    agentChatPort,
+		"previewProxyPort": previewProxyPort(s.PreviewPort),
+		"publicPort":       s.PublicPort,
+		"cdpPort":          s.CDPPort,
+		"vncPort":          s.VNCPort,
+		"vncProxyPort":     vncProxyPort(s.VNCPort),
+		"yoloMode":         s.yoloMode,
+		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
+		"browserStarted":   s.BrowserStarted,
+		"publicHostname":   s.PublicHostname,
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
 	}
+	return status
+}
+
+// BroadcastStatus sends current session status (viewers, PTY size, assistant) to all clients
+func (s *Session) BroadcastStatus() {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, cols := s.calculateMinSize()
+	status := s.buildStatusPayload(len(s.wsClients), rows, cols)
 
 	data, err := json.Marshal(status)
 	if err != nil {
@@ -1671,7 +1705,13 @@ func main() {
 	tsHostname := flag.String("tailscale-hostname", "", "Tailscale hostname to advertise (env: TS_HOSTNAME)")
 	tsStateDir := flag.String("tailscale-state-dir", "", "Tailscale state directory (env: TS_STATE_DIR; default /var/lib/tailscale)")
 	tsDisable := flag.Bool("tailscale-disable", false, "Disable Tailscale bootstrap even if TS_AUTHKEY is set (env: TS_DISABLE=1)")
+	publicHostname := flag.String("public-hostname", "",
+		"Public hostname swe-swe is reachable at when behind a reverse tunnel "+
+			"(e.g. abc-tunnel.example.com). Env: SWE_PUBLIC_HOSTNAME. "+
+			"When set, the frontend builds cross-port URLs as {port}.{public-hostname} "+
+			"instead of using proxy-port offsets.")
 	flag.Parse()
+	serverPublicHostname = resolvePublicHostname(*publicHostname, os.Getenv("SWE_PUBLIC_HOSTNAME"))
 
 	// Override preview port range from environment (set by docker-compose)
 	if portRange := os.Getenv("SWE_PREVIEW_PORTS"); portRange != "" {
@@ -4421,6 +4461,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		AgentChatCmd:    agentChatCmd,
 		agentChatCancel: sessionCancel,
 		SessionMode:     p.SessionMode,
+		PublicHostname:  serverPublicHostname,
 		Metadata: &RecordingMetadata{
 			UUID:          recordingUUID,
 			Name:          name,
