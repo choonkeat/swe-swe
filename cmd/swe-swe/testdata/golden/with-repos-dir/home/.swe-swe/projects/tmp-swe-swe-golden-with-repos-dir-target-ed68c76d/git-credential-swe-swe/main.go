@@ -41,6 +41,17 @@ func main() {
 		return
 	}
 
+	// Refuse to serve unless invoked by git. Without this guard, anyone
+	// (a shell prompt, an LLM agent's tool buffer) can run the binary
+	// directly and capture the password line on stdout. Git invokes us
+	// with PPID's comm == "git". This isn't a hard security boundary --
+	// a determined caller can reparent to git -- but it stops accidental
+	// leaks into chat transcripts, screenshots, and shell history.
+	if !parentIsGit() {
+		fmt.Fprintln(os.Stderr, "git-credential-swe-swe: refusing to serve - not invoked by git")
+		os.Exit(1)
+	}
+
 	in := readKVPairs(os.Stdin)
 	host := in["host"]
 	if host == "" {
@@ -84,6 +95,18 @@ func main() {
 	if p := resp["password"]; p != "" {
 		fmt.Printf("password=%s\n", p)
 	}
+}
+
+// parentIsGit returns true if the parent process's comm is "git".
+// Reads /proc/<ppid>/comm directly. On error, errs on the side of
+// refusing to serve so a misconfigured /proc doesn't accidentally
+// open the leak path.
+func parentIsGit() bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", os.Getppid()))
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(data)) == "git"
 }
 
 func readKVPairs(r *os.File) map[string]string {
