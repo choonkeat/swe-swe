@@ -505,6 +505,35 @@ class TerminalUI extends HTMLElement {
                                 </div>
                             </section>
                             <hr class="settings-panel__divider">
+                            <section class="settings-panel__fields settings-panel__credentials">
+                                <header class="settings-panel__subheader">Git HTTPS Credentials (per session)</header>
+                                <p class="settings-panel__hint">Stored in browser localStorage and sent over this session's WebSocket. Server keeps them in memory only; never written to disk, never readable from other sessions on the same host. Cleared when this session ends.</p>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-host">Host</label>
+                                    <input type="text" id="settings-cred-host" class="settings-panel__input" placeholder="github.com" value="github.com">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-username">Username</label>
+                                    <input type="text" id="settings-cred-username" class="settings-panel__input" placeholder="x-access-token (default for GitHub PATs)">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-token">Personal Access Token</label>
+                                    <input type="password" id="settings-cred-token" class="settings-panel__input" placeholder="ghp_..." autocomplete="off">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-name">Author Name (optional)</label>
+                                    <input type="text" id="settings-cred-name" class="settings-panel__input" placeholder="Your Name">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-email">Author Email (optional)</label>
+                                    <input type="email" id="settings-cred-email" class="settings-panel__input" placeholder="you@example.com">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <button class="settings-panel__cred-save" id="settings-cred-save">Save Credentials</button>
+                                    <span class="settings-panel__cred-status" id="settings-cred-status"></span>
+                                </div>
+                            </section>
+                            <hr class="settings-panel__divider">
                             <button class="settings-panel__end-session" id="settings-end-session">End Session</button>
                         </div>
                     </div>
@@ -1306,6 +1335,12 @@ class TerminalUI extends HTMLElement {
                     console.log(`Heartbeat pong: ${latency}ms`);
                 }
                 break;
+            case 'credentials_stored':
+                // Server acked set_credentials. Hosts list reflects what the
+                // server holds for this session (write-only -- no values).
+                this._credsStoredHosts = Array.isArray(msg.hosts) ? msg.hosts : [];
+                this._refreshCredsStatus();
+                break;
             case 'status':
                 // Session status update
                 this.viewers = msg.viewers || 0;
@@ -1815,6 +1850,44 @@ class TerminalUI extends HTMLElement {
             });
         }
 
+        // Credentials Save button
+        const credSaveBtn = panel.querySelector('#settings-cred-save');
+        if (credSaveBtn) {
+            credSaveBtn.addEventListener('click', () => this._saveCredentials());
+        }
+        // Re-populate from localStorage when the host changes
+        const credHost = panel.querySelector('#settings-cred-host');
+        if (credHost) {
+            credHost.addEventListener('change', () => this.populateCredentialsSection());
+        }
+    }
+
+    _saveCredentials() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const host = (panel.querySelector('#settings-cred-host')?.value || 'github.com').trim();
+        const username = (panel.querySelector('#settings-cred-username')?.value || '').trim();
+        const token = panel.querySelector('#settings-cred-token')?.value || '';
+        const name = (panel.querySelector('#settings-cred-name')?.value || '').trim();
+        const email = (panel.querySelector('#settings-cred-email')?.value || '').trim();
+        if (!host || !token) {
+            const status = panel.querySelector('#settings-cred-status');
+            if (status) {
+                status.textContent = 'Host and token are required.';
+                status.setAttribute('data-state', 'err');
+            }
+            return;
+        }
+        this._writeCredsLocal(host, { username, token, name, email });
+        this.sendJSON({
+            type: 'set_credentials',
+            data: { host, username, token, name, email },
+        });
+        const status = panel.querySelector('#settings-cred-status');
+        if (status) {
+            status.textContent = 'Sending...';
+            status.removeAttribute('data-state');
+        }
     }
 
     // Setup event listeners for the new header and navigation UI
@@ -2121,6 +2194,63 @@ class TerminalUI extends HTMLElement {
         // Theme color picker
         this.populateColorPicker();
 
+        // Per-session git credentials
+        this.populateCredentialsSection();
+    }
+
+    // Populate the credentials section from localStorage. Token is intentionally
+    // re-prompted each session if not already in localStorage, so a shared
+    // browser doesn't auto-leak the secret to a different operator.
+    populateCredentialsSection() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const hostInput = panel.querySelector('#settings-cred-host');
+        const userInput = panel.querySelector('#settings-cred-username');
+        const tokenInput = panel.querySelector('#settings-cred-token');
+        const nameInput = panel.querySelector('#settings-cred-name');
+        const emailInput = panel.querySelector('#settings-cred-email');
+        if (!hostInput) return;
+        const host = (hostInput.value || 'github.com').trim();
+        const stored = this._readCredsLocal(host);
+        if (stored) {
+            if (userInput) userInput.value = stored.username || '';
+            if (tokenInput) tokenInput.value = stored.token || '';
+            if (nameInput) nameInput.value = stored.name || '';
+            if (emailInput) emailInput.value = stored.email || '';
+        }
+        this._refreshCredsStatus();
+    }
+
+    _credsLocalKey(host) {
+        return 'swe-swe-creds:' + host;
+    }
+
+    _readCredsLocal(host) {
+        try {
+            const raw = localStorage.getItem(this._credsLocalKey(host));
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _writeCredsLocal(host, bag) {
+        try {
+            localStorage.setItem(this._credsLocalKey(host), JSON.stringify(bag));
+        } catch (e) {}
+    }
+
+    _refreshCredsStatus() {
+        const status = this.querySelector('#settings-cred-status');
+        if (!status) return;
+        const hosts = Array.isArray(this._credsStoredHosts) ? this._credsStoredHosts : [];
+        if (hosts.length === 0) {
+            status.textContent = 'Not yet sent to server.';
+            status.removeAttribute('data-state');
+        } else {
+            status.textContent = 'Stored on server for: ' + hosts.join(', ');
+            status.setAttribute('data-state', 'ok');
+        }
     }
 
     // Populate theme toggle with current mode
@@ -4099,12 +4229,14 @@ class TerminalUI extends HTMLElement {
         // shows all pane-hosts display:none until the user changes the
         // dropdown. Harmless on desktop (the attribute doesn't participate in
         // desktop grid layout).
+        // Mobile mirrors desktop: stay on Agent Terminal during the chat
+        // probe even when ?session=chat. The probe-success handler flips
+        // the mobile nav to agent-chat once the iframe is loadable. Without
+        // this, mobile users saw a blank "Connecting to chat..." view while
+        // the probe ran, hiding any prompt the agent-terminal had emitted.
         const mobileSel = this.querySelector('.terminal-ui__mobile-nav-select');
         if (mobileSel) {
-            const initialMobilePane = new URLSearchParams(location.search).get('session') === 'chat'
-                ? 'agent-chat'
-                : (mobileSel.value || 'agent-terminal');
-            this.switchMobileNav(initialMobilePane);
+            this.switchMobileNav(mobileSel.value || 'agent-terminal');
         }
 
         this.updatePreviewBaseUrl();

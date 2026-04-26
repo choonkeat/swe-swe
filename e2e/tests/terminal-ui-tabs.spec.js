@@ -375,6 +375,48 @@ test.describe('terminal-ui tab switching', () => {
     expect(finalLabel).toBe('Agent Chat');
   });
 
+  test('mobile viewport ?session=chat: Agent Terminal stays active during probe, flips to chat on probe success', async ({ page }) => {
+    // Mirrors the desktop test above for the mobile dropdown / pane-host
+    // attribute. On ?session=chat we used to eagerly point the mobile nav at
+    // agent-chat, which painted a blank "Connecting to chat..." view while
+    // the probe was still running -- and any agent-terminal prompt was
+    // hidden behind it. Mobile should mirror desktop: stay on Agent Terminal
+    // until the chat iframe is actually loadable, then flip.
+    await page.setViewportSize({ width: 400, height: 800 });
+    const uuid = crypto.randomUUID();
+    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+
+    // Wait until the mobile init has run (data-mobile-active is set).
+    await page.waitForFunction(() => {
+      return Array.from(document.querySelectorAll('.terminal-ui__pane-host'))
+        .some(h => h.hasAttribute('data-mobile-active'));
+    }, null, { timeout: 30_000 });
+
+    // Snapshot before-probe state. If the probe is still in flight we
+    // should observe agent-terminal. If it has already completed (warm
+    // container), we'll see agent-chat -- the post-probe assertion below
+    // catches the flip either way.
+    const beforeProbe = await page.evaluate(() => {
+      const ui = window.terminalUI;
+      const hosts = Array.from(document.querySelectorAll('.terminal-ui__pane-host'));
+      const active = hosts.filter(h => h.hasAttribute('data-mobile-active'));
+      return {
+        activePane: active[0]?.dataset.pane,
+        available: ui?._agentChatAvailable,
+      };
+    });
+    if (beforeProbe.available !== true) {
+      expect(beforeProbe.activePane).toBe('agent-terminal');
+    }
+
+    // After probe success the mobile nav must have flipped to agent-chat.
+    await waitForUi(page, () => window.terminalUI?._agentChatAvailable === true);
+    await page.waitForFunction(() => {
+      const host = document.querySelector('.terminal-ui__pane-host[data-pane="agent-chat"]');
+      return host?.hasAttribute('data-mobile-active');
+    }, null, { timeout: 10_000 });
+  });
+
   test('mobile viewport: switchMobileNav toggles visible pane, not blank body', async ({ page }) => {
     // Use mobile viewport (matches CSS @media max-width: 639px).
     // Set BEFORE navigating so the page loads in mobile mode and our
@@ -386,9 +428,16 @@ test.describe('terminal-ui tab switching', () => {
 
     // Wait until the custom element has mounted + WS has delivered session.
     await waitForUi(page, () => window.terminalUI && window.terminalUI.sessionUUID);
+    // Wait for the probe to complete so the mobile nav has flipped to
+    // agent-chat -- otherwise we'd race the eager-vs-deferred init.
+    await waitForUi(page, () => window.terminalUI?._agentChatAvailable === true);
+    await page.waitForFunction(() => {
+      const host = document.querySelector('.terminal-ui__pane-host[data-pane="agent-chat"]');
+      return host?.hasAttribute('data-mobile-active');
+    }, null, { timeout: 10_000 });
 
-    // On page load with ?session=chat, the mobile initializer picks
-    // agent-chat. Verify exactly one pane-host carries data-mobile-active.
+    // After probe success, exactly one pane-host carries data-mobile-active
+    // and it is agent-chat.
     const initial = await page.evaluate(() => {
       const hosts = Array.from(document.querySelectorAll('.terminal-ui__pane-host'));
       const active = hosts.filter(h => h.hasAttribute('data-mobile-active'));

@@ -50,6 +50,26 @@ make e2e-up-simple
 > contain `{{placeholders}}` that are only replaced at `swe-swe init` time.
 > The e2e framework handles this correctly.
 
+> **Gotcha: static files are double-embedded**. `swe-swe-server/main.go` uses
+> `//go:embed all:static` for `terminal-ui.js`, CSS, etc. So the path is:
+>
+> 1. `cmd/swe-swe` embeds `templates/host/swe-swe-server/` into the swe-swe CLI binary.
+> 2. `swe-swe init` extracts those template files (including swe-swe-server source) to the project dir on disk.
+> 3. The Docker build compiles that source into a binary, which `//go:embed`s `static/` again.
+> 4. The container runs the compiled binary; it serves static files from **its own embed.FS**, not from disk.
+>
+> Therefore: editing files under `<project-dir>/swe-swe-server/static/` (or
+> copying updated templates there) has **no effect**. To pick up a change to a
+> static file you must **rebuild the binary AND rebuild the Docker image**:
+>
+> ```bash
+> # Edit the template source
+> vim cmd/swe-swe/templates/host/swe-swe-server/static/terminal-ui.js
+>
+> # Rebuild and re-up the e2e env (rebuilds Docker image + binary inside)
+> make e2e-down && make e2e-up-simple
+> ```
+
 ## Testing
 
 ### Unit Tests

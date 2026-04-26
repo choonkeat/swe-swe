@@ -971,6 +971,58 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: #fff;
 }
 
+.settings-panel__credentials .settings-panel__field:last-child {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.settings-panel__subheader {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 4px;
+}
+
+.settings-panel__hint {
+    font-size: 11px;
+    color: var(--text-muted, var(--text-secondary));
+    margin: 0 0 8px;
+    line-height: 1.4;
+}
+
+.settings-panel__cred-save {
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--accent, #7c3aed);
+    border: 1px solid var(--accent, #7c3aed);
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.settings-panel__cred-save:hover {
+    opacity: 0.9;
+}
+
+.settings-panel__cred-status {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.settings-panel__cred-status[data-state="ok"] {
+    color: #10b981;
+}
+
+.settings-panel__cred-status[data-state="err"] {
+    color: #dc2626;
+}
+
 /* === Basic UI Split-Pane Layout === */
 .terminal-ui__split-pane {
     display: flex;
