@@ -2252,7 +2252,7 @@ class TerminalUI extends HTMLElement {
                 explainer = document.createElement('p');
                 explainer.id = explainerId;
                 explainer.className = 'settings-panel__hint settings-panel__hint--warn';
-                explainer.textContent = "Author name and email are set in this repo's local .git/config; the per-session values would not take effect. Edit them with `git config --local user.name ...` or `--unset user.name --local` to fall back to the per-session identity.";
+                explainer.textContent = "Author name and email are set in this repo's local .git/config";
                 nameInput.closest('.settings-panel__field').parentNode.insertBefore(
                     explainer,
                     nameInput.closest('.settings-panel__field')

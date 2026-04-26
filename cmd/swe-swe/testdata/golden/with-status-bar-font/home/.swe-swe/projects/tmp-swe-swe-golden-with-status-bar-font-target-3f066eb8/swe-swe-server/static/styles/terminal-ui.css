@@ -763,6 +763,13 @@ terminal-ui.embedded-in-iframe .mobile-only {
     border-color: var(--accent-primary);
 }
 
+.settings-panel__input--readonly,
+.settings-panel__input--readonly:focus {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    border-color: var(--border-secondary);
+    cursor: not-allowed;
+}
 
 .settings-panel__toggle-row {
     display: flex;
@@ -992,6 +999,19 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: var(--text-muted, var(--text-secondary));
     margin: 0 0 8px;
     line-height: 1.4;
+}
+
+.settings-panel__hint--warn {
+    color: #c2410c;
+    background: rgba(249, 115, 22, 0.10);
+    border-left: 3px solid #f97316;
+    padding: 8px 10px;
+    border-radius: 0 4px 4px 0;
+    margin: 4px 0 12px;
+}
+
+[data-theme="light"] .settings-panel__hint--warn {
+    color: #9a3412;
 }
 
 .settings-panel__cred-save {
