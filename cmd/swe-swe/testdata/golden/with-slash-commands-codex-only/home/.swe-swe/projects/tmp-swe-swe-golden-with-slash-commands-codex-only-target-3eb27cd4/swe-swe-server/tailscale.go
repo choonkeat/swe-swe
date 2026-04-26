@@ -44,21 +44,32 @@ func firstNonEmpty(vs ...string) string {
 	return ""
 }
 
-// resolveListenAddr implements the decision rule from www/swe-swe-tailscale.md:
+// resolveListenAddr implements the decision rule from www/swe-swe-tailscale.md,
+// extended for tunnel mode where --bind / SWE_BIND lets ops restrict
+// swe-swe-server to localhost so only the tunnel client can reach it:
 //
-//  1. --addr explicit              -> use it
-//  2. --addr unset, SWE_PORT set   -> ":${SWE_PORT}"
-//  3. --addr unset, SWE_PORT unset,
-//     $PORT set                    -> ":${PORT}"  (no landing server)
-//  4. nothing set                  -> ":9898"
+//  1. --bind explicit              -> use it
+//  2. --addr explicit              -> use it (legacy alias)
+//  3. SWE_BIND set                 -> use it
+//  4. SWE_PORT set                 -> ":${SWE_PORT}"  (host defaults to 0.0.0.0)
+//  5. $PORT set                    -> ":${PORT}"  (PaaS; no landing server)
+//  6. nothing set                  -> ":9898"
+//
+// --bind/SWE_BIND take a full host:port (e.g. "127.0.0.1:9898"); --addr is
+// kept as an alias so existing Dockerfile CMDs and `swe-swe init` output
+// keep working byte-identically.
 //
 // When $PORT is set AND differs from the effective listen port, the landing
 // server binds $PORT; otherwise landingAddr is "" and no landing server runs.
-func resolveListenAddr(flagAddr, envSwePort, envPort string) (listenAddr, landingAddr string) {
+func resolveListenAddr(flagBind, flagAddr, envSweBind, envSwePort, envPort string) (listenAddr, landingAddr string) {
 	listenFromPort := false
 	switch {
+	case flagBind != "":
+		listenAddr = flagBind
 	case flagAddr != "":
 		listenAddr = flagAddr
+	case envSweBind != "":
+		listenAddr = envSweBind
 	case envSwePort != "":
 		listenAddr = ":" + envSwePort
 	case envPort != "":

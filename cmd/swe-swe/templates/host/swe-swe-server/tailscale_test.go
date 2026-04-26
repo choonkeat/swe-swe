@@ -12,14 +12,19 @@ import (
 )
 
 func TestResolveListenAddr(t *testing.T) {
-	// Decision rule cases enumerated in www/swe-swe-tailscale.md.
+	// Decision rule cases enumerated in www/swe-swe-tailscale.md, extended
+	// with --bind / SWE_BIND for tunnel mode (see auth.go cookie-domain
+	// rationale; the symmetric idea here is "only localhost tunnel client
+	// should reach swe-swe-server when behind a tunnel").
 	cases := []struct {
-		name           string
-		flagAddr       string
-		envSwePort     string
-		envPort        string
-		wantListen     string
-		wantLanding    string
+		name        string
+		flagBind    string
+		flagAddr    string
+		envSweBind  string
+		envSwePort  string
+		envPort     string
+		wantListen  string
+		wantLanding string
 	}{
 		{
 			name:        "addr explicit, no env",
@@ -66,10 +71,50 @@ func TestResolveListenAddr(t *testing.T) {
 			wantListen:  ":8080",
 			wantLanding: "",
 		},
+		// --bind / SWE_BIND: tunnel-mode listen-address restriction.
+		{
+			name:        "bind flag wins over everything",
+			flagBind:    "127.0.0.1:9898",
+			flagAddr:    "0.0.0.0:8080",
+			envSweBind:  "127.0.0.1:7777",
+			envSwePort:  "1977",
+			envPort:     "8080",
+			wantListen:  "127.0.0.1:9898",
+			wantLanding: ":8080",
+		},
+		{
+			name:        "bind flag, PORT same as bind -> no landing",
+			flagBind:    "127.0.0.1:8080",
+			envPort:     "8080",
+			wantListen:  "127.0.0.1:8080",
+			wantLanding: "",
+		},
+		{
+			name:        "bind flag empty, addr flag wins over SWE_BIND env",
+			flagAddr:    "0.0.0.0:9898",
+			envSweBind:  "127.0.0.1:7777",
+			wantListen:  "0.0.0.0:9898",
+			wantLanding: "",
+		},
+		{
+			name:        "bind/addr flags empty, SWE_BIND wins over SWE_PORT and PORT",
+			envSweBind:  "127.0.0.1:9898",
+			envSwePort:  "1977",
+			envPort:     "8080",
+			wantListen:  "127.0.0.1:9898",
+			wantLanding: ":8080",
+		},
+		{
+			name:        "SWE_BIND port equals PORT -> no landing",
+			envSweBind:  "127.0.0.1:8080",
+			envPort:     "8080",
+			wantListen:  "127.0.0.1:8080",
+			wantLanding: "",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotListen, gotLanding := resolveListenAddr(tc.flagAddr, tc.envSwePort, tc.envPort)
+			gotListen, gotLanding := resolveListenAddr(tc.flagBind, tc.flagAddr, tc.envSweBind, tc.envSwePort, tc.envPort)
 			if gotListen != tc.wantListen {
 				t.Errorf("listen: got %q, want %q", gotListen, tc.wantListen)
 			}

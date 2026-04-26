@@ -1696,6 +1696,10 @@ func main() {
 	// --addr" from "fell through to default".  The Dockerfile CMD always
 	// passes -addr explicitly, so compose mode is unaffected.
 	addr := flag.String("addr", "", "Listen address (overrides SWE_PORT/PORT; default :9898)")
+	bind := flag.String("bind", "",
+		"Listen address (host:port). Overrides --addr and SWE_PORT/PORT. "+
+			"Env: SWE_BIND. In tunnel mode, recommend 127.0.0.1:9898 so only "+
+			"the localhost tunnel client can reach swe-swe-server.")
 	version := flag.Bool("version", false, "Show version and exit")
 	dumpTemplates := flag.String("dump-container-templates", "", "Dump all container templates to directory and exit")
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
@@ -2324,7 +2328,7 @@ func main() {
 	// Resolve which port swe-swe itself binds and whether a landing server
 	// needs to cover a separate PaaS-facing $PORT (see tailscale.go for the
 	// decision rule).
-	listenAddr, landingAddr := resolveListenAddr(*addr, os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
 	tsCfg := resolveTailscaleConfig(*tsAuthKey, *tsHostname, *tsStateDir, *tsDisable)
 
 	log.Printf("swe-swe-server v%s", Version)
