@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -234,6 +234,10 @@ class TerminalUI extends HTMLElement {
         this.cdpPort = null;
         this.vncPort = null;
         this.vncProxyPort = null;
+        // Tunnel mode public hostname; non-empty when SWE_PUBLIC_HOSTNAME is
+        // set on the server. When non-empty, cross-port URLs are built as
+        // "{port}.{publicHostname}" instead of using proxy-port offsets.
+        this.publicHostname = '';
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1364,6 +1368,7 @@ class TerminalUI extends HTMLElement {
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
+                this.publicHostname = msg.publicHostname || '';
                 // Browser (CDP chrome) just came online -- show the Agent View
                 // tab and auto-add it to its preset-defined home slot (same
                 // spirit as the old "open right panel" auto-switch).
@@ -1381,7 +1386,11 @@ class TerminalUI extends HTMLElement {
                     this._agentChatProbing = true;
                     this._rerenderSlotTabs();
                     const acPathUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
-                    const acPortUrl = buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
+                    // Cross-origin agent-chat URL: tunnel mode uses subdomain
+                    // ({port}.{publicHostname}), legacy mode uses port offset.
+                    const acPortUrl = this.publicHostname
+                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatPort, this.publicHostname)
+                        : buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
                     if (acPathUrl) {
                         this._agentChatProbeController = new AbortController();
                         // Phase 1: probe path-based URL to wait for proxy handler to be up
@@ -4243,6 +4252,12 @@ class TerminalUI extends HTMLElement {
     }
 
     getPreviewBaseUrl() {
+        // Tunnel mode wins over port-based mode: the swe-swe-tunnel demuxes
+        // {port}.{publicHostname} directly to 127.0.0.1:{port}, so the raw
+        // target port is the leftmost subdomain label (no proxyPortOffset).
+        if (this.publicHostname && this.previewPort) {
+            return buildSubdomainPreviewUrl(window.location, this.previewPort, this.publicHostname);
+        }
         if (this._proxyMode === 'port' && this.previewProxyPort) {
             return buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
         }

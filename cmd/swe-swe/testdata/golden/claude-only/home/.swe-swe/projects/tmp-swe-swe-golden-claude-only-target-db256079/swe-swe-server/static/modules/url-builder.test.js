@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainProxyUrl, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -378,6 +378,116 @@ test('buildPortBasedProxyUrl handles bare path', () => {
 test('buildPortBasedProxyUrl returns null when port is null', () => {
     assert.strictEqual(
         buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, null, 'http://localhost:3000/'),
+        null
+    );
+});
+
+// buildSubdomainPreviewUrl tests (tunnel mode)
+test('buildSubdomainPreviewUrl returns protocol://port.publicHostname', () => {
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'https:' }, 3000, 'abc-tunnel.example.com'),
+        'https://3000.abc-tunnel.example.com'
+    );
+});
+
+test('buildSubdomainPreviewUrl handles http', () => {
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'http:' }, 3000, 'foo.example.com'),
+        'http://3000.foo.example.com'
+    );
+});
+
+test('buildSubdomainPreviewUrl uses raw target port (not proxyPortOffset)', () => {
+    // 3000 maps to "3000.host", not "23000.host" -- the tunnel demuxes by
+    // leftmost label and forwards to 127.0.0.1:3000.
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'https:' }, 3000, 'abc.example.com'),
+        'https://3000.abc.example.com'
+    );
+});
+
+test('buildSubdomainPreviewUrl returns null when targetPort is null', () => {
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'https:' }, null, 'abc.example.com'),
+        null
+    );
+});
+
+test('buildSubdomainPreviewUrl returns null when publicHostname is empty', () => {
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'https:' }, 3000, ''),
+        null
+    );
+});
+
+test('buildSubdomainPreviewUrl returns null when targetPort is 0', () => {
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'https:' }, 0, 'abc.example.com'),
+        null
+    );
+});
+
+// buildSubdomainAgentChatUrl tests
+test('buildSubdomainAgentChatUrl returns protocol://port.publicHostname', () => {
+    assert.strictEqual(
+        buildSubdomainAgentChatUrl({ protocol: 'https:' }, 4000, 'abc-tunnel.example.com'),
+        'https://4000.abc-tunnel.example.com'
+    );
+});
+
+test('buildSubdomainAgentChatUrl returns null when publicHostname missing', () => {
+    assert.strictEqual(
+        buildSubdomainAgentChatUrl({ protocol: 'https:' }, 4000, ''),
+        null
+    );
+});
+
+test('buildSubdomainAgentChatUrl returns null when targetPort missing', () => {
+    assert.strictEqual(
+        buildSubdomainAgentChatUrl({ protocol: 'https:' }, null, 'abc.example.com'),
+        null
+    );
+});
+
+// buildSubdomainProxyUrl tests
+test('buildSubdomainProxyUrl with no targetURL returns base with slash', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'https:' }, 3000, 'abc.example.com', null),
+        'https://3000.abc.example.com/'
+    );
+});
+
+test('buildSubdomainProxyUrl extracts path from full URL', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'https:' }, 3000, 'abc.example.com', 'http://localhost:3000/api/health'),
+        'https://3000.abc.example.com/api/health'
+    );
+});
+
+test('buildSubdomainProxyUrl preserves query and hash', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'https:' }, 3000, 'abc.example.com', 'http://localhost:3000/page?q=1#section'),
+        'https://3000.abc.example.com/page?q=1#section'
+    );
+});
+
+test('buildSubdomainProxyUrl handles bare path with leading slash', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'https:' }, 3000, 'abc.example.com', '/some/path'),
+        'https://3000.abc.example.com/some/path'
+    );
+});
+
+test('buildSubdomainProxyUrl handles bare path without leading slash', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'https:' }, 3000, 'abc.example.com', 'some/path'),
+        'https://3000.abc.example.com/some/path'
+    );
+});
+
+test('buildSubdomainProxyUrl returns null when publicHostname missing', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'https:' }, 3000, '', 'http://localhost:3000/'),
         null
     );
 });

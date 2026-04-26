@@ -124,6 +124,56 @@ export function buildPortBasedProxyUrl(location, previewProxyPort, targetURL) {
 }
 
 /**
+ * Build the subdomain-based preview URL for tunnel mode. When swe-swe runs
+ * behind a reverse tunnel (SWE_PUBLIC_HOSTNAME / --public-hostname), browser
+ * requests to "{port}.{publicHostname}" are demuxed by the tunnel server
+ * and forwarded to the right session's target port. The raw target port is
+ * the leftmost subdomain label -- proxyPortOffset does not apply.
+ * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {number|null} targetPort - The per-session preview target port
+ * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
+ * @returns {string|null} Subdomain preview URL, or null if either input is missing
+ */
+export function buildSubdomainPreviewUrl(location, targetPort, publicHostname) {
+    if (!targetPort || !publicHostname) return null;
+    return `${location.protocol}//${targetPort}.${publicHostname}`;
+}
+
+/**
+ * Build the subdomain-based agent chat URL for tunnel mode. Same shape as
+ * buildSubdomainPreviewUrl but for the agent-chat target port.
+ * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {number|null} targetPort - The per-session agent chat target port
+ * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
+ * @returns {string|null} Subdomain agent chat URL, or null if either input is missing
+ */
+export function buildSubdomainAgentChatUrl(location, targetPort, publicHostname) {
+    if (!targetPort || !publicHostname) return null;
+    return `${location.protocol}//${targetPort}.${publicHostname}`;
+}
+
+/**
+ * Build a subdomain-based proxy URL by combining the subdomain base with a
+ * target path. Mirrors buildPortBasedProxyUrl semantics.
+ * @param {{protocol: string}} location - Location-like object
+ * @param {number|null} targetPort - The per-session preview target port
+ * @param {string} publicHostname - Public hostname
+ * @param {string} targetURL - The logical target URL (optional)
+ * @returns {string|null} Subdomain proxy URL for use as iframe src, or null if missing input
+ */
+export function buildSubdomainProxyUrl(location, targetPort, publicHostname, targetURL) {
+    const base = buildSubdomainPreviewUrl(location, targetPort, publicHostname);
+    if (!base) return null;
+    if (!targetURL) return base + '/';
+    try {
+        const parsed = new URL(targetURL);
+        return base + parsed.pathname + parsed.search + parsed.hash;
+    } catch {
+        return base + (targetURL.startsWith('/') ? targetURL : '/' + targetURL);
+    }
+}
+
+/**
  * Build a session page URL with canonical query param ordering.
  * Mirrors Go SessionPageQuery.Encode() -- keep both in sync.
  *
