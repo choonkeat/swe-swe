@@ -3,8 +3,10 @@
 //
 // Wired into git via env-injected GIT_CONFIG_*: see buildSessionEnv.
 // Git invokes us as `git-credential-swe-swe <action>` where action is
-// fill, store, or erase. v1 implements only fill; store/erase are
-// silent no-ops because the broker is the source of truth.
+// "get" (the configured-helper API; what git uses internally), "store",
+// or "erase". For backwards compat with `git credential <op>` callers we
+// also accept "fill". v1 implements get/fill; store/erase are silent
+// no-ops because the broker is the source of truth.
 //
 // Stdin (for fill): key=value lines terminated by blank line. Standard
 // keys: protocol, host, path, username, password.
@@ -28,7 +30,14 @@ import (
 const brokerSocketName = "@swe-swe-broker"
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "fill" {
+	if len(os.Args) < 2 {
+		return
+	}
+	switch os.Args[1] {
+	case "get", "fill":
+		// supported below
+	default:
+		// store, erase, or anything else: silent no-op.
 		return
 	}
 
