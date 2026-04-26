@@ -177,4 +177,37 @@ test.describe('per-session git credentials UI', () => {
     await expect(page.locator('#settings-cred-name')).toHaveValue('GL User');
     await expect(page.locator('#settings-cred-email')).toHaveValue('gl@example.com');
   });
+
+  test('Author fields go readonly when session WorkDir has local .git/config user.*', async ({ page }) => {
+    // Connect once so the session row exists with WorkDir=/workspace
+    // (the e2e container's /workspace has user.name="E2E Test" /
+    // user.email="e2e@test.local" baked into .git/config). Then reload
+    // the page so the server can include LocalUser{Name,Email} in the
+    // index template.
+    const uuid = await openSession(page);
+    await page.reload();
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+
+    // The data-* attributes flow from the index template into <terminal-ui>.
+    const terminalUi = page.locator('terminal-ui');
+    await expect(terminalUi).toHaveAttribute('data-local-user-name', 'E2E Test');
+    await expect(terminalUi).toHaveAttribute('data-local-user-email', 'e2e@test.local');
+
+    await openSettings(page);
+
+    // populateCredentialsSection sets the values from local config and
+    // marks the inputs readonly.
+    const nameInput = page.locator('#settings-cred-name');
+    const emailInput = page.locator('#settings-cred-email');
+    await expect(nameInput).toHaveValue('E2E Test');
+    await expect(emailInput).toHaveValue('e2e@test.local');
+    await expect(nameInput).toHaveAttribute('readonly', '');
+    await expect(emailInput).toHaveAttribute('readonly', '');
+
+    // Explainer is inserted; mention .git/config so the user knows where
+    // the override comes from.
+    const explainer = page.locator('#settings-cred-local-override');
+    await expect(explainer).toBeVisible();
+    await expect(explainer).toContainText('.git/config');
+  });
 });
