@@ -283,6 +283,11 @@ func authLoginHandler(password string) http.HandlerFunc {
 // cookies. Fall back to SWE_COOKIE_SECURE only when no proxy sets the
 // header (rare PaaS that terminates TLS without forwarded headers, or a
 // user fronting the server with custom TLS that omits the header).
+//
+// Intentionally does not gate on source IP: in tunnel mode, browser TLS
+// is forwarded through a tunnel client on localhost, so the source IP at
+// swe-swe-server is always 127.0.0.1 even for "real" HTTPS traffic. Trust
+// X-Forwarded-Proto, not the connection peer.
 func resolveCookieSecure(r *http.Request) bool {
 	if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
 		return p == "https"
@@ -291,6 +296,21 @@ func resolveCookieSecure(r *http.Request) bool {
 		return v == "true"
 	}
 	return false
+}
+
+// resolveCookieDomain decides the Domain attribute for the session cookie.
+// In tunnel mode (publicHostname non-empty), the browser lands on
+// "{port}.{publicHostname}" subdomains -- the auth cookie must be set
+// with Domain=publicHostname so it is sent across all per-port subdomains.
+// In legacy mode, return empty so the cookie is host-only on whatever
+// hostname the user reached the server with.
+//
+// Per RFC 6265 a leading "." in Domain is deprecated and stripped on
+// parse, so Domain=foo.example.com already matches bar.foo.example.com.
+// We omit the dot for clean wire output -- net/http's Cookie.String()
+// also strips it.
+func resolveCookieDomain(publicHostname string) string {
+	return publicHostname
 }
 
 // authLoginPostHandler validates password, sets cookie, and redirects.
@@ -337,6 +357,7 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		Name:     authCookieName,
 		Value:    authSignCookie(secret),
 		Path:     "/",
+		Domain:   resolveCookieDomain(serverPublicHostname),
 		MaxAge:   authCookieMaxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
