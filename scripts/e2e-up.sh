@@ -20,20 +20,39 @@ WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 E2E_PASSWORD="${E2E_PASSWORD:-e2e-test-password}"
 
 # --- Mode-specific configuration ---
+#
+# Each mode reserves a 30-port-wide range per role to avoid colliding with
+# the live swe-swe stack (which uses the 3000/4000/5000/6000/7000 +20000
+# defaults). Ranges per mode are offset by 100 (compose), 200 (simple), or
+# 300 (docker) -- giving 30 sessions worth of headroom before "no available
+# port quintuple" hits, which is what the full e2e suite needs.
+#
+# Why 30, not 20: the agent-browser + ports + terminal-ui-tabs specs each
+# spin up several sessions; running back-to-back against a 20-port pool
+# exhausted preview ports before any reaper could free them.
 if [[ "$MODE" == "simple" ]]; then
     E2E_PORT=9780
-    PREVIEW_PORTS="3200-3219"
-    PUBLIC_PORTS="5200-5219"
+    PREVIEW_PORTS="3200-3229"
+    AGENT_CHAT_PORTS="4200-4229"
+    PUBLIC_PORTS="5200-5229"
+    CDP_PORTS="6200-6229"
+    VNC_PORTS="7200-7229"
     INIT_EXTRA_FLAGS=""
 elif [[ "$MODE" == "docker" ]]; then
     E2E_PORT=9760
-    PREVIEW_PORTS="3300-3319"
-    PUBLIC_PORTS="5300-5319"
+    PREVIEW_PORTS="3300-3329"
+    AGENT_CHAT_PORTS="4300-4329"
+    PUBLIC_PORTS="5300-5329"
+    CDP_PORTS="6300-6329"
+    VNC_PORTS="7300-7329"
     INIT_EXTRA_FLAGS="--with-docker"
 else
     E2E_PORT=9770
-    PREVIEW_PORTS="3100-3119"
-    PUBLIC_PORTS="5100-5119"
+    PREVIEW_PORTS="3100-3129"
+    AGENT_CHAT_PORTS="4100-4129"
+    PUBLIC_PORTS="5100-5129"
+    CDP_PORTS="6100-6129"
+    VNC_PORTS="7100-7129"
     INIT_EXTRA_FLAGS="--with-vscode"
 fi
 
@@ -113,7 +132,14 @@ EOF
 # is the assertion target.
 SWE_PUBLIC_HOSTNAME_PASSTHROUGH="${SWE_PUBLIC_HOSTNAME:-}"
 
-# Create docker-compose.override.yml with host path translation
+# Create docker-compose.override.yml with host path translation.
+#
+# Hardcode ALL SWE_*_PORTS in the override so they aren't subject to leaks
+# from the dev shell's environment. The base compose uses ${VAR:-default}
+# substitution; if the parent shell exports SWE_PREVIEW_PORTS=3000-3019
+# (which the live swe-swe-server does), it would override the .env file.
+# An explicit `- SWE_FOO=bar` line in the override env list wins over the
+# substitution form in the base, regardless of what the shell exports.
 if [[ "$MODE" == "simple" ]]; then
     cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
 # Auto-generated for sibling-container e2e testing (simple mode)
@@ -122,6 +148,11 @@ services:
     environment:
       - SWE_SWE_PASSWORD=${E2E_PASSWORD}
       - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME_PASSTHROUGH}
+      - SWE_PREVIEW_PORTS=${PREVIEW_PORTS}
+      - SWE_AGENT_CHAT_PORTS=${AGENT_CHAT_PORTS}
+      - SWE_PUBLIC_PORTS=${PUBLIC_PORTS}
+      - SWE_CDP_PORTS=${CDP_PORTS}
+      - SWE_VNC_PORTS=${VNC_PORTS}
     volumes:
       - ${HOST_TEST_STACK_DIR}:/workspace
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
@@ -134,6 +165,11 @@ services:
   swe-swe:
     environment:
       - SWE_SWE_PASSWORD=${E2E_PASSWORD}
+      - SWE_PREVIEW_PORTS=${PREVIEW_PORTS}
+      - SWE_AGENT_CHAT_PORTS=${AGENT_CHAT_PORTS}
+      - SWE_PUBLIC_PORTS=${PUBLIC_PORTS}
+      - SWE_CDP_PORTS=${CDP_PORTS}
+      - SWE_VNC_PORTS=${VNC_PORTS}
     volumes:
       - ${HOST_TEST_STACK_DIR}:/workspace
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
@@ -151,6 +187,11 @@ services:
   swe-swe:
     environment:
       - SWE_SWE_PASSWORD=${E2E_PASSWORD}
+      - SWE_PREVIEW_PORTS=${PREVIEW_PORTS}
+      - SWE_AGENT_CHAT_PORTS=${AGENT_CHAT_PORTS}
+      - SWE_PUBLIC_PORTS=${PUBLIC_PORTS}
+      - SWE_CDP_PORTS=${CDP_PORTS}
+      - SWE_VNC_PORTS=${VNC_PORTS}
     volumes:
       - ${HOST_TEST_STACK_DIR}:/workspace
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
