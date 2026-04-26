@@ -12,8 +12,10 @@
 //     effect on the next git invocation (git re-parses gitconfig per
 //     run; no shell restart needed)
 //
-// Files live under /home/app/.swe-swe/session-gitconfig/<sid>. Cleared
-// in clearSessionCredentials's caller path on session end.
+// Files live under /tmp/swe-swe-session-gitconfig/<sid>. Tmpfs-friendly
+// and works in containers regardless of /home/app permissions. Cleared
+// in killSessionProcessGroup on session end; orphaned files survive
+// server restarts but are overwritten when the sid is next saved.
 package main
 
 import (
@@ -23,7 +25,7 @@ import (
 	"strings"
 )
 
-const sessionGitconfigDir = "/home/app/.swe-swe/session-gitconfig"
+const sessionGitconfigDir = "/tmp/swe-swe-session-gitconfig"
 
 func sessionGitconfigPath(sid string) string {
 	return filepath.Join(sessionGitconfigDir, sid)
