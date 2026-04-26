@@ -1108,6 +1108,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 		oldPID := s.Cmd.Process.Pid
 		s.Cmd.Wait()
 		untrackPid(oldPID)
+		unregisterSessionPid(oldPID)
 	}
 
 	// Close old PTY
@@ -1149,6 +1150,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
 	trackPid(cmd.Process.Pid)
+	registerSessionPid(cmd.Process.Pid, s.UUID)
 	s.Cmd = cmd
 	s.PTY = ptmx
 	s.lastActive = time.Now()
@@ -1206,6 +1208,7 @@ func (s *Session) startPTYReader() {
 						}
 					}
 					untrackPid(ptyPID)
+					unregisterSessionPid(ptyPID)
 				}
 
 				// Check for pending replacement (e.g., from YOLO toggle)
@@ -2269,6 +2272,7 @@ func main() {
 	startSignalMonitor()
 	startHeartbeat()
 	startSubreaper()
+	startBrokerListener()
 
 	// Signal-aware shutdown: cancel serverCtx on SIGINT/SIGTERM
 	var serverCancel context.CancelFunc
@@ -4348,6 +4352,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	}
 
 	trackPid(cmd.Process.Pid)
+	registerSessionPid(cmd.Process.Pid, p.UUID)
 
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
@@ -6395,6 +6400,7 @@ func killSessionProcessGroup(s *Session) {
 		s.Cmd.Wait()
 	}
 	untrackPid(pid)
+	unregisterSessionPid(pid)
 
 	// Kill any descendant processes that escaped the process group.
 	// These may be in a different PGID (e.g., detached MCP servers)

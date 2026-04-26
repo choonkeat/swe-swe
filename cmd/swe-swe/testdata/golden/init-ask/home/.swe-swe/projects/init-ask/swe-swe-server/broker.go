@@ -1,0 +1,160 @@
+// broker.go -- per-session credential broker (Option B PoC).
+//
+// Listens on the abstract-namespace unix socket @swe-swe-broker. On each
+// accepted connection it identifies the calling process via SO_PEERCRED,
+// walks /proc/<pid>/status PPid chain until it hits a known session-shell
+// pid (registered via registerSessionPid), and replies with a JSON echo
+// that carries the session UUID. PoC scope: no credential lookup, no
+// credential protocol -- just measures whether kernel peer-credentials
+// plus an ancestry walk identify the caller correctly through the actual
+// session spawn pipeline (server -> script -> bash -> grandchildren).
+//
+// Fail-open: if the listener cannot bind, log and continue. Sessions still
+// start; they just cannot reach the broker. See research/2026-04-25-per-
+// session-git-credentials.md (addendum) for the full design.
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net"
+	"os"
+	"strconv"
+	"sync"
+	"syscall"
+	"time"
+)
+
+const brokerSocketName = "@swe-swe-broker"
+
+var (
+	pidToSid   = map[int]string{}
+	pidToSidMu sync.RWMutex
+)
+
+func registerSessionPid(pid int, sid string) {
+	if pid <= 0 || sid == "" {
+		return
+	}
+	pidToSidMu.Lock()
+	pidToSid[pid] = sid
+	pidToSidMu.Unlock()
+}
+
+func unregisterSessionPid(pid int) {
+	if pid <= 0 {
+		return
+	}
+	pidToSidMu.Lock()
+	delete(pidToSid, pid)
+	pidToSidMu.Unlock()
+}
+
+// findSessionForPID walks the PPid chain from pid upward until it hits an
+// entry in pidToSid, or pid 1, or a fixed step limit. Returns "" if no
+// ancestor was registered as a session shell.
+func findSessionForPID(pid int) string {
+	for steps := 0; pid > 1 && steps < 32; steps++ {
+		pidToSidMu.RLock()
+		sid, ok := pidToSid[pid]
+		pidToSidMu.RUnlock()
+		if ok {
+			return sid
+		}
+		data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
+		if err != nil {
+			return ""
+		}
+		next := parsePPid(data)
+		if next == 0 || next == pid {
+			return ""
+		}
+		pid = next
+	}
+	return ""
+}
+
+// startBrokerListener opens @swe-swe-broker and serves accept-loop in a
+// goroutine. Fail-open: a Listen error logs and returns; sessions still
+// work without a reachable broker.
+func startBrokerListener() {
+	addr := &net.UnixAddr{Name: brokerSocketName, Net: "unix"}
+	l, err := net.ListenUnix("unix", addr)
+	if err != nil {
+		log.Printf("[BROKER] listen on %s failed: %v (continuing without broker)", brokerSocketName, err)
+		return
+	}
+	log.Printf("[BROKER] listening on %s", brokerSocketName)
+	go func() {
+		defer recoverGoroutine("broker accept loop")
+		for {
+			c, err := l.AcceptUnix()
+			if err != nil {
+				log.Printf("[BROKER] accept failed: %v", err)
+				return
+			}
+			go handleBrokerConn(c)
+		}
+	}()
+}
+
+// handleBrokerConn is the PoC handler. SO_PEERCRED -> ancestry walk -> JSON
+// echo with sid. Real credential logic lands in v1.
+func handleBrokerConn(c *net.UnixConn) {
+	defer c.Close()
+	defer recoverGoroutine("broker conn handler")
+
+	pid, err := peerPID(c)
+	if err != nil {
+		log.Printf("[BROKER] SO_PEERCRED failed: %v", err)
+		brokerWriteJSON(c, map[string]any{"error": "peer credentials unavailable"})
+		return
+	}
+
+	sid := findSessionForPID(pid)
+	if sid == "" {
+		log.Printf("[BROKER] no session ancestor for pid=%d", pid)
+		brokerWriteJSON(c, map[string]any{"error": "unknown session", "peerPid": pid})
+		return
+	}
+
+	var req map[string]any
+	if err := json.NewDecoder(c).Decode(&req); err != nil {
+		log.Printf("[BROKER] decode request failed for sid=%s pid=%d: %v", sid, pid, err)
+		return
+	}
+
+	brokerWriteJSON(c, map[string]any{
+		"sid":     sid,
+		"ts":      time.Now().Unix(),
+		"echoed":  req,
+		"peerPid": pid,
+	})
+}
+
+// peerPID returns the kernel-reported pid of the connection's peer via
+// SO_PEERCRED. Cannot be forged by the peer.
+func peerPID(c *net.UnixConn) (int, error) {
+	raw, err := c.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var ucred *syscall.Ucred
+	var sockErr error
+	ctlErr := raw.Control(func(fd uintptr) {
+		ucred, sockErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+	})
+	if ctlErr != nil {
+		return 0, ctlErr
+	}
+	if sockErr != nil {
+		return 0, sockErr
+	}
+	return int(ucred.Pid), nil
+}
+
+func brokerWriteJSON(c *net.UnixConn, v any) {
+	if err := json.NewEncoder(c).Encode(v); err != nil {
+		log.Printf("[BROKER] encode response failed: %v", err)
+	}
+}
