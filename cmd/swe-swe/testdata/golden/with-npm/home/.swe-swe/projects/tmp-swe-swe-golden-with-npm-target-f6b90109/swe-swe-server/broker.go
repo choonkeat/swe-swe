@@ -124,12 +124,38 @@ func handleBrokerConn(c *net.UnixConn) {
 		return
 	}
 
-	brokerWriteJSON(c, map[string]any{
-		"sid":     sid,
-		"ts":      time.Now().Unix(),
-		"echoed":  req,
-		"peerPid": pid,
-	})
+	op, _ := req["op"].(string)
+	switch op {
+	case "get":
+		host, _ := req["host"].(string)
+		if host == "" {
+			brokerWriteJSON(c, map[string]any{"error": "missing host"})
+			return
+		}
+		cred, ok := getCredential(sid, host)
+		if !ok {
+			log.Printf("[BROKER] sid=%s no credential for host=%q (peerPid=%d)", sid, host, pid)
+			brokerWriteJSON(c, map[string]any{"error": "no credential for host", "host": host})
+			return
+		}
+		username := cred.Username
+		if username == "" {
+			username = "x-access-token"
+		}
+		log.Printf("[BROKER] sid=%s served credential for host=%q (peerPid=%d, user=%s)", sid, host, pid, username)
+		brokerWriteJSON(c, map[string]any{
+			"username": username,
+			"password": cred.Token,
+		})
+	default:
+		// PoC echo behavior, kept for the swe-swe-broker-probe diagnostic tool.
+		brokerWriteJSON(c, map[string]any{
+			"sid":     sid,
+			"ts":      time.Now().Unix(),
+			"echoed":  req,
+			"peerPid": pid,
+		})
+	}
 }
 
 // peerPID returns the kernel-reported pid of the connection's peer via

@@ -4832,6 +4832,40 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					log.Printf("[KILL] YOLO toggle: sending SIGTERM to process group -%d (server pid=%d)", cmd.Process.Pid, os.Getpid())
 					syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 				}
+			case "set_credentials":
+				// Browser supplies per-session HTTPS credentials over the
+				// already-authenticated WebSocket. Write-only: there is no
+				// API to read them back to the browser. Server-side they
+				// flow OUT to git via the broker socket.
+				var payload struct {
+					Host     string `json:"host"`
+					Username string `json:"username"`
+					Token    string `json:"token"`
+					Name     string `json:"name"`
+					Email    string `json:"email"`
+				}
+				if err := json.Unmarshal(msg.Data, &payload); err != nil {
+					log.Printf("Session %s: set_credentials invalid payload: %v", sess.UUID, err)
+					continue
+				}
+				host := strings.TrimSpace(payload.Host)
+				if host == "" {
+					host = "github.com"
+				}
+				setCredential(sess.UUID, host, CredentialBag{
+					Username: strings.TrimSpace(payload.Username),
+					Token:    payload.Token,
+					GitName:  strings.TrimSpace(payload.Name),
+					GitEmail: strings.TrimSpace(payload.Email),
+				})
+				log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
+				if err := conn.WriteJSON(map[string]any{
+					"type":  "credentials_stored",
+					"host":  host,
+					"hosts": listCredentialHosts(sess.UUID),
+				}); err != nil {
+					log.Printf("Session %s: failed to ack set_credentials: %v", sess.UUID, err)
+				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
@@ -6401,6 +6435,7 @@ func killSessionProcessGroup(s *Session) {
 	}
 	untrackPid(pid)
 	unregisterSessionPid(pid)
+	clearSessionCredentials(s.UUID)
 
 	// Kill any descendant processes that escaped the process group.
 	// These may be in a different PGID (e.g., detached MCP servers)
