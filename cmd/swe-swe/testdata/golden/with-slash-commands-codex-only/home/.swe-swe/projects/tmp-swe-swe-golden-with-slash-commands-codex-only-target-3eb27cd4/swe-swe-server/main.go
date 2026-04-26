@@ -511,6 +511,15 @@ func buildSessionEnv(p SessionEnvParams) []string {
 		fmt.Sprintf("BROWSER_VNC_PORT=%d", p.VNCPort),
 		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
 		"PATH=/workspace/.swe-swe/proxy:/home/app/.swe-swe/proxy:/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
+		// Wire the per-session credential helper into git for HTTPS remotes.
+		// The helper (git-credential-swe-swe) dials @swe-swe-broker, which
+		// resolves the calling session via SO_PEERCRED + ancestry walk and
+		// returns whatever credentials the user stored for the host. Empty
+		// store -> helper emits nothing -> git falls back to its normal
+		// prompt or the next configured helper.
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=credential.helper",
+		"GIT_CONFIG_VALUE_0=swe-swe",
 	)
 	// Disable agent chat sidecar for non-chat sessions
 	if p.SessionMode != "chat" {

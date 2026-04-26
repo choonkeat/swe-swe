@@ -22,6 +22,10 @@ RUN cd /build-mcp-lazy-init && go mod init mcp-lazy-init && CGO_ENABLED=0 GOOS=l
 COPY swe-swe-broker-probe/main.go /build-swe-swe-broker-probe/main.go
 RUN cd /build-swe-swe-broker-probe && go mod init swe-swe-broker-probe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-swe-broker-probe/swe-swe-broker-probe .
 
+# Build git-credential-swe-swe (per-session git HTTPS credential helper, stdlib only)
+COPY git-credential-swe-swe/main.go /build-git-credential-swe-swe/main.go
+RUN cd /build-git-credential-swe-swe && go mod init git-credential-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-credential-swe-swe/git-credential-swe-swe .
+
 # Stage 2: Main development environment
 FROM golang:1.24-bookworm
 
@@ -130,10 +134,11 @@ RUN git clone --depth 1 https://github.com/org/team-cmds.git /tmp/slash-commands
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.
 
-# Copy swe-swe-server, mcp-lazy-init, and swe-swe-broker-probe binaries from builder stage
+# Copy swe-swe-server, mcp-lazy-init, swe-swe-broker-probe, and git-credential-swe-swe binaries from builder stage
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
 COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
 COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
+COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
