@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const sessionGitconfigDir = "/home/app/.swe-swe/session-gitconfig"
@@ -79,4 +80,51 @@ func removeSessionGitconfig(sid string) {
 		return
 	}
 	_ = os.Remove(sessionGitconfigPath(sid))
+}
+
+// readLocalGitUser reads <workDir>/.git/config and returns local
+// user.name and user.email if set. Used by the session-page template
+// to surface "this repo overrides the per-session identity" in the
+// Settings UI: when local user.* is set, the form's Author Name and
+// Email fields render as readonly with an explainer, since git's
+// resolution order means local beats global and the per-session
+// identity won't apply for that repo.
+//
+// Returns empty strings on any error (no .git/config, no [user]
+// section, parse failure). The form is editable in those cases.
+func readLocalGitUser(workDir string) (name, email string) {
+	if workDir == "" {
+		return "", ""
+	}
+	data, err := os.ReadFile(filepath.Join(workDir, ".git", "config"))
+	if err != nil {
+		return "", ""
+	}
+	inUserSection := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inUserSection = strings.EqualFold(trimmed, "[user]")
+			continue
+		}
+		if !inUserSection {
+			continue
+		}
+		eq := strings.Index(trimmed, "=")
+		if eq < 0 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:eq])
+		val := strings.TrimSpace(trimmed[eq+1:])
+		switch strings.ToLower(key) {
+		case "name":
+			name = val
+		case "email":
+			email = val
+		}
+	}
+	return name, email
 }

@@ -2218,6 +2218,49 @@ class TerminalUI extends HTMLElement {
             if (nameInput) nameInput.value = stored.name || '';
             if (emailInput) emailInput.value = stored.email || '';
         }
+        // If the session's WorkDir has local user.name/user.email in
+        // .git/config, those override anything we'd inject via
+        // GIT_CONFIG_GLOBAL. Show the local values readonly with an
+        // explainer so the user understands why the form isn't editable.
+        const localName = this.dataset.localUserName || '';
+        const localEmail = this.dataset.localUserEmail || '';
+        const overrideActive = !!(localName || localEmail);
+        if (nameInput) {
+            if (overrideActive) {
+                nameInput.value = localName;
+                nameInput.readOnly = true;
+                nameInput.classList.add('settings-panel__input--readonly');
+            } else {
+                nameInput.readOnly = false;
+                nameInput.classList.remove('settings-panel__input--readonly');
+            }
+        }
+        if (emailInput) {
+            if (overrideActive) {
+                emailInput.value = localEmail;
+                emailInput.readOnly = true;
+                emailInput.classList.add('settings-panel__input--readonly');
+            } else {
+                emailInput.readOnly = false;
+                emailInput.classList.remove('settings-panel__input--readonly');
+            }
+        }
+        const explainerId = 'settings-cred-local-override';
+        let explainer = panel.querySelector('#' + explainerId);
+        if (overrideActive) {
+            if (!explainer && nameInput) {
+                explainer = document.createElement('p');
+                explainer.id = explainerId;
+                explainer.className = 'settings-panel__hint settings-panel__hint--warn';
+                explainer.textContent = "Author name and email are set in this repo's local .git/config; the per-session values would not take effect. Edit them with `git config --local user.name ...` or `--unset user.name --local` to fall back to the per-session identity.";
+                nameInput.closest('.settings-panel__field').parentNode.insertBefore(
+                    explainer,
+                    nameInput.closest('.settings-panel__field')
+                );
+            }
+        } else if (explainer) {
+            explainer.remove();
+        }
         this._refreshCredsStatus();
     }
 
