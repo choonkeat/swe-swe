@@ -355,3 +355,181 @@ Not a plan, but a rough surface-area estimate so it's not a black box.
 - `research/2026-01-12-swe-swe-sandboxing-integration-analysis.md` — packnplay's per-session credential forwarding (cited as the feature swe-swe lacks)
 - `research/2026-01-12-ai-agent-sandboxing-comparison.md:44` — packnplay credential-forwarding scope (Git, SSH, GPG, npm, AWS, Keychain)
 - git docs: [credential-helpers](https://git-scm.com/docs/gitcredentials), [GIT_CONFIG_COUNT](https://git-scm.com/docs/git-config#ENVIRONMENT)
+
+---
+
+## Addendum (2026-04-26): PoC results and design correction
+
+The Phase 3 verification matrix was run against commit `72871cb63` in a freshly rebuilt container on 2026-04-25, driven via `mcp__swe-swe__send_session_input` into the user shell session `c3bf1648-...`. Two independent flaws in the original design surfaced. The fd-passing transport itself works as predicted; the integration with real shells does not.
+
+### Phase 3 results
+
+| # | Test | Result | Notes |
+|---|------|--------|-------|
+| 1 | Probe from session shell | FAIL via `SWE_SWE_BROKER_FD=3`, PASS via `SWE_SWE_BROKER_FD=43` | Bash mangles fd 3 — see "Correction" below |
+| 2 | `bash -c probe` | PASS via fd 43 | Same workaround |
+| 3 | `bash -c "bash -c probe"` (3 layers) | PASS via fd 43 | Grandchild inheritance works once the fd is correct |
+| 4 | `git credential fill` via inline helper | PASS | git invoked the probe; got the JSON echo; `warning: invalid credential line` exactly as predicted |
+| 5 | Cross-session distinct sid | PASS by construction | Three live sessions show three distinct socket inodes (`26244787` / `26246993` / `26249223`); probe in shell session `c3bf1648` returned `sid=c3bf1648-...` |
+| 6 | Cross-session leak via `/proc/<pid>/fd/N` | PASS — kernel-blocked | `open()` of a unix socket via another process's `/proc/<pid>/fd/N` returns `ENXIO`. Tested with `cat`, `dd`, and Python `os.open()`. `ptrace_scope` did not matter |
+| 7 | swe-swe-server restart preserves session A | not tested in this run | Out of scope of this PoC; orthogonal to the broker design |
+| 8 | Existing functional behavior of the session shell | PASS | Recording log `session-7ee10e54-...log` continued growing through the run (733KB at end); no regression |
+
+The transport-level claims (per-session isolation, kernel-enforced unforgeable identity, no `/proc` leak) all hold. The integration claim ("bash and the agent will inherit fd 3 cleanly") does not.
+
+### Correction to "Why no renumber preamble"
+
+The doc claimed (Phase 2, step 7):
+
+> *"Bash inherits fd 3 = broker. Bash startup does not touch arbitrary high fds."*
+
+That is wrong. Bash specifically targets fd 3 at startup: it dups the inherited fd to a high slot (fd 43 in this run) and sets `O_CLOEXEC` on the original. Children see fd 3 as closed at `exec(2)` time. Reproduction in the user shell:
+
+```
+$ readlink /proc/$$/fd/3       # parent bash
+socket:[26246993]
+$ swe-swe-broker-probe          # parent execs probe; CLOEXEC closes fd 3 at exec
+write to fd 3 failed: write broker: bad file descriptor
+$ SWE_SWE_BROKER_FD=43 swe-swe-broker-probe
+{"echoed":...,"sid":"c3bf1648-...","ts":...}
+```
+
+Cause: bash treats fds < 10 as user-redirection space (so a script can `exec 3<file` without colliding with bash's internal state), and moves any inherited extras into a high slot under `FD_CLOEXEC`. The original is kept open so the parent shell can still reference it via `>&3`, but exec'd children never see it. This is documented bash behavior at least since 4.4.
+
+The renumber preamble we ruled out as unnecessary turns out to be necessary — or, equivalently, swe-swe-server must inject the actual high-slot fd number into `SWE_SWE_BROKER_FD`. Both routes inherit a fragility on bash's choice of relocation slot, which we did not verify is stable across sessions.
+
+### New finding: claude-code closes the broker fd in the agent's child shells
+
+Inside the agent process (claude PID 222 in this run), the broker socket lives at fd 19, not fd 3 — claude-code (built on Node/libuv) renumbered it during its own startup. More importantly, the fd is **not** propagated to shells that claude-code spawns via its Bash tool. Reproduced by running `swe-swe-broker-probe` from inside the agent's Bash tool: same `bad file descriptor` error, but here fd 3 is not even present (CLOEXEC happened at the libuv layer before bash got involved).
+
+This breaks the design intent stated at line 155 of this doc:
+
+> *"The agent (Claude et al.) inherits fd 3 too — by design, since you want the agent to be able to push on the user's behalf."*
+
+In practice, with the fd-passing approach: user shells can use the broker (with the bash workaround); the agent's own `git push` cannot, because the fd is closed before git sees it. This is a second, independent attack on fd-passing — fixing bash does not fix the agent.
+
+### Recommendation flip: Option B (SO_PEERCRED) preferred
+
+The fd-passing approach assumed every shell and agent in the call chain leaves fd 3 alone. Two independent counter-examples emerged in PoC validation. Each can be patched (a `/etc/profile.d` snippet for bash; a claude-code fork or a wrapper for the agent), but the patches accumulate, and every new shell or wrapper added to the stack is a fresh integration risk.
+
+Option B was originally rated "weaker but easier fallback." Given the empirical fragility above, it is the **stronger** choice in practice. It also matches the accept-and-validate pattern used by every long-lived credential agent on Linux — gpg-agent, ssh-agent, polkit, dbus, dockerd's `/var/run/docker.sock` — for the same reason.
+
+### Option B concrete sketch
+
+#### Mental model
+
+> *Instead of "the kernel routes the message to the right session's private socket," it is "the kernel tells us who is calling, and we look them up in our session map."*
+
+Identity moves from "which socket you have" (fd-passing) to "who you are" (PID + ancestry).
+
+#### Transport
+
+- swe-swe-server listens on an abstract-namespace unix socket: `@swe-swe-broker` (NULL-prefixed name; no filesystem entry).
+- All sessions share the same listener.
+- The credential helper inside the container connects with `net.Dial("unix", "@swe-swe-broker")`.
+
+Why abstract: no file to mount, permission, or clean up; no path-traversal concerns; visible only via `cat /proc/net/unix` (informational; connecting still requires the kernel-validated PID dance below).
+
+#### Identity (server side)
+
+```go
+func (b *Broker) handle(c *net.UnixConn) {
+    defer c.Close()
+
+    // 1. Get peer credentials at connect time. The peer cannot forge these.
+    raw, err := c.SyscallConn()
+    if err != nil { return }
+    var ucred *unix.Ucred
+    raw.Control(func(fd uintptr) {
+        ucred, _ = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+    })
+    if ucred == nil { return }
+
+    // 2. Walk the PPid chain until we hit a known session-shell pid.
+    sid, ok := b.findSession(int(ucred.Pid))
+    if !ok {
+        writeJSON(c, map[string]string{"error": "unknown session"})
+        return
+    }
+
+    // 3. Serve requests bound to sid.
+    b.serve(c, sid)
+}
+
+func (b *Broker) findSession(pid int) (string, bool) {
+    b.mu.RLock(); defer b.mu.RUnlock()
+    for ; pid > 1; pid = ppidOf(pid) {
+        if sid, ok := b.shellPidToSid[pid]; ok {
+            return sid, true
+        }
+    }
+    return "", false
+}
+```
+
+`b.shellPidToSid` is maintained when sessions spawn / exit — already partially tracked in swe-swe-server's session struct. `ppidOf(pid)` reads `/proc/<pid>/status` and parses the `PPid:` line; about 10 LOC.
+
+#### Identity (helper side)
+
+```go
+// swe-swe-credential-helper, replaces the fd plumbing in the current PoC
+func main() {
+    conn, err := net.Dial("unix", "@swe-swe-broker")
+    if err != nil { fail(err) }
+    defer conn.Close()
+
+    req := parseGitStdin(os.Stdin)        // protocol=...\nhost=...\n
+    if err := json.NewEncoder(conn).Encode(req); err != nil { fail(err) }
+
+    var resp credResponse
+    if err := json.NewDecoder(conn).Decode(&resp); err != nil { fail(err) }
+    fmt.Printf("username=%s\npassword=%s\n", resp.Username, resp.Password)
+}
+```
+
+No env var, no inherited fd. The helper is a normal binary doing a normal `connect(2)`. Anything that can run a binary can use it — bash users, the agent, sub-shells, scripts, all the same.
+
+#### Bootstrap
+
+Per-session `GIT_CONFIG_*` injection is still needed (so git invokes our helper for HTTPS remotes). That happens at session shell init and is a single bash profile snippet — same as the original Option A design. No change in surface.
+
+#### TOCTOU mitigation
+
+Between "kernel says peer pid is X" and "I read `/proc/X/status` to walk ancestry", a fast `execve(2)` could in theory swap pid X into something else. Two mitigations, in order of preference:
+
+- **Linux >= 6.5: use `SO_PEERPIDFD`**, which returns a pidfd that survives `execve` and can be `pidfd_open`'d to read `/proc/self/fd/<pidfd>/status` race-free.
+- **Older kernels:** accept the small race window. Same-UID, local socket, micro-second between accept and `/proc` read; the attacker would need to win a pid-recycling race against the kernel. Document the limit.
+
+#### Lifecycle
+
+- Server map updated on session create / destroy (already done elsewhere; just add the bidirectional pid index).
+- Stale entries swept periodically: `kill(pid, 0) == ESRCH` removes dead pids from the map. Cheap.
+- One broker goroutine per accepted connection; closes when the helper disconnects.
+
+#### Migration path from current PoC
+
+1. Land Option B alongside the existing fd code; do not rip the fd path out yet — they can coexist.
+2. When `swe-swe-credential-helper` is added (the real binary, replacing the `swe-swe-broker-probe` measurement tool), wire it to use Option B by default.
+3. Once Option B is validated in production, remove `attachBrokerFD`, `brokerEcho`, the env var, and the probe binary's build stage. Keep the probe in `research/` as a reference exhibit.
+
+#### Effort vs original Option A
+
+| Piece | Option A (fd-passing) | Option B (SO_PEERCRED) |
+|-------|-----------------------|------------------------|
+| Helper binary | ~50 LOC | ~50 LOC |
+| Server hook | ~40 LOC (`attachBrokerFD` + `brokerEcho` + spawn-site changes in 2 places) | ~60 LOC (single listener goroutine + ancestry walk) |
+| Container template surface | new probe binary, Dockerfile build stage, two spawn-site edits | none — listener lives wherever swe-swe-server's other goroutines do |
+| Per-shell setup | `/etc/profile.d` patch + bash CLOEXEC workaround | none |
+| Agent integration | requires claude-code change or wrapper | works as-is |
+
+Net: Option B is similar code volume, fewer files touched, and substantially more robust against shell/agent variation.
+
+### What stays valid from the original doc
+
+- The session-settings UI, in-memory cred store, audit log, commit-identity env vars, `gh` shim, per-push approval gate, device-flow OAuth (Sections 1, 2, 4, 5 and "Two design choices") are all transport-agnostic. They apply unchanged under Option B.
+- The "no on-disk credentials, no env-stored bearer secrets" constraint is preserved — Option B touches neither.
+
+### What this addendum supersedes
+
+- "Why no renumber preamble" — the empirical claim is wrong; preamble (or fd-renumbering, or Option B) is required.
+- The Option-A-as-recommended ordering in "Three options, in order of preference."
