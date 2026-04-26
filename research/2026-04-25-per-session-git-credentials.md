@@ -533,3 +533,39 @@ Net: Option B is similar code volume, fewer files touched, and substantially mor
 
 - "Why no renumber preamble" — the empirical claim is wrong; preamble (or fd-renumbering, or Option B) is required.
 - The Option-A-as-recommended ordering in "Three options, in order of preference."
+
+## Addendum 2 (2026-04-26): post-deploy validation findings (v1.1 follow-ups)
+
+After the Option B implementation shipped (commits `ff110181c` through `42688cd1d`), we walked it through a real-environment validation and surfaced two follow-ups for v1.1.
+
+### Finding 1: Settings-UI-bound creds don't apply to free Terminal panes
+
+**Symptom.** User saves a PAT via the chat session's Settings UI, then runs `git pull` in a "Terminal" pane (the free-shell session, not the agent's pane). Git falls through to a username prompt. Server log shows `[BROKER] sid=<terminal-sid> no credential for host="github.com"`.
+
+**Root cause.** The Settings UI is bound to a single WebSocket conn, which is scoped to one session UUID. Free Terminal panes spawned alongside that chat session are *separate sessions* with their own UUIDs — they have a sibling relationship, not a parent-child one. `setCredential(sess.UUID, host, ...)` keys the cred map by the WS session, so siblings never see it.
+
+**Validation evidence.**
+| Pane | sid | Has creds? | git pull |
+|---|---|---|---|
+| Chat (LLM agent's pane) | `0a4f5d15-...` | yes | succeeds silently |
+| Free Terminal (sibling) | `0ab49df0-...` | no | falls through to prompt |
+
+This is *also* the security claim — sibling sessions cannot read each other's creds. So the same property is both the v1 security guarantee and the v1.1 UX gap. Any fix must preserve sibling-isolation between *different users' sessions* while making *the same user's sibling sessions* shareable.
+
+**Design space for v1.1.**
+
+1. **Per-user creds, scoped above session.** Store at the user level (whatever auth identity the WS connects as) and serve to any session belonging to that user. Cleanest UX, requires the broker to also know "what user does this sid belong to."
+2. **Settings UI exposes session UUIDs and lets you save against multiple.** Explicit, no design change to the broker, but burdens the user.
+3. **Terminal panes inherit from their parent chat session.** Track parent-child relationships in `pidToSid`; broker walks both up the PPid chain *and* sideways to a parent session's sid if the current sid has none. Keeps the broker self-contained but makes "parent session" a load-bearing concept.
+
+Option 1 fits cleanest with the existing user identity model. Option 3 is the smallest code change but adds a new concept.
+
+### Finding 2: helper output is leakable when invoked outside git
+
+**Symptom.** During diagnostics, `printf 'protocol=https\nhost=github.com\n\n' | git credential-swe-swe get` prints the password line to stdout. If that runs inside an agent's tool buffer or a logged shell, the PAT enters the chat transcript / log. Normal git usage never leaks because git owns the helper's stdout pipe.
+
+**Fix shipped same-day** (`feat(broker): credential helper refuses helper invocation outside git`). The helper now reads `/proc/$PPID/comm` at the top of `get`/`fill` actions and exits 1 with a stderr warning if it isn't `"git"`. Real git invocations are unchanged; direct shell/agent invocations are blocked before any `password=` line is written.
+
+Not a hard security boundary (a determined caller can `exec` itself under a process named `git`), but it stops the dominant accidental-leak vectors: agents running diagnostic pipes, screenshots, shell history, copy-pasted command output. Friction-as-defense.
+
+**Open question for v2.** Should we also gate on `isatty(0)` being false? Git always pipes stdin to the helper. A direct caller using `printf | helper` also pipes stdin, so that check alone doesn't add coverage; but `helper get` typed at a prompt with no redirection (where stdin IS a tty) would be caught. Worth pairing with the parent-comm check for belt-and-suspenders. Defer to v2 unless we see an actual instance.
