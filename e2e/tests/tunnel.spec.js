@@ -4,20 +4,25 @@ import crypto from 'crypto';
 const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
 const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
 
-// One spec, two assertion modes:
+// One spec, three assertion modes:
 // - SWE_PUBLIC_HOSTNAME unset (default): preview/agent-chat URLs are
 //   port-based (regression gate). publicHostname on the WS status frame
 //   must be empty so getPreviewBaseUrl() falls through to legacy behavior.
 // - SWE_PUBLIC_HOSTNAME=<host>: getPreviewBaseUrl() returns
-//   "https://{previewPort}.{host}" (no proxyPortOffset). Page won't load
-//   (no real DNS), but the URL the frontend would put in the iframe src
-//   is the assertion target.
+//   "https://{previewPort}.{host}" (no proxyPortOffset). The hostname
+//   reaches the server via env (default) or via state file when
+//   SWE_TUNNEL_VIA=state-file (e2e-up.sh writes the file and does NOT
+//   pass SWE_PUBLIC_HOSTNAME to the container -- both routes converge
+//   on the same WS status frame, so the assertion is identical).
 //
 // Run via:
 //   make e2e-up-simple && make e2e-test-simple && make e2e-down            # regression mode
 //   SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com make e2e-up-simple && \
 //     SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com make e2e-test-simple && \
-//     make e2e-down                                                        # subdomain mode
+//     make e2e-down                                                        # env mode
+//   SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com SWE_TUNNEL_VIA=state-file make e2e-up-simple && \
+//     SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com make e2e-test-simple && \
+//     make e2e-down                                                        # state-file mode
 
 async function login(page) {
     await page.goto('/swe-swe-auth/login');

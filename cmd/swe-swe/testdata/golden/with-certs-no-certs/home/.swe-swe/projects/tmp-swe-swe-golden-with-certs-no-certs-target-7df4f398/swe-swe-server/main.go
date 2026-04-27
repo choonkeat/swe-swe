@@ -129,14 +129,51 @@ func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 func cdpProxyPort(port int) int        { return proxyPortOffset + port }
 func vncProxyPort(port int) int        { return proxyPortOffset + port }
 
+// flagPassed reports whether the user explicitly passed a flag on the
+// command line. Used to distinguish "flag at default value" from "flag
+// not given at all" so an env-var override can win over the default
+// without clobbering a user's explicit flag.
+func flagPassed(name string) bool {
+	seen := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			seen = true
+		}
+	})
+	return seen
+}
+
 // resolvePublicHostname picks the public hostname for swe-swe's tunnel-mode
-// frontend URL templating. CLI flag wins over env var; both empty means
-// tunnel mode is off. Mirrors the resolveListenAddr pattern in tailscale.go.
-func resolvePublicHostname(flagPublicHostname, envPublicHostname string) string {
+// frontend URL templating. Precedence:
+//
+//  1. --public-hostname flag (non-empty)
+//  2. SWE_PUBLIC_HOSTNAME env (non-empty)
+//  3. tunnel state file at stateFile (the JSON file swe-swe-tunnel writes
+//     after RegisterOK -- shape: {"hostname":"...","unique":"...",...})
+//  4. "" (legacy/off)
+//
+// stateFile == "" disables the file-fallback step entirely. A missing
+// state file is the normal case when no tunnel is running -- silent
+// fall-through, no log noise. A *malformed* file is logged and
+// fall-through (we never crash startup over a stale/corrupt state file).
+func resolvePublicHostname(flagPublicHostname, envPublicHostname, stateFile string) string {
 	if flagPublicHostname != "" {
 		return flagPublicHostname
 	}
-	return envPublicHostname
+	if envPublicHostname != "" {
+		return envPublicHostname
+	}
+	if stateFile == "" {
+		return ""
+	}
+	hostname, err := readTunnelStateHostname(stateFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("[tunnel] state file %q unreadable, falling back to legacy mode: %v", stateFile, err)
+		}
+		return ""
+	}
+	return hostname
 }
 
 // agentChatClient is a shared HTTP client for the agent chat reverse proxy.
@@ -1714,8 +1751,17 @@ func main() {
 			"(e.g. abc-tunnel.example.com). Env: SWE_PUBLIC_HOSTNAME. "+
 			"When set, the frontend builds cross-port URLs as {port}.{public-hostname} "+
 			"instead of using proxy-port offsets.")
+	tunnelStateFile := flag.String("tunnel-state-file", "/workspace/.swe-swe/tunnel-state.json",
+		"Path to the JSON state file produced by swe-swe-tunnel. Used to "+
+			"discover the public hostname when --public-hostname / "+
+			"SWE_PUBLIC_HOSTNAME are unset. Env: SWE_TUNNEL_STATE_FILE. "+
+			"Empty string disables the fallback.")
 	flag.Parse()
-	serverPublicHostname = resolvePublicHostname(*publicHostname, os.Getenv("SWE_PUBLIC_HOSTNAME"))
+	stateFilePath := *tunnelStateFile
+	if envSF, ok := os.LookupEnv("SWE_TUNNEL_STATE_FILE"); ok && !flagPassed("tunnel-state-file") {
+		stateFilePath = envSF
+	}
+	serverPublicHostname = resolvePublicHostname(*publicHostname, os.Getenv("SWE_PUBLIC_HOSTNAME"), stateFilePath)
 
 	// Override preview port range from environment (set by docker-compose)
 	if portRange := os.Getenv("SWE_PREVIEW_PORTS"); portRange != "" {

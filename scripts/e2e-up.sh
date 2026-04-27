@@ -130,7 +130,26 @@ EOF
 # frontend builds cross-port URLs as {port}.{hostname}; tunnel.spec.js
 # asserts that shape. Page won't actually load (DNS is fake) but iframe src
 # is the assertion target.
+#
+# SWE_TUNNEL_VIA selects how the server learns its hostname:
+#   "env"        (default) -- pass SWE_PUBLIC_HOSTNAME to the container
+#   "state-file" -- write /workspace/.swe-swe/tunnel-state.json before
+#                   container start; do NOT pass SWE_PUBLIC_HOSTNAME env.
+#                   Server picks up hostname via the file fallback path.
+# Playwright assertions in tunnel.spec.js read SWE_PUBLIC_HOSTNAME on the
+# RUNNER (set by e2e-test.sh) for the "expected" value; the same hostname
+# is the one written into the state file in this branch.
+SWE_TUNNEL_VIA="${SWE_TUNNEL_VIA:-env}"
 SWE_PUBLIC_HOSTNAME_PASSTHROUGH="${SWE_PUBLIC_HOSTNAME:-}"
+if [[ "$SWE_TUNNEL_VIA" == "state-file" && -n "$SWE_PUBLIC_HOSTNAME_PASSTHROUGH" ]]; then
+    echo "  Tunnel mode: state-file (writing tunnel-state.json, NOT passing SWE_PUBLIC_HOSTNAME env)"
+    mkdir -p "${TEST_STACK_DIR}/.swe-swe"
+    cat > "${TEST_STACK_DIR}/.swe-swe/tunnel-state.json" <<TUNNEL_STATE_JSON
+{"hostname":"${SWE_PUBLIC_HOSTNAME_PASSTHROUGH}","unique":"e2e","registered_at":"2026-04-28T00:00:00Z"}
+TUNNEL_STATE_JSON
+    chmod 0600 "${TEST_STACK_DIR}/.swe-swe/tunnel-state.json"
+    SWE_PUBLIC_HOSTNAME_PASSTHROUGH=""
+fi
 
 # Create docker-compose.override.yml with host path translation.
 #
