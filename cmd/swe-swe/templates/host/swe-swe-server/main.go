@@ -1756,12 +1756,51 @@ func main() {
 			"discover the public hostname when --public-hostname / "+
 			"SWE_PUBLIC_HOSTNAME are unset. Env: SWE_TUNNEL_STATE_FILE. "+
 			"Empty string disables the fallback.")
+	tunnelServerURL := flag.String("tunnel-server-url", "",
+		"Tunnel server URL (e.g. https://tunnel.example.com). When set, "+
+			"swe-swe-server spawns the swe-swe-tunnel client as a child "+
+			"process and consumes its lifecycle events on stdout to learn "+
+			"the assigned public hostname. Empty disables tunnel mode. "+
+			"Env: SWE_TUNNEL_SERVER_URL.")
+	tunnelUnique := flag.String("tunnel-unique", "",
+		"Bare unique label for the tunnel registration (server appends "+
+			"-tunnel suffix). Optional; empty falls through to whatever "+
+			"the tunnel client picks itself (typically a generated label "+
+			"or one persisted in its identity store). Env: SWE_TUNNEL_UNIQUE.")
+	tunnelBin := flag.String("tunnel-bin", "swe-swe-tunnel",
+		"Path to the swe-swe-tunnel binary. Defaults to swe-swe-tunnel "+
+			"on $PATH. Env: SWE_TUNNEL_BIN.")
 	flag.Parse()
 	stateFilePath := *tunnelStateFile
 	if envSF, ok := os.LookupEnv("SWE_TUNNEL_STATE_FILE"); ok && !flagPassed("tunnel-state-file") {
 		stateFilePath = envSF
 	}
 	serverPublicHostname = resolvePublicHostname(*publicHostname, os.Getenv("SWE_PUBLIC_HOSTNAME"), stateFilePath)
+
+	// Tunnel-mode subprocess supervisor. Trigger is non-empty
+	// --tunnel-server-url (or its env equivalent). When set, spawn the
+	// swe-swe-tunnel client as a child process and consume its JSONL
+	// event stream. Companion plan:
+	// /workspace/tasks/2026-04-29-tunnel-subprocess-pivot.md.
+	resolvedTunnelServerURL := *tunnelServerURL
+	if envURL, ok := os.LookupEnv("SWE_TUNNEL_SERVER_URL"); ok && !flagPassed("tunnel-server-url") {
+		resolvedTunnelServerURL = envURL
+	}
+	resolvedTunnelUnique := *tunnelUnique
+	if envU, ok := os.LookupEnv("SWE_TUNNEL_UNIQUE"); ok && !flagPassed("tunnel-unique") {
+		resolvedTunnelUnique = envU
+	}
+	resolvedTunnelBin := *tunnelBin
+	if envBin, ok := os.LookupEnv("SWE_TUNNEL_BIN"); ok && !flagPassed("tunnel-bin") {
+		resolvedTunnelBin = envBin
+	}
+	if resolvedTunnelServerURL != "" {
+		go runTunnelSupervisor(context.Background(), tunnelSupervisorOpts{
+			ServerURL: resolvedTunnelServerURL,
+			Unique:    resolvedTunnelUnique,
+			BinPath:   resolvedTunnelBin,
+		})
+	}
 
 	// Override preview port range from environment (set by docker-compose)
 	if portRange := os.Getenv("SWE_PREVIEW_PORTS"); portRange != "" {
