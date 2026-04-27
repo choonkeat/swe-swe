@@ -4304,8 +4304,24 @@ class TerminalUI extends HTMLElement {
         const homeBtn = this.querySelector('.terminal-ui__iframe-home');
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
 
+        // Diagnostic: log WS state + time since last server message on each
+        // nav-button click. Helps distinguish "WS-down" from "WS-stuck" when
+        // the user reports the buttons aren't taking effect. Cheap, no-op on
+        // success path.
+        const logNavClick = (btn) => {
+            const ws = this._debugWs;
+            const states = { 0: 'CONNECTING', 1: 'OPEN', 2: 'CLOSING', 3: 'CLOSED' };
+            const state = ws ? (states[ws.readyState] || ws.readyState) : 'NULL';
+            const lastMsg = this._debugWsLastMessageAt
+                ? `${Date.now() - this._debugWsLastMessageAt}ms ago`
+                : 'never';
+            const ever = this._debugWsEverConnected ? 'yes' : 'no';
+            console.log(`[NavBtn] ${btn} click -- debugWs:${state} everConnected:${ever} lastServerMsg:${lastMsg}`);
+        };
+
         if (homeBtn) {
             homeBtn.addEventListener('click', () => {
+                logNavClick('home');
                 if (this._debugWs?.readyState === WebSocket.OPEN) {
                     this._debugWs.send(JSON.stringify({ t: 'navigate', url: '/' }));
                 } else {
@@ -4314,7 +4330,10 @@ class TerminalUI extends HTMLElement {
             });
         }
         if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => this.refreshIframe());
+            refreshBtn.addEventListener('click', () => {
+                logNavClick('refresh');
+                this.refreshIframe();
+            });
         }
 
         // Setup Back/Forward buttons -- send navigate commands via debug WebSocket
@@ -4752,8 +4771,13 @@ class TerminalUI extends HTMLElement {
         if (this._debugWs?.readyState === WebSocket.OPEN) {
             this._debugWs.send(JSON.stringify({ t: 'reload' }));
         } else {
-            // Fallback: force reload of the currently active pane's iframe.
-            const iframe = this._iframeFor(this.activeTab);
+            // Fallback: hard-reload the preview iframe specifically. Older
+            // code used `_iframeFor(this.activeTab)`, but `activeTab` is a
+            // legacy mirror (see comment near constructor) that can lag
+            // behind the actual visible pane in multi-iframe presets. The
+            // URL bar and refresh button live inside the preview pane-host,
+            // so 'preview' is always the right target here.
+            const iframe = this._iframeFor('preview');
             if (iframe && iframe.src) iframe.src = iframe.src;
         }
     }
@@ -4848,6 +4872,7 @@ class TerminalUI extends HTMLElement {
         ws.onmessage = (e) => {
             try {
                 const msg = JSON.parse(e.data);
+                this._debugWsLastMessageAt = Date.now();
                 if (msg.t === 'urlchange' || msg.t === 'init') {
                     // Proxy and shell page confirmed alive -- hide placeholder
                     if (this._previewWaiting && this.activeTab === 'preview') {
