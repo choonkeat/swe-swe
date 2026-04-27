@@ -271,18 +271,19 @@ class TerminalUI extends HTMLElement {
         // fr ratios -- e.g. cols: [45, 55] means `45fr 55fr`. Empty by
         // default; entries are added/removed as the user drags/dblclicks.
         this.sizesByPreset = _layoutState.sizesByPreset || {};
-        // Agent Chat readiness depends on the agent process running in Agent
-        // Terminal (the chat backend doesn't start until the agent has gotten
-        // past any blocking prompts -- e.g. the swe-swe-agent-chat
-        // --dangerously-load-development-channels confirm screen). If saved
-        // state restored active:'agent-chat' for a slot that also holds
-        // agent-terminal, swap to terminal in-memory only so the user
-        // actually sees what may need their input. The chat probe-success
-        // handler later flips back to agent-chat (persist:false) once the
-        // iframe is loadable. localStorage is untouched, so the user's
-        // saved preference survives across the override.
+        // Whenever a slot contains agent-terminal, force it active on mount
+        // regardless of what was last persisted. The agent terminal is the
+        // primary surface where blocking prompts appear (e.g. the
+        // swe-swe-agent-chat --dangerously-load-development-channels confirm
+        // screen, auth flows, agent crashes), so it must be the default tab
+        // the user sees. localStorage is untouched, so any saved preference
+        // is harmless -- mid-session tab switches via setActiveInSlot still
+        // work normally; this only governs the initial mount. Probes that
+        // auto-open other panes (chat probe-success, browser VNC) use
+        // persist:false and run after this, so they can still take focus
+        // when ready without permanently overriding the mount default.
         for (const slot of Object.values(this.activeBySlot)) {
-            if (slot && slot.active === 'agent-chat' && Array.isArray(slot.tabs) && slot.tabs.includes('agent-terminal')) {
+            if (slot && Array.isArray(slot.tabs) && slot.tabs.includes('agent-terminal')) {
                 slot.active = 'agent-terminal';
             }
         }
