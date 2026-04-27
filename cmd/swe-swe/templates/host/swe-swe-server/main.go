@@ -883,7 +883,7 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"yoloMode":         s.yoloMode,
 		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":   s.BrowserStarted,
-		"publicHostname":   s.PublicHostname,
+		"publicHostname":   effectivePublicHostname(s.PublicHostname),
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)

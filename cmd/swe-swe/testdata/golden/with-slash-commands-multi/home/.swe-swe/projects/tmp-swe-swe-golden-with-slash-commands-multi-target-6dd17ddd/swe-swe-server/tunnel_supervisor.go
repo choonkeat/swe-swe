@@ -114,6 +114,42 @@ func setLiveTunnelHostname(h string) bool {
 	return prev != h
 }
 
+// effectivePublicHostname returns the hostname the frontend should
+// see in a WS status frame. The supervisor's live value (if non-empty)
+// takes precedence over any static fallback (the legacy
+// resolvePublicHostname result, captured per-session as
+// Session.PublicHostname). Empty string means legacy port-mode.
+//
+// Static fallback is retained while commit 3 of the subprocess pivot
+// is pending; once the legacy --public-hostname / state-file path is
+// removed, callers will pass "" and only the live value matters.
+func effectivePublicHostname(staticFallback string) string {
+	if h := getLiveTunnelHostname(); h != "" {
+		return h
+	}
+	return staticFallback
+}
+
+// broadcastPublicHostnameChange triggers a status broadcast on every
+// active session so connected browsers pick up a hostname change
+// immediately. Called by the supervisor on register_ok / relabel
+// when the live value actually changes.
+//
+// It walks the sessions registry under sessionsMu.RLock and fires
+// each Session.BroadcastStatus on its own goroutine to avoid one
+// slow client gating the rest. recoverGoroutine guards each.
+var broadcastPublicHostnameChange = func() {
+	sessionsMu.RLock()
+	defer sessionsMu.RUnlock()
+	for _, s := range sessions {
+		s := s
+		go func() {
+			defer recoverGoroutine("broadcastPublicHostnameChange")
+			s.BroadcastStatus()
+		}()
+	}
+}
+
 // runTunnelSupervisor is the long-running supervisor goroutine. It
 // loops on (start child, drain events, wait for exit, backoff). Exits
 // only when ctx is cancelled; never on its own.
@@ -135,8 +171,12 @@ func runTunnelSupervisor(ctx context.Context, opts tunnelSupervisorOpts) {
 		err := runTunnelChild(ctx, opts)
 		// Hostname is no longer live now that the child has exited.
 		// Clear it so a reader cannot mistake a stale value for the
-		// current tunnel state.
-		setLiveTunnelHostname("")
+		// current tunnel state. If it was previously set, push the
+		// change to connected clients so the frontend can fall back
+		// to legacy mode (or show a "tunnel down" state).
+		if setLiveTunnelHostname("") {
+			broadcastPublicHostnameChange()
+		}
 
 		if ctx.Err() != nil {
 			return
@@ -257,6 +297,7 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 		}
 		if setLiveTunnelHostname(data.Hostname) {
 			log.Printf("[tunnel-supervisor] hostname=%s (kind=%s)", data.Hostname, ev.Kind)
+			broadcastPublicHostnameChange()
 		}
 	case "disconnected":
 		// Keep the cached hostname during a disconnect window. The

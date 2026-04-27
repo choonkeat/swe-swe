@@ -10,12 +10,31 @@ import (
 	"time"
 )
 
+// stubBroadcast replaces broadcastPublicHostnameChange for the duration
+// of a test, capturing how many times the supervisor calls it. The
+// stubbed function is invoked synchronously; the caller checks the
+// count under its own mutex.
+func stubBroadcast(t *testing.T) (count *int, mu *sync.Mutex) {
+	t.Helper()
+	prev := broadcastPublicHostnameChange
+	t.Cleanup(func() { broadcastPublicHostnameChange = prev })
+	c := new(int)
+	m := new(sync.Mutex)
+	broadcastPublicHostnameChange = func() {
+		m.Lock()
+		defer m.Unlock()
+		*c++
+	}
+	return c, m
+}
+
 // TestApplyEvent_RegisterOK_SetsLiveHostname covers the happy path:
 // a register_ok event with a non-empty hostname updates the atomic
-// accessor.
+// accessor and triggers exactly one broadcast.
 func TestApplyEvent_RegisterOK_SetsLiveHostname(t *testing.T) {
 	prev := getLiveTunnelHostname()
 	t.Cleanup(func() { setLiveTunnelHostname(prev) })
+	count, mu := stubBroadcast(t)
 
 	setLiveTunnelHostname("")
 	applyEvent(supervisorEvent{
@@ -26,6 +45,62 @@ func TestApplyEvent_RegisterOK_SetsLiveHostname(t *testing.T) {
 	if got := getLiveTunnelHostname(); got != "alpha-tunnel.example.com" {
 		t.Errorf("after register_ok: getLiveTunnelHostname() = %q, want %q",
 			got, "alpha-tunnel.example.com")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if *count != 1 {
+		t.Errorf("expected 1 broadcast, got %d", *count)
+	}
+}
+
+// TestApplyEvent_RegisterOK_SkipsBroadcastIfUnchanged: if the same
+// hostname comes through twice in a row (e.g. reconnect with the
+// same label), the second register_ok must not redundantly broadcast.
+func TestApplyEvent_RegisterOK_SkipsBroadcastIfUnchanged(t *testing.T) {
+	prev := getLiveTunnelHostname()
+	t.Cleanup(func() { setLiveTunnelHostname(prev) })
+	count, mu := stubBroadcast(t)
+
+	setLiveTunnelHostname("alpha-tunnel.example.com")
+	applyEvent(supervisorEvent{
+		V:    1,
+		Kind: "register_ok",
+		Data: []byte(`{"hostname":"alpha-tunnel.example.com","unique":"alpha"}`),
+	}, tunnelSupervisorOpts{})
+	mu.Lock()
+	defer mu.Unlock()
+	if *count != 0 {
+		t.Errorf("identical-hostname register_ok must not broadcast; got %d", *count)
+	}
+}
+
+// TestEffectivePublicHostname covers the fallback rule: live value
+// from the supervisor wins when set, otherwise the static fallback
+// (which during the migration is the per-session snapshot from
+// resolvePublicHostname).
+func TestEffectivePublicHostname(t *testing.T) {
+	prev := getLiveTunnelHostname()
+	t.Cleanup(func() { setLiveTunnelHostname(prev) })
+
+	cases := []struct {
+		name     string
+		live     string
+		fallback string
+		want     string
+	}{
+		{"both empty", "", "", ""},
+		{"live only", "live.example.com", "", "live.example.com"},
+		{"fallback only", "", "fallback.example.com", "fallback.example.com"},
+		{"live wins over fallback", "live.example.com", "fallback.example.com", "live.example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setLiveTunnelHostname(tc.live)
+			if got := effectivePublicHostname(tc.fallback); got != tc.want {
+				t.Errorf("effectivePublicHostname(live=%q, fallback=%q) = %q, want %q",
+					tc.live, tc.fallback, got, tc.want)
+			}
+		})
 	}
 }
 
