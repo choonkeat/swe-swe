@@ -7,8 +7,8 @@ import (
 )
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
-// based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, and slash commands
-func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo, hostUID int, hostGID int) string {
+// based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, slash commands, and tunnel mode
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo, hostUID int, hostGID int, tunnelServerURL string) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -22,6 +22,12 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
 	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi"))
+
+	// Tunnel mode: when --tunnel-server-url was set, the Dockerfile builds
+	// the swe-swe-tunnel client binary alongside swe-swe-server so the
+	// supervisor can spawn it without any extra setup. See
+	// tasks/2026-04-29-tunnel-subprocess-pivot.md.
+	isTunnel := tunnelServerURL != ""
 
 	// Generate slash commands clone lines
 	var slashCommandsClone string
@@ -75,6 +81,10 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = withDocker
 			case "SLASH_COMMANDS":
 				skip = !hasSlashCommands
+			case "TUNNEL":
+				skip = !isTunnel
+			case "NO_TUNNEL":
+				skip = isTunnel
 			}
 			continue
 		}

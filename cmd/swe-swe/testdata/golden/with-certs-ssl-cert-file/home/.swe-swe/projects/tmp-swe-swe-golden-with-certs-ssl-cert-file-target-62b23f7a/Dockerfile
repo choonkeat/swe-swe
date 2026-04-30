@@ -35,6 +35,7 @@ RUN cd /build-swe-swe-broker-probe && go mod init swe-swe-broker-probe && CGO_EN
 COPY git-credential-swe-swe/main.go /build-git-credential-swe-swe/main.go
 RUN cd /build-git-credential-swe-swe && go mod init git-credential-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-credential-swe-swe/git-credential-swe-swe .
 
+
 # Stage 2: Main development environment
 FROM golang:1.24-bookworm
 

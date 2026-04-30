@@ -1022,7 +1022,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process Dockerfile template with conditional sections
 		if hostFile == "templates/host/Dockerfile" {
-			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID))
+			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID, config.TunnelServerURL))
 			// In dockerfile-only mode, change the server port and add EXPOSE
 			if config.DockerfileOnly {
 				contentStr := string(content)
