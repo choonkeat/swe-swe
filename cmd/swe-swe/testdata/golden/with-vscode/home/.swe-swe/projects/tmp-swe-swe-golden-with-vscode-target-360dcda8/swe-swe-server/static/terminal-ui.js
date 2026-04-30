@@ -4253,7 +4253,18 @@ class TerminalUI extends HTMLElement {
         const loc = window.location;
         // noVNC's vnc_lite.html with query params to configure WebSocket connection
         const v = new URL(import.meta.url).searchParams.get('v') || '';
-        return `${loc.protocol}//${loc.hostname}:${this.vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${this.vncProxyPort}&reconnect=true&resize=scale&autoconnect=true${v ? '&v=' + v : ''}`;
+        const vQs = v ? '&v=' + v : '';
+        // Tunnel mode: page loads via {vncProxyPort}.{publicHostname} subdomain.
+        // vnc_lite.html falls back to window.location.hostname / port when host=
+        // and port= query params are missing, so we omit them and let it derive
+        // the right wss target from its own page origin.
+        if (this.publicHostname) {
+            return `${loc.protocol}//${this.vncProxyPort}.${this.publicHostname}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
+        }
+        // Legacy port-based mode: same hostname, different port. Pass host=
+        // and port= explicitly so noVNC dials the correct WebSocket regardless
+        // of how the iframe parses its own location.
+        return `${loc.protocol}//${loc.hostname}:${this.vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${this.vncProxyPort}&reconnect=true&resize=scale&autoconnect=true${vQs}`;
     }
 
     getPreviewBaseUrl() {
