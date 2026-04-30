@@ -687,7 +687,11 @@ func handleInit() {
 		NpmPackages:         npmPkgs,
 		WithDocker:          *withDocker,
 		WithVSCode:          *withVSCode,
-		DockerfileOnly:      *sslFlag == "no" && !*withVSCode,
+		// Tunnel mode forces the full compose template path (not the
+		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
+		// branches in docker-compose.yml take effect: drop traefik:
+		// service, drop per-port labels, add SWE_TUNNEL_SERVER_URL env.
+		DockerfileOnly: *sslFlag == "no" && !*withVSCode && *tunnelServerURL == "",
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
@@ -1109,13 +1113,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
     restart: unless-stopped
 `, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
-				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
+				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL))
 			}
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL))
 		}
 
 		// Process entrypoint.sh template with conditional sections

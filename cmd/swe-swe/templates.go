@@ -123,60 +123,94 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int) string {
+func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
-	skip := false
 
 	// SSL mode detection
 	isSSL := strings.HasPrefix(ssl, "selfsign") || strings.HasPrefix(ssl, "letsencrypt")
 	isLetsEncrypt := strings.HasPrefix(ssl, "letsencrypt")
 	isSelfSign := strings.HasPrefix(ssl, "selfsign")
 	isLetsEncryptStaging := strings.HasPrefix(ssl, "letsencrypt-staging")
+	// Tunnel mode: when SWE_TUNNEL_SERVER_URL was set at init time, the
+	// generated compose drops the entire traefik: service plus per-port
+	// labels and binds swe-swe-server to 127.0.0.1 only. The tunnel client
+	// (a child process of swe-swe-server) handles all inbound traffic via
+	// the public tunneld. See tasks/2026-04-29-tunnel-subprocess-pivot.md.
+	isTunnel := tunnelServerURL != ""
+
+	// Conditional state is a stack of bools (one entry per open {{IF X}}).
+	// A line is emitted only when EVERY frame on the stack is "include"
+	// (false for skip). This supports nested conditionals -- the original
+	// flat skip-flag design broke when {{IF NO_TUNNEL}} wrapped existing
+	// {{IF SSL}}/{{ENDIF}} pairs because the inner ENDIF cleared skip
+	// while we were still nested in the outer block.
+	var stack []bool
+	skipNow := func() bool {
+		for _, s := range stack {
+			if s {
+				return true
+			}
+		}
+		return false
+	}
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
 		// Handle conditional markers (support both # and yaml-style comments)
 		if strings.Contains(trimmed, "{{IF DOCKER}}") {
-			skip = !withDocker
+			stack = append(stack, !withDocker)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF SSL}}") {
-			skip = !isSSL
+			stack = append(stack, !isSSL)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF NO_SSL}}") {
-			skip = isSSL
+			stack = append(stack, isSSL)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF LETSENCRYPT}}") {
-			skip = !isLetsEncrypt
+			stack = append(stack, !isLetsEncrypt)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF SELFSIGN}}") {
-			skip = !isSelfSign
+			stack = append(stack, !isSelfSign)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF LETSENCRYPT_STAGING}}") {
-			skip = !isLetsEncryptStaging
+			stack = append(stack, !isLetsEncryptStaging)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{IF LETSENCRYPT_PRODUCTION}}") {
-			skip = isLetsEncryptStaging || !isLetsEncrypt
+			stack = append(stack, isLetsEncryptStaging || !isLetsEncrypt)
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF TUNNEL}}") {
+			stack = append(stack, !isTunnel)
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF NO_TUNNEL}}") {
+			stack = append(stack, isTunnel)
 			continue
 		}
 
 		if strings.Contains(trimmed, "{{ENDIF}}") {
-			skip = false
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
 			continue
 		}
+		skip := skipNow()
 
 		if !skip {
 			if strings.Contains(line, "{{PREVIEW_ENTRYPOINTS}}") {
@@ -469,6 +503,9 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					reposDirValue = "${WORKSPACE_DIR:-.}/.swe-swe/repos"
 				}
 				line = strings.ReplaceAll(line, "{{REPOS_DIR}}", reposDirValue)
+			}
+			if strings.Contains(line, "{{TUNNEL_SERVER_URL}}") {
+				line = strings.ReplaceAll(line, "{{TUNNEL_SERVER_URL}}", tunnelServerURL)
 			}
 			result = append(result, line)
 		}
