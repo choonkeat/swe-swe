@@ -2378,9 +2378,10 @@ func main() {
 			if len(sessionUUID) >= 5 {
 				uuidShort = sessionUUID[:5]
 			}
-			var localUserName, localUserEmail string
+			var localUserName, localUserEmail, sessionWorkDir string
 			if exists {
 				localUserName, localUserEmail = readLocalGitUser(existingSession.WorkDir)
+				sessionWorkDir = existingSession.WorkDir
 			}
 			data := struct {
 				UUID           string
@@ -2390,6 +2391,7 @@ func main() {
 				Version        string
 				LocalUserName  string
 				LocalUserEmail string
+				WhereKey       string
 			}{
 				UUID:           sessionUUID,
 				UUIDShort:      uuidShort,
@@ -2398,6 +2400,7 @@ func main() {
 				Version:        Version + "-" + GitCommit,
 				LocalUserName:  localUserName,
 				LocalUserEmail: localUserEmail,
+				WhereKey:       sessionWorkDir,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)

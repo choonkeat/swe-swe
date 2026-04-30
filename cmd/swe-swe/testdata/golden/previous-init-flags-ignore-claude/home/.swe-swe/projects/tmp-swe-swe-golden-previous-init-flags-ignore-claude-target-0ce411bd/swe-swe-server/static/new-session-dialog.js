@@ -346,17 +346,9 @@
                 warningDiv.style.display = 'none';
             }
 
-            // Compute whereKey for sticky color
-            var whereKey;
-            if (body.mode === 'workspace') {
-                whereKey = body.path ? body.path : 'workspace';
-            } else if (body.mode === 'clone') {
-                whereKey = body.url || 'clone';
-            } else if (body.mode === 'create') {
-                whereKey = body.name || 'create';
-            } else {
-                whereKey = dialogState.mode;
-            }
+            // Canonical whereKey is the resolved local repo path so the
+            // session page (which only knows WorkDir) can compute the same key.
+            var whereKey = data.path || dialogState.mode;
 
             // Show env file hint
             if (data.hasEnvFile) {

@@ -5,9 +5,10 @@ import { initThemeMode, setThemeMode, getStoredMode, THEME_MODES } from './theme
 // Apply theme mode (light/dark/system) first
 initThemeMode();
 
-// Get session ID from the terminal-ui element
+// Get session ID and repo whereKey from the terminal-ui element
 const terminalUI = document.querySelector('terminal-ui');
 const sessionId = terminalUI ? terminalUI.getAttribute('uuid') : '';
+const whereKey = terminalUI ? (terminalUI.getAttribute('data-where-key') || '') : '';
 
 // Get color from URL param
 const urlParams = new URLSearchParams(window.location.search);
@@ -15,6 +16,7 @@ const urlColor = urlParams.get('color');
 
 const primaryColor = getEffectivePrimaryColor({
     sessionId: sessionId,
+    repoType: whereKey || undefined,
     urlParam: urlColor,
     fallback: '#7c3aed'
 });
@@ -33,7 +35,8 @@ window.sweSweTheme = {
     COLOR_STORAGE_KEYS,
     saveColorPreference,
     sessionId,
-    getCurrentColor: () => getEffectivePrimaryColor({ sessionId, fallback: '#7c3aed' }),
+    whereKey,
+    getCurrentColor: () => getEffectivePrimaryColor({ sessionId, repoType: whereKey || undefined, fallback: '#7c3aed' }),
     initThemeMode,
     setThemeMode,
     getStoredMode,
