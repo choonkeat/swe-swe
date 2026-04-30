@@ -4686,9 +4686,19 @@ class TerminalUI extends HTMLElement {
             return;
         }
 
-        // Localhost URLs: route through the proxy shell page
-        const base = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
-        if (!base) return;
+        // Localhost URLs: route through the proxy shell page.
+        // probeBase is always path-based (same-origin, no CORS/credentials
+        // problems) so the readiness probe works regardless of tunnel mode.
+        // iframeBase is what the iframe will actually load: in tunnel mode
+        // this is the subdomain URL so the shell's inner iframe is in the
+        // right origin and the cookie (Cookie.Domain=publicHostname) reaches
+        // the auth-proxy port.
+        const probeBase = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
+        if (!probeBase) return;
+        const subdomainBase = (this.publicHostname && this.previewProxyPort)
+            ? buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.publicHostname)
+            : null;
+        const base = subdomainBase || probeBase;
         let path;
         if (iframePath !== null) {
             path = iframePath;
@@ -4722,17 +4732,31 @@ class TerminalUI extends HTMLElement {
             this._previewWaiting = true;
 
             // Two-phase probe:
-            // Phase 1: Probe path-based URL to wait for proxy handler to be up.
-            // Phase 2: Quick probe port-based URL to determine preferred mode.
+            // Phase 1: Probe path-based URL (same-origin) to wait for the
+            //          proxy handler to be up. We always probe path-based
+            //          even when the iframe will load via subdomain, because
+            //          path-based shares the page's origin and cookie.
+            // Phase 2: Legacy port-based mode probe -- skipped entirely in
+            //          tunnel mode since `base` is already the subdomain URL.
             this._previewProbeController = new AbortController();
-            const portBasedBase = buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
-            probeUntilReady(base + '/', {
+            // portBasedBase is the legacy "host:port" URL; meaningless when
+            // window.location.hostname already encodes the port via subdomain
+            // (tunnel mode), so we set it to null in that case to skip the probe.
+            const portBasedBase = subdomainBase
+                ? null
+                : buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
+            probeUntilReady(probeBase + '/', {
                 method: 'GET',
                 maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
                 isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
             }).then(() => {
-                // Phase 2: try port-based if available.
+                if (subdomainBase) {
+                    // Tunnel mode: iframe already targets the subdomain URL.
+                    this._proxyMode = 'subdomain';
+                    return;
+                }
+                // Legacy: try port-based if available.
                 // Uses /__probe__ which bypasses ForwardAuth in Traefik -- avoids
                 // Safari's stricter cross-port CORS+credentials blocking.
                 if (portBasedBase && this._proxyMode !== 'path') {
