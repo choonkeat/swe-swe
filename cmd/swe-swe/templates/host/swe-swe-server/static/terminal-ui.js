@@ -2,6 +2,7 @@ import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './mo
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
+import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
@@ -167,31 +168,6 @@ function normalizeSizesByPreset(value) {
 // activeBySlot[slot]; normalizeSlotState handles the migration on read.
 // sizesByPreset was added later -- absence is normal and means "use the
 // preset's default fr ratios from CSS".
-// Enforce the "one pane, one slot" rule across all slots. First slot in
-// preset.slots order keeps the pane; later slots have the pane removed
-// from their tabs (and active is fixed up if it was the removed pane).
-// Heals stale localStorage written before addPaneToSlot's dedup rule
-// existed -- without this, a bad saved state stays bad across every
-// reload because addPaneToSlot only runs on user-driven add events.
-function dedupePanesAcrossSlots(activeBySlot, slotIds) {
-    const seen = new Set();
-    slotIds.forEach(slotId => {
-        const state = activeBySlot[slotId];
-        if (!state || !state.tabs) return;
-        const kept = [];
-        state.tabs.forEach(p => {
-            if (seen.has(p)) return;
-            seen.add(p);
-            kept.push(p);
-        });
-        if (kept.length === state.tabs.length) return;
-        state.tabs = kept;
-        if (!kept.includes(state.active)) {
-            state.active = kept[0] || null;
-        }
-    });
-}
-
 // On parse failure or missing preset, fall back to the classic defaults.
 function loadLayoutState() {
     try {
