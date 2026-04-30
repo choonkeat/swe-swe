@@ -74,35 +74,6 @@ func TestApplyEvent_RegisterOK_SkipsBroadcastIfUnchanged(t *testing.T) {
 	}
 }
 
-// TestEffectivePublicHostname covers the fallback rule: live value
-// from the supervisor wins when set, otherwise the static fallback
-// (which during the migration is the per-session snapshot from
-// resolvePublicHostname).
-func TestEffectivePublicHostname(t *testing.T) {
-	prev := getLiveTunnelHostname()
-	t.Cleanup(func() { setLiveTunnelHostname(prev) })
-
-	cases := []struct {
-		name     string
-		live     string
-		fallback string
-		want     string
-	}{
-		{"both empty", "", "", ""},
-		{"live only", "live.example.com", "", "live.example.com"},
-		{"fallback only", "", "fallback.example.com", "fallback.example.com"},
-		{"live wins over fallback", "live.example.com", "fallback.example.com", "live.example.com"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			setLiveTunnelHostname(tc.live)
-			if got := effectivePublicHostname(tc.fallback); got != tc.want {
-				t.Errorf("effectivePublicHostname(live=%q, fallback=%q) = %q, want %q",
-					tc.live, tc.fallback, got, tc.want)
-			}
-		})
-	}
-}
 
 // TestApplyEvent_Relabel_UpdatesHostname covers a server-driven label
 // rotation: relabel events overwrite the cached hostname.

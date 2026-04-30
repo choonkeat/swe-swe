@@ -114,22 +114,6 @@ func setLiveTunnelHostname(h string) bool {
 	return prev != h
 }
 
-// effectivePublicHostname returns the hostname the frontend should
-// see in a WS status frame. The supervisor's live value (if non-empty)
-// takes precedence over any static fallback (the legacy
-// resolvePublicHostname result, captured per-session as
-// Session.PublicHostname). Empty string means legacy port-mode.
-//
-// Static fallback is retained while commit 3 of the subprocess pivot
-// is pending; once the legacy --public-hostname / state-file path is
-// removed, callers will pass "" and only the live value matters.
-func effectivePublicHostname(staticFallback string) string {
-	if h := getLiveTunnelHostname(); h != "" {
-		return h
-	}
-	return staticFallback
-}
-
 // broadcastPublicHostnameChange triggers a status broadcast on every
 // active session so connected browsers pick up a hostname change
 // immediately. Called by the supervisor on register_ok / relabel

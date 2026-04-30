@@ -114,16 +114,6 @@ var (
 	proxyPortOffset    = 50000
 )
 
-// serverPublicHostname is the public hostname swe-swe is reachable at when
-// running behind a reverse tunnel (e.g. "abc-tunnel.example.com"). When set,
-// the frontend builds cross-port URLs as "{port}.{publicHostname}" instead
-// of using proxy-port offsets. Empty in legacy mode (no tunnel).
-//
-// Resolved once in main() from the --public-hostname flag and the
-// SWE_PUBLIC_HOSTNAME env var; copied onto each Session at creation so
-// BroadcastStatus can include it in the WebSocket status payload.
-var serverPublicHostname string
-
 func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 func cdpProxyPort(port int) int        { return proxyPortOffset + port }
@@ -141,39 +131,6 @@ func flagPassed(name string) bool {
 		}
 	})
 	return seen
-}
-
-// resolvePublicHostname picks the public hostname for swe-swe's tunnel-mode
-// frontend URL templating. Precedence:
-//
-//  1. --public-hostname flag (non-empty)
-//  2. SWE_PUBLIC_HOSTNAME env (non-empty)
-//  3. tunnel state file at stateFile (the JSON file swe-swe-tunnel writes
-//     after RegisterOK -- shape: {"hostname":"...","unique":"...",...})
-//  4. "" (legacy/off)
-//
-// stateFile == "" disables the file-fallback step entirely. A missing
-// state file is the normal case when no tunnel is running -- silent
-// fall-through, no log noise. A *malformed* file is logged and
-// fall-through (we never crash startup over a stale/corrupt state file).
-func resolvePublicHostname(flagPublicHostname, envPublicHostname, stateFile string) string {
-	if flagPublicHostname != "" {
-		return flagPublicHostname
-	}
-	if envPublicHostname != "" {
-		return envPublicHostname
-	}
-	if stateFile == "" {
-		return ""
-	}
-	hostname, err := readTunnelStateHostname(stateFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("[tunnel] state file %q unreadable, falling back to legacy mode: %v", stateFile, err)
-		}
-		return ""
-	}
-	return hostname
 }
 
 // agentChatClient is a shared HTTP client for the agent chat reverse proxy.
@@ -515,10 +472,6 @@ type Session struct {
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
 	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
-	// Tunnel-mode public hostname (copied from serverPublicHostname at session
-	// creation). Empty in legacy mode. Emitted in BroadcastStatus so the
-	// frontend can branch URL builders on its presence.
-	PublicHostname string
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -883,7 +836,7 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"yoloMode":         s.yoloMode,
 		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":   s.BrowserStarted,
-		"publicHostname":   effectivePublicHostname(s.PublicHostname),
+		"publicHostname":   getLiveTunnelHostname(),
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
@@ -1746,16 +1699,6 @@ func main() {
 	tsHostname := flag.String("tailscale-hostname", "", "Tailscale hostname to advertise (env: TS_HOSTNAME)")
 	tsStateDir := flag.String("tailscale-state-dir", "", "Tailscale state directory (env: TS_STATE_DIR; default /var/lib/tailscale)")
 	tsDisable := flag.Bool("tailscale-disable", false, "Disable Tailscale bootstrap even if TS_AUTHKEY is set (env: TS_DISABLE=1)")
-	publicHostname := flag.String("public-hostname", "",
-		"Public hostname swe-swe is reachable at when behind a reverse tunnel "+
-			"(e.g. abc-tunnel.example.com). Env: SWE_PUBLIC_HOSTNAME. "+
-			"When set, the frontend builds cross-port URLs as {port}.{public-hostname} "+
-			"instead of using proxy-port offsets.")
-	tunnelStateFile := flag.String("tunnel-state-file", "/workspace/.swe-swe/tunnel-state.json",
-		"Path to the JSON state file produced by swe-swe-tunnel. Used to "+
-			"discover the public hostname when --public-hostname / "+
-			"SWE_PUBLIC_HOSTNAME are unset. Env: SWE_TUNNEL_STATE_FILE. "+
-			"Empty string disables the fallback.")
 	tunnelServerURL := flag.String("tunnel-server-url", "",
 		"Tunnel server URL (e.g. https://tunnel.example.com). When set, "+
 			"swe-swe-server spawns the swe-swe-tunnel client as a child "+
@@ -1771,11 +1714,6 @@ func main() {
 		"Path to the swe-swe-tunnel binary. Defaults to swe-swe-tunnel "+
 			"on $PATH. Env: SWE_TUNNEL_BIN.")
 	flag.Parse()
-	stateFilePath := *tunnelStateFile
-	if envSF, ok := os.LookupEnv("SWE_TUNNEL_STATE_FILE"); ok && !flagPassed("tunnel-state-file") {
-		stateFilePath = envSF
-	}
-	serverPublicHostname = resolvePublicHostname(*publicHostname, os.Getenv("SWE_PUBLIC_HOSTNAME"), stateFilePath)
 
 	// Tunnel-mode subprocess supervisor. Trigger is non-empty
 	// --tunnel-server-url (or its env equivalent). When set, spawn the
@@ -4564,7 +4502,6 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		AgentChatCmd:    agentChatCmd,
 		agentChatCancel: sessionCancel,
 		SessionMode:     p.SessionMode,
-		PublicHostname:  serverPublicHostname,
 		Metadata: &RecordingMetadata{
 			UUID:          recordingUUID,
 			Name:          name,

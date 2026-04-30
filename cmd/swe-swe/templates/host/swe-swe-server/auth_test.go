@@ -131,16 +131,16 @@ func TestResolveCookieDomain(t *testing.T) {
 
 // TestAuthLoginPostHandlerSetsCookieDomain verifies the Set-Cookie header
 // from a successful login response carries the right Domain attribute:
-// host-only in legacy mode, "." + serverPublicHostname in tunnel mode.
-// This is the load-bearing claim for cross-subdomain cookie sharing -- a
-// browser at https://3000.{hostname} only sends the auth cookie if the
-// Set-Cookie response on https://{root}.{hostname} included the matching
-// Domain attribute.
+// host-only in legacy mode (no live tunnel), the assigned hostname in
+// tunnel mode. This is the load-bearing claim for cross-subdomain cookie
+// sharing -- a browser at https://3000.{hostname} only sends the auth
+// cookie if the Set-Cookie response on https://{root}.{hostname}
+// included the matching Domain attribute.
 func TestAuthLoginPostHandlerSetsCookieDomain(t *testing.T) {
-	// Snapshot + restore the package-level config var so subtests don't
+	// Snapshot + restore the live tunnel hostname so subtests don't
 	// leak into each other (or into the rest of the suite).
-	saved := serverPublicHostname
-	t.Cleanup(func() { serverPublicHostname = saved })
+	saved := getLiveTunnelHostname()
+	t.Cleanup(func() { setLiveTunnelHostname(saved) })
 
 	cases := []struct {
 		name        string
@@ -152,7 +152,7 @@ func TestAuthLoginPostHandlerSetsCookieDomain(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			serverPublicHostname = tc.hostname
+			setLiveTunnelHostname(tc.hostname)
 
 			form := strings.NewReader("password=test-secret")
 			req := httptest.NewRequest("POST", "/swe-swe-auth/login", form)

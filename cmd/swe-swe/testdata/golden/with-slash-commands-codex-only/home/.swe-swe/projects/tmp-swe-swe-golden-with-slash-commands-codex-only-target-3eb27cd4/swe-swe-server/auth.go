@@ -357,7 +357,7 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		Name:     authCookieName,
 		Value:    authSignCookie(secret),
 		Path:     "/",
-		Domain:   resolveCookieDomain(serverPublicHostname),
+		Domain:   resolveCookieDomain(getLiveTunnelHostname()),
 		MaxAge:   authCookieMaxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
