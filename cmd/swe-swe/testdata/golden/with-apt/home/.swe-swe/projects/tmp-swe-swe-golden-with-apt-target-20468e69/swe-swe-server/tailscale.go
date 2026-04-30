@@ -216,8 +216,12 @@ func startLandingServer(ctx context.Context, landingAddr, sweListenAddr string, 
 			w.WriteHeader(http.StatusOK)
 		})
 	} else {
-		body := renderLandingHTML(sweListenAddr, cfg)
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Render per-request so the tunnel hostname (which can
+			// change after startup) is reflected immediately. Cheap
+			// -- this server only handles PaaS health probes plus
+			// the occasional human visit; ms-level rendering is fine.
+			body := renderLandingHTML(sweListenAddr, cfg, getLiveTunnelHostname())
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write([]byte(body))
 		})
@@ -247,7 +251,12 @@ func startLandingServer(ctx context.Context, landingAddr, sweListenAddr string, 
 // renderLandingHTML returns the placeholder page served on $PORT.  Keeps
 // everything inline (no templates, no assets) so it's impossible to leak
 // swe-swe state through this server.
-func renderLandingHTML(sweListenAddr string, cfg tailscaleConfig) string {
+//
+// liveTunnelHost (when non-empty) is the hostname currently registered
+// with the tunneld; the page links to https://{port}.{liveTunnelHost}/
+// so the operator can click straight through to their UI.  Empty
+// string falls back to the legacy Tailscale-oriented copy.
+func renderLandingHTML(sweListenAddr string, cfg tailscaleConfig, liveTunnelHost string) string {
 	learnMore := os.Getenv("SWE_LANDING_URL")
 	if learnMore == "" {
 		learnMore = "https://swe-swe.netlify.app"
@@ -256,13 +265,8 @@ func renderLandingHTML(sweListenAddr string, cfg tailscaleConfig) string {
 	if i := strings.LastIndex(swePort, ":"); i >= 0 {
 		swePort = swePort[i+1:]
 	}
-	reach := ""
-	if cfg.Hostname != "" {
-		reach = fmt.Sprintf("<code>%s:%s</code>", htmlpkg.EscapeString(cfg.Hostname), htmlpkg.EscapeString(swePort))
-	} else {
-		reach = fmt.Sprintf("your tailnet hostname on port <code>%s</code>", htmlpkg.EscapeString(swePort))
-	}
-	return `<!doctype html>
+
+	body := `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -270,14 +274,38 @@ func renderLandingHTML(sweListenAddr string, cfg tailscaleConfig) string {
 <style>
 body { font-family: system-ui, sans-serif; max-width: 40em; margin: 3em auto; padding: 0 1em; line-height: 1.5; color: #222; }
 code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; }
-a { color: #0366d6; }
+a { color: #0366d6; font-weight: 600; }
+.tunnel { background: #ecfdf5; border-left: 4px solid #10b981; padding: 0.75em 1em; margin: 1em 0; border-radius: 4px; }
 </style>
 </head>
 <body>
 <h1>swe-swe is running</h1>
-<p>This public URL is a placeholder. Reach the real UI via Tailscale at ` + reach + `.</p>
-<p>Learn more: <a href="` + htmlpkg.EscapeString(learnMore) + `">` + htmlpkg.EscapeString(learnMore) + `</a></p>
+`
+
+	if liveTunnelHost != "" {
+		// Tunnel mode is live -- give the operator a click-through.
+		tunnelURL := fmt.Sprintf("https://%s.%s/",
+			htmlpkg.EscapeString(swePort), htmlpkg.EscapeString(liveTunnelHost))
+		body += `<div class="tunnel">
+<p><strong>Open your swe-swe at <a href="` + tunnelURL + `">` + tunnelURL + `</a></strong></p>
+<p>This public URL is a placeholder. The real UI is reached through the tunnel above; auth (cookie-scoped to the tunnel hostname) gates access.</p>
+</div>
+`
+	} else {
+		// No tunnel registered -- fall back to the Tailscale-oriented copy.
+		reach := ""
+		if cfg.Hostname != "" {
+			reach = fmt.Sprintf("<code>%s:%s</code>", htmlpkg.EscapeString(cfg.Hostname), htmlpkg.EscapeString(swePort))
+		} else {
+			reach = fmt.Sprintf("your tailnet hostname on port <code>%s</code>", htmlpkg.EscapeString(swePort))
+		}
+		body += `<p>This public URL is a placeholder. Reach the real UI via Tailscale at ` + reach + `.</p>
+`
+	}
+
+	body += `<p>Learn more: <a href="` + htmlpkg.EscapeString(learnMore) + `">` + htmlpkg.EscapeString(learnMore) + `</a></p>
 </body>
 </html>
 `
+	return body
 }

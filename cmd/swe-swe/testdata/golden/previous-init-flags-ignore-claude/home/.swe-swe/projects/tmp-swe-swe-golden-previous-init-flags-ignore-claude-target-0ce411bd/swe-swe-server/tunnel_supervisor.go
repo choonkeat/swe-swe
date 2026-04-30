@@ -349,6 +349,11 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{State: "connected"})
 		if hostnameChanged {
 			log.Printf("[tunnel-supervisor] hostname=%s (kind=%s)", data.Hostname, ev.Kind)
+			// Operator-friendly URL on a separate line so it's easy
+			// to spot in PaaS log streams. The 9898 component is the
+			// swe-swe-server port; tunneld demuxes
+			// {port}.{hostname} -> 127.0.0.1:{port}.
+			log.Printf("[tunnel-supervisor] OPEN AT https://9898.%s/", data.Hostname)
 		}
 		if hostnameChanged || statusChanged {
 			broadcastPublicHostnameChange()

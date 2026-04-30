@@ -214,7 +214,7 @@ func TestLandingServerHandlers(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
-	body := renderLandingHTML(":1977", tailscaleConfig{Hostname: "mybox.ts.net"})
+	body := renderLandingHTML(":1977", tailscaleConfig{Hostname: "mybox.ts.net"}, "")
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(body))
@@ -260,7 +260,7 @@ func TestLandingServerHandlers(t *testing.T) {
 
 func TestRenderLandingHTMLFallbackHostname(t *testing.T) {
 	// No hostname configured -> generic "your tailnet hostname" fallback.
-	s := renderLandingHTML(":1977", tailscaleConfig{})
+	s := renderLandingHTML(":1977", tailscaleConfig{}, "")
 	if !strings.Contains(s, "your tailnet hostname") {
 		t.Errorf("no hostname -> should render fallback text; body=\n%s", s)
 	}
@@ -271,9 +271,40 @@ func TestRenderLandingHTMLFallbackHostname(t *testing.T) {
 
 func TestRenderLandingHTMLLearnMoreOverride(t *testing.T) {
 	t.Setenv("SWE_LANDING_URL", "https://example.org/docs")
-	s := renderLandingHTML(":1977", tailscaleConfig{})
+	s := renderLandingHTML(":1977", tailscaleConfig{}, "")
 	if !strings.Contains(s, "example.org/docs") {
 		t.Errorf("SWE_LANDING_URL override should appear; body=\n%s", s)
+	}
+}
+
+// TestRenderLandingHTMLTunnelMode covers the PaaS-friendly path: when
+// the supervisor has registered a tunnel hostname, the landing page
+// must surface a click-through https://{port}.{hostname}/ link, NOT
+// the legacy "Reach via Tailscale" copy.
+func TestRenderLandingHTMLTunnelMode(t *testing.T) {
+	s := renderLandingHTML(":9898", tailscaleConfig{}, "alpha-tunnel.example.com")
+	wantURL := "https://9898.alpha-tunnel.example.com/"
+	if !strings.Contains(s, wantURL) {
+		t.Errorf("tunnel mode should expose %q; body=\n%s", wantURL, s)
+	}
+	if strings.Contains(s, "Tailscale") {
+		t.Errorf("tunnel mode should NOT mention Tailscale; body=\n%s", s)
+	}
+	if strings.Contains(s, "your tailnet hostname") {
+		t.Errorf("tunnel mode should NOT show tailnet fallback copy; body=\n%s", s)
+	}
+}
+
+// TestRenderLandingHTMLTunnelOverridesTailscale: tunnel hostname wins
+// even when a tailscale hostname is also configured (legitimate state
+// during a transition where both modes are active).
+func TestRenderLandingHTMLTunnelOverridesTailscale(t *testing.T) {
+	s := renderLandingHTML(":9898", tailscaleConfig{Hostname: "mybox.ts.net"}, "alpha-tunnel.example.com")
+	if !strings.Contains(s, "alpha-tunnel.example.com") {
+		t.Errorf("tunnel hostname should appear; body=\n%s", s)
+	}
+	if strings.Contains(s, "mybox.ts.net") {
+		t.Errorf("tailscale hostname should be hidden when tunnel is live; body=\n%s", s)
 	}
 }
 
