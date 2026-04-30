@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -472,6 +473,7 @@ type Session struct {
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
 	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
+	VNCProxyServer       *http.Server // Per-port listener for vnc proxy (auth-checked websockify reverse proxy)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -994,6 +996,9 @@ func (s *Session) Close() {
 	}
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
+	}
+	if s.VNCProxyServer != nil {
+		s.VNCProxyServer.Shutdown(shutdownCtx)
 	}
 
 	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
@@ -4563,10 +4568,17 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			ThemeCookie: "swe-swe-theme",
 			Hub:         sharedHub,
 		})
+		// Tunnel mode safety: tunneld dials the per-port listeners directly
+		// without Traefik's ForwardAuth in front. Wrap each per-port handler
+		// in requireAuthCookie so the apex login cookie is validated before
+		// any traffic reaches the upstream. No-op when SWE_SWE_PASSWORD is
+		// empty (legacy compose mode where Traefik handles auth externally).
+		authPassword := os.Getenv("SWE_SWE_PASSWORD")
+
 		previewPP := previewProxyPort(previewPort)
 		previewSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", previewPP),
-			Handler: corsWrapper(portPreviewProxy),
+			Handler: corsWrapper(requireAuthCookie(authPassword, portPreviewProxy)),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sess.UUID))
@@ -4585,7 +4597,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		acPP := agentChatProxyPort(acPort)
 		acSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", acPP),
-			Handler: corsWrapper(agentChatProxyHandler(acTarget)),
+			Handler: corsWrapper(requireAuthCookie(authPassword, agentChatProxyHandler(acTarget))),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("agent chat proxy for session %s", sess.UUID))
@@ -4600,6 +4612,42 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			}
 		}()
 		sess.AgentChatProxyServer = acSrv
+
+		// VNC proxy at vncProxyPort (default 27000-27019). Reverse-proxies
+		// HTTP + WebSocket upgrade to localhost:vncPort (websockify on
+		// 7000-7019). httputil.ReverseProxy supports WS upgrade since Go
+		// 1.12, so /websockify, /vnc_lite.html, and the noVNC static assets
+		// all flow through the same handler. Auth-wrapped exactly like
+		// preview/agent-chat above; in legacy/Traefik mode that wrap is a
+		// no-op since SWE_SWE_PASSWORD is empty.
+		vncTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", vncPort))
+		vncReverseProxy := httputil.NewSingleHostReverseProxy(vncTarget)
+		// websockify presents itself with its own Host; rewriting the Host
+		// header to match the target avoids virtual-host filters and CORS
+		// quirks if websockify ever adds them.
+		vncReverseProxy.Director = func(req *http.Request) {
+			req.URL.Scheme = "http"
+			req.URL.Host = vncTarget.Host
+			req.Host = vncTarget.Host
+		}
+		vncPP := vncProxyPort(vncPort)
+		vncSrv := &http.Server{
+			Addr:    fmt.Sprintf(":%d", vncPP),
+			Handler: requireAuthCookie(authPassword, vncReverseProxy),
+		}
+		go func() {
+			defer recoverGoroutine(fmt.Sprintf("vnc proxy for session %s", sess.UUID))
+			ln, err := net.Listen("tcp", vncSrv.Addr)
+			if err != nil {
+				log.Printf("Session %s: vnc proxy port %d unavailable: %v", sess.UUID, vncPP, err)
+				return
+			}
+			log.Printf("Session %s: vnc proxy listening on :%d", sess.UUID, vncPP)
+			if err := vncSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("Session %s: vnc proxy server error: %v", sess.UUID, err)
+			}
+		}()
+		sess.VNCProxyServer = vncSrv
 
 		// Public port: Traefik routes directly to the app (no swe-swe-server proxy needed)
 	}

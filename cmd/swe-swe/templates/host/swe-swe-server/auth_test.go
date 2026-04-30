@@ -233,6 +233,80 @@ func TestAuthMiddlewarePassesAuthenticated(t *testing.T) {
 	}
 }
 
+func TestRequireAuthCookieRejectsUnauthenticated(t *testing.T) {
+	secret := "test-password"
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("protected"))
+	})
+	handler := requireAuthCookie(secret, inner)
+
+	req := httptest.NewRequest("GET", "/some/page", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestRequireAuthCookieAllowsAuthenticated(t *testing.T) {
+	secret := "test-password"
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("protected"))
+	})
+	handler := requireAuthCookie(secret, inner)
+
+	req := httptest.NewRequest("GET", "/some/page", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: authSignCookie(secret)})
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
+	if rr.Body.String() != "protected" {
+		t.Errorf("expected 'protected', got %q", rr.Body.String())
+	}
+}
+
+func TestRequireAuthCookieProbeBypass(t *testing.T) {
+	secret := "test-password"
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Agent-Reverse-Proxy", "1")
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := requireAuthCookie(secret, inner)
+
+	req := httptest.NewRequest("GET", "/__probe__", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 (probe is exempt), got %d", rr.Code)
+	}
+	if rr.Header().Get("X-Agent-Reverse-Proxy") == "" {
+		t.Errorf("inner handler not reached -- probe not exempt")
+	}
+}
+
+func TestRequireAuthCookieEmptySecretIsNoop(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("public"))
+	})
+	handler := requireAuthCookie("", inner)
+
+	req := httptest.NewRequest("GET", "/some/page", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 (no-op when secret empty), got %d", rr.Code)
+	}
+}
+
 func TestAuthMiddlewareExemptPaths(t *testing.T) {
 	secret := "test-password"
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

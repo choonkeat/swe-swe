@@ -437,6 +437,42 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 	})
 }
 
+// requireAuthCookie wraps a handler with cookie-only auth.
+//
+// Used for the per-session port-based proxies (preview/23000, agent-chat/24000,
+// vnc/27000). In legacy/Traefik mode these listeners were reachable only via
+// Traefik with ForwardAuth checking the cookie before forwarding. In tunnel
+// mode, tunneld dials the per-port listeners directly inside the container
+// with no auth gate, so we have to enforce auth here.
+//
+// Differs from authMiddleware in two ways:
+//   - 401 instead of redirect on missing/invalid cookie. The proxies are loaded
+//     cross-origin into iframes and a relative /swe-swe-auth/login redirect
+//     would resolve to {port}.{publicHostname} which doesn't serve the auth
+//     handlers (those are bound to the apex 9898 mux).
+//   - /__probe__ is exempt so the existing client-side reachability probe in
+//     terminal-ui.js keeps working without credentials.
+//
+// If secret is empty (no SWE_SWE_PASSWORD), returns next unwrapped -- harmless
+// no-op for compose-mode setups where Traefik fronts everything.
+func requireAuthCookie(secret string, next http.Handler) http.Handler {
+	if secret == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__probe__" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		cookie, err := r.Cookie(authCookieName)
+		if err != nil || !authVerifyCookie(cookie.Value, secret) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // setupEmbeddedAuth registers the login handler and wraps the default mux with auth middleware.
 // Returns the handler to use for the HTTP server.
 // If password is empty, returns nil (no auth needed -- compose mode with Traefik handles it).
