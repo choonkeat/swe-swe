@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -355,6 +356,95 @@ func TestRunTunnelSupervisor_RestartsAfterChildExit(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("supervisor did not exit within 2s of context cancel")
+	}
+}
+
+// TestApplyEvent_FatalRecordsReason verifies that a kind=fatal event
+// stores the reason into opts.fatalReason so the outer supervisor loop
+// can detect a permanent deny and stop restarting.
+func TestApplyEvent_FatalRecordsReason(t *testing.T) {
+	var fatal atomic.Pointer[string]
+	applyEvent(supervisorEvent{
+		V:    1,
+		Kind: "fatal",
+		Data: []byte(`{"reason":"key_mismatch","unique":"alpha"}`),
+	}, tunnelSupervisorOpts{fatalReason: &fatal})
+	rp := fatal.Load()
+	if rp == nil {
+		t.Fatal("fatalReason not set after kind=fatal")
+	}
+	if *rp != "key_mismatch" {
+		t.Errorf("fatalReason = %q, want %q", *rp, "key_mismatch")
+	}
+}
+
+// TestApplyEvent_FatalEmptyReasonFallsBack verifies that a fatal event
+// with no reason field still records a non-empty placeholder so the
+// outer loop's nil check works the same way.
+func TestApplyEvent_FatalEmptyReasonFallsBack(t *testing.T) {
+	var fatal atomic.Pointer[string]
+	applyEvent(supervisorEvent{
+		V:    1,
+		Kind: "fatal",
+		Data: []byte(`{}`),
+	}, tunnelSupervisorOpts{fatalReason: &fatal})
+	rp := fatal.Load()
+	if rp == nil {
+		t.Fatal("fatalReason not set after kind=fatal with empty data")
+	}
+	if *rp == "" {
+		t.Error("fatalReason is empty string -- should fall back to placeholder")
+	}
+}
+
+// TestRunTunnelSupervisor_StopsOnFatal drives the outer supervisor loop
+// with a fake child that emits kind=fatal and exits. The supervisor
+// must NOT restart -- a permanent deny means restarting just spams the
+// server with the same rejected request.
+func TestRunTunnelSupervisor_StopsOnFatal(t *testing.T) {
+	prev := getLiveTunnelHostname()
+	t.Cleanup(func() { setLiveTunnelHostname(prev) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	var (
+		mu     sync.Mutex
+		starts int
+	)
+
+	done := make(chan struct{})
+	go func() {
+		runTunnelSupervisor(ctx, tunnelSupervisorOpts{
+			ServerURL:  "https://tunnel.example.com",
+			Unique:     "alpha",
+			BinPath:    "/fake",
+			MinBackoff: 5 * time.Millisecond,
+			MaxBackoff: 10 * time.Millisecond,
+			startChild: func(ctx context.Context) (childProcess, error) {
+				mu.Lock()
+				starts++
+				mu.Unlock()
+				return newFakeChild([]string{
+					`{"v":1,"kind":"fatal","data":{"reason":"key_mismatch","unique":"alpha"}}`,
+				}, errors.New("fatal exit"), 4245), nil
+			},
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("supervisor did not stop within 2s after kind=fatal")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if starts != 1 {
+		t.Errorf("supervisor restarted after fatal: starts=%d, want 1", starts)
 	}
 }
 

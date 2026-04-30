@@ -49,6 +49,15 @@ type tunnelSupervisorOpts struct {
 	// event. Used by tests to assert on the event stream without
 	// scraping logs. Production code leaves it nil.
 	onEvent func(supervisorEvent)
+
+	// fatalReason, when non-nil, is set by applyEvent to the deny
+	// reason whenever a kind=fatal event is observed. The outer loop
+	// checks it after each child exit and stops the supervisor instead
+	// of restarting (matches swe-swe-tunnel's EventFatal contract:
+	// permanent failures like key_mismatch / bad_sig / version
+	// mismatch must not loop). runTunnelSupervisor allocates a
+	// non-nil pointer if the caller leaves it nil.
+	fatalReason *atomic.Pointer[string]
 }
 
 // childProcess is the surface area the supervisor needs from a running
@@ -146,6 +155,9 @@ func runTunnelSupervisor(ctx context.Context, opts tunnelSupervisorOpts) {
 	if opts.MaxBackoff == 0 {
 		opts.MaxBackoff = 60 * time.Second
 	}
+	if opts.fatalReason == nil {
+		opts.fatalReason = &atomic.Pointer[string]{}
+	}
 
 	backoff := opts.MinBackoff
 	for {
@@ -163,6 +175,17 @@ func runTunnelSupervisor(ctx context.Context, opts tunnelSupervisorOpts) {
 		}
 
 		if ctx.Err() != nil {
+			return
+		}
+
+		// kind=fatal means the tunnel client surfaced a permanent
+		// deny (key_mismatch, bad_sig, version mismatch, invalid
+		// unique). Restarting just hammers the server with the same
+		// rejected request. Stop the supervisor; an operator must
+		// fix the underlying config and restart the container.
+		if rp := opts.fatalReason.Load(); rp != nil {
+			log.Printf("[tunnel-supervisor] permanent failure (reason=%s); not restarting -- fix config and restart container",
+				*rp)
 			return
 		}
 
@@ -289,7 +312,23 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 		// disconnect is permanent the child will eventually exit and
 		// the outer loop's setLiveTunnelHostname("") will clear it.
 		log.Printf("[tunnel-supervisor] disconnected (kind=%s)", ev.Kind)
-	case "starting", "connecting", "reconnecting", "deregister_ok", "error", "fatal":
+	case "fatal":
+		// Permanent deny from tunneld -- record the reason so the
+		// outer supervisor loop can stop instead of restarting.
+		var data struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(ev.Data, &data)
+		reason := data.Reason
+		if reason == "" {
+			reason = "unspecified"
+		}
+		log.Printf("[tunnel-supervisor] fatal: reason=%s data=%s", reason, string(ev.Data))
+		if opts.fatalReason != nil {
+			r := reason
+			opts.fatalReason.Store(&r)
+		}
+	case "starting", "connecting", "reconnecting", "deregister_ok", "error":
 		log.Printf("[tunnel-supervisor] event kind=%s data=%s", ev.Kind, string(ev.Data))
 	default:
 		log.Printf("[tunnel-supervisor] unknown kind=%q data=%s", ev.Kind, string(ev.Data))
