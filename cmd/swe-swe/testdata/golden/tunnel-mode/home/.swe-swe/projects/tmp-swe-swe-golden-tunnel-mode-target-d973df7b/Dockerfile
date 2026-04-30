@@ -30,7 +30,10 @@ RUN cd /build-git-credential-swe-swe && go mod init git-credential-swe-swe && CG
 # spawns this binary as a child process when SWE_TUNNEL_SERVER_URL is set.
 # Pin to a specific commit so the build is reproducible. Bump the ARG when
 # picking up new tunnel features (e.g. EventFatal, retry_after_seconds).
-ARG SWE_SWE_TUNNEL_REF=1a178434f200b9d6da5fdc1d174a51d8ec9eb0e4
+# Alpine doesn't ship git; go install ...@<commit-sha> needs VCS to
+# resolve a raw hash even when fetching via the module proxy.
+RUN apk add --no-cache git
+ARG SWE_SWE_TUNNEL_REF=114bc6cfda525f0d1640ef9a4bb811b714c9cf84
 RUN CGO_ENABLED=0 GOOS=linux GOBIN=/build-swe-swe-tunnel \
     go install -ldflags="-s -w" \
     github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@${SWE_SWE_TUNNEL_REF}

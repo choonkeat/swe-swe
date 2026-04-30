@@ -1,4 +1,4 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down
+.PHONY: build test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
@@ -93,6 +93,18 @@ test-e2e:
 	./scripts/e2e-up.sh compose
 	./scripts/e2e-test.sh compose $(E2E_ARGS) || (./scripts/e2e-down.sh compose; exit 1)
 	./scripts/e2e-down.sh compose
+
+# --- Manual tunnel-mode test ---
+# Spins up a real swe-swe container in tunnel mode against
+# https://tunnel.example.com (override with TUNNEL_SERVER_URL=...).
+# Exercises the {{IF TUNNEL}} branch of the Dockerfile end-to-end:
+# go install of swe-swe-tunnel + supervisor spawn + register_ok.
+# Tear down with: make tunnel-down-manual.
+tunnel-up-manual:
+	./scripts/tunnel-up-manual.sh
+
+tunnel-down-manual:
+	./scripts/tunnel-down-manual.sh
 
 clean:
 	rm -rf ./dist
