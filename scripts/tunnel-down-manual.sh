@@ -20,7 +20,11 @@ DC=$(command -v docker-compose >/dev/null 2>&1 && echo "docker-compose" || echo 
 echo "=== tunnel-down-manual ==="
 echo "Project: ${PROJECT_PATH}"
 cd "${PROJECT_PATH}"
-${DC} down -v --remove-orphans
+# Pass --remove-orphans but NOT -v: the swe-swe-tunnel-manual-identity
+# named volume is declared external in our override, so a plain `down`
+# leaves it intact. We want it intact -- losing identity.key means
+# burning the new-pubkey rate limit on the next run.
+${DC} down --remove-orphans
 
 # Detect host path and clean up root-owned leftovers via privileged
 # docker run. Same logic as tunnel-up-manual.sh.
