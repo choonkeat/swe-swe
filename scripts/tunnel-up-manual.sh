@@ -1,10 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Bring up a manual tunnel-mode test container against
-# https://tunnel.example.com. Verifies that the {{IF TUNNEL}} branch of
-# the Dockerfile actually fetches and installs swe-swe-tunnel and that
-# the supervisor can spawn it end-to-end.
+# Bring up a manual tunnel-mode test container against the tunnel server
+# named in TUNNEL_SERVER_URL (set it in .swe-swe/env to keep the value out
+# of git). Verifies that the {{IF TUNNEL}} branch of the Dockerfile
+# actually fetches and installs swe-swe-tunnel and that the supervisor can
+# spawn it end-to-end.
 #
 # Why a separate target instead of folding into make e2e: the existing
 # e2e flow only passes a fake SWE_PUBLIC_HOSTNAME env -- it never builds
@@ -15,6 +16,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Source per-workspace env (gitignored) so contributors can set
+# TUNNEL_SERVER_URL once without committing the value. Values in this
+# file override the parent shell -- comment out a line for a one-off run
+# with a different value.
+SWE_SWE_ENV="${WORKSPACE_DIR}/.swe-swe/env"
+if [ -f "$SWE_SWE_ENV" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "$SWE_SWE_ENV"
+    set +a
+fi
 
 TEST_STACK_DIR="${WORKSPACE_DIR}/tmp/tunnel-manual"
 EFFECTIVE_HOME="${WORKSPACE_DIR}/tmp/tunnel-manual-home"
@@ -27,7 +40,7 @@ PUBLIC_PORTS="${PUBLIC_PORTS:-5500-5529}"
 CDP_PORTS="${CDP_PORTS:-6500-6529}"
 VNC_PORTS="${VNC_PORTS:-7500-7529}"
 
-TUNNEL_SERVER_URL="${TUNNEL_SERVER_URL:-https://tunnel.example.com}"
+: "${TUNNEL_SERVER_URL:?Set TUNNEL_SERVER_URL (e.g. https://tunnel.example.com); put it in .swe-swe/env to keep it out of git}"
 # Default to a stable label so reruns reuse the same tunnel identity
 # (avoids burning the per-pubkey new-unique rate limit on each run).
 # Override with SWE_TUNNEL_UNIQUE=foo for ad-hoc runs.

@@ -96,10 +96,10 @@ test-e2e:
 
 # --- Manual tunnel-mode test ---
 # Spins up a real swe-swe container in tunnel mode against
-# https://tunnel.example.com (override with TUNNEL_SERVER_URL=...).
-# Exercises the {{IF TUNNEL}} branch of the Dockerfile end-to-end:
-# go install of swe-swe-tunnel + supervisor spawn + register_ok.
-# Tear down with: make tunnel-down-manual.
+# $$TUNNEL_SERVER_URL (required). Set it in .swe-swe/env (gitignored) or
+# export it before running. Exercises the {{IF TUNNEL}} branch of the
+# Dockerfile end-to-end: go install of swe-swe-tunnel + supervisor spawn
+# + register_ok. Tear down with: make tunnel-down-manual.
 tunnel-up-manual:
 	./scripts/tunnel-up-manual.sh
 
