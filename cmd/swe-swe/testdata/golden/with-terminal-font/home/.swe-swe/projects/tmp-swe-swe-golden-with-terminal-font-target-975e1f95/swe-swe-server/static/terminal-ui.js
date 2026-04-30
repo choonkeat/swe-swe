@@ -1411,6 +1411,13 @@ class TerminalUI extends HTMLElement {
                 // agentChatPort is only sent for session=chat, so terminal sessions skip this.
                 if (this.sessionUUID && this.agentChatPort && !this._agentChatAvailable && !this._agentChatProbing) {
                     this._agentChatProbing = true;
+                    // Animate the Agent Chat tab label spinner during the
+                    // probe. The ?session=chat path also calls this from the
+                    // page-load auto-add (see line ~381), but non-chat session
+                    // pages reach the probe via the WS init handler instead --
+                    // without this call the spinner would render statically
+                    // (single braille frame) because nothing ticks the timer.
+                    if (!this._chatLoadingTimer) this.startChatLoadingAnimation();
                     this._rerenderSlotTabs();
                     const acPathUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
                     // Cross-origin agent-chat URL. Both modes route through
@@ -1481,6 +1488,7 @@ class TerminalUI extends HTMLElement {
                         }).catch(() => {
                             this._agentChatProbing = false;
                             this._agentChatPending = false;
+                            this.stopChatLoadingAnimation();
                             this._rerenderSlotTabs();
                         });
                     }
