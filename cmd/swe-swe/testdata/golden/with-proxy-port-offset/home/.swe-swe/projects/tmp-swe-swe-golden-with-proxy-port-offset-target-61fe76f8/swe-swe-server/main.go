@@ -2382,6 +2382,17 @@ func main() {
 			if exists {
 				localUserName, localUserEmail = readLocalGitUser(existingSession.WorkDir)
 				sessionWorkDir = existingSession.WorkDir
+			} else {
+				// Session not yet created (e.g. "+ New" from a recording link).
+				// The pwd query param carries the workdir if non-default.
+				sessionWorkDir = r.URL.Query().Get("pwd")
+			}
+			// Empty WorkDir means server cwd (see Session.WorkDir comment).
+			// Resolve so it matches the dialog's canonical whereKey (data.path).
+			if sessionWorkDir == "" {
+				if cwd, err := os.Getwd(); err == nil {
+					sessionWorkDir = cwd
+				}
 			}
 			data := struct {
 				UUID           string
