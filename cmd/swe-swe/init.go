@@ -102,6 +102,7 @@ type InitConfig struct {
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
 	DockerfileOnly      bool                `json:"-"`                      // computed: true when SSL=="no" && !WithVSCode
+	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	CLIVersion          string              `json:"cliVersion,omitempty"`
 }
 
@@ -426,6 +427,12 @@ func handleInit() {
 	previewPorts := fs.String("preview-ports", "3000-3019", "App preview port range (e.g., 3000-3019)")
 	publicPorts := fs.String("public-ports", "5000-5019", "Public (no-auth) port range (e.g., 5000-5019)")
 	proxyPortOffset := fs.Int("proxy-port-offset", 20000, "Offset added to app ports for proxy ports (e.g., port 3000 -> 23000 with offset 20000)")
+	tunnelServerURL := fs.String("tunnel-server-url", "",
+		"Tunnel server URL (e.g. https://tunnel.example.com). When set, the "+
+			"generated docker-compose drops Traefik / Let's Encrypt / per-port "+
+			"entrypoints; swe-swe-server binds 127.0.0.1 only and supervises "+
+			"the swe-swe-tunnel client subprocess for inbound traffic. Empty "+
+			"keeps the legacy Traefik-fronted compose.")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
@@ -693,6 +700,7 @@ func handleInit() {
 		StatusBarFontSize:   *statusBarFontSize,
 		StatusBarFontFamily: *statusBarFontFamily,
 		ProxyPortOffset:     *proxyPortOffset,
+		TunnelServerURL:     *tunnelServerURL,
 	}
 
 	// Re-parse SSL from config.SSL in case reuse overwrote sslFlag
