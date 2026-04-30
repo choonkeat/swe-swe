@@ -2,10 +2,14 @@
 
 ## Status
 
-**Proposed (2026-04-29)** — supersedes the state-file fallback approach
-shipped as Step 4 of `tasks/2026-04-27-swe-swe-tunnel-integration.md`.
-No code changes yet; this file captures the decision and the planned
-follow-up work on the swe-swe side.
+**Shipped (2026-04-30)**, with a follow-up adjustment for the
+swe-swe-tunnel typed-deny work landed the same day. Original pivot
+shipped on 2026-04-29; see "Update 2026-04-30" below for the
+fatal/reconnecting handling that came with swe-swe-tunnel commits
+`5e7520d`, `9ca8b4a`, `0ff1353`.
+
+Supersedes the state-file fallback approach shipped as Step 4 of
+`tasks/2026-04-27-swe-swe-tunnel-integration.md`.
 
 Companion plan in the swe-swe-tunnel repo:
 `/repos/swe-swe-tunnel/workspace/tasks/2026-04-29-supervisor-event-protocol.md`.
@@ -304,3 +308,69 @@ This pivot supersedes Steps 4 and parts of Step 5 in
   supervisor uses the existing shared client only if it makes any
   HTTP calls itself; the tunnel client is a child process and owns
   its own HTTP state.
+
+## Update 2026-04-30: typed denies + retry-after
+
+After the v1 supervisor shipped, swe-swe-tunnel landed three commits
+that change the failure-mode semantics:
+
+- **`5e7520d` (swe-swe-tunneld):** pubkey rate limit only counts
+  new-unique claims. Reconnects to a label this pubkey already owns
+  no longer burn a quota slot. Side-effect on us: a transient
+  network blip during a long session will not push the supervisor
+  through the rate-limit path.
+- **`9ca8b4a` (tunnelclient):** typed `DenyError` + smarter Run-loop
+  backoff. The client now distinguishes permanent denies
+  (`key_mismatch`, `bad_sig`, version mismatch, invalid unique) from
+  transient ones, emits `EventFatal` on the former, and applies a
+  5-minute backoff floor on rate-limit denies before reconnecting.
+- **`0ff1353` (swe-swe-tunneld):** server returns
+  `retry_after_seconds` on rate-limit denies. The client carries it
+  forward into the next `reconnecting` event's `after_ms`.
+
+### Implications open question 1 was tracking
+
+Open question 1 above ("What does the tunnel client do during a
+network partition? ... event protocol design needs a `disconnected`
+/ `reconnecting` event type. Not blocking for v1 of this pivot, but
+worth a UI follow-up.") is the surface that just got concrete. The
+tunnel client now answers it: `disconnected` keeps the cached
+hostname; `reconnecting` carries an `after_ms`; `fatal` means the
+deny is permanent and another reconnect attempt is futile.
+
+### Server-side adjustments shipped 2026-04-30
+
+1. **Stop the supervisor on `kind=fatal`.** Without this, the
+   supervisor's outer restart loop would re-spawn the child after
+   every fatal exit and re-issue the same rejected request,
+   re-introducing the loop swe-swe-tunnel just fixed. Implementation:
+   `applyEvent` records the deny reason into a shared
+   `*atomic.Pointer[string]` on `tunnelSupervisorOpts`;
+   `runTunnelSupervisor` checks it after each child exit and breaks
+   the loop with a clear "permanent failure (reason=...); not
+   restarting" log line. Operator must fix the underlying config
+   and restart the container.
+2. **Surface lifecycle state to the frontend.** New
+   `tunnelStatusInfo` struct (`{state, retryAfterMs, reason}`) is
+   updated by `applyEvent` on every relevant kind
+   (`connecting`/`connected`/`reconnecting`/`disconnected`/`error`/
+   `fatal`) and broadcast via the existing status-payload channel.
+   The frontend stores it on the instance and renders a
+   fixed-position banner with state-specific colors. The
+   `reconnecting` banner counts down from `retryAfterMs` so a 5-min
+   rate-limit floor reads as "Tunnel reconnecting in 4m 53s
+   (rate_limited)" instead of an indefinite spinner. The `fatal`
+   banner instructs the operator to restart the container.
+
+### What is still on the supervisor's TODO
+
+- **deregister_ok during shutdown.** When swe-swe-server exits we
+  rely on context-cancellation propagating SIGTERM. The tunnel
+  client emits `deregister_ok` if it gets a clean shutdown window;
+  we currently log it but do not gate the supervisor exit on
+  observing it. Acceptable for v1 (server is going down anyway), but
+  worth revisiting if we add live config reload.
+- **Test-rig binary refresh.** `/tmp/tunnel-manual-launch.sh` builds
+  an old swe-swe-tunnel binary into the test container. Rebuild from
+  the latest tunnel main to exercise the new `EventFatal` /
+  `RetryAfter` paths in the manual e2e.
