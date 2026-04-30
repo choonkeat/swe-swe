@@ -1387,10 +1387,14 @@ class TerminalUI extends HTMLElement {
                     this._agentChatProbing = true;
                     this._rerenderSlotTabs();
                     const acPathUrl = buildAgentChatUrl(getBaseUrl(window.location), this.sessionUUID);
-                    // Cross-origin agent-chat URL: tunnel mode uses subdomain
-                    // ({port}.{publicHostname}), legacy mode uses port offset.
+                    // Cross-origin agent-chat URL. Both modes route through
+                    // the swe-swe-server auth proxy port (agentChatProxyPort)
+                    // so the cookie is checked before forwarding to the raw
+                    // agent-chat target -- tunnel mode demuxes
+                    // {agentChatProxyPort}.{publicHostname} -> 127.0.0.1:{agentChatProxyPort}
+                    // inside the container; legacy mode hits the same port via Traefik.
                     const acPortUrl = this.publicHostname
-                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatPort, this.publicHostname)
+                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatProxyPort, this.publicHostname)
                         : buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
                     if (acPathUrl) {
                         this._agentChatProbeController = new AbortController();
@@ -4254,10 +4258,13 @@ class TerminalUI extends HTMLElement {
 
     getPreviewBaseUrl() {
         // Tunnel mode wins over port-based mode: the swe-swe-tunnel demuxes
-        // {port}.{publicHostname} directly to 127.0.0.1:{port}, so the raw
-        // target port is the leftmost subdomain label (no proxyPortOffset).
-        if (this.publicHostname && this.previewPort) {
-            return buildSubdomainPreviewUrl(window.location, this.previewPort, this.publicHostname);
+        // {previewProxyPort}.{publicHostname} -> 127.0.0.1:{previewProxyPort}
+        // (the swe-swe-server auth proxy port = previewPort + proxyPortOffset),
+        // so the cookie is validated before forwarding to the raw preview target.
+        // Cookie.Domain is scoped to publicHostname so the apex login cookie
+        // is automatically presented on every {port}.publicHostname subdomain.
+        if (this.publicHostname && this.previewProxyPort) {
+            return buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.publicHostname);
         }
         if (this._proxyMode === 'port' && this.previewProxyPort) {
             return buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
