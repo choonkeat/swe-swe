@@ -34,10 +34,15 @@ func stubBroadcast(t *testing.T) (count *int, mu *sync.Mutex) {
 // accessor and triggers exactly one broadcast.
 func TestApplyEvent_RegisterOK_SetsLiveHostname(t *testing.T) {
 	prev := getLiveTunnelHostname()
-	t.Cleanup(func() { setLiveTunnelHostname(prev) })
+	prevStatus := liveTunnelStatus.Load()
+	t.Cleanup(func() {
+		setLiveTunnelHostname(prev)
+		liveTunnelStatus.Store(prevStatus)
+	})
 	count, mu := stubBroadcast(t)
 
 	setLiveTunnelHostname("")
+	liveTunnelStatus.Store(nil)
 	applyEvent(supervisorEvent{
 		V:    1,
 		Kind: "register_ok",
@@ -59,10 +64,18 @@ func TestApplyEvent_RegisterOK_SetsLiveHostname(t *testing.T) {
 // same label), the second register_ok must not redundantly broadcast.
 func TestApplyEvent_RegisterOK_SkipsBroadcastIfUnchanged(t *testing.T) {
 	prev := getLiveTunnelHostname()
-	t.Cleanup(func() { setLiveTunnelHostname(prev) })
+	prevStatus := liveTunnelStatus.Load()
+	t.Cleanup(func() {
+		setLiveTunnelHostname(prev)
+		liveTunnelStatus.Store(prevStatus)
+	})
 	count, mu := stubBroadcast(t)
 
 	setLiveTunnelHostname("alpha-tunnel.example.com")
+	// Pre-seed status to "connected" too -- the broadcast fires on
+	// EITHER hostname or status change, so for the no-broadcast path
+	// both have to match.
+	setLiveTunnelStatus(tunnelStatusInfo{State: "connected"})
 	applyEvent(supervisorEvent{
 		V:    1,
 		Kind: "register_ok",

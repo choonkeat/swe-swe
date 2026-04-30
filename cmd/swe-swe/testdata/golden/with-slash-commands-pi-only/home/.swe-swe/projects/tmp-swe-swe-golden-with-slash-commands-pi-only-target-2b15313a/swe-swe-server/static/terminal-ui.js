@@ -240,6 +240,12 @@ class TerminalUI extends HTMLElement {
         // set on the server. When non-empty, cross-port URLs are built as
         // "{port}.{publicHostname}" instead of using proxy-port offsets.
         this.publicHostname = '';
+        // Tunnel client lifecycle as observed by the server-side
+        // supervisor. Shape: {state, retryAfterMs?, reason?}. Absent
+        // when the supervisor is not running. Used to surface a
+        // "rate-limited; retrying in 5m" hint instead of an indefinite
+        // spinner during reconnect/fatal states.
+        this.tunnelStatus = null;
         // Chat feature
         this.currentUserName = null;
         this.chatMessages = [];
@@ -1372,6 +1378,9 @@ class TerminalUI extends HTMLElement {
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
                 this.publicHostname = msg.publicHostname || '';
+                const prevTunnelStatus = this.tunnelStatus;
+                this.tunnelStatus = msg.tunnelStatus || null;
+                this._renderTunnelStatusBanner(prevTunnelStatus, this.tunnelStatus);
                 // Browser (CDP chrome) just came online -- show the Agent View
                 // tab and auto-add it to its preset-defined home slot (same
                 // spirit as the old "open right panel" auto-switch).
@@ -3840,6 +3849,95 @@ class TerminalUI extends HTMLElement {
             btn.addEventListener('click', () => this.changePreset(presetId));
             container.appendChild(btn);
         });
+    }
+
+    // Surface the tunnel client's lifecycle into the UI. State="connected"
+    // hides the banner; "reconnecting" shows a countdown using
+    // retryAfterMs (so a 5-min rate-limit floor reads as "Retrying in
+    // 5m" instead of an indefinite spinner); "fatal" shows a permanent
+    // failure message with the reason. Idempotent: skips when nothing
+    // user-visible changed.
+    _renderTunnelStatusBanner(prev, next) {
+        const sameState = (prev && next && prev.state === next.state
+            && prev.retryAfterMs === next.retryAfterMs
+            && prev.reason === next.reason);
+        if (sameState) return;
+
+        const remove = () => {
+            const el = document.getElementById('tunnel-status-banner');
+            if (el) el.remove();
+            if (this._tunnelStatusTimer) {
+                clearInterval(this._tunnelStatusTimer);
+                this._tunnelStatusTimer = null;
+            }
+        };
+
+        if (!next || !next.state || next.state === 'connected') {
+            remove();
+            return;
+        }
+
+        let banner = document.getElementById('tunnel-status-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'tunnel-status-banner';
+            banner.style.cssText = [
+                'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9999',
+                'padding:6px 12px', 'font:12px/1.4 monospace',
+                'text-align:center', 'pointer-events:none',
+            ].join(';');
+            document.body.appendChild(banner);
+        }
+
+        const colors = {
+            connecting:   { bg: '#1e3a8a', fg: '#fff' },
+            reconnecting: { bg: '#92400e', fg: '#fff' },
+            disconnected: { bg: '#525252', fg: '#fff' },
+            error:        { bg: '#991b1b', fg: '#fff' },
+            fatal:        { bg: '#7f1d1d', fg: '#fff' },
+        };
+        const palette = colors[next.state] || colors.error;
+        banner.style.background = palette.bg;
+        banner.style.color = palette.fg;
+
+        const reasonSuffix = next.reason ? ` (${next.reason})` : '';
+        const formatRetry = (ms) => {
+            if (!ms || ms <= 0) return '';
+            const sec = Math.ceil(ms / 1000);
+            if (sec < 60) return `${sec}s`;
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return s ? `${m}m ${s}s` : `${m}m`;
+        };
+
+        if (this._tunnelStatusTimer) {
+            clearInterval(this._tunnelStatusTimer);
+            this._tunnelStatusTimer = null;
+        }
+
+        if (next.state === 'reconnecting' && next.retryAfterMs > 0) {
+            const target = Date.now() + next.retryAfterMs;
+            const tick = () => {
+                const remaining = Math.max(0, target - Date.now());
+                banner.textContent = `Tunnel reconnecting in ${formatRetry(remaining)}${reasonSuffix}`;
+                if (remaining <= 0 && this._tunnelStatusTimer) {
+                    clearInterval(this._tunnelStatusTimer);
+                    this._tunnelStatusTimer = null;
+                }
+            };
+            tick();
+            this._tunnelStatusTimer = setInterval(tick, 1000);
+            return;
+        }
+
+        const labels = {
+            connecting:   'Tunnel connecting...',
+            reconnecting: 'Tunnel reconnecting...',
+            disconnected: 'Tunnel disconnected',
+            error:        'Tunnel error',
+            fatal:        'Tunnel permanent failure -- restart the container',
+        };
+        banner.textContent = (labels[next.state] || `Tunnel ${next.state}`) + reasonSuffix;
     }
 
     // Render slot frames (tab bars) for the active preset. Each slot-frame

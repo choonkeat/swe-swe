@@ -843,6 +843,12 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
 	}
+	// tunnelStatus rides along when the tunnel supervisor has
+	// observed at least one event. State="" means no supervisor or
+	// pre-startup -- the frontend treats that as "not in tunnel mode."
+	if ts := getLiveTunnelStatus(); ts.State != "" {
+		status["tunnelStatus"] = ts
+	}
 	return status
 }
 

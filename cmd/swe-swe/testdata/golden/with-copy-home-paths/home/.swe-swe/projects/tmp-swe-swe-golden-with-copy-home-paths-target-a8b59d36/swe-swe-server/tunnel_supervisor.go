@@ -104,6 +104,43 @@ type supervisorRegisterOK struct {
 // goroutine via setLiveTunnelHostname.
 var liveTunnelHostname atomic.Pointer[string]
 
+// tunnelStatusInfo is the shape exposed to the frontend over the WS
+// status payload. State follows the JSONL event lifecycle plus a
+// terminal "fatal" sink for permanent denies. RetryAfterMs is set on
+// reconnecting events so the UI can display "rate-limited; retrying
+// in 5m" instead of an indefinite spinner. Reason is a human-readable
+// string from the underlying event (deny reason, error reason, etc).
+type tunnelStatusInfo struct {
+	State        string `json:"state"`
+	RetryAfterMs int64  `json:"retryAfterMs,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+}
+
+// liveTunnelStatus mirrors the tunnel client's lifecycle for the
+// frontend. Updated by applyEvent on every relevant kind. Read by
+// buildStatusPayload to ride along with the next status broadcast.
+var liveTunnelStatus atomic.Pointer[tunnelStatusInfo]
+
+// getLiveTunnelStatus returns a copy of the current tunnel status. If
+// no status has been recorded yet (no supervisor, or supervisor not
+// yet started), returns the zero value with State="".
+func getLiveTunnelStatus() tunnelStatusInfo {
+	if p := liveTunnelStatus.Load(); p != nil {
+		return *p
+	}
+	return tunnelStatusInfo{}
+}
+
+// setLiveTunnelStatus stores ts as the current tunnel status. Returns
+// true when the value differs from the previous value (so the caller
+// can gate a broadcast).
+func setLiveTunnelStatus(ts tunnelStatusInfo) bool {
+	prev := getLiveTunnelStatus()
+	tsCopy := ts
+	liveTunnelStatus.Store(&tsCopy)
+	return prev != ts
+}
+
 // getLiveTunnelHostname returns the current live hostname or "" if
 // none has been observed. Safe for hot-path readers.
 func getLiveTunnelHostname() string {
@@ -186,6 +223,9 @@ func runTunnelSupervisor(ctx context.Context, opts tunnelSupervisorOpts) {
 		if rp := opts.fatalReason.Load(); rp != nil {
 			log.Printf("[tunnel-supervisor] permanent failure (reason=%s); not restarting -- fix config and restart container",
 				*rp)
+			// applyEvent already pushed a fatal status to the live
+			// atomic; nothing more to do -- the frontend will see
+			// {state:"fatal",reason:...} on its next status frame.
 			return
 		}
 
@@ -291,6 +331,9 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 	if opts.onEvent != nil {
 		opts.onEvent(ev)
 	}
+	// Track whether the tunnelStatus changed so we can broadcast once
+	// per event (instead of broadcasting from every case below).
+	statusChanged := false
 	switch ev.Kind {
 	case "register_ok", "relabel":
 		var data supervisorRegisterOK
@@ -302,16 +345,57 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 			log.Printf("[tunnel-supervisor] %s with empty hostname; ignoring", ev.Kind)
 			return
 		}
-		if setLiveTunnelHostname(data.Hostname) {
+		hostnameChanged := setLiveTunnelHostname(data.Hostname)
+		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{State: "connected"})
+		if hostnameChanged {
 			log.Printf("[tunnel-supervisor] hostname=%s (kind=%s)", data.Hostname, ev.Kind)
+		}
+		if hostnameChanged || statusChanged {
 			broadcastPublicHostnameChange()
 		}
+		return
+	case "starting", "connecting":
+		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{State: "connecting"})
+		log.Printf("[tunnel-supervisor] event kind=%s data=%s", ev.Kind, string(ev.Data))
+	case "reconnecting":
+		// Carry after_ms forward so the UI can show a countdown
+		// instead of an indefinite spinner. swe-swe-tunnel imposes a
+		// 5-minute floor on rate-limit denies; this surfaces that.
+		var data struct {
+			AfterMs int64  `json:"after_ms"`
+			Reason  string `json:"reason"`
+		}
+		_ = json.Unmarshal(ev.Data, &data)
+		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{
+			State:        "reconnecting",
+			RetryAfterMs: data.AfterMs,
+			Reason:       data.Reason,
+		})
+		log.Printf("[tunnel-supervisor] reconnecting after_ms=%d reason=%q", data.AfterMs, data.Reason)
 	case "disconnected":
 		// Keep the cached hostname during a disconnect window. The
 		// child will emit a fresh register_ok on reconnect; if the
 		// disconnect is permanent the child will eventually exit and
 		// the outer loop's setLiveTunnelHostname("") will clear it.
-		log.Printf("[tunnel-supervisor] disconnected (kind=%s)", ev.Kind)
+		var data struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(ev.Data, &data)
+		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{
+			State:  "disconnected",
+			Reason: data.Reason,
+		})
+		log.Printf("[tunnel-supervisor] disconnected reason=%q", data.Reason)
+	case "error":
+		var data struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(ev.Data, &data)
+		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{
+			State:  "error",
+			Reason: data.Reason,
+		})
+		log.Printf("[tunnel-supervisor] error reason=%q data=%s", data.Reason, string(ev.Data))
 	case "fatal":
 		// Permanent deny from tunneld -- record the reason so the
 		// outer supervisor loop can stop instead of restarting.
@@ -323,15 +407,22 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 		if reason == "" {
 			reason = "unspecified"
 		}
+		statusChanged = setLiveTunnelStatus(tunnelStatusInfo{
+			State:  "fatal",
+			Reason: reason,
+		})
 		log.Printf("[tunnel-supervisor] fatal: reason=%s data=%s", reason, string(ev.Data))
 		if opts.fatalReason != nil {
 			r := reason
 			opts.fatalReason.Store(&r)
 		}
-	case "starting", "connecting", "reconnecting", "deregister_ok", "error":
+	case "deregister_ok":
 		log.Printf("[tunnel-supervisor] event kind=%s data=%s", ev.Kind, string(ev.Data))
 	default:
 		log.Printf("[tunnel-supervisor] unknown kind=%q data=%s", ev.Kind, string(ev.Data))
+	}
+	if statusChanged {
+		broadcastPublicHostnameChange()
 	}
 }
 
