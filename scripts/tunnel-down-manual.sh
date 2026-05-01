@@ -47,6 +47,13 @@ else
     HOST_TMP="${WORKSPACE_DIR}/tmp"
 fi
 
+# Step out of PROJECT_PATH before the rm below: we cd'd into it for
+# `docker compose down`, and the wipe below deletes that very dir.
+# If the caller chained `&& <next-cmd>` after this script, the next
+# command would inherit a deleted CWD and die with "Unable to read
+# current working directory".
+cd "${WORKSPACE_DIR}"
+
 echo "--- Wiping ${WORKSPACE_DIR}/tmp/tunnel-manual{,-home} ---"
 docker run --rm \
     -v "${HOST_TMP}:/cleanup" \
