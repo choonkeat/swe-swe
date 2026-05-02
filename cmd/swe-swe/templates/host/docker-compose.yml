@@ -213,6 +213,7 @@ services:
       - SWE_BIND=127.0.0.1:9898
       - SWE_TUNNEL_SERVER_URL={{TUNNEL_SERVER_URL}}
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
+      - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
       - SWE_TUNNEL_BIN=${SWE_TUNNEL_BIN:-swe-swe-tunnel}
 # {{ENDIF}}
     restart: unless-stopped

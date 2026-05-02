@@ -76,6 +76,7 @@ services:
       - SWE_BIND=127.0.0.1:9898
       - SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
+      - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
       - SWE_TUNNEL_BIN=${SWE_TUNNEL_BIN:-swe-swe-tunnel}
     restart: unless-stopped
 

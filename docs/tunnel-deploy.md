@@ -222,9 +222,6 @@ Notes:
 
 ## Known limitations
 
-- The default `swe-swe init` `docker-compose.yml` template does not
-  yet propagate `SWE_TUNNEL_IDENTITY_KEY` from the host environment
-  to the container. On a PaaS this is moot (you set the env on the
-  container directly), but for local docker-compose tunnel testing
-  you must add it manually to the compose file or pass
-  `-e SWE_TUNNEL_IDENTITY_KEY=...` to `docker compose run`.
+(none currently tracked here — `swe-swe tunnel-identity create` is
+the next planned ergonomic upstream change; until it lands, the
+`openssl` recipe in the Deploy section is the manual path.)
