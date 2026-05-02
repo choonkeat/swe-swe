@@ -737,7 +737,6 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                 </div>
                                 <iframe class="terminal-ui__iframe" data-pane="browser" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
-                                <button class="terminal-ui__pane-popout" data-pane="browser" title="Open Agent View in new tab">↗</button>
                             </div>
                         </div>
                     </div>
@@ -4628,22 +4627,6 @@ class TerminalUI extends HTMLElement {
                 if (url) window.open(url, '_blank');
             });
         }
-
-        // Per-pane popout buttons (currently used by Agent View). Each maps
-        // to the pane's full URL via getBrowserViewUrl()-style helpers; add
-        // more entries here when other panes get a popout overlay.
-        const popoutUrlForPane = {
-            browser: () => this.getBrowserViewUrl(),
-        };
-        this.querySelectorAll('.terminal-ui__pane-popout').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const pane = btn.dataset.pane;
-                const getUrl = popoutUrlForPane[pane];
-                const url = getUrl && getUrl();
-                if (url) window.open(url, '_blank');
-            });
-        });
 
         // Open preview tab by default on desktop (if wide enough for split view)
         // Skip when embedded in iframe (right panel) - avoid nested iframes

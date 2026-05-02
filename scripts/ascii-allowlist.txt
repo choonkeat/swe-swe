@@ -11,6 +11,7 @@
 # UI navigation icons and symbols
 terminal-ui.js	←↑→↓↻↗◀▶⚙◯⌂⇧⌥💬•×·
 terminal-ui.css	■✎
+vnc_lite.html	↗
 selection.html	•⚙✨🛠🤖🧠🪿️
 combo-box.js	◯
 

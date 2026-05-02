@@ -1120,37 +1120,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     font-size: 13px;
 }
 
-/* Floating popout-to-tab overlay for panes that don't have a URL bar
-   (e.g. Agent View / VNC). Sits at the top-right of the iframe slot,
-   semi-transparent until hover. The slot itself must be position:relative
-   for the absolute placement to anchor correctly - .terminal-ui__iframe-slot
-   already establishes its own stacking context. */
-.terminal-ui__iframe-slot { position: relative; }
-.terminal-ui__pane-popout {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 6;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.45);
-    color: #fff;
-    border: 0;
-    border-radius: 4px;
-    font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.55;
-    transition: opacity 0.15s, background 0.15s;
-}
-.terminal-ui__pane-popout:hover {
-    opacity: 1;
-    background: var(--accent-primary);
-}
-
 /* URL bar: fixed host:port prefix + editable path input.
    The proxy can only target one port, so the prefix is non-editable. */
 .terminal-ui__iframe-url-bar {

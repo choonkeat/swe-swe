@@ -85,6 +85,21 @@
         .spacer {
             flex: 1;
         }
+        #openInTabButton {
+            background: none;
+            border: 1px solid var(--vnc-border);
+            border-radius: 4px;
+            color: var(--vnc-text-muted);
+            padding: 3px 10px;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        #openInTabButton:hover {
+            color: var(--vnc-text);
+            border-color: var(--vnc-text-muted);
+        }
         /* View only / Interactive toggle */
         #modeToggle {
             display: flex;
@@ -182,6 +197,9 @@
 
         document.getElementById('btnView').onclick = () => setMode('view');
         document.getElementById('btnInteract').onclick = () => setMode('interact');
+        document.getElementById('openInTabButton').onclick = () => {
+            window.open(window.location.href, '_blank');
+        };
 
         const host = readQueryVariable('host', window.location.hostname);
         let port = readQueryVariable('port', window.location.port);
@@ -227,6 +245,7 @@
             <button id="btnView">View only</button>
             <button id="btnInteract" class="active">Interactive</button>
         </div>
+        <button id="openInTabButton" title="Open Agent View in new tab">Open in tab ↗</button>
     </div>
     <div id="screen">
     </div>
