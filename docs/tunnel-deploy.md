@@ -1,83 +1,109 @@
 # Deploying swe-swe with tunnel mode
 
-This guide covers deploying a swe-swe container to a PaaS (Fly.io,
-Railway, Render, Cloud Run, etc.) using **tunnel mode** so the
-container is reachable from the public internet without owning a
-public IP, opening ports, configuring DNS, or provisioning a TLS
-cert. The tunnel client dials a tunneld server outbound; the tunneld
-server fronts traffic to the container over the same connection.
+## What this is
+
+Tunnel mode lets a swe-swe container be reachable from the public
+internet without owning a public IP, opening ports, configuring DNS,
+or provisioning a TLS cert. The tunnel client inside the container
+dials a `swe-swe-tunnel` server outbound; that server fronts traffic
+to your container over the same connection.
+
+The container can sit on a residential network, a PaaS (Fly.io,
+Railway, Render, Cloud Run), or anywhere with outbound HTTPS — there
+is nothing for an attacker on the public internet to scan or
+fingerprint at the container side. The only thing facing the internet
+is the tunnel server, which is run by your `swe-swe-tunnel` admin and
+authenticates clients by Ed25519 pubkey.
 
 For background, see `tasks/2026-04-29-tunnel-subprocess-pivot.md`
-(swe-swe side) and the swe-swe-tunnel repo for the wire protocol.
+(swe-swe side) and the `swe-swe-tunnel` repo for the wire protocol.
 
 ## What you need
 
-- A reachable tunneld server (e.g. `https://tunnel.example.com`).
-  This guide assumes it exists and accepts new clients.
+- A `swe-swe-tunnel` admin who runs a reachable server
+  (e.g. `https://tunnel.example.com`) and can authorize your pubkey.
 - Docker on your workstation to build the image.
 - A PaaS account that can run a Linux container, accept env vars /
   secrets, and route a single HTTP port to the container.
-
-## One-time identity bootstrap
-
-The tunnel client authenticates to tunneld with an Ed25519 keypair.
-On a PaaS you do **not** want this on a persistent volume: deliver it
-as a secret env var instead.
-
-Generate a key locally once with `openssl`:
-
-```sh
-openssl genpkey -algorithm Ed25519 -out identity.key
-SWE_TUNNEL_IDENTITY_KEY=$(base64 -w0 < identity.key)
-echo "$SWE_TUNNEL_IDENTITY_KEY"
-rm identity.key
-```
-
-(A consumer-side `swe-swe tunnel-identity create` subcommand that
-does this end-to-end is planned but not yet shipped — see "Known
-limitations".)
-
-Save `SWE_TUNNEL_IDENTITY_KEY` and the matching `SWE_TUNNEL_UNIQUE`
-(any short label, e.g. `acme-prod`) somewhere safe; you'll paste them
-into the PaaS as secrets. Re-deploys with the same pair keep the same
-public hostname. **Mismatched pair → fatal `key_mismatch`** (the
-supervisor stops, no retry); see "Troubleshooting" below.
 
 ## Build the image
 
 From the host repo where you want swe-swe scaffolded:
 
 ```sh
-swe-swe init --tunnel-server-url=https://tunnel.example.com
-docker build -t my-org/swe-swe:tunnel ./.swe-swe/projects/<project>/
+cd /your/project/repo
+swe-swe init --tunnel-server-url=https://tunnel.example.com --metadata-dir=./.swe-swe-tunnel
+docker build -t my-org/swe-swe:tunnel ./.swe-swe-tunnel/
 ```
 
-The `--tunnel-server-url` flag flips the Dockerfile into tunnel mode:
-it builds the `swe-swe-tunnel` client into the image and the
+`--tunnel-server-url` flips the Dockerfile into tunnel mode: it
+builds the `swe-swe-tunnel` client into the image and the
 `swe-swe-server` supervisor exec's it on startup. The tunnel ref is
 pinned via the `SWE_SWE_TUNNEL_REF` build arg — bump that to pick up
 upstream tunnel changes.
+
+`--metadata-dir=./.swe-swe-tunnel` keeps the generated `Dockerfile`
+and supporting files inside the project (the default puts them under
+`$HOME/.swe-swe/projects/<slug>/`, which is awkward to point `docker
+build` at). The directory itself is the build context.
 
 Push the tagged image to the registry your PaaS reads from.
 
 ## Deploy: env vars and ports
 
-| Var                       | Value                                  | Notes |
-|---------------------------|----------------------------------------|-------|
-| `SWE_TUNNEL_SERVER_URL`   | `https://tunnel.example.com`           | required to enter tunnel mode |
-| `SWE_TUNNEL_IDENTITY_KEY` | base64-of-PEM from bootstrap step      | secret; do not log |
-| `SWE_TUNNEL_UNIQUE`       | bare label, e.g. `acme-prod`           | the public hostname will be `<unique>-tunnel.<server-suffix>` |
-| `PORT`                    | PaaS-assigned port                     | landing/health server binds this |
-| `SWE_SWE_PASSWORD`        | strong password                        | swe-swe auth (still required behind the tunnel) |
+Tunnel mode authenticates your container to the tunnel server with an
+Ed25519 keypair. On a PaaS you do **not** want this on a persistent
+volume: deliver it as a secret env var instead. The pubkey half of
+the keypair must be authorized by the `swe-swe-tunnel` admin before
+your first connection will be accepted, so do this part early — it's
+a wait-on-human step.
+
+```sh
+# 1. Generate identity locally, one-time. base64 the PEM as the env var
+#    you'll paste into the PaaS. SWE_TUNNEL_IDENTITY_KEY is the secret —
+#    treat it like an SSH private key.
+openssl genpkey -algorithm Ed25519 -out identity.key
+SWE_TUNNEL_IDENTITY_KEY=$(base64 -w0 < identity.key)
+echo "$SWE_TUNNEL_IDENTITY_KEY"
+
+# 2. Extract the matching pubkey (base64 RawStd, 32 bytes) and send the
+#    one-line output to your swe-swe-tunnel admin out-of-band (chat,
+#    email, ticket). They authorize it before your first deploy.
+openssl pkey -in identity.key -pubout -outform DER | tail -c 32 | base64 -w0 | tr -d '='
+
+# 3. Wipe the local key file. SWE_TUNNEL_IDENTITY_KEY has the only
+#    copy you need; the PaaS holds it as a secret.
+rm identity.key
+```
+
+Set these env vars on the PaaS (mark the SECRET ones as secrets):
+
+```sh
+SWE_TUNNEL_SERVER_URL=https://tunnel.example.com           # required to enter tunnel mode
+SWE_TUNNEL_IDENTITY_KEY=<base64-PEM from step 1>           # SECRET — do not log
+SWE_TUNNEL_UNIQUE=<short label, e.g. myproject123>         # public hostname: <unique>-tunnel.<server-suffix>
+SWE_BIND=127.0.0.1:9898                                    # tunnel mode: keep swe-swe-server off public interfaces
+PORT=<PaaS-assigned, e.g. 8080>                            # landing/health server binds this
+SWE_SWE_PASSWORD=<strong password, e.g. correct-horse-battery-staple>   # SECRET — swe-swe auth (still required behind the tunnel)
+```
+
+Save `SWE_TUNNEL_IDENTITY_KEY` and `SWE_TUNNEL_UNIQUE` somewhere
+safe. Re-deploys with the same pair keep the same public hostname.
+**Mismatched pair → fatal `key_mismatch`** (the supervisor stops, no
+retry); see Troubleshooting.
 
 Container exposes one port to the PaaS: `$PORT`. That port serves the
 landing page (a small static doc with the live tunnel hostname linked
 through). The PaaS health probe should hit `GET /` on `$PORT`; a 200
 means the container is up and the landing render succeeded.
 
-Internally swe-swe-server binds `0.0.0.0:9898` and the tunnel client
-dials `localhost:9898` from the same container. **Do not publish
-9898** — its only consumer is the in-container tunnel client.
+Internally, swe-swe-server binds `127.0.0.1:9898` (with the
+`SWE_BIND` value above) and the tunnel client dials it from inside
+the same container. **Do not omit `SWE_BIND`** — without it, the
+image's default `CMD` binds `0.0.0.0:9898`, and on a PaaS that means
+anything else in the container's network namespace (sidecars,
+internal cluster mesh, accidentally-routed `$PORT=9898`) could reach
+swe-swe-server without going through the tunnel's identity gate.
 
 ## Verify the tunnel came up
 
@@ -88,8 +114,8 @@ in order:
 [tunnel-supervisor] event kind=starting
 [tunnel-supervisor] event kind=connecting attempt=1
 [tunnel-client] identity loaded source=env fingerprint=ab12cd34ef56
-[tunnel-client] registered hostname=acme-prod-tunnel.example.com
-[tunnel-supervisor] OPEN AT https://9898.acme-prod-tunnel.example.com/
+[tunnel-client] registered hostname=myproject123-tunnel.example.com
+[tunnel-supervisor] OPEN AT https://9898.myproject123-tunnel.example.com/
 ```
 
 The `OPEN AT` line is the operator-friendly URL. The same hostname is
@@ -99,36 +125,44 @@ so it picks up label rotations live.
 
 The `identity loaded` fingerprint should be stable across re-deploys
 of the same `SWE_TUNNEL_IDENTITY_KEY`. Compare across deploys to
-confirm no identity drift.
+confirm no identity drift. The fingerprint is `sha256(pubkey)[:6]`
+hex — the same value the admin sees in their `register ok` /
+`register denied` log lines, so quoting it is a fast way to ask
+"did my registration land?"
 
 ## Operating
 
 **Re-deploy.** Keep `SWE_TUNNEL_IDENTITY_KEY` and `SWE_TUNNEL_UNIQUE`
 identical and the public hostname is unchanged. Old container
-exits → tunneld closes its session → new container connects and
-re-binds. There is a short outage window during the swap; for
+exits → tunnel server closes its session → new container connects
+and re-binds. There is a short outage window during the swap; for
 zero-downtime, run two containers behind separate uniques and swap
 DNS / front-end routing.
 
-**Key rotation.** Generate a new identity, set both
+**Key rotation.** Generate a new identity (steps 1-2 above), send the
+new pubkey to the admin, wait for them to authorize it, set both
 `SWE_TUNNEL_IDENTITY_KEY` and a new `SWE_TUNNEL_UNIQUE`, redeploy.
-The old `unique`/key binding on tunneld is leaked until tunneld GCs
-it; live with that or coordinate with the tunneld operator.
+The old `unique`/key binding on the tunnel server is leaked until
+the admin GCs it.
 
-**Migrating between PaaS providers.** Copy
-`SWE_TUNNEL_IDENTITY_KEY` and `SWE_TUNNEL_UNIQUE` to the new
-provider's secrets, deploy, decommission the old. Same hostname, no
-DNS work needed.
+**Migrating between PaaS providers.** Copy `SWE_TUNNEL_IDENTITY_KEY`
+and `SWE_TUNNEL_UNIQUE` to the new provider's secrets, deploy,
+decommission the old. Same hostname, no DNS work needed, no need to
+re-authorize with the admin.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
-|---------|--------------|
-| `kind=fatal reason=key_mismatch` | `SWE_TUNNEL_IDENTITY_KEY` doesn't match the key originally bound to `SWE_TUNNEL_UNIQUE` on tunneld. Either change the unique, or restore the original key. The supervisor stops on fatal; container will idle without a tunnel. |
-| `kind=fatal reason=bad_sig` / `version` | client/server protocol mismatch. Bump `SWE_SWE_TUNNEL_REF` and rebuild. |
-| `kind=reconnecting retryAfterMs=300000` | rate-limited by tunneld (typically pubkey churn). The frontend banner shows a countdown; wait it out. |
-| Landing 200 but no `OPEN AT` line | tunneld unreachable or DNS not yet resolving. Check `SWE_TUNNEL_SERVER_URL` and outbound egress. |
+|---|---|
+| `kind=fatal reason=not_authorized` | Your pubkey isn't authorized on the tunnel server. Re-run the pubkey-extract command (Deploy step 2) and resend to your admin. |
+| `kind=fatal reason=key_mismatch` | `SWE_TUNNEL_IDENTITY_KEY` doesn't match the key originally bound to `SWE_TUNNEL_UNIQUE` on the tunnel server. Either change the unique, or restore the original key. The supervisor stops on fatal; container will idle without a tunnel. |
+| `kind=fatal reason=signature invalid` | Your `SWE_TUNNEL_IDENTITY_KEY` is corrupt or doesn't match the pubkey on file. Regenerate per Deploy step 1, resend pubkey to admin. |
+| `kind=reconnecting retryAfterMs=300000` | Rate-limited by the tunnel server (typically pubkey churn). The frontend banner shows a countdown; wait it out. |
+| Landing 200 but no `OPEN AT` line | Tunnel server unreachable or DNS not yet resolving. Check `SWE_TUNNEL_SERVER_URL` and outbound egress. |
 | Identity fingerprint changes between deploys | `SWE_TUNNEL_IDENTITY_KEY` not actually set, or set with embedded newlines (use `base64 -w0`). The client falls back to file-based auto-gen each time. |
+
+If your session was working and suddenly drops with `not_authorized`
+on reconnect, your admin has revoked your pubkey. Talk to them.
 
 ## Fly.io walkthrough
 
@@ -145,7 +179,8 @@ primary_region = "iad"
 
 [env]
   SWE_TUNNEL_SERVER_URL = "https://tunnel.example.com"
-  SWE_TUNNEL_UNIQUE = "my-swe-swe-prod"
+  SWE_TUNNEL_UNIQUE = "myproject123"
+  SWE_BIND = "127.0.0.1:9898"
 
 [http_service]
   internal_port = 8080
@@ -191,7 +226,3 @@ Notes:
   container directly), but for local docker-compose tunnel testing
   you must add it manually to the compose file or pass
   `-e SWE_TUNNEL_IDENTITY_KEY=...` to `docker compose run`.
-- A consumer-side `swe-swe tunnel-identity create` subcommand that
-  generates a key, prints `SWE_TUNNEL_IDENTITY_KEY` and a suggested
-  `SWE_TUNNEL_UNIQUE`, and stops short of writing to disk is planned
-  but not yet shipped. Until then, use the `openssl` recipe above.
