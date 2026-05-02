@@ -82,7 +82,7 @@ Set these env vars on the PaaS (mark the SECRET ones as secrets):
 SWE_TUNNEL_SERVER_URL=https://tunnel.example.com           # required to enter tunnel mode
 SWE_TUNNEL_IDENTITY_KEY=<base64-PEM from step 1>           # SECRET — do not log
 SWE_TUNNEL_UNIQUE=<short label, e.g. myproject123>         # public hostname: <unique>-tunnel.<server-suffix>
-SWE_BIND=127.0.0.1:9898                                    # tunnel mode: keep swe-swe-server off public interfaces
+SWE_BIND=127.0.0.1:1977                                    # tunnel mode: keep swe-swe-server off public interfaces
 PORT=<PaaS-assigned, e.g. 8080>                            # landing/health server binds this
 SWE_SWE_PASSWORD=<strong password, e.g. correct-horse-battery-staple>   # SECRET — swe-swe auth (still required behind the tunnel)
 ```
@@ -97,14 +97,15 @@ landing page (a small static doc with the live tunnel hostname linked
 through). The PaaS health probe should hit `GET /` on `$PORT`; a 200
 means the container is up and the landing render succeeded.
 
-Internally, swe-swe-server binds `127.0.0.1:9898` and the tunnel
-client dials it from inside the same container. The image built by
+Internally, swe-swe-server binds `127.0.0.1:1977` (the `SWE_PORT`
+default; was `9898` before commit `34c9cff61`) and the tunnel client
+dials it from inside the same container. The image built by
 `swe-swe init --tunnel-server-url=...` already wires this default in
-its `CMD` line; setting `SWE_BIND=127.0.0.1:9898` explicitly is
+its `CMD` line; setting `SWE_BIND=127.0.0.1:1977` explicitly is
 belt-and-suspenders against an image baked from an older revision.
 The reason to keep it nailed to localhost: anything else in the
 container's network namespace (sidecars, internal cluster mesh,
-accidentally-routed `$PORT=9898`) reaching `swe-swe-server` directly
+accidentally-routed `$PORT=1977`) reaching `swe-swe-server` directly
 would bypass the tunnel's identity gate.
 
 ## Verify the tunnel came up
@@ -117,7 +118,7 @@ in order:
 [tunnel-supervisor] event kind=connecting attempt=1
 [tunnel-client] identity loaded source=env fingerprint=ab12cd34ef56
 [tunnel-client] registered hostname=myproject123-tunnel.example.com
-[tunnel-supervisor] OPEN AT https://9898.myproject123-tunnel.example.com/
+[tunnel-supervisor] OPEN AT https://1977.myproject123-tunnel.example.com/
 ```
 
 The `OPEN AT` line is the operator-friendly URL. The same hostname is
@@ -182,7 +183,7 @@ primary_region = "iad"
 [env]
   SWE_TUNNEL_SERVER_URL = "https://tunnel.example.com"
   SWE_TUNNEL_UNIQUE = "myproject123"
-  SWE_BIND = "127.0.0.1:9898"
+  SWE_BIND = "127.0.0.1:1977"
 
 [http_service]
   internal_port = 8080
@@ -217,7 +218,7 @@ Notes:
   returns 200 even when the tunnel is reconnecting (status banner
   reflects state separately) so health stays green during transient
   reconnects.
-- Do **not** add `[[services.ports]]` for 9898. It's an internal
+- Do **not** add `[[services.ports]]` for 1977. It's an internal
   port; the tunnel handles ingress.
 
 ## Known limitations
