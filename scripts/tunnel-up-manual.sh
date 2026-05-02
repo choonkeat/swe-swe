@@ -206,5 +206,75 @@ echo
 echo "=== Up complete ==="
 echo "Project dir : ${PROJECT_PATH}"
 echo "Tail logs   : cd ${PROJECT_PATH} && ${DC} logs -f swe-swe"
-echo "Public URL  : check logs for 'hostname=' line, then visit https://1977.<hostname> (or whichever SWE_PORT you configured)"
+
+# --- Phase 6: Verify ---
+# Curl every port the swe-swe UI will use (the main server bind plus
+# the per-session proxy ports at offset 20000) and report which ones
+# the tunneld lets through. Catches the "tunneld --allowed-ports too
+# narrow" class of regression that a single curl of port 1977 would
+# miss. Soft-fail (echoes a warning, exits 0) so the script still
+# leaves the stack up for manual inspection on partial pass.
+echo
+echo "--- Verifying tunnel reachability ---"
+
+# Wait for register_ok (max 30s). Extract hostname from the
+# supervisor's "hostname=<h> (kind=register_ok)" line.
+HOSTNAME=""
+for _ in $(seq 1 30); do
+    HOSTNAME=$(${DC} logs swe-swe 2>&1 \
+        | grep -oE 'hostname=[^ )]+ \(kind=register_ok\)' \
+        | head -1 \
+        | sed -E 's/^hostname=//;s/ .*$//' || true)
+    [ -z "$HOSTNAME" ] || break
+    sleep 1
+done
+if [ -z "$HOSTNAME" ]; then
+    echo "WARN: no register_ok in logs after 30s; skipping reachability check"
+    echo "Public URL  : (registration pending) -- see logs"
+    echo "Tear down   : ./scripts/tunnel-down-manual.sh"
+    exit 0
+fi
+echo "  hostname=${HOSTNAME}"
+
+# Ports to probe: the main swe-swe-server bind + the per-session
+# proxy ports for preview/agent-chat/cdp/vnc (offset 20000 against
+# the configured ranges' lower bound).
+SWE_PORT_VAL="${SWE_PORT:-1977}"
+PREVIEW_LO="${PREVIEW_PORTS%%-*}"
+AGENT_CHAT_LO="${AGENT_CHAT_PORTS%%-*}"
+CDP_LO="${CDP_PORTS%%-*}"
+VNC_LO="${VNC_PORTS%%-*}"
+
+PROBES=(
+    "${SWE_PORT_VAL}|swe-swe-server"
+    "$((20000 + PREVIEW_LO))|preview"
+    "$((20000 + AGENT_CHAT_LO))|agent-chat"
+    "$((20000 + CDP_LO))|cdp"
+    "$((20000 + VNC_LO))|vnc"
+)
+
+DENIED=0
+for probe in "${PROBES[@]}"; do
+    port="${probe%%|*}"
+    label="${probe##*|}"
+    url="https://${port}.${HOSTNAME}/"
+    body=$(curl -sS --max-time 5 "$url" 2>&1 || true)
+    code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$url" 2>&1 || echo 000)
+    if [ "$code" = "404" ] && echo "$body" | grep -q "port not allowed"; then
+        echo "  FAIL  ${label} ${url}  (HTTP ${code} 'port not allowed' -- tunneld --allowed-ports does not include ${port})"
+        DENIED=$((DENIED + 1))
+    else
+        echo "  OK    ${label} ${url}  (HTTP ${code})"
+    fi
+done
+
+if [ "$DENIED" -gt 0 ]; then
+    echo
+    echo "WARN: ${DENIED} port(s) rejected by tunneld --allowed-ports."
+    echo "      Operator-side fix: SIGHUP tunneld with a wider allowlist that includes the failing ports."
+    echo "      For swe-swe consumers, the load-bearing band is 20000-29999 (per-session proxy ports)."
+fi
+
+echo
+echo "Public URL  : https://${SWE_PORT_VAL}.${HOSTNAME}/"
 echo "Tear down   : ./scripts/tunnel-down-manual.sh"
