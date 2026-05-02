@@ -65,8 +65,10 @@ chmod +x /home/app/.swe-swe/bin/goose
 echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
 
-# Resolve internal server port (SWE_PORT for dockerfile-only mode, 9898 for compose mode)
-SWE_SERVER_PORT="${SWE_PORT:-9898}"
+# Resolve internal server port. SWE_PORT is set by both compose (via the
+# swe-swe service environment block) and dockerfile-only mode (via ENV in
+# the generated Dockerfile), so the default is the same in either mode.
+SWE_SERVER_PORT="${SWE_PORT:-1977}"
 export SWE_SERVER_PORT
 
 # Create open/xdg-open shims that route URLs to the Preview pane

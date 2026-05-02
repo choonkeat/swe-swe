@@ -27,16 +27,16 @@ import (
 )
 
 // supervisorOpenPort extracts the port portion of a listen address
-// (":9898", "127.0.0.1:9898", "[::]:9898") for the OPEN AT log line.
-// Falls back to "9898" if the address is empty or unparsable so the
+// (":1977", "127.0.0.1:1977", "[::]:1977") for the OPEN AT log line.
+// Falls back to "1977" if the address is empty or unparsable so the
 // log line is never blank.
 func supervisorOpenPort(listenAddr string) string {
 	if listenAddr == "" {
-		return "9898"
+		return "1977"
 	}
 	_, port, err := net.SplitHostPort(listenAddr)
 	if err != nil || port == "" {
-		return "9898"
+		return "1977"
 	}
 	return port
 }
@@ -51,8 +51,8 @@ type tunnelSupervisorOpts struct {
 	Unique    string
 	BinPath   string
 
-	// LocalAddr is the swe-swe-server listen address (e.g. ":9898",
-	// "127.0.0.1:9898"). The supervisor uses just the port portion to
+	// LocalAddr is the swe-swe-server listen address (e.g. ":1977",
+	// "127.0.0.1:1977"). The supervisor uses just the port portion to
 	// build the OPEN AT URL; tunneld demuxes {port}.{hostname} ->
 	// 127.0.0.1:{port} so the URL must match the actual bind.
 	LocalAddr string

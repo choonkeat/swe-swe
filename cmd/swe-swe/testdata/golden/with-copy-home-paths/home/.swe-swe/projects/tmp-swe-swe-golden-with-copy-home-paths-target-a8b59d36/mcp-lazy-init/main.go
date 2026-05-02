@@ -8,7 +8,7 @@
 //
 //	mcp-lazy-init \
 //	  --init-method POST \
-//	  --init-url http://localhost:9898/api/session/$UUID/browser/start \
+//	  --init-url http://localhost:1977/api/session/$UUID/browser/start \
 //	  -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$PORT
 package main
 

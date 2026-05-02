@@ -1693,10 +1693,10 @@ func main() {
 	// addr defaults to empty so resolveListenAddr can distinguish "user passed
 	// --addr" from "fell through to default".  The Dockerfile CMD always
 	// passes -addr explicitly, so compose mode is unaffected.
-	addr := flag.String("addr", "", "Listen address (overrides SWE_PORT/PORT; default :9898)")
+	addr := flag.String("addr", "", "Listen address (overrides SWE_PORT/PORT; default :1977)")
 	bind := flag.String("bind", "",
 		"Listen address (host:port). Overrides --addr and SWE_PORT/PORT. "+
-			"Env: SWE_BIND. In tunnel mode, recommend 127.0.0.1:9898 so only "+
+			"Env: SWE_BIND. In tunnel mode, recommend 127.0.0.1:1977 so only "+
 			"the localhost tunnel client can reach swe-swe-server.")
 	version := flag.Bool("version", false, "Show version and exit")
 	dumpTemplates := flag.String("dump-container-templates", "", "Dump all container templates to directory and exit")

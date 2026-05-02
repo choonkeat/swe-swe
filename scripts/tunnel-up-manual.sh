@@ -206,5 +206,5 @@ echo
 echo "=== Up complete ==="
 echo "Project dir : ${PROJECT_PATH}"
 echo "Tail logs   : cd ${PROJECT_PATH} && ${DC} logs -f swe-swe"
-echo "Public URL  : check logs for 'hostname=' line, then visit https://9898.<hostname>"
+echo "Public URL  : check logs for 'hostname=' line, then visit https://1977.<hostname> (or whichever SWE_PORT you configured)"
 echo "Tear down   : ./scripts/tunnel-down-manual.sh"

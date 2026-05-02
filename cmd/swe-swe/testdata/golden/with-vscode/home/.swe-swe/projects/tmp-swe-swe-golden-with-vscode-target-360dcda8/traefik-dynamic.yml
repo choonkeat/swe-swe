@@ -2,10 +2,12 @@
 
 http:
   middlewares:
-    # ForwardAuth middleware for session-based authentication
+    # ForwardAuth middleware for session-based authentication.
+    # Uses traefik's Go-template env() function so SWE_PORT in the
+    # traefik container's environment is substituted at config load.
     forwardauth:
       forwardAuth:
-        address: "http://swe-swe:9898/swe-swe-auth/verify"
+        address: 'http://swe-swe:{{ env "SWE_PORT" }}/swe-swe-auth/verify'
         # Trust X-Forwarded-* headers for proper URL handling
         trustForwardHeader: true
 

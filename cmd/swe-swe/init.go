@@ -1023,11 +1023,11 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		// Process Dockerfile template with conditional sections
 		if hostFile == "templates/host/Dockerfile" {
 			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID, config.TunnelServerURL))
-			// In dockerfile-only mode, change the server port and add EXPOSE
+			// In dockerfile-only mode, add EXPOSE and ENV defaults so the
+			// platform sees the port without needing a separate .env file.
+			// (The CMD itself already uses ${SWE_PORT:-1977} from the template.)
 			if config.DockerfileOnly {
 				contentStr := string(content)
-				contentStr = strings.Replace(contentStr, `"-addr", "0.0.0.0:9898"`, `"-addr", "0.0.0.0:${SWE_PORT:-1977}"`, 1)
-				// Add EXPOSE and ENV before the CMD line
 				contentStr = strings.Replace(contentStr,
 					"# Default command: run swe-swe-server",
 					"# Environment variables for dockerfile-only mode\nENV SWE_PORT=1977\nENV SWE_SWE_PASSWORD=changeme\n\nEXPOSE ${SWE_PORT:-1977}\n\n# Default command: run swe-swe-server",

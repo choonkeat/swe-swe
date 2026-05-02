@@ -851,10 +851,11 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 			// Generate expected output from template
 			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, false, v.slashCommands, testUID, testGID, "")
 
-			// Apply dockerfile-only post-processing for non-SSL/non-VS-Code variants
+			// Apply dockerfile-only post-processing for non-SSL/non-VS-Code variants.
+			// The Dockerfile template now uses ${SWE_PORT:-1977} directly, so only the
+			// EXPOSE/ENV insertion is needed here.
 			isComposeMode := strings.HasPrefix(v.name, "with-ssl-")
 			if !isComposeMode {
-				expected = strings.Replace(expected, `"-addr", "0.0.0.0:9898"`, `"-addr", "0.0.0.0:${SWE_PORT:-1977}"`, 1)
 				expected = strings.Replace(expected,
 					"# Default command: run swe-swe-server",
 					"# Environment variables for dockerfile-only mode\nENV SWE_PORT=1977\nENV SWE_SWE_PASSWORD=changeme\n\nEXPOSE ${SWE_PORT:-1977}\n\n# Default command: run swe-swe-server",

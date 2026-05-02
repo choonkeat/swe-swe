@@ -209,4 +209,4 @@ WORKDIR /workspace
 # not reachable from anything else in the container's network namespace
 # (sidecars, mesh, accidentally-routed PaaS ports), which would bypass
 # the tunnel's identity gate.
-CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:9898"]
+CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:${SWE_PORT:-1977}"]

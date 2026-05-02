@@ -53,9 +53,9 @@ func firstNonEmpty(vs ...string) string {
 //  3. SWE_BIND set                 -> use it
 //  4. SWE_PORT set                 -> ":${SWE_PORT}"  (host defaults to 0.0.0.0)
 //  5. $PORT set                    -> ":${PORT}"  (PaaS; no landing server)
-//  6. nothing set                  -> ":9898"
+//  6. nothing set                  -> ":1977"
 //
-// --bind/SWE_BIND take a full host:port (e.g. "127.0.0.1:9898"); --addr is
+// --bind/SWE_BIND take a full host:port (e.g. "127.0.0.1:1977"); --addr is
 // kept as an alias so existing Dockerfile CMDs and `swe-swe init` output
 // keep working byte-identically.
 //
@@ -76,7 +76,7 @@ func resolveListenAddr(flagBind, flagAddr, envSweBind, envSwePort, envPort strin
 		listenAddr = ":" + envPort
 		listenFromPort = true
 	default:
-		listenAddr = ":9898"
+		listenAddr = ":1977"
 	}
 	if envPort != "" && !listenFromPort && !addrPortEquals(listenAddr, envPort) {
 		landingAddr = ":" + envPort
@@ -85,7 +85,7 @@ func resolveListenAddr(flagBind, flagAddr, envSweBind, envSwePort, envPort strin
 }
 
 // addrPortEquals reports whether listenAddr's port component equals port.
-// Accepts ":9898", "0.0.0.0:9898", "[::]:9898".
+// Accepts ":1977", "0.0.0.0:1977", "[::]:1977".
 func addrPortEquals(listenAddr, port string) bool {
 	_, p, err := net.SplitHostPort(listenAddr)
 	if err != nil {

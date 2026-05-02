@@ -449,7 +449,7 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 //   - 401 instead of redirect on missing/invalid cookie. The proxies are loaded
 //     cross-origin into iframes and a relative /swe-swe-auth/login redirect
 //     would resolve to {port}.{publicHostname} which doesn't serve the auth
-//     handlers (those are bound to the apex 9898 mux).
+//     handlers (those are bound to the apex 1977 mux).
 //   - /__probe__ is exempt so the existing client-side reachability probe in
 //     terminal-ui.js keeps working without credentials.
 //

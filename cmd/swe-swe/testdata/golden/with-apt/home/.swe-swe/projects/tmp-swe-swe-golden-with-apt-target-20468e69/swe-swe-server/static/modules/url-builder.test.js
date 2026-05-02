@@ -190,21 +190,21 @@ test('buildSessionPageUrl encodes special characters', () => {
 // buildPreviewUrl tests
 test('buildPreviewUrl returns path-based URL with sessionUUID', () => {
     assert.strictEqual(
-        buildPreviewUrl('http://localhost:9898', 'abc-123'),
-        'http://localhost:9898/proxy/abc-123/preview'
+        buildPreviewUrl('http://localhost:1977', 'abc-123'),
+        'http://localhost:1977/proxy/abc-123/preview'
     );
 });
 
 test('buildPreviewUrl returns null when sessionUUID is null', () => {
     assert.strictEqual(
-        buildPreviewUrl('http://localhost:9898', null),
+        buildPreviewUrl('http://localhost:1977', null),
         null
     );
 });
 
 test('buildPreviewUrl returns null when sessionUUID is empty', () => {
     assert.strictEqual(
-        buildPreviewUrl('http://localhost:9898', ''),
+        buildPreviewUrl('http://localhost:1977', ''),
         null
     );
 });
@@ -219,49 +219,49 @@ test('buildPreviewUrl handles https base URL', () => {
 // buildProxyUrl tests
 test('buildProxyUrl with no targetURL returns base with slash', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', 'abc-123', null),
-        'http://localhost:9898/proxy/abc-123/preview/'
+        buildProxyUrl('http://localhost:1977', 'abc-123', null),
+        'http://localhost:1977/proxy/abc-123/preview/'
     );
 });
 
 test('buildProxyUrl with empty targetURL returns base with slash', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', 'abc-123', ''),
-        'http://localhost:9898/proxy/abc-123/preview/'
+        buildProxyUrl('http://localhost:1977', 'abc-123', ''),
+        'http://localhost:1977/proxy/abc-123/preview/'
     );
 });
 
 test('buildProxyUrl extracts path from full URL', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', 'abc-123', 'http://localhost:3000/api/health'),
-        'http://localhost:9898/proxy/abc-123/preview/api/health'
+        buildProxyUrl('http://localhost:1977', 'abc-123', 'http://localhost:3000/api/health'),
+        'http://localhost:1977/proxy/abc-123/preview/api/health'
     );
 });
 
 test('buildProxyUrl preserves query string and hash from target', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', 'abc-123', 'http://localhost:3000/page?q=1#section'),
-        'http://localhost:9898/proxy/abc-123/preview/page?q=1#section'
+        buildProxyUrl('http://localhost:1977', 'abc-123', 'http://localhost:3000/page?q=1#section'),
+        'http://localhost:1977/proxy/abc-123/preview/page?q=1#section'
     );
 });
 
 test('buildProxyUrl handles bare path starting with slash', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', 'abc-123', '/some/path'),
-        'http://localhost:9898/proxy/abc-123/preview/some/path'
+        buildProxyUrl('http://localhost:1977', 'abc-123', '/some/path'),
+        'http://localhost:1977/proxy/abc-123/preview/some/path'
     );
 });
 
 test('buildProxyUrl handles bare path without leading slash', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', 'abc-123', 'some/path'),
-        'http://localhost:9898/proxy/abc-123/preview/some/path'
+        buildProxyUrl('http://localhost:1977', 'abc-123', 'some/path'),
+        'http://localhost:1977/proxy/abc-123/preview/some/path'
     );
 });
 
 test('buildProxyUrl returns null when sessionUUID is null', () => {
     assert.strictEqual(
-        buildProxyUrl('http://localhost:9898', null, 'http://localhost:3000/'),
+        buildProxyUrl('http://localhost:1977', null, 'http://localhost:3000/'),
         null
     );
 });
@@ -269,21 +269,21 @@ test('buildProxyUrl returns null when sessionUUID is null', () => {
 // buildAgentChatUrl tests
 test('buildAgentChatUrl returns path-based URL with sessionUUID', () => {
     assert.strictEqual(
-        buildAgentChatUrl('http://localhost:9898', 'abc-123'),
-        'http://localhost:9898/proxy/abc-123/agentchat'
+        buildAgentChatUrl('http://localhost:1977', 'abc-123'),
+        'http://localhost:1977/proxy/abc-123/agentchat'
     );
 });
 
 test('buildAgentChatUrl returns null when sessionUUID is null', () => {
     assert.strictEqual(
-        buildAgentChatUrl('http://localhost:9898', null),
+        buildAgentChatUrl('http://localhost:1977', null),
         null
     );
 });
 
 test('buildAgentChatUrl returns null when sessionUUID is empty', () => {
     assert.strictEqual(
-        buildAgentChatUrl('http://localhost:9898', ''),
+        buildAgentChatUrl('http://localhost:1977', ''),
         null
     );
 });

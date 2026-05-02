@@ -60,8 +60,8 @@ func TestResolveListenAddr(t *testing.T) {
 			wantLanding: "",
 		},
 		{
-			name:        "nothing set -> default :9898",
-			wantListen:  ":9898",
+			name:        "nothing set -> default :1977",
+			wantListen:  ":1977",
 			wantLanding: "",
 		},
 		{

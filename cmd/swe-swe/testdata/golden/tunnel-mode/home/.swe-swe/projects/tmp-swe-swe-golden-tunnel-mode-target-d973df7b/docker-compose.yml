@@ -9,7 +9,7 @@ services:
     # Tunnel mode: bind to 127.0.0.1 only. The supervisor goroutine
     # spawns swe-swe-tunnel as a child process, which dials the
     # tunneld outbound and forwards inbound streams to localhost.
-    command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:9898"]
+    command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:${SWE_PORT:-1977}"]
     labels:
       - "swe.project=${PROJECT_NAME}"
     volumes:
@@ -37,6 +37,10 @@ services:
     networks:
       - swe-network
     environment:
+      # Internal swe-swe-server bind port. Used by entrypoint.sh to compute
+      # SWE_SERVER_PORT for in-container shims, and by swe-swe-server itself
+      # when the bind is left to env (resolveListenAddr uses SWE_PORT).
+      - SWE_PORT=${SWE_PORT:-1977}
       # Auth password (activates embedded auth middleware)
       - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
       # SWE_COOKIE_SECURE is no longer set here: swe-swe-server now derives
@@ -73,7 +77,7 @@ services:
       # Tunnel mode: swe-swe-server binds to 127.0.0.1 only and supervises
       # the swe-swe-tunnel client child process which dials the tunneld
       # outbound. See tasks/2026-04-29-tunnel-subprocess-pivot.md.
-      - SWE_BIND=127.0.0.1:9898
+      - SWE_BIND=127.0.0.1:${SWE_PORT:-1977}
       - SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
       - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
