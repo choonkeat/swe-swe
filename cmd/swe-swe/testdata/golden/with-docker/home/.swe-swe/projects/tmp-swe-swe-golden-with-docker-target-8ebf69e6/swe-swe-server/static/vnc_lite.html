@@ -85,22 +85,6 @@
         .spacer {
             flex: 1;
         }
-        #sendCtrlAltDelButton {
-            background: none;
-            border: 1px solid var(--vnc-border);
-            border-radius: 4px;
-            color: var(--vnc-text-muted);
-            padding: 3px 10px;
-            cursor: pointer;
-            font-size: 11px;
-            font-family: inherit;
-            white-space: nowrap;
-        }
-        #sendCtrlAltDelButton:hover {
-            color: var(--vnc-text);
-            border-color: var(--vnc-text-muted);
-        }
-
         /* View only / Interactive toggle */
         #modeToggle {
             display: flex;
@@ -164,11 +148,6 @@
             desktopName = e.detail.name;
         }
 
-        function sendCtrlAltDel() {
-            rfb.sendCtrlAltDel();
-            return false;
-        }
-
         function status(text) {
             document.getElementById('statusText').textContent = text;
         }
@@ -201,7 +180,6 @@
             }
         }
 
-        document.getElementById('sendCtrlAltDelButton').onclick = sendCtrlAltDel;
         document.getElementById('btnView').onclick = () => setMode('view');
         document.getElementById('btnInteract').onclick = () => setMode('interact');
 
@@ -249,7 +227,6 @@
             <button id="btnView">View only</button>
             <button id="btnInteract" class="active">Interactive</button>
         </div>
-        <button id="sendCtrlAltDelButton">Send CtrlAltDel</button>
     </div>
     <div id="screen">
     </div>
