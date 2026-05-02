@@ -1598,7 +1598,7 @@ func TestSaveMetadata_ConcurrentWritesProduceValidJSON(t *testing.T) {
 	}
 }
 
-// Phase 6: Homepage Recording Display Tests (loadEndedRecordings, loadEndedRecordingsByAgent)
+// Phase 6: Homepage Recording Display Tests (loadEndedRecordings)
 // ============================================================================
 
 func TestLoadEndedRecordings_EmptyDirectory(t *testing.T) {
@@ -1768,70 +1768,6 @@ func TestLoadEndedRecordings_SortsByEndedAtDesc(t *testing.T) {
 	}
 	if recordings[1].UUID != oldUUID {
 		t.Errorf("expected oldest recording second, got %s", recordings[1].UUID)
-	}
-}
-
-func TestLoadEndedRecordingsByAgent_GroupsByAgent(t *testing.T) {
-	h := newTestHelper(t)
-
-	// Create recordings for different agents
-	claudeUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	geminiUUID := "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee"
-
-	h.createRecordingFiles(claudeUUID, recordingOpts{
-		metadata: &RecordingMetadata{
-			UUID:  claudeUUID,
-			Name:  "Claude Session",
-			Agent: "Claude",
-		},
-	})
-
-	h.createRecordingFiles(geminiUUID, recordingOpts{
-		metadata: &RecordingMetadata{
-			UUID:  geminiUUID,
-			Name:  "Gemini Session",
-			Agent: "Gemini",
-		},
-	})
-
-	recordings := loadEndedRecordings()
-	grouped := loadEndedRecordingsByAgent(recordings)
-
-	// Should have entries for both agents
-	claudeRecordings := grouped["claude"]
-	geminiRecordings := grouped["gemini"]
-
-	if len(claudeRecordings) != 1 {
-		t.Errorf("expected 1 Claude recording, got %d", len(claudeRecordings))
-	}
-	if len(geminiRecordings) != 1 {
-		t.Errorf("expected 1 Gemini recording, got %d", len(geminiRecordings))
-	}
-}
-
-func TestLoadEndedRecordingsByAgent_MapsDisplayNamesToBinaryNames(t *testing.T) {
-	h := newTestHelper(t)
-
-	// Create recording with display name "Claude" (should map to binary name "claude")
-	testUUID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-
-	h.createRecordingFiles(testUUID, recordingOpts{
-		metadata: &RecordingMetadata{
-			UUID:  testUUID,
-			Name:  "Test Session",
-			Agent: "Claude", // Display name
-		},
-	})
-
-	recordings := loadEndedRecordings()
-	grouped := loadEndedRecordingsByAgent(recordings)
-
-	// Should be grouped under "claude" (binary name), not "Claude"
-	if _, ok := grouped["Claude"]; ok {
-		t.Error("expected display name 'Claude' to be mapped to binary name 'claude'")
-	}
-	if recordings, ok := grouped["claude"]; !ok || len(recordings) != 1 {
-		t.Error("expected recording to be grouped under 'claude'")
 	}
 }
 

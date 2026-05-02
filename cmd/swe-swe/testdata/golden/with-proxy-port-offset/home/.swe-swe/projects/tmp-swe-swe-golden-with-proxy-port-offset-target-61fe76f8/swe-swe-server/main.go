@@ -306,11 +306,8 @@ func formatDuration(d time.Duration) string {
 
 // AgentWithSessions groups an assistant with its active sessions
 type AgentWithSessions struct {
-	Assistant        AssistantConfig
-	Sessions         []SessionInfo   // sorted by CreatedAt desc (most recent first)
-	Recordings       []RecordingInfo // ended recordings for this agent (deprecated, use Recent/Kept)
-	RecentRecordings []RecordingInfo // recent recordings (auto-deletable, not kept)
-	KeptRecordings   []RecordingInfo // kept recordings (user explicitly kept)
+	Assistant AssistantConfig
+	Sessions  []SessionInfo // sorted by CreatedAt desc (most recent first)
 }
 
 // RecordingMetadata stores information about a terminal recording session
@@ -2037,9 +2034,8 @@ func main() {
 				})
 			}
 
-			// Load recordings (sorted by timestamp) and group by agent for per-agent sections
+			// Load recordings (sorted by timestamp) for the page-level recordings list.
 			recordings := loadEndedRecordings()
-			recordingsByAgent := loadEndedRecordingsByAgent(recordings)
 
 			const defaultRecordingsPerPage = 10
 			recordingsPerPage := defaultRecordingsPerPage
@@ -2089,22 +2085,9 @@ func main() {
 				if !assistant.Homepage {
 					continue
 				}
-				recordings := recordingsByAgent[assistant.Binary]
-				// Split recordings into recent and kept
-				var recentRecordings, keptRecordings []RecordingInfo
-				for _, rec := range recordings {
-					if rec.IsKept {
-						keptRecordings = append(keptRecordings, rec)
-					} else {
-						recentRecordings = append(recentRecordings, rec)
-					}
-				}
 				agents = append(agents, AgentWithSessions{
-					Assistant:        assistant,
-					Sessions:         sessionsByAssistant[assistant.Binary], // nil if no sessions
-					Recordings:       recordings,                            // all recordings (for backward compat)
-					RecentRecordings: recentRecordings,
-					KeptRecordings:   keptRecordings,
+					Assistant: assistant,
+					Sessions:  sessionsByAssistant[assistant.Binary], // nil if no sessions
 				})
 			}
 
@@ -5811,21 +5794,6 @@ func agentNameToBinary(name string) string {
 		}
 	}
 	return strings.ToLower(name)
-}
-
-// loadEndedRecordingsByAgent returns ended recordings grouped by agent binary name
-func loadEndedRecordingsByAgent(recordings []RecordingInfo) map[string][]RecordingInfo {
-	result := make(map[string][]RecordingInfo)
-	for _, rec := range recordings {
-		agent := rec.Agent
-		if agent == "" {
-			agent = "unknown"
-		}
-		// Convert display name to binary name for consistent grouping
-		binaryName := agentNameToBinary(agent)
-		result[binaryName] = append(result[binaryName], rec)
-	}
-	return result
 }
 
 // TerminalDimensions holds calculated terminal dimensions from content analysis.
