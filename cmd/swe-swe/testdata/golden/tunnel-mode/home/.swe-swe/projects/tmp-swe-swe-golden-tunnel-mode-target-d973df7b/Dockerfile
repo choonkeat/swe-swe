@@ -203,5 +203,10 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default working directory (entrypoint will cd to /workspace for the server)
 WORKDIR /workspace
 
-# Default command: run swe-swe-server pointing to /workspace
-CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
+# Default command: run swe-swe-server pointing to /workspace.
+# Tunnel mode: the only consumer of swe-swe-server is the in-container
+# tunnel client at localhost. Bind localhost-only so swe-swe-server is
+# not reachable from anything else in the container's network namespace
+# (sidecars, mesh, accidentally-routed PaaS ports), which would bypass
+# the tunnel's identity gate.
+CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:9898"]

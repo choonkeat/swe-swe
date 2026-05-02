@@ -197,5 +197,5 @@ ENV SWE_SWE_PASSWORD=changeme
 
 EXPOSE ${SWE_PORT:-1977}
 
-# Default command: run swe-swe-server pointing to /workspace
+# Default command: run swe-swe-server pointing to /workspace.
 CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-addr", "0.0.0.0:${SWE_PORT:-1977}"]

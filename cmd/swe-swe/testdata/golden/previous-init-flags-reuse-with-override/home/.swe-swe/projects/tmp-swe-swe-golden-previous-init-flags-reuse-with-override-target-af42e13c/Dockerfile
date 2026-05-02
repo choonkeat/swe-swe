@@ -191,5 +191,5 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Default working directory (entrypoint will cd to /workspace for the server)
 WORKDIR /workspace
 
-# Default command: run swe-swe-server pointing to /workspace
+# Default command: run swe-swe-server pointing to /workspace.
 CMD ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-addr", "0.0.0.0:9898"]
