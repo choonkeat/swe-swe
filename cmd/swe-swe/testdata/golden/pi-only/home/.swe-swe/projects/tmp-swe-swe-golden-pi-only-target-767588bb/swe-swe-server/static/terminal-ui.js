@@ -627,6 +627,7 @@ class TerminalUI extends HTMLElement {
                         <option value="shell">Terminal</option>
                         <option value="browser" hidden disabled>Agent View</option>
                     </select>
+                    <button class="terminal-ui__mobile-nav-popout" type="button" title="Open in new browser tab" hidden>↗</button>
                     <span class="terminal-ui__assistant-badge">CLAUDE</span>
                 </div>
 
@@ -688,7 +689,6 @@ class TerminalUI extends HTMLElement {
                                     <input type="text" class="terminal-ui__iframe-url-input" placeholder="/" />
                                 </div>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
-                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-open-external" title="Open in new window">↗</button>
                             </div>
                             <div class="terminal-ui__iframe-slot" data-pane="preview">
                                 <div class="terminal-ui__iframe-placeholder">
@@ -1380,6 +1380,8 @@ class TerminalUI extends HTMLElement {
                 const prevWorkDir = this.workDir;
                 this.workDir = msg.workDir || '';
                 const prevPreviewBaseUrl = this.previewBaseUrl;
+                const prevPreviewProxyPort = this.previewProxyPort;
+                const prevVncProxyPort = this.vncProxyPort;
                 this.previewPort = msg.previewPort || null;
                 this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
@@ -1391,6 +1393,16 @@ class TerminalUI extends HTMLElement {
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
                 this.publicHostname = msg.publicHostname || '';
+                // Tab popout-able state depends on URLs that arrive via
+                // BroadcastStatus. Rerender when those URLs flip from null
+                // to set (or vice-versa) so the dotted-underline affordance
+                // and tooltip appear without waiting for an unrelated event.
+                if ((!prevPreviewProxyPort) !== (!this.previewProxyPort)
+                    || (!prevVncProxyPort) !== (!this.vncProxyPort)) {
+                    this._rerenderSlotTabs();
+                    const sel = this.querySelector('.terminal-ui__mobile-nav-select');
+                    if (sel) this.switchMobileNav(sel.value);
+                }
                 const prevTunnelStatus = this.tunnelStatus;
                 this.tunnelStatus = msg.tunnelStatus || null;
                 this._renderTunnelStatusBanner(prevTunnelStatus, this.tunnelStatus);
@@ -1997,6 +2009,17 @@ class TerminalUI extends HTMLElement {
         if (mobileNavSelect) {
             mobileNavSelect.addEventListener('change', (e) => {
                 this.switchMobileNav(e.target.value);
+            });
+        }
+        // Mobile popout button: opens the currently-selected pane in a new
+        // browser tab. switchMobileNav() controls hidden-state.
+        const mobileNavPopout = this.querySelector('.terminal-ui__mobile-nav-popout');
+        if (mobileNavPopout) {
+            mobileNavPopout.title = this._popoutHintText();
+            mobileNavPopout.addEventListener('click', () => {
+                const sel = this.querySelector('.terminal-ui__mobile-nav-select');
+                const url = sel && this.panePopoutUrl(sel.value);
+                if (url) window.open(url, '_blank');
             });
         }
     }
@@ -4307,7 +4330,31 @@ class TerminalUI extends HTMLElement {
             });
             btn.appendChild(close);
 
-            btn.addEventListener('click', () => this.setActiveInSlot(slotId, paneId));
+            // Popout gesture: tabs whose pane resolves to a URL get the
+            // popout-able marker (drives the dotted hover underline) and a
+            // tooltip explaining middle-click / cmd-click. URL is resolved
+            // at click time so navigation/probe state changes are reflected.
+            if (this.panePopoutUrl(paneId) != null) {
+                btn.classList.add('popout-able');
+                btn.title = this._popoutHintText();
+            }
+            const tryPopout = (e) => {
+                const url = this.panePopoutUrl(paneId);
+                if (!url) return false;
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(url, '_blank');
+                return true;
+            };
+            btn.addEventListener('click', (e) => {
+                if (e.metaKey || e.ctrlKey) {
+                    if (tryPopout(e)) return;
+                }
+                this.setActiveInSlot(slotId, paneId);
+            });
+            btn.addEventListener('auxclick', (e) => {
+                if (e.button === 1) tryPopout(e);
+            });
             bar.appendChild(btn);
         });
 
@@ -4491,6 +4538,40 @@ class TerminalUI extends HTMLElement {
         this.previewBaseUrl = this.getPreviewBaseUrl();
     }
 
+    // Resolve the standalone URL for a pane, or null if the pane has no
+    // shareable URL (in-page xterm-style panes). Drives the tab popout
+    // gesture (middle-click / cmd-click) and the mobile dropdown popout
+    // button. Read at click time so URL state changes (preview navigation,
+    // late VNC port assignment) are reflected.
+    panePopoutUrl(paneId) {
+        switch (paneId) {
+            case 'preview': {
+                if (this._lastUrlChangeUrl) return this._lastUrlChangeUrl;
+                const base = this.getPreviewBaseUrl();
+                return base ? base + '/' : null;
+            }
+            case 'browser':
+                return this.getBrowserViewUrl();
+            case 'vscode':
+                return this._vscodeEnabled() ? buildVSCodeUrl(getBaseUrl(window.location), this.workDir) : null;
+            case 'agent-chat': {
+                const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
+                const src = chatIframe && chatIframe.src;
+                return src && src !== 'about:blank' ? src : null;
+            }
+            default:
+                return null;
+        }
+    }
+
+    // Tooltip explaining the popout gesture. Platform-aware so the modifier
+    // key matches the user's keyboard.
+    _popoutHintText() {
+        const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+        const mod = isMac ? '⌘' : 'Ctrl';
+        return `Middle-click or ${mod}+click to open in new browser tab`;
+    }
+
     initSplitPaneUi() {
         // Initialize split-pane UI infrastructure
         // The iframe pane starts hidden (terminal at 100% width)
@@ -4616,15 +4697,6 @@ class TerminalUI extends HTMLElement {
         if (urlInput) {
             urlInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') navigateToUrl();
-            });
-        }
-
-        // Open in new window button
-        const openExternalBtn = this.querySelector('.terminal-ui__iframe-open-external');
-        if (openExternalBtn) {
-            openExternalBtn.addEventListener('click', () => {
-                const url = this._lastUrlChangeUrl || this.getPreviewBaseUrl() + '/';
-                if (url) window.open(url, '_blank');
             });
         }
 
@@ -4791,6 +4863,11 @@ class TerminalUI extends HTMLElement {
         // WS-init probe-success handler calls switchMobileNav('agent-chat')).
         const sel = this.querySelector('.terminal-ui__mobile-nav-select');
         if (sel && sel.value !== value) sel.value = value;
+
+        // Show/hide the adjacent popout button based on whether the new
+        // active pane has a shareable URL. Hidden by default in HTML.
+        const popoutBtn = this.querySelector('.terminal-ui__mobile-nav-popout');
+        if (popoutBtn) popoutBtn.hidden = (this.panePopoutUrl(value) == null);
     }
 
     // Switch between terminal and workspace views on mobile (legacy method, kept for compatibility)

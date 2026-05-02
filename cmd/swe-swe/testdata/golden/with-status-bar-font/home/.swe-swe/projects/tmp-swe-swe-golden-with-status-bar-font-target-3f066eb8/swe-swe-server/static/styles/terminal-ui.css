@@ -1113,13 +1113,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     opacity: 0.3;
 }
 
-.terminal-ui__iframe-open-external {
-    margin-left: 2px;
-    border-left: 1px solid var(--border-primary) !important;
-    padding-left: 8px !important;
-    font-size: 13px;
-}
-
 /* URL bar: fixed host:port prefix + editable path input.
    The proxy can only target one port, so the prefix is non-editable. */
 .terminal-ui__iframe-url-bar {
@@ -1542,6 +1535,27 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .terminal-ui__mobile-nav-select:focus {
     border-color: var(--accent-primary);
+}
+
+/* Mobile popout button: opens whatever the dropdown currently selects in
+   a new browser tab. Hidden by JS when the active pane has no popout URL
+   (xterm-style panes). Sized to match the dropdown row height. */
+.terminal-ui__mobile-nav-popout {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    font-size: 14px;
+    line-height: 1;
+    font-family: inherit;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    outline: none;
+}
+.terminal-ui__mobile-nav-popout:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
 }
 
 /* === Panel Headers (desktop - inside each panel) === */
@@ -2080,6 +2094,15 @@ terminal-ui.embedded-in-iframe .mobile-only {
 .terminal-ui__slot-tab.unavailable {
     opacity: 0.55;
     font-style: italic;
+}
+
+/* Popout-able tab: pane resolves to a shareable URL. Hovering hints that
+   middle-click / cmd-click opens it in a new browser tab. Dotted (vs solid)
+   underline so it doesn't masquerade as a link - left-click still activates
+   the tab as normal. */
+.terminal-ui__slot-tab.popout-able:hover .terminal-ui__slot-tab-label {
+    text-decoration: underline dotted var(--accent-primary);
+    text-underline-offset: 3px;
 }
 
 /* "+" add/replace button: opens a popover listing panes not in any slot. */
