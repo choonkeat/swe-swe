@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## v2.23.0 - Tunnel Mode, Preset-Grid UI, Tailscale PaaS & Pi Agent
+
+### Features
+
+- **Tunnel mode (`swe-swe init --tunnel-server-url=...`)**: New deploy path that lets a swe-swe container be reached from the public internet without owning an IP, opening ports, or provisioning TLS. The container dials a `swe-swe-tunnel` server outbound (Ed25519 pubkey auth); the tunnel server fronts subdomain-routed traffic over the same connection. Works on residential networks, Fly.io, Railway, Render, Cloud Run — anywhere with outbound HTTPS. See `docs/tunnel-deploy.md`
+- **Tunnel-mode subprocess supervisor**: `swe-swe-server` exec's the `swe-swe-tunnel` client as a child process and reads structured lifecycle events (`register_ok`, `disconnect`, `fatal`, `retry-after`) off its stdout. Live `publicHostname` propagates to the WebSocket broadcast and frontend in real time, including `retryAfterMs` for backoff and `kind=fatal` to halt the supervisor instead of restart-looping (ADR-0042)
+- **Tunnel subdomain iframes**: In tunnel mode, preview / Agent View / VNC iframes route via per-session subdomains through a single auth-proxy port — replacing per-port Traefik labels and Let's Encrypt certs (which the tunnel server fronts instead). Path-based probes still resolve before iframe mount
+- **Tunnel-aware landing page**: Landing page shows tunnel state and a click-through to the live URL on `register_ok`
+- **`--bind` / `SWE_BIND` flag**: Restrict the in-container listener to localhost in tunnel mode so nothing on the host network can reach swe-swe directly
+- **`SWE_TUNNEL_IDENTITY_KEY` env var**: Deliver the Ed25519 keypair as a PaaS secret instead of mounting a persistent volume
+- **Tailscale single-container PaaS deploy** (`swe-swe up`): `tailscaled` is baked into the image and dormant unless `TS_AUTHKEY` is set. When present, swe-swe-server spawns `tailscaled --tun=userspace-networking`, joins the tailnet, and binds the swe-swe UI Tailscale-only. The PaaS public `$PORT` exposes only a placeholder landing page + `/health`. New `--tailscale-*` flags (`TS_AUTHKEY` / `TS_HOSTNAME` / `TS_STATE_DIR` / `TS_DISABLE`)
+- **`pi` agent backend** (`@mariozechner/pi-coding-agent`): Wired alongside Claude, Codex, Gemini, OpenCode, Aider, and Goose. Bundled swe-swe slash commands install into `~/.pi/agent/prompts/`, autocomplete plumbed for system + project (`.pi/prompts/`), `pi --continue` for session resume
+- **Terminal UI preset grid**: 8 layout presets with per-slot multi-tab model. Each slot owns its own tab bar, with `+` replace-menu + loading/unavailable states, drag-resizable gutters that snap at 50% and device widths, per-preset persistence in localStorage. Auto-homes Agent Chat + Agent View into preset slots; mobile falls back to Agent Terminal during chat probe
+- **Per-session git credential broker**: `git-credential-swe-swe` helper + per-session `GIT_CONFIG_GLOBAL` injection routes git auth through a per-session credential broker socket. Author Name/Email wire through the credentials UI, with readonly fields when local `.git/config` overrides. Helper refuses invocation outside git
+- **`/swe-swe:setup` slash-command redesign**: Streamlined flow for git identity + auth + dev-server + env-var setup
+- **`/run-md-serve` slash-command**: Spawns `npx @choonkeat/md-serve` for previewing markdown docs
+- **Theme color resolves before session creation**: Session page now resolves sticky repo color via `WorkDir` instead of waiting on a created session
+- **Agent View pop-out button**: New "open in new tab" button on the Agent View pane (top-right of the noVNC toolbar, replacing the removed Send CtrlAltDel button). Mirrors the existing Preview-pane affordance; pop-out URL is wired per pane via a `popoutUrlForPane` map so other iframe panes can opt in
+
+### Bug Fixes
+
+- **Per-port proxy auth bypass (security)**: Per-port proxies in tunnel mode now require the auth cookie before forwarding; added VNC reverse-proxy under the same auth wrap. Slot dedup prevents duplicate panes across slots on layout load
+- **Cookie secure flag respects `X-Forwarded-Proto`**: Auth middleware lets `X-Forwarded-Proto: https` override `SWE_COOKIE_SECURE` per request, so PaaS edge HTTPS works without forcing the SSL compose template. Dropped `SWE_COOKIE_SECURE=true` from the SSL template
+- **Internal server port rename**: `swe-swe-server` internal port renamed from hardcoded `9898` to `SWE_PORT` (default `1977`) so it doesn't clash on hosts where 9898 is in use
+- **Agent Chat spinner during probe**: Spinner animates during non-chat-session probe so users see activity instead of a frozen tab
+- **Stale-state cleanups on terminal-ui boot**: Override stale `active:'agent-chat'` to agent-terminal; clear stale inline styles that left Agent Terminal blank; mobile viewport no longer blanks after preset-grid rewrite; session-driven pane auto-opens and probe-success flips no longer persist across sessions
+- **Tailscale state dir writable**: Compose shim creates a writable tailscale state dir and forwards `TS_*` env to the container
+- **`tunnel-down-manual` leaves caller in valid CWD**: Script no longer cd's into the deleted compose dir before exiting
+- **Auto-redirect to home on session end**
+- **Auto-upgrade docs**: Documented `SWE_SWE_AUTO_UPGRADE` and `NODE_EXTRA_CA_CERTS_BUNDLE` env vars
+
+### Refactoring
+
+- **Drop dead per-agent recording fields** in `Session`
+- **Parameterize tunnel "OPEN AT URL" port** via supervisor `LocalAddr` instead of hardcoding
+- **Drop `--public-hostname` / `--tunnel-state-file`**: Replaced by the subprocess event stream — the file-based IPC was a one-shot read at boot with order-dependent failure modes (see ADR-0042)
+
+### Internal
+
+- Pre-commit hook to keep `.swe-swe/env` values out of commits
+- E2E hardcodes all `SWE_*_PORTS` in `override.yml` + widens ranges to 30 to reduce port-collision flakes
+- `SWE_SWE_TUNNEL_REF` build-arg pin bumped through `9984c43a6059` → `751dd1cbdc42` → `77af59b37ef5`
+- Test coverage: per-port proxy auth wrap, VNC reverse proxy, slot dedup, tunnel-mode `getPreviewBaseUrl` + env passthrough, credential broker round-trip
+
+### Documentation
+
+- ADR-0042: Tunnel-mode subprocess supervisor
+- `docs/tunnel-deploy.md`: PaaS deploy guide with Fly walkthrough
+- `tasks/2026-04-29-tunnel-subprocess-pivot.md`: Subprocess pivot rationale + 2026-04-30 fatal/retry-after follow-up
+- `docs/dev/how-to-restart.md`: End other sessions before compose down
+
 ## v2.21.2 - `.swe-swe/env` $VAR Expansion Fix
 
 ### Bug Fixes

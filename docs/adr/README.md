@@ -67,3 +67,4 @@ Bad: ...
 | [039](0039-strip-csi3j-viewport-fix.md) | Strip CSI 3J to prevent xterm.js viewport jump | Accepted |
 | [040](0040-same-origin-vnc-readiness-probe.md) | Same-origin VNC readiness probe | Accepted |
 | [041](0041-deferred-log-compression.md) | Deferred log compression | Accepted |
+| [042](0042-tunnel-subprocess-supervisor.md) | Tunnel-mode subprocess supervisor | Accepted |
