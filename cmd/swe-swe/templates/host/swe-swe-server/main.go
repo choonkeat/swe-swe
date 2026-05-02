@@ -1723,6 +1723,11 @@ func main() {
 			"on $PATH. Env: SWE_TUNNEL_BIN.")
 	flag.Parse()
 
+	// Resolve the swe-swe-server bind early so the tunnel supervisor can
+	// log the correct OPEN AT URL ({port}.{hostname}) when it learns the
+	// tunnel hostname; tunneld demuxes by the same port.
+	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+
 	// Tunnel-mode subprocess supervisor. Trigger is non-empty
 	// --tunnel-server-url (or its env equivalent). When set, spawn the
 	// swe-swe-tunnel client as a child process and consume its JSONL
@@ -1745,6 +1750,7 @@ func main() {
 			ServerURL: resolvedTunnelServerURL,
 			Unique:    resolvedTunnelUnique,
 			BinPath:   resolvedTunnelBin,
+			LocalAddr: listenAddr,
 		})
 	}
 
@@ -2356,10 +2362,8 @@ func main() {
 		staticHandler.ServeHTTP(w, r)
 	})
 
-	// Resolve which port swe-swe itself binds and whether a landing server
-	// needs to cover a separate PaaS-facing $PORT (see tailscale.go for the
-	// decision rule).
-	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+	// listenAddr/landingAddr were resolved earlier so the tunnel supervisor
+	// can log the correct OPEN AT URL; see tailscale.go for the decision rule.
 	tsCfg := resolveTailscaleConfig(*tsAuthKey, *tsHostname, *tsStateDir, *tsDisable)
 
 	log.Printf("swe-swe-server v%s", Version)

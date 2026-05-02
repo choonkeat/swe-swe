@@ -19,11 +19,27 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os/exec"
 	"sync/atomic"
 	"syscall"
 	"time"
 )
+
+// supervisorOpenPort extracts the port portion of a listen address
+// (":9898", "127.0.0.1:9898", "[::]:9898") for the OPEN AT log line.
+// Falls back to "9898" if the address is empty or unparsable so the
+// log line is never blank.
+func supervisorOpenPort(listenAddr string) string {
+	if listenAddr == "" {
+		return "9898"
+	}
+	_, port, err := net.SplitHostPort(listenAddr)
+	if err != nil || port == "" {
+		return "9898"
+	}
+	return port
+}
 
 // tunnelSupervisorOpts captures the configuration for one supervisor
 // instance. ServerURL is the tunneld base URL (e.g.
@@ -34,6 +50,12 @@ type tunnelSupervisorOpts struct {
 	ServerURL string
 	Unique    string
 	BinPath   string
+
+	// LocalAddr is the swe-swe-server listen address (e.g. ":9898",
+	// "127.0.0.1:9898"). The supervisor uses just the port portion to
+	// build the OPEN AT URL; tunneld demuxes {port}.{hostname} ->
+	// 127.0.0.1:{port} so the URL must match the actual bind.
+	LocalAddr string
 
 	// MinBackoff and MaxBackoff bound the restart delay after a child
 	// exit. Defaults: 1s and 60s.
@@ -350,10 +372,10 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 		if hostnameChanged {
 			log.Printf("[tunnel-supervisor] hostname=%s (kind=%s)", data.Hostname, ev.Kind)
 			// Operator-friendly URL on a separate line so it's easy
-			// to spot in PaaS log streams. The 9898 component is the
-			// swe-swe-server port; tunneld demuxes
+			// to spot in PaaS log streams. The {port} component is
+			// the swe-swe-server port; tunneld demuxes
 			// {port}.{hostname} -> 127.0.0.1:{port}.
-			log.Printf("[tunnel-supervisor] OPEN AT https://9898.%s/", data.Hostname)
+			log.Printf("[tunnel-supervisor] OPEN AT https://%s.%s/", supervisorOpenPort(opts.LocalAddr), data.Hostname)
 		}
 		if hostnameChanged || statusChanged {
 			broadcastPublicHostnameChange()
