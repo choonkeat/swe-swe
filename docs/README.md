@@ -11,6 +11,10 @@
 - [Mobile & Touch Support](mobile-keyboard-ui.md) — mobile-optimized UI for touch devices
 - [Connection Lifecycle](connection-lifecycle.md) — WebSocket states and reconnection behavior
 
+## Deployment
+
+- [Tunnel Mode on a PaaS](tunnel-deploy.md) — Fly/Railway/Cloud Run via swe-swe-tunnel (no public IP / DNS / TLS setup)
+
 ## Internals
 
 - [WebSocket Protocol](websocket-protocol.md) — terminal communication protocol
