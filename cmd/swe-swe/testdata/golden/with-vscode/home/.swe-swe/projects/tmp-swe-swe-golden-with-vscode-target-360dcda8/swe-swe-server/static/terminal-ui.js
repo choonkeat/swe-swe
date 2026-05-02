@@ -110,6 +110,19 @@ const PRESET_GUTTERS = {
 // legacy MIN_PANEL_WIDTH used by the now-defunct flexbox split-pane.
 const GUTTER_MIN_PX = 200;
 
+// Gutter drag snap targets. Hold Alt while dragging to bypass.
+//   - Ratio snap (50%) on both column and row gutters.
+//   - Device-width snaps on column gutters only, applied to whichever
+//     side (left or right pane) is closer to the device width.
+const GUTTER_SNAP_RATIO_THRESHOLD_PX = 12;  // cap on the 2%-of-total threshold
+const GUTTER_SNAP_RATIO_THRESHOLD_FRAC = 0.02;
+const GUTTER_SNAP_DEVICE_THRESHOLD_PX = 8;
+const GUTTER_DEVICE_SNAPS = [
+    { px: 375, label: '375' },
+    { px: 640, label: '640 (sm)' },
+    { px: 768, label: '768 (md)' },
+];
+
 const LAYOUT_STATE_KEY = 'swe-swe-layout-v1';
 
 // Build a fresh slot-state object (one tab, active) from a pane id.
@@ -4084,10 +4097,79 @@ class TerminalUI extends HTMLElement {
                 : null;
         };
 
+        // Build the ordered list of snap candidates for the current drag.
+        // `value` is the size (px) that slot A would take if snapped.
+        // `kind`: 'device' beats 'ratio' when both are within threshold.
+        const buildSnaps = (totalSize) => {
+            const minA = GUTTER_MIN_PX;
+            const minB = GUTTER_MIN_PX;
+            const inRange = v => v >= minA && totalSize - v >= minB;
+            const out = [];
+            // 50% ratio snap (always, both axes).
+            const mid = totalSize / 2;
+            if (inRange(mid)) {
+                const t = Math.min(totalSize * GUTTER_SNAP_RATIO_THRESHOLD_FRAC,
+                                   GUTTER_SNAP_RATIO_THRESHOLD_PX);
+                out.push({ value: mid, label: '50%', threshold: t, kind: 'ratio' });
+            }
+            // Device-width snaps on column gutter only. Each device width is
+            // tested for both panes (left = device, and right = device).
+            if (isCol) {
+                for (const d of GUTTER_DEVICE_SNAPS) {
+                    const t = GUTTER_SNAP_DEVICE_THRESHOLD_PX;
+                    if (inRange(d.px)) {
+                        out.push({ value: d.px, label: d.label, threshold: t, kind: 'device' });
+                    }
+                    const right = totalSize - d.px;
+                    if (right !== d.px && inRange(right)) {
+                        out.push({ value: right, label: d.label, threshold: t, kind: 'device' });
+                    }
+                }
+            }
+            return out;
+        };
+
+        // Pick best snap for newA. Prefer device over ratio, then closest.
+        const findSnap = (snaps, newA) => {
+            const hits = snaps.filter(s => Math.abs(newA - s.value) <= s.threshold);
+            if (!hits.length) return null;
+            hits.sort((a, b) => {
+                const ka = a.kind === 'device' ? 0 : 1;
+                const kb = b.kind === 'device' ? 0 : 1;
+                if (ka !== kb) return ka - kb;
+                return Math.abs(newA - a.value) - Math.abs(newA - b.value);
+            });
+            return hits[0];
+        };
+
+        // Tick marks rendered while dragging at every snap target. Mounted on
+        // the workspace so they span across the full slot dimension.
+        let tickContainer = null;
+        const renderTicks = (snaps, originPx) => {
+            tickContainer = document.createElement('div');
+            tickContainer.className = 'terminal-ui__snap-ticks';
+            for (const s of snaps) {
+                const tick = document.createElement('div');
+                tick.className = `terminal-ui__snap-tick terminal-ui__snap-tick--${isCol ? 'col' : 'row'}`;
+                tick.dataset.kind = s.kind;
+                if (isCol) tick.style.left = `${originPx + s.value}px`;
+                else       tick.style.top  = `${originPx + s.value}px`;
+                const label = document.createElement('span');
+                label.textContent = s.label;
+                tick.appendChild(label);
+                tickContainer.appendChild(tick);
+            }
+            workspace.appendChild(tickContainer);
+        };
+        const removeTicks = () => {
+            if (tickContainer) { tickContainer.remove(); tickContainer = null; }
+        };
+
         let dragging = false;
         let startCoord = 0;       // initial pointer x or y
         let startSizeA = 0;       // initial slot A size in px (along drag axis)
         let totalSize = 0;        // sum of A + B sizes (drag axis)
+        let snapList = [];        // snap candidates for the current drag
 
         const onPointerMove = (e) => {
             if (!dragging) return;
@@ -4097,12 +4179,17 @@ class TerminalUI extends HTMLElement {
             const minA = GUTTER_MIN_PX;
             const minB = GUTTER_MIN_PX;
             newA = Math.max(minA, Math.min(totalSize - minB, newA));
+            // Apply snap unless Alt is held (escape hatch for fine adjust).
+            const snapped = e.altKey ? null : findSnap(snapList, newA);
+            if (snapped) newA = snapped.value;
             const newB = totalSize - newA;
             // Use fr units (ratios) so the grid stays responsive on resize.
             workspace.style.setProperty(varA, `${newA}fr`);
             workspace.style.setProperty(varB, `${newB}fr`);
             this._positionGutters();
-            tooltip.textContent = `${Math.round(newA)}px / ${Math.round(newB)}px`;
+            const sizes = `${Math.round(newA)}px / ${Math.round(newB)}px`;
+            tooltip.textContent = snapped ? `${sizes} - ${snapped.label}` : sizes;
+            tooltip.classList.toggle('snapped', !!snapped);
         };
 
         const onPointerUp = (e) => {
@@ -4110,6 +4197,8 @@ class TerminalUI extends HTMLElement {
             dragging = false;
             gutter.classList.remove('dragging');
             tooltip.classList.remove('visible');
+            tooltip.classList.remove('snapped');
+            removeTicks();
             document.body.style.cursor = '';
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
@@ -4138,6 +4227,13 @@ class TerminalUI extends HTMLElement {
             startSizeA = isCol ? rects.a.width  : rects.a.height;
             const sizeB  = isCol ? rects.b.width  : rects.b.height;
             totalSize = startSizeA + sizeB;
+            snapList = buildSnaps(totalSize);
+            // Origin of slot A in workspace-relative coords; tick positions
+            // are originPx + snapValue.
+            const wsRect = workspace.getBoundingClientRect();
+            const originPx = isCol ? rects.a.left - wsRect.left
+                                   : rects.a.top  - wsRect.top;
+            renderTicks(snapList, originPx);
             gutter.classList.add('dragging');
             document.body.style.cursor = isCol ? 'col-resize' : 'row-resize';
             // Position and show tooltip near gutter center.
