@@ -97,13 +97,15 @@ landing page (a small static doc with the live tunnel hostname linked
 through). The PaaS health probe should hit `GET /` on `$PORT`; a 200
 means the container is up and the landing render succeeded.
 
-Internally, swe-swe-server binds `127.0.0.1:9898` (with the
-`SWE_BIND` value above) and the tunnel client dials it from inside
-the same container. **Do not omit `SWE_BIND`** — without it, the
-image's default `CMD` binds `0.0.0.0:9898`, and on a PaaS that means
-anything else in the container's network namespace (sidecars,
-internal cluster mesh, accidentally-routed `$PORT=9898`) could reach
-swe-swe-server without going through the tunnel's identity gate.
+Internally, swe-swe-server binds `127.0.0.1:9898` and the tunnel
+client dials it from inside the same container. The image built by
+`swe-swe init --tunnel-server-url=...` already wires this default in
+its `CMD` line; setting `SWE_BIND=127.0.0.1:9898` explicitly is
+belt-and-suspenders against an image baked from an older revision.
+The reason to keep it nailed to localhost: anything else in the
+container's network namespace (sidecars, internal cluster mesh,
+accidentally-routed `$PORT=9898`) reaching `swe-swe-server` directly
+would bypass the tunnel's identity gate.
 
 ## Verify the tunnel came up
 
