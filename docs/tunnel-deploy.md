@@ -18,6 +18,22 @@ authenticates clients by Ed25519 pubkey.
 For background, see `tasks/2026-04-29-tunnel-subprocess-pivot.md`
 (swe-swe side) and the `swe-swe-tunnel` repo for the wire protocol.
 
+## Why this requires `init --tunnel-server-url` (not a sidecar)
+
+A common shortcut -- running plain `swe-swe up` (compose mode with
+Traefik) and pointing an external `swe-swe-tunnel` client at it --
+**does not work**. The cookie domain, per-port iframe auth, frontend
+subdomain URLs, and Traefik routing all key off a public hostname
+populated only by the in-process tunnel supervisor that
+`init --tunnel-server-url` bakes into the image. Without it, login
+appears to succeed but the UI bounces you back to the login screen as
+soon as the per-port iframes try to load.
+
+See [ADR-0043](adr/0043-tunnel-mode-not-a-sidecar.md) for the full
+failure mode (six distinct breaks, in order of how soon they bite).
+The short version: tunnel mode is a build-time choice, not a
+runtime sidecar.
+
 ## What you need
 
 - A `swe-swe-tunnel` admin who runs a reachable server
