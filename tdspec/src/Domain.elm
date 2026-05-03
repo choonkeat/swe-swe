@@ -1,4 +1,4 @@
-module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), PublicPort(..), ProxyPortOffset(..), PreviewProxyPort(..), AgentChatProxyPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
+module Domain exposing (Url(..), Path(..), SessionUuid(..), PreviewPort(..), AgentChatPort(..), PublicPort(..), CdpPort(..), VncPort(..), ProxyPortOffset(..), PreviewProxyPort(..), AgentChatProxyPort(..), VncProxyPort(..), Bytes(..), Timestamp(..), ServerAddr(..))
 
 {-| Shared primitive types used across the architecture.
 
@@ -12,7 +12,7 @@ System overview:
       - Path-based (fallback): /proxy/{uuid}/preview/ on main server port
   - Both modes reach the same proxy instance and share a DebugHub
 
-@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, PublicPort, ProxyPortOffset, PreviewProxyPort, AgentChatProxyPort, Bytes, Timestamp, ServerAddr
+@docs Url, Path, SessionUuid, PreviewPort, AgentChatPort, PublicPort, CdpPort, VncPort, ProxyPortOffset, PreviewProxyPort, AgentChatProxyPort, VncProxyPort, Bytes, Timestamp, ServerAddr
 
 -}
 
@@ -74,6 +74,42 @@ type PublicPort
     = PublicPort Int
 
 
+{-| Chrome DevTools Protocol port for the per-session browser stack
+(Xvfb + Chromium). Consumed in-container by Playwright via
+`BROWSER_CDP_PORT` env var; **not** exposed via a per-port reverse
+proxy listener -- the session's MCP browser tools dial it on
+loopback.
+
+Derived from preview port: `previewPort + 3000`.
+
+    cdpPort (PreviewPort 3000) == CdpPort 6000
+
+Range: 6000-6019 (configurable via `SWE_CDP_PORTS`).
+Source: `cdpPortFromPreview` in main.go.
+
+-}
+type CdpPort
+    = CdpPort Int
+
+
+{-| VNC port for the per-session browser stack (x11vnc + noVNC).
+Derived from preview port: `previewPort + 4000`.
+
+    vncPort (PreviewPort 3000) == VncPort 7000
+
+Range: 7000-7019 (configurable via `SWE_VNC_PORTS`).
+Passed to the session as env var `BROWSER_VNC_PORT=7000`.
+
+Reverse-proxied through `VncProxyPort` (vncPort + proxyPortOffset),
+so the Agent View pane in the browser reaches it through the same
+auth-cookie wrap as the preview / agent-chat per-port proxies.
+Source: `vncPortFromPreview` in main.go.
+
+-}
+type VncPort
+    = VncPort Int
+
+
 {-| Offset added to app ports to derive per-port proxy listener ports.
 
     Default: 20000 (configurable via `--proxy-port-offset` at init time)
@@ -110,6 +146,25 @@ listener -> MCP sidecar :4000.
 -}
 type AgentChatProxyPort
     = AgentChatProxyPort Int
+
+
+{-| Per-port reverse-proxy listener for the per-session VNC server.
+
+    vncProxyPort = vncPort + proxyPortOffset
+    e.g., 7000 + 20000 = 27000
+
+Traefik forwards host port 27000 -> container port 27000 -> swe-swe-server
+listener -> x11vnc / noVNC :7000. Wrapped in `requireAuthCookie`
+(security fix `334034b74`) so a missing apex cookie produces 401
+instead of leaking the VNC stream.
+
+Emitted on the WebSocket status frame as `vncProxyPort`
+(`main.go:834`). The CDP equivalent (`cdpProxyPort`) is defined as
+a helper but no per-port listener is started -- CDP is loopback-only.
+
+-}
+type VncProxyPort
+    = VncProxyPort Int
 
 
 {-| Opaque binary data -- PTY I/O, file upload/download chunks.

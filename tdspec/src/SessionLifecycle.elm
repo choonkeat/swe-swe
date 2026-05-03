@@ -41,40 +41,53 @@ Ending a session must:
 
 -}
 
-import Domain exposing (AgentChatPort(..), PreviewPort(..), PublicPort(..), SessionUuid(..))
+import Domain exposing (AgentChatPort(..), CdpPort(..), PreviewPort(..), PublicPort(..), SessionUuid(..), VncPort(..))
 
 
 
 -- -- Session port allocation --------------------------------------
 
 
-{-| The three ports allocated per session, derived from a single preview port.
+{-| The five ports allocated per session, derived from a single preview port.
 
     sessionPorts (PreviewPort 3006)
     --> { preview = PreviewPort 3006
     --> , agentChat = AgentChatPort 4006
     --> , public = PublicPort 5006
+    --> , cdp = CdpPort 6006
+    --> , vnc = VncPort 7006
     --> }
 
-All three ports are reserved atomically when a session starts and released
+All five ports are reserved atomically when a session starts and released
 together when cleanup completes (deferred deletion prevents reuse races).
 
-Source: `findAvailablePortTriple` in main.go.
+`cdp` and `vnc` belong to the per-session browser stack
+(Xvfb + Chromium + x11vnc + noVNC) spawned on demand by
+`POST /api/session/{uuid}/browser/start`. They are allocated up-front
+even for sessions that never start a browser, so the kill / cleanup
+path can match against them unconditionally.
+
+Source: `findAvailablePortQuintuple` in main.go (was `Triple` before
+commit `34c9cff61` and the per-session browser rollout).
 
 -}
 type alias SessionPorts =
     { preview : PreviewPort
     , agentChat : AgentChatPort
     , public : PublicPort
+    , cdp : CdpPort
+    , vnc : VncPort
     }
 
 
-{-| Derive all three session ports from a preview port.
+{-| Derive all five session ports from a preview port.
 
     sessionPorts (PreviewPort 3000)
     --> { preview = PreviewPort 3000
     --> , agentChat = AgentChatPort 4000
     --> , public = PublicPort 5000
+    --> , cdp = CdpPort 6000
+    --> , vnc = VncPort 7000
     --> }
 
 -}
@@ -83,6 +96,8 @@ sessionPorts (PreviewPort p) =
     { preview = PreviewPort p
     , agentChat = AgentChatPort (p + 1000)
     , public = PublicPort (p + 2000)
+    , cdp = CdpPort (p + 3000)
+    , vnc = VncPort (p + 4000)
     }
 
 
@@ -205,7 +220,7 @@ double-forked daemons reparented to PID 1.
 Algorithm:
 
 1.  Parse `/proc/net/tcp` for LISTEN sockets (state `0A`)
-2.  Match socket ports against session ports (preview, agentChat, public)
+2.  Match socket ports against session ports (preview, agentChat, public, cdp, vnc)
 3.  Extract socket inode numbers for matching ports
 4.  Scan `/proc/{pid}/fd/` symlinks to find PIDs holding those inodes
 5.  `SIGKILL` each matching PID (skipping swe-swe-server's own PID)
