@@ -13,7 +13,10 @@
 
 ## Deployment
 
-- [Tunnel Mode on a PaaS](tunnel-deploy.md) — Fly/Railway/Cloud Run via swe-swe-tunnel (no public IP / DNS / TLS setup)
+- [Tunnel Mode Explained](tunnel-explained.md) -- what tunnel mode is, the identity model, env vars, troubleshooting
+- [Tunnel Mode on Your Laptop](tunnel-laptop.md) -- runbook for local docker
+- [Tunnel Mode on a PaaS](tunnel-paas.md) -- generic runbook for any container PaaS
+- [Tunnel Mode on Fly.io](tunnel-fly.md) -- concrete Fly walkthrough
 
 ## Internals
 

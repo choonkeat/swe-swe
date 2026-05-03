@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-05-03
-**Research**: [ADR-0042](0042-tunnel-subprocess-supervisor.md), [docs/tunnel-deploy.md](../tunnel-deploy.md), [tasks/2026-04-29-tunnel-subprocess-pivot.md](../../tasks/2026-04-29-tunnel-subprocess-pivot.md)
+**Research**: [ADR-0042](0042-tunnel-subprocess-supervisor.md), [docs/tunnel-explained.md](../tunnel-explained.md), [tasks/2026-04-29-tunnel-subprocess-pivot.md](../../tasks/2026-04-29-tunnel-subprocess-pivot.md)
 
 ## Context
 

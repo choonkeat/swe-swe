@@ -4,7 +4,7 @@
 
 ### Features
 
-- **Tunnel mode (`swe-swe init --tunnel-server-url=...`)**: New deploy path that lets a swe-swe container be reached from the public internet without owning an IP, opening ports, or provisioning TLS. The container dials a `swe-swe-tunnel` server outbound (Ed25519 pubkey auth); the tunnel server fronts subdomain-routed traffic over the same connection. Works on residential networks, Fly.io, Railway, Render, Cloud Run — anywhere with outbound HTTPS. See `docs/tunnel-deploy.md`
+- **Tunnel mode (`swe-swe init --tunnel-server-url=...`)**: New deploy path that lets a swe-swe container be reached from the public internet without owning an IP, opening ports, or provisioning TLS. The container dials a `swe-swe-tunnel` server outbound (Ed25519 pubkey auth); the tunnel server fronts subdomain-routed traffic over the same connection. Works on residential networks, Fly.io, Railway, Render, Cloud Run -- anywhere with outbound HTTPS. See `docs/tunnel-explained.md` (concepts), `docs/tunnel-laptop.md` (laptop runbook), `docs/tunnel-fly.md` (Fly runbook)
 - **Tunnel-mode subprocess supervisor**: `swe-swe-server` exec's the `swe-swe-tunnel` client as a child process and reads structured lifecycle events (`register_ok`, `disconnect`, `fatal`, `retry-after`) off its stdout. Live `publicHostname` propagates to the WebSocket broadcast and frontend in real time, including `retryAfterMs` for backoff and `kind=fatal` to halt the supervisor instead of restart-looping (ADR-0042)
 - **Tunnel subdomain iframes**: In tunnel mode, preview / Agent View / VNC iframes route via per-session subdomains through a single auth-proxy port — replacing per-port Traefik labels and Let's Encrypt certs (which the tunnel server fronts instead). Path-based probes still resolve before iframe mount
 - **Tunnel-aware landing page**: Landing page shows tunnel state and a click-through to the live URL on `register_ok`
@@ -47,7 +47,7 @@
 ### Documentation
 
 - ADR-0042: Tunnel-mode subprocess supervisor
-- `docs/tunnel-deploy.md`: PaaS deploy guide with Fly walkthrough
+- `docs/tunnel-explained.md` (concepts + troubleshooting), `docs/tunnel-laptop.md` (laptop runbook), `docs/tunnel-fly.md` (Fly runbook)
 - `tasks/2026-04-29-tunnel-subprocess-pivot.md`: Subprocess pivot rationale + 2026-04-30 fatal/retry-after follow-up
 - `docs/dev/how-to-restart.md`: End other sessions before compose down
 
