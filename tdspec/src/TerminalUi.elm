@@ -175,7 +175,7 @@ onDebugMessage { msg, state } =
 returning only the path + query + fragment.
 
     pathFromProxyUrl (SessionUuid "abc")
-        (Url "https://host:9898/proxy/abc/preview/dashboard?tab=1#s")
+        (Url "https://host:1977/proxy/abc/preview/dashboard?tab=1#s")
     --> Path "/dashboard?tab=1#s"
 
     pathFromProxyUrl (SessionUuid "abc")
@@ -183,11 +183,11 @@ returning only the path + query + fragment.
     --> Path "/dashboard?tab=1#s"
 
     pathFromProxyUrl (SessionUuid "abc")
-        (Url "https://host:9898/proxy/abc/preview/")
+        (Url "https://host:1977/proxy/abc/preview/")
     --> Path "/"
 
     pathFromProxyUrl (SessionUuid "abc")
-        (Url "https://host:9898/proxy/abc/preview")
+        (Url "https://host:1977/proxy/abc/preview")
     --> Path "/"
 
 Port-based URLs have no proxy prefix, so the pathname passes through unchanged.

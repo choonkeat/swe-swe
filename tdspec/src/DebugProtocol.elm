@@ -10,7 +10,7 @@ Shell page (WS 5) handles navigation: page loads, URL changes, back/forward.
 inject.js (WS 6) handles telemetry: console, errors, network, DOM queries.
 AllDebugMsg is the aggregate that UI observers (terminal-ui on WS 3,4) receive.
 
-Endpoints (path-based on swe-swe-server :9898, via embedded agent-reverse-proxy):
+Endpoints (path-based on swe-swe-server :1977, via embedded agent-reverse-proxy):
 
     /proxy/{uuid}/preview/__agent-reverse-proxy-debug__/ui        (WS 3,4)
     /proxy/{uuid}/preview/__agent-reverse-proxy-debug__/ws?role=shell   (WS 5)

@@ -14,8 +14,8 @@ reachable via **two modes** -- the browser auto-selects at runtime:
       Agent Chat:  Browser -> Traefik :24000 -> swe-swe-server :24000 -> MCP sidecar :4000
 
     Path-based (fallback, when per-port listeners are unreachable):
-      Preview:     Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/preview/    -> User app :3000
-      Agent Chat:  Browser -> Traefik :1977 -> swe-swe-server :9898 /proxy/{uuid}/agentchat/  -> MCP sidecar :4000
+      Preview:     Browser -> Traefik :1977 -> swe-swe-server :1977 /proxy/{uuid}/preview/    -> User app :3000
+      Agent Chat:  Browser -> Traefik :1977 -> swe-swe-server :1977 /proxy/{uuid}/agentchat/  -> MCP sidecar :4000
 
 Both modes reach the **same proxy instance** -- a path-based proxy and a
 port-based proxy share a single DebugHub per session. The port-based
@@ -146,7 +146,7 @@ type ProxyMode
 
 
 
-{- Path on main server port (e.g., /proxy/{uuid}/preview/ on :9898).
+{- Path on main server port (e.g., /proxy/{uuid}/preview/ on :1977).
    Same-origin with main UI -- no CORS needed.
    Fallback when per-port listeners are unreachable (firewall, etc.).
 -}

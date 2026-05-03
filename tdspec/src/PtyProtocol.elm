@@ -2,7 +2,7 @@ module PtyProtocol exposing (ClientMsg(..), ServerMsg(..), StatusPayload, ExitPa
 
 {-| WS 1,2 -- PTY WebSocket protocol.
 
-Endpoint: `/ws/{uuid}` on swe-swe-server (:9898).
+Endpoint: `/ws/{uuid}` on swe-swe-server (:1977).
 One connection per terminal-ui instance, unique UUID.
 
     terminal-ui #1 (Agent Terminal) <-> swe-swe-server  via /ws/{uuid1}

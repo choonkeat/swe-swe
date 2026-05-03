@@ -28,7 +28,7 @@ instances + Preview tab are active.
     +===|=======|=========|=======|=========|=======|==========+
     |   v       v         v       v         v       v          |
     |  +----------------------------------------------------+  |
-    |  |      swe-swe-server :$SWE_SERVER_PORT (def 9898)  |  |
+    |  |      swe-swe-server :$SWE_SERVER_PORT (def 1977)  |  |
     |  |  PTY host (WS1, WS2)                               |  |
     |  |  +----------------------------------------------+  |  |
     |  |  |  Preview proxy (/proxy/{uuid}/preview/...)   |  |  |
@@ -115,7 +115,7 @@ type InjectJs
 
 Each session gets two proxy instances that share a DebugHub:
 
-  - Path-based: `/proxy/{uuid}/preview/...`, `/proxy/{uuid}/agentchat/...` on :9898
+  - Path-based: `/proxy/{uuid}/preview/...`, `/proxy/{uuid}/agentchat/...` on :1977
   - Port-based: per-port listeners (e.g., :23000, :24000) with empty BasePath
 
 Port-based listeners are wrapped in `corsWrapper` for cross-origin access.
@@ -147,7 +147,7 @@ Routes the main server port plus per-session proxy and public ports:
 
 Authenticated (with forwardauth middleware -> swe-swe-server /swe-swe-auth/verify):
 
-  - Main: :1977 -> :9898 (path-based proxy, UI, WebSockets)
+  - Main: host :1977 -> container :7000 (Traefik HTTP entrypoint) -> swe-swe-server :1977 (path-based proxy, UI, WebSockets)
   - Preview: :23000 -> :23000 (port-based proxy, up to 20 sessions)
   - Agent Chat: :24000 -> :24000 (port-based proxy, up to 20 sessions)
 

@@ -128,18 +128,21 @@ type Timestamp
 
 {-| Container-internal address where swe-swe-server listens.
 
-    localhost :$ SWE_SERVER_PORT (default 9898)
+    localhost :$ SWE_SERVER_PORT (default 1977)
 
 Configured in:
 
-  - main.go: `-addr` flag (default `:9898`)
-  - entrypoint.sh: `SWE_SERVER_PORT="${SWE_PORT:-9898}"` (env override)
-  - docker-compose.yml: `loadbalancer.server.port=9898`
+  - main.go: `-addr` flag (default `""`, deferred to `resolveListenAddr` -> `:1977`)
+  - tailscale.go: `resolveListenAddr` 6-step precedence rule
+    (`--bind`, `--addr`, `SWE_BIND`, `SWE_PORT`, `$PORT`, default `:1977`)
+  - entrypoint.sh: `SWE_SERVER_PORT="${SWE_PORT:-1977}"` (env override)
+  - docker-compose.yml: `loadbalancer.server.port=${SWE_PORT:-1977}`
   - entrypoint.sh: all MCP bridges use `http://localhost:$SWE_SERVER_PORT/...`
   - entrypoint.sh: open shim `curl http://localhost:$SWE_SERVER_PORT/...`
 
-In dockerfile-only mode, `SWE_PORT` defaults to `1977` (set in Dockerfile ENV),
-so `SWE_SERVER_PORT` becomes `1977`.
+`SWE_PORT` defaults to `1977` everywhere (compose, Dockerfile CMD shell
+expansion, and `resolveListenAddr` fallback). The previous `9898`
+default was retired in commit `34c9cff61`.
 
 The stdio bridge, open shim, and proxy chains all target this address.
 

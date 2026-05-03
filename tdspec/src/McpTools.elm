@@ -69,7 +69,7 @@ import Domain exposing (PreviewPort(..), PublicPort(..), SessionUuid(..), Timest
 type McpServer
     = ServerMcp
       {- Built into swe-swe-server.
-         Endpoint: /mcp on :9898
+         Endpoint: /mcp on :1977
          Tools manage sessions, terminals, recordings, repos.
       -}
     | PreviewMcp
