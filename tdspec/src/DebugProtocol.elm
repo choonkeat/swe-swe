@@ -52,7 +52,16 @@ type ShellPageCommand
 
 
 {-| Messages sent by inject.js to the hub.
-Telemetry: console output, errors, network activity, DOM query results.
+
+Telemetry: console output, errors, network activity, DOM query results,
+and DOM action results (click / type / fillForm / pressKey / evaluate).
+
+Action results echo back command `id` so callers can correlate request
+and response. Wire `t` discriminator is camelCase for results
+(`clickResult`, `typeResult`, etc.) and lowercase for telemetry
+(`console`, `error`, `fetch`, `xhr`). `WsUpgrade` is the exception:
+wire `t` is kebab-case `ws-upgrade`.
+
 -}
 type InjectJsDebugMsg
     = Console
@@ -95,8 +104,55 @@ type InjectJsDebugMsg
         {- JSON: "from" (original ws:// URL) -}
         , to : Url
 
-        {- JSON: "to" (upgraded wss:// URL) -}
+        {- JSON: "to" (upgraded wss:// URL); wire t = "ws-upgrade" (kebab-case). -}
         , ts : Timestamp
+        }
+    | ClickResult
+        {- inject.go:357. Wire: { t: "clickResult", id, success, tag?, text?, error? }.
+           success=true -> { tag, text }; success=false -> { error }.
+        -}
+        { id : String
+        , result : Result { error : String } { tag : String, text : String }
+        }
+    | TypeResult
+        {- inject.go:385. Wire: { t: "typeResult", id, success, value?, error? }.
+           success=true -> { value }; success=false -> { error }.
+           `value` is truncated to 500 chars by inject.js.
+        -}
+        { id : String
+        , result : Result { error : String } { value : String }
+        }
+    | FillFormResult
+        {- inject.go:411. Wire: { t: "fillFormResult", id,
+           results: [{ selector, success, error? }] }.
+           Each entry's result is independent -- partial failures possible.
+           Outer envelope has no top-level success flag.
+        -}
+        { id : String
+        , results :
+            List
+                { selector : String
+                , result : Result { error : String } {}
+                }
+        }
+    | PressKeyResult
+        {- inject.go:420. Wire: { t: "pressKeyResult", id, success, key?, error? }.
+           success=true -> { key }; success=false -> { error }.
+        -}
+        { id : String
+        , result : Result { error : String } { key : String }
+        }
+    | EvaluateResult
+        {- inject.go:427. Wire: { t: "evaluateResult", id, success, result?, error? }.
+           success=true -> { result : <serialized JSON value> };
+           success=false -> { error : String }.
+           Wire `result` carries the JS `serialize(evalResult)` output
+           (inject.go:280-303) -- can be objects, arrays, '[function]',
+           or {name,message,stack} for Error -- modelled here as an
+           opaque serialized form to match the wire's polymorphism.
+        -}
+        { id : String
+        , result : Result { error : String } { serialized : String }
         }
 
 

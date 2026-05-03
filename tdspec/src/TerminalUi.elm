@@ -121,6 +121,9 @@ onPtyMessage { msg, state } =
         PtyProtocol.Exit _ ->
             ( state, [] )
 
+        PtyProtocol.CredentialsStored _ ->
+            ( state, [] )
+
 
 {-| Handle a message from the Debug UI WebSocket (WS 3/4).
 

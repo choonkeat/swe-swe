@@ -18,29 +18,57 @@ import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), Bytes(..), Pr
 
 
 {-| Messages sent by terminal-ui to swe-swe-server.
+
 Binary messages carry raw PTY input; JSON messages carry control commands.
+
+Wire `type` discriminator (snake\_case unless noted):
+
+  - `ping`: opaque `data` field passes through; server echoes in `pong`.
+  - `rename_session`: `{ name }`.
+  - `toggle_yolo`: no payload; server toggles current state.
+  - `set_credentials`: `{ host, username, token, name, email }`.
+    Write-only -- there is no read-back API. Server stores per-session
+    via the credential broker (`setCredential` / `setAuthor` /
+    `writeSessionGitconfig`) and acks with `credentials_stored` on
+    ServerMsg. `main.go:4990-5028`.
+
 -}
 type ClientMsg
     = PtyInput Bytes
     | Resize { cols : Int, rows : Int }
     | FileUpload { filename : String, data : Bytes }
-    | Ping {- client sends { type: "ping", data?: {...} }; data is optional opaque pass-through (terminal-ui puts { ts } in it) -}
+    | Ping
     | RenameSession { name : String }
-    | ToggleYolo {- client sends { type: "toggleYolo" }; no payload -- server toggles current state -}
+    | ToggleYolo
     | Chat { userName : String, text : String }
+    | SetCredentials
+        { host : String
+        , username : String
+        , token : String
+        , name : String
+        , email : String
+        }
 
 
 {-| Messages received by terminal-ui from swe-swe-server.
+
 The `Status` message is critical -- its `previewPort` triggers
 `connectDebugWebSocket()`, opening WS 3/4 to the agent-reverse-proxy.
+
+`credentials_stored` (`{ host, hosts }`) is emitted after a successful
+`set_credentials` round-trip. `host` echoes the host just stored;
+`hosts` is the full list of hosts this session currently has
+credentials for. `main.go:5022-5025`.
+
 -}
 type ServerMsg
     = PtyOutput Bytes
-    | Pong {- server echoes { type: "pong", data?: {...} }; data mirrors what client sent in Ping -}
+    | Pong
     | Status StatusPayload
     | ChatMsg { userName : String, text : String, timestamp : String }
     | FileUploaded FileUploadResult
     | Exit ExitPayload
+    | CredentialsStored { host : String, hosts : List String }
 
 
 {-| Payload of the `status` JSON message.

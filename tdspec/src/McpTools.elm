@@ -357,16 +357,32 @@ type AgentChatTool
          Text is spoken via browser text-to-speech.
       -}
     | CheckMessages
+      {- Non-blocking check for queued user messages.
+
+         Input:  (none)
+         Output: "User said: {msg}" or "No new messages."
+
+         Drains message queue without blocking. Call periodically
+         between tasks to stay responsive to user input.
+      -}
+    | ExportChatMd
 
 
 
-{- Non-blocking check for queued user messages.
+{- Export the current chat to a markdown file for review on
+   GitHub/GitLab and viewing in a sibling bubble UI.
 
-   Input:  (none)
-   Output: "User said: {msg}" or "No new messages."
+   Input:  { title : String         -- short kebab-case slug
+           , targetDir : Maybe String -- defaults to ./agent-chats
+           }
+   Output: path to the written .md (string)
 
-   Drains message queue without blocking. Call periodically
-   between tasks to stay responsive to user input.
+   Writes ./agent-chats/YYYY-MM-DD-NN-{title}.md, copies user-uploaded
+   image attachments into ./agent-chats/assets/, and upserts
+   ./agent-chats/index.html (newest first). On first export also
+   writes viewer.css + viewer.js (idempotent). Path safety:
+   targetDir cannot escape cwd.
+   agent-chat/workspace/tools.go:484.
 -}
 
 
@@ -385,12 +401,12 @@ type DrawReply
 
 {-| All agent chat MCP tools.
 
-    allAgentChatTools == [ SendMessage, SendVerbalReply, Draw, SendProgress, SendVerbalProgress, CheckMessages ]
+    allAgentChatTools == [ SendMessage, SendVerbalReply, Draw, SendProgress, SendVerbalProgress, CheckMessages, ExportChatMd ]
 
 -}
 allAgentChatTools : List AgentChatTool
 allAgentChatTools =
-    [ SendMessage, SendVerbalReply, Draw, SendProgress, SendVerbalProgress, CheckMessages ]
+    [ SendMessage, SendVerbalReply, Draw, SendProgress, SendVerbalProgress, CheckMessages, ExportChatMd ]
 
 
 
