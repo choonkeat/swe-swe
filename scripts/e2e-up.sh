@@ -227,12 +227,36 @@ cd "$PROJECT_PATH"
 docker compose build
 
 # --- Phase 5: Start container ---
+# Defensive env override: docker compose's variable substitution lets the
+# parent shell beat .env file values (a process-env-takes-precedence
+# rule, not a docker-compose-specific bug). Without this, running e2e on
+# a host that has the live swe-swe stack exported would silently rebind
+# the e2e container to the live ports (typically SWE_PORT=1977 + the
+# 3000 / 4000 / 5000 / 6000 / 7000 ranges). The leak triggers a confusing
+# "Bind for 0.0.0.0:1977 failed: port is already allocated" 100% of the
+# time when the live and e2e stacks run side-by-side.
+#
+# We don't `unset` -- the user may legitimately want SWE_PORT in their
+# shell. Instead we override on the docker compose call alone so the
+# substitution sees our values, not theirs.
+COMPOSE_ENV=(
+    "SWE_PORT=$E2E_PORT"
+    "SWE_SWE_PASSWORD=$E2E_PASSWORD"
+    "SWE_PREVIEW_PORTS=$PREVIEW_PORTS"
+    "SWE_AGENT_CHAT_PORTS=$AGENT_CHAT_PORTS"
+    "SWE_PUBLIC_PORTS=$PUBLIC_PORTS"
+    "SWE_CDP_PORTS=$CDP_PORTS"
+    "SWE_VNC_PORTS=$VNC_PORTS"
+    "SWE_PROXY_PORT_OFFSET=20000"
+    "WORKSPACE_DIR=$HOST_TEST_STACK_DIR"
+)
+
 echo "--- Starting container ---"
 if [[ "$MODE" == "compose" ]]; then
     # Only start swe-swe + traefik to save memory (skip vscode, chrome, etc.)
-    docker compose up -d swe-swe traefik
+    env "${COMPOSE_ENV[@]}" docker compose up -d swe-swe traefik
 else
-    docker compose up -d
+    env "${COMPOSE_ENV[@]}" docker compose up -d
 fi
 
 # Wait for server to be ready
