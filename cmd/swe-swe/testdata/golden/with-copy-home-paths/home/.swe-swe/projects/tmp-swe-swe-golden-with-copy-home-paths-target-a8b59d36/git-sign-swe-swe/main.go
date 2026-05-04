@@ -47,7 +47,9 @@ import (
 	"strings"
 )
 
-const brokerSocketName = "@swe-swe-broker"
+// var (not const) so tests can spin up a fake listener under a
+// different abstract socket name without rebuilding the binary.
+var brokerSocketName = "@swe-swe-broker"
 
 func main() {
 	fs := flag.NewFlagSet("git-sign-swe-swe", flag.ContinueOnError)

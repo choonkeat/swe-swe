@@ -1,10 +1,10 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-server test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 
-test: ascii-check check-gomod-sync test-cli test-mcp-lazy-init test-server
+test: ascii-check check-gomod-sync test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe
 
 # ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
 # See scripts/ascii-allowlist.txt for the per-file character allowlist
@@ -36,6 +36,18 @@ test-server:
 	cd /tmp/swe-swe-server-test && go mod tidy && go test -v $(TEST_SERVER_ARGS) ./...
 	@cp /tmp/swe-swe-server-test/go.sum $(SERVER_TEMPLATE)/go.sum.txt
 	@rm -rf /tmp/swe-swe-server-test
+
+# Test the git-sign-swe-swe wrapper template (stdlib only).
+# The wrapper ships as a standalone binary built inside Dockerfile;
+# we mirror the same go-mod-init-in-tmp pattern so the test runs
+# against the same module shape that the container build produces.
+GIT_SIGN_TEMPLATE := cmd/swe-swe/templates/host/git-sign-swe-swe
+test-git-sign-swe-swe:
+	@rm -rf /tmp/git-sign-swe-swe-test
+	@mkdir -p /tmp/git-sign-swe-swe-test
+	@cp $(GIT_SIGN_TEMPLATE)/*.go /tmp/git-sign-swe-swe-test/
+	@cd /tmp/git-sign-swe-swe-test && go mod init git-sign-swe-swe >/dev/null 2>&1 && go test -v ./...
+	@rm -rf /tmp/git-sign-swe-swe-test
 
 # Check that common dependencies between go.mod and template go.mod.txt have matching versions
 TEMPLATE_GOMOD := cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt
