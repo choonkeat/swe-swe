@@ -14,7 +14,8 @@ Carries: binary PTY data (xterm I/O) + JSON control messages.
 
 -}
 
-import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), Bytes(..), PreviewPort(..), PreviewProxyPort(..), PublicPort(..), SessionUuid(..), Url(..))
+import Domain exposing (AgentChatPort(..), AgentChatProxyPort(..), Bytes(..), CdpPort(..), PreviewPort(..), PreviewProxyPort(..), PublicPort(..), SessionUuid(..), Url(..), VncPort(..), VncProxyPort(..))
+import TunnelMode exposing (PublicHostname, TunnelStatus)
 
 
 {-| Messages sent by terminal-ui to swe-swe-server.
@@ -72,17 +73,29 @@ type ServerMsg
 
 
 {-| Payload of the `status` JSON message.
-Delivered periodically by swe-swe-server.
+
+Delivered periodically by swe-swe-server (`main.go:818-848`).
 `sessionUUID` is used by the browser to build path-based proxy URLs.
-`ports.preview` triggers the debug WebSocket connection to agent-reverse-proxy.
+`ports.preview` triggers the debug WebSocket connection to
+agent-reverse-proxy.
 
-Note: the wire format is flat JSON (`previewPort`, `agentChatPort` as top-level keys).
-The nesting here groups related fields for clarity (see HOW-TO.md #3.14).
-`agentChatPort` is `0` on the wire for terminal sessions (JS treats as falsy).
+Wire format note: the on-the-wire JSON is flat (`previewPort`,
+`agentChatPort`, `vncProxyPort`, etc. as top-level keys). The nesting
+here groups related fields for clarity (see HOW-TO.md #3.14).
+`agentChatPort` is `0` on the wire for terminal sessions (JS treats
+as falsy).
 
-`browserStarted` is set to `True` after `/api/session/{uuid}/browser/start` is called.
-terminal-ui auto-switches to the Agent View tab when this becomes `True`.
-The Agent View tab is hidden until `browserStarted` is `True`.
+`browserStarted` is set to `True` after
+`POST /api/session/{uuid}/browser/start` is called. The frontend
+**adds** the Agent View pane to its preset's home slot when this
+becomes `True` and shows the tab; it does NOT auto-switch focus to
+it (commit `04732ea1e` removed the focus auto-switch). The Agent
+View tab is hidden until `browserStarted` is `True`.
+
+`publicHostname` and `tunnelStatus` are tunnel-mode-only -- compose
+mode leaves `publicHostname` as `PublicHostname ""` and omits
+`tunnelStatus`. See `TunnelMode` for the lifecycle and how the
+frontend branches on them.
 
 -}
 type alias StatusPayload =
@@ -93,6 +106,9 @@ type alias StatusPayload =
         , previewProxy : PreviewProxyPort
         , agentChatProxy : Maybe AgentChatProxyPort
         , public : PublicPort
+        , cdp : CdpPort
+        , vnc : VncPort
+        , vncProxy : VncProxyPort
         }
     , terminal :
         { cols : Int
@@ -109,6 +125,10 @@ type alias StatusPayload =
         { yoloMode : Bool
         , yoloSupported : Bool
         , browserStarted : Bool
+        }
+    , tunnel :
+        { publicHostname : PublicHostname
+        , tunnelStatus : Maybe TunnelStatus
         }
     }
 
