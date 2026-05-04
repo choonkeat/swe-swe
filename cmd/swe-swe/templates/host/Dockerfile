@@ -37,6 +37,10 @@ RUN cd /build-swe-swe-broker-probe && go mod init swe-swe-broker-probe && CGO_EN
 COPY git-credential-swe-swe/main.go /build-git-credential-swe-swe/main.go
 RUN cd /build-git-credential-swe-swe && go mod init git-credential-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-credential-swe-swe/git-credential-swe-swe .
 
+# Build git-sign-swe-swe (per-session SSH commit-signing helper, stdlib only)
+COPY git-sign-swe-swe/main.go /build-git-sign-swe-swe/main.go
+RUN cd /build-git-sign-swe-swe && go mod init git-sign-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-sign-swe-swe/git-sign-swe-swe .
+
 # {{IF TUNNEL}}
 # Build swe-swe-tunnel client from the upstream public repo. swe-swe-server
 # spawns this binary as a child process when SWE_TUNNEL_SERVER_URL is set.
@@ -224,11 +228,12 @@ RUN ARCH="$(dpkg --print-architecture)" && \
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.
 
-# Copy swe-swe-server, mcp-lazy-init, swe-swe-broker-probe, and git-credential-swe-swe binaries from builder stage
+# Copy swe-swe-server, mcp-lazy-init, swe-swe-broker-probe, git-credential-swe-swe, and git-sign-swe-swe binaries from builder stage
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
 COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
 COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
 COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
+COPY --from=server-builder /build-git-sign-swe-swe/git-sign-swe-swe /usr/local/bin/git-sign-swe-swe
 # {{IF TUNNEL}}
 # swe-swe-tunnel client (only present when init was run with --tunnel-server-url).
 # swe-swe-server's tunnel supervisor will exec this when SWE_TUNNEL_SERVER_URL
