@@ -19,6 +19,8 @@ require (
 
 require golang.org/x/text v0.21.0
 
+require golang.org/x/crypto v0.32.0
+
 require github.com/modelcontextprotocol/go-sdk v1.2.0
 
 require (

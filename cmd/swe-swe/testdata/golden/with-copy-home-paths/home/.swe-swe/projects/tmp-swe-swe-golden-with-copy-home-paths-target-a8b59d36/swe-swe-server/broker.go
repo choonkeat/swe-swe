@@ -15,6 +15,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net"
@@ -147,6 +148,32 @@ func handleBrokerConn(c *net.UnixConn) {
 			"username": username,
 			"password": cred.Token,
 		})
+	case "sign-ssh":
+		key, ok := getSigningKey(sid)
+		if !ok {
+			log.Printf("[BROKER] sid=%s no signing key (peerPid=%d)", sid, pid)
+			brokerWriteJSON(c, map[string]any{"error": "no signing key for session"})
+			return
+		}
+		namespace, _ := req["namespace"].(string)
+		if namespace == "" {
+			namespace = "git"
+		}
+		dataB64, _ := req["data"].(string)
+		data, err := base64.StdEncoding.DecodeString(dataB64)
+		if err != nil {
+			log.Printf("[BROKER] sid=%s sign-ssh bad data: %v (peerPid=%d)", sid, err, pid)
+			brokerWriteJSON(c, map[string]any{"error": "data not base64"})
+			return
+		}
+		armor, err := signSSH(data, key.Signer, namespace)
+		if err != nil {
+			log.Printf("[BROKER] sid=%s sign-ssh failed: %v (peerPid=%d)", sid, err, pid)
+			brokerWriteJSON(c, map[string]any{"error": "sign failed"})
+			return
+		}
+		log.Printf("[BROKER] sid=%s signed %d bytes via %s (peerPid=%d, fp=%s)", sid, len(data), namespace, pid, key.Fingerprint)
+		brokerWriteJSON(c, map[string]any{"signature": armor})
 	default:
 		// PoC echo behavior, kept for the swe-swe-broker-probe diagnostic tool.
 		brokerWriteJSON(c, map[string]any{

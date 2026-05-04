@@ -4993,11 +4993,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				// API to read them back to the browser. Server-side they
 				// flow OUT to git via the broker socket.
 				var payload struct {
-					Host     string `json:"host"`
-					Username string `json:"username"`
-					Token    string `json:"token"`
-					Name     string `json:"name"`
-					Email    string `json:"email"`
+					Host                 string `json:"host"`
+					Username             string `json:"username"`
+					Token                string `json:"token"`
+					Name                 string `json:"name"`
+					Email                string `json:"email"`
+					SigningPrivateKeyPEM string `json:"signing_private_key_pem"`
+					SigningPassphrase    string `json:"signing_passphrase"`
+					SigningKeyLabel      string `json:"signing_key_label"`
 				}
 				if err := json.Unmarshal(msg.Data, &payload); err != nil {
 					log.Printf("Session %s: set_credentials invalid payload: %v", sess.UUID, err)
@@ -5015,15 +5018,37 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					Name:  strings.TrimSpace(payload.Name),
 					Email: strings.TrimSpace(payload.Email),
 				})
+
+				signingFingerprint := ""
+				signingError := ""
+				if pem := strings.TrimSpace(payload.SigningPrivateKeyPEM); pem != "" {
+					key, err := parseSigningKey([]byte(pem), payload.SigningPassphrase, strings.TrimSpace(payload.SigningKeyLabel))
+					if err != nil {
+						signingError = err.Error()
+						log.Printf("Session %s: signing key parse failed: %v", sess.UUID, err)
+					} else {
+						setSigningKey(sess.UUID, key)
+						signingFingerprint = key.Fingerprint
+						log.Printf("Session %s: stored signing key (fp=%s, label=%q)", sess.UUID, key.Fingerprint, key.Label)
+					}
+				}
+
 				if err := writeSessionGitconfig(sess.UUID); err != nil {
 					log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
 				}
 				log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
-				if err := conn.WriteJSON(map[string]any{
+				ack := map[string]any{
 					"type":  "credentials_stored",
 					"host":  host,
 					"hosts": listCredentialHosts(sess.UUID),
-				}); err != nil {
+				}
+				if signingFingerprint != "" {
+					ack["signing_fingerprint"] = signingFingerprint
+				}
+				if signingError != "" {
+					ack["signing_error"] = signingError
+				}
+				if err := conn.WriteJSON(ack); err != nil {
 					log.Printf("Session %s: failed to ack set_credentials: %v", sess.UUID, err)
 				}
 			default:

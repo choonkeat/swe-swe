@@ -74,6 +74,8 @@ func clearSessionCredentials(sid string) {
 	sessionAuthorMu.Lock()
 	delete(sessionAuthor, sid)
 	sessionAuthorMu.Unlock()
+
+	clearSigningKey(sid)
 }
 
 func setAuthor(sid string, ident AuthorIdent) {
