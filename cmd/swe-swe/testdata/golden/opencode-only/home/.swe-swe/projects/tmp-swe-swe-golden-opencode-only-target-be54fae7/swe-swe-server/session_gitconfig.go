@@ -65,15 +65,42 @@ func writeSessionGitconfigFile(path, sid string) error {
 	if home != "" {
 		body += fmt.Sprintf("[include]\n\tpath = %s/.gitconfig\n", home)
 	}
-	if a, ok := getAuthor(sid); ok {
+
+	// [user] takes both author identity and the SSH signing pubkey
+	// (literal, not a path -- supported by git >= 2.34 since the
+	// value starts with a key type token).
+	a, hasAuthor := getAuthor(sid)
+	signPub := signingKeyPublicAuthorized(sid)
+	if hasAuthor || signPub != "" {
 		body += "[user]\n"
-		if a.Name != "" {
-			body += fmt.Sprintf("\tname = %s\n", a.Name)
+		if hasAuthor {
+			if a.Name != "" {
+				body += fmt.Sprintf("\tname = %s\n", a.Name)
+			}
+			if a.Email != "" {
+				body += fmt.Sprintf("\temail = %s\n", a.Email)
+			}
 		}
-		if a.Email != "" {
-			body += fmt.Sprintf("\temail = %s\n", a.Email)
+		if signPub != "" {
+			body += fmt.Sprintf("\tsigningkey = %s\n", signPub)
 		}
 	}
+
+	// SSH commit/tag signing wiring. Only emit when a signing key
+	// is actually set so users without one see no behavior change.
+	// gpg.format = ssh switches git off the openpgp default;
+	// gpg.ssh.program points it at our broker-backed wrapper.
+	if signPub != "" {
+		body += "[gpg]\n"
+		body += "\tformat = ssh\n"
+		body += "[gpg \"ssh\"]\n"
+		body += "\tprogram = git-sign-swe-swe\n"
+		body += "[commit]\n"
+		body += "\tgpgsign = true\n"
+		body += "[tag]\n"
+		body += "\tgpgsign = true\n"
+	}
+
 	return os.WriteFile(path, []byte(body), 0600)
 }
 

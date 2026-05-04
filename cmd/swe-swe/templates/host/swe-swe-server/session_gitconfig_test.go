@@ -150,3 +150,60 @@ func TestSessionGitconfig_RoundTrip(t *testing.T) {
 		t.Errorf("expected email in file, got:\n%s", body)
 	}
 }
+
+func TestSessionGitconfig_SigningKey(t *testing.T) {
+	// When a signing key is registered, writeSessionGitconfigFile
+	// must emit:
+	//   - user.signingkey with the OpenSSH-authorized-key literal
+	//   - [gpg] format = ssh
+	//   - [gpg "ssh"] program = git-sign-swe-swe
+	//   - [commit] gpgsign = true
+	//   - [tag] gpgsign = true
+	// Without a signing key these blocks must be absent so users
+	// who haven't opted in see no behavior change.
+	tmp := t.TempDir()
+	sid := "test-sid-sign-gitconfig"
+	path := filepath.Join(tmp, sid)
+	defer clearSessionCredentials(sid)
+
+	// No signing key yet -- the signing blocks must not appear.
+	if err := writeSessionGitconfigFile(path, sid); err != nil {
+		t.Fatalf("writeSessionGitconfigFile (no key): %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if strings.Contains(string(body), "gpgsign") {
+		t.Errorf("did not expect gpgsign before signing key, got:\n%s", body)
+	}
+	if strings.Contains(string(body), "format = ssh") {
+		t.Errorf("did not expect format=ssh before signing key, got:\n%s", body)
+	}
+
+	// Register a signing key and re-emit.
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{
+		Signer:      signer,
+		Fingerprint: "SHA256:test",
+		Label:       "test",
+	})
+	if err := writeSessionGitconfigFile(path, sid); err != nil {
+		t.Fatalf("writeSessionGitconfigFile (with key): %v", err)
+	}
+	body, _ = os.ReadFile(path)
+	got := string(body)
+
+	wantSubstrings := []string{
+		"signingkey = ssh-ed25519 ",
+		"[gpg]",
+		"format = ssh",
+		"[gpg \"ssh\"]",
+		"program = git-sign-swe-swe",
+		"[commit]",
+		"gpgsign = true",
+		"[tag]",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in gitconfig; got:\n%s", want, got)
+		}
+	}
+}
