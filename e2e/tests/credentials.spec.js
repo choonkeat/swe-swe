@@ -211,3 +211,97 @@ test.describe('per-session git credentials UI', () => {
     await expect(explainer).toContainText('.git/config');
   });
 });
+
+// Test ed25519 key generated for e2e only; never used outside this suite.
+// Fingerprint: SHA256:YNOCH+zR5nOPiv90YpfKRkXMeHPseO6WdGegIzLmj+U
+const TEST_SIGNING_KEY_PEM = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACA/lEFqfZd6xhkn6HW5K7QjLEQFkV34Tq9W0wIAnx0ogQAAAJghU4NbIVOD
+WwAAAAtzc2gtZWQyNTUxOQAAACA/lEFqfZd6xhkn6HW5K7QjLEQFkV34Tq9W0wIAnx0ogQ
+AAAEC0jJWbHEAJ8zCd60hZS5xa43xt1Qh3bkj7PQQRYXxRFT+UQWp9l3rGGSfodbkrtCMs
+RAWRXfhOr1bTAgCfHSiBAAAAEGUyZS10ZXN0QHN3ZS1zd2UBAgMEBQ==
+-----END OPENSSH PRIVATE KEY-----
+`;
+
+const TEST_SIGNING_FINGERPRINT = 'SHA256:YNOCH+zR5nOPiv90YpfKRkXMeHPseO6WdGegIzLmj+U';
+
+test.describe('per-session SSH commit signing UI', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+  });
+
+  test('save round-trip: signing form -> WS -> credentials_stored ack with fingerprint -> status + localStorage', async ({ page }) => {
+    await openSession(page);
+
+    await page.evaluate(() => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe-signing:'))
+        .forEach(k => localStorage.removeItem(k));
+      if (window.terminalUI) {
+        window.terminalUI._credsStoredHosts = [];
+        window.terminalUI._signingFingerprint = '';
+      }
+    });
+
+    await openSettings(page);
+
+    // Signing section is rendered alongside the HTTPS credentials.
+    const signingSection = page.locator('.settings-panel__signing');
+    await expect(signingSection).toBeVisible();
+
+    // Fields the form must expose. Test-first: this fails until the
+    // implementation lands the matching ids.
+    const keyTextarea = page.locator('#settings-cred-signing-key');
+    const passphraseInput = page.locator('#settings-cred-signing-passphrase');
+    const labelInput = page.locator('#settings-cred-signing-label');
+    await expect(keyTextarea).toBeVisible();
+    await expect(passphraseInput).toBeVisible();
+    await expect(labelInput).toBeVisible();
+    await expect(passphraseInput).toHaveAttribute('type', 'password');
+
+    // Token also required to keep the WS payload validation happy in
+    // the existing _saveCredentials path. (Signing reuses the unified
+    // Save Credentials button.)
+    await page.fill('#settings-cred-token', 'ghp_e2e_for_signing');
+    await page.fill('#settings-cred-signing-key', TEST_SIGNING_KEY_PEM);
+    await page.fill('#settings-cred-signing-label', 'e2e-signing-key');
+
+    // Save. Status flips to "Sending..." synchronously.
+    await page.click('#settings-cred-save');
+
+    // Wait for the credentials_stored ack with signing_fingerprint.
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return typeof ui?._signingFingerprint === 'string' && ui._signingFingerprint.startsWith('SHA256:');
+    });
+
+    const got = await page.evaluate(() => window.terminalUI._signingFingerprint);
+    expect(got).toBe(TEST_SIGNING_FINGERPRINT);
+
+    // Status reflects the registered key fingerprint somewhere visible
+    // to the user.
+    const signingStatus = page.locator('#settings-cred-signing-status');
+    await expect(signingStatus).toContainText('SHA256:');
+
+    // localStorage round-trip: the key + label persist; passphrase
+    // does NOT persist (consumed once on save, not retained).
+    const stored = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-signing:default');
+      return raw ? JSON.parse(raw) : null;
+    });
+    expect(stored).toMatchObject({
+      privateKey: TEST_SIGNING_KEY_PEM,
+      label: 'e2e-signing-key',
+    });
+    expect(stored).not.toHaveProperty('passphrase');
+
+    // Close + re-open: key + label rehydrate from localStorage.
+    await closeSettings(page);
+    await openSettings(page);
+    await expect(page.locator('#settings-cred-signing-key')).toHaveValue(TEST_SIGNING_KEY_PEM);
+    await expect(page.locator('#settings-cred-signing-label')).toHaveValue('e2e-signing-key');
+    // Passphrase is NEVER rehydrated -- it isn't in localStorage to
+    // rehydrate from.
+    await expect(page.locator('#settings-cred-signing-passphrase')).toHaveValue('');
+  });
+});

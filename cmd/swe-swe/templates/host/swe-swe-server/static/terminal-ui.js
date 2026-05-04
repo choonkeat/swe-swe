@@ -560,6 +560,26 @@ class TerminalUI extends HTMLElement {
                                 </div>
                             </section>
                             <hr class="settings-panel__divider">
+                            <section class="settings-panel__fields settings-panel__signing">
+                                <header class="settings-panel__subheader">SSH Commit Signing (per session)</header>
+                                <p class="settings-panel__hint">Paste an OpenSSH-format ed25519 private key. Held in server memory only, never on disk. Used by git commit -S via the credential broker. The matching public key must already be registered as a signing key on your forge (GitHub / GitLab / Gitea / Forgejo).</p>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-signing-key">Signing Private Key (ed25519)</label>
+                                    <textarea id="settings-cred-signing-key" class="settings-panel__input settings-panel__input--multiline" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" autocomplete="off" spellcheck="false"></textarea>
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-signing-passphrase">Passphrase (optional, not stored)</label>
+                                    <input type="password" id="settings-cred-signing-passphrase" class="settings-panel__input" placeholder="leave blank if key is unencrypted" autocomplete="off">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <label class="settings-panel__label" for="settings-cred-signing-label">Label (optional)</label>
+                                    <input type="text" id="settings-cred-signing-label" class="settings-panel__input" placeholder="laptop@example">
+                                </div>
+                                <div class="settings-panel__field">
+                                    <span class="settings-panel__cred-status" id="settings-cred-signing-status"></span>
+                                </div>
+                            </section>
+                            <hr class="settings-panel__divider">
                             <button class="settings-panel__end-session" id="settings-end-session">End Session</button>
                         </div>
                     </div>
@@ -1366,6 +1386,14 @@ class TerminalUI extends HTMLElement {
                 // server holds for this session (write-only -- no values).
                 this._credsStoredHosts = Array.isArray(msg.hosts) ? msg.hosts : [];
                 this._refreshCredsStatus();
+                if (typeof msg.signing_fingerprint === 'string' && msg.signing_fingerprint) {
+                    this._signingFingerprint = msg.signing_fingerprint;
+                    this._signingError = '';
+                } else if (typeof msg.signing_error === 'string' && msg.signing_error) {
+                    this._signingFingerprint = '';
+                    this._signingError = msg.signing_error;
+                }
+                this._refreshSigningStatus();
                 break;
             case 'status':
                 // Session status update
@@ -1937,15 +1965,81 @@ class TerminalUI extends HTMLElement {
             return;
         }
         this._writeCredsLocal(host, { username, token, name, email });
-        this.sendJSON({
-            type: 'set_credentials',
-            data: { host, username, token, name, email },
-        });
+
+        // SSH signing: optional. If the user has filled in the signing
+        // key textarea we ship it alongside the PAT in the same WS
+        // payload. Passphrase is consumed once and never persisted to
+        // localStorage (the textarea / input on the page is the only
+        // place it lives in the browser).
+        const signingKey = panel.querySelector('#settings-cred-signing-key')?.value || '';
+        const signingPassphrase = panel.querySelector('#settings-cred-signing-passphrase')?.value || '';
+        const signingLabel = (panel.querySelector('#settings-cred-signing-label')?.value || '').trim();
+        if (signingKey.trim()) {
+            this._writeSigningLocal({ privateKey: signingKey, label: signingLabel });
+        }
+
+        const wsPayload = { host, username, token, name, email };
+        if (signingKey.trim()) {
+            wsPayload.signing_private_key_pem = signingKey;
+            wsPayload.signing_passphrase = signingPassphrase;
+            wsPayload.signing_key_label = signingLabel;
+        }
+        this.sendJSON({ type: 'set_credentials', data: wsPayload });
+
         const status = panel.querySelector('#settings-cred-status');
         if (status) {
             status.textContent = 'Sending...';
             status.removeAttribute('data-state');
         }
+        if (signingKey.trim()) {
+            const sigStatus = panel.querySelector('#settings-cred-signing-status');
+            if (sigStatus) {
+                sigStatus.textContent = 'Sending signing key...';
+                sigStatus.removeAttribute('data-state');
+            }
+        }
+    }
+
+    // localStorage layout for signing: a single 'default' bag because
+    // a session has at most one signing identity (unlike HTTPS creds
+    // which are per-host). The passphrase is intentionally NEVER in
+    // this bag -- it gets retyped each session if the key is encrypted.
+    _signingLocalKey() {
+        return 'swe-swe-signing:default';
+    }
+    _readSigningLocal() {
+        try {
+            const raw = localStorage.getItem(this._signingLocalKey());
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+    _writeSigningLocal(bag) {
+        try {
+            const payload = {
+                privateKey: bag.privateKey || '',
+                label: bag.label || '',
+            };
+            localStorage.setItem(this._signingLocalKey(), JSON.stringify(payload));
+        } catch (e) {}
+    }
+
+    _refreshSigningStatus() {
+        const status = this.querySelector('#settings-cred-signing-status');
+        if (!status) return;
+        if (this._signingError) {
+            status.textContent = 'Signing key error: ' + this._signingError;
+            status.setAttribute('data-state', 'err');
+            return;
+        }
+        if (this._signingFingerprint) {
+            status.textContent = 'Signing key registered: ' + this._signingFingerprint;
+            status.setAttribute('data-state', 'ok');
+            return;
+        }
+        status.textContent = '';
+        status.removeAttribute('data-state');
     }
 
     // Setup event listeners for the new header and navigation UI
@@ -2331,6 +2425,17 @@ class TerminalUI extends HTMLElement {
             explainer.remove();
         }
         this._refreshCredsStatus();
+
+        // Rehydrate the signing key textarea + label from localStorage.
+        // Passphrase intentionally stays blank -- not persisted.
+        const sigKey = panel.querySelector('#settings-cred-signing-key');
+        const sigLabel = panel.querySelector('#settings-cred-signing-label');
+        const sigPass = panel.querySelector('#settings-cred-signing-passphrase');
+        const sigBag = this._readSigningLocal();
+        if (sigKey && sigBag) sigKey.value = sigBag.privateKey || '';
+        if (sigLabel && sigBag) sigLabel.value = sigBag.label || '';
+        if (sigPass) sigPass.value = '';
+        this._refreshSigningStatus();
     }
 
     _credsLocalKey(host) {
