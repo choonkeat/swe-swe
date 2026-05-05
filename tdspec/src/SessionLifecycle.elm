@@ -327,6 +327,15 @@ Port reservation is deferred: sessions stay in the map during cleanup so
 their ports can't be grabbed by a new session while processes are still dying.
 Only after all cleanup completes are they removed.
 
+`KillProcessTree` includes credential-broker cleanup --
+`killSessionProcessGroup` calls `unregisterSessionPid`,
+`clearSessionCredentials`, and `removeSessionGitconfig` immediately
+after the SIGKILL completes (`main.go:6606-6609`), BEFORE
+`session.Close()`. This ordering matters: the broker stops resolving
+pids for this sid before any escaped descendant could connect.
+
+See `CredentialBroker` for the cleanup details.
+
 -}
 type EndSessionStep
     = CheckPublicPort
