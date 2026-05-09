@@ -66,11 +66,6 @@ echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
 # {{IF CODEX}}
 # Create Codex MCP configuration (TOML format)
-# Codex sandboxes MCP child processes and only forwards env vars listed in
-# `env_vars` -- so we cannot use the `sh -c "exec npx ... $VAR"` wrapper that
-# the other agents use, since $VAR would expand to empty inside the sandbox.
-# Instead we run npx (or mcp-lazy-init) directly and let Codex substitute
-# $VAR references in args from the declared env_vars whitelist.
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]

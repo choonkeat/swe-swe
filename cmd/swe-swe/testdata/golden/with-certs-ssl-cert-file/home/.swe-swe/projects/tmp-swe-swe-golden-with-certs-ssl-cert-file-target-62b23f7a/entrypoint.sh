@@ -47,27 +47,36 @@ EOF
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
 # Create Codex MCP configuration (TOML format)
+# Codex sandboxes MCP child processes and only forwards env vars listed in
+# `env_vars` -- so we cannot use the `sh -c "exec npx ... $VAR"` wrapper that
+# the other agents use, since $VAR would expand to empty inside the sandbox.
+# Instead we run npx (or mcp-lazy-init) directly and let Codex substitute
+# $VAR references in args from the declared env_vars whitelist.
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
-command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
+command = "npx"
+args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme", "--autocomplete-triggers", "/=slash-command", "--autocomplete-url", "http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
+env_vars = ["AGENT_CHAT_PORT", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
 [mcp_servers.swe-swe-playwright]
-command = "sh"
-args = ["-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
+command = "mcp-lazy-init"
+args = ["--init-method", "POST", "--init-url", "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY", "--", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:$BROWSER_CDP_PORT"]
+env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY", "BROWSER_CDP_PORT"]
 
 [mcp_servers.swe-swe-preview]
-command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"]
+command = "npx"
+args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"]
+env_vars = ["SWE_SERVER_PORT", "SESSION_UUID"]
 
 [mcp_servers.swe-swe-whiteboard]
 command = "npx"
 args = ["-y", "@choonkeat/agent-whiteboard"]
 
 [mcp_servers.swe-swe]
-command = "sh"
-args = ["-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
+command = "npx"
+args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
+env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
 EOF
 
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Chat logs · agent-chat</title>
+<link rel="stylesheet" href="./assets/viewer.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="./assets/viewer.js" defer></script>
+</head>
+<body class="archive">
+
+<aside class="sidebar">
+  <div class="brand">
+    <h1>Chat logs</h1>
+    <p class="subtitle">agent-chat exports</p>
+  </div>
+  <input type="search" id="filter" class="filter" placeholder="Filter…">
+  <nav id="chat-list" class="chat-list" aria-label="Chats"></nav>
+  <div class="footer-links">
+    <a href="./assets/" target="_blank">browse assets/ →</a>
+  </div>
+</aside>
+
+<main class="main">
+  <header class="main-header">
+    <div class="meta" id="current-meta">Pick a chat from the sidebar →</div>
+    <div class="actions">
+      <a id="raw-md-link" href="#" target="_blank" hidden>raw .md ↗</a>
+    </div>
+  </header>
+  <div class="chat" id="chat-pane"></div>
+</main>
+
+<script>
+// Manifest is maintained by the export tool. Newest first. Each new export
+// prepends an entry on the line above the sentinel comment below.
+const MANIFEST = [
+  { md: './2026-05-09-01-codex-mcp-env-fix.md', date: '2026-05-09', idx: '01', title: 'Codex Mcp Env Fix' },
+  // === agent-chat:manifest-insert (newest first) ===
+];
+
+function renderList(filter) {
+  const ul = document.getElementById('chat-list');
+  ul.innerHTML = '';
+  let lastDate = null;
+  let visible = 0;
+  for (const e of MANIFEST) {
+    if (filter) {
+      const hay = (e.title + ' ' + e.idx + ' ' + e.date).toLowerCase();
+      if (!hay.includes(filter)) continue;
+    }
+    if (e.date !== lastDate) {
+      const h = document.createElement('div');
+      h.className = 'date-group';
+      h.textContent = e.date;
+      ul.appendChild(h);
+      lastDate = e.date;
+    }
+    const link = document.createElement('a');
+    link.href = '#' + encodeURIComponent(e.md);
+    link.className = 'chat-link';
+    link.dataset.md = e.md;
+    link.innerHTML = `<span class="idx">${e.idx}</span><span class="title">${e.title}</span>`;
+    link.addEventListener('click', evt => { evt.preventDefault(); selectChat(e); });
+    ul.appendChild(link);
+    visible++;
+  }
+  if (visible === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'date-group';
+    empty.style.color = '#5a5e6e';
+    empty.textContent = MANIFEST.length === 0 ? 'No chats yet' : 'No matches';
+    ul.appendChild(empty);
+  }
+}
+
+async function selectChat(entry) {
+  document.querySelectorAll('.chat-link').forEach(a => a.classList.toggle('active', a.dataset.md === entry.md));
+  document.getElementById('current-meta').textContent = `${entry.date}-${entry.idx} · ${entry.title}`;
+  document.title = `${entry.title} · Chat logs`;
+
+  const rawMd = document.getElementById('raw-md-link');
+  rawMd.href = entry.md;
+  rawMd.hidden = false;
+
+  await viewer.load(entry.md, document.getElementById('chat-pane'));
+  history.replaceState(null, '', '#' + encodeURIComponent(entry.md));
+}
+
+document.getElementById('filter').addEventListener('input', e => {
+  renderList(e.target.value.trim().toLowerCase());
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  renderList('');
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const target = MANIFEST.find(e => e.md === hash) || MANIFEST[0];
+  if (target) selectChat(target);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,419 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  margin: 0;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100dvh;
+}
+
+.toolbar {
+  width: 100%;
+  max-width: 800px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.toolbar h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.toolbar select,
+.toolbar a {
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.chat {
+  max-width: 800px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.bubble {
+  max-width: 80%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-wrap: break-word;
+}
+
+.bubble.agent {
+  align-self: flex-start;
+  background: #16213e;
+  color: #e0e0e0;
+  border-bottom-left-radius: 3px;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+
+.bubble.system {
+  align-self: center;
+  color: #888;
+  font-size: 0.75rem;
+  background: transparent;
+  max-width: 90%;
+  text-align: center;
+}
+
+.bubble code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+.bubble pre {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.5rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.3rem 0;
+}
+
+.bubble p {
+  margin: 0.3rem 0;
+}
+
+.bubble p:first-child {
+  margin-top: 0;
+}
+
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.bubble pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.bubble h1,
+.bubble h2,
+.bubble h3 {
+  margin: 0.4rem 0 0.2rem;
+  line-height: 1.3;
+}
+
+.bubble h1 { font-size: 1.2em; }
+.bubble h2 { font-size: 1.1em; }
+.bubble h3 { font-size: 1.0em; }
+
+.bubble ul,
+.bubble ol {
+  margin: 0.2rem 0;
+  padding-left: 1.2em;
+}
+
+.bubble a {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.bubble.user a { color: #fff; }
+
+.bubble img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin-top: 0.3rem;
+  display: block;
+}
+
+.elapsed-time {
+  align-self: center;
+  color: #666;
+  font-size: 0.65rem;
+  padding: 0.15rem 0.5rem;
+  opacity: 0.6;
+}
+
+.frozen-replies {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  flex-wrap: wrap;
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.frozen-replies .chip {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  background: transparent;
+  color: #999;
+  cursor: default;
+}
+
+.error {
+  color: #fca5a5;
+  padding: 1rem;
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  max-width: 800px;
+  width: 100%;
+}
+
+/* ────────────────────────────────────────────────────────────
+   Archive layout (used by index.html — sidebar + main pane)
+   ──────────────────────────────────────────────────────────── */
+
+body.archive {
+  padding: 0;
+  flex-direction: row;
+  align-items: stretch;
+  background: #0f1320;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 300px;
+  flex-shrink: 0;
+  background: #131829;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar .brand {
+  padding: 1.2rem 1rem 0.4rem;
+}
+
+.sidebar .brand h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e8e8f0;
+}
+
+.sidebar .brand .subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.7rem;
+  color: #6a7080;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar .filter {
+  margin: 0.6rem 1rem 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: #0f1320;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+}
+
+.sidebar .filter:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.sidebar .chat-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0.5rem 1rem;
+}
+
+.sidebar .date-group {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6a7080;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.8rem 0.5rem 0.2rem;
+}
+
+.sidebar .chat-link {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  color: #c0c4d0;
+  text-decoration: none;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.sidebar .chat-link:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar .chat-link.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.sidebar .chat-link .idx {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: #6a7080;
+  flex-shrink: 0;
+}
+
+.sidebar .chat-link.active .idx {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sidebar .chat-link .title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar .footer-links {
+  padding: 0.6rem 1rem 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sidebar .footer-links a {
+  font-size: 0.75rem;
+  color: #6a7080;
+  text-decoration: none;
+}
+
+.sidebar .footer-links a:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-header {
+  padding: 0.7rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #131829;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.main-header .meta {
+  color: #c0c4d0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-header .actions {
+  display: flex;
+  gap: 0.8rem;
+  flex-shrink: 0;
+}
+
+.main-header .actions a {
+  color: #6a7080;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.main-header .actions a:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+body.archive .chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  max-width: none;
+  width: auto;
+  align-items: center;
+}
+
+body.archive .chat > * {
+  max-width: 800px;
+}
+
+/* Bubbles, elapsed-time markers, and frozen-reply chip rows size themselves
+   (or already cap at 80%); they must not be force-stretched to 100% or the
+   user/agent left/right alignment collapses. */
+body.archive .chat > .bubble.user,
+body.archive .chat > .bubble.agent,
+body.archive .chat > .elapsed-time,
+body.archive .chat > .frozen-replies {
+  width: auto;
+}
+
+body.archive .chat > .bubble.system,
+body.archive .chat > :not(.bubble):not(.elapsed-time):not(.frozen-replies) {
+  width: 100%;
+}
+
+body.archive .chat .bubble {
+  max-width: 80%;
+}
+
+body.archive .chat > .bubble.system {
+  max-width: 90%;
+  width: auto;
+  background: transparent;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #6a7080;
+  padding: 0.3rem 0.6rem;
+}
+
+@media (max-width: 720px) {
+  body.archive {
+    flex-direction: column;
+    height: auto;
+    overflow: auto;
+  }
+  .sidebar {
+    width: auto;
+    max-height: 240px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .main {
+    overflow: visible;
+  }
+  body.archive .chat {
+    overflow: visible;
+  }
+}
