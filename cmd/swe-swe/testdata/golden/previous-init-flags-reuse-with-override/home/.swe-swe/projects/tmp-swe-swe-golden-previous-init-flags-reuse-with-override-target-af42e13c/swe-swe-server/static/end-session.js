@@ -2,13 +2,18 @@
 // Included as a regular <script> so both homepage-main.js and terminal-ui.js can call it.
 
 /**
- * End a session. The server probes the public port and returns 409 if
- * something is listening, requiring the user to confirm before proceeding.
+ * End a session. Callers are responsible for obtaining user consent before
+ * invoking this helper -- it performs no consent prompt of its own.
+ *
+ * The server probes the public port and returns 409 if something is listening;
+ * in that case the helper prompts the user to type the port number to confirm
+ * the disruption (a port-safety check, not a general "are you sure" gate).
  *
  * @param {Object} opts
  * @param {string} opts.uuid - Session UUID
  * @param {function} opts.onSuccess - Called after session is ended successfully
  * @param {function} [opts.onError] - Called on error (defaults to alert)
+ * @param {function} [opts.onStart] - Called once the API request is in flight
  */
 function checkPublicPortAndEndSession(opts) {
     var uuid = opts.uuid;
@@ -18,10 +23,6 @@ function checkPublicPortAndEndSession(opts) {
 
     if (!uuid) {
         onSuccess();
-        return;
-    }
-
-    if (!confirm('End this session?')) {
         return;
     }
 

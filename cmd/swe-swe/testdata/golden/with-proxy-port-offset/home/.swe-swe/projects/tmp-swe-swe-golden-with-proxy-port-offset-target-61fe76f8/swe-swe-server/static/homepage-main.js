@@ -43,6 +43,9 @@ function setButtonLoading(button, loading) {
 }
 
 function endSession(uuid, button) {
+    if (!confirm('End this session?')) {
+        return;
+    }
     var publicPort = parseInt(button.dataset.publicPort, 10) || 0;
     checkPublicPortAndEndSession({
         uuid: uuid,
