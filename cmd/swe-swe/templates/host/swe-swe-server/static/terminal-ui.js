@@ -499,88 +499,145 @@ class TerminalUI extends HTMLElement {
                             <button class="settings-panel__close" aria-label="Close settings">&times;</button>
                         </header>
                         <div class="settings-panel__body">
-                            <section class="settings-panel__fields">
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-username">Username</label>
-                                    <input type="text" id="settings-username" class="settings-panel__input" placeholder="Enter your name" maxlength="16">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-session">Session Name</label>
-                                    <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label">Appearance</label>
-                                    <div class="settings-panel__theme-toggle" id="settings-theme-toggle">
-                                        <button class="settings-panel__theme-btn" data-mode="light">Light</button>
-                                        <button class="settings-panel__theme-btn" data-mode="dark">Dark</button>
-                                        <button class="settings-panel__theme-btn selected" data-mode="system">System</button>
+                            <nav class="settings-panel__nav" role="tablist" aria-label="Settings sections">
+                                <span class="settings-panel__nav-section">Workspace</span>
+                                <button class="settings-panel__nav-item settings-panel__nav-item--active" role="tab" data-tab="profile" aria-selected="true">
+                                    <span class="settings-panel__nav-label">Profile</span>
+                                </button>
+                                <button class="settings-panel__nav-item" role="tab" data-tab="appearance" aria-selected="false">
+                                    <span class="settings-panel__nav-label">Appearance</span>
+                                </button>
+                                <span class="settings-panel__nav-section">Credentials</span>
+                                <button class="settings-panel__nav-item" role="tab" data-tab="git" aria-selected="false">
+                                    <span class="settings-panel__nav-label">Git HTTPS</span>
+                                    <span class="settings-panel__nav-badge" id="settings-nav-badge-git" hidden></span>
+                                </button>
+                                <button class="settings-panel__nav-item" role="tab" data-tab="ssh" aria-selected="false">
+                                    <span class="settings-panel__nav-label">SSH Signing</span>
+                                    <span class="settings-panel__nav-badge" id="settings-nav-badge-ssh" hidden></span>
+                                </button>
+                            </nav>
+                            <div class="settings-panel__pane-host">
+                                <!-- PROFILE -->
+                                <section class="settings-panel__pane settings-panel__pane--active" data-pane="profile" role="tabpanel">
+                                    <h3 class="settings-panel__pane-title">Profile</h3>
+                                    <p class="settings-panel__pane-sub">How you and this session are identified inside this workspace.</p>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-username">Username</label>
+                                        <input type="text" id="settings-username" class="settings-panel__input" placeholder="Enter your name" maxlength="16">
                                     </div>
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label">Theme Color</label>
-                                    <div class="settings-panel__color-picker">
-                                        <div class="settings-panel__color-presets" id="settings-color-presets">
-                                            <!-- Populated by JS -->
-                                        </div>
-                                        <div class="settings-panel__color-custom">
-                                            <input type="color" class="settings-panel__color-input" id="settings-color-input" value="#7c3aed">
-                                            <input type="text" class="settings-panel__color-hex" id="settings-color-hex" value="#7c3aed" placeholder="#7c3aed">
-                                            <button class="settings-panel__color-reset" id="settings-color-reset">Reset</button>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-session">Session name</label>
+                                        <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
+                                    </div>
+                                    <div class="settings-panel__pane-footer">
+                                        <span class="settings-panel__pane-status" id="settings-profile-status">Unsaved changes are discarded on close</span>
+                                        <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-profile-revert" type="button">Revert</button>
+                                        <button class="settings-panel__btn settings-panel__btn--primary" id="settings-profile-save" type="button">Save</button>
+                                    </div>
+                                </section>
+
+                                <!-- APPEARANCE -->
+                                <section class="settings-panel__pane" data-pane="appearance" role="tabpanel" hidden>
+                                    <h3 class="settings-panel__pane-title">Appearance</h3>
+                                    <p class="settings-panel__pane-sub">Local to this browser. Live preview while you tweak &mdash; close without saving to revert.</p>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label">Theme mode</label>
+                                        <div class="settings-panel__theme-toggle" id="settings-theme-toggle">
+                                            <button class="settings-panel__theme-btn" data-mode="light" type="button">Light</button>
+                                            <button class="settings-panel__theme-btn" data-mode="dark" type="button">Dark</button>
+                                            <button class="settings-panel__theme-btn selected" data-mode="system" type="button">System</button>
                                         </div>
                                     </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label">Accent color</label>
+                                        <div class="settings-panel__color-picker">
+                                            <div class="settings-panel__color-presets" id="settings-color-presets">
+                                                <!-- Populated by JS -->
+                                            </div>
+                                            <div class="settings-panel__color-custom">
+                                                <input type="color" class="settings-panel__color-input" id="settings-color-input" value="#7c3aed">
+                                                <input type="text" class="settings-panel__color-hex" id="settings-color-hex" value="#7c3aed" placeholder="#7c3aed">
+                                                <button class="settings-panel__color-reset" id="settings-color-reset" type="button">Reset</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-panel__pane-footer">
+                                        <span class="settings-panel__pane-status" id="settings-appearance-status">Live preview &mdash; not yet saved</span>
+                                        <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-appearance-revert" type="button">Revert</button>
+                                        <button class="settings-panel__btn settings-panel__btn--primary" id="settings-appearance-save" type="button">Save</button>
+                                    </div>
+                                </section>
+
+                                <!-- GIT HTTPS -->
+                                <section class="settings-panel__pane" data-pane="git" role="tabpanel" hidden>
+                                    <h3 class="settings-panel__pane-title">Git HTTPS credentials</h3>
+                                    <p class="settings-panel__pane-sub">In-memory on the server only. Never written to disk; cleared when this session ends.</p>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-host">Host</label>
+                                        <input type="text" id="settings-cred-host" class="settings-panel__input" placeholder="github.com" value="github.com">
+                                    </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-username">Username</label>
+                                        <input type="text" id="settings-cred-username" class="settings-panel__input" placeholder="x-access-token (default for GitHub PATs)">
+                                    </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-token">Token</label>
+                                        <input type="password" id="settings-cred-token" class="settings-panel__input" placeholder="ghp_..." autocomplete="off">
+                                    </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-name">Author name</label>
+                                        <input type="text" id="settings-cred-name" class="settings-panel__input" placeholder="Your Name">
+                                    </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-email">Author email</label>
+                                        <input type="email" id="settings-cred-email" class="settings-panel__input" placeholder="you@example.com">
+                                    </div>
+                                    <div class="settings-panel__pane-footer">
+                                        <span class="settings-panel__pane-status settings-panel__cred-status" id="settings-cred-status"></span>
+                                        <button class="settings-panel__btn settings-panel__btn--primary" id="settings-cred-save" type="button">Save credentials</button>
+                                    </div>
+                                </section>
+
+                                <!-- SSH SIGNING -->
+                                <section class="settings-panel__pane" data-pane="ssh" role="tabpanel" hidden>
+                                    <h3 class="settings-panel__pane-title">SSH commit signing</h3>
+                                    <p class="settings-panel__pane-sub">Paste an OpenSSH ed25519 private key. Held in server memory only; never on disk. Used by git commit -S via the credential broker. The matching public key must already be registered as a signing key on your forge.</p>
+                                    <div class="settings-panel__field-row settings-panel__field-row--stacked">
+                                        <label class="settings-panel__label" for="settings-cred-signing-key">Signing private key (ed25519)</label>
+                                        <textarea id="settings-cred-signing-key" class="settings-panel__input settings-panel__input--multiline" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" autocomplete="off" spellcheck="false"></textarea>
+                                    </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-signing-passphrase">Passphrase</label>
+                                        <input type="password" id="settings-cred-signing-passphrase" class="settings-panel__input" placeholder="leave blank if key is unencrypted" autocomplete="off">
+                                    </div>
+                                    <div class="settings-panel__field-row">
+                                        <label class="settings-panel__label" for="settings-cred-signing-label">Label</label>
+                                        <input type="text" id="settings-cred-signing-label" class="settings-panel__input" placeholder="laptop@example">
+                                    </div>
+                                    <div class="settings-panel__pane-footer">
+                                        <span class="settings-panel__pane-status settings-panel__cred-status" id="settings-cred-signing-status"></span>
+                                        <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-cred-signing-verify" type="button">Verify key</button>
+                                        <button class="settings-panel__btn settings-panel__btn--primary" id="settings-cred-signing-save" type="button">Save key</button>
+                                    </div>
+                                    <p class="settings-panel__hint settings-panel__hint--inline">Verify derives the public key, signs a test payload, and confirms the signature parses &mdash; proves the passphrase is right and the key is loadable. It does not contact your forge.</p>
+                                </section>
+                            </div>
+                        </div>
+                        <footer class="settings-panel__footer">
+                            <button class="settings-panel__end-link" id="settings-end-session" type="button">End session</button>
+                            <div class="settings-panel__footer-meta" id="settings-footer-meta"></div>
+                            <button class="settings-panel__btn settings-panel__btn--secondary settings-panel__footer-close" type="button">Close</button>
+                        </footer>
+                        <div class="settings-panel__end-confirm" id="settings-end-confirm" hidden>
+                            <div class="settings-panel__end-confirm-card">
+                                <h4 class="settings-panel__end-confirm-title">End this session?</h4>
+                                <p class="settings-panel__end-confirm-body">Closes the workspace, terminates the agent, and clears in-memory credentials. Repository changes on disk are unaffected.</p>
+                                <div class="settings-panel__end-confirm-actions">
+                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-cancel" type="button">Cancel</button>
+                                    <button class="settings-panel__btn settings-panel__btn--danger-strong" id="settings-end-confirm-yes" type="button">Yes, end session</button>
                                 </div>
-                            </section>
-                            <hr class="settings-panel__divider">
-                            <section class="settings-panel__fields settings-panel__credentials">
-                                <header class="settings-panel__subheader">Git HTTPS Credentials (per session)</header>
-                                <p class="settings-panel__hint">Stored in browser localStorage and sent over this session's WebSocket. Server keeps them in memory only; never written to disk, never readable from other sessions on the same host. Cleared when this session ends.</p>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-host">Host</label>
-                                    <input type="text" id="settings-cred-host" class="settings-panel__input" placeholder="github.com" value="github.com">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-username">Username</label>
-                                    <input type="text" id="settings-cred-username" class="settings-panel__input" placeholder="x-access-token (default for GitHub PATs)">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-token">Personal Access Token</label>
-                                    <input type="password" id="settings-cred-token" class="settings-panel__input" placeholder="ghp_..." autocomplete="off">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-name">Author Name (optional)</label>
-                                    <input type="text" id="settings-cred-name" class="settings-panel__input" placeholder="Your Name">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-email">Author Email (optional)</label>
-                                    <input type="email" id="settings-cred-email" class="settings-panel__input" placeholder="you@example.com">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <button class="settings-panel__cred-save" id="settings-cred-save">Save Credentials</button>
-                                    <span class="settings-panel__cred-status" id="settings-cred-status"></span>
-                                </div>
-                            </section>
-                            <hr class="settings-panel__divider">
-                            <section class="settings-panel__fields settings-panel__signing">
-                                <header class="settings-panel__subheader">SSH Commit Signing (per session)</header>
-                                <p class="settings-panel__hint">Paste an OpenSSH-format ed25519 private key. Held in server memory only, never on disk. Used by git commit -S via the credential broker. The matching public key must already be registered as a signing key on your forge (GitHub / GitLab / Gitea / Forgejo).</p>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-signing-key">Signing Private Key (ed25519)</label>
-                                    <textarea id="settings-cred-signing-key" class="settings-panel__input settings-panel__input--multiline" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" autocomplete="off" spellcheck="false"></textarea>
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-signing-passphrase">Passphrase (optional, not stored)</label>
-                                    <input type="password" id="settings-cred-signing-passphrase" class="settings-panel__input" placeholder="leave blank if key is unencrypted" autocomplete="off">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <label class="settings-panel__label" for="settings-cred-signing-label">Label (optional)</label>
-                                    <input type="text" id="settings-cred-signing-label" class="settings-panel__input" placeholder="laptop@example">
-                                </div>
-                                <div class="settings-panel__field">
-                                    <span class="settings-panel__cred-status" id="settings-cred-signing-status"></span>
-                                </div>
-                            </section>
-                            <hr class="settings-panel__divider">
-                            <button class="settings-panel__end-session" id="settings-end-session">End Session</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1395,6 +1452,32 @@ class TerminalUI extends HTMLElement {
                 }
                 this._refreshSigningStatus();
                 break;
+            case 'signing_key_stored':
+                // Server acked set_signing_key. Save flow.
+                this._signingVerified = '';
+                if (typeof msg.fingerprint === 'string' && msg.fingerprint) {
+                    this._signingFingerprint = msg.fingerprint;
+                    this._signingError = '';
+                } else if (typeof msg.error === 'string' && msg.error) {
+                    this._signingFingerprint = '';
+                    this._signingError = msg.error;
+                }
+                this._refreshSigningStatus();
+                break;
+            case 'signing_key_verified':
+                // Server acked verify_signing_key. Did NOT persist; only
+                // confirms parse + signing roundtrip succeeded.
+                if (typeof msg.fingerprint === 'string' && msg.fingerprint) {
+                    this._signingVerified = msg.fingerprint + ' (parsed and signed test payload)';
+                    this._signingError = '';
+                } else if (typeof msg.error === 'string' && msg.error) {
+                    this._signingVerified = '';
+                    this._signingError = msg.error;
+                } else {
+                    this._signingVerified = '';
+                }
+                this._refreshSigningStatus();
+                break;
             case 'status':
                 // Session status update
                 this.viewers = msg.viewers || 0;
@@ -1828,6 +1911,14 @@ class TerminalUI extends HTMLElement {
         // Populate inputs with current values before showing
         this.populateSettingsPanel();
 
+        // Snapshot Profile + Appearance state so close-without-save reverts.
+        // Theme/color apply live during the session for preview, but we
+        // restore both visual + storage on revert.
+        this._settingsSnapshot = this._snapshotSettings();
+
+        // Default to the Profile pane each time the modal opens.
+        this._switchSettingsTab('profile');
+
         panel.removeAttribute('hidden');
         statusBar.setAttribute('aria-expanded', 'true');
 
@@ -1839,6 +1930,16 @@ class TerminalUI extends HTMLElement {
         const panel = this.querySelector('.settings-panel');
         const statusBar = this.querySelector('.terminal-ui__status-bar');
         if (!panel) return;
+
+        // Discard unsaved Profile + Appearance changes by reverting to
+        // the snapshot taken when the panel opened.
+        this._revertProfile({ silent: true });
+        this._revertAppearance({ silent: true });
+        this._settingsSnapshot = null;
+
+        // Hide the end-session confirm popover if it was open.
+        const endConfirm = panel.querySelector('#settings-end-confirm');
+        if (endConfirm) endConfirm.setAttribute('hidden', '');
 
         panel.setAttribute('hidden', '');
         statusBar.setAttribute('aria-expanded', 'false');
@@ -1862,64 +1963,101 @@ class TerminalUI extends HTMLElement {
 
         const backdrop = panel.querySelector('.settings-panel__backdrop');
         const closeBtn = panel.querySelector('.settings-panel__close');
+        const footerClose = panel.querySelector('.settings-panel__footer-close');
 
         // Close on backdrop click
         if (backdrop) {
             backdrop.addEventListener('click', () => this.closeSettingsPanel());
         }
 
-        // Close on X button click
+        // Close on X / footer Close button click
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.closeSettingsPanel());
         }
+        if (footerClose) {
+            footerClose.addEventListener('click', () => this.closeSettingsPanel());
+        }
 
-        // Close on Escape key
+        // Close on Escape key (and dismiss the end-session popover first
+        // if it's open so a single Escape doesn't blow away the whole modal).
         panel.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
+                const endConfirm = panel.querySelector('#settings-end-confirm');
+                if (endConfirm && !endConfirm.hasAttribute('hidden')) {
+                    endConfirm.setAttribute('hidden', '');
+                    return;
+                }
                 this.closeSettingsPanel();
             }
         });
 
-        // Username input
-        const usernameInput = panel.querySelector('#settings-username');
-        if (usernameInput) {
-            usernameInput.addEventListener('change', (e) => {
-                const validation = validateUsername(e.target.value);
-                if (validation.valid) {
-                    this.setUsername(validation.name);
-                } else {
-                    // Restore previous value
-                    e.target.value = this.currentUserName || '';
-                }
+        // Sidebar tab navigation
+        panel.querySelectorAll('.settings-panel__nav-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                if (tab) this._switchSettingsTab(tab);
             });
-        }
+        });
 
-        // Session name input
-        const sessionInput = panel.querySelector('#settings-session');
-        if (sessionInput) {
-            sessionInput.addEventListener('change', (e) => {
-                const validation = validateSessionName(e.target.value);
-                if (validation.valid) {
-                    this.setSessionName(validation.name);
-                } else {
-                    // Restore previous value
-                    e.target.value = this.sessionName || '';
-                }
-            });
+        // Profile pane: Save / Revert buttons. Username + session name
+        // changes only commit on Save; close-without-save reverts.
+        const profileSave = panel.querySelector('#settings-profile-save');
+        if (profileSave) {
+            profileSave.addEventListener('click', () => this._saveProfile());
         }
+        const profileRevert = panel.querySelector('#settings-profile-revert');
+        if (profileRevert) {
+            profileRevert.addEventListener('click', () => this._revertProfile());
+        }
+        ['#settings-username', '#settings-session'].forEach(sel => {
+            const el = panel.querySelector(sel);
+            if (el) {
+                el.addEventListener('input', () => {
+                    const status = panel.querySelector('#settings-profile-status');
+                    if (!status) return;
+                    status.textContent = 'Unsaved changes are discarded on close';
+                    status.removeAttribute('data-state');
+                });
+            }
+        });
 
-        // Theme mode toggle (light/dark/system)
+        // Theme mode toggle (light/dark/system) -- live preview only
         this.setupThemeToggle();
 
-        // Theme color picker
+        // Theme color picker -- live preview only
         this.setupColorPicker();
 
-        // End Session button
-        const endSessionBtn = panel.querySelector('#settings-end-session');
-        if (endSessionBtn) {
-            endSessionBtn.addEventListener('click', () => {
+        // Appearance pane: Save / Revert
+        const apprSave = panel.querySelector('#settings-appearance-save');
+        if (apprSave) {
+            apprSave.addEventListener('click', () => this._saveAppearance());
+        }
+        const apprRevert = panel.querySelector('#settings-appearance-revert');
+        if (apprRevert) {
+            apprRevert.addEventListener('click', () => this._revertAppearance());
+        }
+
+        // End Session footer link -> show confirm popover
+        const endLink = panel.querySelector('#settings-end-session');
+        const endConfirm = panel.querySelector('#settings-end-confirm');
+        const endCancel = panel.querySelector('#settings-end-cancel');
+        const endYes = panel.querySelector('#settings-end-confirm-yes');
+        if (endLink && endConfirm) {
+            endLink.addEventListener('click', () => {
+                endConfirm.removeAttribute('hidden');
+            });
+        }
+        if (endCancel && endConfirm) {
+            endCancel.addEventListener('click', () => endConfirm.setAttribute('hidden', ''));
+            // Click the dimmed area (but not the inner card) to dismiss.
+            endConfirm.addEventListener('click', (e) => {
+                if (e.target === endConfirm) endConfirm.setAttribute('hidden', '');
+            });
+        }
+        if (endYes) {
+            endYes.addEventListener('click', () => {
                 this.closeSettingsPanel();
                 const uuid = this.sessionUUID;
                 if (!uuid) {
@@ -1936,7 +2074,7 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // Credentials Save button
+        // Credentials Save button (Git HTTPS only)
         const credSaveBtn = panel.querySelector('#settings-cred-save');
         if (credSaveBtn) {
             credSaveBtn.addEventListener('click', () => this._saveCredentials());
@@ -1945,6 +2083,167 @@ class TerminalUI extends HTMLElement {
         const credHost = panel.querySelector('#settings-cred-host');
         if (credHost) {
             credHost.addEventListener('change', () => this.populateCredentialsSection());
+        }
+
+        // SSH signing pane: Save key + Verify key
+        const sigSave = panel.querySelector('#settings-cred-signing-save');
+        if (sigSave) {
+            sigSave.addEventListener('click', () => this._saveSigningKey());
+        }
+        const sigVerify = panel.querySelector('#settings-cred-signing-verify');
+        if (sigVerify) {
+            sigVerify.addEventListener('click', () => this._verifySigningKey());
+        }
+    }
+
+    // Switch between sidebar nav panes.
+    _switchSettingsTab(tab) {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        panel.querySelectorAll('.settings-panel__nav-item').forEach(btn => {
+            const active = btn.dataset.tab === tab;
+            btn.classList.toggle('settings-panel__nav-item--active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        panel.querySelectorAll('.settings-panel__pane').forEach(p => {
+            const active = p.dataset.pane === tab;
+            p.classList.toggle('settings-panel__pane--active', active);
+            if (active) p.removeAttribute('hidden');
+            else p.setAttribute('hidden', '');
+        });
+    }
+
+    // Snapshot the values that are revertable on close-without-save.
+    // Theme/color also have their localStorage state so revert can put
+    // both the visual and the persistence back where they were.
+    _snapshotSettings() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return null;
+        return {
+            username: this.currentUserName || '',
+            sessionName: this.sessionName || '',
+            themeMode: window.sweSweTheme?.getStoredMode?.() || 'system',
+            color: window.sweSweTheme?.getCurrentColor?.() || '#7c3aed',
+        };
+    }
+
+    _saveProfile() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const status = panel.querySelector('#settings-profile-status');
+        const usernameInput = panel.querySelector('#settings-username');
+        const sessionInput = panel.querySelector('#settings-session');
+
+        // Validate username + session name before committing either.
+        const usernameVal = (usernameInput?.value || '').trim();
+        const sessionVal = (sessionInput?.value || '').trim();
+        const userValid = validateUsername(usernameVal);
+        const sessValid = validateSessionName(sessionVal);
+        if (!userValid.valid) {
+            if (status) {
+                status.textContent = 'Username: ' + (userValid.error || 'invalid');
+                status.setAttribute('data-state', 'err');
+            }
+            return;
+        }
+        if (!sessValid.valid) {
+            if (status) {
+                status.textContent = 'Session name: ' + (sessValid.error || 'invalid');
+                status.setAttribute('data-state', 'err');
+            }
+            return;
+        }
+
+        if (userValid.name !== this.currentUserName) {
+            this.setUsername(userValid.name);
+        }
+        if (sessValid.name !== this.sessionName) {
+            this.setSessionName(sessValid.name);
+        }
+
+        // Update snapshot so a subsequent close doesn't revert what we just saved.
+        if (this._settingsSnapshot) {
+            this._settingsSnapshot.username = userValid.name;
+            this._settingsSnapshot.sessionName = sessValid.name;
+        }
+
+        if (status) {
+            status.textContent = 'Saved.';
+            status.setAttribute('data-state', 'ok');
+        }
+    }
+
+    _revertProfile({ silent = false } = {}) {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel || !this._settingsSnapshot) return;
+        const usernameInput = panel.querySelector('#settings-username');
+        const sessionInput = panel.querySelector('#settings-session');
+        if (usernameInput) usernameInput.value = this._settingsSnapshot.username || '';
+        if (sessionInput) sessionInput.value = this._settingsSnapshot.sessionName || '';
+        if (!silent) {
+            const status = panel.querySelector('#settings-profile-status');
+            if (status) {
+                status.textContent = 'Reverted.';
+                status.removeAttribute('data-state');
+            }
+        }
+    }
+
+    _saveAppearance() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const status = panel.querySelector('#settings-appearance-status');
+
+        // Theme mode + color are already applied live; persist them now.
+        const mode = this._currentPreviewThemeMode || window.sweSweTheme?.getStoredMode?.() || 'system';
+        const color = (panel.querySelector('#settings-color-input')?.value || '#7c3aed').toLowerCase();
+        if (window.sweSweTheme?.setThemeMode) {
+            window.sweSweTheme.setThemeMode(mode);
+        }
+        if (window.sweSweTheme?.saveColorPreference && this.uuid) {
+            const sessionKey = window.sweSweTheme.COLOR_STORAGE_KEYS.SESSION_PREFIX + this.uuid;
+            window.sweSweTheme.saveColorPreference(sessionKey, color);
+        }
+        // Update URL once on save (not on every preview tweak).
+        this.updateUrlColor(color);
+
+        // Refresh snapshot so close-without-save doesn't revert.
+        if (this._settingsSnapshot) {
+            this._settingsSnapshot.themeMode = mode;
+            this._settingsSnapshot.color = color;
+        }
+        if (status) {
+            status.textContent = 'Saved.';
+            status.setAttribute('data-state', 'ok');
+        }
+    }
+
+    _revertAppearance({ silent = false } = {}) {
+        if (!this._settingsSnapshot) return;
+        const snap = this._settingsSnapshot;
+        // Re-apply visual mode + color from snapshot.
+        if (window.sweSweTheme?.applyMode) {
+            window.sweSweTheme.applyMode(snap.themeMode);
+        } else if (window.sweSweTheme?.setThemeMode) {
+            // Fallback: setThemeMode persists too, which matches snapshot's stored value.
+            window.sweSweTheme.setThemeMode(snap.themeMode);
+        }
+        if (window.sweSweTheme?.applyTheme) {
+            window.sweSweTheme.applyTheme(snap.color);
+        }
+        this._currentPreviewThemeMode = snap.themeMode;
+
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        // Sync UI controls back to snapshot values.
+        this.populateThemeToggle();
+        this.populateColorPicker();
+        if (!silent) {
+            const status = panel.querySelector('#settings-appearance-status');
+            if (status) {
+                status.textContent = 'Reverted.';
+                status.removeAttribute('data-state');
+            }
         }
     }
 
@@ -1965,38 +2264,68 @@ class TerminalUI extends HTMLElement {
             return;
         }
         this._writeCredsLocal(host, { username, token, name, email });
-
-        // SSH signing: optional. If the user has filled in the signing
-        // key textarea we ship it alongside the PAT in the same WS
-        // payload. Passphrase is consumed once and never persisted to
-        // localStorage (the textarea / input on the page is the only
-        // place it lives in the browser).
-        const signingKey = panel.querySelector('#settings-cred-signing-key')?.value || '';
-        const signingPassphrase = panel.querySelector('#settings-cred-signing-passphrase')?.value || '';
-        const signingLabel = (panel.querySelector('#settings-cred-signing-label')?.value || '').trim();
-        if (signingKey.trim()) {
-            this._writeSigningLocal({ privateKey: signingKey, label: signingLabel });
-        }
-
-        const wsPayload = { host, username, token, name, email };
-        if (signingKey.trim()) {
-            wsPayload.signing_private_key_pem = signingKey;
-            wsPayload.signing_passphrase = signingPassphrase;
-            wsPayload.signing_key_label = signingLabel;
-        }
-        this.sendJSON({ type: 'set_credentials', data: wsPayload });
-
+        this.sendJSON({ type: 'set_credentials', data: { host, username, token, name, email } });
         const status = panel.querySelector('#settings-cred-status');
         if (status) {
             status.textContent = 'Sending...';
             status.removeAttribute('data-state');
         }
-        if (signingKey.trim()) {
-            const sigStatus = panel.querySelector('#settings-cred-signing-status');
+    }
+
+    _saveSigningKey() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const sigStatus = panel.querySelector('#settings-cred-signing-status');
+        const signingKey = panel.querySelector('#settings-cred-signing-key')?.value || '';
+        const signingPassphrase = panel.querySelector('#settings-cred-signing-passphrase')?.value || '';
+        const signingLabel = (panel.querySelector('#settings-cred-signing-label')?.value || '').trim();
+        if (!signingKey.trim()) {
             if (sigStatus) {
-                sigStatus.textContent = 'Sending signing key...';
-                sigStatus.removeAttribute('data-state');
+                sigStatus.textContent = 'Paste a private key first.';
+                sigStatus.setAttribute('data-state', 'err');
             }
+            return;
+        }
+        this._writeSigningLocal({ privateKey: signingKey, label: signingLabel });
+        this.sendJSON({
+            type: 'set_signing_key',
+            data: {
+                signing_private_key_pem: signingKey,
+                signing_passphrase: signingPassphrase,
+                signing_key_label: signingLabel,
+            },
+        });
+        if (sigStatus) {
+            sigStatus.textContent = 'Sending signing key...';
+            sigStatus.removeAttribute('data-state');
+        }
+    }
+
+    _verifySigningKey() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const sigStatus = panel.querySelector('#settings-cred-signing-status');
+        const signingKey = panel.querySelector('#settings-cred-signing-key')?.value || '';
+        const signingPassphrase = panel.querySelector('#settings-cred-signing-passphrase')?.value || '';
+        const signingLabel = (panel.querySelector('#settings-cred-signing-label')?.value || '').trim();
+        if (!signingKey.trim()) {
+            if (sigStatus) {
+                sigStatus.textContent = 'Paste a private key first.';
+                sigStatus.setAttribute('data-state', 'err');
+            }
+            return;
+        }
+        this.sendJSON({
+            type: 'verify_signing_key',
+            data: {
+                signing_private_key_pem: signingKey,
+                signing_passphrase: signingPassphrase,
+                signing_key_label: signingLabel,
+            },
+        });
+        if (sigStatus) {
+            sigStatus.textContent = 'Verifying...';
+            sigStatus.removeAttribute('data-state');
         }
     }
 
@@ -2027,19 +2356,50 @@ class TerminalUI extends HTMLElement {
 
     _refreshSigningStatus() {
         const status = this.querySelector('#settings-cred-signing-status');
-        if (!status) return;
-        if (this._signingError) {
-            status.textContent = 'Signing key error: ' + this._signingError;
-            status.setAttribute('data-state', 'err');
-            return;
+        if (status) {
+            if (this._signingError) {
+                status.textContent = 'Signing key error: ' + this._signingError;
+                status.setAttribute('data-state', 'err');
+            } else if (this._signingFingerprint) {
+                status.textContent = 'Signing key registered: ' + this._signingFingerprint;
+                status.setAttribute('data-state', 'ok');
+            } else if (this._signingVerified) {
+                status.textContent = 'Verified: ' + this._signingVerified;
+                status.setAttribute('data-state', 'ok');
+            } else {
+                status.textContent = '';
+                status.removeAttribute('data-state');
+            }
         }
-        if (this._signingFingerprint) {
-            status.textContent = 'Signing key registered: ' + this._signingFingerprint;
-            status.setAttribute('data-state', 'ok');
-            return;
+        this._refreshSettingsNavBadges();
+    }
+
+    // Update the small badges next to "Git HTTPS" / "SSH Signing" in the
+    // settings sidebar so users can see config state at a glance.
+    _refreshSettingsNavBadges() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const gitBadge = panel.querySelector('#settings-nav-badge-git');
+        const sshBadge = panel.querySelector('#settings-nav-badge-ssh');
+        const hasGit = Array.isArray(this._credsStoredHosts) && this._credsStoredHosts.length > 0;
+        if (gitBadge) {
+            if (hasGit) {
+                gitBadge.textContent = 'Saved';
+                gitBadge.removeAttribute('hidden');
+                gitBadge.setAttribute('data-state', 'ok');
+            } else {
+                gitBadge.setAttribute('hidden', '');
+            }
         }
-        status.textContent = '';
-        status.removeAttribute('data-state');
+        if (sshBadge) {
+            if (this._signingFingerprint) {
+                sshBadge.textContent = 'On';
+                sshBadge.removeAttribute('hidden');
+                sshBadge.setAttribute('data-state', 'ok');
+            } else {
+                sshBadge.setAttribute('hidden', '');
+            }
+        }
     }
 
     // Setup event listeners for the new header and navigation UI
@@ -2480,7 +2840,9 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Setup theme toggle click handler
+    // Setup theme toggle click handler. Live preview only -- the change
+    // is visible immediately but does not persist to localStorage until
+    // the user presses Save in the Appearance pane (or revert kicks in).
     setupThemeToggle() {
         const toggle = this.querySelector('#settings-theme-toggle');
         if (!toggle) return;
@@ -2495,10 +2857,16 @@ class TerminalUI extends HTMLElement {
                 b.classList.toggle('selected', b === btn);
             });
 
-            // Apply mode
-            if (window.sweSweTheme?.setThemeMode) {
+            // Visual-only apply (no localStorage write).
+            this._currentPreviewThemeMode = mode;
+            if (window.sweSweTheme?.applyMode) {
+                window.sweSweTheme.applyMode(mode);
+            } else if (window.sweSweTheme?.setThemeMode) {
+                // Old API fallback -- this also persists, but the snapshot
+                // restore will undo it on close-without-save.
                 window.sweSweTheme.setThemeMode(mode);
             }
+            this._markAppearanceDirty();
         });
 
         // Listen for theme mode changes to update xterm
@@ -2508,6 +2876,13 @@ class TerminalUI extends HTMLElement {
                 this.term.options.theme = resolved === 'light' ? LIGHT_XTERM_THEME : DARK_XTERM_THEME;
             }
         });
+    }
+
+    _markAppearanceDirty() {
+        const status = this.querySelector('#settings-appearance-status');
+        if (!status) return;
+        status.textContent = 'Unsaved preview -- close without saving to revert.';
+        status.removeAttribute('data-state');
     }
 
     // Color picker preset colors
@@ -2556,7 +2931,9 @@ class TerminalUI extends HTMLElement {
         });
     }
 
-    // Setup color picker event listeners
+    // Setup color picker event listeners. All paths route through
+    // selectColor() which is now preview-only; persistence happens on
+    // explicit Save in the Appearance pane.
     setupColorPicker() {
         const presetsContainer = this.querySelector('#settings-color-presets');
         const colorInput = this.querySelector('#settings-color-input');
@@ -2586,20 +2963,17 @@ class TerminalUI extends HTMLElement {
             }
         });
 
-        // Reset button
+        // Reset button: preview the default color. Save persists; close-no-save reverts.
         if (colorReset) {
             colorReset.addEventListener('click', () => {
-                // Clear session-specific color and use default
-                if (window.sweSweTheme) {
-                    const sessionKey = window.sweSweTheme.COLOR_STORAGE_KEYS.SESSION_PREFIX + this.uuid;
-                    localStorage.removeItem(sessionKey);
-                }
                 this.selectColor('#7c3aed');
             });
         }
     }
 
-    // Apply and save selected color
+    // Preview a color. Visual-only: applies CSS vars across the app so
+    // the user can see the change but does not persist to localStorage
+    // or update the URL until Save is pressed in the Appearance pane.
     selectColor(color) {
         const presetsContainer = this.querySelector('#settings-color-presets');
         const colorInput = this.querySelector('#settings-color-input');
@@ -2616,19 +2990,11 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // Apply theme
+        // Apply theme (visual only)
         if (window.sweSweTheme?.applyTheme) {
             window.sweSweTheme.applyTheme(color);
         }
-
-        // Save for this session
-        if (window.sweSweTheme?.saveColorPreference && this.uuid) {
-            const sessionKey = window.sweSweTheme.COLOR_STORAGE_KEYS.SESSION_PREFIX + this.uuid;
-            window.sweSweTheme.saveColorPreference(sessionKey, color);
-        }
-
-        // Update URL to reflect color (for sharing)
-        this.updateUrlColor(color);
+        this._markAppearanceDirty();
     }
 
     // Update URL query parameter with new color

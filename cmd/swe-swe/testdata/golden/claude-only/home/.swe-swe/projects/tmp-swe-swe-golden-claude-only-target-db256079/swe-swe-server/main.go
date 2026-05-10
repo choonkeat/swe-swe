@@ -5051,6 +5051,67 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if err := conn.WriteJSON(ack); err != nil {
 					log.Printf("Session %s: failed to ack set_credentials: %v", sess.UUID, err)
 				}
+			case "set_signing_key":
+				// Browser supplies an SSH signing key independent of the
+				// HTTPS PAT. Mirrors the signing branch of set_credentials
+				// but never touches credential / author state.
+				var payload struct {
+					SigningPrivateKeyPEM string `json:"signing_private_key_pem"`
+					SigningPassphrase    string `json:"signing_passphrase"`
+					SigningKeyLabel      string `json:"signing_key_label"`
+				}
+				if err := json.Unmarshal(msg.Data, &payload); err != nil {
+					log.Printf("Session %s: set_signing_key invalid payload: %v", sess.UUID, err)
+					continue
+				}
+				ack := map[string]any{"type": "signing_key_stored"}
+				pem := strings.TrimSpace(payload.SigningPrivateKeyPEM)
+				if pem == "" {
+					ack["error"] = "no key provided"
+				} else {
+					key, err := parseSigningKey([]byte(pem), payload.SigningPassphrase, strings.TrimSpace(payload.SigningKeyLabel))
+					if err != nil {
+						ack["error"] = err.Error()
+						log.Printf("Session %s: set_signing_key parse failed: %v", sess.UUID, err)
+					} else {
+						setSigningKey(sess.UUID, key)
+						if err := writeSessionGitconfig(sess.UUID); err != nil {
+							log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
+						}
+						ack["fingerprint"] = key.Fingerprint
+						log.Printf("Session %s: stored signing key (fp=%s, label=%q)", sess.UUID, key.Fingerprint, key.Label)
+					}
+				}
+				if err := conn.WriteJSON(ack); err != nil {
+					log.Printf("Session %s: failed to ack set_signing_key: %v", sess.UUID, err)
+				}
+			case "verify_signing_key":
+				// Parse + decrypt the supplied key, return the fingerprint,
+				// then discard. Does NOT persist and does NOT contact the forge.
+				var payload struct {
+					SigningPrivateKeyPEM string `json:"signing_private_key_pem"`
+					SigningPassphrase    string `json:"signing_passphrase"`
+					SigningKeyLabel      string `json:"signing_key_label"`
+				}
+				if err := json.Unmarshal(msg.Data, &payload); err != nil {
+					log.Printf("Session %s: verify_signing_key invalid payload: %v", sess.UUID, err)
+					continue
+				}
+				ack := map[string]any{"type": "signing_key_verified"}
+				pem := strings.TrimSpace(payload.SigningPrivateKeyPEM)
+				if pem == "" {
+					ack["error"] = "no key provided"
+				} else {
+					key, err := parseSigningKey([]byte(pem), payload.SigningPassphrase, strings.TrimSpace(payload.SigningKeyLabel))
+					if err != nil {
+						ack["error"] = err.Error()
+					} else {
+						ack["fingerprint"] = key.Fingerprint
+					}
+				}
+				if err := conn.WriteJSON(ack); err != nil {
+					log.Printf("Session %s: failed to ack verify_signing_key: %v", sess.UUID, err)
+				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
