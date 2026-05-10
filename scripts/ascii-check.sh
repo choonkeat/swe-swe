@@ -27,6 +27,7 @@ grep -rPn '[^\x00-\x7F]' \
     --exclude-dir=dist --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.git \
     --exclude-dir=testdata --exclude-dir=research --exclude-dir=.playwright-mcp --exclude-dir=.claude \
     --exclude-dir=tmp --exclude-dir=agent-chat-dist --exclude-dir=.swe-swe \
+    --exclude-dir=agent-chats \
     --exclude=clipboard.min.js --exclude=elm.js --exclude=elm-doc-preview.css --exclude=xterm.js \
     . 2>/dev/null | grep -v '^\./\.test-home' > "$TMPOUT" || true
 
