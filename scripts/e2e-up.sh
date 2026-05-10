@@ -31,7 +31,7 @@ E2E_PASSWORD="${E2E_PASSWORD:-e2e-test-password}"
 # spin up several sessions; running back-to-back against a 20-port pool
 # exhausted preview ports before any reaper could free them.
 if [[ "$MODE" == "simple" ]]; then
-    E2E_PORT=9780
+    E2E_PORT=${E2E_PORT:-9780}
     PREVIEW_PORTS="3200-3229"
     AGENT_CHAT_PORTS="4200-4229"
     PUBLIC_PORTS="5200-5229"
