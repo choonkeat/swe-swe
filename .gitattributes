@@ -3,3 +3,15 @@ cmd/swe-swe/testdata/golden/** linguist-generated=true
 
 # Task/log files - collapse in PRs
 tasks/*.log linguist-generated=true
+
+# Image attachments under agent-chats/assets/ tracked via Git LFS.
+# Requires `git lfs install` once per clone. GitHub free quota is
+# 1 GB storage + 1 GB/month bandwidth across the account; every
+# checkout that pulls these files (CI, contributors, forks) ticks
+# the bandwidth meter. Set GIT_LFS_SKIP_SMUDGE=1 in CI if you don't
+# need the binaries.
+agent-chats/assets/**/*.png  filter=lfs diff=lfs merge=lfs -text
+agent-chats/assets/**/*.jpg  filter=lfs diff=lfs merge=lfs -text
+agent-chats/assets/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+agent-chats/assets/**/*.gif  filter=lfs diff=lfs merge=lfs -text
+agent-chats/assets/**/*.webp filter=lfs diff=lfs merge=lfs -text
