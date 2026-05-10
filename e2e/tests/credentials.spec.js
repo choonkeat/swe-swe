@@ -33,6 +33,16 @@ async function openSettings(page) {
   await page.locator('.settings-panel:not([hidden])').waitFor({ timeout: 5_000 });
 }
 
+// Phase A reshaped Settings into a sidebar+tabs layout. The credentials and
+// SSH controls live behind data-tab="git" and data-tab="ssh" panes that are
+// hidden until the user clicks the nav item. Tests that touch those controls
+// must switch tabs explicitly; otherwise fill/toBeVisible/etc. fail on the
+// hidden ancestor.
+async function switchSettingsTab(page, tab) {
+  await page.locator(`.settings-panel__nav-item[data-tab="${tab}"]`).click();
+  await page.locator(`.settings-panel__pane[data-pane="${tab}"]:not([hidden])`).waitFor({ timeout: 5_000 });
+}
+
 async function closeSettings(page) {
   const closeBtn = page.locator('.settings-panel__close').first();
   await closeBtn.click();
@@ -57,9 +67,10 @@ test.describe('per-session git credentials UI', () => {
     });
 
     await openSettings(page);
+    await switchSettingsTab(page, 'git');
 
-    // The credentials section is rendered in the panel.
-    const credsSection = page.locator('.settings-panel__credentials');
+    // The credentials section is rendered in the git tab pane.
+    const credsSection = page.locator('.settings-panel__pane[data-pane="git"]');
     await expect(credsSection).toBeVisible();
 
     // Default host is github.com; status starts as "Not yet sent to server."
@@ -110,6 +121,7 @@ test.describe('per-session git credentials UI', () => {
     // the user can see what's saved and re-Save without re-typing.
     await closeSettings(page);
     await openSettings(page);
+    await switchSettingsTab(page, 'git');
 
     await expect(page.locator('#settings-cred-host')).toHaveValue('github.com');
     await expect(page.locator('#settings-cred-username')).toHaveValue('x-access-token');
@@ -130,6 +142,7 @@ test.describe('per-session git credentials UI', () => {
     });
 
     await openSettings(page);
+    await switchSettingsTab(page, 'git');
 
     // Token blank, host defaulted to github.com.
     await page.fill('#settings-cred-token', '');
@@ -162,6 +175,7 @@ test.describe('per-session git credentials UI', () => {
     });
 
     await openSettings(page);
+    await switchSettingsTab(page, 'git');
 
     // Default host github.com pre-fills with GH values.
     await expect(page.locator('#settings-cred-username')).toHaveValue('x-access-token');
@@ -194,6 +208,7 @@ test.describe('per-session git credentials UI', () => {
     await expect(terminalUi).toHaveAttribute('data-local-user-email', 'e2e@test.local');
 
     await openSettings(page);
+    await switchSettingsTab(page, 'git');
 
     // populateCredentialsSection sets the values from local config and
     // marks the inputs readonly.
@@ -244,9 +259,10 @@ test.describe('per-session SSH commit signing UI', () => {
     });
 
     await openSettings(page);
+    await switchSettingsTab(page, 'ssh');
 
-    // Signing section is rendered alongside the HTTPS credentials.
-    const signingSection = page.locator('.settings-panel__signing');
+    // Signing section is rendered in the SSH commit-signing tab.
+    const signingSection = page.locator('.settings-panel__pane[data-pane="ssh"]');
     await expect(signingSection).toBeVisible();
 
     // Fields the form must expose. Test-first: this fails until the
@@ -259,17 +275,16 @@ test.describe('per-session SSH commit signing UI', () => {
     await expect(labelInput).toBeVisible();
     await expect(passphraseInput).toHaveAttribute('type', 'password');
 
-    // Token also required to keep the WS payload validation happy in
-    // the existing _saveCredentials path. (Signing reuses the unified
-    // Save Credentials button.)
-    await page.fill('#settings-cred-token', 'ghp_e2e_for_signing');
+    // Phase A split signing onto its own Save button + set_signing_key WS
+    // message, so we no longer need to fill an HTTPS token to satisfy the
+    // unified _saveCredentials path.
     await page.fill('#settings-cred-signing-key', TEST_SIGNING_KEY_PEM);
     await page.fill('#settings-cred-signing-label', 'e2e-signing-key');
 
-    // Save. Status flips to "Sending..." synchronously.
-    await page.click('#settings-cred-save');
+    // Save key. Triggers set_signing_key over the WS.
+    await page.click('#settings-cred-signing-save');
 
-    // Wait for the credentials_stored ack with signing_fingerprint.
+    // Wait for the signing_key_stored ack to populate the fingerprint.
     await waitForUi(page, () => {
       const ui = window.terminalUI;
       return typeof ui?._signingFingerprint === 'string' && ui._signingFingerprint.startsWith('SHA256:');
@@ -298,6 +313,7 @@ test.describe('per-session SSH commit signing UI', () => {
     // Close + re-open: key + label rehydrate from localStorage.
     await closeSettings(page);
     await openSettings(page);
+    await switchSettingsTab(page, 'ssh');
     await expect(page.locator('#settings-cred-signing-key')).toHaveValue(TEST_SIGNING_KEY_PEM);
     await expect(page.locator('#settings-cred-signing-label')).toHaveValue('e2e-signing-key');
     // Passphrase is NEVER rehydrated -- it isn't in localStorage to
