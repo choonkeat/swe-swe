@@ -2818,9 +2818,9 @@ class TerminalUI extends HTMLElement {
                 explainer.id = explainerId;
                 explainer.className = 'settings-panel__hint settings-panel__hint--warn';
                 explainer.textContent = "Author name and email are set in this repo's local .git/config";
-                nameInput.closest('.settings-panel__field').parentNode.insertBefore(
+                nameInput.closest('.settings-panel__field-row').parentNode.insertBefore(
                     explainer,
-                    nameInput.closest('.settings-panel__field')
+                    nameInput.closest('.settings-panel__field-row')
                 );
             }
         } else if (explainer) {
