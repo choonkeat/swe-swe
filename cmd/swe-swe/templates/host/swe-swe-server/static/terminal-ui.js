@@ -595,6 +595,7 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                     <div class="settings-panel__pane-footer">
                                         <span class="settings-panel__pane-status settings-panel__cred-status" id="settings-cred-status"></span>
+                                        <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-cred-test" type="button">Test connection</button>
                                         <button class="settings-panel__btn settings-panel__btn--primary" id="settings-cred-save" type="button">Save credentials</button>
                                     </div>
                                 </section>
@@ -1452,6 +1453,21 @@ class TerminalUI extends HTMLElement {
                 }
                 this._refreshSigningStatus();
                 break;
+            case 'credentials_tested':
+                // Server acked test_credentials. Show the result against the
+                // existing credential status line on the Git HTTPS pane.
+                {
+                    const status = this.querySelector('#settings-cred-status');
+                    if (status) {
+                        const ok = !!msg.ok;
+                        const text = typeof msg.message === 'string' && msg.message
+                            ? msg.message
+                            : (ok ? 'Connection OK' : 'Connection failed');
+                        status.textContent = text;
+                        status.setAttribute('data-state', ok ? 'ok' : 'err');
+                    }
+                }
+                break;
             case 'signing_key_stored':
                 // Server acked set_signing_key. Save flow.
                 this._signingVerified = '';
@@ -2079,6 +2095,11 @@ class TerminalUI extends HTMLElement {
         if (credSaveBtn) {
             credSaveBtn.addEventListener('click', () => this._saveCredentials());
         }
+        // Test connection button (Git HTTPS)
+        const credTestBtn = panel.querySelector('#settings-cred-test');
+        if (credTestBtn) {
+            credTestBtn.addEventListener('click', () => this._testCredentials());
+        }
         // Re-populate from localStorage when the host changes
         const credHost = panel.querySelector('#settings-cred-host');
         if (credHost) {
@@ -2268,6 +2289,27 @@ class TerminalUI extends HTMLElement {
         const status = panel.querySelector('#settings-cred-status');
         if (status) {
             status.textContent = 'Sending...';
+            status.removeAttribute('data-state');
+        }
+    }
+
+    _testCredentials() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const status = panel.querySelector('#settings-cred-status');
+        const host = (panel.querySelector('#settings-cred-host')?.value || 'github.com').trim();
+        const username = (panel.querySelector('#settings-cred-username')?.value || '').trim();
+        const token = panel.querySelector('#settings-cred-token')?.value || '';
+        if (!host || !token) {
+            if (status) {
+                status.textContent = 'Host and token are required to test.';
+                status.setAttribute('data-state', 'err');
+            }
+            return;
+        }
+        this.sendJSON({ type: 'test_credentials', data: { host, username, token } });
+        if (status) {
+            status.textContent = 'Testing connection...';
             status.removeAttribute('data-state');
         }
     }

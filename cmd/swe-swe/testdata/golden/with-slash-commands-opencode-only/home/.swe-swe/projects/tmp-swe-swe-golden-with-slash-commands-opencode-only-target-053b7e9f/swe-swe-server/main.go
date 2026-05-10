@@ -5051,6 +5051,39 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if err := conn.WriteJSON(ack); err != nil {
 					log.Printf("Session %s: failed to ack set_credentials: %v", sess.UUID, err)
 				}
+			case "test_credentials":
+				// Validate the supplied HTTPS credentials by attempting an
+				// authenticated GET against the host. Does not persist the
+				// credentials; the user explicitly hits Save Credentials
+				// after a successful test.
+				var payload struct {
+					Host     string `json:"host"`
+					Username string `json:"username"`
+					Token    string `json:"token"`
+				}
+				if err := json.Unmarshal(msg.Data, &payload); err != nil {
+					log.Printf("Session %s: test_credentials invalid payload: %v", sess.UUID, err)
+					continue
+				}
+				host := strings.TrimSpace(payload.Host)
+				if host == "" {
+					host = "github.com"
+				}
+				ack := map[string]any{"type": "credentials_tested"}
+				if strings.TrimSpace(payload.Token) == "" {
+					ack["ok"] = false
+					ack["message"] = "Token is empty"
+				} else {
+					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					ok, message := testGitCredentials(ctx, host, strings.TrimSpace(payload.Username), payload.Token)
+					cancel()
+					ack["ok"] = ok
+					ack["message"] = message
+					log.Printf("Session %s: test_credentials host=%q ok=%v", sess.UUID, host, ok)
+				}
+				if err := conn.WriteJSON(ack); err != nil {
+					log.Printf("Session %s: failed to ack test_credentials: %v", sess.UUID, err)
+				}
 			case "set_signing_key":
 				// Browser supplies an SSH signing key independent of the
 				// HTTPS PAT. Mirrors the signing branch of set_credentials
@@ -8067,4 +8100,60 @@ func handleDownloadRecording(w http.ResponseWriter, r *http.Request, uuid string
 	w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
 	w.Write(buf.Bytes())
 	log.Printf("Recording downloaded: %s", uuid)
+}
+
+// testGitCredentials attempts an authenticated GET against the forge host
+// using HTTP Basic auth. Returns (ok, human-readable message) for the
+// settings panel "Test connection" button. Does not persist anything.
+//
+// For github.com we hit api.github.com/user, which returns the
+// authenticated user's login on success and 401 on a bad token.
+// For other hosts we hit https://{host}/ which only confirms the host is
+// reachable and what status the server returns for our Basic-auth request --
+// we do not assume any particular API surface.
+func testGitCredentials(ctx context.Context, host, username, token string) (bool, string) {
+	if username == "" {
+		username = "x-access-token"
+	}
+	var reqURL string
+	if host == "github.com" {
+		reqURL = "https://api.github.com/user"
+	} else {
+		reqURL = "https://" + host + "/"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return false, "request error: " + err.Error()
+	}
+	req.SetBasicAuth(username, token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "swe-swe/test-credentials")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, "Cannot reach " + host + ": " + err.Error()
+	}
+	defer resp.Body.Close()
+
+	if host == "github.com" && resp.StatusCode == http.StatusOK {
+		var body struct {
+			Login string `json:"login"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		if body.Login != "" {
+			return true, "Connected as @" + body.Login
+		}
+		return true, "Connected"
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, "Reached " + host + " (HTTP 200) -- token accepted"
+	case http.StatusUnauthorized:
+		return false, "Invalid credentials (HTTP 401)"
+	case http.StatusForbidden:
+		return false, "Forbidden (HTTP 403) -- token may lack scope"
+	case http.StatusNotFound:
+		return false, "Not found (HTTP 404)"
+	}
+	return false, fmt.Sprintf("HTTP %d from %s", resp.StatusCode, host)
 }
