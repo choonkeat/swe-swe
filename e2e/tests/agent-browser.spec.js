@@ -57,8 +57,19 @@ test.describe('Agent Browser E2E', () => {
     const chatInput = chatIframe.locator('#chat-input');
     await expect(chatInput).toBeEnabled({ timeout: 60_000 });
 
-    // Send the prompt
-    await chatInput.fill('use playwright to visit example.com and take a screenshot');
+    // Send the prompt. The leading sentence is important: the playwright
+    // MCP server is wrapped in mcp-lazy-init, which only starts Chrome +
+    // websockify (and binds the CDP port) the first time a tool is
+    // invoked. If the agent tries to probe the CDP port directly before
+    // calling a tool, it will see ECONNREFUSED and bail out with a
+    // "Playwright browser is not running" message instead of doing the
+    // task. Telling it to just invoke the tool sidesteps that bail.
+    const prompt = [
+      'The Playwright MCP server is lazy-loaded — the CDP browser starts the first time you invoke a Playwright tool.',
+      'Do NOT probe the CDP port directly; just call the tool.',
+      'Use Playwright to visit https://example.com and take a screenshot.',
+    ].join(' ');
+    await chatInput.fill(prompt);
     await chatIframe.locator('#btn-send').click();
 
     // Poll: click first quick reply (confirmation), then wait for agent response

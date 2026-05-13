@@ -80,18 +80,19 @@ test.describe('Port Connectivity', () => {
     console.log(`Preview proxy port ${previewResp.port}: ok=${previewResp.ok}, status=${previewResp.status}, type=${previewResp.type}`);
     expect(previewResp.ok).toBe(true);
 
-    // --- VNC proxy (needs browser started first) ---
+    // --- VNC proxy port allocation ---
+    // We only assert the port number is allocated; we cannot drive a TCP
+    // connection without first starting the browser, and POST
+    // /api/session/{uuid}/browser/start is gated by MCP_AUTH_KEY (a
+    // server-internal secret unreachable from the test runner). In
+    // dockerfile-only mode the published port additionally maps host:PP
+    // to container:vncPort (websockify) rather than container:PP, so
+    // even a no-op fetch on PP would be testing websockify readiness,
+    // not the swe-swe-server VNC proxy. The agent-browser spec exercises
+    // the real end-to-end path (agent invokes playwright MCP, which
+    // triggers browser/start via mcp-lazy-init's internal auth key).
     expect(ports.vncProxyPort).toBeTruthy();
-    console.log(`Testing VNC proxy port: ${ports.vncProxyPort}`);
-    const url = new URL(BASE_URL);
-    await page.evaluate(async (startUrl) => {
-      await fetch(startUrl, { method: 'POST', credentials: 'include' });
-    }, `${url.origin}/start-browser/${ports.sessionUUID}`);
-    await page.waitForTimeout(3000);
-
-    const vncResp = await fetchPortWithRetry(page, ports.vncProxyPort, '/vnc_lite.html', 5);
-    console.log(`VNC proxy port ${vncResp.port}: ok=${vncResp.ok}, status=${vncResp.status}, type=${vncResp.type}`);
-    expect(vncResp.ok).toBe(true);
+    console.log(`VNC proxy port allocated: ${ports.vncProxyPort}`);
 
     // --- Agent chat proxy ---
     expect(ports.agentChatProxyPort).toBeTruthy();
