@@ -1,28 +1,28 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
-
-const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
-
-async function login(page) {
-  await page.goto('/swe-swe-auth/login');
-  await page.fill('input[type="password"]', PASSWORD);
-  await Promise.all([
-    page.waitForNavigation(),
-    page.click('button[type="submit"]'),
-  ]);
-}
+import { login, endSessions } from './_helpers/sessions.js';
 
 // Wait until window.terminalUI exists and reports a given property via predicate.
-// 60s default: on isolated runs the MCP probe completes in ~12-15s, but when
-// run after heavier tests (agent-browser.spec.js exercising the full MCP
-// server workflow) the probe can stretch past 30s, flaking the assertion.
-// 60s keeps the full suite stable without hiding real regressions.
+// 90s default: on isolated runs the MCP probe completes in ~12-15s, but when
+// the suite runs end-to-end (agent-browser plus the credentials and ports
+// specs leave Chrome, sidecars, and processes behind even after their own
+// pages close), the probe can stretch past 60s. 90s keeps the full suite
+// stable without hiding real regressions -- a clean baseline (see
+// globalSetup) plus per-test session cleanup (afterEach on pass) handles
+// most accumulation; this budget is the safety margin on top.
 async function waitForUi(page, predicate) {
-  return page.waitForFunction(predicate, null, { timeout: 60_000 });
+  return page.waitForFunction(predicate, null, { timeout: 90_000 });
 }
+
+// Per-test session tracker. We push every UUID openChatSession /
+// openTerminalSession creates so afterEach can end them on pass. Failed
+// tests skip cleanup so the broken session state stays in the container
+// for inspection.
+let testSessions = [];
 
 async function openChatSession(page) {
   const uuid = crypto.randomUUID();
+  testSessions.push(uuid);
   await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   return uuid;
@@ -30,6 +30,7 @@ async function openChatSession(page) {
 
 async function openTerminalSession(page) {
   const uuid = crypto.randomUUID();
+  testSessions.push(uuid);
   await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   return uuid;
@@ -37,7 +38,14 @@ async function openTerminalSession(page) {
 
 test.describe('terminal-ui tab switching', () => {
   test.beforeEach(async ({ page }) => {
+    testSessions = [];
     await login(page);
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.status === 'passed' && testSessions.length > 0) {
+      await endSessions(page, testSessions);
+    }
   });
 
   test('?session=chat: Agent Terminal stays active while chat probe runs, chat activates on probe success', async ({ page }) => {

@@ -4,6 +4,7 @@ const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './global-setup.js',
   timeout: 180_000, // 3 minutes per test (AI agent needs time)
   expect: {
     timeout: 120_000, // 2 minutes for assertions (waiting for AI response)
