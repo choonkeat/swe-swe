@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -90,3 +91,83 @@ func TestCopyDirPreservesSymlink(t *testing.T) {
 		t.Errorf("symlink target: got %q, want %q", target, "real")
 	}
 }
+
+// TestEnsureSSHConfigPortable_AddsDirective verifies that a host ssh_config
+// containing macOS-only keywords gets an IgnoreUnknown directive prepended
+// so OpenSSH on Linux does not abort the whole config.
+func TestEnsureSSHConfigPortable_AddsDirective(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	original := "Host github.com\n  UseKeychain yes\n  AddKeysToAgent yes\n"
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	if err := ensureSSHConfigPortable(path); err != nil {
+		t.Fatalf("ensureSSHConfigPortable: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	want := "IgnoreUnknown UseKeychain,AddKeysToAgent"
+	if !strings.Contains(string(got), want) {
+		t.Errorf("directive missing; got:\n%s", got)
+	}
+	if !strings.Contains(string(got), original) {
+		t.Errorf("original body lost; got:\n%s", got)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("mode not preserved; got %v want 0600", info.Mode().Perm())
+	}
+}
+
+// TestEnsureSSHConfigPortable_Idempotent verifies running twice does not
+// stack duplicate directives.
+func TestEnsureSSHConfigPortable_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	if err := os.WriteFile(path, []byte("Host *\n  UseKeychain yes\n"), 0600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := ensureSSHConfigPortable(path); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read first: %v", err)
+	}
+
+	if err := ensureSSHConfigPortable(path); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read second: %v", err)
+	}
+
+	if string(first) != string(second) {
+		t.Errorf("second run changed file:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+// TestEnsureSSHConfigPortable_NoFile is a no-op when the path does not exist.
+func TestEnsureSSHConfigPortable_NoFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "does-not-exist")
+
+	if err := ensureSSHConfigPortable(path); err != nil {
+		t.Fatalf("expected nil for missing file, got: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("function created the file; expected no-op")
+	}
+}
+

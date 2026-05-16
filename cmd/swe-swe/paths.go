@@ -133,6 +133,41 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
+// ensureSSHConfigPortable makes a host-copied ~/.ssh/config safe to use
+// inside a Linux container by neutralising macOS-only keywords (UseKeychain,
+// AddKeysToAgent). OpenSSH on Linux aborts the whole config on the first
+// unknown keyword, which breaks every git-over-SSH command in the container.
+//
+// The fix is to prepend an `IgnoreUnknown` directive, which is the official
+// OpenSSH portability escape hatch and is honored on macOS too -- so the
+// same file remains valid on both platforms.
+//
+// Idempotent: a sentinel comment on the line above the directive lets us
+// detect a previous run and skip. Returns nil (no-op) if the file does not
+// exist.
+func ensureSSHConfigPortable(path string) error {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	const sentinel = "# swe-swe: ignore macOS-only ssh_config keywords on Linux"
+	if strings.Contains(string(data), sentinel) {
+		return nil
+	}
+	prefix := sentinel + "\nIgnoreUnknown UseKeychain,AddKeysToAgent\n\n"
+	return os.WriteFile(path, append([]byte(prefix), data...), info.Mode())
+}
+
 // sanitizeProjectName converts a directory name into a sanitized project name
 // suitable for use as Docker label values and Traefik router names.
 // It lowercases, replaces non-alphanumeric chars with hyphens, and truncates to 32 chars.

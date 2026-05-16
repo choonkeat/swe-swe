@@ -836,6 +836,16 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 				return nil
 			})
 		}
+
+		// If a ~/.ssh/config was copied (either directly or as part of a
+		// .ssh directory copy), neutralise macOS-only keywords so OpenSSH
+		// on Linux does not abort the whole config. Without this, git over
+		// SSH fails with "Bad configuration option: usekeychain" on every
+		// container that copied a Mac ssh_config in.
+		sshConfigPath := filepath.Join(homeDir, ".ssh", "config")
+		if err := ensureSSHConfigPortable(sshConfigPath); err != nil {
+			fmt.Printf("Warning: could not sanitize %s for Linux: %v\n", sshConfigPath, err)
+		}
 	}
 
 	// Write bundled slash commands to agent-specific directories
