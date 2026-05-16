@@ -207,3 +207,124 @@ func TestSessionGitconfig_SigningKey(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionGitconfig_AllowedSigners verifies that when both a signing
+// key and an author email are present, writeSessionGitconfigFile writes
+// the per-session allowed_signers file with `<email> <pubkey>` and emits
+// `allowedSignersFile = <path>` under `[gpg "ssh"]`. Without this, git's
+// signature verification path (`git log --show-signature`, `verify-commit`)
+// fails because the signature has no recognized principal.
+func TestSessionGitconfig_AllowedSigners(t *testing.T) {
+	tmp := t.TempDir()
+	savedDir := sessionGitconfigDir
+	sessionGitconfigDir = tmp
+	defer func() { sessionGitconfigDir = savedDir }()
+
+	sid := "test-sid-allowed-signers"
+	path := filepath.Join(tmp, sid)
+	defer clearSessionCredentials(sid)
+
+	setAuthor(sid, AuthorIdent{Name: "Eve Email", Email: "eve@example.com"})
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{
+		Signer:      signer,
+		Fingerprint: "SHA256:test",
+		Label:       "test",
+	})
+
+	if err := writeSessionGitconfigFile(path, sid); err != nil {
+		t.Fatalf("writeSessionGitconfigFile: %v", err)
+	}
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read gitconfig: %v", err)
+	}
+	if !strings.Contains(string(body), "allowedSignersFile = "+sessionAllowedSignersPath(sid)) {
+		t.Errorf("expected allowedSignersFile pointing at session path; got:\n%s", body)
+	}
+
+	signers, err := os.ReadFile(sessionAllowedSignersPath(sid))
+	if err != nil {
+		t.Fatalf("read allowed_signers: %v", err)
+	}
+	got := string(signers)
+	if !strings.HasPrefix(got, "eve@example.com ssh-ed25519 ") {
+		t.Errorf("allowed_signers line: got %q, want %q...", got, "eve@example.com ssh-ed25519 ")
+	}
+	if !strings.HasSuffix(got, "\n") {
+		t.Errorf("allowed_signers must end with newline; got %q", got)
+	}
+}
+
+// TestSessionGitconfig_AllowedSigners_SkippedWithoutEmail verifies that
+// when a signing key is set but no author email is recorded, we skip the
+// allowed_signers file and do not emit `allowedSignersFile`. Signing still
+// works (no behavior regression); only local verification is skipped.
+func TestSessionGitconfig_AllowedSigners_SkippedWithoutEmail(t *testing.T) {
+	tmp := t.TempDir()
+	savedDir := sessionGitconfigDir
+	sessionGitconfigDir = tmp
+	defer func() { sessionGitconfigDir = savedDir }()
+
+	sid := "test-sid-no-email"
+	path := filepath.Join(tmp, sid)
+	defer clearSessionCredentials(sid)
+
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{
+		Signer:      signer,
+		Fingerprint: "SHA256:test",
+		Label:       "test",
+	})
+	// Author not set: signing still wires up, but no allowed_signers.
+
+	if err := writeSessionGitconfigFile(path, sid); err != nil {
+		t.Fatalf("writeSessionGitconfigFile: %v", err)
+	}
+
+	body, _ := os.ReadFile(path)
+	if strings.Contains(string(body), "allowedSignersFile") {
+		t.Errorf("did not expect allowedSignersFile without author email; got:\n%s", body)
+	}
+	if _, err := os.Stat(sessionAllowedSignersPath(sid)); !os.IsNotExist(err) {
+		t.Errorf("did not expect allowed_signers file to be written; stat err=%v", err)
+	}
+}
+
+// TestRemoveSessionGitconfig_RemovesAllowedSigners verifies that
+// session teardown also removes the sibling allowed_signers file so
+// teardown is symmetric with creation.
+func TestRemoveSessionGitconfig_RemovesAllowedSigners(t *testing.T) {
+	tmp := t.TempDir()
+	savedDir := sessionGitconfigDir
+	sessionGitconfigDir = tmp
+	defer func() { sessionGitconfigDir = savedDir }()
+
+	sid := "test-sid-remove-signers"
+	defer clearSessionCredentials(sid)
+
+	setAuthor(sid, AuthorIdent{Name: "Frank Foo", Email: "frank@example.com"})
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{
+		Signer:      signer,
+		Fingerprint: "SHA256:test",
+		Label:       "test",
+	})
+	if _, err := ensureSessionGitconfig(sid); err != nil {
+		t.Fatalf("ensureSessionGitconfig: %v", err)
+	}
+
+	if _, err := os.Stat(sessionAllowedSignersPath(sid)); err != nil {
+		t.Fatalf("expected allowed_signers to exist after ensure; got %v", err)
+	}
+
+	removeSessionGitconfig(sid)
+
+	if _, err := os.Stat(sessionAllowedSignersPath(sid)); !os.IsNotExist(err) {
+		t.Errorf("expected allowed_signers gone after remove; stat err=%v", err)
+	}
+	if _, err := os.Stat(sessionGitconfigPath(sid)); !os.IsNotExist(err) {
+		t.Errorf("expected gitconfig gone after remove; stat err=%v", err)
+	}
+}

@@ -25,10 +25,19 @@ import (
 	"strings"
 )
 
-const sessionGitconfigDir = "/tmp/swe-swe-session-gitconfig"
+// var (not const) so tests can redirect to a temp dir.
+var sessionGitconfigDir = "/tmp/swe-swe-session-gitconfig"
 
 func sessionGitconfigPath(sid string) string {
 	return filepath.Join(sessionGitconfigDir, sid)
+}
+
+// sessionAllowedSignersPath sits next to the per-session gitconfig.
+// gpg.ssh.allowedSignersFile in the gitconfig points here so that
+// `git verify-commit` (and friends) can verify signatures produced by
+// the in-session broker without needing a process-wide ~/.ssh/allowed_signers.
+func sessionAllowedSignersPath(sid string) string {
+	return filepath.Join(sessionGitconfigDir, sid+".allowed_signers")
 }
 
 // ensureSessionGitconfig creates the file if missing, populating it
@@ -95,6 +104,20 @@ func writeSessionGitconfigFile(path, sid string) error {
 		body += "\tformat = ssh\n"
 		body += "[gpg \"ssh\"]\n"
 		body += "\tprogram = git-sign-swe-swe\n"
+
+		// Emit allowedSignersFile only when we can also write a usable
+		// file: it needs a principal, and the author email is the obvious
+		// choice. Without this, `git log --show-signature` and
+		// `git verify-commit` fail with "gpg.ssh.allowedSignersFile needs
+		// to be configured" or similar.
+		if hasAuthor && a.Email != "" {
+			signersPath := sessionAllowedSignersPath(sid)
+			line := fmt.Sprintf("%s %s\n", a.Email, signPub)
+			if err := os.WriteFile(signersPath, []byte(line), 0600); err == nil {
+				body += fmt.Sprintf("\tallowedSignersFile = %s\n", signersPath)
+			}
+		}
+
 		body += "[commit]\n"
 		body += "\tgpgsign = true\n"
 		body += "[tag]\n"
@@ -109,6 +132,7 @@ func removeSessionGitconfig(sid string) {
 		return
 	}
 	_ = os.Remove(sessionGitconfigPath(sid))
+	_ = os.Remove(sessionAllowedSignersPath(sid))
 }
 
 // readLocalGitUser reads <workDir>/.git/config and returns local
