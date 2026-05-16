@@ -11,7 +11,7 @@ const ROLE_MAP = {
 // wraps every user/agent body. The `(?!>)` lookahead makes that contract
 // explicit: even if the markdown were corrupted to put a marker-like literal
 // inside a blockquoted body, the regex won't false-match. Combined with
-// `^…$` anchoring this also protects against marker text inside fenced code
+// `^...$` anchoring this also protects against marker text inside fenced code
 // blocks (which gets blockquoted alongside the surrounding body).
 const TURN_RE = /^(?!>)(?:## ([A-Za-z]+)|\*\*([A-Za-z]+)\*\*)\s*$/;
 const ELAPSED_RE = /^(?!>)<small>\s*(?:took\s+)?([^<]+?)\s*<\/small><br\s*\/?>?\s*$/i;
@@ -34,7 +34,7 @@ function stripFrontmatter(md) {
   return { meta, body };
 }
 
-// Legacy variant-C parser — each turn is a 2-cell <table> (left/right empty
+// Legacy variant-C parser -- each turn is a 2-cell <table> (left/right empty
 // indicates the role). Kept so old `agent-chats/*.md` still render.
 function splitTurnsFromTables(body) {
   const tableRE = /<table[^>]*>[\s\S]*?<\/table>/g;
@@ -104,7 +104,7 @@ function splitTurnsFromHeadings(body) {
     }
     const elapsedMatch = line.match(ELAPSED_RE);
     if (elapsedMatch) {
-      // Buffer it — applies to the *next* turn, not the current one.
+      // Buffer it -- applies to the *next* turn, not the current one.
       pendingElapsed = elapsedMatch[1].trim();
       continue;
     }
@@ -127,11 +127,11 @@ function splitTurnsFromHeadings(body) {
   };
 }
 
-// Pull a trailing `[Quick replies]\n- A\n- B\n…` block off the end of body.
+// Pull a trailing `[Quick replies]\n- A\n- B\n...` block off the end of body.
 // The block lives outside the `> ` blockquote, so a body line `> [Quick
 // replies]` (a literal one inside the speech bubble) won't false-trigger:
 // after `unblockquote` strips the `> ` we see `[Quick replies]` at column 0,
-// but only at the *very end* of the body — and any text *after* the bullets
+// but only at the *very end* of the body -- and any text *after* the bullets
 // (e.g. continued conversation prose) breaks the match.
 function extractQuickReplies(body) {
   const m = body.match(/(?:^|\n)\[Quick replies\]\s*\n((?:[ \t]*-[^\n]*\n?)+)\s*$/);
@@ -142,8 +142,8 @@ function extractQuickReplies(body) {
   return { body: body.slice(0, m.index), replies };
 }
 
-// Blockquote-prefix parser (variants E/F). Lines like `> **You:** …` or
-// `> **Claude:** …` start a new turn; bare content between them is the OTHER
+// Blockquote-prefix parser (variants E/F). Lines like `> **You:** ...` or
+// `> **Claude:** ...` start a new turn; bare content between them is the OTHER
 // role. Kept for backward-compat with that variant.
 function splitTurnsFromPrefix(body) {
   const lines = body.split('\n');
@@ -218,7 +218,7 @@ async function loadChat(mdPath, container) {
     const { meta, body } = stripFrontmatter(md);
     const { preamble, turns } = splitTurns(body);
 
-    // Strip HTML comments (e.g. `<!-- agent-chat export … -->`) so they don't
+    // Strip HTML comments (e.g. `<!-- agent-chat export ... -->`) so they don't
     // create an empty system bubble.
     const preambleClean = preamble.replace(/<!--[\s\S]*?-->/g, '').trim();
     if (preambleClean) {
@@ -276,7 +276,7 @@ function init(manifest) {
     if (tb && meta) {
       tb.textContent = (meta.date || '') + (meta.index ? '-' + meta.index : '') + ' · ' + (meta.title || select.value);
     }
-    if (meta && meta.title) document.title = meta.title + ' — chat log';
+    if (meta && meta.title) document.title = meta.title + ' -- chat log';
   };
   select.addEventListener('change', update);
   if (manifest.length) update();
