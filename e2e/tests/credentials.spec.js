@@ -320,4 +320,144 @@ test.describe('per-session SSH commit signing UI', () => {
     // rehydrate from.
     await expect(page.locator('#settings-cred-signing-passphrase')).toHaveValue('');
   });
+
+  test('end-to-end: git commit -S in the session terminal produces an ssh-signed commit', async ({ page }) => {
+    // Smoke that the entire stack works: WS set_credentials carries
+    // the signing key, the broker stores it, writeSessionGitconfig
+    // emits the [gpg] / [commit] blocks, the session shell sees the
+    // new gitconfig, git invokes git-sign-swe-swe, the wrapper dials
+    // the broker, sign-ssh signs, the wrapper writes the .sig, and
+    // git embeds it as a gpgsig field in the commit object.
+    //
+    // Assertion: `git cat-file -p HEAD` of the just-made commit
+    // contains a "-----BEGIN SSH SIGNATURE-----" block. We don't
+    // verify the signature here -- that's covered by the Go-side
+    // SSHSIG round-trip unit test. This test catches *wiring* errors
+    // between the layers, which the unit tests can't.
+    //
+    // Session shape: `?assistant=shell` gives a plain bash so we can
+    // type git commands into it. Other test sessions use opencode
+    // which grabs the terminal with its own TUI -- not usable here.
+    // Using a single session means the WS that saves the signing key
+    // is the same sid the broker resolves for the helper's connect,
+    // sidestepping the sibling-session creds gap (research addendum
+    // 2026-04-26 finding #1).
+    const uuid = crypto.randomUUID();
+    await page.goto(`/session/${uuid}?assistant=shell`);
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
+    await page.evaluate(() => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe-signing:'))
+        .forEach(k => localStorage.removeItem(k));
+      if (window.terminalUI) {
+        window.terminalUI._credsStoredHosts = [];
+        window.terminalUI._signingFingerprint = '';
+      }
+    });
+
+    // Save signing key + author identity by sending the WS message
+    // directly. Shell-mode sessions don't ship the Settings panel
+    // chrome (preset=single, no settings button visible), so going
+    // through the form would hang. The Phase 4 UI test covers that
+    // path against the chat session; here we want the back-end smoke.
+    await page.evaluate((pem) => {
+      window.terminalUI.sendJSON({
+        type: 'set_credentials',
+        data: {
+          host: 'github.com',
+          username: 'x-access-token',
+          token: 'ghp_e2e_phase5_smoke',
+          name: 'Phase5 Smoke',
+          email: 'phase5@example.com',
+          signing_private_key_pem: pem,
+          signing_passphrase: '',
+          signing_key_label: 'phase5-key',
+        },
+      });
+    }, TEST_SIGNING_KEY_PEM);
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return typeof ui?._signingFingerprint === 'string' && ui._signingFingerprint.startsWith('SHA256:');
+    });
+
+    // Drive the session shell via raw WS bytes. The terminal-ui
+    // forwards them straight to the PTY -- same path the user takes
+    // when typing into the terminal pane.
+    //
+    // The PTY echoes typed input back into the xterm buffer, so any
+    // literal sentinel in the command appears once just from being
+    // typed. To distinguish "command was typed" from "command ran",
+    // we put the sentinel inside a printf format string with hex
+    // escapes -- the typed line shows the source `\x5f` while the
+    // executed line shows the resolved underscore `_`. Wait for the
+    // resolved form so we know bash actually ran the pipeline.
+    const SENTINEL = 'PHASE5DONE' + crypto.randomUUID().slice(0, 8).replace(/-/g, '');
+    // Source form interleaves \x5fs. Resolved form is the same
+    // string with the \x5f sequences turned into underscores.
+    const sourceForm = SENTINEL.replace(/^([A-Z0-9]{5})/, '$1\\x5f');
+    const resolvedForm = SENTINEL.replace(/^([A-Z0-9]{5})/, '$1_');
+    const cmd = [
+      'cd /tmp',
+      'rm -rf signtest',
+      'mkdir signtest',
+      'cd signtest',
+      'git init -q',
+      'git commit --allow-empty -S -m smoke 2>&1',
+      'echo === HEAD ===',
+      'git cat-file -p HEAD 2>&1 || true',
+      'echo === VERIFY ===',
+      'git log -1 --show-signature 2>&1 || true',
+      "printf '" + sourceForm + "\\n'",
+    ].join(' && ');
+    await page.evaluate((c) => {
+      const enc = new TextEncoder();
+      window.terminalUI.ws.send(enc.encode(c + '\n'));
+    }, cmd);
+
+    // Wait for the resolved sentinel form to appear (proof bash
+    // executed the printf). Cap at 30s -- warm container is ~1s.
+    await page.waitForFunction((s) => {
+      const term = window.terminalUI?.term;
+      if (!term) return false;
+      const buf = term.buffer.active;
+      for (let y = 0; y < buf.length; y++) {
+        const line = buf.getLine(y);
+        if (line && line.translateToString().includes(s)) return true;
+      }
+      return false;
+    }, resolvedForm, { timeout: 30_000 });
+
+    // Pull the full visible buffer back to JS for assertions.
+    const text = await page.evaluate(() => {
+      const term = window.terminalUI.term;
+      const buf = term.buffer.active;
+      let out = '';
+      for (let y = 0; y < buf.length; y++) {
+        const line = buf.getLine(y);
+        if (line) out += line.translateToString().trimEnd() + '\n';
+      }
+      return out;
+    });
+
+    // The smoke fails loudly if any of these show up.
+    expect(text, text).not.toMatch(/error: gpg failed to sign/i);
+    expect(text, text).not.toMatch(/error: cannot run git-sign-swe-swe/i);
+    expect(text, text).not.toMatch(/refusing to serve - not invoked by git/);
+
+    // The proof: the commit object (printed by git cat-file -p HEAD)
+    // must contain a gpgsig field with an SSH signature block.
+    expect(text, text).toMatch(/gpgsig\s+-----BEGIN SSH SIGNATURE-----/);
+    expect(text, text).toContain('-----END SSH SIGNATURE-----');
+
+    // Verification path (F1: git-sign-swe-swe -Y verify, F2: allowedSignersFile).
+    // Before F1, `git log --show-signature` died with
+    // "git-sign-swe-swe: only -Y sign is supported". Before F2,
+    // ssh-keygen complained that gpg.ssh.allowedSignersFile needed to be
+    // configured. After both fixes, ssh-keygen recognises the principal
+    // from the per-session allowed_signers file and verifies the signature.
+    expect(text, text).not.toMatch(/only -Y sign is supported/);
+    expect(text, text).not.toMatch(/allowedSignersFile needs to be configured/i);
+    expect(text, text).toMatch(/Good "git" signature for phase5@example.com/);
+  });
 });
