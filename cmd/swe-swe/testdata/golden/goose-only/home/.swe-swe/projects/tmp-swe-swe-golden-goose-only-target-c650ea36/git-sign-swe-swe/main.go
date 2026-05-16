@@ -60,39 +60,61 @@ var brokerSocketName = "@swe-swe-broker"
 var verifyExecBinary = "ssh-keygen"
 
 func main() {
-	fs := flag.NewFlagSet("git-sign-swe-swe", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	action := fs.String("Y", "", "action: sign | check-novalidate | verify")
-	namespace := fs.String("n", "git", "signature namespace (git for commits/tags)")
-	keyFile := fs.String("f", "", "signing key file or allowed_signers (ssh-keygen-compatible; broker holds the signer for sign)")
-	sigFile := fs.String("s", "", "signature file (ssh-keygen-compatible; used in verify)")
-	principal := fs.String("I", "", "signature principal (ssh-keygen-compatible; used in verify)")
-	options := newRepeatedString()
-	fs.Var(options, "O", "ssh-keygen -O option=value (accepted and ignored)")
-	_ = keyFile
-	_ = sigFile
-	_ = principal
-
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		os.Exit(2)
-	}
 	if !parentIsGit() {
 		fmt.Fprintln(os.Stderr, "git-sign-swe-swe: refusing to serve - not invoked by git")
 		os.Exit(1)
 	}
 
-	switch *action {
+	// Pre-scan for -Y to decide route before any flag parsing. ssh-keygen
+	// accepts short-form clustered flags like `-Overify-time=now` that the
+	// Go flag package does not, so for verify-side actions we delegate to
+	// ssh-keygen with the original argv and skip parsing entirely.
+	action := extractYAction(os.Args[1:])
+	switch action {
 	case "sign":
-		runSign(*namespace, fs.Args())
-	case "check-novalidate", "verify":
+		runSign(os.Args[1:])
+	case "check-novalidate", "verify", "find-principals", "match-principals":
 		os.Exit(runVerify(verifyExecBinary, os.Args[1:]))
 	default:
-		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: -Y must be sign|check-novalidate|verify (got %q)\n", *action)
+		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: -Y must be sign|check-novalidate|verify|find-principals|match-principals (got %q)\n", action)
 		os.Exit(2)
 	}
 }
 
-func runSign(namespace string, args []string) {
+// extractYAction returns the value of the `-Y` flag, supporting both
+// `-Y verify` (space-separated) and `-Y=verify` (= form). Returns the
+// empty string if `-Y` is absent.
+func extractYAction(argv []string) string {
+	for i := 0; i < len(argv); i++ {
+		a := argv[i]
+		if a == "-Y" {
+			if i+1 < len(argv) {
+				return argv[i+1]
+			}
+			return ""
+		}
+		if strings.HasPrefix(a, "-Y=") {
+			return strings.TrimPrefix(a, "-Y=")
+		}
+	}
+	return ""
+}
+
+func runSign(argv []string) {
+	fs := flag.NewFlagSet("git-sign-swe-swe", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	_ = fs.String("Y", "", "action (sign)")
+	namespace := fs.String("n", "git", "signature namespace (git for commits/tags)")
+	keyFile := fs.String("f", "", "signing key file or literal (ignored; broker holds the signer)")
+	options := newRepeatedString()
+	fs.Var(options, "O", "ssh-keygen -O option=value (accepted and ignored)")
+	_ = keyFile
+
+	if err := fs.Parse(argv); err != nil {
+		os.Exit(2)
+	}
+
+	args := fs.Args()
 	var (
 		data    []byte
 		sigPath string
@@ -118,7 +140,7 @@ func runSign(namespace string, args []string) {
 		os.Exit(2)
 	}
 
-	armor, err := dialBrokerSign(namespace, data)
+	armor, err := dialBrokerSign(*namespace, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: %v\n", err)
 		os.Exit(1)

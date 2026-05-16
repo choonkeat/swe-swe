@@ -128,6 +128,35 @@ func TestDialBrokerSign_DialFailure(t *testing.T) {
 	}
 }
 
+// TestExtractYAction covers the manual pre-scan that decides which
+// route (sign vs verify-side) we take. flag.Parse is too strict to
+// handle short-form clustered flags like `-Overify-time=now` that git
+// passes for verify, so we never parse argv ahead of routing.
+func TestExtractYAction(t *testing.T) {
+	cases := []struct {
+		name string
+		argv []string
+		want string
+	}{
+		{"space-separated", []string{"-Y", "verify", "-n", "git"}, "verify"},
+		{"equals-form", []string{"-Y=check-novalidate", "-n", "git"}, "check-novalidate"},
+		{"first-wins", []string{"-Y", "sign", "-Y", "verify"}, "sign"},
+		{"absent", []string{"-n", "git", "-s", "/tmp/sig"}, ""},
+		{"trailing-Y", []string{"-Y"}, ""},
+		{"empty argv", []string{}, ""},
+		{"verify with -O cluster", []string{"-Y", "verify", "-Overify-time=now", "-f", "/tmp/signers", "-s", "/tmp/sig"}, "verify"},
+		{"find-principals", []string{"-Y", "find-principals", "-f", "/tmp/signers", "-s", "/tmp/sig"}, "find-principals"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractYAction(tc.argv)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestRunVerify_ExecsAndForwardsArgv asserts that runVerify shells out
 // to the configured binary with the original argv intact. We use a
 // throwaway shell script that records its argv into a file and exits
