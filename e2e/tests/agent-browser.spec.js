@@ -65,7 +65,7 @@ test.describe('Agent Browser E2E', () => {
     // "Playwright browser is not running" message instead of doing the
     // task. Telling it to just invoke the tool sidesteps that bail.
     const prompt = [
-      'The Playwright MCP server is lazy-loaded — the CDP browser starts the first time you invoke a Playwright tool.',
+      'The Playwright MCP server is lazy-loaded - the CDP browser starts the first time you invoke a Playwright tool.',
       'Do NOT probe the CDP port directly; just call the tool.',
       'Use Playwright to visit https://example.com and take a screenshot.',
     ].join(' ');
