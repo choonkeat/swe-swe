@@ -460,4 +460,111 @@ test.describe('per-session SSH commit signing UI', () => {
     expect(text, text).not.toMatch(/allowedSignersFile needs to be configured/i);
     expect(text, text).toMatch(/Good "git" signature for phase5@example.com/);
   });
+
+  test('auto-restore: trusted (origin, init_sha) auto-sends signing key on next session', async ({ page }) => {
+    // After the user explicitly trusts a (origin, init_sha) pair via
+    // the "Trust this browser to auto-load..." confirm dialog, opening a
+    // new session at the same origin should send the bound key to the
+    // server without any UI interaction. The server's _signingFingerprint
+    // populates from the signing_key_stored ack, so we watch for that.
+    await openSession(page);
+    // Sanity: the page exposes the workdir's init-commit SHA. Without
+    // it, no trust binding is possible -- skip rather than asserting
+    // false negatives.
+    const initSha = await page.evaluate(() => document.querySelector('terminal-ui')?.dataset?.initSha || '');
+    test.skip(!initSha, 'workdir is not a git repo with commits; cannot test init_sha trust binding');
+
+    // Clean slate: nothing in localStorage and no prior fingerprint.
+    await page.evaluate(() => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe-signing:') || k.startsWith('swe-swe:signing-'))
+        .forEach(k => localStorage.removeItem(k));
+      if (window.terminalUI) window.terminalUI._signingFingerprint = '';
+    });
+
+    // First session: explicit Save flow.
+    await openSettings(page);
+    await switchSettingsTab(page, 'ssh');
+    await page.fill('#settings-cred-signing-key', TEST_SIGNING_KEY_PEM);
+    await page.fill('#settings-cred-signing-label', 'auto-restore-key');
+    page.once('dialog', d => d.accept());
+    await page.click('#settings-cred-signing-save');
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return typeof ui?._signingFingerprint === 'string' && ui._signingFingerprint.startsWith('SHA256:');
+    });
+    const fpAfterSave = await page.evaluate(() => window.terminalUI._signingFingerprint);
+    expect(fpAfterSave).toBe(TEST_SIGNING_FINGERPRINT);
+
+    // Trust entry was written by the dialog accept above.
+    const trust = await page.evaluate((initSha) => {
+      const key = 'swe-swe:signing-trust:' + window.location.origin + '|' + initSha;
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    }, initSha);
+    expect(trust).not.toBeNull();
+    expect(trust.fingerprint).toBe(TEST_SIGNING_FINGERPRINT);
+
+    // Second session: reload. The on-open auto-restore should re-send
+    // the bound key without the user opening Settings.
+    await page.evaluate(() => {
+      if (window.terminalUI) window.terminalUI._signingFingerprint = '';
+    });
+    await page.reload();
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return typeof ui?._signingFingerprint === 'string' && ui._signingFingerprint.startsWith('SHA256:');
+    });
+    const fpAfterReload = await page.evaluate(() => window.terminalUI._signingFingerprint);
+    expect(fpAfterReload).toBe(TEST_SIGNING_FINGERPRINT);
+  });
+
+  test('Forget on this device: clears trust so reload no longer auto-sends', async ({ page }) => {
+    await openSession(page);
+    const initSha = await page.evaluate(() => document.querySelector('terminal-ui')?.dataset?.initSha || '');
+    test.skip(!initSha, 'workdir is not a git repo with commits; cannot test init_sha trust binding');
+
+    // Seed: pretend we already trusted this (origin, init_sha) with the test key.
+    await page.evaluate((opts) => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe-signing:') || k.startsWith('swe-swe:signing-'))
+        .forEach(k => localStorage.removeItem(k));
+      localStorage.setItem('swe-swe:signing-key:' + opts.fp, JSON.stringify({
+        pem: opts.pem,
+        label: 'forget-test',
+        fingerprint: opts.fp,
+        savedAt: Date.now(),
+      }));
+      localStorage.setItem('swe-swe:signing-trust:' + window.location.origin + '|' + opts.initSha, JSON.stringify({
+        fingerprint: opts.fp,
+        savedAt: Date.now(),
+      }));
+      if (window.terminalUI) window.terminalUI._signingFingerprint = '';
+    }, { fp: TEST_SIGNING_FINGERPRINT, pem: TEST_SIGNING_KEY_PEM, initSha });
+
+    // Open Settings -> SSH; the Forget button is rendered because a
+    // trust entry exists for this repo. Click it.
+    await openSettings(page);
+    await switchSettingsTab(page, 'ssh');
+    const forgetBtn = page.locator('#settings-cred-signing-forget');
+    await expect(forgetBtn).toBeVisible();
+    await forgetBtn.click();
+
+    // Trust entry is gone from localStorage.
+    const trustAfter = await page.evaluate((initSha) => {
+      const key = 'swe-swe:signing-trust:' + window.location.origin + '|' + initSha;
+      return localStorage.getItem(key);
+    }, initSha);
+    expect(trustAfter).toBeNull();
+
+    // Reload: nothing auto-sends, fingerprint stays empty.
+    await page.reload();
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
+    // Give the auto-restore code a chance to fire (it would have by now
+    // since onopen runs synchronously on connect).
+    await page.waitForTimeout(500);
+    const fpAfterReload = await page.evaluate(() => window.terminalUI._signingFingerprint || '');
+    expect(fpAfterReload).toBe('');
+  });
 });

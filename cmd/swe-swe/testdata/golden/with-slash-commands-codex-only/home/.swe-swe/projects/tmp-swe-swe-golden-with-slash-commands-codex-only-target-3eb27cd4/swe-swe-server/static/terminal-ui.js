@@ -618,6 +618,7 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                     <div class="settings-panel__pane-footer">
                                         <span class="settings-panel__pane-status settings-panel__cred-status" id="settings-cred-signing-status"></span>
+                                        <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-cred-signing-forget" type="button" hidden>Forget on this device</button>
                                         <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-cred-signing-verify" type="button">Verify key</button>
                                         <button class="settings-panel__btn settings-panel__btn--primary" id="settings-cred-signing-save" type="button">Save key</button>
                                     </div>
@@ -1236,6 +1237,11 @@ class TerminalUI extends HTMLElement {
             this.startUptimeTimer();
             this.sendResize();
             this.startHeartbeat();
+            // Browser-side auto-restore of the SSH signing key. Only fires
+            // when the user has explicitly trusted this (origin, repo)
+            // pair via the Save flow + first-time dialog. See the
+            // _readSigningTrust / _writeSigningTrust pair for the wire-up.
+            this._maybeAutoRestoreSigningKey();
         };
 
         this.ws.onmessage = (event) => {
@@ -1469,15 +1475,24 @@ class TerminalUI extends HTMLElement {
                 }
                 break;
             case 'signing_key_stored':
-                // Server acked set_signing_key. Save flow.
+                // Server acked set_signing_key. Save flow OR auto-restore.
                 this._signingVerified = '';
                 if (typeof msg.fingerprint === 'string' && msg.fingerprint) {
                     this._signingFingerprint = msg.fingerprint;
                     this._signingError = '';
+                    this._handleSigningKeyStored(msg.fingerprint);
                 } else if (typeof msg.error === 'string' && msg.error) {
                     this._signingFingerprint = '';
                     this._signingError = msg.error;
+                    // Auto-restore that fails (e.g. server can no longer
+                    // parse the stored PEM) should clear the trust so we
+                    // do not loop on every reconnect.
+                    if (this._signingAutoRestoreInFlight) {
+                        const initSha = this.dataset.initSha || '';
+                        if (initSha) this._clearSigningTrust(initSha);
+                    }
                 }
+                this._signingAutoRestoreInFlight = false;
                 this._refreshSigningStatus();
                 break;
             case 'signing_key_verified':
@@ -2106,7 +2121,7 @@ class TerminalUI extends HTMLElement {
             credHost.addEventListener('change', () => this.populateCredentialsSection());
         }
 
-        // SSH signing pane: Save key + Verify key
+        // SSH signing pane: Save key + Verify key + Forget on this device
         const sigSave = panel.querySelector('#settings-cred-signing-save');
         if (sigSave) {
             sigSave.addEventListener('click', () => this._saveSigningKey());
@@ -2114,6 +2129,60 @@ class TerminalUI extends HTMLElement {
         const sigVerify = panel.querySelector('#settings-cred-signing-verify');
         if (sigVerify) {
             sigVerify.addEventListener('click', () => this._verifySigningKey());
+        }
+        const sigForget = panel.querySelector('#settings-cred-signing-forget');
+        if (sigForget) {
+            sigForget.addEventListener('click', () => this._forgetSigningKeyOnThisDevice());
+        }
+        this._refreshSigningForgetButton();
+    }
+
+    // Show/hide the "Forget on this device" button based on whether
+    // a trust entry exists for this (origin, init_sha) pair.
+    _refreshSigningForgetButton() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const btn = panel.querySelector('#settings-cred-signing-forget');
+        if (!btn) return;
+        const initSha = this.dataset.initSha || '';
+        const trust = initSha ? this._readSigningTrust(initSha) : null;
+        btn.hidden = !(trust && !this._signingTrustExpired(trust));
+    }
+
+    _forgetSigningKeyOnThisDevice() {
+        const initSha = this.dataset.initSha || '';
+        if (!initSha) return;
+        const trust = this._readSigningTrust(initSha);
+        this._clearSigningTrust(initSha);
+        // Best-effort: also clear the key blob if no other trust entry
+        // references this fingerprint. Walk all swe-swe:signing-trust:*
+        // keys looking for any survivor pointing at the same fingerprint.
+        if (trust && trust.fingerprint) {
+            let othersRefer = false;
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (!k || !k.startsWith('swe-swe:signing-trust:')) continue;
+                    const raw = localStorage.getItem(k);
+                    if (!raw) continue;
+                    try {
+                        const v = JSON.parse(raw);
+                        if (v && v.fingerprint === trust.fingerprint) {
+                            othersRefer = true;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            } catch (e) { othersRefer = true; }
+            if (!othersRefer) {
+                try { localStorage.removeItem(this._signingKeyByFpKey(trust.fingerprint)); } catch (e) {}
+            }
+        }
+        this._refreshSigningForgetButton();
+        const sigStatus = this.querySelector('#settings-cred-signing-status');
+        if (sigStatus) {
+            sigStatus.textContent = 'Forgotten on this device. Re-save to trust again.';
+            sigStatus.removeAttribute('data-state');
         }
     }
 
@@ -2132,6 +2201,13 @@ class TerminalUI extends HTMLElement {
             if (active) p.removeAttribute('hidden');
             else p.setAttribute('hidden', '');
         });
+        // Pane-specific re-render hooks. Trust state can change at any
+        // time (another tab updated localStorage, or the user just
+        // pasted/cleared something) so the SSH tab re-derives its
+        // Forget button visibility each time it is shown.
+        if (tab === 'ssh') {
+            this._refreshSigningForgetButton();
+        }
     }
 
     // Snapshot the values that are revertable on close-without-save.
@@ -2329,6 +2405,11 @@ class TerminalUI extends HTMLElement {
             return;
         }
         this._writeSigningLocal({ privateKey: signingKey, label: signingLabel });
+        // Stash the just-pasted PEM so the signing_key_stored handler can
+        // persist it under the fingerprint slot for auto-restore. The
+        // user could have closed the Settings panel by the time the ack
+        // arrives, so reading from the form again is unreliable.
+        this._signingPendingSave = { pem: signingKey, label: signingLabel };
         this.sendJSON({
             type: 'set_signing_key',
             data: {
@@ -2341,6 +2422,40 @@ class TerminalUI extends HTMLElement {
             sigStatus.textContent = 'Sending signing key...';
             sigStatus.removeAttribute('data-state');
         }
+    }
+
+    // Fired from the signing_key_stored handler when the server confirms
+    // a fingerprint. Persists the key under its fingerprint slot and, if
+    // this came from a user-initiated Save (not an auto-restore) and no
+    // trust binding exists for this repo, prompts the user to add one.
+    _handleSigningKeyStored(fingerprint) {
+        if (this._signingAutoRestoreInFlight) {
+            // Auto-restored from an existing trust entry. Refresh the
+            // savedAt timestamp so the 90-day TTL extends with use.
+            const initSha = this.dataset.initSha || '';
+            if (initSha) this._writeSigningTrust(initSha, fingerprint);
+            return;
+        }
+        if (this._signingPendingSave && this._signingPendingSave.pem) {
+            this._writeSigningKeyByFp(fingerprint, this._signingPendingSave);
+            this._signingPendingSave = null;
+        }
+        // Prompt for trust binding only when (a) this server told us
+        // there is a repo to bind to, (b) we have not already trusted
+        // this fingerprint for this repo, and (c) the connection is
+        // TLS-protected so the auto-restore could actually fire later.
+        const initSha = this.dataset.initSha || '';
+        if (!initSha || !this._signingAutoSendSafe()) return;
+        const existing = this._readSigningTrust(initSha);
+        if (existing && existing.fingerprint === fingerprint) return;
+        const shortSha = initSha.slice(0, 7);
+        const msg = 'Trust this browser to auto-load this signing key on future visits to this repo (init ' + shortSha + ')?\n\nYou can revoke this with "Forget on this device" in Settings > SSH Signing.';
+        try {
+            if (window.confirm(msg)) {
+                this._writeSigningTrust(initSha, fingerprint);
+            }
+        } catch (e) {}
+        this._refreshSigningForgetButton();
     }
 
     _verifySigningKey() {
@@ -2371,12 +2486,40 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // localStorage layout for signing: a single 'default' bag because
-    // a session has at most one signing identity (unlike HTTPS creds
-    // which are per-host). The passphrase is intentionally NEVER in
-    // this bag -- it gets retyped each session if the key is encrypted.
+    // localStorage layout for signing:
+    //
+    //   swe-swe-signing:default
+    //     Legacy single-bag layout (kept so the textarea rehydrate
+    //     path in renderSettingsPanel keeps working). { privateKey, label }
+    //
+    //   swe-swe:signing-key:<fingerprint>
+    //     One entry per ed25519 key seen. { pem, label, fingerprint, savedAt }
+    //     savedAt is ms-since-epoch for the 90-day TTL check.
+    //
+    //   swe-swe:signing-trust:<origin>|<init_sha>
+    //     One entry per (this browser, this server, this repo).
+    //     { fingerprint, savedAt }. Presence of this entry is the user's
+    //     explicit "auto-restore the key with this fingerprint when I
+    //     visit this server+repo from this browser" consent.
+    //
+    // Why two-level: a user can have one signing identity that they
+    // trust in multiple repos -- the key blob lives once, the trust
+    // entry references it by fingerprint. "Forget on this device" for
+    // a single repo removes the trust entry but leaves the key, so
+    // other trusted repos keep working.
+    //
+    // The passphrase is intentionally NEVER stored. Encrypted keys
+    // require the user to retype the passphrase the first time per
+    // browser; once we hand the parsed key to the server, it stays in
+    // server memory for the lifetime of the session.
     _signingLocalKey() {
         return 'swe-swe-signing:default';
+    }
+    _signingKeyByFpKey(fp) {
+        return 'swe-swe:signing-key:' + fp;
+    }
+    _signingTrustKey(initSha) {
+        return 'swe-swe:signing-trust:' + window.location.origin + '|' + initSha;
     }
     _readSigningLocal() {
         try {
@@ -2394,6 +2537,105 @@ class TerminalUI extends HTMLElement {
             };
             localStorage.setItem(this._signingLocalKey(), JSON.stringify(payload));
         } catch (e) {}
+    }
+    _readSigningKeyByFp(fp) {
+        if (!fp) return null;
+        try {
+            const raw = localStorage.getItem(this._signingKeyByFpKey(fp));
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+    _writeSigningKeyByFp(fp, payload) {
+        if (!fp) return;
+        try {
+            const data = {
+                pem: payload.pem || '',
+                label: payload.label || '',
+                fingerprint: fp,
+                savedAt: Date.now(),
+            };
+            localStorage.setItem(this._signingKeyByFpKey(fp), JSON.stringify(data));
+        } catch (e) {}
+    }
+    _readSigningTrust(initSha) {
+        if (!initSha) return null;
+        try {
+            const raw = localStorage.getItem(this._signingTrustKey(initSha));
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+    _writeSigningTrust(initSha, fingerprint) {
+        if (!initSha || !fingerprint) return;
+        try {
+            const data = { fingerprint: fingerprint, savedAt: Date.now() };
+            localStorage.setItem(this._signingTrustKey(initSha), JSON.stringify(data));
+        } catch (e) {}
+    }
+    _clearSigningTrust(initSha) {
+        if (!initSha) return;
+        try {
+            localStorage.removeItem(this._signingTrustKey(initSha));
+        } catch (e) {}
+    }
+
+    // Trust entries older than 90 days require the user to re-confirm.
+    // Cuts long-tail exposure from stale trust on a browser that hasn't
+    // been used in a while.
+    static get SIGNING_TRUST_TTL_MS() { return 90 * 24 * 60 * 60 * 1000; }
+    _signingTrustExpired(trust) {
+        if (!trust || typeof trust.savedAt !== 'number') return true;
+        return Date.now() - trust.savedAt > TerminalUI.SIGNING_TRUST_TTL_MS;
+    }
+
+    // Auto-restore is gated on the connection being TLS-protected. On
+    // plain ws://, an on-path attacker would receive the PEM in the
+    // clear, so we refuse to auto-send and require the user to use the
+    // form (which makes the trust gesture explicit). Loopback hostnames
+    // are treated as safe because there is no network for an attacker
+    // to sit on -- this mirrors how browsers themselves treat localhost
+    // as a "secure context" for capabilities like service workers.
+    _signingAutoSendSafe() {
+        try {
+            if (window.location.protocol === 'https:') return true;
+            const host = window.location.hostname;
+            return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1' || host === 'host.docker.internal';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Called from this.ws.onopen. Looks up a (origin, init_sha) trust
+    // entry; if present, valid, and TLS-protected, sends the bound key
+    // to the server so the user does not have to re-paste each session.
+    _maybeAutoRestoreSigningKey() {
+        const initSha = this.dataset.initSha || '';
+        if (!initSha) return;
+        if (!this._signingAutoSendSafe()) return;
+        const trust = this._readSigningTrust(initSha);
+        if (!trust) return;
+        if (this._signingTrustExpired(trust)) {
+            this._clearSigningTrust(initSha);
+            return;
+        }
+        const key = this._readSigningKeyByFp(trust.fingerprint);
+        if (!key || !key.pem) return;
+        // Encrypted keys would need a passphrase. We never persist
+        // the passphrase, so encrypted keys cannot auto-restore.
+        // If the server rejects (e.g. bad PEM, missing passphrase),
+        // _signingError gets set and the UI shows it.
+        this._signingAutoRestoreInFlight = true;
+        this.sendJSON({
+            type: 'set_signing_key',
+            data: {
+                signing_private_key_pem: key.pem,
+                signing_passphrase: '',
+                signing_key_label: key.label || '',
+            },
+        });
     }
 
     _refreshSigningStatus() {
