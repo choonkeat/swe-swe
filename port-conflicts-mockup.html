@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup -- Port conflicts panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --text-bright: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-primary: #475569;
+    --accent-primary: #7c3aed;
+    --accent-hover: #8b5cf6;
+    --accent-light: #a78bfa;
+    --accent-10: rgba(124, 58, 237, 0.1);
+    --accent-20: rgba(124, 58, 237, 0.2);
+    --accent-30: rgba(124, 58, 237, 0.3);
+    --accent-text: #ffffff;
+    --accent-gradient: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    --warn: #f59e0b;
+    --warn-10: rgba(245, 158, 11, 0.1);
+    --warn-20: rgba(245, 158, 11, 0.2);
+    --danger: #ef4444;
+    --danger-10: rgba(239, 68, 68, 0.1);
+    --ok: #22c55e;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+    height: 100%;
+    background: var(--bg-primary);
+    color: var(--text-bright);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.5;
+}
+.app { min-height: 100%; display: flex; flex-direction: column; }
+
+.header {
+    background: rgba(30, 41, 59, 0.8);
+    border-bottom: 1px solid var(--border-primary);
+}
+.header__inner {
+    display: flex; align-items: center; gap: 12px;
+    max-width: 1280px; margin: 0 auto; padding: 16px;
+}
+.header__logo {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-primary); border-radius: 10px;
+    color: white; font-weight: 700; font-size: 20px;
+}
+.header__text h1 {
+    font-size: 18px; font-weight: 700; letter-spacing: -0.45px;
+}
+.header__text p {
+    font-size: 10px; font-weight: 400;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
+}
+
+.main {
+    flex: 1; padding: 32px 16px;
+    max-width: 1280px; margin: 0 auto; width: 100%;
+}
+
+.mock-banner {
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px dashed rgba(245, 158, 11, 0.4);
+    color: var(--warn);
+    padding: 8px 14px;
+    margin-bottom: 24px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Port conflicts card */
+.conflicts-card {
+    background: rgba(245, 158, 11, 0.04);
+    border: 1px solid var(--warn-20);
+    border-left: 3px solid var(--warn);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+}
+.conflicts-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 4px;
+}
+.conflicts-card__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+.conflicts-card__title svg {
+    width: 18px; height: 18px;
+    color: var(--warn);
+    flex-shrink: 0;
+}
+.conflicts-card__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 8px;
+    background: var(--warn);
+    color: #1f2937;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 11px;
+}
+.conflicts-card__refresh {
+    background: transparent;
+    border: 1px solid var(--border-primary);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.conflicts-card__refresh:hover {
+    border-color: var(--accent-light);
+    color: var(--text-bright);
+}
+.conflicts-card__refresh svg {
+    width: 12px; height: 12px;
+}
+.conflicts-card__sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 16px;
+}
+.conflicts-list {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid rgba(245, 158, 11, 0.15);
+}
+.conflict-row {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(245, 158, 11, 0.08);
+    font-size: 13px;
+}
+.conflict-row:last-child { border-bottom: none; }
+.conflict-port {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+.conflict-port__dot {
+    width: 8px; height: 8px;
+    background: var(--warn);
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.conflict-row--foreign .conflict-port__dot { background: var(--text-muted); }
+.conflict-process {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.conflict-process__cmd {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    color: var(--text-secondary);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.conflict-process__meta {
+    color: var(--text-muted);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.conflict-process__meta strong {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.conflict-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.conflict-tag--orphan {
+    background: var(--danger-10);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+.conflict-tag--foreign {
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--text-muted);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+}
+.btn-free {
+    padding: 6px 14px;
+    background: var(--danger-10);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 90px;
+}
+.btn-free:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.4);
+}
+.btn-free:disabled {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border-primary);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.btn-free.is-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+}
+.btn-free.is-loading::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 12px; height: 12px;
+    margin-top: -6px; margin-left: -6px;
+    border-radius: 50%;
+    border: 2px solid #fca5a5;
+    border-top-color: transparent;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-free--success {
+    background: rgba(34, 197, 94, 0.1);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, 0.25);
+    cursor: default;
+    pointer-events: none;
+}
+
+/* Sessions section (just for context -- not the focus) */
+.section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+}
+.section-header__left { display: flex; align-items: center; gap: 12px; }
+.section-header__title { font-size: 20px; font-weight: 600; }
+.section-header__count {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 24px; height: 24px; padding: 0 8px;
+    background: var(--accent-primary); color: white;
+    font-size: 12px; font-weight: 600; border-radius: 12px;
+}
+.btn-new-session {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px;
+    background: var(--accent-gradient); color: white;
+    font-size: 14px; font-weight: 500; border: none;
+    border-radius: 8px; cursor: pointer;
+}
+.btn-new-session::before { content: "+"; font-size: 18px; line-height: 1; }
+.sessions-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+}
+.session-card {
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid var(--bg-secondary);
+    border-radius: 12px;
+    padding: 20px;
+}
+.session-card__repo {
+    font-size: 16px; font-weight: 600; margin-bottom: 4px;
+}
+.session-card__branch {
+    font-size: 13px; color: var(--ok); margin-bottom: 16px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.session-card__actions { display: flex; gap: 12px; }
+.btn-join {
+    flex: 1; padding: 8px 16px;
+    background: var(--accent-10); color: var(--accent-light);
+    font-size: 13px; border: 1px solid var(--accent-20);
+    border-radius: 8px; cursor: pointer; text-align: center;
+}
+
+/* Empty state mockup */
+.empty-card {
+    background: rgba(34, 197, 94, 0.04);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-left: 3px solid var(--ok);
+    color: var(--text-secondary);
+    padding: 14px 20px;
+    margin-bottom: 32px;
+    border-radius: 12px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.empty-card svg { width: 16px; height: 16px; color: var(--ok); }
+
+.divider {
+    margin: 48px 0 24px;
+    border: 0;
+    border-top: 1px dashed var(--border-primary);
+    position: relative;
+}
+.divider span {
+    position: absolute;
+    top: -10px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-primary);
+    padding: 0 16px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="header">
+        <div class="header__inner">
+            <div class="header__logo">S</div>
+            <div class="header__text">
+                <h1>swe-swe</h1>
+                <p>mockup &mdash; port conflicts panel</p>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="mock-banner">
+            // MOCK: this is a static design preview, not the live homepage. Click a "Free port" button to see loading + success states.
+        </div>
+
+        <!-- Variant 1: with conflicts -->
+        <div class="conflicts-card">
+            <div class="conflicts-card__header">
+                <div class="conflicts-card__title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Port conflicts
+                    <span class="conflicts-card__count">3</span>
+                </div>
+                <button class="conflicts-card__refresh" onclick="this.classList.toggle('is-loading')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Refresh
+                </button>
+            </div>
+            <p class="conflicts-card__sub">
+                Some ports in the configured ranges are already in use, so fewer sessions can be started. Free a port if you recognise the process.
+            </p>
+
+            <div class="conflicts-list">
+                <div class="conflict-row">
+                    <div class="conflict-port">
+                        <span class="conflict-port__dot"></span>
+                        3007
+                    </div>
+                    <div class="conflict-process">
+                        <div class="conflict-process__cmd">/usr/local/bin/postgres -D /var/lib/postgres/data</div>
+                        <div class="conflict-process__meta">
+                            <span><strong>PID 12345</strong></span>
+                            <span>preview range</span>
+                            <span>owner: you</span>
+                        </div>
+                    </div>
+                    <button class="btn-free" onclick="simulate(this)">Free port</button>
+                </div>
+
+                <div class="conflict-row">
+                    <div class="conflict-port">
+                        <span class="conflict-port__dot"></span>
+                        4007
+                    </div>
+                    <div class="conflict-process">
+                        <div class="conflict-process__cmd">node /home/me/old-project/dev-server.js</div>
+                        <div class="conflict-process__meta">
+                            <span><strong>PID 67890</strong></span>
+                            <span>agent-chat range</span>
+                            <span>owner: you</span>
+                            <span class="conflict-tag conflict-tag--orphan">likely swe-swe leak</span>
+                        </div>
+                    </div>
+                    <button class="btn-free" onclick="simulate(this)">Free port</button>
+                </div>
+
+                <div class="conflict-row conflict-row--foreign">
+                    <div class="conflict-port">
+                        <span class="conflict-port__dot"></span>
+                        6010
+                    </div>
+                    <div class="conflict-process">
+                        <div class="conflict-process__cmd">(unreadable &mdash; process owned by root)</div>
+                        <div class="conflict-process__meta">
+                            <span><strong>PID 11122</strong></span>
+                            <span>cdp range</span>
+                            <span class="conflict-tag conflict-tag--foreign">other user</span>
+                        </div>
+                    </div>
+                    <button class="btn-free" disabled title="Process is owned by another user; refusing to kill from this UI.">Free port</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-header">
+            <div class="section-header__left">
+                <h2 class="section-header__title">Active Sessions</h2>
+                <span class="section-header__count">2</span>
+            </div>
+            <button class="btn-new-session">New Session</button>
+        </div>
+        <div class="sessions-list">
+            <div class="session-card">
+                <div class="session-card__repo">acme/api</div>
+                <div class="session-card__branch">feat/payments-rewrite</div>
+                <div class="session-card__actions">
+                    <button class="btn-join">Join Session</button>
+                </div>
+            </div>
+            <div class="session-card">
+                <div class="session-card__repo">acme/web</div>
+                <div class="session-card__branch">main</div>
+                <div class="session-card__actions">
+                    <button class="btn-join">Join Session</button>
+                </div>
+            </div>
+        </div>
+
+        <hr class="divider"><span>EMPTY STATE (no conflicts)</span></hr>
+
+        <div class="empty-card">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            All 100 configured ports are available. <span style="color: var(--text-muted); margin-left: 4px;">Last checked just now.</span>
+        </div>
+    </main>
+</div>
+
+<script>
+function simulate(btn) {
+    btn.classList.add('is-loading');
+    btn.disabled = true;
+    setTimeout(function() {
+        btn.classList.remove('is-loading');
+        btn.classList.add('btn-free--success');
+        btn.textContent = 'Freed';
+    }, 1100);
+}
+</script>
+</body>
+</html>
