@@ -2332,6 +2332,11 @@ func main() {
 					sessionWorkDir = cwd
 				}
 			}
+			// Init-commit SHA gives the browser a repo-identity it can bind
+			// stored signing keys to (auto-restore only fires when the
+			// browser's (origin, init_sha) trust entry matches the current
+			// session). Empty for non-git workdirs or empty repos.
+			initSHA := repoInitSHA(sessionWorkDir)
 			data := struct {
 				UUID           string
 				UUIDShort      string
@@ -2341,6 +2346,7 @@ func main() {
 				LocalUserName  string
 				LocalUserEmail string
 				WhereKey       string
+				InitSHA        string
 			}{
 				UUID:           sessionUUID,
 				UUIDShort:      uuidShort,
@@ -2350,6 +2356,7 @@ func main() {
 				LocalUserName:  localUserName,
 				LocalUserEmail: localUserEmail,
 				WhereKey:       sessionWorkDir,
+				InitSHA:        initSHA,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)

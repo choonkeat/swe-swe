@@ -19,10 +19,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // var (not const) so tests can redirect to a temp dir.
@@ -133,6 +136,49 @@ func removeSessionGitconfig(sid string) {
 	}
 	_ = os.Remove(sessionGitconfigPath(sid))
 	_ = os.Remove(sessionAllowedSignersPath(sid))
+}
+
+// repoInitSHA returns the root commit (the parent-less "initial" commit)
+// of the repo at workDir, or the empty string if the directory is not
+// a git repo, has no commits yet, or git is unavailable. The browser
+// uses this as a per-repo identity for binding stored signing keys to
+// "this is the repo I had auto-restore enabled for last time" -- a
+// stronger check than origin alone because a recycled hostname does
+// not share the same root commit as the original repo.
+//
+// `git rev-list --max-parents=0 HEAD` returns one line per root commit;
+// some repos have multiple roots after a merge of unrelated histories,
+// so we return the lexicographically first hash to keep the choice
+// deterministic across machines that clone the same repo.
+func repoInitSHA(workDir string) string {
+	if workDir == "" {
+		return ""
+	}
+	// Quick early-out: not a git working tree.
+	if _, err := os.Stat(filepath.Join(workDir, ".git")); err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-list", "--max-parents=0", "HEAD")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	// Deterministic choice when multiple roots exist.
+	min := strings.TrimSpace(lines[0])
+	for _, line := range lines[1:] {
+		s := strings.TrimSpace(line)
+		if s != "" && (min == "" || s < min) {
+			min = s
+		}
+	}
+	return min
 }
 
 // readLocalGitUser reads <workDir>/.git/config and returns local

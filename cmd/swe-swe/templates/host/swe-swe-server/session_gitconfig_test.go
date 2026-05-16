@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -289,6 +290,76 @@ func TestSessionGitconfig_AllowedSigners_SkippedWithoutEmail(t *testing.T) {
 	}
 	if _, err := os.Stat(sessionAllowedSignersPath(sid)); !os.IsNotExist(err) {
 		t.Errorf("did not expect allowed_signers file to be written; stat err=%v", err)
+	}
+}
+
+// TestRepoInitSHA_ReturnsRootCommit creates a tiny repo with one
+// commit and asserts repoInitSHA returns its hash. Skips if git is
+// not on $PATH.
+func TestRepoInitSHA_ReturnsRootCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t",
+			"GIT_AUTHOR_EMAIL=t@x",
+			"GIT_COMMITTER_NAME=t",
+			"GIT_COMMITTER_EMAIL=t@x",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hi\n"), 0644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	run("add", "README")
+	run("commit", "-q", "-m", "init")
+
+	got := repoInitSHA(dir)
+	if len(got) != 40 {
+		t.Errorf("got %q; want 40-char hex sha", got)
+	}
+}
+
+// TestRepoInitSHA_EmptyForNonGit returns empty when the workdir is
+// not a git working tree (no .git directory).
+func TestRepoInitSHA_EmptyForNonGit(t *testing.T) {
+	dir := t.TempDir()
+	got := repoInitSHA(dir)
+	if got != "" {
+		t.Errorf("expected empty for non-git workdir; got %q", got)
+	}
+}
+
+// TestRepoInitSHA_EmptyForEmptyWorkdir returns empty when workDir is "".
+func TestRepoInitSHA_EmptyForEmptyWorkdir(t *testing.T) {
+	if repoInitSHA("") != "" {
+		t.Errorf("expected empty for empty workdir")
+	}
+}
+
+// TestRepoInitSHA_EmptyForRepoWithNoCommits returns empty when the repo
+// has been initialized but has no commits yet (git rev-list fails).
+func TestRepoInitSHA_EmptyForRepoWithNoCommits(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	got := repoInitSHA(dir)
+	if got != "" {
+		t.Errorf("expected empty for repo with no commits; got %q", got)
 	}
 }
 
