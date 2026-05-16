@@ -7,20 +7,24 @@
 //	    format = ssh
 //	[gpg "ssh"]
 //	    program = git-sign-swe-swe
+//	    allowedSignersFile = <path>
 //	[user]
 //	    signingkey = <pubkey path or literal "ssh-ed25519 AAAA...">
 //	[commit]
 //	    gpgsign = true
 //
-// On `git commit -S`, git invokes us as if we were ssh-keygen:
+// Git invokes us as if we were ssh-keygen, for both directions:
 //
-//	git-sign-swe-swe -Y sign -n git -f <keyfile> [<datafile>]
+//	-Y sign -n git -f <keyfile> [<datafile>]         (for commit/tag)
+//	-Y check-novalidate -n git -s <sigfile>          (for verify, no allowed_signers)
+//	-Y verify -n git -f <allowed_signers> -I <principal> -s <sigfile>
 //
-// We dial @swe-swe-broker, send {op:"sign-ssh", namespace, data},
-// and write the armored SSHSIG returned by the broker. With a data
-// file path on argv we write to <datafile>.sig (matching ssh-keygen
-// -Y sign behavior); with no positional arg we read stdin and emit
-// the armor on stdout.
+// For -Y sign we dial @swe-swe-broker, which holds the session's
+// signing key in memory, and write the armored SSHSIG it returns.
+// For -Y verify and -Y check-novalidate we re-exec the real
+// ssh-keygen with the same argv: verification is pure-pubkey work
+// (no key material needed) so there is no reason to route it
+// through the broker.
 //
 // All real signing happens in swe-swe-server (the broker), which
 // holds the session's SSH signing key in memory. The wrapper holds
@@ -44,6 +48,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -51,21 +56,24 @@ import (
 // different abstract socket name without rebuilding the binary.
 var brokerSocketName = "@swe-swe-broker"
 
+// var so tests can swap in a fake ssh-keygen-like binary.
+var verifyExecBinary = "ssh-keygen"
+
 func main() {
 	fs := flag.NewFlagSet("git-sign-swe-swe", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	action := fs.String("Y", "", "action: sign (only sign is supported)")
+	action := fs.String("Y", "", "action: sign | check-novalidate | verify")
 	namespace := fs.String("n", "git", "signature namespace (git for commits/tags)")
-	keyFile := fs.String("f", "", "signing key file or literal (ignored; broker holds the signer)")
+	keyFile := fs.String("f", "", "signing key file or allowed_signers (ssh-keygen-compatible; broker holds the signer for sign)")
+	sigFile := fs.String("s", "", "signature file (ssh-keygen-compatible; used in verify)")
+	principal := fs.String("I", "", "signature principal (ssh-keygen-compatible; used in verify)")
 	options := newRepeatedString()
 	fs.Var(options, "O", "ssh-keygen -O option=value (accepted and ignored)")
 	_ = keyFile
+	_ = sigFile
+	_ = principal
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
-		os.Exit(2)
-	}
-	if *action != "sign" {
-		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: only -Y sign is supported (got %q)\n", *action)
 		os.Exit(2)
 	}
 	if !parentIsGit() {
@@ -73,7 +81,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	args := fs.Args()
+	switch *action {
+	case "sign":
+		runSign(*namespace, fs.Args())
+	case "check-novalidate", "verify":
+		os.Exit(runVerify(verifyExecBinary, os.Args[1:]))
+	default:
+		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: -Y must be sign|check-novalidate|verify (got %q)\n", *action)
+		os.Exit(2)
+	}
+}
+
+func runSign(namespace string, args []string) {
 	var (
 		data    []byte
 		sigPath string
@@ -99,7 +118,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	armor, err := dialBrokerSign(*namespace, data)
+	armor, err := dialBrokerSign(namespace, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: %v\n", err)
 		os.Exit(1)
@@ -116,6 +135,30 @@ func main() {
 		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: write stdout: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// runVerify forwards the verification request to the real ssh-keygen.
+// Verification needs only the public key (already in -f's allowed_signers
+// or skipped under -Y check-novalidate) and the signature blob, so no
+// broker round-trip is needed. Returns ssh-keygen's exit code.
+func runVerify(binary string, argv []string) int {
+	path, err := exec.LookPath(binary)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: %s not found: %v\n", binary, err)
+		return 1
+	}
+	cmd := exec.Command(path, argv...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return exitErr.ExitCode()
+		}
+		fmt.Fprintf(os.Stderr, "git-sign-swe-swe: %s: %v\n", binary, err)
+		return 1
+	}
+	return 0
 }
 
 func dialBrokerSign(namespace string, data []byte) (string, error) {

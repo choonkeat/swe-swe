@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net"
+	"os"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,83 @@ func TestDialBrokerSign_DialFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "dial") {
 		t.Errorf("error mismatch: got %v", err)
 	}
+}
+
+// TestRunVerify_ExecsAndForwardsArgv asserts that runVerify shells out
+// to the configured binary with the original argv intact. We use a
+// throwaway shell script that records its argv into a file and exits
+// with a known code, so we can assert both the forwarded argv and the
+// exit-code passthrough.
+func TestRunVerify_ExecsAndForwardsArgv(t *testing.T) {
+	dir := t.TempDir()
+	recorded := dir + "/argv"
+	fake := dir + "/fake-ssh-keygen"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + recorded + "\nexit 7\n"
+	if err := writeFile(fake, []byte(script), 0755); err != nil {
+		t.Fatalf("write fake: %v", err)
+	}
+
+	argv := []string{"-Y", "verify", "-n", "git", "-f", "/some/allowed_signers", "-I", "user@example.com", "-s", "/some/sig"}
+	code := runVerify(fake, argv)
+	if code != 7 {
+		t.Errorf("exit code: got %d, want 7 (ssh-keygen passthrough)", code)
+	}
+
+	got, err := readFile(recorded)
+	if err != nil {
+		t.Fatalf("read recorded argv: %v", err)
+	}
+	gotArgs := strings.Split(strings.TrimSpace(string(got)), "\n")
+	if !equalStringSlices(gotArgs, argv) {
+		t.Errorf("forwarded argv mismatch\ngot:  %v\nwant: %v", gotArgs, argv)
+	}
+}
+
+// TestRunVerify_BinaryNotFound returns exit-1 with a clear error when
+// the configured ssh-keygen binary is not on $PATH.
+func TestRunVerify_BinaryNotFound(t *testing.T) {
+	code := runVerify("definitely-not-a-real-binary-name-x9q", []string{"-Y", "verify"})
+	if code != 1 {
+		t.Errorf("exit code: got %d, want 1", code)
+	}
+}
+
+func writeFile(path string, data []byte, mode uint32) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func readFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var buf [4096]byte
+	n, err := f.Read(buf[:])
+	if err != nil && n == 0 {
+		return nil, err
+	}
+	return buf[:n], nil
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestDialBrokerSign_DefaultNamespace(t *testing.T) {
