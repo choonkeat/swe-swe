@@ -2337,26 +2337,34 @@ func main() {
 			// browser's (origin, init_sha) trust entry matches the current
 			// session). Empty for non-git workdirs or empty repos.
 			initSHA := repoInitSHA(sessionWorkDir)
+			// Local-repo signing overrides: any key set in <workdir>/.git/config
+			// will silently win over the per-session GIT_CONFIG_GLOBAL we
+			// write. Surfaced in the SSH Signing tab so users can fix the
+			// trap (typically a host-leftover `gpg.format = openpgp`) before
+			// they hit "gpg failed to sign" on commit.
+			localGPGOverrides := readLocalSigningOverrides(sessionWorkDir)
 			data := struct {
-				UUID           string
-				UUIDShort      string
-				Assistant      string
-				AssistantName  string
-				Version        string
-				LocalUserName  string
-				LocalUserEmail string
-				WhereKey       string
-				InitSHA        string
+				UUID              string
+				UUIDShort         string
+				Assistant         string
+				AssistantName     string
+				Version           string
+				LocalUserName     string
+				LocalUserEmail    string
+				WhereKey          string
+				InitSHA           string
+				LocalGPGOverrides string
 			}{
-				UUID:           sessionUUID,
-				UUIDShort:      uuidShort,
-				Assistant:      assistant,
-				AssistantName:  assistantName,
-				Version:        Version + "-" + GitCommit,
-				LocalUserName:  localUserName,
-				LocalUserEmail: localUserEmail,
-				WhereKey:       sessionWorkDir,
-				InitSHA:        initSHA,
+				UUID:              sessionUUID,
+				UUIDShort:         uuidShort,
+				Assistant:         assistant,
+				AssistantName:     assistantName,
+				Version:           Version + "-" + GitCommit,
+				LocalUserName:     localUserName,
+				LocalUserEmail:    localUserEmail,
+				WhereKey:          sessionWorkDir,
+				InitSHA:           initSHA,
+				LocalGPGOverrides: localGPGOverrides,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)

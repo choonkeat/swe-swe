@@ -520,6 +520,38 @@ test.describe('per-session SSH commit signing UI', () => {
     expect(fpAfterReload).toBe(TEST_SIGNING_FINGERPRINT);
   });
 
+  test('Local .git/config signing overrides surface as a warning in the SSH tab', async ({ page }) => {
+    // Server reads <workdir>/.git/config and exposes any signing-side
+    // override via data-local-gpg-overrides on <terminal-ui>. The JS
+    // renders a warning banner in the SSH Signing pane so the user
+    // can fix the local config before they hit `gpg failed to sign`.
+    // Driving the Go side end-to-end would need a controlled workdir
+    // with seeded overrides; instead we exercise the rendering hook
+    // by setting the data-attribute on the element and asserting the
+    // banner appears (and disappears) accordingly.
+    await openSession(page);
+    await page.evaluate(() => {
+      const el = document.querySelector('terminal-ui');
+      el.dataset.localGpgOverrides = 'gpg.format=openpgp, commit.gpgSign=true';
+    });
+    await openSettings(page);
+    await switchSettingsTab(page, 'ssh');
+
+    const banner = page.locator('#settings-cred-signing-local-overrides');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('gpg.format=openpgp');
+    await expect(banner).toContainText('commit.gpgSign=true');
+    await expect(banner).toContainText('git config --local --unset');
+
+    // Clear the override -> banner gone next time the tab is refreshed.
+    await page.evaluate(() => {
+      document.querySelector('terminal-ui').dataset.localGpgOverrides = '';
+    });
+    await switchSettingsTab(page, 'profile');
+    await switchSettingsTab(page, 'ssh');
+    await expect(page.locator('#settings-cred-signing-local-overrides')).toHaveCount(0);
+  });
+
   test('Forget on this device: clears trust so reload no longer auto-sends', async ({ page }) => {
     await openSession(page);
     const initSha = await page.evaluate(() => document.querySelector('terminal-ui')?.dataset?.initSha || '');

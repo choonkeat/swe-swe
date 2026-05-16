@@ -363,6 +363,80 @@ func TestRepoInitSHA_EmptyForRepoWithNoCommits(t *testing.T) {
 	}
 }
 
+// TestReadLocalSigningOverrides covers the standard traps: the local
+// gpg.format = openpgp override (which silently routes signing through
+// gnupg instead of our broker) and the explicit commit.gpgsign / tag.gpgsign
+// flags. Each gets returned in human-readable canonical form.
+func TestReadLocalSigningOverrides(t *testing.T) {
+	tmp := t.TempDir()
+	gitDir := filepath.Join(tmp, ".git")
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `[core]
+	repositoryformatversion = 0
+[gpg]
+	format = openpgp
+[gpg "ssh"]
+	program = /usr/local/bin/ssh-keygen
+	allowedSignersFile = /Users/me/.ssh/allowed_signers
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = false
+`
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(cfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := readLocalSigningOverrides(tmp)
+	wantSubstrings := []string{
+		"gpg.format=openpgp",
+		"gpg.ssh.program=/usr/local/bin/ssh-keygen",
+		"gpg.ssh.allowedSignersFile=/Users/me/.ssh/allowed_signers",
+		"commit.gpgSign=true",
+		"tag.gpgSign=false",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in result; got: %q", want, got)
+		}
+	}
+}
+
+// TestReadLocalSigningOverrides_NoSigningConfig returns empty when the
+// repo has a .git/config with unrelated sections.
+func TestReadLocalSigningOverrides_NoSigningConfig(t *testing.T) {
+	tmp := t.TempDir()
+	gitDir := filepath.Join(tmp, ".git")
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `[core]
+	repositoryformatversion = 0
+[remote "origin"]
+	url = https://github.com/example/repo.git
+[user]
+	name = Alice
+`
+	if err := os.WriteFile(filepath.Join(gitDir, "config"), []byte(cfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := readLocalSigningOverrides(tmp)
+	if got != "" {
+		t.Errorf("expected empty result for no signing config; got: %q", got)
+	}
+}
+
+// TestReadLocalSigningOverrides_MissingConfig returns empty when the
+// workdir has no .git/config (e.g., not a git repo).
+func TestReadLocalSigningOverrides_MissingConfig(t *testing.T) {
+	tmp := t.TempDir()
+	got := readLocalSigningOverrides(tmp)
+	if got != "" {
+		t.Errorf("expected empty for missing config; got: %q", got)
+	}
+}
+
 // TestRemoveSessionGitconfig_RemovesAllowedSigners verifies that
 // session teardown also removes the sibling allowed_signers file so
 // teardown is symmetric with creation.

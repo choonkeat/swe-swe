@@ -181,6 +181,97 @@ func repoInitSHA(workDir string) string {
 	return min
 }
 
+// readLocalSigningOverrides scans <workDir>/.git/config for any
+// signing-related keys set at repo level. Local config wins over the
+// per-session GIT_CONFIG_GLOBAL, so any of these silently disable the
+// session's signing wiring even when a key has been registered:
+//
+//	gpg.format
+//	gpg.ssh.program
+//	gpg.ssh.allowedSignersFile
+//	commit.gpgsign
+//	tag.gpgsign
+//
+// The classic trap is `gpg.format = openpgp` left over from a host
+// gitconfig: signing flows route to gnupg (which has no key in the
+// container) instead of git-sign-swe-swe, and the user sees a generic
+// "gpg failed to sign the data".
+//
+// Returns the matching key=value pairs in declaration order, joined
+// with ", " so the UI can render the list verbatim. Empty string when
+// no overrides are set (the common case).
+func readLocalSigningOverrides(workDir string) string {
+	if workDir == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(workDir, ".git", "config"))
+	if err != nil {
+		return ""
+	}
+	// Sections we care about and the keys within them.
+	type want struct {
+		section string
+		keys    []string
+	}
+	wants := []want{
+		{"gpg", []string{"format"}},
+		{"gpg \"ssh\"", []string{"program", "allowedsignersfile"}},
+		{"commit", []string{"gpgsign"}},
+		{"tag", []string{"gpgsign"}},
+	}
+	wantedKey := func(section, key string) (string, bool) {
+		section = strings.ToLower(section)
+		key = strings.ToLower(key)
+		for _, w := range wants {
+			if !strings.EqualFold(w.section, section) {
+				continue
+			}
+			for _, k := range w.keys {
+				if k == key {
+					// Canonical display form for the user-facing list.
+					base := section
+					if section == "gpg \"ssh\"" {
+						base = "gpg.ssh"
+					}
+					if key == "allowedsignersfile" {
+						key = "allowedSignersFile"
+					}
+					if key == "gpgsign" {
+						key = "gpgSign"
+					}
+					return base + "." + key, true
+				}
+			}
+		}
+		return "", false
+	}
+
+	var out []string
+	currentSection := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			currentSection = strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+			continue
+		}
+		eq := strings.Index(trimmed, "=")
+		if eq < 0 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:eq])
+		val := strings.TrimSpace(trimmed[eq+1:])
+		display, ok := wantedKey(currentSection, key)
+		if !ok {
+			continue
+		}
+		out = append(out, display+"="+val)
+	}
+	return strings.Join(out, ", ")
+}
+
 // readLocalGitUser reads <workDir>/.git/config and returns local
 // user.name and user.email if set. Used by the session-page template
 // to surface "this repo overrides the per-session identity" in the

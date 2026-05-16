@@ -2207,7 +2207,44 @@ class TerminalUI extends HTMLElement {
         // Forget button visibility each time it is shown.
         if (tab === 'ssh') {
             this._refreshSigningForgetButton();
+            this._refreshLocalSigningOverridesWarning();
         }
+    }
+
+    // Render a warning at the top of the SSH Signing pane when the
+    // current workdir's .git/config has signing-related keys set. These
+    // beat the per-session GIT_CONFIG_GLOBAL git resolves so even with
+    // a registered signing key, commits silently route through whatever
+    // the local config says -- typically a stale `gpg.format = openpgp`
+    // left over from the host's gitconfig. The fix is one-line
+    // `git config --local --unset <key>`.
+    _refreshLocalSigningOverridesWarning() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const pane = panel.querySelector('.settings-panel__pane[data-pane="ssh"]');
+        if (!pane) return;
+        const overrides = (this.dataset.localGpgOverrides || '').trim();
+        const id = 'settings-cred-signing-local-overrides';
+        let banner = pane.querySelector('#' + id);
+        if (!overrides) {
+            if (banner) banner.remove();
+            return;
+        }
+        if (!banner) {
+            banner = document.createElement('p');
+            banner.id = id;
+            banner.className = 'settings-panel__hint settings-panel__hint--warn';
+            const title = pane.querySelector('.settings-panel__pane-title');
+            if (title && title.nextSibling) {
+                title.parentNode.insertBefore(banner, title.nextSibling);
+            } else {
+                pane.prepend(banner);
+            }
+        }
+        banner.textContent =
+            "This repo's .git/config overrides signing config: " +
+            overrides +
+            ". Local config wins over the per-session settings; commits will use the local values. Unset with `git config --local --unset <key>` to let swe-swe handle signing.";
     }
 
     // Snapshot the values that are revertable on close-without-save.
