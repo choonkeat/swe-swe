@@ -97,7 +97,7 @@ git commit -q --allow-empty -m "initial"
 
 HOME="$EFFECTIVE_HOME" "$WORKSPACE_DIR/dist/swe-swe.linux-amd64" init \
     --project-directory="$TEST_STACK_DIR" \
-    --agents=opencode \
+    --agents="${SWE_SWE_E2E_AGENTS:-opencode}" \
     --preview-ports="$PREVIEW_PORTS" \
     --public-ports="$PUBLIC_PORTS" \
     $INIT_EXTRA_FLAGS

@@ -37,6 +37,22 @@ test-server:
 	@cp /tmp/swe-swe-server-test/go.sum $(SERVER_TEMPLATE)/go.sum.txt
 	@rm -rf /tmp/swe-swe-server-test
 
+# Build the standalone swe-swe-fork-convo CLI for local iteration.
+# The source lives inside the swe-swe-server template (so the server can
+# import the same forkconvo package), so we mirror the test-server flow:
+# copy out, rename go.mod.txt -> go.mod, then `go build`.
+.PHONY: swe-swe-fork-convo
+swe-swe-fork-convo:
+	@rm -rf /tmp/swe-swe-fork-convo-build
+	@mkdir -p /tmp/swe-swe-fork-convo-build
+	@cp -r $(SERVER_TEMPLATE)/. /tmp/swe-swe-fork-convo-build/
+	@mv /tmp/swe-swe-fork-convo-build/go.mod.txt /tmp/swe-swe-fork-convo-build/go.mod
+	@mv /tmp/swe-swe-fork-convo-build/go.sum.txt /tmp/swe-swe-fork-convo-build/go.sum
+	@mkdir -p bin
+	cd /tmp/swe-swe-fork-convo-build && go build -o $(CURDIR)/bin/swe-swe-fork-convo ./cmd/swe-swe-fork-convo
+	@rm -rf /tmp/swe-swe-fork-convo-build
+	@echo "built: bin/swe-swe-fork-convo"
+
 # Test the git-sign-swe-swe wrapper template (stdlib only).
 # The wrapper ships as a standalone binary built inside Dockerfile;
 # we mirror the same go-mod-init-in-tmp pattern so the test runs
