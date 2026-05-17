@@ -59,10 +59,13 @@ RUN CGO_ENABLED=0 GOOS=linux GOBIN=/build-swe-swe-tunnel \
 FROM golang:1.24-bookworm
 
 # Install base dependencies
+# git-lfs is required so `git worktree add` succeeds on repos that ship LFS
+# pointers (the filter-process hook runs in the new worktree as well).
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
+    git-lfs \
     build-essential \
     ca-certificates \
     file \

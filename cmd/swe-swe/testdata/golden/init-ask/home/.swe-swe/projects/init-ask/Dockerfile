@@ -35,10 +35,13 @@ RUN cd /build-git-sign-swe-swe && go mod init git-sign-swe-swe && CGO_ENABLED=0 
 FROM golang:1.24-bookworm
 
 # Install base dependencies
+# git-lfs is required so `git worktree add` succeeds on repos that ship LFS
+# pointers (the filter-process hook runs in the new worktree as well).
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
+    git-lfs \
     build-essential \
     ca-certificates \
     file \
