@@ -493,18 +493,28 @@
         dialogState.selectedBranch = branchInput.value.trim();
     });
 
-    // While the branch combo is open, collapse the steps below it (Agent, Extra
-    // CLI flags, env hint, Start buttons). Mirrors the Where step's reveal-on-
-    // progress pattern and prevents the user from clicking Start before the
-    // free-entry combo has committed its typed text.
+    // While the branch combo is open OR focused, collapse the steps below it
+    // (Agent, Extra CLI flags, env hint, Start buttons). Mirrors the Where
+    // step's reveal-on-progress pattern and prevents the user from clicking
+    // Start before the free-entry combo has committed its typed text.
+    //
+    // Both signals matter: on iOS Safari, tapping into the combo's input
+    // fires focusin but doesn't always set the 'open' attribute right away
+    // (the dropdown opens only once filtering kicks in), so observing 'open'
+    // alone misses the keyboard-up state on touch devices.
     if (branchCombo) {
-        var branchOpenObserver = new MutationObserver(function() {
-            overlay.classList.toggle(
-                'dialog__overlay--branch-editing',
-                branchCombo.hasAttribute('open')
-            );
-        });
+        function updateBranchEditing() {
+            var editing = branchCombo.hasAttribute('open') ||
+                          branchCombo.matches(':focus-within');
+            overlay.classList.toggle('dialog__overlay--branch-editing', editing);
+        }
+        var branchOpenObserver = new MutationObserver(updateBranchEditing);
         branchOpenObserver.observe(branchCombo, { attributes: true, attributeFilter: ['open'] });
+        branchCombo.addEventListener('focusin', updateBranchEditing);
+        branchCombo.addEventListener('focusout', function() {
+            // focusout fires before focus settles on the next element; defer.
+            setTimeout(updateBranchEditing, 0);
+        });
     }
 
     // Agent selection
