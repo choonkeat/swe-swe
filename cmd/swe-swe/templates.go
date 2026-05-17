@@ -615,11 +615,13 @@ fi`, configDir, repo.Alias, configDir, repo.Alias, pullCmd, repo.Alias, agentNam
 	chownCodex := ""
 	chownGemini := ""
 	chownGoose := ""
+	chownPi := ""
 	if withDocker {
 		chownOpencode = "chown -R app: /home/app/.config/opencode"
 		chownCodex = "chown -R app: /home/app/.codex"
 		chownGemini = "chown -R app: /home/app/.gemini"
 		chownGoose = "chown -R app: /home/app/.config/goose"
+		chownPi = "chown -R app: /home/app/.pi"
 	}
 
 	// Generate Claude MCP setup block (varies by docker mode)
@@ -684,6 +686,10 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 			skip = !hasAgent("claude")
 			continue
 		}
+		if strings.Contains(trimmed, "{{IF PI}}") {
+			skip = !hasAgent("pi")
+			continue
+		}
 		if strings.Contains(trimmed, "{{ENDIF}}") {
 			skip = false
 			continue
@@ -713,6 +719,9 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 		}
 		if strings.Contains(line, "{{CHOWN_GOOSE}}") {
 			line = strings.ReplaceAll(line, "{{CHOWN_GOOSE}}", chownGoose)
+		}
+		if strings.Contains(line, "{{CHOWN_PI}}") {
+			line = strings.ReplaceAll(line, "{{CHOWN_PI}}", chownPi)
 		}
 
 		if !skip {

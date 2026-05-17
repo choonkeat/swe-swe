@@ -65,6 +65,7 @@ chmod +x /home/app/.swe-swe/bin/goose
 echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 
 
+
 # Resolve internal server port. SWE_PORT is set by both compose (via the
 # swe-swe service environment block) and dockerfile-only mode (via ENV in
 # the generated Dockerfile), so the default is the same in either mode.

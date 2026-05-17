@@ -37,6 +37,7 @@ claude_mcp_setup() {
 claude_mcp_setup
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 
+
 # Resolve internal server port. SWE_PORT is set by both compose (via the
 # swe-swe service environment block) and dockerfile-only mode (via ENV in
 # the generated Dockerfile), so the default is the same in either mode.

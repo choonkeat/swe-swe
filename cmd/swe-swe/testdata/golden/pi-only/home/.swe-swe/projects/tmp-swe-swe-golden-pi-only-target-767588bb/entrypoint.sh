@@ -19,6 +19,16 @@ NC='\033[0m' # No Color
 
 
 
+# Install Pi mcp-bridge extension into the global Pi config dir so every
+# session in every workspace gets the swe-swe / agent-chat / playwright /
+# preview / whiteboard MCPs without per-workspace setup. Pi prefers a
+# project-local .pi/extensions/ override, so /workspace can still drop a
+# custom mcp-bridge.ts to hack on it.
+mkdir -p /home/app/.pi/agent/extensions
+cp /tmp/pi-mcp-bridge.ts /home/app/.pi/agent/extensions/mcp-bridge.ts
+
+echo -e "${GREEN}[ok] Installed Pi mcp-bridge extension${NC}"
+
 # Resolve internal server port. SWE_PORT is set by both compose (via the
 # swe-swe service environment block) and dockerfile-only mode (via ENV in
 # the generated Dockerfile), so the default is the same in either mode.

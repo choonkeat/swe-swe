@@ -130,6 +130,9 @@ RUN npm install -g opencode-ai
 
 # Install Pi coding agent (https://shittycodingagent.ai)
 RUN npm install -g @mariozechner/pi-coding-agent
+# Stage the mcp-bridge extension; entrypoint.sh installs it into
+# /home/app/.pi/agent/extensions/ at container start (with proper ownership).
+COPY mcp-bridge.ts /tmp/pi-mcp-bridge.ts
 
 # Install user-specified npm packages
 RUN npm install -g typescript

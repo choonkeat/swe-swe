@@ -1019,6 +1019,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 			continue
 		}
 
+		// Skip Pi mcp-bridge extension when pi isn't a selected agent.
+		// (Dockerfile only COPYs it under {{IF PI}}, so leaving it in the build
+		// context with pi disabled would be dead weight and a confusing artifact.)
+		if hostFile == "templates/host/mcp-bridge.ts" && !agentInList("pi", config.Agents) {
+			continue
+		}
+
 		// Skip compose-only files when dockerfile-only mode is enabled
 		// (docker-compose.yml is NOT skipped -- a minimal shim is generated instead)
 		if config.DockerfileOnly {
