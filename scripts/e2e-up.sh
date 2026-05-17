@@ -259,14 +259,29 @@ else
     env "${COMPOSE_ENV[@]}" docker compose up -d
 fi
 
-# Wait for server to be ready
+# Wait for server to be ready.
+#
+# Two-phase probe:
+#   1. Any HTTP response on /          -- container is listening
+#   2. /swe-swe-auth/login returns 200 -- swe-swe-server is fully wired up
+#
+# Compose mode runs Traefik in front of swe-swe-server; until the backend
+# is reachable Traefik returns 502 Bad Gateway on /swe-swe-auth/login, but
+# / can already return 302 (redirect to login). The old probe accepted any
+# 1xx-5xx code on /, which let test-e2e race the playwright globalSetup
+# against an unready stack -- the login page would 502 and Playwright would
+# timeout looking for the password input. Requiring 200 on the login route
+# is the actual precondition for our test setup.
 echo "Waiting for server..."
 HOST_IP="${HOST_IP:-host.docker.internal}"
 SERVER_READY=false
+LAST_ROOT=""
+LAST_LOGIN=""
 for i in $(seq 1 60); do
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$HOST_IP:$E2E_PORT/" 2>/dev/null) || HTTP_CODE="000"
-    if [[ "$HTTP_CODE" =~ ^[1-5][0-9][0-9]$ ]]; then
-        echo "Server ready (HTTP $HTTP_CODE) after ${i}s"
+    LAST_ROOT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$HOST_IP:$E2E_PORT/" 2>/dev/null) || LAST_ROOT="000"
+    LAST_LOGIN=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$HOST_IP:$E2E_PORT/swe-swe-auth/login" 2>/dev/null) || LAST_LOGIN="000"
+    if [[ "$LAST_LOGIN" == "200" ]]; then
+        echo "Server ready (/=$LAST_ROOT, /swe-swe-auth/login=$LAST_LOGIN) after ${i}s"
         SERVER_READY=true
         break
     fi
@@ -274,7 +289,7 @@ for i in $(seq 1 60); do
 done
 
 if [[ "$SERVER_READY" != "true" ]]; then
-    echo "ERROR: Server did not start within 60s (last HTTP_CODE=$HTTP_CODE)"
+    echo "ERROR: Server did not become ready within 60s (last /=$LAST_ROOT, /swe-swe-auth/login=$LAST_LOGIN)"
     docker compose logs
     exit 1
 fi

@@ -13,7 +13,13 @@ export default defineConfig({
   expect: {
     timeout: 120_000, // 2 minutes for assertions (waiting for AI response)
   },
-  retries: 0,
+  // One retry per test: most flakes here are LLM-driven (the agent-chat
+  // probe and the agent-browser tool-use assertion both depend on an
+  // OpenCode response within a window). 0 retries means a single slow
+  // response kills the whole run; 2+ retries can mask real regressions.
+  // 1 is the standard tradeoff: a clean retry hides genuine flakes, a
+  // 2/2 failure still fails the suite.
+  retries: 1,
   workers: 1, // sequential -- tests share the server
   reporter: 'list',
   use: {
