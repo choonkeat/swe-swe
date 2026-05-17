@@ -493,6 +493,20 @@
         dialogState.selectedBranch = branchInput.value.trim();
     });
 
+    // While the branch combo is open, collapse the steps below it (Agent, Extra
+    // CLI flags, env hint, Start buttons). Mirrors the Where step's reveal-on-
+    // progress pattern and prevents the user from clicking Start before the
+    // free-entry combo has committed its typed text.
+    if (branchCombo) {
+        var branchOpenObserver = new MutationObserver(function() {
+            overlay.classList.toggle(
+                'dialog__overlay--branch-editing',
+                branchCombo.hasAttribute('open')
+            );
+        });
+        branchOpenObserver.observe(branchCombo, { attributes: true, attributeFilter: ['open'] });
+    }
+
     // Agent selection
     function selectAgent(label) {
         if (!label || label.classList.contains('dialog__agent--disabled')) {
@@ -597,6 +611,7 @@
     // Dialog close
     function closeDialog() {
         overlay.style.display = 'none';
+        overlay.classList.remove('dialog__overlay--branch-editing');
         resetDialog();
     }
 

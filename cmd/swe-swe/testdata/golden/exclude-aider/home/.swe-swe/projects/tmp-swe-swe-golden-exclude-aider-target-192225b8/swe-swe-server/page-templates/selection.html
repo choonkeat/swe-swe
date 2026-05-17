@@ -936,6 +936,17 @@
             display: none;
         }
 
+        /* While the branch combo is open, collapse the steps below it so the
+           wizard stays single-step and the user can't click Start before the
+           free-entry combo commits its typed text. !important is needed for
+           #new-session-env-hint because prepareRepo sets its display inline. */
+        .dialog__overlay--branch-editing .dialog__field:has(#new-session-agents),
+        .dialog__overlay--branch-editing .dialog__field:has(#new-session-extra-args),
+        .dialog__overlay--branch-editing #new-session-env-hint,
+        .dialog__overlay--branch-editing .dialog__footer {
+            display: none !important;
+        }
+
         /* Hide original elements upgraded by combo-box */
         .dialog select[aria-hidden="true"],
         .dialog input[aria-hidden="true"],
