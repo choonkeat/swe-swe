@@ -1,6 +1,10 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+const storageStatePath = path.join(__dirname, '.auth', 'state.json');
 
 export default defineConfig({
   testDir: './tests',
@@ -14,6 +18,11 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL,
+    // Default: every spec starts already logged in via the cookie that
+    // global-setup.js captured. login.spec.js opts out per-file via
+    // test.use({ storageState: { cookies: [], origins: [] } }) because
+    // it tests the login flow itself.
+    storageState: storageStatePath,
     headless: true,
     launchOptions: {
       executablePath: '/usr/bin/chromium',

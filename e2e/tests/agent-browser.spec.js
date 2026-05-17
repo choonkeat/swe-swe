@@ -1,22 +1,11 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
-const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
-
-// Helper: login
-async function login(page) {
-  await page.goto('/swe-swe-auth/login');
-  await page.fill('input[type="password"]', PASSWORD);
-  await Promise.all([
-    page.waitForNavigation(),
-    page.click('button[type="submit"]'),
-  ]);
-}
+// Auth cookie comes from the suite-wide storageState (see playwright.config.js
+// + global-setup.js); no per-test login is needed.
 
 test.describe('Agent Browser E2E', () => {
   test('OpenCode chat session: playwright visits example.com and takes screenshot', async ({ page }) => {
-    await login(page);
-
     // Create a chat session with OpenCode
     const uuid = crypto.randomUUID();
     await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);

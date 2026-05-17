@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
-const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
 const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
+
+// Auth cookie comes from the suite-wide storageState (see playwright.config.js
+// + global-setup.js); no per-test login is needed.
 
 // One spec, three assertion modes:
 // - SWE_PUBLIC_HOSTNAME unset (default): preview/agent-chat URLs are
@@ -23,15 +25,6 @@ const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
 //   SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com SWE_TUNNEL_VIA=state-file make e2e-up-simple && \
 //     SWE_PUBLIC_HOSTNAME=fake-tunnel.example.com make e2e-test-simple && \
 //     make e2e-down                                                        # state-file mode
-
-async function login(page) {
-    await page.goto('/swe-swe-auth/login');
-    await page.fill('input[type="password"]', PASSWORD);
-    await Promise.all([
-        page.waitForNavigation(),
-        page.click('button[type="submit"]'),
-    ]);
-}
 
 async function createSessionAndWaitForStatus(page) {
     const uuid = crypto.randomUUID();
@@ -56,7 +49,6 @@ async function createSessionAndWaitForStatus(page) {
 
 test.describe('tunnel-mode URL templating', () => {
     test('frontend reflects SWE_PUBLIC_HOSTNAME in WS status and getPreviewBaseUrl', async ({ page }) => {
-        await login(page);
         const status = await createSessionAndWaitForStatus(page);
 
         // Sanity checks regardless of mode.

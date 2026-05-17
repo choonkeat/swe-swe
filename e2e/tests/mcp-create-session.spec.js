@@ -2,17 +2,11 @@ import { test, expect, request as apiRequest } from '@playwright/test';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
 
-const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 
-// Helper: login and return cookie string for API requests
-async function loginAndGetCookie(page) {
-  await page.goto('/swe-swe-auth/login');
-  await page.fill('input[type="password"]', PASSWORD);
-  await Promise.all([
-    page.waitForNavigation(),
-    page.click('button[type="submit"]'),
-  ]);
+// Auth cookie comes from the suite-wide storageState (see playwright.config.js
+// + global-setup.js); we only need to extract its value for direct API calls.
+async function getAuthCookie(page) {
   const cookies = await page.context().cookies();
   const authCookie = cookies.find(c => c.name === 'swe_swe_session');
   return authCookie ? `swe_swe_session=${authCookie.value}` : '';
@@ -95,7 +89,7 @@ test.describe('MCP create_session', () => {
     // Traefik's forwardauth middleware protects /mcp)
     const context = await browser.newContext();
     const page = await context.newPage();
-    const cookie = await loginAndGetCookie(page);
+    const cookie = await getAuthCookie(page);
     const uuid = crypto.randomUUID();
     await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
     await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });

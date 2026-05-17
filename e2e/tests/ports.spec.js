@@ -1,18 +1,10 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
-const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 
-// Helper: login
-async function login(page) {
-  await page.goto('/swe-swe-auth/login');
-  await page.fill('input[type="password"]', PASSWORD);
-  await Promise.all([
-    page.waitForNavigation(),
-    page.click('button[type="submit"]'),
-  ]);
-}
+// Auth cookie comes from the suite-wide storageState (see playwright.config.js
+// + global-setup.js); no per-test login is needed.
 
 // Helper: create a chat session and wait for all port info via WebSocket
 async function createChatSessionAndGetPorts(page) {
@@ -70,7 +62,6 @@ async function fetchPortWithRetry(page, port, path, maxRetries) {
 // Uses one login + one session to avoid Traefik rate limiting in compose mode.
 test.describe('Port Connectivity', () => {
   test('preview, VNC, and agent chat proxy ports respond', async ({ page }) => {
-    await login(page);
     const ports = await createChatSessionAndGetPorts(page);
 
     // --- Preview proxy ---

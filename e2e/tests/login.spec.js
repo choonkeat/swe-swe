@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test';
 
 const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
 
+// Opt out of the suite-wide authenticated storageState (playwright.config.js).
+// This file tests the login flow itself, so every test must start logged out.
+test.use({ storageState: { cookies: [], origins: [] } });
+
 test.describe('Login', () => {
   test('shows login page', async ({ page }) => {
     await page.goto('/');

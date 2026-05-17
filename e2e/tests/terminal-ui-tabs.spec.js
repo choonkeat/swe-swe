@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
-import { login, endSessions } from './_helpers/sessions.js';
+import { endSessions } from './_helpers/sessions.js';
+
+// Auth cookie comes from the suite-wide storageState (see playwright.config.js
+// + global-setup.js); no per-test login is needed.
 
 // Wait until window.terminalUI exists and reports a given property via predicate.
 // 90s default: on isolated runs the MCP probe completes in ~12-15s, but when
@@ -39,7 +42,6 @@ async function openTerminalSession(page) {
 test.describe('terminal-ui tab switching', () => {
   test.beforeEach(async ({ page }) => {
     testSessions = [];
-    await login(page);
   });
 
   test.afterEach(async ({ page }, testInfo) => {
@@ -504,8 +506,9 @@ test.describe('terminal-ui tab switching', () => {
 
     // First persist a non-default multi-slot preset in this origin's
     // localStorage so we can confirm the shell-mode override wins.
-    await page.goto('/swe-swe-auth/login');
-    // (login already happened in beforeEach; just visit origin to access localStorage)
+    // Visit the origin so we have a document to access localStorage on;
+    // the storageState cookie keeps us logged in.
+    await page.goto('/');
     await page.evaluate(() => {
       localStorage.setItem('swe-swe-layout-v1', JSON.stringify({
         preset: 'quadrants',

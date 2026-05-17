@@ -1,16 +1,8 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 
-const PASSWORD = process.env.SWE_SWE_PASSWORD || 'changeme';
-
-async function login(page) {
-  await page.goto('/swe-swe-auth/login');
-  await page.fill('input[type="password"]', PASSWORD);
-  await Promise.all([
-    page.waitForNavigation(),
-    page.click('button[type="submit"]'),
-  ]);
-}
+// Auth cookie comes from the suite-wide storageState (see playwright.config.js
+// + global-setup.js); no per-test login is needed.
 
 async function waitForUi(page, predicate) {
   return page.waitForFunction(predicate, null, { timeout: 60_000 });
@@ -52,10 +44,6 @@ async function closeSettings(page) {
 }
 
 test.describe('per-session git credentials UI', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page);
-  });
-
   test('save round-trip: form -> WS -> credentials_stored ack -> status + localStorage', async ({ page }) => {
     await openSession(page);
 
@@ -241,10 +229,6 @@ RAWRXfhOr1bTAgCfHSiBAAAAEGUyZS10ZXN0QHN3ZS1zd2UBAgMEBQ==
 const TEST_SIGNING_FINGERPRINT = 'SHA256:YNOCH+zR5nOPiv90YpfKRkXMeHPseO6WdGegIzLmj+U';
 
 test.describe('per-session SSH commit signing UI', () => {
-  test.beforeEach(async ({ page }) => {
-    await login(page);
-  });
-
   test('save round-trip: signing form -> WS -> credentials_stored ack with fingerprint -> status + localStorage', async ({ page }) => {
     await openSession(page);
 
