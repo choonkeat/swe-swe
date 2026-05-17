@@ -41,6 +41,7 @@ import (
 	recordtui "github.com/choonkeat/record-tui/playback"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
+	"github.com/choonkeat/swe-swe/forkconvo"
 	"github.com/gorilla/websocket"
 	"github.com/hinshun/vt10x"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -465,6 +466,7 @@ type Session struct {
 	AgentChatCmd    *exec.Cmd
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
 	SessionMode     string             // "terminal" or "chat"
+	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
 	PreviewProxy          *agentproxy.Proxy // Per-session preview proxy instance
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
@@ -2216,6 +2218,12 @@ func main() {
 		// Session end API endpoint
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
 			handleSessionEndAPI(w, r)
+			return
+		}
+
+		// Session fork API endpoint: GET /api/fork/{source-uuid} -> 302 /session/{new-uuid}
+		if strings.HasPrefix(r.URL.Path, "/api/fork/") {
+			handleSessionForkAPI(w, r)
 			return
 		}
 
@@ -4277,6 +4285,7 @@ type SessionParams struct {
 	Theme               string // terminal theme
 	SessionMode         string // "terminal" or "chat"
 	ExtraArgs           string // extra CLI flags appended to the agent command (whitespace-split)
+	PrepopulateChatLog  string // when non-empty, copy this file into the new session's chat event log before the agent starts (used by /api/fork)
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -4444,10 +4453,20 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 
 	// Set up chat event log recording for chat sessions
 	var chatRecordingUUID string
+	var chatLogPath string
 	if p.SessionMode == "chat" {
 		chatRecordingUUID = uuid.New().String()
 		chatPrefix := recordingPrefix(recordingUUID, chatRecordingUUID)
-		chatLogPath := fmt.Sprintf("%s/%s.events.jsonl", recordingsDir, chatPrefix)
+		chatLogPath = fmt.Sprintf("%s/%s.events.jsonl", recordingsDir, chatPrefix)
+		// /api/fork prepopulates the new session's chat event log so the
+		// browser tab shows the same history bubbles as the source session
+		// before the user types anything.
+		if p.PrepopulateChatLog != "" {
+			if err := copyFile(p.PrepopulateChatLog, chatLogPath); err != nil {
+				return nil, false, fmt.Errorf("prepopulate chat log: %w", err)
+			}
+			log.Printf("Session %s: prepopulated chat event log from %s", p.UUID, p.PrepopulateChatLog)
+		}
 		env = append(env, fmt.Sprintf("AGENT_CHAT_EVENT_LOG=%s", chatLogPath))
 		log.Printf("Chat event log: %s", chatLogPath)
 	}
@@ -4516,6 +4535,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		AgentChatCmd:    agentChatCmd,
 		agentChatCancel: sessionCancel,
 		SessionMode:     p.SessionMode,
+		ChatLogPath:     chatLogPath,
 		Metadata: &RecordingMetadata{
 			UUID:          recordingUUID,
 			Name:          name,
@@ -6913,6 +6933,163 @@ func endSessionByUUID(sessionUUID string) error {
 		}
 	}
 
+	return nil
+}
+
+// handleSessionForkAPI handles GET /api/fork/{source-session-uuid}.
+//
+// MVP: fork only supports chat-mode Claude sessions. The handler:
+//  1. locates the source session and its Claude .jsonl by mtime in
+//     ~/.claude/projects/<encoded-workdir>/
+//  2. forks the .jsonl at the last agent-chat send_message reply via the
+//     forkconvo package
+//  3. spawns a new swe-swe session (same assistant, workdir, mode) with
+//     ExtraArgs += " --resume <fork-id>" so claude --resume picks up the
+//     forked file, and PrepopulateChatLog set so the chat tab replays the
+//     same bubbles as the source
+//  4. 302-redirects to /session/{new-uuid}?assistant={binary}
+//
+// Worktree per fork, agent-aware session-id tracking, and codex/pi support
+// are deliberate TODOs for the next iteration.
+func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sourceUUID := strings.TrimPrefix(r.URL.Path, "/api/fork/")
+	sourceUUID = strings.TrimSuffix(sourceUUID, "/")
+	if sourceUUID == "" {
+		http.Error(w, "Missing source session UUID", http.StatusBadRequest)
+		return
+	}
+
+	sessionsMu.RLock()
+	src, exists := sessions[sourceUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "source session not found", http.StatusNotFound)
+		return
+	}
+	if src.SessionMode != "chat" {
+		http.Error(w, "fork supports chat-mode sessions only", http.StatusBadRequest)
+		return
+	}
+	if src.Assistant != "claude" {
+		http.Error(w, "fork MVP supports the claude assistant only", http.StatusBadRequest)
+		return
+	}
+	if src.ChatLogPath == "" {
+		http.Error(w, "source session has no chat event log (predates fork support?)", http.StatusConflict)
+		return
+	}
+
+	agentSessionID, err := findLatestClaudeSessionInWorkDir(src.WorkDir)
+	if err != nil {
+		http.Error(w, "locate claude session: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	forkRes, err := forkconvo.Fork(forkconvo.Opts{
+		Agent:           forkconvo.AgentClaude,
+		SourceSessionID: agentSessionID,
+		Anchor:          forkconvo.AnchorLastChatReply,
+	})
+	if err != nil {
+		http.Error(w, "fork claude session: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Forked claude session %s -> %s (anchor %s) for swe-swe session %s",
+		agentSessionID, forkRes.NewSessionID, forkRes.AnchorUUID, sourceUUID)
+
+	newUUID := uuid.New().String()
+	extraArgs := strings.TrimSpace(src.ExtraArgs + " --resume " + forkRes.NewSessionID)
+	forkName := src.Name
+	if forkName == "" {
+		forkName = "fork"
+	} else {
+		forkName = "fork: " + forkName
+	}
+	_, _, err = getOrCreateSession(SessionParams{
+		UUID:               newUUID,
+		Assistant:          src.Assistant,
+		Name:               forkName,
+		WorkDir:            src.WorkDir,
+		SessionMode:        "chat",
+		ExtraArgs:          extraArgs,
+		Theme:              src.Theme,
+		PrepopulateChatLog: src.ChatLogPath,
+	})
+	if err != nil {
+		http.Error(w, "create fork session: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)
+}
+
+// findLatestClaudeSessionInWorkDir returns the session id (filename minus
+// .jsonl) of the most recently modified Claude .jsonl in the project
+// directory that corresponds to workDir. Claude stores sessions under
+// ~/.claude/projects/<workDir-with-slashes-replaced-by-dashes>/.
+//
+// The mtime heuristic is fine for the MVP because we only have one active
+// claude per workdir during the e2e flow. The Session struct should grow
+// an AgentSessionID field once we get to it.
+func findLatestClaudeSessionInWorkDir(workDir string) (string, error) {
+	if workDir == "" {
+		return "", fmt.Errorf("empty workdir")
+	}
+	encoded := strings.ReplaceAll(workDir, "/", "-")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, ".claude", "projects", encoded)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	var latestName string
+	var latestMtime time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(latestMtime) {
+			latestMtime = info.ModTime()
+			latestName = e.Name()
+		}
+	}
+	if latestName == "" {
+		return "", fmt.Errorf("no claude .jsonl in %s", dir)
+	}
+	return strings.TrimSuffix(latestName, ".jsonl"), nil
+}
+
+// copyFile is a small helper used by /api/fork to clone the source chat
+// event log into the new session's location before the agent-chat MCP
+// sidecar opens the file at boot.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -12,7 +12,10 @@ COPY swe-swe-server/agent-chat-dist/ ./agent-chat-dist/
 COPY swe-swe-server/static/ ./static/
 COPY swe-swe-server/page-templates/ ./page-templates/
 COPY swe-swe-server/container-templates/ ./container-templates/
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server .
+COPY swe-swe-server/forkconvo/ ./forkconvo/
+COPY swe-swe-server/cmd/ ./cmd/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server . && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-fork-convo ./cmd/swe-swe-fork-convo
 
 # Build mcp-lazy-init (generic lazy-init MCP proxy, stdlib only)
 COPY mcp-lazy-init/main.go /build-mcp-lazy-init/main.go
@@ -165,6 +168,7 @@ RUN ARCH="$(dpkg --print-architecture)" && \
 
 # Copy swe-swe-server, mcp-lazy-init, swe-swe-broker-probe, git-credential-swe-swe, and git-sign-swe-swe binaries from builder stage
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
+COPY --from=server-builder /build/swe-swe-fork-convo /usr/local/bin/swe-swe-fork-convo
 COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
 COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
 COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
