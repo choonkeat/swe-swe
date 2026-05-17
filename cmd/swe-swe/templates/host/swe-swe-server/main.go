@@ -4331,15 +4331,16 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			baseRepo = "/workspace"
 		}
 
-		// If branch is provided, create/use worktree
+		// If branch is provided, create/use worktree.
+		// Previously we silently fell back to baseRepo on failure, which hid the
+		// common "branch already checked out at /workspace" case from users --
+		// they got a session in /workspace with no indication their worktree
+		// request was dropped. Return the error instead so the caller can show it.
 		if p.Branch != "" {
-			// Use createWorktreeInRepo which supports both /workspace and external repos
 			var err error
 			workDir, err = createWorktreeInRepo(baseRepo, p.Branch)
 			if err != nil {
-				log.Printf("Warning: failed to create worktree for branch %s in %s: %v", p.Branch, baseRepo, err)
-				// Fall back to base repo without worktree
-				workDir = baseRepo
+				return nil, false, fmt.Errorf("worktree for branch %q in %s: %w", p.Branch, baseRepo, err)
 			}
 		} else {
 			// No branch specified, use base repo directly
@@ -4800,7 +4801,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	})
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
-		conn.WriteMessage(websocket.TextMessage, []byte("Error creating session: "+err.Error()))
+		// Send the full error as JSON before closing -- the WS close-reason
+		// field is capped at 123 bytes and would truncate the useful tail of
+		// git's output (e.g. "fatal: 'main' is already checked out at ...").
+		// Close code 4002 tells the client "fatal, don't reconnect".
+		if data, jerr := json.Marshal(map[string]string{
+			"type":    "session_error",
+			"message": err.Error(),
+		}); jerr == nil {
+			conn.WriteMessage(websocket.TextMessage, data)
+		}
+		conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(4002, "session creation failed"))
 		return
 	}
 

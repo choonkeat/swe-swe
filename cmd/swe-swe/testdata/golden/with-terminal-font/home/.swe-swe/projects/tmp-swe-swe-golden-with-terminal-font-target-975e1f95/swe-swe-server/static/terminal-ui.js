@@ -1283,6 +1283,17 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
+            // Fatal session creation error (e.g. "branch already checked out").
+            // Stop reconnecting so the user sees the reason instead of an
+            // endless loop that would just hit the same error. The full error
+            // arrived as a session_error JSON message just before close --
+            // prefer it over the truncated close-reason field.
+            if (event.code === 4002) {
+                this.processExited = true;
+                this.updateStatus('error', this._sessionErrorMsg || reason || 'Could not create session');
+                return;
+            }
+
             // Show close reason in status bar for debugging
             this.updateStatus('error', `Disconnected: ${reason}`);
             // Brief delay to show the error before scheduling reconnect
@@ -1444,6 +1455,13 @@ class TerminalUI extends HTMLElement {
                     const latency = Date.now() - msg.data.ts;
                     console.log(`Heartbeat pong: ${latency}ms`);
                 }
+                break;
+            case 'session_error':
+                // Fatal error from the server (e.g. worktree creation failed).
+                // Stash the full text so the onclose 4002 handler can display it
+                // -- the WS close-reason field would otherwise truncate the
+                // most useful tail of git's output.
+                this._sessionErrorMsg = typeof msg.message === 'string' ? msg.message : '';
                 break;
             case 'credentials_stored':
                 // Server acked set_credentials. Hosts list reflects what the
