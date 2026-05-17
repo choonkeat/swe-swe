@@ -74,11 +74,25 @@ test.describe('per-session git credentials UI', () => {
     await page.fill('#settings-cred-email', 'e2e@example.com');
     await expect(page.locator('#settings-cred-token')).toHaveAttribute('type', 'password');
 
+    // Capture every status-text change in the page so we can assert that
+    // "Sending..." was rendered at some point, without racing Playwright's
+    // poll loop against the WS ack. Polling expect() can miss a single-frame
+    // transition; a MutationObserver running in the page sees every value.
+    await page.evaluate(() => {
+      window.__credStatusHistory = [];
+      const el = document.getElementById('settings-cred-status');
+      window.__credStatusObserver = new MutationObserver(() => {
+        window.__credStatusHistory.push(el.textContent);
+      });
+      window.__credStatusObserver.observe(el, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    });
+
     // Click Save. The handler writes localStorage AND sends a WS message.
     await page.click('#settings-cred-save');
-
-    // Status flips to "Sending..." synchronously.
-    await expect(status).toHaveText(/Sending\.\.\./);
 
     // Wait for the credentials_stored ack to update _credsStoredHosts.
     await waitForUi(page, () => {
@@ -88,6 +102,15 @@ test.describe('per-session git credentials UI', () => {
 
     // Status now reflects the server-confirmed host list (no values).
     await expect(status).toHaveText(/Stored on server for: github\.com/);
+
+    // Verify the transient "Sending..." state was rendered between click
+    // and ack. Reading from the recorded history is race-proof: even if
+    // the ack overwrote the text within one frame, the observer captured it.
+    const statusHistory = await page.evaluate(() => {
+      window.__credStatusObserver?.disconnect();
+      return window.__credStatusHistory || [];
+    });
+    expect(statusHistory.some(t => /Sending\.\.\./.test(t))).toBe(true);
     // ok state attribute is set so the UI can style it green.
     await expect(status).toHaveAttribute('data-state', 'ok');
 
