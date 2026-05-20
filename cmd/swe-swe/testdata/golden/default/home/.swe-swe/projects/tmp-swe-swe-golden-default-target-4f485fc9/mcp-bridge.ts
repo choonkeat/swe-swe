@@ -131,17 +131,6 @@ function splitSseData(text: string): string[] {
   return out;
 }
 
-async function prelaunch(url: string): Promise<void> {
-  // Best-effort POST to a session-setup endpoint (e.g. browser/start) before
-  // spawning a downstream MCP server. Failures are non-fatal; the downstream
-  // process will surface its own error if the prerequisite is truly missing.
-  try {
-    await fetch(url, { method: "POST" });
-  } catch {
-    // ignore
-  }
-}
-
 class HttpMcpClient implements McpClient {
   private nextId = 1;
   constructor(private readonly name: string, private readonly endpoint: string) {}
@@ -512,18 +501,20 @@ class McpBridge {
       endpoints.push({ name: "swe-swe-whiteboard", client: new HttpMcpClient("whiteboard", `${whiteboardUrl}/mcp`) });
     }
 
-    // swe-swe-playwright: @playwright/mcp is stdio-only by default. We POST to
-    // the browser-start endpoint first (so the per-session Chrome is up before
-    // playwright tries to attach via CDP), then spawn @playwright/mcp and
-    // speak JSON-RPC to it over stdio.
+    // swe-swe-playwright: wrap @playwright/mcp in mcp-lazy-init so the
+    // per-session browser only starts on the first tools/call, matching the
+    // lazy behavior used by the other agent configs.
     const browserCdpPort = envNumber("BROWSER_CDP_PORT");
     if (sessionUuid && browserCdpPort) {
-      await prelaunch(
-        `http://localhost:${sweServerPort}/api/session/${sessionUuid}/browser/start?key=${sweAuthKey ?? ""}`,
-      );
       endpoints.push({
         name: "swe-swe-playwright",
-        client: new StdioMcpClient("playwright", "npx", [
+        client: new StdioMcpClient("playwright", "mcp-lazy-init", [
+          "--init-method",
+          "POST",
+          "--init-url",
+          `http://localhost:${sweServerPort}/api/session/${sessionUuid}/browser/start?key=${sweAuthKey ?? ""}`,
+          "--",
+          "npx",
           "-y",
           "@playwright/mcp@latest",
           "--cdp-endpoint",
