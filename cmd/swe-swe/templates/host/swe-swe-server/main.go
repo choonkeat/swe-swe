@@ -1361,8 +1361,20 @@ func (s *Session) startPTYReader() {
 }
 
 var (
-	sessions            = make(map[string]*Session)
-	sessionsMu          sync.RWMutex
+	sessions   = make(map[string]*Session)
+	sessionsMu sync.RWMutex
+
+	// pendingForks holds SessionParams staged by /api/fork that have not yet
+	// been materialized into a live session. The first WebSocket client to
+	// open the new session URL consumes the entry, calls getOrCreateSession
+	// from inside the WS handler, and -- because the UUID is brand new at
+	// that point -- gets isNew=true exactly like a normal "+ New" session.
+	// This is important: it ensures the PTY starts after the client's
+	// geometry is known, so claude renders its first frame at the right
+	// size and a joining-client snapshot is never needed.
+	pendingForks   = make(map[string]SessionParams)
+	pendingForksMu sync.Mutex
+
 	shellCmd            string
 	shellRestartCmd     string
 	workingDir          string
@@ -4805,7 +4817,21 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Optional extra CLI flags appended to the agent invocation (e.g. "--channels server:agent-chat")
 	extraArgs := r.URL.Query().Get("extra_args")
 
-	sess, isNew, err := getOrCreateSession(SessionParams{
+	// /api/fork stages SessionParams under sessionUUID and 302-redirects the
+	// browser here without spawning anything. If this UUID has a staged
+	// entry, consume it and use those params instead of the URL query --
+	// they carry the source session's WorkDir, ExtraArgs (with --resume
+	// appended), PrepopulateChatLog, etc. The entry is removed on first
+	// consumption so a reconnect after the session is live falls through
+	// to the normal existing-session path.
+	pendingForksMu.Lock()
+	staged, isPendingFork := pendingForks[sessionUUID]
+	if isPendingFork {
+		delete(pendingForks, sessionUUID)
+	}
+	pendingForksMu.Unlock()
+
+	params := SessionParams{
 		UUID:                sessionUUID,
 		Assistant:           assistant,
 		Name:                sessionName,
@@ -4818,7 +4844,16 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		Theme:               theme,
 		SessionMode:         sessionMode,
 		ExtraArgs:           extraArgs,
-	})
+	}
+	if isPendingFork {
+		// Preserve the UUID from the URL but override everything else with
+		// the staged params -- the URL only carries assistant + session
+		// mode for routing, the staged entry carries the real wiring.
+		staged.UUID = sessionUUID
+		params = staged
+	}
+
+	sess, isNew, err := getOrCreateSession(params)
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		// Send the full error as JSON before closing -- the WS close-reason
@@ -7009,7 +7044,15 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 	} else {
 		forkName = "fork: " + forkName
 	}
-	_, _, err = getOrCreateSession(SessionParams{
+
+	// Stage the SessionParams; the first WS client to hit /session/<newUUID>
+	// will materialize the session from this entry. Starting the PTY only
+	// after a client connects ensures claude's first render happens at the
+	// client's actual geometry, sidestepping the "blocked-on-stdin during
+	// SIGWINCH leaves a blank screen for the snapshot" bug that an eager
+	// getOrCreateSession would hit here.
+	pendingForksMu.Lock()
+	pendingForks[newUUID] = SessionParams{
 		UUID:               newUUID,
 		Assistant:          src.Assistant,
 		Name:               forkName,
@@ -7018,11 +7061,8 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		ExtraArgs:          extraArgs,
 		Theme:              src.Theme,
 		PrepopulateChatLog: src.ChatLogPath,
-	})
-	if err != nil {
-		http.Error(w, "create fork session: "+err.Error(), http.StatusInternalServerError)
-		return
 	}
+	pendingForksMu.Unlock()
 
 	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)
 }
