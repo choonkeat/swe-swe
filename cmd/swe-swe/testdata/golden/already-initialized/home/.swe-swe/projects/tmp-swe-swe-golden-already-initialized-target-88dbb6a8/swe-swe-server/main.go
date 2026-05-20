@@ -332,6 +332,12 @@ type RecordingMetadata struct {
 	WorkDir      string     `json:"work_dir,omitempty"`      // Working directory for VS Code links in playback
 	ExtraArgs    string     `json:"extra_args,omitempty"`    // Extra CLI flags appended to the agent command (for restart)
 	SummaryLine  string     `json:"summary_line,omitempty"`  // Cached one-line summary extracted from .log tail before compression (avoids per-request gzip decompression on the homepage)
+	// AgentSessionID is the agent-side session id (e.g. Claude's .jsonl filename
+	// stem, codex's rollout id) captured at session spawn so /api/fork can
+	// locate the exact source conversation without resorting to mtime guesses.
+	// Older recordings predate this field and leave it empty; fork falls back
+	// to the legacy lookup in that case.
+	AgentSessionID string `json:"agent_session_id,omitempty"`
 }
 
 // Visitor represents a client that joined the session
@@ -467,6 +473,7 @@ type Session struct {
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
 	SessionMode     string             // "terminal" or "chat"
 	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
+	AgentSessionID  string             // agent-side conversation id (e.g. Claude .jsonl stem); captured at spawn for /api/fork
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
 	PreviewProxy          *agentproxy.Proxy // Per-session preview proxy instance
 	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
@@ -4445,6 +4452,37 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		log.Printf("Session %s: extra CLI args: %s", p.UUID, p.ExtraArgs)
 	}
 
+	// Capture the agent's conversation id so /api/fork can locate the source
+	// .jsonl reliably. Three paths: id already specified in argv (--resume
+	// uuid, codex resume uuid, ...), explicit injection (claude --session-id),
+	// or post-spawn filesystem watch (codex, pi). See agent_session_id.go.
+	var (
+		agentSessionID    string
+		agentWatchDir     string
+		agentPreSnapshot  map[string]struct{}
+		unlockAgentSpawn  func()
+	)
+	if p.SessionMode == "chat" {
+		agentSessionID = parseKnownAgentSessionID(p.Assistant, cmdArgs)
+		if agentSessionID != "" {
+			log.Printf("Session %s: agent (%s) session id parsed from argv: %s", p.UUID, p.Assistant, agentSessionID)
+		} else {
+			var injectedID string
+			cmdArgs, injectedID = injectAgentSessionID(p.Assistant, cmdArgs)
+			if injectedID != "" {
+				agentSessionID = injectedID
+				log.Printf("Session %s: injected agent (%s) session id: %s", p.UUID, p.Assistant, injectedID)
+			} else if dir := agentSessionDir(p.Assistant, workDir); dir != "" {
+				// Need watch-based capture. Hold per-assistant mutex through
+				// snapshot+spawn+first-new-file so concurrent codex/pi spawns
+				// can't confuse each other.
+				unlockAgentSpawn = acquireAgentSpawnLock(p.Assistant)
+				agentWatchDir = dir
+				agentPreSnapshot = agentSessionFileSnapshot(dir)
+			}
+		}
+	}
+
 	// Wrap with script for recording
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
 	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
@@ -4548,23 +4586,35 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		agentChatCancel: sessionCancel,
 		SessionMode:     p.SessionMode,
 		ChatLogPath:     chatLogPath,
+		AgentSessionID:  agentSessionID,
 		Metadata: &RecordingMetadata{
-			UUID:          recordingUUID,
-			Name:          name,
-			Agent:         cfg.Name,
-			AgentBinary:   cfg.Binary,
-			RecordingType: recType,
-			SessionMode:   p.SessionMode,
-			BranchName:    p.Branch,
-			StartedAt:     now,
-			Command:       append([]string{cmdName}, cmdArgs...),
-			MaxCols:       80, // Default starting size
-			MaxRows:       24,
-			WorkDir:       workDir,
-			ExtraArgs:     p.ExtraArgs,
+			UUID:           recordingUUID,
+			Name:           name,
+			Agent:          cfg.Name,
+			AgentBinary:    cfg.Binary,
+			RecordingType:  recType,
+			SessionMode:    p.SessionMode,
+			BranchName:     p.Branch,
+			StartedAt:      now,
+			Command:        append([]string{cmdName}, cmdArgs...),
+			MaxCols:        80, // Default starting size
+			MaxRows:        24,
+			WorkDir:        workDir,
+			ExtraArgs:      p.ExtraArgs,
+			AgentSessionID: agentSessionID,
 		},
 	}
 	sessions[p.UUID] = sess
+
+	// If the agent session id wasn't known synchronously, watch the agent's
+	// session directory for the new file. The per-assistant spawn lock is
+	// released by the watcher when it terminates (success or 10s timeout).
+	if unlockAgentSpawn != nil {
+		go func() {
+			defer unlockAgentSpawn()
+			captureAgentSessionIDViaWatch(sess, agentWatchDir, agentPreSnapshot)
+		}()
+	}
 
 	// Create per-session preview proxy hosted inside swe-swe-server.
 	// Two instances share a DebugHub: path-based (with basePath prefix for URL
@@ -7018,10 +7068,20 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agentSessionID, err := findLatestClaudeSessionInWorkDir(src.WorkDir)
-	if err != nil {
-		http.Error(w, "locate claude session: "+err.Error(), http.StatusInternalServerError)
-		return
+	// Prefer the agent session id captured at spawn (Session.AgentSessionID).
+	// Fall back to the legacy "latest mtime in workdir" heuristic only for
+	// older sessions that started before the capture machinery existed; log
+	// when we fall back so the data ambiguity is visible.
+	agentSessionID := src.AgentSessionID
+	if agentSessionID == "" {
+		var err error
+		agentSessionID, err = findLatestClaudeSessionInWorkDir(src.WorkDir)
+		if err != nil {
+			http.Error(w, "locate claude session: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("WARN: /api/fork %s: source session has no captured AgentSessionID; falling back to mtime in %s -> %s",
+			sourceUUID, src.WorkDir, agentSessionID)
 	}
 
 	forkRes, err := forkconvo.Fork(forkconvo.Opts{
