@@ -801,6 +801,87 @@ func TestGoldenFiles(t *testing.T) {
 }
 
 // TestGoldenFilesMatchTemplate verifies golden Dockerfiles match template processing
+func TestInstallBundledSlashCommandsUsesCanonicalStoreAndSymlinks(t *testing.T) {
+	homeDir := t.TempDir()
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands: %v", err)
+	}
+
+	assertFileExists(t, filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe", "setup.md"))
+	assertFileExists(t, filepath.Join(homeDir, ".swe-swe", "commands", "toml", "swe-swe", "setup.toml"))
+
+	assertSymlinkTarget(t,
+		filepath.Join(homeDir, ".claude", "commands", "swe-swe"),
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
+	assertSymlinkTarget(t,
+		filepath.Join(homeDir, ".codex", "prompts", "swe-swe"),
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
+	assertSymlinkTarget(t,
+		filepath.Join(homeDir, ".config", "opencode", "command", "swe-swe"),
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
+	assertSymlinkTarget(t,
+		filepath.Join(homeDir, ".pi", "agent", "prompts", "swe-swe"),
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
+	assertSymlinkTarget(t,
+		filepath.Join(homeDir, ".gemini", "commands", "swe-swe"),
+		filepath.Join(homeDir, ".swe-swe", "commands", "toml", "swe-swe"))
+}
+
+func TestInstallBundledSlashCommandsLeavesExistingRealDirs(t *testing.T) {
+	homeDir := t.TempDir()
+	existingDir := filepath.Join(homeDir, ".claude", "commands", "swe-swe")
+	if err := os.MkdirAll(existingDir, 0755); err != nil {
+		t.Fatalf("mkdir existing dir: %v", err)
+	}
+	customFile := filepath.Join(existingDir, "custom.md")
+	if err := os.WriteFile(customFile, []byte("custom"), 0644); err != nil {
+		t.Fatalf("write custom file: %v", err)
+	}
+
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands should not fail on existing real dir: %v", err)
+	}
+	info, err := os.Lstat(existingDir)
+	if err != nil {
+		t.Fatalf("stat existing dir: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("existing real dir should not be replaced by a symlink")
+	}
+	if got, err := os.ReadFile(customFile); err != nil || string(got) != "custom" {
+		t.Fatalf("existing file was not preserved, got %q err=%v", got, err)
+	}
+}
+
+func assertFileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected file %s: %v", path, err)
+	}
+}
+
+func assertSymlinkTarget(t *testing.T, linkPath, wantTarget string) {
+	t.Helper()
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatalf("expected symlink %s: %v", linkPath, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %s to be a symlink, mode=%s", linkPath, info.Mode())
+	}
+	got, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("readlink %s: %v", linkPath, err)
+	}
+	if !filepath.IsAbs(got) {
+		got = filepath.Clean(filepath.Join(filepath.Dir(linkPath), got))
+	}
+	wantTarget = filepath.Clean(wantTarget)
+	if got != wantTarget {
+		t.Fatalf("symlink %s target = %s, want %s", linkPath, got, wantTarget)
+	}
+}
+
 func TestGoldenFilesMatchTemplate(t *testing.T) {
 	variants := []struct {
 		name          string
@@ -882,6 +963,35 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 				t.Errorf("Golden Dockerfile doesn't match template output for %s.\nExpected:\n%s\n\nActual:\n%s", v.name, expected, string(actual))
 			}
 		})
+	}
+}
+
+// TestProcessSimpleTemplate verifies simple template processing for docker-compose.yml and entrypoint.sh
+func TestProcessEntrypointTemplateSlashCommandsUseCanonicalStore(t *testing.T) {
+	input := `# {{IF SLASH_COMMANDS}}
+{{SLASH_COMMANDS_COPY}}
+# {{ENDIF}}`
+	got := processEntrypointTemplate(input, []string{"claude", "pi"}, false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}})
+
+	mustContain := []string{
+		`/home/app/.swe-swe/commands/md/ck`,
+		`cp -r /tmp/slash-commands/ck /home/app/.swe-swe/commands/md/ck`,
+		`ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.claude/commands/ck`,
+		`ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.pi/agent/prompts/ck`,
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(got, want) {
+			t.Fatalf("entrypoint output missing %q:\n%s", want, got)
+		}
+	}
+	mustNotContain := []string{
+		`/home/app/.codex/prompts/ck`,
+		`/home/app/.config/opencode/command/ck`,
+	}
+	for _, unwanted := range mustNotContain {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("entrypoint output unexpectedly contains %q:\n%s", unwanted, got)
+		}
 	}
 }
 
@@ -1213,4 +1323,3 @@ func TestSaveLoadInitConfig(t *testing.T) {
 		t.Errorf("Save/Load mismatch:\noriginal: %+v\nloaded: %+v", original, loaded)
 	}
 }
-

@@ -552,7 +552,6 @@ func vncProxyPort(port, offset int) int {
 	return offset + port
 }
 
-
 // processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions
 func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo) string {
 	// Helper to check if agent is selected
@@ -563,48 +562,55 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
 	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
 	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi"))
 
-	// Generate slash commands copy lines
+	// Generate slash commands copy/link lines. Custom slash command repos are
+	// materialized once into a swe-swe-owned canonical store, then projected into
+	// each selected agent's native command directory with symlinks.
 	var slashCommandsCopy string
 	if hasSlashCommands {
 		var copyLines []string
 		for _, repo := range slashCommands {
-			// Helper: generate slash command copy block for an agent
-			genSlashBlock := func(agentName, configDir, subDir string) string {
-				pullCmd := fmt.Sprintf(`(cd %s/%s && git pull) 2>/dev/null`, configDir, repo.Alias)
-				if withDocker {
-					pullCmd = fmt.Sprintf(`su -s /bin/bash app -c "cd %s/%s && git pull" 2>/dev/null`, configDir, repo.Alias)
-				}
-				chownLine := ""
-				if withDocker {
-					chownLine = fmt.Sprintf("\n    chown -R app:app %s/%s", configDir, repo.Alias)
-				}
-				return fmt.Sprintf(`if [ -d "%s/%s/.git" ]; then
+			centralDir := "/home/app/.swe-swe/commands/md/" + repo.Alias
+			pullCmd := fmt.Sprintf(`(cd %s && git pull) 2>/dev/null`, centralDir)
+			if withDocker {
+				pullCmd = fmt.Sprintf(`su -s /bin/bash app -c "cd %s && git pull" 2>/dev/null`, centralDir)
+			}
+			chownLine := ""
+			if withDocker {
+				chownLine = fmt.Sprintf("\n    chown -R app:app %s", centralDir)
+			}
+			copyLines = append(copyLines, fmt.Sprintf(`if [ -d "%s/.git" ]; then
     # Try to pull updates (best effort)
-    git config --global --add safe.directory %s/%s 2>/dev/null || true
+    git config --global --add safe.directory %s 2>/dev/null || true
     %s && \
-        echo -e "${GREEN}[ok] Updated slash commands: %s (%s)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: %s (%s)${NC}"
+        echo -e "${GREEN}[ok] Updated slash commands: %s (swe-swe store)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: %s (swe-swe store)${NC}"
 elif [ -d "/tmp/slash-commands/%s" ]; then
-    mkdir -p %s
-    cp -r /tmp/slash-commands/%s %s/%s%s
-    echo -e "${GREEN}[ok] Installed slash commands: %s (%s)${NC}"
-fi`, configDir, repo.Alias, configDir, repo.Alias, pullCmd, repo.Alias, agentName, repo.Alias, agentName, repo.Alias, configDir, repo.Alias, configDir, repo.Alias, chownLine, repo.Alias, agentName)
+    mkdir -p "$(dirname "%s")"
+    cp -r /tmp/slash-commands/%s %s%s
+    echo -e "${GREEN}[ok] Installed slash commands: %s (swe-swe store)${NC}"
+fi`, centralDir, centralDir, pullCmd, repo.Alias, repo.Alias, repo.Alias, centralDir, repo.Alias, centralDir, chownLine, repo.Alias))
+
+			genLinkBlock := func(agentName, configDir string) string {
+				linkPath := configDir + "/" + repo.Alias
+				return fmt.Sprintf(`if [ -e "%s" ] && [ ! -L "%s" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: %s (%s)${NC}"
+elif [ -d "%s" ]; then
+    mkdir -p "$(dirname "%s")"
+    ln -sfn %s %s
+    echo -e "${GREEN}[ok] Linked slash commands: %s (%s)${NC}"
+fi`, linkPath, linkPath, linkPath, agentName, centralDir, linkPath, centralDir, linkPath, repo.Alias, agentName)
 			}
-			// Claude
 			if hasAgent("claude") {
-				copyLines = append(copyLines, genSlashBlock("claude", "/home/app/.claude/commands", repo.Alias))
+				copyLines = append(copyLines, genLinkBlock("claude", "/home/app/.claude/commands"))
 			}
-			// Codex
 			if hasAgent("codex") {
-				copyLines = append(copyLines, genSlashBlock("codex", "/home/app/.codex/prompts", repo.Alias))
+				copyLines = append(copyLines, genLinkBlock("codex", "/home/app/.codex/prompts"))
 			}
-			// OpenCode
 			if hasAgent("opencode") {
-				copyLines = append(copyLines, genSlashBlock("opencode", "/home/app/.config/opencode/command", repo.Alias))
+				copyLines = append(copyLines, genLinkBlock("opencode", "/home/app/.config/opencode/command"))
 			}
-			// Pi
 			if hasAgent("pi") {
-				copyLines = append(copyLines, genSlashBlock("pi", "/home/app/.pi/agent/prompts", repo.Alias))
+				copyLines = append(copyLines, genLinkBlock("pi", "/home/app/.pi/agent/prompts"))
 			}
 		}
 		slashCommandsCopy = strings.Join(copyLines, "\n")

@@ -70,6 +70,79 @@ func writeBundledSlashCommands(destDir string, ext string) error {
 		return nil
 	})
 }
+
+// installBundledSlashCommands writes swe-swe's bundled slash commands once to a
+// canonical swe-swe-owned store, then projects that store into each agent's
+// native command directory using relative symlinks that work both on the host
+// metadata tree and inside the /home/app container mount.
+func installBundledSlashCommands(homeDir string) error {
+	mdDir := filepath.Join(homeDir, ".swe-swe", "commands", "md")
+	tomlDir := filepath.Join(homeDir, ".swe-swe", "commands", "toml")
+	if err := writeBundledSlashCommands(mdDir, ".md"); err != nil {
+		return err
+	}
+	if err := writeBundledSlashCommands(tomlDir, ".toml"); err != nil {
+		return err
+	}
+
+	mdSweSweDir := filepath.Join(mdDir, "swe-swe")
+	tomlSweSweDir := filepath.Join(tomlDir, "swe-swe")
+	projections := []struct {
+		link   string
+		target string
+	}{
+		{filepath.Join(homeDir, ".claude", "commands", "swe-swe"), mdSweSweDir},
+		{filepath.Join(homeDir, ".codex", "prompts", "swe-swe"), mdSweSweDir},
+		{filepath.Join(homeDir, ".config", "opencode", "command", "swe-swe"), mdSweSweDir},
+		{filepath.Join(homeDir, ".pi", "agent", "prompts", "swe-swe"), mdSweSweDir},
+		{filepath.Join(homeDir, ".gemini", "commands", "swe-swe"), tomlSweSweDir},
+	}
+	for _, projection := range projections {
+		if err := ensureRelativeSymlink(projection.link, projection.target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureRelativeSymlink(linkPath, targetPath string) error {
+	parent := filepath.Dir(linkPath)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return fmt.Errorf("creating symlink parent %s: %w", parent, err)
+	}
+	relTarget, err := filepath.Rel(parent, targetPath)
+	if err != nil {
+		return fmt.Errorf("computing relative symlink from %s to %s: %w", linkPath, targetPath, err)
+	}
+
+	info, err := os.Lstat(linkPath)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink == 0 {
+			// Preserve existing real directories/files. This keeps upgrades from
+			// clobbering user-owned command directories or older swe-swe installs;
+			// the canonical store is still written for new projections.
+			return nil
+		}
+		current, err := os.Readlink(linkPath)
+		if err != nil {
+			return fmt.Errorf("reading symlink %s: %w", linkPath, err)
+		}
+		if current == relTarget {
+			return nil
+		}
+		if err := os.Remove(linkPath); err != nil {
+			return fmt.Errorf("replacing symlink %s: %w", linkPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("checking symlink %s: %w", linkPath, err)
+	}
+
+	if err := os.Symlink(relTarget, linkPath); err != nil {
+		return fmt.Errorf("creating symlink %s -> %s: %w", linkPath, relTarget, err)
+	}
+	return nil
+}
+
 // allAgents lists all available AI agents that can be installed
 var allAgents = []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}
 
@@ -101,7 +174,7 @@ type InitConfig struct {
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
-	DockerfileOnly      bool                `json:"-"`                      // computed: true when SSL=="no" && !WithVSCode
+	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	CLIVersion          string              `json:"cliVersion,omitempty"`
 }
@@ -682,16 +755,16 @@ func handleInit() {
 
 	// Build config from parsed flag values
 	config := InitConfig{
-		Agents:              agents,
-		AptPackages:         aptPkgs,
-		NpmPackages:         npmPkgs,
-		WithDocker:          *withDocker,
-		WithVSCode:          *withVSCode,
+		Agents:      agents,
+		AptPackages: aptPkgs,
+		NpmPackages: npmPkgs,
+		WithDocker:  *withDocker,
+		WithVSCode:  *withVSCode,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:
 		// service, drop per-port labels, add SWE_TUNNEL_SERVER_URL env.
-		DockerfileOnly: *sslFlag == "no" && !*withVSCode && *tunnelServerURL == "",
+		DockerfileOnly:      *sslFlag == "no" && !*withVSCode && *tunnelServerURL == "",
 		SlashCommands:       slashCmds,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
@@ -848,23 +921,10 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		}
 	}
 
-	// Write bundled slash commands to agent-specific directories
-	// .md files go to Claude, Codex, OpenCode, and Pi directories
-	// .toml files go to Gemini directory
-	slashCmdAgentDirs := []struct {
-		dir string
-		ext string
-	}{
-		{filepath.Join(homeDir, ".claude", "commands"), ".md"},
-		{filepath.Join(homeDir, ".codex", "prompts"), ".md"},
-		{filepath.Join(homeDir, ".config", "opencode", "command"), ".md"},
-		{filepath.Join(homeDir, ".gemini", "commands"), ".toml"},
-		{filepath.Join(homeDir, ".pi", "agent", "prompts"), ".md"},
-	}
-	for _, agent := range slashCmdAgentDirs {
-		if err := writeBundledSlashCommands(agent.dir, agent.ext); err != nil {
-			log.Fatalf("Failed to write bundled slash commands to %s: %v", agent.dir, err)
-		}
+	// Write bundled slash commands once to a swe-swe-owned canonical store,
+	// then project them into each agent-specific directory.
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		log.Fatalf("Failed to install bundled slash commands: %v", err)
 	}
 
 	// Write .path file to record the project path

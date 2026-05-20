@@ -137,6 +137,72 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("pi project autocomplete reads pi prompts", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		projectDir := filepath.Join(tmpDir, "project")
+		mkdirAll(t, filepath.Join(projectDir, ".pi", "prompts", "swe-swe"))
+		writeFile(t, filepath.Join(projectDir, ".pi", "prompts", "swe-swe", "zzzz-pi-project-only-123.md"),
+			"---\ndescription: Pi-only project command\n---\n")
+
+		sessions["test-uuid"] = &Session{
+			UUID:      "test-uuid",
+			Assistant: "pi",
+			WorkDir:   projectDir,
+			AssistantConfig: AssistantConfig{
+				SlashCmdFormat: SlashCmdMD,
+			},
+		}
+		defer delete(sessions, "test-uuid")
+
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":"zzzzpi"}`))
+		w := httptest.NewRecorder()
+		handleAutocompleteAPI(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp autocompleteResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if !hasAutocompleteValue(resp.Results, "swe-swe:zzzz-pi-project-only-123") {
+			t.Fatalf("expected pi project command in results, got %+v", resp.Results)
+		}
+	})
+
+	t.Run("pi project autocomplete projects legacy claude commands", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		projectDir := filepath.Join(tmpDir, "project")
+		mkdirAll(t, filepath.Join(projectDir, ".claude", "commands", "swe-swe"))
+		writeFile(t, filepath.Join(projectDir, ".claude", "commands", "swe-swe", "zzzz-claude-project-only-123.md"),
+			"---\ndescription: Claude-only project command\n---\n")
+
+		sessions["test-uuid"] = &Session{
+			UUID:      "test-uuid",
+			Assistant: "pi",
+			WorkDir:   projectDir,
+			AssistantConfig: AssistantConfig{
+				SlashCmdFormat: SlashCmdMD,
+			},
+		}
+		defer delete(sessions, "test-uuid")
+
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":"zzzzclaude"}`))
+		w := httptest.NewRecorder()
+		handleAutocompleteAPI(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp autocompleteResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if !hasAutocompleteValue(resp.Results, "swe-swe:zzzz-claude-project-only-123") {
+			t.Fatalf("expected pi autocomplete to find projected legacy claude command, got %+v", resp.Results)
+		}
+		assertSymlink(t, filepath.Join(projectDir, ".swe-swe", "commands", "md"))
+		assertSymlink(t, filepath.Join(projectDir, ".pi", "prompts"))
+	})
+
 	t.Run("returns empty results for agent with no slash commands", func(t *testing.T) {
 		sessions["test-uuid"] = &Session{
 			UUID:      "test-uuid",
@@ -162,6 +228,26 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 			t.Error("expected has_more to be false")
 		}
 	})
+}
+
+func assertSymlink(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("expected symlink %s: %v", path, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %s to be a symlink, got mode %s", path, info.Mode())
+	}
+}
+
+func hasAutocompleteValue(items []autocompleteItem, value string) bool {
+	for _, item := range items {
+		if item.V == value {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSlashCommandDiscovery(t *testing.T) {
@@ -326,6 +412,7 @@ func TestProjectCommandDir(t *testing.T) {
 		{"codex", "/workspace", "/workspace/.codex/prompts"},
 		{"opencode", "/workspace", "/workspace/.opencode/command"},
 		{"gemini", "/workspace", "/workspace/.gemini/commands"},
+		{"pi", "/workspace", "/workspace/.pi/prompts"},
 		{"shell", "/workspace", ""},
 		{"claude", "", ""},
 	}
@@ -350,6 +437,7 @@ func TestSlashCommandDirForAgent(t *testing.T) {
 		{"codex", SlashCmdMD, "/home/app/.codex/prompts", "md"},
 		{"opencode", SlashCmdMD, "/home/app/.config/opencode/command", "md"},
 		{"gemini", SlashCmdTOML, "/home/app/.gemini/commands", "toml"},
+		{"pi", SlashCmdMD, "/home/app/.pi/agent/prompts", "md"},
 		{"shell", SlashCmdNone, "", ""},
 	}
 	for _, tt := range tests {
