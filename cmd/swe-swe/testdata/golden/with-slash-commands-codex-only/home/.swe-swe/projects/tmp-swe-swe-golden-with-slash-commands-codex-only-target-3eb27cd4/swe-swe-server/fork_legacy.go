@@ -149,12 +149,10 @@ func fingerprintClaudeSessionByEvents(workDir, chatLogPath string) (string, erro
 	if len(needles) == 0 {
 		return "", fmt.Errorf("chat events file has no agentMessage/verbalReply texts to fingerprint with")
 	}
-	encoded := strings.ReplaceAll(workDir, "/", "-")
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	dir := agentSessionDir("claude", workDir)
+	if dir == "" {
+		return "", fmt.Errorf("no claude session dir for workdir %s", workDir)
 	}
-	dir := filepath.Join(home, ".claude", "projects", encoded)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", dir, err)
