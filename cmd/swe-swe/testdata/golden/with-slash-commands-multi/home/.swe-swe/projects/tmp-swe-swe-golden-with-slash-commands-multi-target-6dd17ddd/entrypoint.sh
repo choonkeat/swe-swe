@@ -14,93 +14,83 @@ NC='\033[0m' # No Color
 
 
 # Copy slash commands to agent directories
-if [ -d "/home/app/.claude/commands/ck/.git" ]; then
+if [ -d "/home/app/.swe-swe/commands/md/ck/.git" ]; then
     # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.claude/commands/ck 2>/dev/null || true
-    (cd /home/app/.claude/commands/ck && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: ck (claude)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: ck (claude)${NC}"
+    git config --global --add safe.directory /home/app/.swe-swe/commands/md/ck 2>/dev/null || true
+    (cd /home/app/.swe-swe/commands/md/ck && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated slash commands: ck (swe-swe store)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: ck (swe-swe store)${NC}"
 elif [ -d "/tmp/slash-commands/ck" ]; then
-    mkdir -p /home/app/.claude/commands
-    cp -r /tmp/slash-commands/ck /home/app/.claude/commands/ck
-    echo -e "${GREEN}[ok] Installed slash commands: ck (claude)${NC}"
+    mkdir -p "$(dirname "/home/app/.swe-swe/commands/md/ck")"
+    cp -r /tmp/slash-commands/ck /home/app/.swe-swe/commands/md/ck
+    echo -e "${GREEN}[ok] Installed slash commands: ck (swe-swe store)${NC}"
 fi
-if [ -d "/home/app/.codex/prompts/ck/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.codex/prompts/ck 2>/dev/null || true
-    (cd /home/app/.codex/prompts/ck && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: ck (codex)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: ck (codex)${NC}"
-elif [ -d "/tmp/slash-commands/ck" ]; then
-    mkdir -p /home/app/.codex/prompts
-    cp -r /tmp/slash-commands/ck /home/app/.codex/prompts/ck
-    echo -e "${GREEN}[ok] Installed slash commands: ck (codex)${NC}"
+if [ -e "/home/app/.claude/commands/ck" ] && [ ! -L "/home/app/.claude/commands/ck" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.claude/commands/ck (claude)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
+    mkdir -p "$(dirname "/home/app/.claude/commands/ck")"
+    ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.claude/commands/ck
+    echo -e "${GREEN}[ok] Linked slash commands: ck (claude)${NC}"
 fi
-if [ -d "/home/app/.config/opencode/command/ck/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.config/opencode/command/ck 2>/dev/null || true
-    (cd /home/app/.config/opencode/command/ck && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: ck (opencode)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: ck (opencode)${NC}"
-elif [ -d "/tmp/slash-commands/ck" ]; then
-    mkdir -p /home/app/.config/opencode/command
-    cp -r /tmp/slash-commands/ck /home/app/.config/opencode/command/ck
-    echo -e "${GREEN}[ok] Installed slash commands: ck (opencode)${NC}"
+if [ -e "/home/app/.codex/prompts/ck" ] && [ ! -L "/home/app/.codex/prompts/ck" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.codex/prompts/ck (codex)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
+    mkdir -p "$(dirname "/home/app/.codex/prompts/ck")"
+    ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.codex/prompts/ck
+    echo -e "${GREEN}[ok] Linked slash commands: ck (codex)${NC}"
 fi
-if [ -d "/home/app/.pi/agent/prompts/ck/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.pi/agent/prompts/ck 2>/dev/null || true
-    (cd /home/app/.pi/agent/prompts/ck && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: ck (pi)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: ck (pi)${NC}"
-elif [ -d "/tmp/slash-commands/ck" ]; then
-    mkdir -p /home/app/.pi/agent/prompts
-    cp -r /tmp/slash-commands/ck /home/app/.pi/agent/prompts/ck
-    echo -e "${GREEN}[ok] Installed slash commands: ck (pi)${NC}"
+if [ -e "/home/app/.config/opencode/command/ck" ] && [ ! -L "/home/app/.config/opencode/command/ck" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.config/opencode/command/ck (opencode)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
+    mkdir -p "$(dirname "/home/app/.config/opencode/command/ck")"
+    ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.config/opencode/command/ck
+    echo -e "${GREEN}[ok] Linked slash commands: ck (opencode)${NC}"
 fi
-if [ -d "/home/app/.claude/commands/org/team-cmds/.git" ]; then
+if [ -e "/home/app/.pi/agent/prompts/ck" ] && [ ! -L "/home/app/.pi/agent/prompts/ck" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.pi/agent/prompts/ck (pi)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
+    mkdir -p "$(dirname "/home/app/.pi/agent/prompts/ck")"
+    ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.pi/agent/prompts/ck
+    echo -e "${GREEN}[ok] Linked slash commands: ck (pi)${NC}"
+fi
+if [ -d "/home/app/.swe-swe/commands/md/org/team-cmds/.git" ]; then
     # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.claude/commands/org/team-cmds 2>/dev/null || true
-    (cd /home/app/.claude/commands/org/team-cmds && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: org/team-cmds (claude)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: org/team-cmds (claude)${NC}"
+    git config --global --add safe.directory /home/app/.swe-swe/commands/md/org/team-cmds 2>/dev/null || true
+    (cd /home/app/.swe-swe/commands/md/org/team-cmds && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated slash commands: org/team-cmds (swe-swe store)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: org/team-cmds (swe-swe store)${NC}"
 elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
-    mkdir -p /home/app/.claude/commands
-    cp -r /tmp/slash-commands/org/team-cmds /home/app/.claude/commands/org/team-cmds
-    echo -e "${GREEN}[ok] Installed slash commands: org/team-cmds (claude)${NC}"
+    mkdir -p "$(dirname "/home/app/.swe-swe/commands/md/org/team-cmds")"
+    cp -r /tmp/slash-commands/org/team-cmds /home/app/.swe-swe/commands/md/org/team-cmds
+    echo -e "${GREEN}[ok] Installed slash commands: org/team-cmds (swe-swe store)${NC}"
 fi
-if [ -d "/home/app/.codex/prompts/org/team-cmds/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.codex/prompts/org/team-cmds 2>/dev/null || true
-    (cd /home/app/.codex/prompts/org/team-cmds && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: org/team-cmds (codex)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: org/team-cmds (codex)${NC}"
-elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
-    mkdir -p /home/app/.codex/prompts
-    cp -r /tmp/slash-commands/org/team-cmds /home/app/.codex/prompts/org/team-cmds
-    echo -e "${GREEN}[ok] Installed slash commands: org/team-cmds (codex)${NC}"
+if [ -e "/home/app/.claude/commands/org/team-cmds" ] && [ ! -L "/home/app/.claude/commands/org/team-cmds" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.claude/commands/org/team-cmds (claude)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/org/team-cmds" ]; then
+    mkdir -p "$(dirname "/home/app/.claude/commands/org/team-cmds")"
+    ln -sfn /home/app/.swe-swe/commands/md/org/team-cmds /home/app/.claude/commands/org/team-cmds
+    echo -e "${GREEN}[ok] Linked slash commands: org/team-cmds (claude)${NC}"
 fi
-if [ -d "/home/app/.config/opencode/command/org/team-cmds/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.config/opencode/command/org/team-cmds 2>/dev/null || true
-    (cd /home/app/.config/opencode/command/org/team-cmds && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: org/team-cmds (opencode)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: org/team-cmds (opencode)${NC}"
-elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
-    mkdir -p /home/app/.config/opencode/command
-    cp -r /tmp/slash-commands/org/team-cmds /home/app/.config/opencode/command/org/team-cmds
-    echo -e "${GREEN}[ok] Installed slash commands: org/team-cmds (opencode)${NC}"
+if [ -e "/home/app/.codex/prompts/org/team-cmds" ] && [ ! -L "/home/app/.codex/prompts/org/team-cmds" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.codex/prompts/org/team-cmds (codex)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/org/team-cmds" ]; then
+    mkdir -p "$(dirname "/home/app/.codex/prompts/org/team-cmds")"
+    ln -sfn /home/app/.swe-swe/commands/md/org/team-cmds /home/app/.codex/prompts/org/team-cmds
+    echo -e "${GREEN}[ok] Linked slash commands: org/team-cmds (codex)${NC}"
 fi
-if [ -d "/home/app/.pi/agent/prompts/org/team-cmds/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.pi/agent/prompts/org/team-cmds 2>/dev/null || true
-    (cd /home/app/.pi/agent/prompts/org/team-cmds && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: org/team-cmds (pi)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: org/team-cmds (pi)${NC}"
-elif [ -d "/tmp/slash-commands/org/team-cmds" ]; then
-    mkdir -p /home/app/.pi/agent/prompts
-    cp -r /tmp/slash-commands/org/team-cmds /home/app/.pi/agent/prompts/org/team-cmds
-    echo -e "${GREEN}[ok] Installed slash commands: org/team-cmds (pi)${NC}"
+if [ -e "/home/app/.config/opencode/command/org/team-cmds" ] && [ ! -L "/home/app/.config/opencode/command/org/team-cmds" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.config/opencode/command/org/team-cmds (opencode)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/org/team-cmds" ]; then
+    mkdir -p "$(dirname "/home/app/.config/opencode/command/org/team-cmds")"
+    ln -sfn /home/app/.swe-swe/commands/md/org/team-cmds /home/app/.config/opencode/command/org/team-cmds
+    echo -e "${GREEN}[ok] Linked slash commands: org/team-cmds (opencode)${NC}"
+fi
+if [ -e "/home/app/.pi/agent/prompts/org/team-cmds" ] && [ ! -L "/home/app/.pi/agent/prompts/org/team-cmds" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.pi/agent/prompts/org/team-cmds (pi)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/org/team-cmds" ]; then
+    mkdir -p "$(dirname "/home/app/.pi/agent/prompts/org/team-cmds")"
+    ln -sfn /home/app/.swe-swe/commands/md/org/team-cmds /home/app/.pi/agent/prompts/org/team-cmds
+    echo -e "${GREEN}[ok] Linked slash commands: org/team-cmds (pi)${NC}"
 fi
 
 # Create OpenCode MCP configuration

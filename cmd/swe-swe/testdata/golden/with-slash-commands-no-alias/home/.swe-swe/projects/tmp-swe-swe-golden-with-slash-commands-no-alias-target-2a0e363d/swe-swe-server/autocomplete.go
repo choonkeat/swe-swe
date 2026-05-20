@@ -72,6 +72,11 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Self-heal project/worktree command projections before discovery. This keeps
+	// Pi sessions compatible with existing projects that only have Claude-style
+	// project slash commands checked in or symlinked from the base worktree.
+	ensureProjectSlashCommandProjections(sess.WorkDir)
+
 	// Collect commands from project-level and system-level directories.
 	// Project-level commands come FIRST so they appear ahead of system
 	// commands in the unranked (empty-query) order. For non-empty queries
@@ -179,6 +184,47 @@ func projectCommandDir(assistant string, workDir string) string {
 	default:
 		return ""
 	}
+}
+
+// ensureProjectSlashCommandProjections creates best-effort project-local
+// symlink projections from legacy Claude project commands to swe-swe's
+// canonical project command store and Pi's project prompt directory. It is
+// intentionally conservative: existing files/directories are never clobbered.
+func ensureProjectSlashCommandProjections(workDir string) {
+	if workDir == "" {
+		return
+	}
+	claudeCommands := filepath.Join(workDir, ".claude", "commands")
+	if info, err := os.Stat(claudeCommands); err != nil || !info.IsDir() {
+		return
+	}
+
+	canonicalMD := filepath.Join(workDir, ".swe-swe", "commands", "md")
+	ensureRelativeSymlinkIfMissing(canonicalMD, claudeCommands)
+
+	// If canonicalMD already existed as a real directory, project that. If it was
+	// absent, the helper above made it a symlink to .claude/commands.
+	if info, err := os.Stat(canonicalMD); err != nil || !info.IsDir() {
+		return
+	}
+	ensureRelativeSymlinkIfMissing(filepath.Join(workDir, ".pi", "prompts"), canonicalMD)
+}
+
+func ensureRelativeSymlinkIfMissing(linkPath, targetPath string) {
+	if _, err := os.Lstat(linkPath); err == nil {
+		return
+	} else if !os.IsNotExist(err) {
+		return
+	}
+	parent := filepath.Dir(linkPath)
+	if err := os.MkdirAll(parent, 0755); err != nil {
+		return
+	}
+	relTarget, err := filepath.Rel(parent, targetPath)
+	if err != nil {
+		return
+	}
+	_ = os.Symlink(relTarget, linkPath)
 }
 
 // discoverSlashCommands scans a slash command directory and returns all

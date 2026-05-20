@@ -14,49 +14,44 @@ NC='\033[0m' # No Color
 
 
 # Copy slash commands to agent directories
-if [ -d "/home/app/.claude/commands/choonkeat/slash-commands/.git" ]; then
+if [ -d "/home/app/.swe-swe/commands/md/choonkeat/slash-commands/.git" ]; then
     # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.claude/commands/choonkeat/slash-commands 2>/dev/null || true
-    (cd /home/app/.claude/commands/choonkeat/slash-commands && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: choonkeat/slash-commands (claude)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (claude)${NC}"
+    git config --global --add safe.directory /home/app/.swe-swe/commands/md/choonkeat/slash-commands 2>/dev/null || true
+    (cd /home/app/.swe-swe/commands/md/choonkeat/slash-commands && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated slash commands: choonkeat/slash-commands (swe-swe store)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (swe-swe store)${NC}"
 elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
-    mkdir -p /home/app/.claude/commands
-    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.claude/commands/choonkeat/slash-commands
-    echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (claude)${NC}"
+    mkdir -p "$(dirname "/home/app/.swe-swe/commands/md/choonkeat/slash-commands")"
+    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.swe-swe/commands/md/choonkeat/slash-commands
+    echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (swe-swe store)${NC}"
 fi
-if [ -d "/home/app/.codex/prompts/choonkeat/slash-commands/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.codex/prompts/choonkeat/slash-commands 2>/dev/null || true
-    (cd /home/app/.codex/prompts/choonkeat/slash-commands && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: choonkeat/slash-commands (codex)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (codex)${NC}"
-elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
-    mkdir -p /home/app/.codex/prompts
-    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.codex/prompts/choonkeat/slash-commands
-    echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (codex)${NC}"
+if [ -e "/home/app/.claude/commands/choonkeat/slash-commands" ] && [ ! -L "/home/app/.claude/commands/choonkeat/slash-commands" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.claude/commands/choonkeat/slash-commands (claude)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/choonkeat/slash-commands" ]; then
+    mkdir -p "$(dirname "/home/app/.claude/commands/choonkeat/slash-commands")"
+    ln -sfn /home/app/.swe-swe/commands/md/choonkeat/slash-commands /home/app/.claude/commands/choonkeat/slash-commands
+    echo -e "${GREEN}[ok] Linked slash commands: choonkeat/slash-commands (claude)${NC}"
 fi
-if [ -d "/home/app/.config/opencode/command/choonkeat/slash-commands/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.config/opencode/command/choonkeat/slash-commands 2>/dev/null || true
-    (cd /home/app/.config/opencode/command/choonkeat/slash-commands && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: choonkeat/slash-commands (opencode)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (opencode)${NC}"
-elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
-    mkdir -p /home/app/.config/opencode/command
-    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.config/opencode/command/choonkeat/slash-commands
-    echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (opencode)${NC}"
+if [ -e "/home/app/.codex/prompts/choonkeat/slash-commands" ] && [ ! -L "/home/app/.codex/prompts/choonkeat/slash-commands" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.codex/prompts/choonkeat/slash-commands (codex)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/choonkeat/slash-commands" ]; then
+    mkdir -p "$(dirname "/home/app/.codex/prompts/choonkeat/slash-commands")"
+    ln -sfn /home/app/.swe-swe/commands/md/choonkeat/slash-commands /home/app/.codex/prompts/choonkeat/slash-commands
+    echo -e "${GREEN}[ok] Linked slash commands: choonkeat/slash-commands (codex)${NC}"
 fi
-if [ -d "/home/app/.pi/agent/prompts/choonkeat/slash-commands/.git" ]; then
-    # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.pi/agent/prompts/choonkeat/slash-commands 2>/dev/null || true
-    (cd /home/app/.pi/agent/prompts/choonkeat/slash-commands && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: choonkeat/slash-commands (pi)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: choonkeat/slash-commands (pi)${NC}"
-elif [ -d "/tmp/slash-commands/choonkeat/slash-commands" ]; then
-    mkdir -p /home/app/.pi/agent/prompts
-    cp -r /tmp/slash-commands/choonkeat/slash-commands /home/app/.pi/agent/prompts/choonkeat/slash-commands
-    echo -e "${GREEN}[ok] Installed slash commands: choonkeat/slash-commands (pi)${NC}"
+if [ -e "/home/app/.config/opencode/command/choonkeat/slash-commands" ] && [ ! -L "/home/app/.config/opencode/command/choonkeat/slash-commands" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.config/opencode/command/choonkeat/slash-commands (opencode)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/choonkeat/slash-commands" ]; then
+    mkdir -p "$(dirname "/home/app/.config/opencode/command/choonkeat/slash-commands")"
+    ln -sfn /home/app/.swe-swe/commands/md/choonkeat/slash-commands /home/app/.config/opencode/command/choonkeat/slash-commands
+    echo -e "${GREEN}[ok] Linked slash commands: choonkeat/slash-commands (opencode)${NC}"
+fi
+if [ -e "/home/app/.pi/agent/prompts/choonkeat/slash-commands" ] && [ ! -L "/home/app/.pi/agent/prompts/choonkeat/slash-commands" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.pi/agent/prompts/choonkeat/slash-commands (pi)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/choonkeat/slash-commands" ]; then
+    mkdir -p "$(dirname "/home/app/.pi/agent/prompts/choonkeat/slash-commands")"
+    ln -sfn /home/app/.swe-swe/commands/md/choonkeat/slash-commands /home/app/.pi/agent/prompts/choonkeat/slash-commands
+    echo -e "${GREEN}[ok] Linked slash commands: choonkeat/slash-commands (pi)${NC}"
 fi
 
 # Create OpenCode MCP configuration

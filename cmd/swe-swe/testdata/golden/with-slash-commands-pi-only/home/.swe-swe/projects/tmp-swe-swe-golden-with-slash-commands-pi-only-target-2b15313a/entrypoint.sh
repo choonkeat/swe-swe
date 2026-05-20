@@ -14,16 +14,23 @@ NC='\033[0m' # No Color
 
 
 # Copy slash commands to agent directories
-if [ -d "/home/app/.pi/agent/prompts/ck/.git" ]; then
+if [ -d "/home/app/.swe-swe/commands/md/ck/.git" ]; then
     # Try to pull updates (best effort)
-    git config --global --add safe.directory /home/app/.pi/agent/prompts/ck 2>/dev/null || true
-    (cd /home/app/.pi/agent/prompts/ck && git pull) 2>/dev/null && \
-        echo -e "${GREEN}[ok] Updated slash commands: ck (pi)${NC}" || \
-        echo -e "${YELLOW}⚠ Could not update slash commands: ck (pi)${NC}"
+    git config --global --add safe.directory /home/app/.swe-swe/commands/md/ck 2>/dev/null || true
+    (cd /home/app/.swe-swe/commands/md/ck && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated slash commands: ck (swe-swe store)${NC}" || \
+        echo -e "${YELLOW}⚠ Could not update slash commands: ck (swe-swe store)${NC}"
 elif [ -d "/tmp/slash-commands/ck" ]; then
-    mkdir -p /home/app/.pi/agent/prompts
-    cp -r /tmp/slash-commands/ck /home/app/.pi/agent/prompts/ck
-    echo -e "${GREEN}[ok] Installed slash commands: ck (pi)${NC}"
+    mkdir -p "$(dirname "/home/app/.swe-swe/commands/md/ck")"
+    cp -r /tmp/slash-commands/ck /home/app/.swe-swe/commands/md/ck
+    echo -e "${GREEN}[ok] Installed slash commands: ck (swe-swe store)${NC}"
+fi
+if [ -e "/home/app/.pi/agent/prompts/ck" ] && [ ! -L "/home/app/.pi/agent/prompts/ck" ]; then
+    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.pi/agent/prompts/ck (pi)${NC}"
+elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
+    mkdir -p "$(dirname "/home/app/.pi/agent/prompts/ck")"
+    ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.pi/agent/prompts/ck
+    echo -e "${GREEN}[ok] Linked slash commands: ck (pi)${NC}"
 fi
 
 
