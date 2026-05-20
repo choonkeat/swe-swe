@@ -7023,19 +7023,20 @@ func endSessionByUUID(sessionUUID string) error {
 
 // handleSessionForkAPI handles GET /api/fork/{source-session-uuid}.
 //
-// MVP: fork only supports chat-mode Claude sessions. The handler:
-//  1. locates the source session and its Claude .jsonl by mtime in
-//     ~/.claude/projects/<encoded-workdir>/
-//  2. forks the .jsonl at the last agent-chat send_message reply via the
+// Fork supports chat-mode Claude sessions, live or ended. The handler:
+//  1. resolves the source from the in-memory sessions map; on miss, hydrates
+//     from the recording metadata + chat events file on disk
+//  2. determines the source Claude .jsonl via Session.AgentSessionID (captured
+//     at spawn); for legacy recordings that predate that capture, falls back
+//     to fingerprint-matching the chat events against tool_use texts in each
+//     candidate .jsonl
+//  3. forks the .jsonl at the last agent-chat send_message reply via the
 //     forkconvo package
-//  3. spawns a new swe-swe session (same assistant, workdir, mode) with
-//     ExtraArgs += " --resume <fork-id>" so claude --resume picks up the
-//     forked file, and PrepopulateChatLog set so the chat tab replays the
-//     same bubbles as the source
-//  4. 302-redirects to /session/{new-uuid}?assistant={binary}
+//  4. stages SessionParams; first WS client to hit /session/<newUUID>
+//     materializes the session (avoids spawning at unknown geometry)
+//  5. 302-redirects to /session/{new-uuid}?assistant={binary}
 //
-// Worktree per fork, agent-aware session-id tracking, and codex/pi support
-// are deliberate TODOs for the next iteration.
+// Worktree per fork and codex/pi support remain deliberate TODOs.
 func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -7048,11 +7049,9 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionsMu.RLock()
-	src, exists := sessions[sourceUUID]
-	sessionsMu.RUnlock()
-	if !exists {
-		http.Error(w, "source session not found", http.StatusNotFound)
+	src, err := resolveForkSource(sourceUUID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	if src.SessionMode != "chat" {
@@ -7068,20 +7067,23 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prefer the agent session id captured at spawn (Session.AgentSessionID).
-	// Fall back to the legacy "latest mtime in workdir" heuristic only for
-	// older sessions that started before the capture machinery existed; log
-	// when we fall back so the data ambiguity is visible.
+	// Prefer AgentSessionID captured at spawn. For legacy recordings, brute-
+	// force fingerprint match against the chat events file. Last-ditch
+	// fallback for live sessions with neither: the old mtime heuristic.
 	agentSessionID := src.AgentSessionID
 	if agentSessionID == "" {
-		var err error
-		agentSessionID, err = findLatestClaudeSessionInWorkDir(src.WorkDir)
-		if err != nil {
-			http.Error(w, "locate claude session: "+err.Error(), http.StatusInternalServerError)
-			return
+		if id, ferr := fingerprintClaudeSessionByEvents(src.WorkDir, src.ChatLogPath); ferr == nil {
+			agentSessionID = id
+			log.Printf("INFO: /api/fork %s: AgentSessionID recovered by fingerprint -> %s", sourceUUID, id)
+		} else {
+			log.Printf("WARN: /api/fork %s: fingerprint failed (%v); falling back to mtime in %s", sourceUUID, ferr, src.WorkDir)
+			var mtimeErr error
+			agentSessionID, mtimeErr = findLatestClaudeSessionInWorkDir(src.WorkDir)
+			if mtimeErr != nil {
+				http.Error(w, "locate claude session: "+mtimeErr.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
-		log.Printf("WARN: /api/fork %s: source session has no captured AgentSessionID; falling back to mtime in %s -> %s",
-			sourceUUID, src.WorkDir, agentSessionID)
 	}
 
 	forkRes, err := forkconvo.Fork(forkconvo.Opts{
