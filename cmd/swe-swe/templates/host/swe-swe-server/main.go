@@ -7023,20 +7023,20 @@ func endSessionByUUID(sessionUUID string) error {
 
 // handleSessionForkAPI handles GET /api/fork/{source-session-uuid}.
 //
-// Fork supports chat-mode Claude sessions, live or ended. The handler:
-//  1. resolves the source from the in-memory sessions map; on miss, hydrates
-//     from the recording metadata + chat events file on disk
-//  2. determines the source Claude .jsonl via Session.AgentSessionID (captured
-//     at spawn); for legacy recordings that predate that capture, falls back
-//     to fingerprint-matching the chat events against tool_use texts in each
-//     candidate .jsonl
-//  3. forks the .jsonl at the last agent-chat send_message reply via the
-//     forkconvo package
-//  4. stages SessionParams; first WS client to hit /session/<newUUID>
-//     materializes the session (avoids spawning at unknown geometry)
-//  5. 302-redirects to /session/{new-uuid}?assistant={binary}
+// Two anchor modes:
 //
-// Worktree per fork and codex/pi support remain deliberate TODOs.
+//  1. Default (no query params): forks at the last chat reply, mirroring
+//     pre-bubble-anchor behavior. Used by callers that just want "fork
+//     here, now."
+//
+//  2. ?bubble=<seq>&mode=after|replay|before: forks at a specific chat
+//     bubble in the .events.jsonl. The resolver (fork_resolve.go) maps the
+//     bubble to the agent-side tool_use_id / call_id via either an
+//     AgentToolSeq stamp (new agent-chat) or text correlation (legacy).
+//
+// Fork supports chat-mode claude and codex sessions, live or ended. Pi
+// is deliberately deferred to pi's native runtime.fork; other agents have
+// no forkconvo support yet.
 func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -7058,20 +7058,29 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fork supports chat-mode sessions only", http.StatusBadRequest)
 		return
 	}
-	if src.Assistant != "claude" {
-		http.Error(w, "fork MVP supports the claude assistant only", http.StatusBadRequest)
-		return
-	}
 	if src.ChatLogPath == "" {
 		http.Error(w, "source session has no chat event log (predates fork support?)", http.StatusConflict)
 		return
 	}
 
-	// Prefer AgentSessionID captured at spawn. For legacy recordings, brute-
-	// force fingerprint match against the chat events file. Last-ditch
-	// fallback for live sessions with neither: the old mtime heuristic.
+	// Map src.Assistant to the per-agent forkconvo.Agent constant. Bail
+	// loudly for assistants we know we don't support yet (pi has its own
+	// native /fork; gemini/opencode/aider/goose have no forkconvo at all).
+	var fcAgent forkconvo.Agent
+	switch src.Assistant {
+	case "claude":
+		fcAgent = forkconvo.AgentClaude
+	case "codex":
+		fcAgent = forkconvo.AgentCodex
+	default:
+		http.Error(w, fmt.Sprintf("fork does not support assistant %q (claude and codex only)", src.Assistant), http.StatusBadRequest)
+		return
+	}
+
+	// Resolve the per-agent session id captured at spawn. Falls back to
+	// fingerprint (claude only) and then mtime when neither is available.
 	agentSessionID := src.AgentSessionID
-	if agentSessionID == "" {
+	if agentSessionID == "" && src.Assistant == "claude" {
 		if id, ferr := fingerprintClaudeSessionByEvents(src.WorkDir, src.ChatLogPath); ferr == nil {
 			agentSessionID = id
 			log.Printf("INFO: /api/fork %s: AgentSessionID recovered by fingerprint -> %s", sourceUUID, id)
@@ -7085,21 +7094,55 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-
-	forkRes, err := forkconvo.Fork(forkconvo.Opts{
-		Agent:           forkconvo.AgentClaude,
-		SourceSessionID: agentSessionID,
-		Anchor:          forkconvo.AnchorLastChatReply,
-	})
-	if err != nil {
-		http.Error(w, "fork claude session: "+err.Error(), http.StatusInternalServerError)
+	if agentSessionID == "" {
+		http.Error(w, fmt.Sprintf("no agent_session_id captured for %s; cannot fork", src.Assistant), http.StatusConflict)
 		return
 	}
-	log.Printf("Forked claude session %s -> %s (anchor %s) for swe-swe session %s",
-		agentSessionID, forkRes.NewSessionID, forkRes.AnchorUUID, sourceUUID)
+
+	// Resolve the anchor. Default = last chat reply (existing semantics).
+	// If ?bubble= is set, walk the bubble-anchored path: locate the bubble
+	// in the chat events file, map to the agent tool_use id, pass that as
+	// an explicit forkconvo anchor.
+	forkOpts := forkconvo.Opts{
+		Agent:           fcAgent,
+		SourceSessionID: agentSessionID,
+		Anchor:          forkconvo.AnchorLastChatReply,
+	}
+	mode := r.URL.Query().Get("mode")
+	if mode == "" {
+		mode = "after"
+	}
+	if bubbleRaw := r.URL.Query().Get("bubble"); bubbleRaw != "" {
+		bubbleSeq, perr := strconv.ParseInt(bubbleRaw, 10, 64)
+		if perr != nil || bubbleSeq <= 0 {
+			http.Error(w, "bubble param must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		agentJsonl, jerr := agentSessionFilePath(src.Assistant, src.WorkDir, agentSessionID)
+		if jerr != nil {
+			http.Error(w, "locate agent session file: "+jerr.Error(), http.StatusInternalServerError)
+			return
+		}
+		resolved, rerr := resolveBubbleAnchor(src.ChatLogPath, agentJsonl, src.Assistant, bubbleSeq, mode)
+		if rerr != nil {
+			http.Error(w, "resolve bubble anchor: "+rerr.Error(), http.StatusConflict)
+			return
+		}
+		log.Printf("INFO: /api/fork %s: bubble seq=%d resolved via %s -> %s (tool=%s, kind=%s)",
+			sourceUUID, bubbleSeq, resolved.ResolverUsed, resolved.AnchorID, resolved.ToolName, resolved.BubbleKind)
+		forkOpts.Anchor = resolved.AnchorID
+	}
+
+	forkRes, err := forkconvo.Fork(forkOpts)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("fork %s session: %s", src.Assistant, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Forked %s session %s -> %s (anchor %s, mode %s) for swe-swe session %s",
+		src.Assistant, agentSessionID, forkRes.NewSessionID, forkRes.AnchorUUID, mode, sourceUUID)
 
 	newUUID := uuid.New().String()
-	extraArgs := strings.TrimSpace(src.ExtraArgs + " --resume " + forkRes.NewSessionID)
+	extraArgs := buildForkResumeArgs(src.Assistant, src.ExtraArgs, forkRes.NewSessionID)
 	forkName := src.Name
 	if forkName == "" {
 		forkName = "fork"
@@ -7109,9 +7152,9 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 
 	// Stage the SessionParams; the first WS client to hit /session/<newUUID>
 	// will materialize the session from this entry. Starting the PTY only
-	// after a client connects ensures claude's first render happens at the
-	// client's actual geometry, sidestepping the "blocked-on-stdin during
-	// SIGWINCH leaves a blank screen for the snapshot" bug that an eager
+	// after a client connects ensures the agent's first render happens at
+	// the client's actual geometry, sidestepping the "blocked-on-stdin
+	// during SIGWINCH leaves a blank screen" bug that an eager
 	// getOrCreateSession would hit here.
 	pendingForksMu.Lock()
 	pendingForks[newUUID] = SessionParams{
@@ -7127,6 +7170,77 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 	pendingForksMu.Unlock()
 
 	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)
+}
+
+// buildForkResumeArgs constructs the ExtraArgs string for a forked session.
+// Per-agent resume conventions:
+//
+//	claude: appended "--resume <id>" (claude takes resume as a flag, so
+//	        ordering with other extra args doesn't matter).
+//	codex:  prepended "resume <id>" (codex takes resume as a subcommand,
+//	        which must come right after the binary name; any pre-existing
+//	        global flags in src.ExtraArgs stay before the subcommand).
+//
+// Other agents fall through to claude's append behavior; if we ever add
+// more, branch them here.
+func buildForkResumeArgs(assistant, srcExtraArgs, newSessionID string) string {
+	srcExtraArgs = strings.TrimSpace(srcExtraArgs)
+	switch assistant {
+	case "codex":
+		// codex global flags (if any) stay leading; "resume <id>" follows.
+		if srcExtraArgs == "" {
+			return "resume " + newSessionID
+		}
+		return srcExtraArgs + " resume " + newSessionID
+	default:
+		return strings.TrimSpace(srcExtraArgs + " --resume " + newSessionID)
+	}
+}
+
+// agentSessionFilePath returns the absolute path to the per-agent session
+// file (claude jsonl, codex rollout, ...) for resolving bubble anchors.
+func agentSessionFilePath(assistant, workDir, agentSessionID string) (string, error) {
+	switch assistant {
+	case "claude":
+		if workDir == "" {
+			return "", fmt.Errorf("empty workdir")
+		}
+		encoded := strings.ReplaceAll(workDir, "/", "-")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".claude", "projects", encoded, agentSessionID+".jsonl"), nil
+	case "codex":
+		// codex stores rollouts under ~/.codex/sessions/YYYY/MM/DD/rollout-...-<id>.jsonl.
+		// We don't know the timestamp; walk the tree under the YYYY root and
+		// take the file that ends in -<id>.jsonl. The dir's not large enough
+		// for this to matter perf-wise.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		root := filepath.Join(home, ".codex", "sessions")
+		var match string
+		walkErr := filepath.WalkDir(root, func(p string, d os.DirEntry, werr error) error {
+			if werr != nil || d.IsDir() {
+				return werr
+			}
+			name := d.Name()
+			if strings.HasPrefix(name, "rollout-") && strings.HasSuffix(name, "-"+agentSessionID+".jsonl") {
+				match = p
+			}
+			return nil
+		})
+		if walkErr != nil {
+			return "", walkErr
+		}
+		if match == "" {
+			return "", fmt.Errorf("codex rollout for session %s not found under %s", agentSessionID, root)
+		}
+		return match, nil
+	}
+	return "", fmt.Errorf("agentSessionFilePath: unsupported assistant %q", assistant)
 }
 
 // findLatestClaudeSessionInWorkDir returns the session id (filename minus
