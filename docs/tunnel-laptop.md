@@ -67,3 +67,37 @@ the swe-swe UI loads through the tunnel.
 If verification fails (no `OPEN AT`, `source=file` instead of
 `source=env`, fatal `kind=...`), see
 [tunnel-explained.md](tunnel-explained.md#troubleshooting).
+
+## Optional: reach the containers directly from your laptop
+
+By default tunnel mode publishes **no host ports** -- swe-swe-server
+binds `127.0.0.1` *inside the container* and is reachable only through
+the tunnel. If you also want to hit it from the laptop running the
+container (e.g. `curl localhost:1977`, or point a local tool at a
+preview port), add `--tunnel-local-ports` at init:
+
+```sh
+swe-swe init \
+  --tunnel-server-url=https://tunnel.example.com \
+  --tunnel-local-ports
+```
+
+This widens the server bind to all interfaces and publishes, on the
+host's `127.0.0.1` only:
+
+| Port(s) | What |
+|---|---|
+| `SWE_PORT` (default `1977`) | main UI |
+| `23000-23019` | app preview proxy (`preview-port + proxy-offset`) |
+| `24000-24019` | agent-chat proxy |
+| `27000-27019` | VNC proxy |
+| `5000-5019` | public (no-auth) range |
+
+(Proxy ranges shown with the default `--proxy-port-offset=20000`.)
+
+Host-loopback only: nothing is exposed beyond the machine's own
+localhost, so the tunnel stays the only network-facing path. The tunnel
+itself is unaffected -- the tunnel client still dials `127.0.0.1:{port}`
+inside the container, which the all-interfaces bind covers.
+`SWE_SWE_PASSWORD` still gates these ports exactly as it gates the
+tunnel.
