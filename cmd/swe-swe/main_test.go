@@ -682,6 +682,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
 		{"with-vscode", []string{"--with-vscode"}},
 		{"tunnel-mode", []string{"--tunnel-server-url", "https://tunnel.example.com"}},
+		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
 	}
 
 	for _, v := range variants {

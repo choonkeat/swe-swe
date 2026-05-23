@@ -176,6 +176,7 @@ type InitConfig struct {
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
+	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
 	CLIVersion          string              `json:"cliVersion,omitempty"`
 }
 
@@ -506,6 +507,13 @@ func handleInit() {
 			"entrypoints; swe-swe-server binds 127.0.0.1 only and supervises "+
 			"the swe-swe-tunnel client subprocess for inbound traffic. Empty "+
 			"keeps the legacy Traefik-fronted compose.")
+	tunnelClientCert := fs.String("tunnel-client-cert", "",
+		"Path to a PEM-encoded mTLS client certificate to present to the "+
+			"tunnel server. Only meaningful with --tunnel-server-url. The "+
+			"cert is staged inside the project so the generated compose "+
+			"can mount it into the container at a fixed path. Empty leaves "+
+			"the tunnel client without a cert (works against a daemon that "+
+			"has not enabled --mtls-ca).")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
@@ -778,6 +786,7 @@ func handleInit() {
 		StatusBarFontFamily: *statusBarFontFamily,
 		ProxyPortOffset:     *proxyPortOffset,
 		TunnelServerURL:     *tunnelServerURL,
+		TunnelClientCert:    *tunnelClientCert,
 	}
 
 	// Re-parse SSL from config.SSL in case reuse overwrote sslFlag
