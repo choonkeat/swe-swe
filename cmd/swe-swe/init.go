@@ -177,6 +177,7 @@ type InitConfig struct {
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
+	TunnelLocalPorts    bool                `json:"tunnelLocalPorts,omitempty"`
 	CLIVersion          string              `json:"cliVersion,omitempty"`
 }
 
@@ -514,6 +515,16 @@ func handleInit() {
 			"can mount it into the container at a fixed path. Empty leaves "+
 			"the tunnel client without a cert (works against a daemon that "+
 			"has not enabled --mtls-ca).")
+	tunnelLocalPorts := fs.Bool("tunnel-local-ports", false,
+		"Only meaningful with --tunnel-server-url. Tunnel mode normally "+
+			"publishes no host ports (the swe-swe-server binds 127.0.0.1 "+
+			"inside the container and is reachable only via the tunnel). "+
+			"With this flag the generated compose widens the server bind to "+
+			"all interfaces and publishes SWE_PORT plus the preview / "+
+			"agent-chat / vnc / public port ranges on the host's 127.0.0.1, "+
+			"so the machine running 'swe-swe up' can reach the containers "+
+			"directly (e.g. curl localhost:1977). Host-loopback only; no "+
+			"network exposure beyond the tunnel.")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
@@ -760,6 +771,9 @@ func handleInit() {
 		if !explicitFlags["tunnel-client-cert"] {
 			*tunnelClientCert = savedConfig.TunnelClientCert
 		}
+		if !explicitFlags["tunnel-local-ports"] {
+			*tunnelLocalPorts = savedConfig.TunnelLocalPorts
+		}
 		if len(explicitFlags) > 0 {
 			fmt.Printf("Reusing saved configuration from %s (with overrides)\n", initConfigPath)
 		} else {
@@ -793,6 +807,7 @@ func handleInit() {
 		ProxyPortOffset:     *proxyPortOffset,
 		TunnelServerURL:     *tunnelServerURL,
 		TunnelClientCert:    *tunnelClientCert,
+		TunnelLocalPorts:    *tunnelLocalPorts,
 	}
 
 	// Re-parse SSL from config.SSL in case reuse overwrote sslFlag

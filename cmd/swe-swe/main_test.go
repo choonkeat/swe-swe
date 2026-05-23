@@ -683,6 +683,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-vscode", []string{"--with-vscode"}},
 		{"tunnel-mode", []string{"--tunnel-server-url", "https://tunnel.example.com"}},
 		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
+		{"tunnel-mode-local-ports", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-local-ports"}},
 	}
 
 	for _, v := range variants {
@@ -1372,6 +1373,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"ProxyPortOffset":     true,
 		"TunnelServerURL":     true,
 		"TunnelClientCert":    true,
+		"TunnelLocalPorts":    true,
 	}
 	// Fields intentionally NOT restored: computed or stamped fresh at init time.
 	notReused := map[string]bool{
