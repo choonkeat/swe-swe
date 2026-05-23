@@ -516,3 +516,83 @@ func TestRunTunnelSupervisor_ClearsHostnameAfterChildExit(t *testing.T) {
 		t.Errorf("after supervisor exit: hostname should be cleared, got %q", got)
 	}
 }
+
+// TestTunnelChildArgs covers the four optional-flag combinations the
+// supervisor builds. Args are positional pairs so order matters: a
+// future drift (e.g. someone adds a flag in the middle of the slice)
+// would change exec semantics, so we lock the full slice.
+func TestTunnelChildArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		opts tunnelSupervisorOpts
+		want []string
+	}{
+		{
+			name: "required-only",
+			opts: tunnelSupervisorOpts{ServerURL: "https://tunnel.example.com"},
+			want: []string{
+				"--server", "https://tunnel.example.com",
+				"--report-format", "jsonl",
+			},
+		},
+		{
+			name: "with-unique",
+			opts: tunnelSupervisorOpts{
+				ServerURL: "https://tunnel.example.com",
+				Unique:    "alpha",
+			},
+			want: []string{
+				"--server", "https://tunnel.example.com",
+				"--report-format", "jsonl",
+				"--unique", "alpha",
+			},
+		},
+		{
+			name: "with-client-cert",
+			opts: tunnelSupervisorOpts{
+				ServerURL:      "https://tunnel.example.com",
+				ClientCertPath: "/root/.swe-swe-tunnel/client.crt",
+			},
+			want: []string{
+				"--server", "https://tunnel.example.com",
+				"--report-format", "jsonl",
+				"--client-cert", "/root/.swe-swe-tunnel/client.crt",
+			},
+		},
+		{
+			name: "with-unique-and-client-cert",
+			opts: tunnelSupervisorOpts{
+				ServerURL:      "https://tunnel.example.com",
+				Unique:         "alpha",
+				ClientCertPath: "/root/.swe-swe-tunnel/client.crt",
+			},
+			want: []string{
+				"--server", "https://tunnel.example.com",
+				"--report-format", "jsonl",
+				"--unique", "alpha",
+				"--client-cert", "/root/.swe-swe-tunnel/client.crt",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tunnelChildArgs(tc.opts)
+			if !equalStringSlices(got, tc.want) {
+				t.Errorf("tunnelChildArgs(%+v) =\n  %q\nwant\n  %q",
+					tc.opts, got, tc.want)
+			}
+		})
+	}
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

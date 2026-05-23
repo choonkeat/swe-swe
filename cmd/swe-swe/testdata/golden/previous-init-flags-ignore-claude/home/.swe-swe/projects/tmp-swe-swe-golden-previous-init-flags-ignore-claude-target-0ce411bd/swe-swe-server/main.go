@@ -1742,6 +1742,12 @@ func main() {
 	tunnelBin := flag.String("tunnel-bin", "swe-swe-tunnel",
 		"Path to the swe-swe-tunnel binary. Defaults to swe-swe-tunnel "+
 			"on $PATH. Env: SWE_TUNNEL_BIN.")
+	tunnelClientCert := flag.String("tunnel-client-cert", "",
+		"Path to a PEM-encoded mTLS client certificate to present to "+
+			"the tunnel server. Empty means no client cert; the agent "+
+			"then connects without one and a daemon running with "+
+			"--mtls-ca will reject the handshake. Env: "+
+			"SWE_TUNNEL_CLIENT_CERT.")
 	flag.Parse()
 
 	// Resolve the swe-swe-server bind early so the tunnel supervisor can
@@ -1766,12 +1772,17 @@ func main() {
 	if envBin, ok := os.LookupEnv("SWE_TUNNEL_BIN"); ok && !flagPassed("tunnel-bin") {
 		resolvedTunnelBin = envBin
 	}
+	resolvedTunnelClientCert := *tunnelClientCert
+	if envCert, ok := os.LookupEnv("SWE_TUNNEL_CLIENT_CERT"); ok && !flagPassed("tunnel-client-cert") {
+		resolvedTunnelClientCert = envCert
+	}
 	if resolvedTunnelServerURL != "" {
 		go runTunnelSupervisor(context.Background(), tunnelSupervisorOpts{
-			ServerURL: resolvedTunnelServerURL,
-			Unique:    resolvedTunnelUnique,
-			BinPath:   resolvedTunnelBin,
-			LocalAddr: listenAddr,
+			ServerURL:      resolvedTunnelServerURL,
+			Unique:         resolvedTunnelUnique,
+			BinPath:        resolvedTunnelBin,
+			LocalAddr:      listenAddr,
+			ClientCertPath: resolvedTunnelClientCert,
 		})
 	}
 

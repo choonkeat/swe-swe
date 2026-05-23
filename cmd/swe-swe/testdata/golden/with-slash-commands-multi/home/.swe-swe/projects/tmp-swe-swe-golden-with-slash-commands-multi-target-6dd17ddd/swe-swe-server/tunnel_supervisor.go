@@ -57,6 +57,14 @@ type tunnelSupervisorOpts struct {
 	// 127.0.0.1:{port} so the URL must match the actual bind.
 	LocalAddr string
 
+	// ClientCertPath is the absolute path to a PEM-encoded mTLS client
+	// certificate to present to the tunnel server. The matching private
+	// key is the agent's existing identity.key (one Ed25519 key, two
+	// uses), so only the cert path is needed here. Empty means "no
+	// client cert"; the agent then connects without one and a daemon
+	// running with --mtls-ca will reject the handshake.
+	ClientCertPath string
+
 	// MinBackoff and MaxBackoff bound the restart delay after a child
 	// exit. Defaults: 1s and 60s.
 	MinBackoff time.Duration
@@ -483,13 +491,13 @@ func (c *execChild) Kill() error {
 	return c.cmd.Process.Signal(syscall.SIGKILL)
 }
 
-// startExecChild builds and starts the swe-swe-tunnel binary with the
-// supervisor's options. Called by runTunnelChild when no fake is
-// installed.
-func startExecChild(ctx context.Context, opts tunnelSupervisorOpts) (childProcess, error) {
-	if opts.BinPath == "" {
-		return nil, errors.New("tunnel-bin path is empty")
-	}
+// tunnelChildArgs builds the argv (excluding argv[0]) for one
+// swe-swe-tunnel invocation. Extracted from startExecChild so unit
+// tests can assert the flag plumbing without spawning a real process.
+// Required flags (--server, --report-format) come first; optional
+// flags (--unique, --client-cert) are appended only when non-empty
+// so the child does not see empty strings as values.
+func tunnelChildArgs(opts tunnelSupervisorOpts) []string {
 	args := []string{
 		"--server", opts.ServerURL,
 		"--report-format", "jsonl",
@@ -497,6 +505,20 @@ func startExecChild(ctx context.Context, opts tunnelSupervisorOpts) (childProces
 	if opts.Unique != "" {
 		args = append(args, "--unique", opts.Unique)
 	}
+	if opts.ClientCertPath != "" {
+		args = append(args, "--client-cert", opts.ClientCertPath)
+	}
+	return args
+}
+
+// startExecChild builds and starts the swe-swe-tunnel binary with the
+// supervisor's options. Called by runTunnelChild when no fake is
+// installed.
+func startExecChild(ctx context.Context, opts tunnelSupervisorOpts) (childProcess, error) {
+	if opts.BinPath == "" {
+		return nil, errors.New("tunnel-bin path is empty")
+	}
+	args := tunnelChildArgs(opts)
 	cmd := exec.CommandContext(ctx, opts.BinPath, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
