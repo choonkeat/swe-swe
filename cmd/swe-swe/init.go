@@ -1220,13 +1220,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
     restart: unless-stopped
 `, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
-				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert))
+				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert, config.TunnelLocalPorts))
 			}
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert, config.TunnelLocalPorts))
 		}
 
 		// Process entrypoint.sh template with conditional sections

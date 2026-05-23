@@ -133,7 +133,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string, tunnelClientCert string) string {
+func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string, tunnelClientCert string, tunnelLocalPorts bool) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 
@@ -152,6 +152,22 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 	// host-side client cert are configured. Drives the extra volume mount
 	// and SWE_TUNNEL_CLIENT_CERT env block in docker-compose.yml.
 	isTunnelClientCert := tunnelClientCert != ""
+	// Tunnel local-ports mode: only meaningful in tunnel mode. Widens the
+	// swe-swe-server bind to all interfaces and publishes SWE_PORT plus the
+	// preview/agent-chat/vnc/public ranges on the host's 127.0.0.1 so the
+	// machine running 'swe-swe up' can reach the containers directly. The
+	// tunnel client still dials 127.0.0.1:{port} internally (covered by the
+	// all-interfaces bind), so the tunnel path is unaffected.
+	isTunnelLocalPorts := isTunnel && tunnelLocalPorts
+	// {{TUNNEL_BIND}} expands to the swe-swe-server bind address used by both
+	// the command's -bind flag and the SWE_BIND env. Default tunnel mode binds
+	// 127.0.0.1 only; --tunnel-local-ports widens it to all interfaces so the
+	// published host ports can reach it (Docker forwards published ports to the
+	// container's eth0, not its loopback).
+	tunnelBind := "127.0.0.1:${SWE_PORT:-1977}"
+	if isTunnelLocalPorts {
+		tunnelBind = ":${SWE_PORT:-1977}"
+	}
 
 	// Conditional state is a stack of bools (one entry per open {{IF X}}).
 	// A line is emitted only when EVERY frame on the stack is "include"
@@ -220,6 +236,11 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 
 		if strings.Contains(trimmed, "{{IF TUNNEL_CLIENT_CERT}}") {
 			stack = append(stack, !isTunnelClientCert)
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF TUNNEL_LOCAL_PORTS}}") {
+			stack = append(stack, !isTunnelLocalPorts)
 			continue
 		}
 
@@ -310,6 +331,39 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					vp := vncPort(port)
 					pp := vncProxyPort(vp, proxyPortOffset)
 					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, pp, pp))
+				}
+				continue
+			}
+
+			// Tunnel mode + --tunnel-local-ports: publish the in-container
+			// listeners on the host's 127.0.0.1. Mirrors the non-tunnel port
+			// set (SWE_PORT + preview/agent-chat/vnc proxy ranges + public
+			// range) but host-scoped to loopback and attached directly to the
+			// swe-swe service (no Traefik in tunnel mode).
+			if strings.Contains(line, "{{TUNNEL_LOCAL_PORTS}}") {
+				indent := strings.Split(line, "{{TUNNEL_LOCAL_PORTS}}")[0]
+				// Main swe-swe-server port.
+				result = append(result, fmt.Sprintf("%s- \"127.0.0.1:${SWE_PORT:-1977}:${SWE_PORT:-1977}\"", indent))
+				// Preview proxy ports.
+				for _, port := range previewPorts {
+					pp := previewProxyPort(port, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, pp, pp))
+				}
+				// Agent chat proxy ports.
+				for _, port := range previewPorts {
+					acPort := agentChatPort(port)
+					pp := agentChatProxyPort(acPort, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, pp, pp))
+				}
+				// VNC proxy ports.
+				for _, port := range previewPorts {
+					vp := vncPort(port)
+					pp := vncProxyPort(vp, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, pp, pp))
+				}
+				// Public ports (no offset; the app binds these directly).
+				for _, port := range publicPorts {
+					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, port, port))
 				}
 				continue
 			}
@@ -528,6 +582,9 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 			}
 			if strings.Contains(line, "{{TUNNEL_CLIENT_CERT}}") {
 				line = strings.ReplaceAll(line, "{{TUNNEL_CLIENT_CERT}}", tunnelClientCert)
+			}
+			if strings.Contains(line, "{{TUNNEL_BIND}}") {
+				line = strings.ReplaceAll(line, "{{TUNNEL_BIND}}", tunnelBind)
 			}
 			result = append(result, line)
 		}

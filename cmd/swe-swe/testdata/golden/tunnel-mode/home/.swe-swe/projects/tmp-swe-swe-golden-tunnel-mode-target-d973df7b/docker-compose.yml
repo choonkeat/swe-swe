@@ -6,9 +6,12 @@ services:
       dockerfile: Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Tunnel mode: bind to 127.0.0.1 only. The supervisor goroutine
-    # spawns swe-swe-tunnel as a child process, which dials the
-    # tunneld outbound and forwards inbound streams to localhost.
+    # Tunnel mode: the supervisor goroutine spawns swe-swe-tunnel as a
+    # child process, which dials the tunneld outbound and forwards inbound
+    # streams to 127.0.0.1:{port}. The bind is normally 127.0.0.1 only;
+    # --tunnel-local-ports widens it to all interfaces so the published
+    # host ports below can reach it (Docker publishes to the container's
+    # eth0, not its loopback).
     command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:${SWE_PORT:-1977}"]
     labels:
       - "swe.project=${PROJECT_NAME}"
@@ -74,9 +77,12 @@ services:
       - TS_HOSTNAME=${TS_HOSTNAME:-}
       - TS_STATE_DIR=${TS_STATE_DIR:-}
       - TS_DISABLE=${TS_DISABLE:-}
-      # Tunnel mode: swe-swe-server binds to 127.0.0.1 only and supervises
-      # the swe-swe-tunnel client child process which dials the tunneld
-      # outbound. See tasks/2026-04-29-tunnel-subprocess-pivot.md.
+      # Tunnel mode: swe-swe-server supervises the swe-swe-tunnel client
+      # child process which dials the tunneld outbound. The bind is
+      # 127.0.0.1 only by default; --tunnel-local-ports widens it to all
+      # interfaces. The -bind flag in command: takes precedence over this
+      # env, but they are kept in sync for clarity.
+      # See tasks/2026-04-29-tunnel-subprocess-pivot.md.
       - SWE_BIND=127.0.0.1:${SWE_PORT:-1977}
       - SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}

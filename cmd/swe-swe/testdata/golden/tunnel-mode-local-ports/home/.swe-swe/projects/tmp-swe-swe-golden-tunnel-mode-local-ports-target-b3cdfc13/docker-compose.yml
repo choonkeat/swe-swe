@@ -6,10 +6,100 @@ services:
       dockerfile: Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Tunnel mode: bind to 127.0.0.1 only. The supervisor goroutine
-    # spawns swe-swe-tunnel as a child process, which dials the
-    # tunneld outbound and forwards inbound streams to localhost.
-    command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:${SWE_PORT:-1977}"]
+    # Tunnel mode: the supervisor goroutine spawns swe-swe-tunnel as a
+    # child process, which dials the tunneld outbound and forwards inbound
+    # streams to 127.0.0.1:{port}. The bind is normally 127.0.0.1 only;
+    # --tunnel-local-ports widens it to all interfaces so the published
+    # host ports below can reach it (Docker publishes to the container's
+    # eth0, not its loopback).
+    command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", ":${SWE_PORT:-1977}"]
+    # --tunnel-local-ports: publish the in-container listeners on the host's
+    # 127.0.0.1 so the machine running 'swe-swe up' can reach them directly
+    # (e.g. curl localhost:1977). Host-loopback only -- no exposure beyond
+    # the tunnel. Mirrors the non-tunnel port set; the tunnel path is
+    # unaffected because swe-swe-tunnel still dials 127.0.0.1 internally.
+    ports:
+      - "127.0.0.1:${SWE_PORT:-1977}:${SWE_PORT:-1977}"
+      - "127.0.0.1:23000:23000"
+      - "127.0.0.1:23001:23001"
+      - "127.0.0.1:23002:23002"
+      - "127.0.0.1:23003:23003"
+      - "127.0.0.1:23004:23004"
+      - "127.0.0.1:23005:23005"
+      - "127.0.0.1:23006:23006"
+      - "127.0.0.1:23007:23007"
+      - "127.0.0.1:23008:23008"
+      - "127.0.0.1:23009:23009"
+      - "127.0.0.1:23010:23010"
+      - "127.0.0.1:23011:23011"
+      - "127.0.0.1:23012:23012"
+      - "127.0.0.1:23013:23013"
+      - "127.0.0.1:23014:23014"
+      - "127.0.0.1:23015:23015"
+      - "127.0.0.1:23016:23016"
+      - "127.0.0.1:23017:23017"
+      - "127.0.0.1:23018:23018"
+      - "127.0.0.1:23019:23019"
+      - "127.0.0.1:24000:24000"
+      - "127.0.0.1:24001:24001"
+      - "127.0.0.1:24002:24002"
+      - "127.0.0.1:24003:24003"
+      - "127.0.0.1:24004:24004"
+      - "127.0.0.1:24005:24005"
+      - "127.0.0.1:24006:24006"
+      - "127.0.0.1:24007:24007"
+      - "127.0.0.1:24008:24008"
+      - "127.0.0.1:24009:24009"
+      - "127.0.0.1:24010:24010"
+      - "127.0.0.1:24011:24011"
+      - "127.0.0.1:24012:24012"
+      - "127.0.0.1:24013:24013"
+      - "127.0.0.1:24014:24014"
+      - "127.0.0.1:24015:24015"
+      - "127.0.0.1:24016:24016"
+      - "127.0.0.1:24017:24017"
+      - "127.0.0.1:24018:24018"
+      - "127.0.0.1:24019:24019"
+      - "127.0.0.1:27000:27000"
+      - "127.0.0.1:27001:27001"
+      - "127.0.0.1:27002:27002"
+      - "127.0.0.1:27003:27003"
+      - "127.0.0.1:27004:27004"
+      - "127.0.0.1:27005:27005"
+      - "127.0.0.1:27006:27006"
+      - "127.0.0.1:27007:27007"
+      - "127.0.0.1:27008:27008"
+      - "127.0.0.1:27009:27009"
+      - "127.0.0.1:27010:27010"
+      - "127.0.0.1:27011:27011"
+      - "127.0.0.1:27012:27012"
+      - "127.0.0.1:27013:27013"
+      - "127.0.0.1:27014:27014"
+      - "127.0.0.1:27015:27015"
+      - "127.0.0.1:27016:27016"
+      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:27018:27018"
+      - "127.0.0.1:27019:27019"
+      - "127.0.0.1:5000:5000"
+      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:5002:5002"
+      - "127.0.0.1:5003:5003"
+      - "127.0.0.1:5004:5004"
+      - "127.0.0.1:5005:5005"
+      - "127.0.0.1:5006:5006"
+      - "127.0.0.1:5007:5007"
+      - "127.0.0.1:5008:5008"
+      - "127.0.0.1:5009:5009"
+      - "127.0.0.1:5010:5010"
+      - "127.0.0.1:5011:5011"
+      - "127.0.0.1:5012:5012"
+      - "127.0.0.1:5013:5013"
+      - "127.0.0.1:5014:5014"
+      - "127.0.0.1:5015:5015"
+      - "127.0.0.1:5016:5016"
+      - "127.0.0.1:5017:5017"
+      - "127.0.0.1:5018:5018"
+      - "127.0.0.1:5019:5019"
     labels:
       - "swe.project=${PROJECT_NAME}"
     volumes:
@@ -74,10 +164,13 @@ services:
       - TS_HOSTNAME=${TS_HOSTNAME:-}
       - TS_STATE_DIR=${TS_STATE_DIR:-}
       - TS_DISABLE=${TS_DISABLE:-}
-      # Tunnel mode: swe-swe-server binds to 127.0.0.1 only and supervises
-      # the swe-swe-tunnel client child process which dials the tunneld
-      # outbound. See tasks/2026-04-29-tunnel-subprocess-pivot.md.
-      - SWE_BIND=127.0.0.1:${SWE_PORT:-1977}
+      # Tunnel mode: swe-swe-server supervises the swe-swe-tunnel client
+      # child process which dials the tunneld outbound. The bind is
+      # 127.0.0.1 only by default; --tunnel-local-ports widens it to all
+      # interfaces. The -bind flag in command: takes precedence over this
+      # env, but they are kept in sync for clarity.
+      # See tasks/2026-04-29-tunnel-subprocess-pivot.md.
+      - SWE_BIND=:${SWE_PORT:-1977}
       - SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
       - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}

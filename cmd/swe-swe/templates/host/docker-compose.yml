@@ -96,10 +96,22 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 # {{IF TUNNEL}}
-    # Tunnel mode: bind to 127.0.0.1 only. The supervisor goroutine
-    # spawns swe-swe-tunnel as a child process, which dials the
-    # tunneld outbound and forwards inbound streams to localhost.
-    command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "127.0.0.1:${SWE_PORT:-1977}"]
+    # Tunnel mode: the supervisor goroutine spawns swe-swe-tunnel as a
+    # child process, which dials the tunneld outbound and forwards inbound
+    # streams to 127.0.0.1:{port}. The bind is normally 127.0.0.1 only;
+    # --tunnel-local-ports widens it to all interfaces so the published
+    # host ports below can reach it (Docker publishes to the container's
+    # eth0, not its loopback).
+    command: ["/usr/local/bin/swe-swe-server", "-working-directory", "/workspace", "-bind", "{{TUNNEL_BIND}}"]
+# {{IF TUNNEL_LOCAL_PORTS}}
+    # --tunnel-local-ports: publish the in-container listeners on the host's
+    # 127.0.0.1 so the machine running 'swe-swe up' can reach them directly
+    # (e.g. curl localhost:1977). Host-loopback only -- no exposure beyond
+    # the tunnel. Mirrors the non-tunnel port set; the tunnel path is
+    # unaffected because swe-swe-tunnel still dials 127.0.0.1 internally.
+    ports:
+      {{TUNNEL_LOCAL_PORTS}}
+# {{ENDIF}}
 # {{ENDIF}}
     labels:
       - "swe.project=${PROJECT_NAME}"
@@ -222,10 +234,13 @@ services:
       - TS_STATE_DIR=${TS_STATE_DIR:-}
       - TS_DISABLE=${TS_DISABLE:-}
 # {{IF TUNNEL}}
-      # Tunnel mode: swe-swe-server binds to 127.0.0.1 only and supervises
-      # the swe-swe-tunnel client child process which dials the tunneld
-      # outbound. See tasks/2026-04-29-tunnel-subprocess-pivot.md.
-      - SWE_BIND=127.0.0.1:${SWE_PORT:-1977}
+      # Tunnel mode: swe-swe-server supervises the swe-swe-tunnel client
+      # child process which dials the tunneld outbound. The bind is
+      # 127.0.0.1 only by default; --tunnel-local-ports widens it to all
+      # interfaces. The -bind flag in command: takes precedence over this
+      # env, but they are kept in sync for clarity.
+      # See tasks/2026-04-29-tunnel-subprocess-pivot.md.
+      - SWE_BIND={{TUNNEL_BIND}}
       - SWE_TUNNEL_SERVER_URL={{TUNNEL_SERVER_URL}}
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
       - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
