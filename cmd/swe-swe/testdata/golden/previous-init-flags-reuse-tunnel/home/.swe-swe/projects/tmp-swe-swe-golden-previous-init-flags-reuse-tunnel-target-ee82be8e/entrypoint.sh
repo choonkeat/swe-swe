@@ -1,0 +1,65 @@
+#!/bin/bash
+set -e
+trap 'echo -e "\n\033[0;31m✗ Entrypoint failed at line $LINENO (exit code $?)\033[0m" >&2' ERR
+
+# Container Entrypoint
+# Configures MCP servers and agent tools, then starts swe-swe-server.
+# In DOCKER mode, runs as root for socket permissions, then drops to app user.
+# In non-DOCKER mode, runs directly as app user.
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+
+
+
+
+
+
+# Create Claude MCP configuration (user scope = cross-project)
+# Uses claude mcp add which writes to ~/.claude.json
+# Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
+claude_mcp_setup() {
+  unset CLAUDECODE
+  claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
+  claude mcp remove --scope user swe-swe 2>/dev/null || true
+  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
+  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp'
+  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
+  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
+}
+claude_mcp_setup
+echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
+
+
+# Resolve internal server port. SWE_PORT is set by both compose (via the
+# swe-swe service environment block) and dockerfile-only mode (via ENV in
+# the generated Dockerfile), so the default is the same in either mode.
+SWE_SERVER_PORT="${SWE_PORT:-1977}"
+export SWE_SERVER_PORT
+
+# Create open/xdg-open shims that route URLs to the Preview pane
+mkdir -p /home/app/.swe-swe/bin
+cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
+#!/bin/sh
+URL="${1:-}"
+[ -z "$URL" ] && exit 0
+curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+echo "-> Preview: $URL" >&2
+SHIM
+chmod +x /home/app/.swe-swe/bin/swe-swe-open
+for name in xdg-open open x-www-browser www-browser sensible-browser; do
+    ln -sf swe-swe-open /home/app/.swe-swe/bin/$name
+done
+echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
+
+# Execute the original command directly (already running as app user)
+# Use sh -c to expand shell variables in CMD arguments (e.g. ${SWE_PORT:-1977})
+cd /workspace
+exec sh -c "$*"

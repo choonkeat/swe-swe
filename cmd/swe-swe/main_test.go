@@ -1290,6 +1290,109 @@ func TestGoldenReuseWithOverride(t *testing.T) {
 	}
 }
 
+// TestGoldenReuseTunnel verifies --previous-init-flags=reuse restores the
+// tunnel server URL and client cert. Regression: reuse used to drop both
+// tunnel fields, so a re-init silently disabled the tunnel client.
+func TestGoldenReuseTunnel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping golden file test in short mode")
+	}
+
+	goldenDir := filepath.Join("testdata", "golden", "previous-init-flags-reuse-tunnel")
+	if _, err := os.Stat(goldenDir); os.IsNotExist(err) {
+		t.Skipf("Golden files not found at %s - run 'make golden-update' first", goldenDir)
+	}
+
+	// Find metadata directory
+	goldenHomeDir := filepath.Join(goldenDir, "home", ".swe-swe", "projects")
+	entries, err := os.ReadDir(goldenHomeDir)
+	if err != nil {
+		t.Fatalf("Failed to read golden home dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("Expected exactly one project dir, got %d", len(entries))
+	}
+	metadataDir := filepath.Join(goldenHomeDir, entries[0].Name())
+
+	config, err := loadInitConfig(metadataDir)
+	if err != nil {
+		t.Fatalf("Failed to load init config: %v", err)
+	}
+
+	// Both tunnel fields must survive reuse (they came from the first init).
+	if config.TunnelServerURL != "https://tunnel.example.com" {
+		t.Errorf("Expected TunnelServerURL preserved on reuse, got %q", config.TunnelServerURL)
+	}
+	if config.TunnelClientCert != "/etc/swe-swe-tunnel/client.crt" {
+		t.Errorf("Expected TunnelClientCert preserved on reuse, got %q", config.TunnelClientCert)
+	}
+
+	// Verify stderr doesn't contain error
+	stderrContent, err := os.ReadFile(filepath.Join(goldenDir, "stderr.txt"))
+	if err != nil {
+		t.Fatalf("Failed to read stderr.txt: %v", err)
+	}
+	if strings.Contains(string(stderrContent), "Error:") {
+		t.Errorf("stderr should not contain errors, got: %s", stderrContent)
+	}
+}
+
+// TestInitConfigReuseCoverage is a guard against the class of bug where a new
+// persisted InitConfig field is added but never wired into the
+// --previous-init-flags=reuse block in init.go (which is how TunnelServerURL /
+// TunnelClientCert silently got dropped on reuse).
+//
+// Every field must be classified as either restored-on-reuse or
+// intentionally-not-restored. Add a new field and forget to categorize it here
+// (and in init.go's reuse block) and this test fails, naming the field.
+//
+// Note: this guards *presence* (no field can be silently ignored), not
+// *correctness* of the init.go line. Lock in behavior for a specific field
+// with a golden test (see TestGoldenReuseTunnel).
+func TestInitConfigReuseCoverage(t *testing.T) {
+	// Fields restored from saved config on --previous-init-flags=reuse.
+	// Keep in sync with the reuse block in init.go.
+	reused := map[string]bool{
+		"Agents":              true,
+		"AptPackages":         true,
+		"NpmPackages":         true,
+		"WithDocker":          true,
+		"WithVSCode":          true,
+		"SlashCommands":       true,
+		"SSL":                 true,
+		"Email":               true,
+		"PreviewPorts":        true,
+		"PublicPorts":         true,
+		"CopyHomePaths":       true,
+		"ReposDir":            true,
+		"TerminalFontSize":    true,
+		"TerminalFontFamily":  true,
+		"StatusBarFontSize":   true,
+		"StatusBarFontFamily": true,
+		"ProxyPortOffset":     true,
+		"TunnelServerURL":     true,
+		"TunnelClientCert":    true,
+	}
+	// Fields intentionally NOT restored: computed or stamped fresh at init time.
+	notReused := map[string]bool{
+		"HostUID":        true, // host's current uid, re-detected each init
+		"HostGID":        true, // host's current gid, re-detected each init
+		"DockerfileOnly": true, // computed from SSL/WithVSCode/tunnel (json:"-")
+		"CLIVersion":     true, // stamped by saveInitConfig on every write
+	}
+
+	typ := reflect.TypeOf(InitConfig{})
+	for i := 0; i < typ.NumField(); i++ {
+		name := typ.Field(i).Name
+		if reused[name] == notReused[name] { // neither set, or (impossibly) both
+			t.Errorf("InitConfig field %q is not classified for --previous-init-flags=reuse.\n"+
+				"If reuse should restore it: add a line to the reuse block in init.go and add %q to `reused` here.\n"+
+				"If it is computed/stamped at init time: add %q to `notReused` here.",
+				name, name, name)
+		}
+	}
+}
+
 // TestSaveLoadInitConfig verifies save and load work together
 func TestSaveLoadInitConfig(t *testing.T) {
 	tmpDir := t.TempDir()

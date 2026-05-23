@@ -754,6 +754,12 @@ func handleInit() {
 		if !explicitFlags["proxy-port-offset"] && savedConfig.ProxyPortOffset != 0 {
 			*proxyPortOffset = savedConfig.ProxyPortOffset
 		}
+		if !explicitFlags["tunnel-server-url"] {
+			*tunnelServerURL = savedConfig.TunnelServerURL
+		}
+		if !explicitFlags["tunnel-client-cert"] {
+			*tunnelClientCert = savedConfig.TunnelClientCert
+		}
 		if len(explicitFlags) > 0 {
 			fmt.Printf("Reusing saved configuration from %s (with overrides)\n", initConfigPath)
 		} else {

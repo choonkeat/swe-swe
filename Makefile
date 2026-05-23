@@ -241,6 +241,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=previous-init-flags-ignore-claude FLAGS="--previous-init-flags=ignore --agents=claude"
 	@$(MAKE) _golden-variant NAME=previous-init-flags-invalid FLAGS="--previous-init-flags=invalid"
 	@$(MAKE) _golden-previous-init-flags-reuse-with-override
+	@$(MAKE) _golden-previous-init-flags-reuse-tunnel
 	@$(MAKE) _golden-already-initialized
 	@$(MAKE) _golden-init-ask
 	@# Normalize TLS files to avoid flip-flopping due to random cert generation
@@ -297,6 +298,19 @@ _golden-previous-init-flags-reuse-with-override:
 	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
 	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-with-override/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --ssl=selfsign --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-with-override/target \
 		2> $(GOLDEN_TESTDATA)/previous-init-flags-reuse-with-override/stderr.txt || true
+
+# Multi-step golden test: init with tunnel flags, then reuse to verify the
+# tunnel server URL and client cert are restored (regression: reuse used to
+# drop both tunnel fields).
+_golden-previous-init-flags-reuse-tunnel:
+	@rm -rf $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/target
+	@mkdir -p $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/target
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/home $(SWE_SWE_CLI) init --agents=claude --tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/target \
+		2> /dev/null || true
+	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/target \
+		2> $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/stderr.txt || true
 
 # Golden test: interactive init via --ask with piped stdin
 _golden-init-ask:
