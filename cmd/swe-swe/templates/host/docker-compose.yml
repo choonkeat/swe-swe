@@ -159,6 +159,13 @@ services:
       - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+# {{IF TUNNEL_CLIENT_CERT}}
+      # mTLS client cert for the swe-swe-tunnel subprocess. Bind-mounted
+      # read-only from the host path passed to swe-swe init via
+      # --tunnel-client-cert. The matching private key is the agent's
+      # existing identity.key, so no key is mounted here.
+      - {{TUNNEL_CLIENT_CERT}}:/home/app/.swe-swe-tunnel/client.crt:ro
+# {{ENDIF}}
 # {{IF SELFSIGN}}
       # SSL certificate for download endpoint (self-signed only)
       - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
@@ -223,6 +230,12 @@ services:
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
       - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
       - SWE_TUNNEL_BIN=${SWE_TUNNEL_BIN:-swe-swe-tunnel}
+# {{IF TUNNEL_CLIENT_CERT}}
+      # mTLS: point swe-swe-tunnel at the cert mounted into the container
+      # above. swe-swe-server forwards this env to the child via the
+      # supervisor's ClientCertPath option.
+      - SWE_TUNNEL_CLIENT_CERT=/home/app/.swe-swe-tunnel/client.crt
+# {{ENDIF}}
 # {{ENDIF}}
     restart: unless-stopped
 

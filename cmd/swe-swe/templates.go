@@ -133,7 +133,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string) string {
+func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string, tunnelClientCert string) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 
@@ -148,6 +148,10 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 	// (a child process of swe-swe-server) handles all inbound traffic via
 	// the public tunneld. See tasks/2026-04-29-tunnel-subprocess-pivot.md.
 	isTunnel := tunnelServerURL != ""
+	// Tunnel mTLS mode: only active when both the tunnel server URL and a
+	// host-side client cert are configured. Drives the extra volume mount
+	// and SWE_TUNNEL_CLIENT_CERT env block in docker-compose.yml.
+	isTunnelClientCert := tunnelClientCert != ""
 
 	// Conditional state is a stack of bools (one entry per open {{IF X}}).
 	// A line is emitted only when EVERY frame on the stack is "include"
@@ -211,6 +215,11 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 
 		if strings.Contains(trimmed, "{{IF NO_TUNNEL}}") {
 			stack = append(stack, isTunnel)
+			continue
+		}
+
+		if strings.Contains(trimmed, "{{IF TUNNEL_CLIENT_CERT}}") {
+			stack = append(stack, !isTunnelClientCert)
 			continue
 		}
 
@@ -516,6 +525,9 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 			}
 			if strings.Contains(line, "{{TUNNEL_SERVER_URL}}") {
 				line = strings.ReplaceAll(line, "{{TUNNEL_SERVER_URL}}", tunnelServerURL)
+			}
+			if strings.Contains(line, "{{TUNNEL_CLIENT_CERT}}") {
+				line = strings.ReplaceAll(line, "{{TUNNEL_CLIENT_CERT}}", tunnelClientCert)
 			}
 			result = append(result, line)
 		}

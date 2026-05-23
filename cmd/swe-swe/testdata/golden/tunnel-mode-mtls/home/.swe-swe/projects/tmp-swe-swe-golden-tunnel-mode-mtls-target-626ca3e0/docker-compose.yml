@@ -27,6 +27,11 @@ services:
       - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
       # Enterprise certificates (if certs/ directory exists with certificates)
       - ./certs:/swe-swe/certs:ro
+      # mTLS client cert for the swe-swe-tunnel subprocess. Bind-mounted
+      # read-only from the host path passed to swe-swe init via
+      # --tunnel-client-cert. The matching private key is the agent's
+      # existing identity.key, so no key is mounted here.
+      - /etc/swe-swe-tunnel/client.crt:/home/app/.swe-swe-tunnel/client.crt:ro
       # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
       - type: tmpfs
         target: /workspace/.swe-swe/uploads
@@ -82,6 +87,10 @@ services:
       - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
       - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
       - SWE_TUNNEL_BIN=${SWE_TUNNEL_BIN:-swe-swe-tunnel}
+      # mTLS: point swe-swe-tunnel at the cert mounted into the container
+      # above. swe-swe-server forwards this env to the child via the
+      # supervisor's ClientCertPath option.
+      - SWE_TUNNEL_CLIENT_CERT=/home/app/.swe-swe-tunnel/client.crt
     restart: unless-stopped
 
 networks:
