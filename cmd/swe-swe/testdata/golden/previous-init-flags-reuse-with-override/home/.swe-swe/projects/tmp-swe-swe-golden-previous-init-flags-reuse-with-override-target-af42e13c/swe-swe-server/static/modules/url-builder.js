@@ -105,6 +105,17 @@ export function buildPortBasedAgentChatUrl(location, agentChatProxyPort) {
 }
 
 /**
+ * Build the port-based files URL (cross-origin, per-port).
+ * @param {{protocol: string, hostname: string}} location - Location-like object
+ * @param {number|null} filesProxyPort - The per-session files proxy port
+ * @returns {string|null} Port-based files URL, or null if no port
+ */
+export function buildPortBasedFilesUrl(location, filesProxyPort) {
+    if (!filesProxyPort) return null;
+    return `${location.protocol}//${location.hostname}:${filesProxyPort}`;
+}
+
+/**
  * Build a port-based proxy URL by combining the port-based base with a target path.
  * @param {{protocol: string, hostname: string}} location - Location-like object
  * @param {number|null} previewProxyPort - The per-session preview proxy port
@@ -148,6 +159,19 @@ export function buildSubdomainPreviewUrl(location, targetPort, publicHostname) {
  * @returns {string|null} Subdomain agent chat URL, or null if either input is missing
  */
 export function buildSubdomainAgentChatUrl(location, targetPort, publicHostname) {
+    if (!targetPort || !publicHostname) return null;
+    return `${location.protocol}//${targetPort}.${publicHostname}`;
+}
+
+/**
+ * Build the subdomain-based files URL for tunnel mode. Same shape as
+ * buildSubdomainPreviewUrl but for the files target port.
+ * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {number|null} targetPort - The per-session files target port
+ * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
+ * @returns {string|null} Subdomain files URL, or null if either input is missing
+ */
+export function buildSubdomainFilesUrl(location, targetPort, publicHostname) {
     if (!targetPort || !publicHostname) return null;
     return `${location.protocol}//${targetPort}.${publicHostname}`;
 }

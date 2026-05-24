@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, getDebugQueryString } from './modules/url-builder.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -58,13 +58,14 @@ function buildPresetIcon(rects) {
 }
 
 // Display order for slot tab bars (same in every slot).
-const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'vscode', 'shell', 'browser'];
+const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'files', 'vscode', 'shell', 'browser'];
 
 // Human-readable labels for slot tab bar buttons.
 const PANE_LABELS = {
     'agent-terminal': 'Agent Terminal',
     'agent-chat':     'Agent Chat',
     'preview':        'Preview',
+    'files':          'Files',
     'vscode':         'Code',
     'shell':          'Terminal',
     'browser':        'Agent View',
@@ -245,6 +246,7 @@ class TerminalUI extends HTMLElement {
         this._proxyMode = null; // null = undecided, 'port' = per-port, 'path' = path-based
         this.previewProxyPort = null;
         this.agentChatProxyPort = null;
+        this.filesProxyPort = null;
         this.publicPort = null;
         this.cdpPort = null;
         this.vncPort = null;
@@ -777,6 +779,19 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                 </div>
                                 <iframe class="terminal-ui__iframe" data-pane="preview" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                            </div>
+                        </div>
+
+                        <!-- Files (md-serve) pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="files" hidden>
+                            <div class="terminal-ui__iframe-slot" data-pane="files">
+                                <div class="terminal-ui__iframe-placeholder hidden">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to files...</span>
+                                    </div>
+                                </div>
+                                <iframe class="terminal-ui__iframe" data-pane="files" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                             </div>
                         </div>
 
@@ -1542,12 +1557,14 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 const prevPreviewProxyPort = this.previewProxyPort;
                 const prevVncProxyPort = this.vncProxyPort;
+                const prevFilesProxyPort = this.filesProxyPort;
                 this.previewPort = msg.previewPort || null;
                 this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
                 this.sessionUUID = msg.sessionUUID || null;
                 this.previewProxyPort = msg.previewProxyPort || null;
                 this.agentChatProxyPort = msg.agentChatProxyPort || null;
+                this.filesProxyPort = msg.filesProxyPort || null;
                 this.publicPort = msg.publicPort || null;
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
@@ -1558,7 +1575,8 @@ class TerminalUI extends HTMLElement {
                 // to set (or vice-versa) so the dotted-underline affordance
                 // and tooltip appear without waiting for an unrelated event.
                 if ((!prevPreviewProxyPort) !== (!this.previewProxyPort)
-                    || (!prevVncProxyPort) !== (!this.vncProxyPort)) {
+                    || (!prevVncProxyPort) !== (!this.vncProxyPort)
+                    || (!prevFilesProxyPort) !== (!this.filesProxyPort)) {
                     this._rerenderSlotTabs();
                     const sel = this.querySelector('.terminal-ui__mobile-nav-select');
                     if (sel) this.switchMobileNav(sel.value);
@@ -1692,6 +1710,14 @@ class TerminalUI extends HTMLElement {
                         const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
                         this.setPreviewURL(currentTarget);
                     }
+                }
+                // Load files once filesProxyPort arrives. If the user dragged
+                // the Files tab into a slot before the port was known,
+                // _loadPaneIfNeeded('files') returned early (deferred) without
+                // marking it loaded; re-kick now so the iframe src gets set and
+                // the "Connecting to files..." placeholder clears.
+                if (this.filesProxyPort && this._slotForPane('files') && !this._paneLoaded.has('files')) {
+                    this._loadPaneIfNeeded('files');
                 }
                 // YOLO mode state
                 this.yoloMode = msg.yoloMode || false;
@@ -4612,6 +4638,21 @@ class TerminalUI extends HTMLElement {
                 this._paneLoaded.add('vscode');
                 this.setIframeUrl(buildVSCodeUrl(baseUrl, this.workDir), 'vscode');
                 break;
+            case 'files': {
+                // Cross-origin only -- md-serve emits root-relative links, so a
+                // path prefix would break navigation. Tunnel mode demuxes
+                // {filesProxyPort}.{publicHostname} -> 127.0.0.1:{filesProxyPort};
+                // legacy mode hits the same auth-proxy port directly.
+                const filesUrl = this.publicHostname
+                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.publicHostname)
+                    : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+                // Defer if the proxy port hasn't arrived yet -- the WS Status
+                // handler re-kicks us once filesProxyPort flips from null.
+                if (!filesUrl) return;
+                this._paneLoaded.add('files');
+                this.setIframeUrl(filesUrl + '/', 'files');
+                break;
+            }
             case 'shell': {
                 this._paneLoaded.add('shell');
                 const shellUUID = deriveShellUUID(this.uuid);
@@ -5208,6 +5249,7 @@ class TerminalUI extends HTMLElement {
     _isPaneKnown(paneId) {
         if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing || !!this._agentChatPending;
         if (paneId === 'browser') return !!this.vncProxyPort;
+        if (paneId === 'files') return !!this.filesProxyPort;
         if (paneId === 'vscode') return this._vscodeEnabled();
         return true;
     }
@@ -5364,6 +5406,12 @@ class TerminalUI extends HTMLElement {
                 return this.getBrowserViewUrl();
             case 'vscode':
                 return this._vscodeEnabled() ? buildVSCodeUrl(getBaseUrl(window.location), this.workDir) : null;
+            case 'files': {
+                const filesUrl = this.publicHostname
+                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.publicHostname)
+                    : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+                return filesUrl ? filesUrl + '/' : null;
+            }
             case 'agent-chat': {
                 const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                 const src = chatIframe && chatIframe.src;

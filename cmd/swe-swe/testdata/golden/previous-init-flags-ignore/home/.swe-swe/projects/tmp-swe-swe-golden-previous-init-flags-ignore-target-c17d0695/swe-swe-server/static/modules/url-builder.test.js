@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainProxyUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -346,6 +346,35 @@ test('buildPortBasedAgentChatUrl returns null when port is 0', () => {
     );
 });
 
+// buildPortBasedFilesUrl tests
+test('buildPortBasedFilesUrl returns protocol://hostname:port', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'http:', hostname: 'localhost' }, 29000),
+        'http://localhost:29000'
+    );
+});
+
+test('buildPortBasedFilesUrl returns null when port is null', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'http:', hostname: 'localhost' }, null),
+        null
+    );
+});
+
+test('buildPortBasedFilesUrl returns null when port is 0', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'http:', hostname: 'localhost' }, 0),
+        null
+    );
+});
+
+test('buildPortBasedFilesUrl handles https', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'https:', hostname: 'example.com' }, 29000),
+        'https://example.com:29000'
+    );
+});
+
 // buildPortBasedProxyUrl tests
 test('buildPortBasedProxyUrl with no targetURL returns base with slash', () => {
     assert.strictEqual(
@@ -445,6 +474,28 @@ test('buildSubdomainAgentChatUrl returns null when publicHostname missing', () =
 test('buildSubdomainAgentChatUrl returns null when targetPort missing', () => {
     assert.strictEqual(
         buildSubdomainAgentChatUrl({ protocol: 'https:' }, null, 'abc.example.com'),
+        null
+    );
+});
+
+// buildSubdomainFilesUrl tests
+test('buildSubdomainFilesUrl returns protocol://port.publicHostname', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'https:' }, 29000, 'abc-tunnel.example.com'),
+        'https://29000.abc-tunnel.example.com'
+    );
+});
+
+test('buildSubdomainFilesUrl returns null when publicHostname missing', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'https:' }, 29000, ''),
+        null
+    );
+});
+
+test('buildSubdomainFilesUrl returns null when targetPort missing', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'https:' }, null, 'abc.example.com'),
         null
     );
 });
