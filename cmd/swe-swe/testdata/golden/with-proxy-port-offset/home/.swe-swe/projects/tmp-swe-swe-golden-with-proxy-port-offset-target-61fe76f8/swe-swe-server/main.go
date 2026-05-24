@@ -113,6 +113,8 @@ var (
 	cdpPortEnd         = 6019
 	vncPortStart       = 7000
 	vncPortEnd         = 7019
+	filesPortStart     = 9000
+	filesPortEnd       = 9019
 	proxyPortOffset    = 50000
 )
 
@@ -120,6 +122,7 @@ func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 func cdpProxyPort(port int) int        { return proxyPortOffset + port }
 func vncProxyPort(port int) int        { return proxyPortOffset + port }
+func filesProxyPort(port int) int      { return proxyPortOffset + port }
 
 // flagPassed reports whether the user explicitly passed a flag on the
 // command line. Used to distinguish "flag at default value" from "flag
@@ -460,6 +463,7 @@ type Session struct {
 	PublicPort    int // Public (no-auth) port for this session
 	CDPPort       int // Chrome DevTools Protocol port for this session
 	VNCPort       int // VNC port for browser view for this session
+	FilesPort     int // Files (md-serve) port for this session
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
 	BrowserStarted bool   // Whether browser processes have been started
@@ -4110,6 +4114,10 @@ func vncPortFromPreview(previewPort int) int {
 	return previewPort + 4000
 }
 
+func filesPortFromPreview(previewPort int) int {
+	return previewPort + 6000
+}
+
 // displayNumberFromPreview derives a unique X11 display number from a preview port.
 // Preview port 3000 -> DISPLAY=:1, 3001 -> :2, etc.
 func displayNumberFromPreview(previewPort int) int {
@@ -4591,6 +4599,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		PublicPort:      pubPort,
 		CDPPort:         cdpPort,
 		VNCPort:         vncPort,
+		FilesPort:       filesPortFromPreview(previewPort),
 		Theme:           p.Theme,
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
