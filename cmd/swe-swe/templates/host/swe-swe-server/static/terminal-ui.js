@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString } from './modules/url-builder.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -341,6 +341,16 @@ class TerminalUI extends HTMLElement {
 
     get links() {
         return this.getAttribute('links') || '';
+    }
+
+    // publicHostname scoped to how the page was actually loaded. The server
+    // sets this.publicHostname whenever it is in tunnel mode, but subdomain
+    // proxy URLs ("{port}.{publicHostname}") are only reachable when the
+    // browser reached this page through the tunnel host. When opened directly
+    // (localhost / LAN / Tailscale), this returns "" so the URL builders fall
+    // back to port-based / path-based forms that are actually reachable.
+    get effectivePublicHostname() {
+        return accessedViaTunnel(window.location, this.publicHostname) ? this.publicHostname : '';
     }
 
     connectedCallback() {
@@ -1624,8 +1634,8 @@ class TerminalUI extends HTMLElement {
                     // agent-chat target -- tunnel mode demuxes
                     // {agentChatProxyPort}.{publicHostname} -> 127.0.0.1:{agentChatProxyPort}
                     // inside the container; legacy mode hits the same port via Traefik.
-                    const acPortUrl = this.publicHostname
-                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatProxyPort, this.publicHostname)
+                    const acPortUrl = this.effectivePublicHostname
+                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatProxyPort, this.effectivePublicHostname)
                         : buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
                     if (acPathUrl) {
                         this._agentChatProbeController = new AbortController();
@@ -4653,8 +4663,8 @@ class TerminalUI extends HTMLElement {
                 // path prefix would break navigation. Tunnel mode demuxes
                 // {filesProxyPort}.{publicHostname} -> 127.0.0.1:{filesProxyPort};
                 // legacy mode hits the same auth-proxy port directly.
-                const filesUrl = this.publicHostname
-                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.publicHostname)
+                const filesUrl = this.effectivePublicHostname
+                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
                     : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
                 // Defer if the proxy port hasn't arrived yet -- the WS Status
                 // handler re-kicks us once filesProxyPort flips from null.
@@ -5371,8 +5381,8 @@ class TerminalUI extends HTMLElement {
         // vnc_lite.html falls back to window.location.hostname / port when host=
         // and port= query params are missing, so we omit them and let it derive
         // the right wss target from its own page origin.
-        if (this.publicHostname) {
-            return `${loc.protocol}//${this.vncProxyPort}.${this.publicHostname}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
+        if (this.effectivePublicHostname) {
+            return `${loc.protocol}//${this.vncProxyPort}.${this.effectivePublicHostname}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
         }
         // Legacy port-based mode: same hostname, different port. Pass host=
         // and port= explicitly so noVNC dials the correct WebSocket regardless
@@ -5387,8 +5397,8 @@ class TerminalUI extends HTMLElement {
         // so the cookie is validated before forwarding to the raw preview target.
         // Cookie.Domain is scoped to publicHostname so the apex login cookie
         // is automatically presented on every {port}.publicHostname subdomain.
-        if (this.publicHostname && this.previewProxyPort) {
-            return buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.publicHostname);
+        if (this.effectivePublicHostname && this.previewProxyPort) {
+            return buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.effectivePublicHostname);
         }
         if (this._proxyMode === 'port' && this.previewProxyPort) {
             return buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
@@ -5417,8 +5427,8 @@ class TerminalUI extends HTMLElement {
             case 'vscode':
                 return this._vscodeEnabled() ? buildVSCodeUrl(getBaseUrl(window.location), this.workDir) : null;
             case 'files': {
-                const filesUrl = this.publicHostname
-                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.publicHostname)
+                const filesUrl = this.effectivePublicHostname
+                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
                     : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
                 return filesUrl ? filesUrl + '/' : null;
             }
@@ -5855,8 +5865,8 @@ class TerminalUI extends HTMLElement {
         // the auth-proxy port.
         const probeBase = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
         if (!probeBase) return;
-        const subdomainBase = (this.publicHostname && this.previewProxyPort)
-            ? buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.publicHostname)
+        const subdomainBase = (this.effectivePublicHostname && this.previewProxyPort)
+            ? buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.effectivePublicHostname)
             : null;
         const base = subdomainBase || probeBase;
         let path;

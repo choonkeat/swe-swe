@@ -135,6 +135,24 @@ export function buildPortBasedProxyUrl(location, previewProxyPort, targetURL) {
 }
 
 /**
+ * Decide whether the current page was loaded through the reverse tunnel.
+ * Subdomain proxy URLs ("{port}.{publicHostname}") are only reachable when
+ * the browser is actually talking to the tunnel host. When the same swe-swe
+ * is reached directly (localhost, LAN IP, Tailscale name, etc.) the subdomain
+ * form is unreachable, so callers should fall back to port-based / path-based
+ * URLs. This is a function of HOW the page was loaded, not of whether the
+ * server happens to be in tunnel mode.
+ * @param {{hostname: string}} location - Location-like object
+ * @param {string} publicHostname - Tunnel public hostname (e.g. "abc-tunnel.example.com"), or "" when not in tunnel mode
+ * @returns {boolean} true when location.hostname is the tunnel host or a subdomain of it
+ */
+export function accessedViaTunnel(location, publicHostname) {
+    if (!publicHostname) return false;
+    const h = location.hostname;
+    return h === publicHostname || h.endsWith('.' + publicHostname);
+}
+
+/**
  * Build the subdomain-based preview URL for tunnel mode. When swe-swe runs
  * behind a reverse tunnel (SWE_PUBLIC_HOSTNAME / --public-hostname), browser
  * requests to "{port}.{publicHostname}" are demuxed by the tunnel server
