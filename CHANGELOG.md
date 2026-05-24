@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v2.24.0 - Skills from Git Repos (`--with-skills`)
+
+### Features
+
+- **`swe-swe init --with-skills <alias>@<url>`**: Bake external skill repos into a container so every `SKILL.md` is exposed to the agent through autocomplete. The Dockerfile runs `git clone --depth 1 <url> /tmp/skills/<alias>` at build time; on first boot the entrypoint copies the clone into `~/.swe-swe/skills-src/<alias>/` (and `git pull`s it on later boots), then symlinks each `SKILL.md`'s parent directory into the canonical store `~/.swe-swe/skills/<alias>-<skill>`. Skills are agent-agnostic -- they live only under `~/.swe-swe/skills/` and surface to Claude, Codex, Gemini, OpenCode, Aider, Goose, and Pi alike. Handles arbitrarily nested repo layouts (e.g. mattpocock's `skills/engineering/<name>/`)
+- **Skills in autocomplete (every session)**: `/api/autocomplete` now discovers skills regardless of assistant, scanning project-level dirs (`<workDir>/.swe-swe/skills`, then `.claude`/`.codex`/`.gemini`/`.opencode`/`.pi` skills dirs) then system-level dirs (`~/.swe-swe/skills` canonical store, then the same per-agent dirs under `$HOME`). Hints are prefixed `[skill]` and truncated to the first sentence to fit a single-line pill; the early-exit for assistants without a slash-command convention is dropped so skills surface even for a bare shell agent
+- **Collision-free flatten-with-prefix**: the autocomplete handle is the flattened store directory name (`<alias>-<skill>`) rather than the SKILL.md frontmatter `name:`. Because the store is one flat directory of uniquely-named entries, every installed skill is distinct by construction -- two repos that both ship `grill-me` surface as `/<alias-a>-grill-me` and `/<alias-b>-grill-me` instead of one silently shadowing the other. Project-level skills still override system skills of the same name (project-wins). Within one repo, a leaf-name clash across folders installs the second under its repo-relative path with a `[warn]` instead of an `ln -sfn` silent overwrite; the entrypoint clears stale `<alias>-*` links before re-linking and sorts `find` output so the short-name winner is deterministic
+
+### Bug Fixes
+
+- **Symlinked skills dropped from autocomplete**: `discoverSkills` used `!entry.IsDir()`, which is true for a symlink-to-directory (`os.ReadDir` reports `IsDir()==false` for symlinks), so the `--with-skills` store -- which installs every skill as an `ln -sfn` symlink -- surfaced **zero** skills in a real deploy. Fixed by using `os.Stat` (follows the link); verified against a real clone of `github.com/mattpocock/skills` where 28 nested skills went from 0 discovered to 28. Golden + unit fixtures had only ever built real dirs (`MkdirAll`), never the symlink shape production uses, which is why it shipped
+
 ## v2.23.0 - Tunnel Mode, Preset-Grid UI, Tailscale PaaS & Pi Agent
 
 ### Features

@@ -3,7 +3,7 @@
     "name": "choonkeat/swe-swe",
     "summary": "Elm type-checked specification of the swe-swe architecture",
     "license": "MIT",
-    "version": "2.23.0",
+    "version": "2.24.0",
     "exposed-modules": [
         "Domain",
         "PtyProtocol",
@@ -14,7 +14,9 @@
         "HttpProxy",
         "McpTools",
         "SessionLifecycle",
-        "Topology"
+        "Topology",
+        "TunnelMode",
+        "CredentialBroker"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {
