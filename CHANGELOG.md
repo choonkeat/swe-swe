@@ -1,8 +1,10 @@
 # CHANGELOG
 
-## v2.24.0 - Skills from Git Repos (`--with-skills`)
+## v2.24.0 - Skills from Git Repos (`--with-skills`) & Tunnel Local-Ports
 
 ### Features
+
+- **`--tunnel-local-ports` (tunnel mode)**: Optionally publish a tunnel-mode container's in-container listeners on the host's `127.0.0.1`, so the machine running `swe-swe up` can reach the containers directly instead of only through the tunnel. Widens the `swe-swe-server` bind from `127.0.0.1:${SWE_PORT}` to all interfaces (via a new `{{TUNNEL_BIND}}` placeholder driving both the `-bind` flag and `SWE_BIND`) -- required because Docker publishes ports to the container's `eth0`, not its loopback -- and adds a compose `ports:` block publishing `SWE_PORT` plus the preview / agent-chat / VNC-proxy / public ranges on host loopback only. No exposure beyond the tunnel (the per-session proxy listeners already self-authenticate); a local-only convenience with no benefit on PaaS/Fly. Documented in `tunnel-explained.md` and the tunnel-laptop runbook
 
 - **`swe-swe init --with-skills <alias>@<url>`**: Bake external skill repos into a container so every `SKILL.md` is exposed to the agent through autocomplete. The Dockerfile runs `git clone --depth 1 <url> /tmp/skills/<alias>` at build time; on first boot the entrypoint copies the clone into `~/.swe-swe/skills-src/<alias>/` (and `git pull`s it on later boots), then symlinks each `SKILL.md`'s parent directory into the canonical store `~/.swe-swe/skills/<alias>-<skill>`. Skills are agent-agnostic -- they live only under `~/.swe-swe/skills/` and surface to Claude, Codex, Gemini, OpenCode, Aider, Goose, and Pi alike. Handles arbitrarily nested repo layouts (e.g. mattpocock's `skills/engineering/<name>/`)
 - **Skills in autocomplete (every session)**: `/api/autocomplete` now discovers skills regardless of assistant, scanning project-level dirs (`<workDir>/.swe-swe/skills`, then `.claude`/`.codex`/`.gemini`/`.opencode`/`.pi` skills dirs) then system-level dirs (`~/.swe-swe/skills` canonical store, then the same per-agent dirs under `$HOME`). Hints are prefixed `[skill]` and truncated to the first sentence to fit a single-line pill; the early-exit for assistants without a slash-command convention is dropped so skills surface even for a bare shell agent
