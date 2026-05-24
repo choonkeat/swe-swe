@@ -203,7 +203,14 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		assertSymlink(t, filepath.Join(projectDir, ".pi", "prompts"))
 	})
 
-	t.Run("returns empty results for agent with no slash commands", func(t *testing.T) {
+	t.Run("returns empty results for agent with no slash commands or skills", func(t *testing.T) {
+		// Point HOME at an empty temp dir so skill discovery (which is
+		// agent-agnostic and always scans ~/.{claude,codex,...}/skills)
+		// finds nothing for this test.
+		origHome := os.Getenv("HOME")
+		os.Setenv("HOME", t.TempDir())
+		defer os.Setenv("HOME", origHome)
+
 		sessions["test-uuid"] = &Session{
 			UUID:      "test-uuid",
 			Assistant: "shell",
@@ -613,5 +620,399 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// TestDiscoverSkills verifies the skills discovery walks one level deep,
+// uses frontmatter `name:` as the canonical handle, prefixes hints with
+// `[skill]`, truncates multi-sentence descriptions, falls back to dirname
+// when frontmatter lacks `name:`, and silently returns nil for missing
+// dirs. These cover the behaviors that handleAutocompleteAPI relies on.
+func TestDiscoverSkills(t *testing.T) {
+	t.Run("returns nil for missing dir", func(t *testing.T) {
+		if got := discoverSkills("/nonexistent/skills"); got != nil {
+			t.Fatalf("expected nil for missing dir, got %v", got)
+		}
+	})
+
+	t.Run("returns nil for empty dir", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		if got := discoverSkills(tmpDir); got != nil {
+			t.Fatalf("expected nil for empty dir, got %v", got)
+		}
+	})
+
+	t.Run("flat layout with frontmatter name and description", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mkdirAll(t, filepath.Join(tmpDir, "cli-development"))
+		writeFile(t, filepath.Join(tmpDir, "cli-development", "SKILL.md"),
+			"---\nname: cli-development\ndescription: Build CLIs in Go.\n---\n# CLI\n")
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 {
+			t.Fatalf("expected 1 skill, got %d: %+v", len(got), got)
+		}
+		if got[0].V != "cli-development" {
+			t.Errorf("expected V=cli-development, got %q", got[0].V)
+		}
+		if got[0].H != "[skill] Build CLIs in Go." {
+			t.Errorf("expected [skill] prefix + first sentence, got %q", got[0].H)
+		}
+	})
+
+	t.Run("frontmatter name overrides dirname", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mkdirAll(t, filepath.Join(tmpDir, "init"))
+		writeFile(t, filepath.Join(tmpDir, "init", "SKILL.md"),
+			"---\nname: tdspec:init\ndescription: Initialize tdspec.\n---\n")
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 || got[0].V != "tdspec:init" {
+			t.Fatalf("expected V=tdspec:init from frontmatter, got %+v", got)
+		}
+	})
+
+	t.Run("falls back to dirname when frontmatter lacks name", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mkdirAll(t, filepath.Join(tmpDir, "fallback-skill"))
+		writeFile(t, filepath.Join(tmpDir, "fallback-skill", "SKILL.md"),
+			"---\ndescription: No name field.\n---\n")
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 || got[0].V != "fallback-skill" {
+			t.Fatalf("expected dirname fallback, got %+v", got)
+		}
+	})
+
+	t.Run("truncates multi-sentence description to first sentence", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mkdirAll(t, filepath.Join(tmpDir, "verbose"))
+		writeFile(t, filepath.Join(tmpDir, "verbose", "SKILL.md"),
+			"---\nname: verbose\ndescription: First sentence here. Second sentence. Third sentence.\n---\n")
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 {
+			t.Fatalf("expected 1 skill, got %d", len(got))
+		}
+		if got[0].H != "[skill] First sentence here." {
+			t.Errorf("expected first sentence only, got %q", got[0].H)
+		}
+	})
+
+	t.Run("skill prefix with no description", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mkdirAll(t, filepath.Join(tmpDir, "bare"))
+		writeFile(t, filepath.Join(tmpDir, "bare", "SKILL.md"),
+			"---\nname: bare\n---\n")
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 || got[0].H != "[skill]" {
+			t.Fatalf("expected bare [skill] hint, got %+v", got)
+		}
+	})
+
+	t.Run("skips entries without SKILL.md", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mkdirAll(t, filepath.Join(tmpDir, "empty-dir"))
+		mkdirAll(t, filepath.Join(tmpDir, "valid"))
+		writeFile(t, filepath.Join(tmpDir, "valid", "SKILL.md"),
+			"---\nname: valid\ndescription: Counts.\n---\n")
+		writeFile(t, filepath.Join(tmpDir, "loose-file.md"),
+			"# Not a skill\n")
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 || got[0].V != "valid" {
+			t.Fatalf("expected only valid skill, got %+v", got)
+		}
+	})
+}
+
+// TestSkillCandidateDirs verifies the candidate dir lists cover every
+// known agent convention plus the swe-swe canonical store. The exact set
+// is load-bearing -- handleAutocompleteAPI scans these regardless of
+// session.Assistant so a skill installed under any convention appears in
+// every agent's autocomplete.
+func TestSkillCandidateDirs(t *testing.T) {
+	t.Run("system dirs cover all known conventions", func(t *testing.T) {
+		origHome := os.Getenv("HOME")
+		os.Setenv("HOME", "/h")
+		defer os.Setenv("HOME", origHome)
+
+		want := []string{
+			"/h/.swe-swe/skills",
+			"/h/.claude/skills",
+			"/h/.codex/skills",
+			"/h/.gemini/skills",
+			"/h/.opencode/skills",
+			"/h/.pi/skills",
+		}
+		got := skillCandidateDirsSystem()
+		if len(got) != len(want) {
+			t.Fatalf("expected %d system dirs, got %d: %v", len(want), len(got), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("system dir [%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("project dirs nil when workDir empty", func(t *testing.T) {
+		if got := skillCandidateDirsProject(""); got != nil {
+			t.Errorf("expected nil for empty workDir, got %v", got)
+		}
+	})
+
+	t.Run("project dirs cover all known conventions", func(t *testing.T) {
+		want := []string{
+			"/work/.swe-swe/skills",
+			"/work/.claude/skills",
+			"/work/.codex/skills",
+			"/work/.gemini/skills",
+			"/work/.opencode/skills",
+			"/work/.pi/skills",
+		}
+		got := skillCandidateDirsProject("/work")
+		if len(got) != len(want) {
+			t.Fatalf("expected %d project dirs, got %d: %v", len(want), len(got), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("project dir [%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+}
+
+// TestExtractSkillFrontmatter verifies frontmatter parsing edge cases for
+// SKILL.md files: no frontmatter, partial fields, quoted values, missing
+// closing fence.
+func TestExtractSkillFrontmatter(t *testing.T) {
+	cases := []struct {
+		name        string
+		input       string
+		wantName    string
+		wantDescrip string
+	}{
+		{"no frontmatter", "# Just markdown\n", "", ""},
+		{"missing close fence", "---\nname: foo\n", "", ""},
+		{"both fields", "---\nname: foo\ndescription: Bar baz.\n---\n", "foo", "Bar baz."},
+		{"only name", "---\nname: foo\n---\n", "foo", ""},
+		{"only description", "---\ndescription: Bar.\n---\n", "", "Bar."},
+		{"double-quoted values", "---\nname: \"foo\"\ndescription: \"Bar.\"\n---\n", "foo", "Bar."},
+		{"single-quoted values", "---\nname: 'foo'\ndescription: 'Bar.'\n---\n", "foo", "Bar."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotName, gotDesc := extractSkillFrontmatter(tc.input)
+			if gotName != tc.wantName {
+				t.Errorf("name: got %q, want %q", gotName, tc.wantName)
+			}
+			if gotDesc != tc.wantDescrip {
+				t.Errorf("description: got %q, want %q", gotDesc, tc.wantDescrip)
+			}
+		})
+	}
+}
+
+// TestFirstSentence verifies sentence truncation handles `.`, `!`, `?`,
+// no terminator, and surrounding whitespace.
+func TestFirstSentence(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"One. Two.", "One."},
+		{"Hello! Goodbye.", "Hello!"},
+		{"Question? Answer.", "Question?"},
+		{"No terminator at all", "No terminator at all"},
+		{"  Leading and trailing.  ", "Leading and trailing."},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := firstSentence(tc.in); got != tc.want {
+				t.Errorf("firstSentence(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHandleAutocompleteAPI_SkillsSurfaced is an end-to-end check: a skill
+// dropped under the session's workDir/.claude/skills/ surfaces in
+// autocomplete with the [skill] hint prefix, even when the session's
+// assistant is not Claude. Confirms the agent-agnostic discovery wiring.
+func TestHandleAutocompleteAPI_SkillsSurfaced(t *testing.T) {
+	origKey := mcpAuthKey
+	mcpAuthKey = "test-api-key"
+	defer func() { mcpAuthKey = origKey }()
+
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	workDir := t.TempDir()
+	// Drop a project-level skill under .codex/skills/ to also prove the
+	// non-Claude convention is scanned.
+	mkdirAll(t, filepath.Join(workDir, ".codex", "skills", "deploy"))
+	writeFile(t, filepath.Join(workDir, ".codex", "skills", "deploy", "SKILL.md"),
+		"---\nname: deploy\ndescription: Push to prod.\n---\n")
+
+	// Session is a gemini agent -- skills must still surface.
+	sessions["test-uuid"] = &Session{
+		UUID:      "test-uuid",
+		Assistant: "gemini",
+		WorkDir:   workDir,
+		AssistantConfig: AssistantConfig{
+			SlashCmdFormat: SlashCmdTOML,
+		},
+	}
+	defer delete(sessions, "test-uuid")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey,
+		strings.NewReader(`{"type":"slash-command","query":""}`))
+	w := httptest.NewRecorder()
+	handleAutocompleteAPI(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp autocompleteResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var found *autocompleteItem
+	for i, item := range resp.Results {
+		if item.V == "deploy" {
+			found = &resp.Results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("skill 'deploy' missing from results: %+v", resp.Results)
+	}
+	if found.H != "[skill] Push to prod." {
+		t.Errorf("hint: got %q, want %q", found.H, "[skill] Push to prod.")
+	}
+}
+
+// TestHandleAutocompleteAPI_SkillsDedupProjectWins verifies that when the
+// same skill name appears in both project-level and system-level dirs,
+// only one entry appears in autocomplete and project-level wins (its
+// description survives).
+func TestHandleAutocompleteAPI_SkillsDedupProjectWins(t *testing.T) {
+	origKey := mcpAuthKey
+	mcpAuthKey = "test-api-key"
+	defer func() { mcpAuthKey = origKey }()
+
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	workDir := t.TempDir()
+	mkdirAll(t, filepath.Join(workDir, ".claude", "skills", "shared"))
+	writeFile(t, filepath.Join(workDir, ".claude", "skills", "shared", "SKILL.md"),
+		"---\nname: shared\ndescription: Project version.\n---\n")
+
+	mkdirAll(t, filepath.Join(tmpHome, ".claude", "skills", "shared"))
+	writeFile(t, filepath.Join(tmpHome, ".claude", "skills", "shared", "SKILL.md"),
+		"---\nname: shared\ndescription: System version.\n---\n")
+
+	sessions["test-uuid"] = &Session{
+		UUID:      "test-uuid",
+		Assistant: "claude",
+		WorkDir:   workDir,
+		AssistantConfig: AssistantConfig{
+			SlashCmdFormat: SlashCmdMD,
+		},
+	}
+	defer delete(sessions, "test-uuid")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey,
+		strings.NewReader(`{"type":"slash-command","query":""}`))
+	w := httptest.NewRecorder()
+	handleAutocompleteAPI(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp autocompleteResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	count := 0
+	var sharedHint string
+	for _, item := range resp.Results {
+		if item.V == "shared" {
+			count++
+			sharedHint = item.H
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 'shared' skill (project-wins dedup), got %d", count)
+	}
+	if sharedHint != "[skill] Project version." {
+		t.Errorf("expected project description to win, got hint %q", sharedHint)
+	}
+}
+
+// TestHandleAutocompleteAPI_SkillsDedupAcrossAgentDirs verifies that two
+// different agent dirs at the same level (e.g. ~/.claude/skills/foo and
+// ~/.codex/skills/foo) collapse into a single autocomplete entry. The
+// first scanned wins (deterministic order: .swe-swe, .claude, .codex, ...).
+func TestHandleAutocompleteAPI_SkillsDedupAcrossAgentDirs(t *testing.T) {
+	origKey := mcpAuthKey
+	mcpAuthKey = "test-api-key"
+	defer func() { mcpAuthKey = origKey }()
+
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	// .claude is scanned before .codex per skillCandidateDirsSystem order
+	// (after .swe-swe, which is empty here).
+	mkdirAll(t, filepath.Join(tmpHome, ".claude", "skills", "review"))
+	writeFile(t, filepath.Join(tmpHome, ".claude", "skills", "review", "SKILL.md"),
+		"---\nname: review\ndescription: From claude dir.\n---\n")
+
+	mkdirAll(t, filepath.Join(tmpHome, ".codex", "skills", "review"))
+	writeFile(t, filepath.Join(tmpHome, ".codex", "skills", "review", "SKILL.md"),
+		"---\nname: review\ndescription: From codex dir.\n---\n")
+
+	sessions["test-uuid"] = &Session{
+		UUID:      "test-uuid",
+		Assistant: "claude",
+		WorkDir:   t.TempDir(),
+		AssistantConfig: AssistantConfig{
+			SlashCmdFormat: SlashCmdMD,
+		},
+	}
+	defer delete(sessions, "test-uuid")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey,
+		strings.NewReader(`{"type":"slash-command","query":""}`))
+	w := httptest.NewRecorder()
+	handleAutocompleteAPI(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp autocompleteResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	count := 0
+	var hint string
+	for _, item := range resp.Results {
+		if item.V == "review" {
+			count++
+			hint = item.H
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 'review' skill (cross-agent dedup), got %d", count)
+	}
+	if hint != "[skill] From claude dir." {
+		t.Errorf("expected .claude dir to win (scanned first), got hint %q", hint)
 	}
 }

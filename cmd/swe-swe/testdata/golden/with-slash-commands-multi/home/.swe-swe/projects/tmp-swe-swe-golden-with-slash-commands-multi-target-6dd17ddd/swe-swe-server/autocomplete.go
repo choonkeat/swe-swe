@@ -66,16 +66,15 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	systemDir, ext := slashCommandDirForAgent(sess.Assistant, sess.AssistantConfig.SlashCmdFormat)
-	if systemDir == "" && ext == "" {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(autocompleteResponse{Results: []autocompleteItem{}})
-		return
-	}
 
 	// Self-heal project/worktree command projections before discovery. This keeps
 	// Pi sessions compatible with existing projects that only have Claude-style
 	// project slash commands checked in or symlinked from the base worktree.
-	ensureProjectSlashCommandProjections(sess.WorkDir)
+	// Only runs when the agent has a slash command convention -- skills do not
+	// need projection (they live in a single canonical store).
+	if systemDir != "" || ext != "" {
+		ensureProjectSlashCommandProjections(sess.WorkDir)
+	}
 
 	// Collect commands from project-level and system-level directories.
 	// Project-level commands come FIRST so they appear ahead of system
@@ -126,6 +125,32 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		items = append(items, item)
+	}
+
+	// Skills are agent-agnostic: scan every known skills dir regardless of
+	// the session's assistant. Project-level dirs are scanned first so they
+	// win the dedup race; within each level, candidate dirs are scanned in
+	// fixed order. Dedup is by frontmatter `name:` (the canonical handle),
+	// not directory name. Skills with names that collide with a slash
+	// command are still emitted -- the [skill] hint prefix differentiates.
+	seenSkills := make(map[string]bool)
+	for _, d := range skillCandidateDirsProject(sess.WorkDir) {
+		for _, item := range discoverSkills(d) {
+			if seenSkills[item.V] {
+				continue
+			}
+			seenSkills[item.V] = true
+			items = append(items, item)
+		}
+	}
+	for _, d := range skillCandidateDirsSystem() {
+		for _, item := range discoverSkills(d) {
+			if seenSkills[item.V] {
+				continue
+			}
+			seenSkills[item.V] = true
+			items = append(items, item)
+		}
 	}
 
 	items = filterAutocomplete(items, req.Query)
@@ -339,6 +364,120 @@ func extractTOMLDescription(content string) string {
 		}
 	}
 	return ""
+}
+
+// skillCandidateDirsSystem returns the set of system-level skills directories
+// scanned by handleAutocompleteAPI. Skills are agent-agnostic, so every
+// known convention is included regardless of the session's assistant.
+// ~/.swe-swe/skills is the canonical store populated by --with-skills clones.
+func skillCandidateDirsSystem() []string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/home/app"
+	}
+	return []string{
+		filepath.Join(home, ".swe-swe", "skills"),
+		filepath.Join(home, ".claude", "skills"),
+		filepath.Join(home, ".codex", "skills"),
+		filepath.Join(home, ".gemini", "skills"),
+		filepath.Join(home, ".opencode", "skills"),
+		filepath.Join(home, ".pi", "skills"),
+	}
+}
+
+// skillCandidateDirsProject returns the set of project-level skills
+// directories scanned by handleAutocompleteAPI. Returns nil when workDir is
+// empty. The order matches skillCandidateDirsSystem for predictability.
+func skillCandidateDirsProject(workDir string) []string {
+	if workDir == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(workDir, ".swe-swe", "skills"),
+		filepath.Join(workDir, ".claude", "skills"),
+		filepath.Join(workDir, ".codex", "skills"),
+		filepath.Join(workDir, ".gemini", "skills"),
+		filepath.Join(workDir, ".opencode", "skills"),
+		filepath.Join(workDir, ".pi", "skills"),
+	}
+}
+
+// discoverSkills scans a single skills directory for skill subdirectories
+// containing SKILL.md. Each result uses the frontmatter `name:` field as its
+// canonical handle (falling back to the directory name when frontmatter
+// lacks `name:`), and a `[skill] <first-sentence>` description hint so
+// callers can distinguish skills from slash commands.
+//
+// Expected layout: <dir>/<subdir>/SKILL.md. Layouts with deeper nesting
+// (e.g. cloned repos with category subdirs like
+// mattpocock/skills/engineering/<name>/SKILL.md) are flattened at install
+// time by the entrypoint, so discoverSkills only needs to walk one level.
+func discoverSkills(dir string) []autocompleteItem {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var items []autocompleteItem
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		skillFile := filepath.Join(dir, entry.Name(), "SKILL.md")
+		content, err := os.ReadFile(skillFile)
+		if err != nil {
+			continue
+		}
+		name, desc := extractSkillFrontmatter(string(content))
+		if name == "" {
+			name = entry.Name()
+		}
+		hint := "[skill]"
+		if desc != "" {
+			hint += " " + firstSentence(desc)
+		}
+		items = append(items, autocompleteItem{V: name, H: hint})
+	}
+	return items
+}
+
+// extractSkillFrontmatter pulls the `name:` and `description:` fields out
+// of YAML-style frontmatter at the start of a SKILL.md file. Returns empty
+// strings when frontmatter is absent or the fields are missing.
+func extractSkillFrontmatter(content string) (name, description string) {
+	if !strings.HasPrefix(content, "---\n") {
+		return "", ""
+	}
+	end := strings.Index(content[4:], "\n---")
+	if end < 0 {
+		return "", ""
+	}
+	frontmatter := content[4 : 4+end]
+	for _, line := range strings.Split(frontmatter, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "name:"):
+			v := strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+			name = strings.Trim(v, "\"'")
+		case strings.HasPrefix(line, "description:"):
+			v := strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+			description = strings.Trim(v, "\"'")
+		}
+	}
+	return name, description
+}
+
+// firstSentence returns the leading sentence of s, including its terminator
+// (`.`, `!`, or `?`). When s has no terminator the whole string is returned
+// (trimmed). Used to shorten SKILL.md descriptions for the autocomplete
+// hint, which is single-line and competes for vertical space with slash
+// command hints.
+func firstSentence(s string) string {
+	for i, r := range s {
+		if r == '.' || r == '!' || r == '?' {
+			return strings.TrimSpace(s[:i+1])
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 // filterAutocomplete filters autocomplete items by fuzzy matching the query
