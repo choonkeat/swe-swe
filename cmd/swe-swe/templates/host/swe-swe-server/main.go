@@ -485,6 +485,7 @@ type Session struct {
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
 	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
 	VNCProxyServer       *http.Server // Per-port listener for vnc proxy (auth-checked websockify reverse proxy)
+	FilesProxyServer     *http.Server // Per-port listener for files proxy (auth-checked md-serve reverse proxy)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -846,6 +847,7 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"cdpPort":          s.CDPPort,
 		"vncPort":          s.VNCPort,
 		"vncProxyPort":     vncProxyPort(s.VNCPort),
+		"filesProxyPort":   filesProxyPort(s.FilesPort),
 		"yoloMode":         s.yoloMode,
 		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":   s.BrowserStarted,
@@ -1016,6 +1018,9 @@ func (s *Session) Close() {
 	}
 	if s.VNCProxyServer != nil {
 		s.VNCProxyServer.Shutdown(shutdownCtx)
+	}
+	if s.FilesProxyServer != nil {
+		s.FilesProxyServer.Shutdown(shutdownCtx)
 	}
 
 	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
@@ -4821,6 +4826,33 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			}
 		}()
 		sess.VNCProxyServer = vncSrv
+
+		// Files proxy at filesProxyPort (default 29000-29019). Plain
+		// reverse-proxy to the per-session md-serve on localhost:FilesPort
+		// (9000-9019); md-serve renders full pages, so no DebugHub/inject.js
+		// machinery is needed. Auth-wrapped exactly like preview/agent-chat
+		// above; in legacy/Traefik mode that wrap is a no-op since
+		// SWE_SWE_PASSWORD is empty.
+		filesTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", sess.FilesPort))
+		filesReverseProxy := httputil.NewSingleHostReverseProxy(filesTarget)
+		filesPP := filesProxyPort(sess.FilesPort)
+		filesSrv := &http.Server{
+			Addr:    fmt.Sprintf(":%d", filesPP),
+			Handler: corsWrapper(requireAuthCookie(authPassword, filesReverseProxy)),
+		}
+		go func() {
+			defer recoverGoroutine(fmt.Sprintf("files proxy for session %s", sess.UUID))
+			ln, err := net.Listen("tcp", filesSrv.Addr)
+			if err != nil {
+				log.Printf("Session %s: files proxy port %d unavailable: %v", sess.UUID, filesPP, err)
+				return
+			}
+			log.Printf("Session %s: files proxy listening on :%d", sess.UUID, filesPP)
+			if err := filesSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("Session %s: files proxy server error: %v", sess.UUID, err)
+			}
+		}()
+		sess.FilesProxyServer = filesSrv
 
 		// Public port: Traefik routes directly to the app (no swe-swe-server proxy needed)
 	}
