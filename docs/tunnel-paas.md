@@ -38,6 +38,11 @@ docker build -t <registry>/<your-app>:tunnel ./dockerbuild/
 docker push <registry>/<your-app>:tunnel
 ```
 
+If your tunnel server enforces mTLS (admin runs `tunneld` with
+`--mtls-ca`), add `--tunnel-client-cert=/path/to/client.crt` to the
+`swe-swe init` line. See
+[tunnel-explained.md](tunnel-explained.md#mtls-when-the-tunnel-server-requires-client-certificates).
+
 ## 3. Configure PaaS env vars
 
 Set on your PaaS (mark the SECRET ones as secrets):

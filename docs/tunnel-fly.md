@@ -36,6 +36,11 @@ docker build -t registry.fly.io/<your-app>:tunnel ./dockerbuild/
 docker push registry.fly.io/<your-app>:tunnel
 ```
 
+If your tunnel server enforces mTLS (admin runs `tunneld` with
+`--mtls-ca`), add `--tunnel-client-cert=/path/to/client.crt` to the
+`swe-swe init` line. See
+[tunnel-explained.md](tunnel-explained.md#mtls-when-the-tunnel-server-requires-client-certificates).
+
 ## 3. Configure Fly
 
 `fly.toml` (minimal):

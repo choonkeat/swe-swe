@@ -27,6 +27,25 @@ authenticates clients by Ed25519 pubkey.
 For background, see `tasks/2026-04-29-tunnel-subprocess-pivot.md`
 (swe-swe side) and the `swe-swe-tunnel` repo for the wire protocol.
 
+## Two sides: client (this doc) vs server (the admin)
+
+There are two halves, and these docs cover only the **client** half --
+the swe-swe container that dials out:
+
+- **Client (you):** the swe-swe container, built with
+  `init --tunnel-server-url=...`. Generating an identity, getting your
+  pubkey authorized, and the run/verify steps are all in the runbooks
+  ([tunnel-laptop.md](tunnel-laptop.md), [tunnel-fly.md](tunnel-fly.md),
+  [tunnel-paas.md](tunnel-paas.md)).
+- **Server (the admin):** the public-facing `swe-swe-tunnel` daemon
+  (`tunneld`) that terminates TLS, authorizes client pubkeys, optionally
+  enforces mTLS, and demuxes `{port}.{unique}-tunnel.<suffix>` to the
+  right session. **Running the server is out of scope here** -- see the
+  [`swe-swe-tunnel` repo](https://github.com/choonkeat/swe-swe-tunnel)
+  for how to stand up `tunneld`, authorize pubkeys, and enable
+  `--mtls-ca`. If you are self-hosting both ends (e.g. testing locally),
+  start there for the server, then return to the runbooks for the client.
+
 ## Why it requires `init --tunnel-server-url` (not a sidecar)
 
 A common shortcut -- running plain `swe-swe up` (compose mode with
@@ -109,6 +128,43 @@ on the tunnel server and confuse the operator). See
 `internal/tunnelclient/identity.go:LoadIdentity` in the
 `swe-swe-tunnel` repo.
 
+## mTLS (when the tunnel server requires client certificates)
+
+By default the tunnel server authenticates clients by Ed25519 pubkey
+alone (the identity model above). A hardened server can *additionally*
+require a TLS client certificate -- the admin runs `tunneld` with
+`--mtls-ca <ca.pem>`, and any client that doesn't present a cert signed
+by that CA is refused at the TLS layer, before identity auth.
+
+**When you need it:** only when your admin tells you the server enforces
+`--mtls-ca`. Against a server without it, a client cert is simply
+ignored, so there is no harm in omitting the flag unless asked.
+
+**How to enable it (client side):** pass `--tunnel-client-cert` at init,
+alongside `--tunnel-server-url`:
+
+```sh
+swe-swe init \
+  --tunnel-server-url=https://tunnel.example.com \
+  --tunnel-client-cert=/path/to/client.crt
+```
+
+What this wires into the generated compose:
+
+- The cert path is bind-mounted **read-only** into the container at
+  `/home/app/.swe-swe-tunnel/client.crt`.
+- `SWE_TUNNEL_CLIENT_CERT=/home/app/.swe-swe-tunnel/client.crt` is set so
+  the tunnel client presents it during the TLS handshake.
+- **No private key is mounted.** The cert's key half is your existing
+  identity key (`SWE_TUNNEL_IDENTITY_KEY` / `~/.swe-swe-tunnel/identity.key`).
+  So the client cert must be an X.509 cert issued for *that same*
+  Ed25519 identity keypair, signed by the server's mTLS CA.
+
+**Getting the cert:** the admin (who holds the mTLS CA) signs a cert for
+the pubkey you already sent them for identity authorization, and hands
+back the `.crt`. It is not secret on its own (the private key never
+leaves you), so it can travel over normal channels.
+
 ## Verifying the tunnel came up
 
 Look at the container logs for, in order:
@@ -155,6 +211,31 @@ admin GCs it.
 and `SWE_TUNNEL_UNIQUE` to the new provider's secrets, deploy,
 decommission the old. Same hostname, no DNS work needed, no need to
 re-authorize with the admin.
+
+## Reaching the container directly (`--tunnel-local-ports`)
+
+By default tunnel mode publishes **no host ports**: swe-swe-server binds
+`127.0.0.1:1977` *inside* the container and the only way in is through
+the tunnel. That is the right default for a PaaS/remote box, but it
+means that on the machine actually running the container (typically your
+laptop, `swe-swe up`) you cannot `curl localhost:1977` or open a preview
+port directly -- and if the tunnel hostname is hard to reach from where
+you sit, the UI's preview/agent-chat iframes (which target
+`{port}.{publicHostname}`) break.
+
+`init --tunnel-local-ports` (alongside `--tunnel-server-url`) widens the
+bind to all interfaces and publishes, **on the host's `127.0.0.1` only**,
+`SWE_PORT` plus the preview / agent-chat / vnc / public ranges. The
+tunnel is unaffected (the client still dials `127.0.0.1` internally), and
+nothing is exposed beyond the host's own loopback. The frontend also
+picks its URL mode by how the page was loaded, so over `localhost` it
+uses the reachable port-based / same-origin URLs instead of the tunnel
+subdomain. Full steps + the published-port table are in
+[tunnel-laptop.md](tunnel-laptop.md#optional-reach-the-containers-directly-from-your-laptop).
+
+This is primarily a **local/laptop** convenience. On a PaaS/Fly deploy
+it has no benefit (the host loopback isn't something you can reach), so
+leave it off there.
 
 ## Troubleshooting
 

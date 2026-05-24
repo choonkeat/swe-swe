@@ -34,6 +34,10 @@ baked in (no Traefik, swe-swe-tunnel client built into the image,
 supervisor wired up). Without this step, the `SWE_TUNNEL_*` env vars
 in step 3 are read by nothing.
 
+If your tunnel server enforces mTLS (the admin runs `tunneld` with
+`--mtls-ca`), also pass `--tunnel-client-cert=/path/to/client.crt` here.
+See [tunnel-explained.md](tunnel-explained.md#mtls-when-the-tunnel-server-requires-client-certificates).
+
 ## 3. Run
 
 ```sh
