@@ -159,6 +159,9 @@ from this set; a pane appears in **at most one slot** at a time
     src.
   - `Preview`: user app iframe (preview proxy). Popout URL is the
     last navigated URL or the preview base.
+  - `Files`: per-session read-only repo browser served by md-serve
+    (renders Markdown + source files), shown in an iframe. Always
+    cross-origin: port-based locally, subdomain in tunnel mode.
   - `Vscode`: code-server iframe (when enabled). Popout URL is the
     workdir-scoped VSCode URL.
   - `Shell`: extra terminal pane (manual shell).
@@ -173,16 +176,17 @@ type Pane
     = AgentTerminal
     | AgentChat
     | Preview
+    | Files
     | Vscode
     | Shell
     | Browser
 
 
-{-| All six panes.
+{-| All seven panes.
 -}
 allPanes : List Pane
 allPanes =
-    [ AgentTerminal, AgentChat, Preview, Vscode, Shell, Browser ]
+    [ AgentTerminal, AgentChat, Preview, Files, Vscode, Shell, Browser ]
 
 
 {-| Per-slot tab state.
