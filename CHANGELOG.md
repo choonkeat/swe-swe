@@ -13,6 +13,7 @@
 - **Tailscale single-container PaaS deploy** (`swe-swe up`): `tailscaled` is baked into the image and dormant unless `TS_AUTHKEY` is set. When present, swe-swe-server spawns `tailscaled --tun=userspace-networking`, joins the tailnet, and binds the swe-swe UI Tailscale-only. The PaaS public `$PORT` exposes only a placeholder landing page + `/health`. New `--tailscale-*` flags (`TS_AUTHKEY` / `TS_HOSTNAME` / `TS_STATE_DIR` / `TS_DISABLE`)
 - **`pi` agent backend** (`@mariozechner/pi-coding-agent`): Wired alongside Claude, Codex, Gemini, OpenCode, Aider, and Goose. Bundled swe-swe slash commands install into `~/.pi/agent/prompts/`, autocomplete plumbed for system + project (`.pi/prompts/`), `pi --continue` for session resume
 - **Terminal UI preset grid**: 8 layout presets with per-slot multi-tab model. Each slot owns its own tab bar, with `+` replace-menu + loading/unavailable states, drag-resizable gutters that snap at 50% and device widths, per-preset persistence in localStorage. Auto-homes Agent Chat + Agent View into preset slots; mobile falls back to Agent Terminal during chat probe
+- **Files tab (per-session `md-serve` read-only repo browser)**: Each session spawns its own `md-serve` (`@choonkeat/md-serve`) rooted at the session's working directory, surfaced as a new "Files" pane reachable from a slot's `+` menu. md-serve renders Markdown as GitHub-styled HTML, syntax-highlights source with linkable line numbers, lists directories, and live-reloads on mtime change -- a read-only view that stays current as the agent edits files, distinct from the Code (code-server) tab. It is exposed through a new per-session proxy-port band: the files port is `previewPort+6000` (range 9000-9019), wrapped by an auth-checked reverse proxy at the existing `proxyPortOffset` (default band 29000-29019). Cross-origin only in both modes (local `localhost:{filesProxyPort}`, tunnel `{filesProxyPort}.{publicHostname}`) because md-serve emits root-relative links. Read-only by design and behind the same login cookie as every other tab
 - **Per-session git credential broker**: `git-credential-swe-swe` helper + per-session `GIT_CONFIG_GLOBAL` injection routes git auth through a per-session credential broker socket. Author Name/Email wire through the credentials UI, with readonly fields when local `.git/config` overrides. Helper refuses invocation outside git
 - **`/swe-swe:setup` slash-command redesign**: Streamlined flow for git identity + auth + dev-server + env-var setup
 - **`/run-md-serve` slash-command**: Spawns `npx @choonkeat/md-serve` for previewing markdown docs
@@ -42,7 +43,7 @@
 - Pre-commit hook to keep `.swe-swe/env` values out of commits
 - E2E hardcodes all `SWE_*_PORTS` in `override.yml` + widens ranges to 30 to reduce port-collision flakes
 - `SWE_SWE_TUNNEL_REF` build-arg pin bumped through `9984c43a6059` → `751dd1cbdc42` → `77af59b37ef5`
-- Test coverage: per-port proxy auth wrap, VNC reverse proxy, slot dedup, tunnel-mode `getPreviewBaseUrl` + env passthrough, credential broker round-trip
+- Test coverage: per-port proxy auth wrap, VNC reverse proxy, slot dedup, tunnel-mode `getPreviewBaseUrl` + env passthrough, credential broker round-trip, Files-tab e2e (slot `+` menu adds the pane, iframe loads md-serve) + files proxy-port band assertion
 
 ### Documentation
 

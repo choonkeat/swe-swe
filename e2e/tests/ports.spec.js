@@ -18,10 +18,12 @@ async function createChatSessionAndGetPorts(page) {
     const ui = window.terminalUI;
     if (!ui || !ui.previewProxyPort) return null;
     if (!ui.agentChatProxyPort) return null;
+    if (!ui.filesProxyPort) return null;
     return {
       previewProxyPort: ui.previewProxyPort,
       vncProxyPort: ui.vncProxyPort,
       agentChatProxyPort: ui.agentChatProxyPort,
+      filesProxyPort: ui.filesProxyPort,
       sessionUUID: ui.sessionUUID,
     };
   }, { timeout: 60_000 });
@@ -61,7 +63,7 @@ async function fetchPortWithRetry(page, port, path, maxRetries) {
 // Single test that verifies all proxy ports from one session.
 // Uses one login + one session to avoid Traefik rate limiting in compose mode.
 test.describe('Port Connectivity', () => {
-  test('preview, VNC, and agent chat proxy ports respond', async ({ page }) => {
+  test('preview, VNC, agent chat, and files proxy ports respond', async ({ page }) => {
     const ports = await createChatSessionAndGetPorts(page);
 
     // --- Preview proxy ---
@@ -91,5 +93,22 @@ test.describe('Port Connectivity', () => {
     const chatResp = await fetchPortWithRetry(page, ports.agentChatProxyPort, '/', 5);
     console.log(`Agent chat proxy port ${chatResp.port}: ok=${chatResp.ok}, status=${chatResp.status}, type=${chatResp.type}`);
     expect(chatResp.ok).toBe(true);
+
+    // --- Files proxy (per-session md-serve) ---
+    // The files port is derived as previewPort+6000, then wrapped by the same
+    // proxyPortOffset as every other proxy band. So independent of the
+    // configured offset, filesProxyPort - previewProxyPort === 6000. With the
+    // e2e simple stack's preview band (3200-3229) and the default offset
+    // (20000), filesProxyPort lands in 29200-29229. Unlike VNC, md-serve
+    // answers under the auth cookie without any MCP_AUTH_KEY gate, so we can
+    // drive the proxy end-to-end here.
+    expect(ports.filesProxyPort).toBeTruthy();
+    expect(ports.filesProxyPort - ports.previewProxyPort).toBe(6000);
+    expect(ports.filesProxyPort).toBeGreaterThanOrEqual(29200);
+    expect(ports.filesProxyPort).toBeLessThanOrEqual(29229);
+    console.log(`Testing files proxy port: ${ports.filesProxyPort}`);
+    const filesResp = await fetchPortWithRetry(page, ports.filesProxyPort, '/', 5);
+    console.log(`Files proxy port ${filesResp.port}: ok=${filesResp.ok}, status=${filesResp.status}, type=${filesResp.type}`);
+    expect(filesResp.ok).toBe(true);
   });
 });

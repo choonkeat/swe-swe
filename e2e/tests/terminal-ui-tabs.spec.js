@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
 import { endSessions } from './_helpers/sessions.js';
 
+// Same base-url resolution ports.spec.js uses, for the cross-origin
+// filesProxyPort reachability check in the Files-tab test.
+const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+
 // Auth cookie comes from the suite-wide storageState (see playwright.config.js
 // + global-setup.js); no per-test login is needed.
 
@@ -602,6 +606,90 @@ test.describe('terminal-ui tab switching', () => {
     if (fonts.refTabFamily) {
       expect(fonts.menuFamily).toBe(fonts.refTabFamily);
     }
+  });
+
+  test('Files tab: slot "+" menu adds Files pane, tab appears, iframe loads md-serve at filesProxyPort', async ({ page }) => {
+    // The Files pane (per-session md-serve) is reached via a slot's "+"
+    // popover -- the same affordance the font-stack test above exercises.
+    // It only becomes "known" (and thus offered in the menu) once the WS
+    // Status payload delivers filesProxyPort, so wait for that first.
+    await openChatSession(page);
+
+    await waitForUi(page, () => {
+      const ui = window.terminalUI;
+      return ui && ui.filesProxyPort && ui.sessionUUID;
+    });
+
+    const filesProxyPort = await page.evaluate(() => window.terminalUI.filesProxyPort);
+    expect(filesProxyPort).toBeTruthy();
+
+    // Open the "+" popover on whichever slot offers Files, then click the
+    // "Files" item. Menu items are .terminal-ui__slot-replace-item buttons
+    // whose textContent is the pane label (PANE_LABELS['files'] === 'Files').
+    // We may need to try more than one slot's "+" button before we find the
+    // one whose unassigned list includes Files.
+    const addBtns = page.locator('.terminal-ui__slot-add');
+    const addCount = await addBtns.count();
+    expect(addCount).toBeGreaterThan(0);
+
+    let clickedFiles = false;
+    for (let i = 0; i < addCount; i++) {
+      await addBtns.nth(i).click();
+      const menu = page.locator('.terminal-ui__slot-replace-menu');
+      await menu.waitFor({ state: 'visible' });
+      const filesItem = menu.locator('.terminal-ui__slot-replace-item', { hasText: 'Files' });
+      if (await filesItem.count() > 0) {
+        await filesItem.first().click();
+        clickedFiles = true;
+        break;
+      }
+      // Not in this slot's menu; dismiss and try the next "+".
+      await page.mouse.click(2, 2);
+      await menu.waitFor({ state: 'detached' }).catch(() => {});
+    }
+    expect(clickedFiles).toBe(true);
+
+    // The slot now carries a Files tab button (data-pane="files") labelled
+    // "Files", and files is the active pane in some slot.
+    const tabState = await page.evaluate(() => {
+      const ui = window.terminalUI;
+      const tab = ui.querySelector('.terminal-ui__slot-tab[data-pane="files"]');
+      return {
+        hasTab: !!tab,
+        tabLabel: tab?.querySelector('.terminal-ui__slot-tab-label')?.textContent,
+        slotForFiles: ui._slotForPane('files'),
+      };
+    });
+    expect(tabState.hasTab).toBe(true);
+    expect(tabState.tabLabel).toBe('Files');
+    expect(tabState.slotForFiles).toBeTruthy();
+
+    // The files iframe src must point at the filesProxyPort (cross-origin
+    // port form in non-tunnel mode: http://<host>:<filesProxyPort>/). Give
+    // _loadPaneIfNeeded a moment to set it.
+    const src = await page.waitForFunction(() => {
+      const iframe = window.terminalUI.querySelector('.terminal-ui__iframe[data-pane="files"]');
+      const s = iframe?.getAttribute('src');
+      return s ? s : null;
+    }, null, { timeout: 10_000 }).then(h => h.jsonValue());
+    expect(src).toBeTruthy();
+    expect(src).toContain(`:${filesProxyPort}`);
+
+    // Finally, confirm md-serve is actually answering on that proxy port by
+    // fetching the directory listing it renders for the session workDir.
+    // Cross-origin so we use no-cors and assert the request resolves (an
+    // opaque response) rather than throwing -- mirrors ports.spec.js.
+    const url = new URL(BASE_URL);
+    const filesUrl = `${url.protocol}//${url.hostname}:${filesProxyPort}/`;
+    const reachable = await page.evaluate(async (fetchUrl) => {
+      try {
+        const r = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000), mode: 'no-cors' });
+        return { ok: true, type: r.type };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    }, filesUrl);
+    expect(reachable.ok).toBe(true);
   });
 
   test('preview iframe loads without getting stuck on "Connecting..." placeholder', async ({ page }) => {
