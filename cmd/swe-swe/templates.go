@@ -317,6 +317,18 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 				continue
 			}
 
+			if strings.Contains(line, "{{FILES_ENTRYPOINTS}}") {
+				indent := strings.Split(line, "{{FILES_ENTRYPOINTS}}")[0]
+				for _, port := range previewPorts {
+					fp := filesPort(port)
+					entrypoint := fmt.Sprintf("files%d", fp)
+					pp := filesProxyPort(fp, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.address=:%d\"", indent, entrypoint, pp))
+					result = append(result, fmt.Sprintf("%s- \"--entrypoints.%s.transport.respondingTimeouts.readTimeout=60s\"", indent, entrypoint))
+				}
+				continue
+			}
+
 			if strings.Contains(line, "{{PUBLIC_PORTS}}") {
 				indent := strings.Split(line, "{{PUBLIC_PORTS}}")[0]
 				for _, port := range publicPorts {
@@ -337,9 +349,9 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 
 			// Tunnel mode + --tunnel-local-ports: publish the in-container
 			// listeners on the host's 127.0.0.1. Mirrors the non-tunnel port
-			// set (SWE_PORT + preview/agent-chat/vnc proxy ranges + public
-			// range) but host-scoped to loopback and attached directly to the
-			// swe-swe service (no Traefik in tunnel mode).
+			// set (SWE_PORT + preview/agent-chat/vnc/files proxy ranges +
+			// public range) but host-scoped to loopback and attached directly
+			// to the swe-swe service (no Traefik in tunnel mode).
 			if strings.Contains(line, "{{TUNNEL_LOCAL_PORTS}}") {
 				indent := strings.Split(line, "{{TUNNEL_LOCAL_PORTS}}")[0]
 				// Main swe-swe-server port.
@@ -361,9 +373,25 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					pp := vncProxyPort(vp, proxyPortOffset)
 					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, pp, pp))
 				}
+				// Files proxy ports.
+				for _, port := range previewPorts {
+					fp := filesPort(port)
+					pp := filesProxyPort(fp, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, pp, pp))
+				}
 				// Public ports (no offset; the app binds these directly).
 				for _, port := range publicPorts {
 					result = append(result, fmt.Sprintf("%s- \"127.0.0.1:%d:%d\"", indent, port, port))
+				}
+				continue
+			}
+
+			if strings.Contains(line, "{{FILES_PORTS}}") {
+				indent := strings.Split(line, "{{FILES_PORTS}}")[0]
+				for _, port := range previewPorts {
+					fp := filesPort(port)
+					pp := filesProxyPort(fp, proxyPortOffset)
+					result = append(result, fmt.Sprintf("%s- \"%d:%d\"", indent, pp, pp))
 				}
 				continue
 			}
@@ -474,6 +502,39 @@ func processSimpleTemplate(content string, withDocker bool, withVSCode bool, ssl
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, vp))
+					if isSSL {
+						if isLetsEncrypt {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
+						} else if isSelfSign {
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
+						}
+					}
+				}
+				continue
+			}
+
+			if strings.Contains(line, "{{FILES_ROUTERS}}") {
+				indent := strings.Split(line, "{{FILES_ROUTERS}}")[0]
+				for _, port := range previewPorts {
+					fp := filesPort(port)
+					entrypoint := fmt.Sprintf("files%d", fp)
+					routerName := fmt.Sprintf("${PROJECT_NAME}-files-%d", fp)
+					// Probe router: no ForwardAuth, higher priority -- Safari CORS fix
+					probeName := routerName + "-probe"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=Path(`/__probe__`)\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Main router with ForwardAuth
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=forwardauth@file\"", indent, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, routerName, routerName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.services.%s.loadbalancer.server.port=%d\"", indent, routerName, fp))
 					if isSSL {
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
@@ -605,6 +666,10 @@ func vncPort(previewPort int) int {
 	return previewPort + 4000
 }
 
+func filesPort(previewPort int) int {
+	return previewPort + 6000
+}
+
 func previewProxyPort(port, offset int) int {
 	return offset + port
 }
@@ -618,6 +683,10 @@ func cdpProxyPort(port, offset int) int {
 }
 
 func vncProxyPort(port, offset int) int {
+	return offset + port
+}
+
+func filesProxyPort(port, offset int) int {
 	return offset + port
 }
 

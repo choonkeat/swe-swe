@@ -617,7 +617,11 @@ func handleInit() {
 		fmt.Fprintf(os.Stderr, "Error: --proxy-port-offset must be >= 1024, got %d\n", *proxyPortOffset)
 		os.Exit(1)
 	}
-	if *proxyPortOffset+5019 >= 65536 {
+	// 9019 is the highest real port that gets the offset applied: the top of
+	// the files band (preview 3000-3019 + 6000 = 9000-9019). Keep this in sync
+	// with the highest derived band so a large offset cannot push a proxy port
+	// past 65535.
+	if *proxyPortOffset+9019 >= 65536 {
 		fmt.Fprintf(os.Stderr, "Error: --proxy-port-offset %d is too large (offset + max port must be < 65536)\n", *proxyPortOffset)
 		os.Exit(1)
 	}
@@ -1172,9 +1176,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 					lastAC := agentChatPortsRange[len(agentChatPortsRange)-1]
 					firstVNC := vncPort(firstPreview)
 					lastVNC := vncPort(lastPreview)
+					firstFiles := filesPort(firstPreview)
+					lastFiles := filesPort(lastPreview)
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", previewProxyPort(firstPreview, ppo), previewProxyPort(lastPreview, ppo), previewProxyPort(firstPreview, ppo), previewProxyPort(lastPreview, ppo))
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", agentChatProxyPort(firstAC, ppo), agentChatProxyPort(lastAC, ppo), agentChatProxyPort(firstAC, ppo), agentChatProxyPort(lastAC, ppo))
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo), firstVNC, lastVNC)
+					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", filesProxyPort(firstFiles, ppo), filesProxyPort(lastFiles, ppo), firstFiles, lastFiles)
 				}
 				if len(publicPortsRange) > 0 {
 					firstPub := publicPortsRange[0]
