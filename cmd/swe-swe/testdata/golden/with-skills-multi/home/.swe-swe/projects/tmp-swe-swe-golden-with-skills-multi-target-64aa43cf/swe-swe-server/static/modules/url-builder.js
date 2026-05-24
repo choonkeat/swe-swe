@@ -105,6 +105,17 @@ export function buildPortBasedAgentChatUrl(location, agentChatProxyPort) {
 }
 
 /**
+ * Build the port-based files URL (cross-origin, per-port).
+ * @param {{protocol: string, hostname: string}} location - Location-like object
+ * @param {number|null} filesProxyPort - The per-session files proxy port
+ * @returns {string|null} Port-based files URL, or null if no port
+ */
+export function buildPortBasedFilesUrl(location, filesProxyPort) {
+    if (!filesProxyPort) return null;
+    return `${location.protocol}//${location.hostname}:${filesProxyPort}`;
+}
+
+/**
  * Build a port-based proxy URL by combining the port-based base with a target path.
  * @param {{protocol: string, hostname: string}} location - Location-like object
  * @param {number|null} previewProxyPort - The per-session preview proxy port
@@ -121,6 +132,24 @@ export function buildPortBasedProxyUrl(location, previewProxyPort, targetURL) {
     } catch {
         return base + (targetURL.startsWith('/') ? targetURL : '/' + targetURL);
     }
+}
+
+/**
+ * Decide whether the current page was loaded through the reverse tunnel.
+ * Subdomain proxy URLs ("{port}.{publicHostname}") are only reachable when
+ * the browser is actually talking to the tunnel host. When the same swe-swe
+ * is reached directly (localhost, LAN IP, Tailscale name, etc.) the subdomain
+ * form is unreachable, so callers should fall back to port-based / path-based
+ * URLs. This is a function of HOW the page was loaded, not of whether the
+ * server happens to be in tunnel mode.
+ * @param {{hostname: string}} location - Location-like object
+ * @param {string} publicHostname - Tunnel public hostname (e.g. "abc-tunnel.example.com"), or "" when not in tunnel mode
+ * @returns {boolean} true when location.hostname is the tunnel host or a subdomain of it
+ */
+export function accessedViaTunnel(location, publicHostname) {
+    if (!publicHostname) return false;
+    const h = location.hostname;
+    return h === publicHostname || h.endsWith('.' + publicHostname);
 }
 
 /**
@@ -148,6 +177,19 @@ export function buildSubdomainPreviewUrl(location, targetPort, publicHostname) {
  * @returns {string|null} Subdomain agent chat URL, or null if either input is missing
  */
 export function buildSubdomainAgentChatUrl(location, targetPort, publicHostname) {
+    if (!targetPort || !publicHostname) return null;
+    return `${location.protocol}//${targetPort}.${publicHostname}`;
+}
+
+/**
+ * Build the subdomain-based files URL for tunnel mode. Same shape as
+ * buildSubdomainPreviewUrl but for the files target port.
+ * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {number|null} targetPort - The per-session files target port
+ * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
+ * @returns {string|null} Subdomain files URL, or null if either input is missing
+ */
+export function buildSubdomainFilesUrl(location, targetPort, publicHostname) {
     if (!targetPort || !publicHostname) return null;
     return `${location.protocol}//${targetPort}.${publicHostname}`;
 }

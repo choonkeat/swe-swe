@@ -113,6 +113,8 @@ var (
 	cdpPortEnd         = 6019
 	vncPortStart       = 7000
 	vncPortEnd         = 7019
+	filesPortStart     = 9000
+	filesPortEnd       = 9019
 	proxyPortOffset    = 20000
 )
 
@@ -120,6 +122,7 @@ func previewProxyPort(port int) int    { return proxyPortOffset + port }
 func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
 func cdpProxyPort(port int) int        { return proxyPortOffset + port }
 func vncProxyPort(port int) int        { return proxyPortOffset + port }
+func filesProxyPort(port int) int      { return proxyPortOffset + port }
 
 // flagPassed reports whether the user explicitly passed a flag on the
 // command line. Used to distinguish "flag at default value" from "flag
@@ -460,9 +463,11 @@ type Session struct {
 	PublicPort    int // Public (no-auth) port for this session
 	CDPPort       int // Chrome DevTools Protocol port for this session
 	VNCPort       int // VNC port for browser view for this session
+	FilesPort     int // Files (md-serve) port for this session
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
 	BrowserStarted bool   // Whether browser processes have been started
+	FilesPID       int    // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -480,6 +485,7 @@ type Session struct {
 	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
 	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
 	VNCProxyServer       *http.Server // Per-port listener for vnc proxy (auth-checked websockify reverse proxy)
+	FilesProxyServer     *http.Server // Per-port listener for files proxy (auth-checked md-serve reverse proxy)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -841,6 +847,7 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"cdpPort":          s.CDPPort,
 		"vncPort":          s.VNCPort,
 		"vncProxyPort":     vncProxyPort(s.VNCPort),
+		"filesProxyPort":   filesProxyPort(s.FilesPort),
 		"yoloMode":         s.yoloMode,
 		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":   s.BrowserStarted,
@@ -1012,9 +1019,15 @@ func (s *Session) Close() {
 	if s.VNCProxyServer != nil {
 		s.VNCProxyServer.Shutdown(shutdownCtx)
 	}
+	if s.FilesProxyServer != nil {
+		s.FilesProxyServer.Shutdown(shutdownCtx)
+	}
 
 	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	stopSessionBrowser(s)
+
+	// Stop the per-session md-serve (Files tab)
+	stopSessionMdServe(s)
 
 	// Close all WebSocket client connections
 	for conn := range s.wsClients {
@@ -4110,6 +4123,10 @@ func vncPortFromPreview(previewPort int) int {
 	return previewPort + 4000
 }
 
+func filesPortFromPreview(previewPort int) int {
+	return previewPort + 6000
+}
+
 // displayNumberFromPreview derives a unique X11 display number from a preview port.
 // Preview port 3000 -> DISPLAY=:1, 3001 -> :2, etc.
 func displayNumberFromPreview(previewPort int) int {
@@ -4272,6 +4289,64 @@ func stopSessionBrowser(sess *Session) {
 		}
 		sess.BrowserDataDir = ""
 	}
+}
+
+// startSessionMdServe launches a per-session md-serve rooted at the session's
+// working directory, listening on sess.FilesPort. md-serve renders the workDir
+// as a read-only, live-reloading repo browser for the Files tab. The process is
+// non-critical: a failure to start is logged but does not abort session creation.
+func startSessionMdServe(sess *Session) error {
+	cmd := exec.Command("md-serve",
+		"-dir", sess.WorkDir,
+		"-addr", fmt.Sprintf(":%d", sess.FilesPort),
+	)
+	// Use a clean PORT-free environment so md-serve cannot accidentally pick up
+	// the server's own PORT and ignore -addr. We still inherit the rest of the
+	// environment (PATH for the md-serve binary, etc.) minus any PORT entry.
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "PORT=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = env
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start md-serve on port %d: %w", sess.FilesPort, err)
+	}
+	filesPID := cmd.Process.Pid
+	trackPid(filesPID)
+	registerSessionPid(filesPID, sess.UUID)
+	sess.FilesPID = filesPID
+	log.Printf("Started md-serve on port %d, dir %s (PID %d) for session %s", sess.FilesPort, sess.WorkDir, filesPID, sess.UUID)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("md-serve wait (PID %d, session %s)", filesPID, sess.UUID))
+		defer untrackPid(filesPID)
+		err := cmd.Wait()
+		if err != nil {
+			log.Printf("md-serve exited with error (PID %d, session %s): %v", filesPID, sess.UUID, err)
+		} else {
+			log.Printf("md-serve exited normally (PID %d, session %s)", filesPID, sess.UUID)
+		}
+	}()
+	return nil
+}
+
+// stopSessionMdServe kills the per-session md-serve process, if one was started.
+func stopSessionMdServe(sess *Session) {
+	if sess.FilesPID == 0 {
+		return
+	}
+	if err := syscall.Kill(sess.FilesPID, syscall.SIGKILL); err != nil {
+		// Process may have already exited
+		if !errors.Is(err, syscall.ESRCH) {
+			log.Printf("Failed to kill md-serve process PID %d for session %s: %v", sess.FilesPID, sess.UUID, err)
+		}
+	} else {
+		log.Printf("[KILL] Killed md-serve process PID %d for session %s (server PID %d)", sess.FilesPID, sess.UUID, os.Getpid())
+	}
+	sess.FilesPID = 0
 }
 
 // findAvailablePortQuintuple finds a preview port and its derived agent chat,
@@ -4591,6 +4666,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		PublicPort:      pubPort,
 		CDPPort:         cdpPort,
 		VNCPort:         vncPort,
+		FilesPort:       filesPortFromPreview(previewPort),
 		Theme:           p.Theme,
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
@@ -4751,6 +4827,33 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		}()
 		sess.VNCProxyServer = vncSrv
 
+		// Files proxy at filesProxyPort (default 29000-29019). Plain
+		// reverse-proxy to the per-session md-serve on localhost:FilesPort
+		// (9000-9019); md-serve renders full pages, so no DebugHub/inject.js
+		// machinery is needed. Auth-wrapped exactly like preview/agent-chat
+		// above; in legacy/Traefik mode that wrap is a no-op since
+		// SWE_SWE_PASSWORD is empty.
+		filesTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", sess.FilesPort))
+		filesReverseProxy := httputil.NewSingleHostReverseProxy(filesTarget)
+		filesPP := filesProxyPort(sess.FilesPort)
+		filesSrv := &http.Server{
+			Addr:    fmt.Sprintf(":%d", filesPP),
+			Handler: corsWrapper(requireAuthCookie(authPassword, filesReverseProxy)),
+		}
+		go func() {
+			defer recoverGoroutine(fmt.Sprintf("files proxy for session %s", sess.UUID))
+			ln, err := net.Listen("tcp", filesSrv.Addr)
+			if err != nil {
+				log.Printf("Session %s: files proxy port %d unavailable: %v", sess.UUID, filesPP, err)
+				return
+			}
+			log.Printf("Session %s: files proxy listening on :%d", sess.UUID, filesPP)
+			if err := filesSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Printf("Session %s: files proxy server error: %v", sess.UUID, err)
+			}
+		}()
+		sess.FilesProxyServer = filesSrv
+
 		// Public port: Traefik routes directly to the app (no swe-swe-server proxy needed)
 	}
 
@@ -4781,6 +4884,16 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	// Browser processes are started on-demand via POST /api/session/{uuid}/browser/start
 	// (triggered by mcp-lazy-init on first Playwright MCP tool call).
 	// Child sessions share the parent's browser.
+
+	// Eagerly start the per-session md-serve for the Files tab. Child sessions
+	// inherit the parent's FilesPort, so they share the parent's md-serve (a
+	// second instance on the same port would fail to bind). md-serve is
+	// non-critical: log a start failure but do not abort session creation.
+	if p.ParentUUID == "" {
+		if err := startSessionMdServe(sess); err != nil {
+			log.Printf("Failed to start md-serve for session %s: %v", sess.UUID, err)
+		}
+	}
 
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sess.UUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session

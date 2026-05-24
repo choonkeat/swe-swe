@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString } from './modules/url-builder.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -58,13 +58,14 @@ function buildPresetIcon(rects) {
 }
 
 // Display order for slot tab bars (same in every slot).
-const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'vscode', 'shell', 'browser'];
+const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'files', 'vscode', 'shell', 'browser'];
 
 // Human-readable labels for slot tab bar buttons.
 const PANE_LABELS = {
     'agent-terminal': 'Agent Terminal',
     'agent-chat':     'Agent Chat',
     'preview':        'Preview',
+    'files':          'Files',
     'vscode':         'Code',
     'shell':          'Terminal',
     'browser':        'Agent View',
@@ -245,6 +246,7 @@ class TerminalUI extends HTMLElement {
         this._proxyMode = null; // null = undecided, 'port' = per-port, 'path' = path-based
         this.previewProxyPort = null;
         this.agentChatProxyPort = null;
+        this.filesProxyPort = null;
         this.publicPort = null;
         this.cdpPort = null;
         this.vncPort = null;
@@ -339,6 +341,16 @@ class TerminalUI extends HTMLElement {
 
     get links() {
         return this.getAttribute('links') || '';
+    }
+
+    // publicHostname scoped to how the page was actually loaded. The server
+    // sets this.publicHostname whenever it is in tunnel mode, but subdomain
+    // proxy URLs ("{port}.{publicHostname}") are only reachable when the
+    // browser reached this page through the tunnel host. When opened directly
+    // (localhost / LAN / Tailscale), this returns "" so the URL builders fall
+    // back to port-based / path-based forms that are actually reachable.
+    get effectivePublicHostname() {
+        return accessedViaTunnel(window.location, this.publicHostname) ? this.publicHostname : '';
     }
 
     connectedCallback() {
@@ -702,6 +714,7 @@ class TerminalUI extends HTMLElement {
                         <option value="agent-terminal">Agent Terminal</option>
                         <option value="agent-chat" hidden disabled>Agent Chat</option>
                         <option value="preview">App Preview</option>
+                        <option value="files" hidden disabled>Files</option>
                         <option value="vscode" hidden disabled>Code</option>
                         <option value="shell">Terminal</option>
                         <option value="browser" hidden disabled>Agent View</option>
@@ -777,6 +790,19 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                 </div>
                                 <iframe class="terminal-ui__iframe" data-pane="preview" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                            </div>
+                        </div>
+
+                        <!-- Files (md-serve) pane-host -->
+                        <div class="terminal-ui__pane-host" data-pane="files" hidden>
+                            <div class="terminal-ui__iframe-slot" data-pane="files">
+                                <div class="terminal-ui__iframe-placeholder hidden">
+                                    <div class="terminal-ui__iframe-placeholder-status">
+                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
+                                        <span class="terminal-ui__iframe-placeholder-text">Connecting to files...</span>
+                                    </div>
+                                </div>
+                                <iframe class="terminal-ui__iframe" data-pane="files" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                             </div>
                         </div>
 
@@ -1542,12 +1568,14 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewBaseUrl = this.previewBaseUrl;
                 const prevPreviewProxyPort = this.previewProxyPort;
                 const prevVncProxyPort = this.vncProxyPort;
+                const prevFilesProxyPort = this.filesProxyPort;
                 this.previewPort = msg.previewPort || null;
                 this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
                 this.sessionUUID = msg.sessionUUID || null;
                 this.previewProxyPort = msg.previewProxyPort || null;
                 this.agentChatProxyPort = msg.agentChatProxyPort || null;
+                this.filesProxyPort = msg.filesProxyPort || null;
                 this.publicPort = msg.publicPort || null;
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
@@ -1558,8 +1586,18 @@ class TerminalUI extends HTMLElement {
                 // to set (or vice-versa) so the dotted-underline affordance
                 // and tooltip appear without waiting for an unrelated event.
                 if ((!prevPreviewProxyPort) !== (!this.previewProxyPort)
-                    || (!prevVncProxyPort) !== (!this.vncProxyPort)) {
+                    || (!prevVncProxyPort) !== (!this.vncProxyPort)
+                    || (!prevFilesProxyPort) !== (!this.filesProxyPort)) {
                     this._rerenderSlotTabs();
+                    // Toggle the Files mobile-nav option in step with its
+                    // availability (filesProxyPort), mirroring how Agent View
+                    // toggles its option. switchMobileNav below then shows the
+                    // popout button when Files is the selected pane.
+                    const filesOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="files"]');
+                    if (filesOpt) {
+                        filesOpt.hidden = !this.filesProxyPort;
+                        filesOpt.disabled = !this.filesProxyPort;
+                    }
                     const sel = this.querySelector('.terminal-ui__mobile-nav-select');
                     if (sel) this.switchMobileNav(sel.value);
                 }
@@ -1596,8 +1634,8 @@ class TerminalUI extends HTMLElement {
                     // agent-chat target -- tunnel mode demuxes
                     // {agentChatProxyPort}.{publicHostname} -> 127.0.0.1:{agentChatProxyPort}
                     // inside the container; legacy mode hits the same port via Traefik.
-                    const acPortUrl = this.publicHostname
-                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatProxyPort, this.publicHostname)
+                    const acPortUrl = this.effectivePublicHostname
+                        ? buildSubdomainAgentChatUrl(window.location, this.agentChatProxyPort, this.effectivePublicHostname)
                         : buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
                     if (acPathUrl) {
                         this._agentChatProbeController = new AbortController();
@@ -1692,6 +1730,14 @@ class TerminalUI extends HTMLElement {
                         const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
                         this.setPreviewURL(currentTarget);
                     }
+                }
+                // Load files once filesProxyPort arrives. If the user dragged
+                // the Files tab into a slot before the port was known,
+                // _loadPaneIfNeeded('files') returned early (deferred) without
+                // marking it loaded; re-kick now so the iframe src gets set and
+                // the "Connecting to files..." placeholder clears.
+                if (this.filesProxyPort && this._slotForPane('files') && !this._paneLoaded.has('files')) {
+                    this._loadPaneIfNeeded('files');
                 }
                 // YOLO mode state
                 this.yoloMode = msg.yoloMode || false;
@@ -4612,6 +4658,21 @@ class TerminalUI extends HTMLElement {
                 this._paneLoaded.add('vscode');
                 this.setIframeUrl(buildVSCodeUrl(baseUrl, this.workDir), 'vscode');
                 break;
+            case 'files': {
+                // Cross-origin only -- md-serve emits root-relative links, so a
+                // path prefix would break navigation. Tunnel mode demuxes
+                // {filesProxyPort}.{publicHostname} -> 127.0.0.1:{filesProxyPort};
+                // legacy mode hits the same auth-proxy port directly.
+                const filesUrl = this.effectivePublicHostname
+                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
+                    : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+                // Defer if the proxy port hasn't arrived yet -- the WS Status
+                // handler re-kicks us once filesProxyPort flips from null.
+                if (!filesUrl) return;
+                this._paneLoaded.add('files');
+                this.setIframeUrl(filesUrl + '/', 'files');
+                break;
+            }
             case 'shell': {
                 this._paneLoaded.add('shell');
                 const shellUUID = deriveShellUUID(this.uuid);
@@ -5208,6 +5269,7 @@ class TerminalUI extends HTMLElement {
     _isPaneKnown(paneId) {
         if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing || !!this._agentChatPending;
         if (paneId === 'browser') return !!this.vncProxyPort;
+        if (paneId === 'files') return !!this.filesProxyPort;
         if (paneId === 'vscode') return this._vscodeEnabled();
         return true;
     }
@@ -5319,8 +5381,8 @@ class TerminalUI extends HTMLElement {
         // vnc_lite.html falls back to window.location.hostname / port when host=
         // and port= query params are missing, so we omit them and let it derive
         // the right wss target from its own page origin.
-        if (this.publicHostname) {
-            return `${loc.protocol}//${this.vncProxyPort}.${this.publicHostname}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
+        if (this.effectivePublicHostname) {
+            return `${loc.protocol}//${this.vncProxyPort}.${this.effectivePublicHostname}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
         }
         // Legacy port-based mode: same hostname, different port. Pass host=
         // and port= explicitly so noVNC dials the correct WebSocket regardless
@@ -5335,8 +5397,8 @@ class TerminalUI extends HTMLElement {
         // so the cookie is validated before forwarding to the raw preview target.
         // Cookie.Domain is scoped to publicHostname so the apex login cookie
         // is automatically presented on every {port}.publicHostname subdomain.
-        if (this.publicHostname && this.previewProxyPort) {
-            return buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.publicHostname);
+        if (this.effectivePublicHostname && this.previewProxyPort) {
+            return buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.effectivePublicHostname);
         }
         if (this._proxyMode === 'port' && this.previewProxyPort) {
             return buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
@@ -5364,6 +5426,12 @@ class TerminalUI extends HTMLElement {
                 return this.getBrowserViewUrl();
             case 'vscode':
                 return this._vscodeEnabled() ? buildVSCodeUrl(getBaseUrl(window.location), this.workDir) : null;
+            case 'files': {
+                const filesUrl = this.effectivePublicHostname
+                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
+                    : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+                return filesUrl ? filesUrl + '/' : null;
+            }
             case 'agent-chat': {
                 const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                 const src = chatIframe && chatIframe.src;
@@ -5797,8 +5865,8 @@ class TerminalUI extends HTMLElement {
         // the auth-proxy port.
         const probeBase = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
         if (!probeBase) return;
-        const subdomainBase = (this.publicHostname && this.previewProxyPort)
-            ? buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.publicHostname)
+        const subdomainBase = (this.effectivePublicHostname && this.previewProxyPort)
+            ? buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.effectivePublicHostname)
             : null;
         const base = subdomainBase || probeBase;
         let path;

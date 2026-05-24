@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainProxyUrl, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -346,6 +346,35 @@ test('buildPortBasedAgentChatUrl returns null when port is 0', () => {
     );
 });
 
+// buildPortBasedFilesUrl tests
+test('buildPortBasedFilesUrl returns protocol://hostname:port', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'http:', hostname: 'localhost' }, 29000),
+        'http://localhost:29000'
+    );
+});
+
+test('buildPortBasedFilesUrl returns null when port is null', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'http:', hostname: 'localhost' }, null),
+        null
+    );
+});
+
+test('buildPortBasedFilesUrl returns null when port is 0', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'http:', hostname: 'localhost' }, 0),
+        null
+    );
+});
+
+test('buildPortBasedFilesUrl handles https', () => {
+    assert.strictEqual(
+        buildPortBasedFilesUrl({ protocol: 'https:', hostname: 'example.com' }, 29000),
+        'https://example.com:29000'
+    );
+});
+
 // buildPortBasedProxyUrl tests
 test('buildPortBasedProxyUrl with no targetURL returns base with slash', () => {
     assert.strictEqual(
@@ -449,6 +478,28 @@ test('buildSubdomainAgentChatUrl returns null when targetPort missing', () => {
     );
 });
 
+// buildSubdomainFilesUrl tests
+test('buildSubdomainFilesUrl returns protocol://port.publicHostname', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'https:' }, 29000, 'abc-tunnel.example.com'),
+        'https://29000.abc-tunnel.example.com'
+    );
+});
+
+test('buildSubdomainFilesUrl returns null when publicHostname missing', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'https:' }, 29000, ''),
+        null
+    );
+});
+
+test('buildSubdomainFilesUrl returns null when targetPort missing', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'https:' }, null, 'abc.example.com'),
+        null
+    );
+});
+
 // buildSubdomainProxyUrl tests
 test('buildSubdomainProxyUrl with no targetURL returns base with slash', () => {
     assert.strictEqual(
@@ -510,4 +561,34 @@ test('getDebugQueryString returns empty string for falsy values', () => {
 test('getDebugQueryString returns ?debug=1 for truthy values', () => {
     assert.strictEqual(getDebugQueryString(1), '?debug=1');
     assert.strictEqual(getDebugQueryString('yes'), '?debug=1');
+});
+
+// accessedViaTunnel tests
+test('accessedViaTunnel false when publicHostname empty (not tunnel mode)', () => {
+    assert.strictEqual(accessedViaTunnel({ hostname: 'localhost' }, ''), false);
+});
+
+test('accessedViaTunnel false on localhost even when server is in tunnel mode', () => {
+    // The bug this fixes: server injects publicHostname, but the browser
+    // reached the page over localhost, so subdomain URLs are unreachable.
+    assert.strictEqual(accessedViaTunnel({ hostname: 'localhost' }, 'abc-tunnel.example.com'), false);
+});
+
+test('accessedViaTunnel false on LAN IP / Tailscale name in tunnel mode', () => {
+    assert.strictEqual(accessedViaTunnel({ hostname: '192.168.1.5' }, 'abc-tunnel.example.com'), false);
+    assert.strictEqual(accessedViaTunnel({ hostname: 'mybox.tail-scale.ts.net' }, 'abc-tunnel.example.com'), false);
+});
+
+test('accessedViaTunnel true when loaded via the {port}.{publicHostname} tunnel host', () => {
+    assert.strictEqual(accessedViaTunnel({ hostname: '1977.abc-tunnel.example.com' }, 'abc-tunnel.example.com'), true);
+    assert.strictEqual(accessedViaTunnel({ hostname: '23000.abc-tunnel.example.com' }, 'abc-tunnel.example.com'), true);
+});
+
+test('accessedViaTunnel true when loaded via the apex publicHostname', () => {
+    assert.strictEqual(accessedViaTunnel({ hostname: 'abc-tunnel.example.com' }, 'abc-tunnel.example.com'), true);
+});
+
+test('accessedViaTunnel does not match a lookalike suffix without a dot boundary', () => {
+    // "evil-abc-tunnel.example.com" must NOT be treated as the tunnel host.
+    assert.strictEqual(accessedViaTunnel({ hostname: 'evilabc-tunnel.example.com' }, 'abc-tunnel.example.com'), false);
 });
