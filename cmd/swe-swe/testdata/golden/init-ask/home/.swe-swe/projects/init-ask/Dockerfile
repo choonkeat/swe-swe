@@ -103,6 +103,11 @@ RUN echo 'alias tailscale="tailscale --socket=/var/lib/tailscale/tailscaled.sock
     > /etc/profile.d/swe-swe-tailscale.sh
 
 
+# Install md-serve for the per-session Files tab (read-only repo browser).
+# Pinned so image builds are reproducible. Always installed (core feature,
+# not agent-specific), launched per session by swe-swe-server with -addr.
+RUN npm install -g @choonkeat/md-serve@0.1.0
+
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 

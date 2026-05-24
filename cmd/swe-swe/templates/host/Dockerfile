@@ -152,6 +152,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 # {{ENDIF}}
 
+# Install md-serve for the per-session Files tab (read-only repo browser).
+# Pinned so image builds are reproducible. Always installed (core feature,
+# not agent-specific), launched per session by swe-swe-server with -addr.
+RUN npm install -g @choonkeat/md-serve@0.1.0
+
 # {{IF CLAUDE}}
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code

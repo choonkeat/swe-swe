@@ -467,6 +467,7 @@ type Session struct {
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
 	BrowserStarted bool   // Whether browser processes have been started
+	FilesPID       int    // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -1019,6 +1020,9 @@ func (s *Session) Close() {
 
 	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	stopSessionBrowser(s)
+
+	// Stop the per-session md-serve (Files tab)
+	stopSessionMdServe(s)
 
 	// Close all WebSocket client connections
 	for conn := range s.wsClients {
@@ -4282,6 +4286,64 @@ func stopSessionBrowser(sess *Session) {
 	}
 }
 
+// startSessionMdServe launches a per-session md-serve rooted at the session's
+// working directory, listening on sess.FilesPort. md-serve renders the workDir
+// as a read-only, live-reloading repo browser for the Files tab. The process is
+// non-critical: a failure to start is logged but does not abort session creation.
+func startSessionMdServe(sess *Session) error {
+	cmd := exec.Command("md-serve",
+		"-dir", sess.WorkDir,
+		"-addr", fmt.Sprintf(":%d", sess.FilesPort),
+	)
+	// Use a clean PORT-free environment so md-serve cannot accidentally pick up
+	// the server's own PORT and ignore -addr. We still inherit the rest of the
+	// environment (PATH for the md-serve binary, etc.) minus any PORT entry.
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "PORT=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = env
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start md-serve on port %d: %w", sess.FilesPort, err)
+	}
+	filesPID := cmd.Process.Pid
+	trackPid(filesPID)
+	registerSessionPid(filesPID, sess.UUID)
+	sess.FilesPID = filesPID
+	log.Printf("Started md-serve on port %d, dir %s (PID %d) for session %s", sess.FilesPort, sess.WorkDir, filesPID, sess.UUID)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("md-serve wait (PID %d, session %s)", filesPID, sess.UUID))
+		defer untrackPid(filesPID)
+		err := cmd.Wait()
+		if err != nil {
+			log.Printf("md-serve exited with error (PID %d, session %s): %v", filesPID, sess.UUID, err)
+		} else {
+			log.Printf("md-serve exited normally (PID %d, session %s)", filesPID, sess.UUID)
+		}
+	}()
+	return nil
+}
+
+// stopSessionMdServe kills the per-session md-serve process, if one was started.
+func stopSessionMdServe(sess *Session) {
+	if sess.FilesPID == 0 {
+		return
+	}
+	if err := syscall.Kill(sess.FilesPID, syscall.SIGKILL); err != nil {
+		// Process may have already exited
+		if !errors.Is(err, syscall.ESRCH) {
+			log.Printf("Failed to kill md-serve process PID %d for session %s: %v", sess.FilesPID, sess.UUID, err)
+		}
+	} else {
+		log.Printf("[KILL] Killed md-serve process PID %d for session %s (server PID %d)", sess.FilesPID, sess.UUID, os.Getpid())
+	}
+	sess.FilesPID = 0
+}
+
 // findAvailablePortQuintuple finds a preview port and its derived agent chat,
 // public, CDP, and VNC ports that are not already allocated to an existing session.
 // Must be called while holding sessionsMu.
@@ -4790,6 +4852,16 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	// Browser processes are started on-demand via POST /api/session/{uuid}/browser/start
 	// (triggered by mcp-lazy-init on first Playwright MCP tool call).
 	// Child sessions share the parent's browser.
+
+	// Eagerly start the per-session md-serve for the Files tab. Child sessions
+	// inherit the parent's FilesPort, so they share the parent's md-serve (a
+	// second instance on the same port would fail to bind). md-serve is
+	// non-critical: log a start failure but do not abort session creation.
+	if p.ParentUUID == "" {
+		if err := startSessionMdServe(sess); err != nil {
+			log.Printf("Failed to start md-serve for session %s: %v", sess.UUID, err)
+		}
+	}
 
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sess.UUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
