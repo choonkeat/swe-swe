@@ -13,9 +13,9 @@ This doc explains *why* it works, the operational steps, and the gotchas.
 
 | Concern | Default behavior | Tailscale impact |
 |---|---|---|
-| Server bind address | Listens on all interfaces — compose mode binds container `:9898` (Traefik fronts it on container `:7000`); dockerfile-only mode binds `0.0.0.0:${SWE_PORT:-1977}` directly. | Reachable on the Tailscale interface immediately. |
+| Server bind address | Listens on all interfaces — compose mode binds container `:1977` (Traefik fronts it on container `:7000`, or `:7443` with SSL); dockerfile-only mode binds `0.0.0.0:${SWE_PORT:-1977}` directly. | Reachable on the Tailscale interface immediately. |
 | Docker port mapping | Compose: `"${SWE_PORT:-1977}:7000"`. Dockerfile-only: `"${SWE_PORT:-1977}:${SWE_PORT:-1977}"`. Preview/agent-chat/VNC ports: `"%d:%d"`. No IP prefix anywhere. | Docker binds to `0.0.0.0` by default → tailnet peers reach the host port directly. |
-| WebSocket Origin check | `CheckOrigin: func(r *http.Request) bool { return true }` (`main.go:85`). | Any hostname (including `*.ts.net`) is accepted. |
+| WebSocket Origin check | `CheckOrigin: func(r *http.Request) bool { return true }` (`main.go:87`). | Any hostname (including `*.ts.net`) is accepted. |
 | Frontend URL building | Uses `window.location.host` for WS and port-based proxy URLs (`terminal-ui.js:776`, etc.). | Browser's hostname is reused — Tailscale FQDN works. |
 | Auth cookie flags | `SameSite=Lax`; `Secure` auto-set from `X-Forwarded-Proto` when present, falling back to `SWE_COOKIE_SECURE` only when no proxy header arrives (`resolveCookieSecure` in `auth.go`). | Direct HTTP over Tailscale to the bare swe-swe-server port → no header, env var not set by the compose template → non-Secure cookie, login works. Via Traefik or `tailscale serve` → `X-Forwarded-Proto: https` → Secure cookie over HTTPS. |
 | Per-session proxy ports | `SWE_PREVIEW_PORTS=3000-3019`, `SWE_AGENT_CHAT_PORTS=4000-4019`, `SWE_PUBLIC_PORTS=5000-5019`, `SWE_VNC_PORTS=7000-7019`. All bound on the host. | Each is reachable as `tailnet-host:<port>`. |
@@ -46,7 +46,7 @@ The user-facing host port is **`SWE_PORT` (default `1977`) in both compose mode 
 
 | Mode | Container internals |
 |---|---|
-| Compose (default) | Traefik on container `:7000` → forwards to `swe-swe-server` on container `:9898`. Host `SWE_PORT` → Traefik. |
+| Compose (default) | Traefik on container `:7000` (or `:7443` with SSL) → forwards to `swe-swe-server` on container `:1977`. Host `SWE_PORT` → Traefik. |
 | Dockerfile-only | `swe-swe-server` listens directly on `${SWE_PORT}`, no Traefik. |
 
 From a Tailscale client the difference is invisible.
@@ -235,26 +235,28 @@ The goal: bake everything into one Docker image (swe-swe + Tailscale) and deploy
                               └─────────────────────────────────────────────────┘
 ```
 
-### Two changes to `swe-swe-server`
+### How `swe-swe-server` handles it
 
-**1. Manage `tailscaled` as a child process** when `--tailscale-authkey` (or `TS_AUTHKEY`) is set.
+This is implemented today (`tailscale.go`); no extra build steps. Two behaviors kick in:
 
-- `cmd.Exec` the installed `tailscaled` binary in `--tun=userspace-networking` mode.
-- Wait for the daemon socket, then run `tailscale up --authkey ... --hostname ...`.
-- Log PID + exit status (per the CLAUDE.md "no silent goroutine `Wait`" rule — that bug was added after exactly this kind of slip).
-- Tear down `tailscaled` on `swe-swe-server` shutdown (existing `serverCtx` cancel path).
+**1. It manages `tailscaled` as a child process** when `--tailscale-authkey` (or `TS_AUTHKEY`) is set (`startTailscale`).
+
+- Execs the installed `tailscaled` binary in `--tun=userspace-networking` mode.
+- Waits for the daemon socket, then runs `tailscale up --authkey ... --hostname ...`.
+- Logs PID + exit status (per the CLAUDE.md "no silent goroutine `Wait`" rule — that bug was added after exactly this kind of slip).
+- Tears down `tailscaled` on `swe-swe-server` shutdown (the `serverCtx` cancel path).
 
 Why exec, not [`tsnet`](https://pkg.go.dev/tailscale.com/tsnet): `tsnet` only exposes ports that the embedding Go process listens on. swe-swe's per-session preview / agent-chat / VNC ports are bound by **child agent processes**, so `tsnet` would force us to add proxy listeners for every range. `tailscaled --tun=userspace-networking` transparently bridges the entire container loopback — anything bound on `0.0.0.0:*` inside the container is reachable from the tailnet, no extra code.
 
-New flags / env:
+Flags / env:
 - `--tailscale-authkey` / `TS_AUTHKEY`
 - `--tailscale-hostname` / `TS_HOSTNAME`
 - `--tailscale-state-dir` / `TS_STATE_DIR` (default `/var/lib/tailscale`)
 - `--tailscale-disable` / `TS_DISABLE=1` (escape hatch)
 
-If `TS_AUTHKEY` is unset, the new code path is dormant — single-container behavior is unchanged.
+If `TS_AUTHKEY` is unset, this code path is dormant — single-container behavior is unchanged.
 
-**2. Landing-page / health server on `$PORT`** when `$PORT` is set and differs from the swe-swe listen port.
+**2. It runs a landing-page / health server on `$PORT`** (`startLandingServer`) when `$PORT` is set and differs from the swe-swe listen port.
 
 - A tiny secondary `http.Server` on `:$PORT` returning:
   - `GET /health` → `200 OK`
@@ -262,24 +264,30 @@ If `TS_AUTHKEY` is unset, the new code path is dormant — single-container beha
 - Default behavior is **secure**: PaaS public URL doesn't expose the swe-swe login form to the internet — only a placeholder.
 - Users who *do* want public access on `$PORT` set `SWE_PORT=$PORT` (or unset `SWE_PORT` and let `$PORT` win), and the landing server doesn't start.
 
-Decision rule for which port `swe-swe-server` itself binds:
-1. `--addr` explicit → use it; if `$PORT` is set and different, landing server starts on `$PORT`.
-2. `--addr` unset, `SWE_PORT` set → bind `:$SWE_PORT`; if `$PORT` set and different, landing server on `$PORT`.
-3. `--addr` unset, `SWE_PORT` unset, `$PORT` set → bind `:$PORT` directly (current PaaS expectation, no landing).
-4. Nothing set → default `:9898`.
+Decision rule for which port `swe-swe-server` itself binds (`resolveListenAddr`, highest precedence first):
+1. `--bind` / `SWE_BIND` set → bind that `host:port` exactly (tunnel mode uses this to pin `127.0.0.1`).
+2. `--addr` set → use it.
+3. `SWE_PORT` set → bind `:$SWE_PORT`.
+4. `$PORT` set (and none of the above) → bind `:$PORT` directly (PaaS expectation, no landing server).
+5. Nothing set → default `:1977`.
+
+The landing server (next paragraph) starts on `:$PORT` when `$PORT` is set, differs from the chosen listen port, and the listen port was *not* itself derived from `$PORT`.
 
 Optional knobs: `SWE_LANDING_URL` (override link target), `SWE_LANDING_DISABLE=1` (just respond `200` to all paths on `$PORT`).
 
-### Dockerfile changes
+### Dockerfile
 
-Two lines added to the dockerfile-only template:
+The image installs Tailscale (static binaries, no apt repo):
 
 ```dockerfile
 # Install Tailscale (static binaries, no apt repo)
 RUN curl -fsSL https://tailscale.com/install.sh | sh
 ```
 
-Entrypoint stays one-line: `swe-swe-server` (which now manages `tailscaled` itself).
+It also pre-creates `/var/lib/tailscale` owned by the app user (so
+`tailscaled` can bootstrap without root) and adds a profile alias so a
+bare `tailscale` targets the non-default socket path. The entrypoint
+stays one line: `swe-swe-server` (which manages `tailscaled` itself).
 
 ### PaaS persistence
 
