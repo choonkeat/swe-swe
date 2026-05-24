@@ -53,4 +53,5 @@ Should show processes for your session's display number.
 
 ### Common Issues
 - **Browser not started**: Browser processes start on-demand when the first Playwright MCP tool is used. If browser tools fail, try using a Playwright tool first (e.g., `browser_navigate`). Check server logs for startup errors.
+- **e2e / tests fail connecting to CDP**: A test suite that connects to `$BROWSER_CDP_PORT` directly does not trigger the lazy browser launch. Warm CDP first with a Playwright MCP call (e.g., `browser_navigate` to any page), then run the suite.
 - **Container needs rebuild**: After config changes, run `swe-swe stop && swe-swe build && swe-swe up`
