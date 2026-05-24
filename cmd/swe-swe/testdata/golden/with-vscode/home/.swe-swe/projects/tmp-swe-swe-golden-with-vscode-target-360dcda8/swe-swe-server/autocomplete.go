@@ -130,9 +130,12 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 	// Skills are agent-agnostic: scan every known skills dir regardless of
 	// the session's assistant. Project-level dirs are scanned first so they
 	// win the dedup race; within each level, candidate dirs are scanned in
-	// fixed order. Dedup is by frontmatter `name:` (the canonical handle),
-	// not directory name. Skills with names that collide with a slash
-	// command are still emitted -- the [skill] hint prefix differentiates.
+	// fixed order. Dedup is by directory name (the canonical handle): a
+	// project skill dir named `foo` overrides a system skill dir also named
+	// `foo`, while --with-skills installs (prefixed `<alias>-foo`) stay
+	// distinct and never silently shadow each other. Skills whose name
+	// collides with a slash command are still emitted -- the [skill] hint
+	// prefix differentiates.
 	seenSkills := make(map[string]bool)
 	for _, d := range skillCandidateDirsProject(sess.WorkDir) {
 		for _, item := range discoverSkills(d) {
@@ -403,10 +406,15 @@ func skillCandidateDirsProject(workDir string) []string {
 }
 
 // discoverSkills scans a single skills directory for skill subdirectories
-// containing SKILL.md. Each result uses the frontmatter `name:` field as its
-// canonical handle (falling back to the directory name when frontmatter
-// lacks `name:`), and a `[skill] <first-sentence>` description hint so
-// callers can distinguish skills from slash commands.
+// containing SKILL.md. Each result uses the directory name as its canonical
+// handle and a `[skill] <first-sentence>` description hint (from frontmatter)
+// so callers can distinguish skills from slash commands.
+//
+// The directory name -- not the frontmatter `name:` -- is the handle because
+// --with-skills installs flatten each skill into a uniquely-prefixed store dir
+// (`<alias>-<skill>`). Keying on the dir name keeps those distinct and
+// collision-free, so no installed skill is ever silently shadowed by another
+// that happens to declare the same frontmatter `name:`.
 //
 // Expected layout: <dir>/<subdir>/SKILL.md. Layouts with deeper nesting
 // (e.g. cloned repos with category subdirs like
@@ -432,15 +440,12 @@ func discoverSkills(dir string) []autocompleteItem {
 		if err != nil {
 			continue
 		}
-		name, desc := extractSkillFrontmatter(string(content))
-		if name == "" {
-			name = entry.Name()
-		}
+		_, desc := extractSkillFrontmatter(string(content))
 		hint := "[skill]"
 		if desc != "" {
 			hint += " " + firstSentence(desc)
 		}
-		items = append(items, autocompleteItem{V: name, H: hint})
+		items = append(items, autocompleteItem{V: entry.Name(), H: hint})
 	}
 	return items
 }

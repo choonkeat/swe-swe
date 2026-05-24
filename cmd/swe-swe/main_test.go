@@ -1107,8 +1107,16 @@ func TestProcessEntrypointTemplateSkillsInstall(t *testing.T) {
 		`/home/app/.swe-swe/skills-src/eng`,
 		`cp -r /tmp/skills/eng /home/app/.swe-swe/skills-src/eng`,
 		`mkdir -p /home/app/.swe-swe/skills`,
+		// Stale symlinks for this repo are cleared before re-linking.
+		`find /home/app/.swe-swe/skills -maxdepth 1 -type l -name 'eng-*' -delete`,
 		`find /home/app/.swe-swe/skills-src/eng -name SKILL.md`,
-		`ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/eng-${skill_name}"`,
+		// Short prefixed name is the default store handle.
+		`skill_link="/home/app/.swe-swe/skills/eng-$(basename "$skill_dir")"`,
+		// On a leaf-name clash, fall back to the repo-relative path so no
+		// skill is silently overwritten.
+		`skill_rel=$(printf '%s' "${skill_dir#/home/app/.swe-swe/skills-src/eng/}" | tr '/' '-')`,
+		`skill_link="/home/app/.swe-swe/skills/eng-${skill_rel}"`,
+		`ln -sfn "$skill_dir" "$skill_link"`,
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(got, want) {

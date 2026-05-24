@@ -785,8 +785,12 @@ fi`, linkPath, linkPath, linkPath, agentName, centralDir, linkPath, centralDir, 
 	// ~/.swe-swe/skills-src/<alias>/ (so subsequent entrypoint runs can
 	// git-pull updates), and each SKILL.md's parent directory is symlinked
 	// flat into ~/.swe-swe/skills/<alias>-<dirname>/ so autocomplete can scan
-	// one level. The <alias>- prefix avoids collisions when two repos provide
-	// a skill with the same directory name.
+	// one level. The <alias>- prefix avoids collisions across repos; within a
+	// repo, if two skill dirs share a leaf name (in different folders), the
+	// second is installed under its repo-relative path (<alias>-<a>-<b>-<name>)
+	// with a warning, so no skill is silently dropped by an ln -sfn overwrite.
+	// The flat store name is the autocomplete handle, so every installed skill
+	// stays distinct and addressable.
 	var skillsInstall string
 	if hasSkills {
 		var installLines []string
@@ -811,10 +815,20 @@ elif [ -d "/tmp/skills/%s" ]; then
     echo -e "${GREEN}[ok] Installed skills: %s${NC}"
 fi
 mkdir -p /home/app/.swe-swe/skills
-find %s -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+# Drop this repo's previously-installed symlinks first so renamed or removed
+# skills don't linger, and so the clash check below only sees this run's links.
+find /home/app/.swe-swe/skills -maxdepth 1 -type l -name '%s-*' -delete 2>/dev/null || true
+find %s -name SKILL.md -type f 2>/dev/null | sort | while read -r skill_file; do
     skill_dir=$(dirname "$skill_file")
-    skill_name=$(basename "$skill_dir")
-    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/%s-${skill_name}"
+    skill_link="/home/app/.swe-swe/skills/%s-$(basename "$skill_dir")"
+    if [ -e "$skill_link" ]; then
+        # Same leaf name in two folders of one repo: disambiguate with the
+        # path relative to the repo root so neither skill is silently dropped.
+        skill_rel=$(printf '%%s' "${skill_dir#%s/}" | tr '/' '-')
+        skill_link="/home/app/.swe-swe/skills/%s-${skill_rel}"
+        echo -e "${YELLOW}[warn] skill name clash; installing as $(basename "$skill_link")${NC}"
+    fi
+    ln -sfn "$skill_dir" "$skill_link"
 done`,
 				srcDir,
 				srcDir,
@@ -826,6 +840,9 @@ done`,
 				repo.Alias,
 				srcDir,
 				chownLine,
+				repo.Alias,
+				repo.Alias,
+				srcDir,
 				repo.Alias,
 				srcDir,
 				repo.Alias,

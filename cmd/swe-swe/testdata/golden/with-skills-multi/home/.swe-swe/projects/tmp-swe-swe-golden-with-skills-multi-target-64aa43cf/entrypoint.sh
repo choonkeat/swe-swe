@@ -27,10 +27,20 @@ elif [ -d "/tmp/skills/eng" ]; then
     echo -e "${GREEN}[ok] Installed skills: eng${NC}"
 fi
 mkdir -p /home/app/.swe-swe/skills
-find /home/app/.swe-swe/skills-src/eng -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+# Drop this repo's previously-installed symlinks first so renamed or removed
+# skills don't linger, and so the clash check below only sees this run's links.
+find /home/app/.swe-swe/skills -maxdepth 1 -type l -name 'eng-*' -delete 2>/dev/null || true
+find /home/app/.swe-swe/skills-src/eng -name SKILL.md -type f 2>/dev/null | sort | while read -r skill_file; do
     skill_dir=$(dirname "$skill_file")
-    skill_name=$(basename "$skill_dir")
-    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/eng-${skill_name}"
+    skill_link="/home/app/.swe-swe/skills/eng-$(basename "$skill_dir")"
+    if [ -e "$skill_link" ]; then
+        # Same leaf name in two folders of one repo: disambiguate with the
+        # path relative to the repo root so neither skill is silently dropped.
+        skill_rel=$(printf '%s' "${skill_dir#/home/app/.swe-swe/skills-src/eng/}" | tr '/' '-')
+        skill_link="/home/app/.swe-swe/skills/eng-${skill_rel}"
+        echo -e "${YELLOW}[warn] skill name clash; installing as $(basename "$skill_link")${NC}"
+    fi
+    ln -sfn "$skill_dir" "$skill_link"
 done
 if [ -d "/home/app/.swe-swe/skills-src/org/skills/.git" ]; then
     git config --global --add safe.directory /home/app/.swe-swe/skills-src/org/skills 2>/dev/null || true
@@ -43,10 +53,20 @@ elif [ -d "/tmp/skills/org/skills" ]; then
     echo -e "${GREEN}[ok] Installed skills: org/skills${NC}"
 fi
 mkdir -p /home/app/.swe-swe/skills
-find /home/app/.swe-swe/skills-src/org/skills -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+# Drop this repo's previously-installed symlinks first so renamed or removed
+# skills don't linger, and so the clash check below only sees this run's links.
+find /home/app/.swe-swe/skills -maxdepth 1 -type l -name 'org/skills-*' -delete 2>/dev/null || true
+find /home/app/.swe-swe/skills-src/org/skills -name SKILL.md -type f 2>/dev/null | sort | while read -r skill_file; do
     skill_dir=$(dirname "$skill_file")
-    skill_name=$(basename "$skill_dir")
-    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/org/skills-${skill_name}"
+    skill_link="/home/app/.swe-swe/skills/org/skills-$(basename "$skill_dir")"
+    if [ -e "$skill_link" ]; then
+        # Same leaf name in two folders of one repo: disambiguate with the
+        # path relative to the repo root so neither skill is silently dropped.
+        skill_rel=$(printf '%s' "${skill_dir#/home/app/.swe-swe/skills-src/org/skills/}" | tr '/' '-')
+        skill_link="/home/app/.swe-swe/skills/org/skills-${skill_rel}"
+        echo -e "${YELLOW}[warn] skill name clash; installing as $(basename "$skill_link")${NC}"
+    fi
+    ln -sfn "$skill_dir" "$skill_link"
 done
 
 # Create OpenCode MCP configuration

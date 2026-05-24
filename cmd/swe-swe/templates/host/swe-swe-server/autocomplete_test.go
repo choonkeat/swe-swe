@@ -624,10 +624,10 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 // TestDiscoverSkills verifies the skills discovery walks one level deep,
-// uses frontmatter `name:` as the canonical handle, prefixes hints with
-// `[skill]`, truncates multi-sentence descriptions, falls back to dirname
-// when frontmatter lacks `name:`, and silently returns nil for missing
-// dirs. These cover the behaviors that handleAutocompleteAPI relies on.
+// uses the directory name as the canonical handle (so prefixed --with-skills
+// installs stay distinct), prefixes hints with `[skill]`, truncates
+// multi-sentence descriptions, and silently returns nil for missing dirs.
+// These cover the behaviors that handleAutocompleteAPI relies on.
 func TestDiscoverSkills(t *testing.T) {
 	t.Run("returns nil for missing dir", func(t *testing.T) {
 		if got := discoverSkills("/nonexistent/skills"); got != nil {
@@ -660,19 +660,19 @@ func TestDiscoverSkills(t *testing.T) {
 		}
 	})
 
-	t.Run("frontmatter name overrides dirname", func(t *testing.T) {
+	t.Run("directory name is the handle, not frontmatter name", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		mkdirAll(t, filepath.Join(tmpDir, "init"))
-		writeFile(t, filepath.Join(tmpDir, "init", "SKILL.md"),
+		mkdirAll(t, filepath.Join(tmpDir, "mattpocock-init"))
+		writeFile(t, filepath.Join(tmpDir, "mattpocock-init", "SKILL.md"),
 			"---\nname: tdspec:init\ndescription: Initialize tdspec.\n---\n")
 
 		got := discoverSkills(tmpDir)
-		if len(got) != 1 || got[0].V != "tdspec:init" {
-			t.Fatalf("expected V=tdspec:init from frontmatter, got %+v", got)
+		if len(got) != 1 || got[0].V != "mattpocock-init" {
+			t.Fatalf("expected V=mattpocock-init (dir name, not frontmatter), got %+v", got)
 		}
 	})
 
-	t.Run("falls back to dirname when frontmatter lacks name", func(t *testing.T) {
+	t.Run("uses dirname even when frontmatter lacks name", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		mkdirAll(t, filepath.Join(tmpDir, "fallback-skill"))
 		writeFile(t, filepath.Join(tmpDir, "fallback-skill", "SKILL.md"),
@@ -680,7 +680,7 @@ func TestDiscoverSkills(t *testing.T) {
 
 		got := discoverSkills(tmpDir)
 		if len(got) != 1 || got[0].V != "fallback-skill" {
-			t.Fatalf("expected dirname fallback, got %+v", got)
+			t.Fatalf("expected dirname handle, got %+v", got)
 		}
 	})
 
@@ -748,8 +748,45 @@ func TestDiscoverSkills(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("expected 1 skill via symlink, got %d: %+v", len(got), got)
 		}
-		if got[0].V != "tdd" || got[0].H != "[skill] Drive code with tests." {
+		// Handle is the prefixed store name, not the frontmatter `name: tdd`.
+		if got[0].V != "mattpocock-tdd" || got[0].H != "[skill] Drive code with tests." {
 			t.Errorf("unexpected skill from symlink: %+v", got[0])
+		}
+	})
+
+	// Collision avoidance: two repos that both ship a skill declaring the same
+	// frontmatter `name:` install under distinct prefixed store dirs. Keying
+	// on the dir name surfaces both -- neither silently shadows the other,
+	// which is the whole point of flattening-with-prefix.
+	t.Run("distinct store names with same frontmatter name both surface", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		srcA := t.TempDir()
+		srcB := t.TempDir()
+		mkdirAll(t, filepath.Join(srcA, "grill-me"))
+		writeFile(t, filepath.Join(srcA, "grill-me", "SKILL.md"),
+			"---\nname: grill-me\ndescription: From repo A.\n---\n")
+		mkdirAll(t, filepath.Join(srcB, "grill-me"))
+		writeFile(t, filepath.Join(srcB, "grill-me", "SKILL.md"),
+			"---\nname: grill-me\ndescription: From repo B.\n---\n")
+		if err := os.Symlink(filepath.Join(srcA, "grill-me"),
+			filepath.Join(tmpDir, "alpha-grill-me")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		if err := os.Symlink(filepath.Join(srcB, "grill-me"),
+			filepath.Join(tmpDir, "beta-grill-me")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 2 {
+			t.Fatalf("expected both skills (no collision drop), got %d: %+v", len(got), got)
+		}
+		names := map[string]bool{}
+		for _, item := range got {
+			names[item.V] = true
+		}
+		if !names["alpha-grill-me"] || !names["beta-grill-me"] {
+			t.Errorf("expected alpha-grill-me and beta-grill-me, got %+v", got)
 		}
 	})
 

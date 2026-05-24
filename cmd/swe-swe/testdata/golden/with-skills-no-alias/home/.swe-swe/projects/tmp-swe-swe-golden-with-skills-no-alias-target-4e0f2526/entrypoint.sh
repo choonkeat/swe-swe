@@ -27,10 +27,20 @@ elif [ -d "/tmp/skills/mattpocock/skills" ]; then
     echo -e "${GREEN}[ok] Installed skills: mattpocock/skills${NC}"
 fi
 mkdir -p /home/app/.swe-swe/skills
-find /home/app/.swe-swe/skills-src/mattpocock/skills -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+# Drop this repo's previously-installed symlinks first so renamed or removed
+# skills don't linger, and so the clash check below only sees this run's links.
+find /home/app/.swe-swe/skills -maxdepth 1 -type l -name 'mattpocock/skills-*' -delete 2>/dev/null || true
+find /home/app/.swe-swe/skills-src/mattpocock/skills -name SKILL.md -type f 2>/dev/null | sort | while read -r skill_file; do
     skill_dir=$(dirname "$skill_file")
-    skill_name=$(basename "$skill_dir")
-    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/mattpocock/skills-${skill_name}"
+    skill_link="/home/app/.swe-swe/skills/mattpocock/skills-$(basename "$skill_dir")"
+    if [ -e "$skill_link" ]; then
+        # Same leaf name in two folders of one repo: disambiguate with the
+        # path relative to the repo root so neither skill is silently dropped.
+        skill_rel=$(printf '%s' "${skill_dir#/home/app/.swe-swe/skills-src/mattpocock/skills/}" | tr '/' '-')
+        skill_link="/home/app/.swe-swe/skills/mattpocock/skills-${skill_rel}"
+        echo -e "${YELLOW}[warn] skill name clash; installing as $(basename "$skill_link")${NC}"
+    fi
+    ln -sfn "$skill_dir" "$skill_link"
 done
 
 # Create OpenCode MCP configuration
