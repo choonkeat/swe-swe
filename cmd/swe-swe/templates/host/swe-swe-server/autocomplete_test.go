@@ -725,6 +725,44 @@ func TestDiscoverSkills(t *testing.T) {
 			t.Fatalf("expected only valid skill, got %+v", got)
 		}
 	})
+
+	// Regression: --with-skills installs each skill as a symlink into the
+	// canonical store (entrypoint `ln -sfn <real skill dir> ~/.swe-swe/skills/
+	// <alias>-<dirname>`). os.ReadDir reports a symlink-to-dir with
+	// IsDir()==false, so an IsDir() guard silently dropped every installed
+	// skill. discoverSkills must resolve the link and find the skill.
+	t.Run("discovers symlinked skill dirs (--with-skills install shape)", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		// Real skill lives outside the scanned dir (mirrors skills-src/).
+		realSrc := t.TempDir()
+		mkdirAll(t, filepath.Join(realSrc, "engineering", "tdd"))
+		writeFile(t, filepath.Join(realSrc, "engineering", "tdd", "SKILL.md"),
+			"---\nname: tdd\ndescription: Drive code with tests.\n---\n")
+		// Flat symlink into the canonical store, as the entrypoint creates it.
+		if err := os.Symlink(filepath.Join(realSrc, "engineering", "tdd"),
+			filepath.Join(tmpDir, "mattpocock-tdd")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+
+		got := discoverSkills(tmpDir)
+		if len(got) != 1 {
+			t.Fatalf("expected 1 skill via symlink, got %d: %+v", len(got), got)
+		}
+		if got[0].V != "tdd" || got[0].H != "[skill] Drive code with tests." {
+			t.Errorf("unexpected skill from symlink: %+v", got[0])
+		}
+	})
+
+	t.Run("skips dangling symlinks", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		if err := os.Symlink(filepath.Join(tmpDir, "gone"),
+			filepath.Join(tmpDir, "dangling")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		if got := discoverSkills(tmpDir); got != nil {
+			t.Fatalf("expected nil for dangling symlink, got %+v", got)
+		}
+	})
 }
 
 // TestSkillCandidateDirs verifies the candidate dir lists cover every

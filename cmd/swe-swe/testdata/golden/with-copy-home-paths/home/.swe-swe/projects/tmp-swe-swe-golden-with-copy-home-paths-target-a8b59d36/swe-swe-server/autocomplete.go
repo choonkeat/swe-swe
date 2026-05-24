@@ -419,7 +419,12 @@ func discoverSkills(dir string) []autocompleteItem {
 	}
 	var items []autocompleteItem
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		// Follow symlinks: --with-skills installs each skill as a symlink
+		// into the canonical store, and os.ReadDir reports a symlink-to-dir
+		// with IsDir()==false. os.Stat resolves the link so symlinked skills
+		// are discovered the same as real directories.
+		info, err := os.Stat(filepath.Join(dir, entry.Name()))
+		if err != nil || !info.IsDir() {
 			continue
 		}
 		skillFile := filepath.Join(dir, entry.Name(), "SKILL.md")
