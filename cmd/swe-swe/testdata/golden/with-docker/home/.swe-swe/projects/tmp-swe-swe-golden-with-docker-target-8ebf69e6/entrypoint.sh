@@ -24,6 +24,7 @@ if [ -S /var/run/docker.sock ]; then
 fi
 
 
+
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode

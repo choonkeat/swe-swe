@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 
 
 
+
 # Create Goose MCP configuration (YAML format)
 mkdir -p /home/app/.config/goose
 cat > /home/app/.config/goose/config.yaml << 'EOF'

@@ -14,6 +14,25 @@ NC='\033[0m' # No Color
 
 
 
+# Install skills repos into ~/.swe-swe/skills-src/<alias> and project each
+# SKILL.md's parent directory as a flat symlink under ~/.swe-swe/skills/.
+if [ -d "/home/app/.swe-swe/skills-src/mattpocock/skills/.git" ]; then
+    git config --global --add safe.directory /home/app/.swe-swe/skills-src/mattpocock/skills 2>/dev/null || true
+    (cd /home/app/.swe-swe/skills-src/mattpocock/skills && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated skills: mattpocock/skills${NC}" || \
+        echo -e "${YELLOW}[warn] Could not update skills: mattpocock/skills${NC}"
+elif [ -d "/tmp/skills/mattpocock/skills" ]; then
+    mkdir -p "$(dirname "/home/app/.swe-swe/skills-src/mattpocock/skills")"
+    cp -r /tmp/skills/mattpocock/skills /home/app/.swe-swe/skills-src/mattpocock/skills
+    echo -e "${GREEN}[ok] Installed skills: mattpocock/skills${NC}"
+fi
+mkdir -p /home/app/.swe-swe/skills
+find /home/app/.swe-swe/skills-src/mattpocock/skills -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+    skill_dir=$(dirname "$skill_file")
+    skill_name=$(basename "$skill_dir")
+    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/mattpocock/skills-${skill_name}"
+done
+
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode

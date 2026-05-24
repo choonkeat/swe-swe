@@ -30,6 +30,12 @@ fi
 {{SLASH_COMMANDS_COPY}}
 # {{ENDIF}}
 
+# {{IF SKILLS}}
+# Install skills repos into ~/.swe-swe/skills-src/<alias> and project each
+# SKILL.md's parent directory as a flat symlink under ~/.swe-swe/skills/.
+{{SKILLS_INSTALL}}
+# {{ENDIF}}
+
 # {{IF OPENCODE}}
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array

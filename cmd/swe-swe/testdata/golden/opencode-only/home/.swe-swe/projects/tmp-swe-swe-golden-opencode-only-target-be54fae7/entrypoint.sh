@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 
 
 
+
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode

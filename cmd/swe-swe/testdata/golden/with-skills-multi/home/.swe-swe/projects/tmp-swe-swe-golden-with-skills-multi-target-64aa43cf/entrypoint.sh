@@ -14,6 +14,41 @@ NC='\033[0m' # No Color
 
 
 
+# Install skills repos into ~/.swe-swe/skills-src/<alias> and project each
+# SKILL.md's parent directory as a flat symlink under ~/.swe-swe/skills/.
+if [ -d "/home/app/.swe-swe/skills-src/eng/.git" ]; then
+    git config --global --add safe.directory /home/app/.swe-swe/skills-src/eng 2>/dev/null || true
+    (cd /home/app/.swe-swe/skills-src/eng && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated skills: eng${NC}" || \
+        echo -e "${YELLOW}[warn] Could not update skills: eng${NC}"
+elif [ -d "/tmp/skills/eng" ]; then
+    mkdir -p "$(dirname "/home/app/.swe-swe/skills-src/eng")"
+    cp -r /tmp/skills/eng /home/app/.swe-swe/skills-src/eng
+    echo -e "${GREEN}[ok] Installed skills: eng${NC}"
+fi
+mkdir -p /home/app/.swe-swe/skills
+find /home/app/.swe-swe/skills-src/eng -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+    skill_dir=$(dirname "$skill_file")
+    skill_name=$(basename "$skill_dir")
+    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/eng-${skill_name}"
+done
+if [ -d "/home/app/.swe-swe/skills-src/org/skills/.git" ]; then
+    git config --global --add safe.directory /home/app/.swe-swe/skills-src/org/skills 2>/dev/null || true
+    (cd /home/app/.swe-swe/skills-src/org/skills && git pull) 2>/dev/null && \
+        echo -e "${GREEN}[ok] Updated skills: org/skills${NC}" || \
+        echo -e "${YELLOW}[warn] Could not update skills: org/skills${NC}"
+elif [ -d "/tmp/skills/org/skills" ]; then
+    mkdir -p "$(dirname "/home/app/.swe-swe/skills-src/org/skills")"
+    cp -r /tmp/skills/org/skills /home/app/.swe-swe/skills-src/org/skills
+    echo -e "${GREEN}[ok] Installed skills: org/skills${NC}"
+fi
+mkdir -p /home/app/.swe-swe/skills
+find /home/app/.swe-swe/skills-src/org/skills -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+    skill_dir=$(dirname "$skill_file")
+    skill_name=$(basename "$skill_dir")
+    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/org/skills-${skill_name}"
+done
+
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode

@@ -54,6 +54,7 @@ elif [ -d "/home/app/.swe-swe/commands/md/choonkeat/slash-commands" ]; then
     echo -e "${GREEN}[ok] Linked slash commands: choonkeat/slash-commands (pi)${NC}"
 fi
 
+
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode

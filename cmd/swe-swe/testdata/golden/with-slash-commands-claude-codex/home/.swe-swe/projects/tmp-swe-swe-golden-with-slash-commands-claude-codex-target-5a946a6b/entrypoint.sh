@@ -41,6 +41,7 @@ elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
 fi
 
 
+
 # Create Codex MCP configuration (TOML format)
 # Codex sandboxes MCP child processes and only forwards env vars listed in
 # `env_vars` -- so we cannot use the `sh -c "exec npx ... $VAR"` wrapper that

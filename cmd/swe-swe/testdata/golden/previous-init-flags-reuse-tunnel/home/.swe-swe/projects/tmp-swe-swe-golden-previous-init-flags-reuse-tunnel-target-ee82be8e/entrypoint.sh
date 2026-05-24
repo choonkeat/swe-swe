@@ -18,6 +18,7 @@ NC='\033[0m' # No Color
 
 
 
+
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
 # Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)

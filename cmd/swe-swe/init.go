@@ -1209,7 +1209,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process Dockerfile template with conditional sections
 		if hostFile == "templates/host/Dockerfile" {
-			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, hostUID, hostGID, config.TunnelServerURL))
+			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, config.Skills, hostUID, hostGID, config.TunnelServerURL))
 			// In dockerfile-only mode, add EXPOSE and ENV defaults so the
 			// platform sees the port without needing a separate .env file.
 			// (The CMD itself already uses ${SWE_PORT:-1977} from the template.)
@@ -1314,7 +1314,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process entrypoint.sh template with conditional sections
 		if hostFile == "templates/host/entrypoint.sh" {
-			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands))
+			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands, config.Skills))
 		}
 
 		// Inject version info and proxy port offset into swe-swe-server main.go

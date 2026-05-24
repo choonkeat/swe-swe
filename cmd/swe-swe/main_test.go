@@ -664,7 +664,7 @@ CMD done`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processDockerfileTemplate(template, tt.agents, tt.apt, "", false, false, nil, 0, 0, "")
+			result := processDockerfileTemplate(template, tt.agents, tt.apt, "", false, false, nil, nil, 0, 0, "")
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("result should contain %q, got:\n%s", s, result)
@@ -709,7 +709,7 @@ CMD done`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processDockerfileTemplate(template, []string{}, "", "", tt.withDocker, false, nil, 0, 0, "")
+			result := processDockerfileTemplate(template, []string{}, "", "", tt.withDocker, false, nil, nil, 0, 0, "")
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("result should contain %q, got:\n%s", s, result)
@@ -982,31 +982,36 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 		npm           string
 		withDocker    bool
 		slashCommands []SlashCommandsRepo
+		skills        []SkillsRepo
 	}{
-		{"default", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
-		{"claude-only", []string{"claude"}, "", "", false, nil},
-		{"aider-only", []string{"aider"}, "", "", false, nil},
-		{"goose-only", []string{"goose"}, "", "", false, nil},
-		{"opencode-only", []string{"opencode"}, "", "", false, nil},
-		{"pi-only", []string{"pi"}, "", "", false, nil},
-		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", "", false, nil},
-		{"exclude-aider", []string{"claude", "gemini", "codex", "goose", "opencode", "pi"}, "", "", false, nil},
-		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "vim curl", "", false, nil},
-		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "typescript", false, nil},
-		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "vim", "typescript", false, nil},
-		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", true, nil},
-		{"with-slash-commands", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-multi", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}, {Alias: "org/team-cmds", URL: "https://github.com/org/team-cmds.git"}}},
-		{"with-slash-commands-claude-only", []string{"claude"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-codex-only", []string{"codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-no-alias", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-claude-codex", []string{"claude", "codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-opencode-only", []string{"opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-pi-only", []string{"pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-slash-commands-claude-opencode", []string{"claude", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}},
-		{"with-ssl-selfsign", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
-		{"with-ssl-letsencrypt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
-		{"with-ssl-letsencrypt-staging", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil},
+		{"default", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, nil},
+		{"claude-only", []string{"claude"}, "", "", false, nil, nil},
+		{"aider-only", []string{"aider"}, "", "", false, nil, nil},
+		{"goose-only", []string{"goose"}, "", "", false, nil, nil},
+		{"opencode-only", []string{"opencode"}, "", "", false, nil, nil},
+		{"pi-only", []string{"pi"}, "", "", false, nil, nil},
+		{"nodejs-agents", []string{"claude", "gemini", "codex"}, "", "", false, nil, nil},
+		{"exclude-aider", []string{"claude", "gemini", "codex", "goose", "opencode", "pi"}, "", "", false, nil, nil},
+		{"with-apt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "vim curl", "", false, nil, nil},
+		{"with-npm", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "typescript", false, nil, nil},
+		{"with-both-packages", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "vim", "typescript", false, nil, nil},
+		{"with-docker", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", true, nil, nil},
+		{"with-slash-commands", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-multi", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}, {Alias: "org/team-cmds", URL: "https://github.com/org/team-cmds.git"}}, nil},
+		{"with-slash-commands-claude-only", []string{"claude"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-codex-only", []string{"codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-no-alias", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "choonkeat/slash-commands", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-claude-codex", []string{"claude", "codex"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-opencode-only", []string{"opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-pi-only", []string{"pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-slash-commands-claude-opencode", []string{"claude", "opencode"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil},
+		{"with-skills", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, []SkillsRepo{{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"}}},
+		{"with-skills-multi", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, []SkillsRepo{{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"}, {Alias: "org/skills", URL: "https://github.com/org/skills.git"}}},
+		{"with-skills-no-alias", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, []SkillsRepo{{Alias: "mattpocock/skills", URL: "https://github.com/mattpocock/skills.git"}}},
+		{"with-skills-and-slash", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, []SkillsRepo{{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"}}},
+		{"with-ssl-selfsign", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, nil},
+		{"with-ssl-letsencrypt", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, nil},
+		{"with-ssl-letsencrypt-staging", []string{"claude", "gemini", "codex", "aider", "goose", "opencode", "pi"}, "", "", false, nil, nil},
 	}
 
 	// Read the template
@@ -1022,7 +1027,7 @@ func TestGoldenFilesMatchTemplate(t *testing.T) {
 	for _, v := range variants {
 		t.Run(v.name, func(t *testing.T) {
 			// Generate expected output from template
-			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, false, v.slashCommands, testUID, testGID, "")
+			expected := processDockerfileTemplate(string(templateContent), v.agents, v.apt, v.npm, v.withDocker, false, v.slashCommands, v.skills, testUID, testGID, "")
 
 			// Apply dockerfile-only post-processing for non-SSL/non-VS-Code variants.
 			// The Dockerfile template now uses ${SWE_PORT:-1977} directly, so only the
@@ -1063,7 +1068,7 @@ func TestProcessEntrypointTemplateSlashCommandsUseCanonicalStore(t *testing.T) {
 	input := `# {{IF SLASH_COMMANDS}}
 {{SLASH_COMMANDS_COPY}}
 # {{ENDIF}}`
-	got := processEntrypointTemplate(input, []string{"claude", "pi"}, false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}})
+	got := processEntrypointTemplate(input, []string{"claude", "pi"}, false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil)
 
 	mustContain := []string{
 		`/home/app/.swe-swe/commands/md/ck`,
@@ -1084,6 +1089,59 @@ func TestProcessEntrypointTemplateSlashCommandsUseCanonicalStore(t *testing.T) {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("entrypoint output unexpectedly contains %q:\n%s", unwanted, got)
 		}
+	}
+}
+
+// TestProcessEntrypointTemplateSkillsInstall verifies the skills install
+// block clones to ~/.swe-swe/skills-src/<alias>/ and creates flat
+// ~/.swe-swe/skills/<alias>-<name> symlinks via find/dirname/basename.
+// Discovery happens via the agent-agnostic ~/.swe-swe/skills/ scan; no
+// per-agent projection is generated.
+func TestProcessEntrypointTemplateSkillsInstall(t *testing.T) {
+	input := `# {{IF SKILLS}}
+{{SKILLS_INSTALL}}
+# {{ENDIF}}`
+	got := processEntrypointTemplate(input, []string{"claude", "codex", "gemini"}, false, nil, []SkillsRepo{{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"}})
+
+	mustContain := []string{
+		`/home/app/.swe-swe/skills-src/eng`,
+		`cp -r /tmp/skills/eng /home/app/.swe-swe/skills-src/eng`,
+		`mkdir -p /home/app/.swe-swe/skills`,
+		`find /home/app/.swe-swe/skills-src/eng -name SKILL.md`,
+		`ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/eng-${skill_name}"`,
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(got, want) {
+			t.Fatalf("skills install output missing %q:\n%s", want, got)
+		}
+	}
+	mustNotContain := []string{
+		`/home/app/.claude/skills/`,
+		`/home/app/.codex/skills/`,
+		`/home/app/.gemini/skills/`,
+	}
+	for _, unwanted := range mustNotContain {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("skills install output unexpectedly contains per-agent projection %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+// TestProcessEntrypointTemplateSkillsOmittedWhenAbsent verifies that
+// when --with-skills was not used, the {{IF SKILLS}} block is dropped and
+// SKILLS_INSTALL leaves no residue.
+func TestProcessEntrypointTemplateSkillsOmittedWhenAbsent(t *testing.T) {
+	input := `before
+# {{IF SKILLS}}
+{{SKILLS_INSTALL}}
+# {{ENDIF}}
+after`
+	got := processEntrypointTemplate(input, []string{"claude"}, false, nil, nil)
+	if strings.Contains(got, "SKILLS_INSTALL") || strings.Contains(got, "skills-src") {
+		t.Fatalf("expected skills block to be omitted, got:\n%s", got)
+	}
+	if !strings.Contains(got, "before") || !strings.Contains(got, "after") {
+		t.Fatalf("expected surrounding lines preserved, got:\n%s", got)
 	}
 }
 

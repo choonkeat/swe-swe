@@ -33,6 +33,7 @@ elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
     echo -e "${GREEN}[ok] Linked slash commands: ck (opencode)${NC}"
 fi
 
+
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode

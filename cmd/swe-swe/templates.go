@@ -7,8 +7,8 @@ import (
 )
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
-// based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, slash commands, and tunnel mode
-func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo, hostUID int, hostGID int, tunnelServerURL string) string {
+// based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, slash commands, skills, and tunnel mode
+func processDockerfileTemplate(content string, agents []string, aptPackages, npmPackages string, withDocker bool, hasCerts bool, slashCommands []SlashCommandsRepo, skills []SkillsRepo, hostUID int, hostGID int, tunnelServerURL string) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -22,6 +22,11 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
 	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi"))
+
+	// Skills are agent-agnostic: the autocomplete surfaces them in every
+	// session and we let the agent decide whether to dispatch. So presence is
+	// purely "did the user pass --with-skills".
+	hasSkills := len(skills) > 0
 
 	// Tunnel mode: when --tunnel-server-url was set, the Dockerfile builds
 	// the swe-swe-tunnel client binary alongside swe-swe-server so the
@@ -37,6 +42,16 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 			cloneLines = append(cloneLines, fmt.Sprintf("RUN git clone --depth 1 %s /tmp/slash-commands/%s", repo.URL, repo.Alias))
 		}
 		slashCommandsClone = strings.Join(cloneLines, "\n")
+	}
+
+	// Generate skills clone lines
+	var skillsClone string
+	if hasSkills {
+		var cloneLines []string
+		for _, repo := range skills {
+			cloneLines = append(cloneLines, fmt.Sprintf("RUN git clone --depth 1 %s /tmp/skills/%s", repo.URL, repo.Alias))
+		}
+		skillsClone = strings.Join(cloneLines, "\n")
 	}
 
 	// Build the Dockerfile from template
@@ -81,6 +96,8 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 				skip = withDocker
 			case "SLASH_COMMANDS":
 				skip = !hasSlashCommands
+			case "SKILLS":
+				skip = !hasSkills
 			case "TUNNEL":
 				skip = !isTunnel
 			case "NO_TUNNEL":
@@ -112,6 +129,13 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 		if strings.Contains(line, "{{SLASH_COMMANDS_CLONE}}") {
 			if slashCommandsClone != "" {
 				line = strings.ReplaceAll(line, "{{SLASH_COMMANDS_CLONE}}", slashCommandsClone)
+			}
+		}
+
+		// Handle SKILLS_CLONE placeholder
+		if strings.Contains(line, "{{SKILLS_CLONE}}") {
+			if skillsClone != "" {
+				line = strings.ReplaceAll(line, "{{SKILLS_CLONE}}", skillsClone)
 			}
 		}
 
@@ -690,8 +714,8 @@ func filesProxyPort(port, offset int) int {
 	return offset + port
 }
 
-// processEntrypointTemplate handles the entrypoint.sh template with DOCKER and SLASH_COMMANDS conditions
-func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo) string {
+// processEntrypointTemplate handles the entrypoint.sh template with DOCKER, SLASH_COMMANDS, and SKILLS conditions
+func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo, skills []SkillsRepo) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
@@ -699,6 +723,9 @@ func processEntrypointTemplate(content string, agents []string, withDocker bool,
 
 	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
 	hasSlashCommands := len(slashCommands) > 0 && (hasAgent("claude") || hasAgent("codex") || hasAgent("opencode") || hasAgent("pi"))
+
+	// Skills are agent-agnostic; presence is just "did the user pass --with-skills"
+	hasSkills := len(skills) > 0
 
 	// Generate slash commands copy/link lines. Custom slash command repos are
 	// materialized once into a swe-swe-owned canonical store, then projected into
@@ -752,6 +779,59 @@ fi`, linkPath, linkPath, linkPath, agentName, centralDir, linkPath, centralDir, 
 			}
 		}
 		slashCommandsCopy = strings.Join(copyLines, "\n")
+	}
+
+	// Generate skills install lines. The persistent clone lives at
+	// ~/.swe-swe/skills-src/<alias>/ (so subsequent entrypoint runs can
+	// git-pull updates), and each SKILL.md's parent directory is symlinked
+	// flat into ~/.swe-swe/skills/<alias>-<dirname>/ so autocomplete can scan
+	// one level. The <alias>- prefix avoids collisions when two repos provide
+	// a skill with the same directory name.
+	var skillsInstall string
+	if hasSkills {
+		var installLines []string
+		for _, repo := range skills {
+			srcDir := "/home/app/.swe-swe/skills-src/" + repo.Alias
+			pullCmd := fmt.Sprintf(`(cd %s && git pull) 2>/dev/null`, srcDir)
+			if withDocker {
+				pullCmd = fmt.Sprintf(`su -s /bin/bash app -c "cd %s && git pull" 2>/dev/null`, srcDir)
+			}
+			chownLine := ""
+			if withDocker {
+				chownLine = fmt.Sprintf("\n    chown -R app:app %s", srcDir)
+			}
+			installLines = append(installLines, fmt.Sprintf(`if [ -d "%s/.git" ]; then
+    git config --global --add safe.directory %s 2>/dev/null || true
+    %s && \
+        echo -e "${GREEN}[ok] Updated skills: %s${NC}" || \
+        echo -e "${YELLOW}[warn] Could not update skills: %s${NC}"
+elif [ -d "/tmp/skills/%s" ]; then
+    mkdir -p "$(dirname "%s")"
+    cp -r /tmp/skills/%s %s%s
+    echo -e "${GREEN}[ok] Installed skills: %s${NC}"
+fi
+mkdir -p /home/app/.swe-swe/skills
+find %s -name SKILL.md -type f 2>/dev/null | while read -r skill_file; do
+    skill_dir=$(dirname "$skill_file")
+    skill_name=$(basename "$skill_dir")
+    ln -sfn "$skill_dir" "/home/app/.swe-swe/skills/%s-${skill_name}"
+done`,
+				srcDir,
+				srcDir,
+				pullCmd,
+				repo.Alias,
+				repo.Alias,
+				repo.Alias,
+				srcDir,
+				repo.Alias,
+				srcDir,
+				chownLine,
+				repo.Alias,
+				srcDir,
+				repo.Alias,
+			))
+		}
+		skillsInstall = strings.Join(installLines, "\n")
 	}
 
 	// Generate chown lines (only needed when running as root in DOCKER mode)
@@ -810,6 +890,10 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 			skip = !hasSlashCommands
 			continue
 		}
+		if strings.Contains(trimmed, "{{IF SKILLS}}") {
+			skip = !hasSkills
+			continue
+		}
 		if strings.Contains(trimmed, "{{IF OPENCODE}}") {
 			skip = !hasAgent("opencode")
 			continue
@@ -843,6 +927,13 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 		if strings.Contains(line, "{{SLASH_COMMANDS_COPY}}") {
 			if slashCommandsCopy != "" {
 				line = strings.ReplaceAll(line, "{{SLASH_COMMANDS_COPY}}", slashCommandsCopy)
+			}
+		}
+
+		// Handle SKILLS_INSTALL placeholder
+		if strings.Contains(line, "{{SKILLS_INSTALL}}") {
+			if skillsInstall != "" {
+				line = strings.ReplaceAll(line, "{{SKILLS_INSTALL}}", skillsInstall)
 			}
 		}
 

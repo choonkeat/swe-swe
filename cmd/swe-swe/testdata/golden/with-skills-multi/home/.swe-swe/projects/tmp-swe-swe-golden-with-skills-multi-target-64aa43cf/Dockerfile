@@ -140,6 +140,12 @@ COPY mcp-bridge.ts /tmp/pi-mcp-bridge.ts
 
 
 
+# Clone skills repositories to temp location
+# (will be copied to ~/.swe-swe/skills-src and flat-symlinked into
+# ~/.swe-swe/skills/ by entrypoint.sh)
+RUN git clone --depth 1 https://github.com/mattpocock/skills.git /tmp/skills/eng
+RUN git clone --depth 1 https://github.com/org/skills.git /tmp/skills/org/skills
+
 # Enterprise certificate support
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.

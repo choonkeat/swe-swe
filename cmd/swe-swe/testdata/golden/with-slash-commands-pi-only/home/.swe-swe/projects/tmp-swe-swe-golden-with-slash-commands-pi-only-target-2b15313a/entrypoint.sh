@@ -38,6 +38,7 @@ fi
 
 
 
+
 # Install Pi mcp-bridge extension into the global Pi config dir so every
 # session in every workspace gets the swe-swe / agent-chat / playwright /
 # preview / whiteboard MCPs without per-workspace setup. Pi prefers a
