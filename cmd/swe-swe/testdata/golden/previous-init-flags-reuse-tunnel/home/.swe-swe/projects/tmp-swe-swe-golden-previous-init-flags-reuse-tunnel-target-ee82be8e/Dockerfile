@@ -40,7 +40,7 @@ RUN cd /build-git-sign-swe-swe && go mod init git-sign-swe-swe && CGO_ENABLED=0 
 # Alpine doesn't ship git; go install ...@<commit-sha> needs VCS to
 # resolve a raw hash even when fetching via the module proxy.
 RUN apk add --no-cache git
-ARG SWE_SWE_TUNNEL_REF=0d5d65a879d4b68379f24b41e1ce8aa3a812010e
+ARG SWE_SWE_TUNNEL_REF=0ee5aba510bc818acd382fe736b7277242489be6
 RUN CGO_ENABLED=0 GOOS=linux GOBIN=/build-swe-swe-tunnel \
     go install -ldflags="-s -w" \
     github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@${SWE_SWE_TUNNEL_REF}
@@ -113,11 +113,6 @@ RUN mkdir -p /var/lib/tailscale && \
 RUN echo 'alias tailscale="tailscale --socket=/var/lib/tailscale/tailscaled.sock"' \
     > /etc/profile.d/swe-swe-tailscale.sh
 
-
-# Install md-serve for the per-session Files tab (read-only repo browser).
-# Pinned so image builds are reproducible. Always installed (core feature,
-# not agent-specific), launched per session by swe-swe-server with -addr.
-RUN npm install -g @choonkeat/md-serve@0.1.0
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code

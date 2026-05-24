@@ -221,6 +221,10 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-slash-commands-opencode-only FLAGS="--agents opencode --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-pi-only FLAGS="--agents pi --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
 	@$(MAKE) _golden-variant NAME=with-slash-commands-claude-opencode FLAGS="--agents claude,opencode --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git"
+	@$(MAKE) _golden-variant NAME=with-skills FLAGS="--agents all --with-skills eng@https://github.com/mattpocock/skills.git"
+	@$(MAKE) _golden-variant NAME=with-skills-multi FLAGS='--agents all --with-skills "eng@https://github.com/mattpocock/skills.git https://github.com/org/skills.git"'
+	@$(MAKE) _golden-variant NAME=with-skills-no-alias FLAGS="--agents all --with-skills https://github.com/mattpocock/skills.git"
+	@$(MAKE) _golden-variant NAME=with-skills-and-slash FLAGS="--agents all --with-slash-commands ck@https://github.com/choonkeat/slash-commands.git --with-skills eng@https://github.com/mattpocock/skills.git"
 	@$(MAKE) _golden-variant NAME=with-ssl-selfsign FLAGS="--ssl=selfsign"
 	@$(MAKE) _golden-variant NAME=with-ssl-letsencrypt FLAGS="--ssl=letsencrypt@google.com --email=admin@example.com"
 	@$(MAKE) _golden-variant NAME=with-ssl-letsencrypt-staging FLAGS="--ssl=letsencrypt-staging@google.com --email=admin@example.com"

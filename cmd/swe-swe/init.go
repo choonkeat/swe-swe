@@ -152,6 +152,15 @@ type SlashCommandsRepo struct {
 	URL   string `json:"url"`   // "https://github.com/choonkeat/slash-commands.git"
 }
 
+// SkillsRepo represents a git repository to clone for skills (Anthropic-style
+// SKILL.md directories). Same shape as SlashCommandsRepo: clones land in
+// /tmp/skills/<alias>/ at build time and the entrypoint symlinks each
+// <alias>/skills/<name>/ into the canonical ~/.swe-swe/skills/<alias>-<name>/.
+type SkillsRepo struct {
+	Alias string `json:"alias"` // "eng" or derived "mattpocock/skills"
+	URL   string `json:"url"`   // "https://github.com/mattpocock/skills.git"
+}
+
 // InitConfig stores the configuration used to initialize a project.
 // This is saved to init.json and used by --previous-init-flags=reuse.
 type InitConfig struct {
@@ -160,6 +169,7 @@ type InitConfig struct {
 	NpmPackages         string              `json:"npmPackages,omitempty"`
 	WithDocker          bool                `json:"withDocker,omitempty"`
 	SlashCommands       []SlashCommandsRepo `json:"slashCommands,omitempty"`
+	Skills              []SkillsRepo        `json:"skills,omitempty"`
 	SSL                 string              `json:"ssl,omitempty"`
 	Email               string              `json:"email,omitempty"`
 	PreviewPorts        string              `json:"previewPorts,omitempty"`
@@ -289,6 +299,57 @@ func parseSlashCommandsFlag(flag string) ([]SlashCommandsRepo, error) {
 		repo, err := parseSlashCommandsEntry(entry)
 		if err != nil {
 			return nil, fmt.Errorf("invalid slash commands entry %q: %v", entry, err)
+		}
+		repos = append(repos, repo)
+	}
+
+	return repos, nil
+}
+
+// parseSkillsEntry parses a single "[alias@]<git-url>" entry for --with-skills.
+// Mirrors parseSlashCommandsEntry; "swe-swe" remains reserved so future
+// bundled skills can take that namespace.
+func parseSkillsEntry(entry string) (SkillsRepo, error) {
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return SkillsRepo{}, fmt.Errorf("empty entry")
+	}
+
+	atIndex := strings.Index(entry, "@")
+	if atIndex > 0 && !strings.HasPrefix(entry, "http") && !strings.HasPrefix(entry, "git@") {
+		alias := entry[:atIndex]
+		url := entry[atIndex+1:]
+		if url == "" {
+			return SkillsRepo{}, fmt.Errorf("empty URL after alias in %q", entry)
+		}
+		if alias == "swe-swe" {
+			return SkillsRepo{}, fmt.Errorf("alias %q is reserved for bundled skills", alias)
+		}
+		return SkillsRepo{Alias: alias, URL: url}, nil
+	}
+
+	alias, err := deriveAliasFromURL(entry)
+	if err != nil {
+		return SkillsRepo{}, err
+	}
+	return SkillsRepo{Alias: alias, URL: entry}, nil
+}
+
+// parseSkillsFlag parses the full --with-skills flag value.
+// Format: "[alias@]<git-url> [alias@]<git-url> ..."
+func parseSkillsFlag(flag string) ([]SkillsRepo, error) {
+	flag = strings.TrimSpace(flag)
+	if flag == "" {
+		return nil, nil
+	}
+
+	entries := strings.Fields(flag)
+	var repos []SkillsRepo
+
+	for _, entry := range entries {
+		repo, err := parseSkillsEntry(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid skills entry %q: %v", entry, err)
 		}
 		repos = append(repos, repo)
 	}
@@ -491,6 +552,7 @@ func handleInit() {
 	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no VS Code = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
+	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
 	emailFlag := fs.String("email", "", "Email for Let's Encrypt certificate expiry notifications (required for letsencrypt)")
 	copyHomePathsFlag := fs.String("copy-home-paths", "", "Comma-separated paths relative to $HOME to copy into container home")
@@ -657,6 +719,16 @@ func handleInit() {
 		}
 	}
 
+	// Parse skills flag early (may be overridden by --previous-init-flags=reuse)
+	var skillRepos []SkillsRepo
+	if *skills != "" {
+		var err error
+		skillRepos, err = parseSkillsFlag(*skills)
+		if err != nil {
+			log.Fatalf("Invalid --with-skills value: %v", err)
+		}
+	}
+
 	// Create directory if it doesn't exist
 	absPath, err := filepath.Abs(*path)
 	if err != nil {
@@ -729,6 +801,9 @@ func handleInit() {
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
 		}
+		if !explicitFlags["with-skills"] {
+			skillRepos = savedConfig.Skills
+		}
 		if !explicitFlags["ssl"] {
 			*sslFlag = savedConfig.SSL
 			if *sslFlag == "" {
@@ -798,6 +873,7 @@ func handleInit() {
 		// service, drop per-port labels, add SWE_TUNNEL_SERVER_URL env.
 		DockerfileOnly:      *sslFlag == "no" && !*withVSCode && *tunnelServerURL == "",
 		SlashCommands:       slashCmds,
+		Skills:              skillRepos,
 		SSL:                 *sslFlag,
 		Email:               *emailFlag,
 		PreviewPorts:        *previewPorts,

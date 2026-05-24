@@ -142,6 +142,92 @@ func TestParseSlashCommandsFlag(t *testing.T) {
 	}
 }
 
+// TestParseSkillsEntry verifies parsing of single skills entries.
+func TestParseSkillsEntry(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantAlias string
+		wantURL   string
+		wantErr   bool
+	}{
+		{"eng@https://github.com/mattpocock/skills.git", "eng", "https://github.com/mattpocock/skills.git", false},
+		{"team@https://github.com/org/skills.git", "team", "https://github.com/org/skills.git", false},
+		{"https://github.com/mattpocock/skills.git", "mattpocock/skills", "https://github.com/mattpocock/skills.git", false},
+		{"https://github.com/mattpocock/skills", "mattpocock/skills", "https://github.com/mattpocock/skills", false},
+		{"git@github.com:owner/repo.git", "owner/repo", "git@github.com:owner/repo.git", false},
+		{"", "", "", true},
+		{"eng@", "", "", true},
+		{"not-a-url", "", "", true},
+		{"swe-swe@https://github.com/example/repo.git", "", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := parseSkillsEntry(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSkillsEntry(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if got.Alias != tt.wantAlias {
+					t.Errorf("parseSkillsEntry(%q).Alias = %q, want %q", tt.input, got.Alias, tt.wantAlias)
+				}
+				if got.URL != tt.wantURL {
+					t.Errorf("parseSkillsEntry(%q).URL = %q, want %q", tt.input, got.URL, tt.wantURL)
+				}
+			}
+		})
+	}
+}
+
+// TestParseSkillsFlag verifies parsing of full --with-skills flag.
+func TestParseSkillsFlag(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    []SkillsRepo
+		wantErr bool
+	}{
+		{"", nil, false},
+		{"  ", nil, false},
+		{"eng@https://github.com/mattpocock/skills.git", []SkillsRepo{
+			{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"},
+		}, false},
+		{"https://github.com/mattpocock/skills.git", []SkillsRepo{
+			{Alias: "mattpocock/skills", URL: "https://github.com/mattpocock/skills.git"},
+		}, false},
+		{"eng@https://github.com/mattpocock/skills.git https://github.com/org/skills.git", []SkillsRepo{
+			{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"},
+			{Alias: "org/skills", URL: "https://github.com/org/skills.git"},
+		}, false},
+		{"  eng@https://github.com/a/b.git   team@https://github.com/c/d.git  ", []SkillsRepo{
+			{Alias: "eng", URL: "https://github.com/a/b.git"},
+			{Alias: "team", URL: "https://github.com/c/d.git"},
+		}, false},
+		{"eng@https://github.com/a/b.git not-a-url", nil, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := parseSkillsFlag(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSkillsFlag(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if len(got) != len(tt.want) {
+					t.Errorf("parseSkillsFlag(%q) len = %d, want %d", tt.input, len(got), len(tt.want))
+					return
+				}
+				for i := range got {
+					if got[i].Alias != tt.want[i].Alias || got[i].URL != tt.want[i].URL {
+						t.Errorf("parseSkillsFlag(%q)[%d] = %+v, want %+v", tt.input, i, got[i], tt.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestWriteBundledSlashCommands verifies bundled slash commands are extracted correctly
 func TestWriteBundledSlashCommands(t *testing.T) {
 	t.Run("md files only", func(t *testing.T) {
@@ -669,6 +755,10 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-slash-commands-opencode-only", []string{"--agents", "opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-pi-only", []string{"--agents", "pi", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
 		{"with-slash-commands-claude-opencode", []string{"--agents", "claude,opencode", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git"}},
+		{"with-skills", []string{"--agents", "all", "--with-skills", "eng@https://github.com/mattpocock/skills.git"}},
+		{"with-skills-multi", []string{"--agents", "all", "--with-skills", "eng@https://github.com/mattpocock/skills.git https://github.com/org/skills.git"}},
+		{"with-skills-no-alias", []string{"--agents", "all", "--with-skills", "https://github.com/mattpocock/skills.git"}},
+		{"with-skills-and-slash", []string{"--agents", "all", "--with-slash-commands", "ck@https://github.com/choonkeat/slash-commands.git", "--with-skills", "eng@https://github.com/mattpocock/skills.git"}},
 		{"with-ssl-selfsign", []string{"--ssl", "selfsign"}},
 		{"with-ssl-letsencrypt", []string{"--ssl", "letsencrypt@google.com", "--email", "admin@example.com"}},
 		{"with-ssl-letsencrypt-staging", []string{"--ssl", "letsencrypt-staging@google.com", "--email", "admin@example.com"}},
@@ -1360,6 +1450,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"WithDocker":          true,
 		"WithVSCode":          true,
 		"SlashCommands":       true,
+		"Skills":              true,
 		"SSL":                 true,
 		"Email":               true,
 		"PreviewPorts":        true,
