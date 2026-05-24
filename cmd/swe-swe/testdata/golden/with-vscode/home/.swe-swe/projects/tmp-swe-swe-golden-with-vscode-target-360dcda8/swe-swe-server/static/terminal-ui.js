@@ -704,6 +704,7 @@ class TerminalUI extends HTMLElement {
                         <option value="agent-terminal">Agent Terminal</option>
                         <option value="agent-chat" hidden disabled>Agent Chat</option>
                         <option value="preview">App Preview</option>
+                        <option value="files" hidden disabled>Files</option>
                         <option value="vscode" >Code</option>
                         <option value="shell">Terminal</option>
                         <option value="browser" hidden disabled>Agent View</option>
@@ -1578,6 +1579,15 @@ class TerminalUI extends HTMLElement {
                     || (!prevVncProxyPort) !== (!this.vncProxyPort)
                     || (!prevFilesProxyPort) !== (!this.filesProxyPort)) {
                     this._rerenderSlotTabs();
+                    // Toggle the Files mobile-nav option in step with its
+                    // availability (filesProxyPort), mirroring how Agent View
+                    // toggles its option. switchMobileNav below then shows the
+                    // popout button when Files is the selected pane.
+                    const filesOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="files"]');
+                    if (filesOpt) {
+                        filesOpt.hidden = !this.filesProxyPort;
+                        filesOpt.disabled = !this.filesProxyPort;
+                    }
                     const sel = this.querySelector('.terminal-ui__mobile-nav-select');
                     if (sel) this.switchMobileNav(sel.value);
                 }
