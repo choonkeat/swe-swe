@@ -394,6 +394,62 @@ func TestEffectiveGitEmail(t *testing.T) {
 	}
 }
 
+// TestParseRemoteHost covers URL and scp-style remote forms plus the
+// negative cases (local path, empty) that must yield "".
+func TestParseRemoteHost(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"https://github.com/org/repo.git", "github.com"},
+		{"https://gitlab.example.com/org/repo.git", "gitlab.example.com"},
+		{"https://user@gitlab.example.com/org/repo.git", "gitlab.example.com"},
+		{"https://gitlab.example.com:8443/org/repo.git", "gitlab.example.com"},
+		{"ssh://git@github.com/org/repo.git", "github.com"},
+		{"ssh://git@gitlab.example.com:2222/org/repo.git", "gitlab.example.com"},
+		{"git@github.com:org/repo.git", "github.com"},
+		{"git@gitlab.example.com:org/repo.git", "gitlab.example.com"},
+		{"github.com:org/repo.git", "github.com"},
+		{"/local/path/repo", ""},
+		{"file:///local/path/repo", ""},
+		{"", ""},
+		{"   ", ""},
+	}
+	for _, tc := range tests {
+		if got := parseRemoteHost(tc.in); got != tc.want {
+			t.Errorf("parseRemoteHost(%q): got %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestReadLocalRemoteHost creates a repo with an origin remote and asserts
+// the host is parsed from it. Skips if git is unavailable.
+func TestReadLocalRemoteHost(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	// No origin yet -> empty.
+	if got := readLocalRemoteHost(dir); got != "" {
+		t.Errorf("readLocalRemoteHost (no origin): got %q, want empty", got)
+	}
+	run("remote", "add", "origin", "https://gitlab.example.com/org/repo.git")
+	if got := readLocalRemoteHost(dir); got != "gitlab.example.com" {
+		t.Errorf("readLocalRemoteHost: got %q, want gitlab.example.com", got)
+	}
+	if got := readLocalRemoteHost(""); got != "" {
+		t.Errorf("readLocalRemoteHost(\"\"): got %q, want empty", got)
+	}
+}
+
 // gitconfigUserEmail extracts the `email = ...` value from the [user]
 // section of a session gitconfig body. Returns "" if absent. Used by the
 // concurrency test to assert the gitconfig and allowed_signers agree.

@@ -6,7 +6,7 @@
 - [x] **Phase 0** -- per-sid serialize + atomic-write (gitconfig/allowed_signers). Done 2026-05-27.
 - [x] **Phase 1** -- connect-time state snapshot + broadcast + SSH-pane indicator. Done 2026-05-27.
 - [x] **Phase 2** -- server-side author-email derivation (effective git email fallback for allowed_signers). Done 2026-05-27. Combined Phase 1+2 browser e2e PASSED: key + local identity, no Save -> "verifies locally" + `git commit -S` verifies via `git log --show-signature`; negative local gpg override -> "inactive -- local .git/config override". See -phase1.log.
-- [ ] Phase 3 -- trust-gated HTTPS auto-send + host autofill
+- [x] **Phase 3** -- trust-gated HTTPS auto-send + host autofill + "Forget HTTPS on this device". Done 2026-05-27. e2e PASSED: host autofill -> origin host; trusted new session auto-sends creds+key in ONE combined message (gitconfig written once); Forget clears shared trust + PAT; untrusted session sends nothing. See -phase3.log.
 - [ ] Phase 4 -- adjacent papercuts
 
 Follow-up to the SSH commit-signing work

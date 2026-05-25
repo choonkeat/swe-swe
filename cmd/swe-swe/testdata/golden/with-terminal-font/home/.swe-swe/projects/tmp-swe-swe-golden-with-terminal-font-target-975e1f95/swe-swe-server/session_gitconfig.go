@@ -294,6 +294,62 @@ func clearSessionEffectiveEmail(sid string) {
 	sessionEffectiveEmailMu.Unlock()
 }
 
+// readLocalRemoteHost returns the host of the workdir's `origin` remote
+// (e.g. "github.com", "gitlab.example.com"), or "" when there is no
+// origin, no git, or the URL is unparseable. The session page injects it
+// as data-local-remote-host so the Settings > Git HTTPS Host field
+// autofills to the repo's actual forge -- a GitLab user otherwise has to
+// switch Host away from the hardcoded github.com before their stored
+// credentials apply.
+func readLocalRemoteHost(workDir string) string {
+	if workDir == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "remote", "get-url", "origin")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseRemoteHost(strings.TrimSpace(string(out)))
+}
+
+// parseRemoteHost extracts the host from a git remote URL. Pure function
+// (table-tested) handling both URL form (https://host/path,
+// ssh://git@host:port/path) and scp-style (git@host:path). Returns "" for
+// local paths or anything without a recognizable host.
+func parseRemoteHost(remote string) string {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
+		return ""
+	}
+	if !strings.Contains(remote, "://") {
+		// scp-style: [user@]host:path -- the ':' precedes the path and
+		// there is no scheme. A bare local path has no ':' so returns "".
+		if at := strings.LastIndex(remote, "@"); at >= 0 {
+			remote = remote[at+1:]
+		}
+		if colon := strings.Index(remote, ":"); colon >= 0 {
+			return remote[:colon]
+		}
+		return ""
+	}
+	// URL form: scheme://[user@]host[:port]/path
+	rest := remote[strings.Index(remote, "://")+3:]
+	if at := strings.Index(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
+	}
+	if slash := strings.Index(rest, "/"); slash >= 0 {
+		rest = rest[:slash]
+	}
+	if colon := strings.Index(rest, ":"); colon >= 0 {
+		rest = rest[:colon]
+	}
+	return rest
+}
+
 // repoInitSHA returns the root commit (the parent-less "initial" commit)
 // of the repo at workDir, or the empty string if the directory is not
 // a git repo, has no commits yet, or git is unavailable. The browser

@@ -2425,6 +2425,10 @@ func main() {
 			// trap (typically a host-leftover `gpg.format = openpgp`) before
 			// they hit "gpg failed to sign" on commit.
 			localGPGOverrides := readLocalSigningOverrides(sessionWorkDir)
+			// Host of the workdir's origin remote, used to autofill the
+			// Git HTTPS Host field so a non-github forge's stored creds
+			// apply without the user switching Host first.
+			localRemoteHost := readLocalRemoteHost(sessionWorkDir)
 			data := struct {
 				UUID              string
 				UUIDShort         string
@@ -2436,6 +2440,7 @@ func main() {
 				WhereKey          string
 				InitSHA           string
 				LocalGPGOverrides string
+				LocalRemoteHost   string
 			}{
 				UUID:              sessionUUID,
 				UUIDShort:         uuidShort,
@@ -2447,6 +2452,7 @@ func main() {
 				WhereKey:          sessionWorkDir,
 				InitSHA:           initSHA,
 				LocalGPGOverrides: localGPGOverrides,
+				LocalRemoteHost:   localRemoteHost,
 			}
 			if err := indexTemplate.Execute(w, data); err != nil {
 				log.Printf("Template error: %v", err)
