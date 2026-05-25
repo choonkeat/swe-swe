@@ -1,0 +1,2 @@
+070813 BEFORE: Phase 0 implemented per-sid write mutex (sessionGitconfigLock) + atomicWriteFile (tmp+rename) in session_gitconfig.go; allowed_signers written+renamed before the referencing gitconfig; removeSessionGitconfig now holds the lock and removes gitconfig before allowed_signers. Added TestSessionGitconfig_ConcurrentWrites (16 writers x 50 iters + reader loop).
+070813 BEFORE: Will run 'make test'. EXPECT: all suites pass, including the new concurrency test (no torn-read, gitconfig [user] email matches allowed_signers principal).
