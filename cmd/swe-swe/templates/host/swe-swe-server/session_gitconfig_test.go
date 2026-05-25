@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -290,6 +292,140 @@ func TestSessionGitconfig_AllowedSigners_SkippedWithoutEmail(t *testing.T) {
 	}
 	if _, err := os.Stat(sessionAllowedSignersPath(sid)); !os.IsNotExist(err) {
 		t.Errorf("did not expect allowed_signers file to be written; stat err=%v", err)
+	}
+}
+
+// gitconfigUserEmail extracts the `email = ...` value from the [user]
+// section of a session gitconfig body. Returns "" if absent. Used by the
+// concurrency test to assert the gitconfig and allowed_signers agree.
+func gitconfigUserEmail(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "email = ") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "email = "))
+		}
+	}
+	return ""
+}
+
+// TestSessionGitconfig_ConcurrentWrites fires N goroutines calling
+// writeSessionGitconfig(sid) with different author emails while a reader
+// goroutine reads the gitconfig in a tight loop. It asserts two
+// invariants that the Phase 0 per-sid lock + atomic writes guarantee:
+//
+//   - No torn read: every read of the gitconfig sees a complete file
+//     (the managed header is always present; os.Rename never exposes a
+//     truncated O_TRUNC window).
+//   - Internal consistency: the final gitconfig's [user] email matches
+//     the principal email in the final allowed_signers file, i.e. both
+//     files came from the same locked write call (no interleave between
+//     allowed_signers from writer A and gitconfig from writer B).
+func TestSessionGitconfig_ConcurrentWrites(t *testing.T) {
+	tmp := t.TempDir()
+	savedDir := sessionGitconfigDir
+	sessionGitconfigDir = tmp
+	defer func() { sessionGitconfigDir = savedDir }()
+
+	sid := "test-sid-concurrent"
+	defer clearSessionCredentials(sid)
+
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{Signer: signer, Fingerprint: "SHA256:test", Label: "test"})
+
+	// Seed an initial write so the file exists before the reader starts.
+	setAuthor(sid, AuthorIdent{Name: "User 0", Email: "user0@example.com"})
+	if err := writeSessionGitconfig(sid); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+
+	const writers = 16
+	const iterations = 50
+
+	var (
+		writersWg sync.WaitGroup
+		readerWg  sync.WaitGroup
+		errMu     sync.Mutex
+		firstErr  error
+	)
+	recordErr := func(err error) {
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMu.Unlock()
+	}
+	stop := make(chan struct{})
+
+	readerWg.Add(1)
+	go func() {
+		defer readerWg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			body, err := os.ReadFile(sessionGitconfigPath(sid))
+			if err != nil {
+				// With atomic rename the file is always present after the
+				// seed; a read error here is itself a failure.
+				recordErr(fmt.Errorf("reader: %v", err))
+				return
+			}
+			if !strings.HasPrefix(string(body), "# managed by swe-swe-server") {
+				recordErr(fmt.Errorf("reader saw torn/partial gitconfig:\n%s", body))
+				return
+			}
+		}
+	}()
+
+	for w := 0; w < writers; w++ {
+		writersWg.Add(1)
+		go func(w int) {
+			defer writersWg.Done()
+			for i := 0; i < iterations; i++ {
+				setAuthor(sid, AuthorIdent{
+					Name:  fmt.Sprintf("User %d", w),
+					Email: fmt.Sprintf("user%d@example.com", w),
+				})
+				if err := writeSessionGitconfig(sid); err != nil {
+					recordErr(fmt.Errorf("writer %d: %v", w, err))
+					return
+				}
+			}
+		}(w)
+	}
+
+	writersWg.Wait()
+	close(stop)
+	readerWg.Wait()
+
+	errMu.Lock()
+	gotErr := firstErr
+	errMu.Unlock()
+	if gotErr != nil {
+		t.Fatal(gotErr)
+	}
+
+	// Final consistency: the [user] email and the allowed_signers
+	// principal must agree -- both written under one lock hold.
+	finalBody, err := os.ReadFile(sessionGitconfigPath(sid))
+	if err != nil {
+		t.Fatalf("read final gitconfig: %v", err)
+	}
+	email := gitconfigUserEmail(string(finalBody))
+	if email == "" {
+		t.Fatalf("final gitconfig has no [user] email:\n%s", finalBody)
+	}
+	if !strings.Contains(string(finalBody), "allowedSignersFile = "+sessionAllowedSignersPath(sid)) {
+		t.Fatalf("final gitconfig missing allowedSignersFile line:\n%s", finalBody)
+	}
+	signers, err := os.ReadFile(sessionAllowedSignersPath(sid))
+	if err != nil {
+		t.Fatalf("read final allowed_signers: %v", err)
+	}
+	if !strings.HasPrefix(string(signers), email+" ") {
+		t.Errorf("allowed_signers principal mismatch: gitconfig email=%q, allowed_signers=%q", email, signers)
 	}
 }
 
