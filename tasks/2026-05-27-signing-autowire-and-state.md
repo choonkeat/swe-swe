@@ -7,7 +7,7 @@
 - [x] **Phase 1** -- connect-time state snapshot + broadcast + SSH-pane indicator. Done 2026-05-27.
 - [x] **Phase 2** -- server-side author-email derivation (effective git email fallback for allowed_signers). Done 2026-05-27. Combined Phase 1+2 browser e2e PASSED: key + local identity, no Save -> "verifies locally" + `git commit -S` verifies via `git log --show-signature`; negative local gpg override -> "inactive -- local .git/config override". See -phase1.log.
 - [x] **Phase 3** -- trust-gated HTTPS auto-send + host autofill + "Forget HTTPS on this device". Done 2026-05-27. e2e PASSED: host autofill -> origin host; trusted new session auto-sends creds+key in ONE combined message (gitconfig written once); Forget clears shared trust + PAT; untrusted session sends nothing. See -phase3.log.
-- [ ] Phase 4 -- adjacent papercuts
+- [x] **Phase 4** -- adjacent papercuts: GitLab-aware Test connection (api/v4/user + PRIVATE-TOKEN, fall back to generic GET) + verify-stored-key (server verify_stored_signing_key op; frontend falls back to it when the form is empty but a key is registered). Done 2026-05-27. TestGitLabAPI green; verify-key e2e PASSED. See -phase4.log.
 
 Follow-up to the SSH commit-signing work
 (`tasks/2026-05-04-sshsig-commit-signing.md`, shipped in v2.24.0). That

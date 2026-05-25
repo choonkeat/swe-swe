@@ -5472,6 +5472,24 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if err := conn.WriteJSON(ack); err != nil {
 					log.Printf("Session %s: failed to ack verify_signing_key: %v", sess.UUID, err)
 				}
+			case "verify_stored_signing_key":
+				// Verify the key ALREADY registered for this session (e.g.
+				// auto-restored) without re-sending the PEM, which the form
+				// may not hold this session. Signs a tiny test payload with
+				// the in-memory signer to prove it is loadable and functional,
+				// then returns the fingerprint. Acks with the same
+				// signing_key_verified type the frontend already handles.
+				ack := map[string]any{"type": "signing_key_verified"}
+				if key, ok := getSigningKey(sess.UUID); !ok || key.Signer == nil {
+					ack["error"] = "no signing key registered this session"
+				} else if _, err := signSSH([]byte("swe-swe verify"), key.Signer, "git"); err != nil {
+					ack["error"] = "stored key failed to sign: " + err.Error()
+				} else {
+					ack["fingerprint"] = key.Fingerprint
+				}
+				if err := conn.WriteJSON(ack); err != nil {
+					log.Printf("Session %s: failed to ack verify_stored_signing_key: %v", sess.UUID, err)
+				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
@@ -8731,6 +8749,16 @@ func testGitCredentials(ctx context.Context, host, username, token string) (bool
 	if username == "" {
 		username = "x-access-token"
 	}
+	// GitLab's site root returns 404 for an authenticated Basic-auth GET,
+	// so the generic path below would mis-report a valid token as "Not
+	// found". Probe the GitLab API first for non-github hosts; it gives a
+	// definitive 200/401 on a GitLab instance, and we fall through to the
+	// generic GET when the host is clearly not GitLab.
+	if host != "github.com" {
+		if handled, ok, msg := testGitLabCredentials(ctx, host, token); handled {
+			return ok, msg
+		}
+	}
 	var reqURL string
 	if host == "github.com" {
 		reqURL = "https://api.github.com/user"
@@ -8772,4 +8800,50 @@ func testGitCredentials(ctx context.Context, host, username, token string) (bool
 		return false, "Not found (HTTP 404)"
 	}
 	return false, fmt.Sprintf("HTTP %d from %s", resp.StatusCode, host)
+}
+
+// testGitLabCredentials probes {host}/api/v4/user with the PAT in the
+// PRIVATE-TOKEN header (how GitLab authenticates personal access tokens).
+// Returns handled=false to mean "this does not look like a GitLab API
+// surface, fall back to the generic check" -- distinct from a definitive
+// 401/403. Used because GitLab's site root 404s a Basic-auth GET, which
+// the generic path would mis-report.
+func testGitLabCredentials(ctx context.Context, host, token string) (handled, ok bool, msg string) {
+	return testGitLabAPI(ctx, "https://"+host+"/api/v4/user", token)
+}
+
+// testGitLabAPI is the host-agnostic core of testGitLabCredentials, taking
+// the full API URL so it can be exercised against an httptest server.
+func testGitLabAPI(ctx context.Context, reqURL, token string) (handled, ok bool, msg string) {
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return false, false, ""
+	}
+	req.Header.Set("PRIVATE-TOKEN", token)
+	req.Header.Set("User-Agent", "swe-swe/test-credentials")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// Network error -> let the generic path report the unreachable host.
+		return false, false, ""
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var body struct {
+			Username string `json:"username"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		if body.Username != "" {
+			return true, true, "Connected as @" + body.Username + " (GitLab)"
+		}
+		return true, true, "Connected (GitLab)"
+	case http.StatusUnauthorized:
+		return true, false, "Invalid credentials (HTTP 401)"
+	case http.StatusForbidden:
+		return true, false, "Forbidden (HTTP 403) -- token may lack scope"
+	}
+	// 404 or anything else: not a GitLab API surface. Fall back.
+	return false, false, ""
 }

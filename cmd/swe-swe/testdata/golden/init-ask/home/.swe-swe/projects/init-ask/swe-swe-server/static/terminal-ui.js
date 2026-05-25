@@ -2668,6 +2668,17 @@ class TerminalUI extends HTMLElement {
         const signingPassphrase = panel.querySelector('#settings-cred-signing-passphrase')?.value || '';
         const signingLabel = (panel.querySelector('#settings-cred-signing-label')?.value || '').trim();
         if (!signingKey.trim()) {
+            // Form is empty -- but a key may already be registered server-side
+            // (e.g. auto-restored this session, with the PEM not re-pasted).
+            // Verify that stored key instead of telling the user to paste one.
+            if (this._signingFingerprint) {
+                this.sendJSON({ type: 'verify_stored_signing_key' });
+                if (sigStatus) {
+                    sigStatus.textContent = 'Verifying registered key...';
+                    sigStatus.removeAttribute('data-state');
+                }
+                return;
+            }
             if (sigStatus) {
                 sigStatus.textContent = 'Paste a private key first.';
                 sigStatus.setAttribute('data-state', 'err');
