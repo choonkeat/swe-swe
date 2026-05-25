@@ -556,7 +556,7 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	// Server-side writes (by writeSessionGitconfig) take effect on the
 	// next git invocation in the session, no shell restart needed.
 	if p.SID != "" {
-		path, err := ensureSessionGitconfig(p.SID)
+		path, err := ensureSessionGitconfig(p.SID, p.WorkDir)
 		if err != nil {
 			log.Printf("Session %s: ensureSessionGitconfig failed: %v (per-session author identity disabled)", p.SID, err)
 		} else {
@@ -5343,7 +5343,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				}
 				sessionCredStateMu.Unlock()
 
-				if err := writeSessionGitconfig(sess.UUID); err != nil {
+				// Refresh the cached workdir email (a user may have just
+				// fixed their local identity) before the rewrite, which
+				// reads it via cachedEffectiveGitEmail.
+				refreshSessionEffectiveEmail(sess.UUID, sess.effectiveWorkDir())
+				if err := writeSessionGitconfig(sess.UUID, sess.effectiveWorkDir()); err != nil {
 					log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
 				}
 				log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
@@ -5421,7 +5425,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 						log.Printf("Session %s: set_signing_key parse failed: %v", sess.UUID, err)
 					} else {
 						setSigningKey(sess.UUID, key)
-						if err := writeSessionGitconfig(sess.UUID); err != nil {
+						if err := writeSessionGitconfig(sess.UUID, sess.effectiveWorkDir()); err != nil {
 							log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
 						}
 						ack["fingerprint"] = key.Fingerprint

@@ -91,8 +91,9 @@ func sessionAllowedSignersPath(sid string) string {
 
 // ensureSessionGitconfig creates the file if missing, populating it
 // from any already-stored author identity for the sid. Returns the
-// path on success.
-func ensureSessionGitconfig(sid string) (string, error) {
+// path on success. workDir is used to derive a fallback signing
+// principal email (see writeSessionGitconfigFile).
+func ensureSessionGitconfig(sid, workDir string) (string, error) {
 	if sid == "" {
 		return "", fmt.Errorf("empty sid")
 	}
@@ -100,7 +101,9 @@ func ensureSessionGitconfig(sid string) (string, error) {
 		return "", err
 	}
 	path := sessionGitconfigPath(sid)
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	// Resolve the workdir fallback email OUTSIDE the per-sid file lock
+	// (cachedEffectiveGitEmail may fork git); pass the value in.
+	if err := writeSessionGitconfigFile(path, sid, cachedEffectiveGitEmail(sid, workDir)); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -108,16 +111,23 @@ func ensureSessionGitconfig(sid string) (string, error) {
 
 // writeSessionGitconfig (re)writes the per-session gitconfig file with
 // the current sessionAuthor[sid] values. Safe to call any time the
-// author identity changes.
-func writeSessionGitconfig(sid string) error {
+// author identity changes. workDir supplies the fallback signing
+// principal email when no session author email is set.
+func writeSessionGitconfig(sid, workDir string) error {
 	if sid == "" {
 		return nil
 	}
 	path := sessionGitconfigPath(sid)
-	return writeSessionGitconfigFile(path, sid)
+	// Resolve the workdir fallback email OUTSIDE the per-sid file lock.
+	return writeSessionGitconfigFile(path, sid, cachedEffectiveGitEmail(sid, workDir))
 }
 
-func writeSessionGitconfigFile(path, sid string) error {
+// writeSessionGitconfigFile assembles and atomically writes the
+// per-session gitconfig (and its allowed_signers sibling). effectiveEmail
+// is the workdir's resolved git email, supplied by the caller as a
+// fallback signing principal -- it MUST be resolved outside this function
+// because the per-sid lock is held here and resolving it forks git.
+func writeSessionGitconfigFile(path, sid, effectiveEmail string) error {
 	// Serialize the whole assemble + write allowed_signers + write
 	// gitconfig sequence per sid so the two files are always a
 	// consistent pair (see sessionGitconfigLocks). Any subprocess-derived
@@ -164,16 +174,25 @@ func writeSessionGitconfigFile(path, sid string) error {
 		body += "\tprogram = git-sign-swe-swe\n"
 
 		// Emit allowedSignersFile only when we can also write a usable
-		// file: it needs a principal, and the author email is the obvious
-		// choice. Without this, `git log --show-signature` and
-		// `git verify-commit` fail with "gpg.ssh.allowedSignersFile needs
-		// to be configured" or similar.
+		// file: it needs a principal. The session author email wins; when
+		// none is set we fall back to the workdir's effective git email
+		// (local-then-global precedence -- the email commits are actually
+		// authored with). This is what lets signing verify for a repo that
+		// has a local identity but where the user never hit Save. Without a
+		// principal, `git log --show-signature` / `git verify-commit` fail
+		// with "gpg.ssh.allowedSignersFile needs to be configured".
+		principal := ""
+		if hasAuthor && a.Email != "" {
+			principal = a.Email
+		} else if effectiveEmail != "" {
+			principal = effectiveEmail
+		}
 		// Write + rename the allowed_signers file BEFORE the gitconfig
 		// that references it, so the file always exists by the time the
 		// allowedSignersFile line goes live.
-		if hasAuthor && a.Email != "" {
+		if principal != "" {
 			signersPath := sessionAllowedSignersPath(sid)
-			line := fmt.Sprintf("%s %s\n", a.Email, signPub)
+			line := fmt.Sprintf("%s %s\n", principal, signPub)
 			if err := atomicWriteFile(signersPath, []byte(line), 0600); err == nil {
 				body += fmt.Sprintf("\tallowedSignersFile = %s\n", signersPath)
 			}
@@ -201,6 +220,78 @@ func removeSessionGitconfig(sid string) {
 	defer mu.Unlock()
 	_ = os.Remove(sessionGitconfigPath(sid))
 	_ = os.Remove(sessionAllowedSignersPath(sid))
+}
+
+// sessionEffectiveEmail memoizes the workdir's effective git email per
+// session so a gitconfig rewrite does not fork git on every call.
+// Populated lazily by cachedEffectiveGitEmail, refreshed on
+// set_credentials, and cleared on session end.
+var (
+	sessionEffectiveEmail   = map[string]string{}
+	sessionEffectiveEmailMu sync.RWMutex
+)
+
+// effectiveGitEmail returns user.email for workDir exactly as git
+// resolves it -- local .git/config first, then global ~/.gitconfig --
+// i.e. the email commits in that repo are actually authored with. We use
+// `git config user.email` (not a raw .git/config parse) precisely so the
+// global identity is included. Empty when workDir is not a repo, has no
+// email configured, or git is unavailable.
+func effectiveGitEmail(workDir string) string {
+	if workDir == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "config", "user.email")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// cachedEffectiveGitEmail returns the memoized effective git email for a
+// session, resolving (and caching) it on first use. MUST be called
+// OUTSIDE the per-sid gitconfig file lock since a cache miss forks git.
+// A benign race where two goroutines both miss and fork only costs an
+// extra fork; the stored value is identical.
+func cachedEffectiveGitEmail(sid, workDir string) string {
+	if sid == "" {
+		return effectiveGitEmail(workDir)
+	}
+	sessionEffectiveEmailMu.RLock()
+	email, ok := sessionEffectiveEmail[sid]
+	sessionEffectiveEmailMu.RUnlock()
+	if ok {
+		return email
+	}
+	email = effectiveGitEmail(workDir)
+	sessionEffectiveEmailMu.Lock()
+	sessionEffectiveEmail[sid] = email
+	sessionEffectiveEmailMu.Unlock()
+	return email
+}
+
+// refreshSessionEffectiveEmail re-resolves and stores the workdir email
+// for a session. Called on set_credentials so a user who fixes their
+// local identity mid-session sees it reflected without a reconnect.
+func refreshSessionEffectiveEmail(sid, workDir string) {
+	if sid == "" {
+		return
+	}
+	email := effectiveGitEmail(workDir)
+	sessionEffectiveEmailMu.Lock()
+	sessionEffectiveEmail[sid] = email
+	sessionEffectiveEmailMu.Unlock()
+}
+
+// clearSessionEffectiveEmail drops the cached email on session end.
+func clearSessionEffectiveEmail(sid string) {
+	sessionEffectiveEmailMu.Lock()
+	delete(sessionEffectiveEmail, sid)
+	sessionEffectiveEmailMu.Unlock()
 }
 
 // repoInitSHA returns the root commit (the parent-less "initial" commit)

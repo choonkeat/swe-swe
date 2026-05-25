@@ -76,6 +76,7 @@ func clearSessionCredentials(sid string) {
 	sessionAuthorMu.Unlock()
 
 	clearSigningKey(sid)
+	clearSessionEffectiveEmail(sid)
 }
 
 func setAuthor(sid string, ident AuthorIdent) {

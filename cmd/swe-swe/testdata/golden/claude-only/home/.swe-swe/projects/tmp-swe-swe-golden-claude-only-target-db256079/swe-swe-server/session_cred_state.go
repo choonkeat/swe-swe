@@ -55,9 +55,10 @@ func computeSigningState(hasKey, emailResolvable bool, localOverrides string) (a
 // compound update. readLocalSigningOverrides is a pure .git/config file
 // read (no subprocess), safe to run while holding the lock.
 //
-// emailResolvable in Phase 1 is the session author email alone; Phase 2
-// extends it to also accept the workdir's effective git email so a repo
-// with a local identity but no Save still signs.
+// emailResolvable is the session author email OR (Phase 2) the workdir's
+// effective git email, so a repo with a local identity but no Save still
+// reads as signing-active. cachedEffectiveGitEmail forks git at most once
+// per session and is called outside sessionCredStateMu.
 func buildSessionCredState(sid, workDir string) map[string]any {
 	sessionCredStateMu.Lock()
 	hosts := listCredentialHosts(sid)
@@ -70,8 +71,9 @@ func buildSessionCredState(sid, workDir string) map[string]any {
 		fingerprint = key.Fingerprint
 	}
 	authorEmailSet := author.Email != ""
+	emailResolvable := authorEmailSet || cachedEffectiveGitEmail(sid, workDir) != ""
 	localOverrides := readLocalSigningOverrides(workDir)
-	active, reason := computeSigningState(hasKey, authorEmailSet, localOverrides)
+	active, reason := computeSigningState(hasKey, emailResolvable, localOverrides)
 
 	return map[string]any{
 		"type":                    "session_cred_state",

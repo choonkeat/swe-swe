@@ -4,8 +4,8 @@
 
 **In progress.**
 - [x] **Phase 0** -- per-sid serialize + atomic-write (gitconfig/allowed_signers). Done 2026-05-27.
-- [x] **Phase 1** -- connect-time state snapshot + broadcast + SSH-pane indicator. Code + unit tests done 2026-05-27. Browser e2e deferred to a combined Phase 1+2 run ("verifies locally with no Save" is a 1+2 outcome).
-- [ ] Phase 2 -- server-side author-email derivation
+- [x] **Phase 1** -- connect-time state snapshot + broadcast + SSH-pane indicator. Done 2026-05-27.
+- [x] **Phase 2** -- server-side author-email derivation (effective git email fallback for allowed_signers). Done 2026-05-27. Combined Phase 1+2 browser e2e PASSED: key + local identity, no Save -> "verifies locally" + `git commit -S` verifies via `git log --show-signature`; negative local gpg override -> "inactive -- local .git/config override". See -phase1.log.
 - [ ] Phase 3 -- trust-gated HTTPS auto-send + host autofill
 - [ ] Phase 4 -- adjacent papercuts
 

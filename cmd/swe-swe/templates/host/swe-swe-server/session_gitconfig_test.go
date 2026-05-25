@@ -126,7 +126,7 @@ func TestSessionGitconfig_RoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	sid := "test-sid-12345"
 	path := filepath.Join(tmp, sid)
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	if err := writeSessionGitconfigFile(path, sid, ""); err != nil {
 		t.Fatalf("writeSessionGitconfigFile (no author): %v", err)
 	}
 	body, err := os.ReadFile(path)
@@ -142,7 +142,7 @@ func TestSessionGitconfig_RoundTrip(t *testing.T) {
 
 	setAuthor(sid, AuthorIdent{Name: "Dave Diff", Email: "dave@example.com"})
 	defer clearSessionCredentials(sid)
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	if err := writeSessionGitconfigFile(path, sid, ""); err != nil {
 		t.Fatalf("writeSessionGitconfigFile (with author): %v", err)
 	}
 	body, _ = os.ReadFile(path)
@@ -170,7 +170,7 @@ func TestSessionGitconfig_SigningKey(t *testing.T) {
 	defer clearSessionCredentials(sid)
 
 	// No signing key yet -- the signing blocks must not appear.
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	if err := writeSessionGitconfigFile(path, sid, ""); err != nil {
 		t.Fatalf("writeSessionGitconfigFile (no key): %v", err)
 	}
 	body, _ := os.ReadFile(path)
@@ -188,7 +188,7 @@ func TestSessionGitconfig_SigningKey(t *testing.T) {
 		Fingerprint: "SHA256:test",
 		Label:       "test",
 	})
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	if err := writeSessionGitconfigFile(path, sid, ""); err != nil {
 		t.Fatalf("writeSessionGitconfigFile (with key): %v", err)
 	}
 	body, _ = os.ReadFile(path)
@@ -235,7 +235,7 @@ func TestSessionGitconfig_AllowedSigners(t *testing.T) {
 		Label:       "test",
 	})
 
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	if err := writeSessionGitconfigFile(path, sid, ""); err != nil {
 		t.Fatalf("writeSessionGitconfigFile: %v", err)
 	}
 
@@ -282,7 +282,7 @@ func TestSessionGitconfig_AllowedSigners_SkippedWithoutEmail(t *testing.T) {
 	})
 	// Author not set: signing still wires up, but no allowed_signers.
 
-	if err := writeSessionGitconfigFile(path, sid); err != nil {
+	if err := writeSessionGitconfigFile(path, sid, ""); err != nil {
 		t.Fatalf("writeSessionGitconfigFile: %v", err)
 	}
 
@@ -292,6 +292,105 @@ func TestSessionGitconfig_AllowedSigners_SkippedWithoutEmail(t *testing.T) {
 	}
 	if _, err := os.Stat(sessionAllowedSignersPath(sid)); !os.IsNotExist(err) {
 		t.Errorf("did not expect allowed_signers file to be written; stat err=%v", err)
+	}
+}
+
+// TestSessionGitconfig_AllowedSigners_FallbackToEffectiveEmail verifies
+// Phase 2: when a signing key is set and there is NO session author
+// email, the workdir's effective git email (passed in) is used as the
+// allowed_signers principal and allowedSignersFile is emitted. This is
+// what makes signing verify for a repo with a local identity but no Save.
+func TestSessionGitconfig_AllowedSigners_FallbackToEffectiveEmail(t *testing.T) {
+	tmp := t.TempDir()
+	savedDir := sessionGitconfigDir
+	sessionGitconfigDir = tmp
+	defer func() { sessionGitconfigDir = savedDir }()
+
+	sid := "test-sid-effective-email"
+	path := filepath.Join(tmp, sid)
+	defer clearSessionCredentials(sid)
+
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{Signer: signer, Fingerprint: "SHA256:test", Label: "test"})
+	// No session author set: the fallback email must be used.
+
+	if err := writeSessionGitconfigFile(path, sid, "workdir@example.com"); err != nil {
+		t.Fatalf("writeSessionGitconfigFile: %v", err)
+	}
+
+	body, _ := os.ReadFile(path)
+	if !strings.Contains(string(body), "allowedSignersFile = "+sessionAllowedSignersPath(sid)) {
+		t.Errorf("expected allowedSignersFile with fallback email; got:\n%s", body)
+	}
+	// No session author email means no [user] email line was written...
+	if strings.Contains(string(body), "email = workdir@example.com") {
+		t.Errorf("fallback email must NOT be written as [user] email; got:\n%s", body)
+	}
+	// ...but the allowed_signers principal IS the fallback email.
+	signers, err := os.ReadFile(sessionAllowedSignersPath(sid))
+	if err != nil {
+		t.Fatalf("read allowed_signers: %v", err)
+	}
+	if !strings.HasPrefix(string(signers), "workdir@example.com ssh-ed25519 ") {
+		t.Errorf("allowed_signers principal: got %q, want workdir@example.com ...", signers)
+	}
+}
+
+// TestSessionGitconfig_AllowedSigners_SessionAuthorWins verifies the
+// session author email takes precedence over the workdir effective email
+// for the allowed_signers principal (the session author is the explicit,
+// intentional identity).
+func TestSessionGitconfig_AllowedSigners_SessionAuthorWins(t *testing.T) {
+	tmp := t.TempDir()
+	savedDir := sessionGitconfigDir
+	sessionGitconfigDir = tmp
+	defer func() { sessionGitconfigDir = savedDir }()
+
+	sid := "test-sid-author-wins"
+	path := filepath.Join(tmp, sid)
+	defer clearSessionCredentials(sid)
+
+	setAuthor(sid, AuthorIdent{Name: "Session Author", Email: "session@example.com"})
+	signer := genTestEd25519Signer(t)
+	setSigningKey(sid, SigningKey{Signer: signer, Fingerprint: "SHA256:test", Label: "test"})
+
+	if err := writeSessionGitconfigFile(path, sid, "workdir@example.com"); err != nil {
+		t.Fatalf("writeSessionGitconfigFile: %v", err)
+	}
+	signers, err := os.ReadFile(sessionAllowedSignersPath(sid))
+	if err != nil {
+		t.Fatalf("read allowed_signers: %v", err)
+	}
+	if !strings.HasPrefix(string(signers), "session@example.com ssh-ed25519 ") {
+		t.Errorf("expected session author email to win; got %q", signers)
+	}
+}
+
+// TestEffectiveGitEmail resolves user.email via `git config` (honoring
+// local-then-global precedence). Creates a repo with a local user.email
+// and asserts effectiveGitEmail returns it. Skips if git is unavailable.
+func TestEffectiveGitEmail(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "local@example.com")
+
+	if got := effectiveGitEmail(dir); got != "local@example.com" {
+		t.Errorf("effectiveGitEmail: got %q, want local@example.com", got)
+	}
+	// Empty workdir -> empty.
+	if got := effectiveGitEmail(""); got != "" {
+		t.Errorf("effectiveGitEmail(\"\"): got %q, want empty", got)
 	}
 }
 
@@ -309,7 +408,7 @@ func gitconfigUserEmail(body string) string {
 }
 
 // TestSessionGitconfig_ConcurrentWrites fires N goroutines calling
-// writeSessionGitconfig(sid) with different author emails while a reader
+// writeSessionGitconfig(sid, "") with different author emails while a reader
 // goroutine reads the gitconfig in a tight loop. It asserts two
 // invariants that the Phase 0 per-sid lock + atomic writes guarantee:
 //
@@ -334,7 +433,7 @@ func TestSessionGitconfig_ConcurrentWrites(t *testing.T) {
 
 	// Seed an initial write so the file exists before the reader starts.
 	setAuthor(sid, AuthorIdent{Name: "User 0", Email: "user0@example.com"})
-	if err := writeSessionGitconfig(sid); err != nil {
+	if err := writeSessionGitconfig(sid, ""); err != nil {
 		t.Fatalf("seed write: %v", err)
 	}
 
@@ -388,7 +487,7 @@ func TestSessionGitconfig_ConcurrentWrites(t *testing.T) {
 					Name:  fmt.Sprintf("User %d", w),
 					Email: fmt.Sprintf("user%d@example.com", w),
 				})
-				if err := writeSessionGitconfig(sid); err != nil {
+				if err := writeSessionGitconfig(sid, ""); err != nil {
 					recordErr(fmt.Errorf("writer %d: %v", w, err))
 					return
 				}
@@ -592,7 +691,7 @@ func TestRemoveSessionGitconfig_RemovesAllowedSigners(t *testing.T) {
 		Fingerprint: "SHA256:test",
 		Label:       "test",
 	})
-	if _, err := ensureSessionGitconfig(sid); err != nil {
+	if _, err := ensureSessionGitconfig(sid, ""); err != nil {
 		t.Fatalf("ensureSessionGitconfig: %v", err)
 	}
 
