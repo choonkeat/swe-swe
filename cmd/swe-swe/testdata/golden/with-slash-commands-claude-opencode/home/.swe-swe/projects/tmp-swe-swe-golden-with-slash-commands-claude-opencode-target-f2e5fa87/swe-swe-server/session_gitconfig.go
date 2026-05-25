@@ -25,11 +25,57 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 // var (not const) so tests can redirect to a temp dir.
 var sessionGitconfigDir = "/tmp/swe-swe-session-gitconfig"
+
+// sessionGitconfigLocks serializes the assemble+write sequence per sid.
+// The per-session gitconfig and its sibling <sid>.allowed_signers must
+// stay a mutually consistent pair: the gitconfig's allowedSignersFile
+// line points at the allowed_signers file, and the principal email in
+// that file must match the [user] email in the gitconfig. Multiple WS
+// connections to one sid each run their read loop on a separate
+// goroutine, so writeSessionGitconfig can be called concurrently for
+// the same sid. Holding this lock across both file writes guarantees
+// the final on-disk pair comes from a single write call (no interleave).
+//
+// Keyed by sid (not by path) because the allowed_signers path is always
+// derived from the sid even when callers pass an explicit gitconfig path.
+var (
+	sessionGitconfigLocks   = map[string]*sync.Mutex{}
+	sessionGitconfigLocksMu sync.Mutex
+)
+
+func sessionGitconfigLock(sid string) *sync.Mutex {
+	sessionGitconfigLocksMu.Lock()
+	defer sessionGitconfigLocksMu.Unlock()
+	mu, ok := sessionGitconfigLocks[sid]
+	if !ok {
+		mu = &sync.Mutex{}
+		sessionGitconfigLocks[sid] = mu
+	}
+	return mu
+}
+
+// atomicWriteFile writes data to <path>.tmp then renames it onto path.
+// os.Rename is atomic on the same filesystem, so a concurrent reader
+// (the agent's git) sees either the old complete file or the new
+// complete file, never a truncated one. os.WriteFile alone opens with
+// O_TRUNC and would expose a zero-length / partial window.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
 
 func sessionGitconfigPath(sid string) string {
 	return filepath.Join(sessionGitconfigDir, sid)
@@ -72,6 +118,15 @@ func writeSessionGitconfig(sid string) error {
 }
 
 func writeSessionGitconfigFile(path, sid string) error {
+	// Serialize the whole assemble + write allowed_signers + write
+	// gitconfig sequence per sid so the two files are always a
+	// consistent pair (see sessionGitconfigLocks). Any subprocess-derived
+	// input must be resolved by the caller and passed in -- never shell
+	// out while holding this lock.
+	mu := sessionGitconfigLock(sid)
+	mu.Lock()
+	defer mu.Unlock()
+
 	home, _ := os.UserHomeDir()
 	body := "# managed by swe-swe-server; edits will be overwritten\n"
 	if home != "" {
@@ -113,10 +168,13 @@ func writeSessionGitconfigFile(path, sid string) error {
 		// choice. Without this, `git log --show-signature` and
 		// `git verify-commit` fail with "gpg.ssh.allowedSignersFile needs
 		// to be configured" or similar.
+		// Write + rename the allowed_signers file BEFORE the gitconfig
+		// that references it, so the file always exists by the time the
+		// allowedSignersFile line goes live.
 		if hasAuthor && a.Email != "" {
 			signersPath := sessionAllowedSignersPath(sid)
 			line := fmt.Sprintf("%s %s\n", a.Email, signPub)
-			if err := os.WriteFile(signersPath, []byte(line), 0600); err == nil {
+			if err := atomicWriteFile(signersPath, []byte(line), 0600); err == nil {
 				body += fmt.Sprintf("\tallowedSignersFile = %s\n", signersPath)
 			}
 		}
@@ -127,13 +185,20 @@ func writeSessionGitconfigFile(path, sid string) error {
 		body += "\tgpgsign = true\n"
 	}
 
-	return os.WriteFile(path, []byte(body), 0600)
+	return atomicWriteFile(path, []byte(body), 0600)
 }
 
 func removeSessionGitconfig(sid string) {
 	if sid == "" {
 		return
 	}
+	// Hold the per-sid lock so removal cannot interleave with an
+	// in-flight write. Remove the gitconfig FIRST so a live
+	// allowedSignersFile = line never points at an already-deleted
+	// file (which would make git verification fail mid-teardown).
+	mu := sessionGitconfigLock(sid)
+	mu.Lock()
+	defer mu.Unlock()
 	_ = os.Remove(sessionGitconfigPath(sid))
 	_ = os.Remove(sessionAllowedSignersPath(sid))
 }

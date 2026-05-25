@@ -1553,6 +1553,27 @@ class TerminalUI extends HTMLElement {
                 }
                 this._refreshSigningStatus();
                 break;
+            case 'session_cred_state':
+                // Connect-time (and on-change) snapshot of server-side
+                // credential/signing state. Lets the panel show what is
+                // already set up server-side without a manual Save. Carries
+                // no secrets -- only host names, the signing fingerprint,
+                // local override text, and the computed signing verdict.
+                this._credsStoredHosts = Array.isArray(msg.hosts) ? msg.hosts : [];
+                if (typeof msg.signing_fingerprint === 'string') {
+                    this._signingFingerprint = msg.signing_fingerprint;
+                }
+                if (typeof msg.local_gpg_overrides === 'string') {
+                    this.dataset.localGpgOverrides = msg.local_gpg_overrides;
+                }
+                this._signingActive = !!msg.signing_active;
+                this._signingInactiveReason = typeof msg.signing_inactive_reason === 'string'
+                    ? msg.signing_inactive_reason : '';
+                this._signingStateKnown = true;
+                this._refreshCredsStatus();
+                this._refreshSigningStatus();
+                this._refreshLocalSigningOverridesWarning();
+                break;
             case 'status':
                 // Session status update
                 this.viewers = msg.viewers || 0;
@@ -2757,6 +2778,49 @@ class TerminalUI extends HTMLElement {
             }
         }
         this._refreshSettingsNavBadges();
+        this._refreshSigningActiveIndicator();
+    }
+
+    // One-line indicator on the SSH Signing pane stating whether commit
+    // signing will actually verify locally. Driven by the server-computed
+    // session_cred_state snapshot: "verifies locally" when a key is
+    // registered, an author email is resolvable, and no local .git/config
+    // override shadows the per-session config; otherwise the blocking
+    // reason ("no email", "local .git/config override", ...). Only shown
+    // once we have heard a snapshot AND a key is registered -- with no key
+    // the pane's normal "paste a key" affordance is the right message.
+    _refreshSigningActiveIndicator() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const pane = panel.querySelector('.settings-panel__pane[data-pane="ssh"]');
+        if (!pane) return;
+        const id = 'settings-cred-signing-active';
+        let line = pane.querySelector('#' + id);
+        if (!this._signingStateKnown || !this._signingFingerprint) {
+            if (line) line.remove();
+            return;
+        }
+        if (!line) {
+            line = document.createElement('p');
+            line.id = id;
+            line.className = 'settings-panel__hint';
+            const footer = pane.querySelector('.settings-panel__pane-footer');
+            if (footer) {
+                footer.parentNode.insertBefore(line, footer);
+            } else {
+                pane.appendChild(line);
+            }
+        }
+        if (this._signingActive) {
+            line.textContent = 'Signing: verifies locally';
+            line.setAttribute('data-state', 'ok');
+            line.classList.remove('settings-panel__hint--warn');
+        } else {
+            const reason = this._signingInactiveReason || 'inactive';
+            line.textContent = 'Signing: inactive -- ' + reason;
+            line.setAttribute('data-state', 'warn');
+            line.classList.add('settings-panel__hint--warn');
+        }
     }
 
     // Update the small badges next to "Git HTTPS" / "SSH Signing" in the

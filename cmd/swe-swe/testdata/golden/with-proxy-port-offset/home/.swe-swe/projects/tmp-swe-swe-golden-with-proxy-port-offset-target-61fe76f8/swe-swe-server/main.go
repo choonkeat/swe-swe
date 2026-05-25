@@ -20,8 +20,8 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof"
 	"net/http/httputil"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"os/exec"
@@ -39,9 +39,9 @@ import (
 
 	agentproxy "github.com/choonkeat/agent-reverse-proxy"
 	recordtui "github.com/choonkeat/record-tui/playback"
+	"github.com/choonkeat/swe-swe/forkconvo"
 	"github.com/creack/pty"
 	"github.com/google/uuid"
-	"github.com/choonkeat/swe-swe/forkconvo"
 	"github.com/gorilla/websocket"
 	"github.com/hinshun/vt10x"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -118,11 +118,11 @@ var (
 	proxyPortOffset    = 50000
 )
 
-func previewProxyPort(port int) int    { return proxyPortOffset + port }
-func agentChatProxyPort(port int) int  { return proxyPortOffset + port }
-func cdpProxyPort(port int) int        { return proxyPortOffset + port }
-func vncProxyPort(port int) int        { return proxyPortOffset + port }
-func filesProxyPort(port int) int      { return proxyPortOffset + port }
+func previewProxyPort(port int) int   { return proxyPortOffset + port }
+func agentChatProxyPort(port int) int { return proxyPortOffset + port }
+func cdpProxyPort(port int) int       { return proxyPortOffset + port }
+func vncProxyPort(port int) int       { return proxyPortOffset + port }
+func filesProxyPort(port int) int     { return proxyPortOffset + port }
 
 // flagPassed reports whether the user explicitly passed a flag on the
 // command line. Used to distinguish "flag at default value" from "flag
@@ -279,13 +279,13 @@ func (q SessionPageQuery) Encode() template.URL {
 }
 
 type SessionInfo struct {
-	UUID        string
-	UUIDShort   string
-	ClientCount int
-	CreatedAt   time.Time
-	DurationStr string // human-readable duration (e.g., "5m", "1h 23m")
-	PublicPort  int    // PUBLIC_PORT env var value (e.g. 5000)
-	Query       SessionPageQuery
+	UUID          string
+	UUIDShort     string
+	ClientCount   int
+	CreatedAt     time.Time
+	DurationStr   string // human-readable duration (e.g., "5m", "1h 23m")
+	PublicPort    int    // PUBLIC_PORT env var value (e.g. 5000)
+	Query         SessionPageQuery
 	SummaryLine   string // One-line summary: "{who}: {message}" from last chat event or terminal
 	SummaryStatus string // "green" (waiting for user) or "red" (agent busy) or "" (unknown)
 	MemoryUsage   string // Human-readable RSS of session process tree (e.g. "1.2 GB")
@@ -325,16 +325,16 @@ type RecordingMetadata struct {
 	BranchName    string     `json:"branch_name,omitempty"`    // git branch / worktree name
 	StartedAt     time.Time  `json:"started_at"`
 	EndedAt       *time.Time `json:"ended_at,omitempty"`
-	KeptAt       *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
-	Command      []string   `json:"command"`
-	Visitors     []Visitor  `json:"visitors,omitempty"`
-	MaxCols      uint16     `json:"max_cols,omitempty"`      // Max terminal columns during recording
-	MaxRows      uint16     `json:"max_rows,omitempty"`      // Max terminal rows during recording
-	PlaybackCols uint16     `json:"playback_cols,omitempty"` // Content-based cols for playback (calculated at session end)
-	PlaybackRows uint32     `json:"playback_rows,omitempty"` // Content-based rows for playback (calculated at session end)
-	WorkDir      string     `json:"work_dir,omitempty"`      // Working directory for VS Code links in playback
-	ExtraArgs    string     `json:"extra_args,omitempty"`    // Extra CLI flags appended to the agent command (for restart)
-	SummaryLine  string     `json:"summary_line,omitempty"`  // Cached one-line summary extracted from .log tail before compression (avoids per-request gzip decompression on the homepage)
+	KeptAt        *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
+	Command       []string   `json:"command"`
+	Visitors      []Visitor  `json:"visitors,omitempty"`
+	MaxCols       uint16     `json:"max_cols,omitempty"`      // Max terminal columns during recording
+	MaxRows       uint16     `json:"max_rows,omitempty"`      // Max terminal rows during recording
+	PlaybackCols  uint16     `json:"playback_cols,omitempty"` // Content-based cols for playback (calculated at session end)
+	PlaybackRows  uint32     `json:"playback_rows,omitempty"` // Content-based rows for playback (calculated at session end)
+	WorkDir       string     `json:"work_dir,omitempty"`      // Working directory for VS Code links in playback
+	ExtraArgs     string     `json:"extra_args,omitempty"`    // Extra CLI flags appended to the agent command (for restart)
+	SummaryLine   string     `json:"summary_line,omitempty"`  // Cached one-line summary extracted from .log tail before compression (avoids per-request gzip decompression on the homepage)
 	// AgentSessionID is the agent-side session id (e.g. Claude's .jsonl filename
 	// stem, codex's rollout id) captured at session spawn so /api/fork can
 	// locate the exact source conversation without resorting to mtime guesses.
@@ -457,13 +457,13 @@ type Session struct {
 	Metadata        *RecordingMetadata // Recording metadata (saved on name change or visitor join)
 	metadataMu      sync.Mutex         // serializes saveMetadata writes (atomic temp+rename below isn't enough on its own)
 	// Parent session relationship
-	ParentUUID  string // UUID of parent session (for shell sessions opened from agent sessions)
-	PreviewPort   int // App preview target port for this session
-	AgentChatPort int // Agent chat MCP server port for this session
-	PublicPort    int // Public (no-auth) port for this session
-	CDPPort       int // Chrome DevTools Protocol port for this session
-	VNCPort       int // VNC port for browser view for this session
-	FilesPort     int // Files (md-serve) port for this session
+	ParentUUID     string // UUID of parent session (for shell sessions opened from agent sessions)
+	PreviewPort    int    // App preview target port for this session
+	AgentChatPort  int    // Agent chat MCP server port for this session
+	PublicPort     int    // Public (no-auth) port for this session
+	CDPPort        int    // Chrome DevTools Protocol port for this session
+	VNCPort        int    // VNC port for browser view for this session
+	FilesPort      int    // Files (md-serve) port for this session
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
 	BrowserStarted bool   // Whether browser processes have been started
@@ -480,12 +480,12 @@ type Session struct {
 	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
 	AgentSessionID  string             // agent-side conversation id (e.g. Claude .jsonl stem); captured at spawn for /api/fork
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
-	PreviewProxy          *agentproxy.Proxy // Per-session preview proxy instance
-	SessionMux            http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
-	PreviewProxyServer    *http.Server      // Per-port listener for preview proxy (port-based mode)
-	AgentChatProxyServer *http.Server // Per-port listener for agent chat proxy (port-based mode)
-	VNCProxyServer       *http.Server // Per-port listener for vnc proxy (auth-checked websockify reverse proxy)
-	FilesProxyServer     *http.Server // Per-port listener for files proxy (auth-checked md-serve reverse proxy)
+	PreviewProxy         *agentproxy.Proxy // Per-session preview proxy instance
+	SessionMux           http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
+	PreviewProxyServer   *http.Server      // Per-port listener for preview proxy (port-based mode)
+	AgentChatProxyServer *http.Server      // Per-port listener for agent chat proxy (port-based mode)
+	VNCProxyServer       *http.Server      // Per-port listener for vnc proxy (auth-checked websockify reverse proxy)
+	FilesProxyServer     *http.Server      // Per-port listener for files proxy (auth-checked md-serve reverse proxy)
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -885,6 +885,37 @@ func (s *Session) BroadcastStatus() {
 		}
 	}
 	log.Printf("Session %s: broadcast status (viewers=%d, size=%dx%d)", s.UUID, len(s.wsClients), cols, rows)
+}
+
+// BroadcastJSON marshals v and sends it as a text frame to every connected
+// client. Used for idempotent state pushes (e.g. session_cred_state) so
+// co-viewers do not go stale when one browser changes credential/signing
+// state. The payload must be a control message the frontend tolerates as
+// a duplicate -- ordering is not guaranteed, only eventual consistency.
+func (s *Session) BroadcastJSON(v interface{}) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("BroadcastJSON marshal error: %v", err)
+		return
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for conn := range s.wsClients {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("BroadcastJSON write error: %v", err)
+		}
+	}
+}
+
+// effectiveWorkDir returns the session's working directory, falling back
+// to the server's cwd (matching buildStatusPayload). WorkDir is set at
+// session creation and never mutated, so this needs no lock.
+func (s *Session) effectiveWorkDir() string {
+	if s.WorkDir != "" {
+		return s.WorkDir
+	}
+	wd, _ := os.Getwd()
+	return wd
 }
 
 // BroadcastChatMessage broadcasts a chat message to all connected clients
@@ -1999,12 +2030,12 @@ func main() {
 
 			// Collect session info and data needed for summaries under the read lock
 			type sessionSummaryInput struct {
-				assistant    string
-				index        int
+				assistant     string
+				index         int
 				recordingUUID string
-				sessionMode  string
-				sess         *Session
-				pid          int // root PID for memory tracking
+				sessionMode   string
+				sess          *Session
+				pid           int // root PID for memory tracking
 			}
 			var summaryInputs []sessionSummaryInput
 
@@ -4543,10 +4574,10 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	// uuid, codex resume uuid, ...), explicit injection (claude --session-id),
 	// or post-spawn filesystem watch (codex, pi). See agent_session_id.go.
 	var (
-		agentSessionID    string
-		agentWatchDir     string
-		agentPreSnapshot  map[string]struct{}
-		unlockAgentSpawn  func()
+		agentSessionID   string
+		agentWatchDir    string
+		agentPreSnapshot map[string]struct{}
+		unlockAgentSpawn func()
 	)
 	if p.SessionMode == "chat" {
 		agentSessionID = parseKnownAgentSessionID(p.Assistant, cmdArgs)
@@ -5105,6 +5136,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		}
 	}
 
+	// Push the connect-time credential/signing snapshot so the Settings
+	// panel reflects true server-side state without a manual Save. Sent to
+	// this connection only; later state changes are broadcast to all conns.
+	if err := conn.WriteJSON(buildSessionCredState(sess.UUID, sess.effectiveWorkDir())); err != nil {
+		log.Printf("Session %s: failed to send session_cred_state: %v", sess.UUID, err)
+	}
+
 	// Read from this WebSocket and write to PTY
 	// Message protocol:
 	// - Binary frames: terminal I/O
@@ -5266,6 +5304,31 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if host == "" {
 					host = "github.com"
 				}
+
+				// Parse the signing key (CPU-bound, may decrypt) BEFORE
+				// taking the compound lock -- never hold a lock across it.
+				var (
+					parsedKey          SigningKey
+					haveParsedKey      bool
+					signingFingerprint string
+					signingError       string
+				)
+				if pem := strings.TrimSpace(payload.SigningPrivateKeyPEM); pem != "" {
+					key, err := parseSigningKey([]byte(pem), payload.SigningPassphrase, strings.TrimSpace(payload.SigningKeyLabel))
+					if err != nil {
+						signingError = err.Error()
+						log.Printf("Session %s: signing key parse failed: %v", sess.UUID, err)
+					} else {
+						parsedKey = key
+						haveParsedKey = true
+						signingFingerprint = key.Fingerprint
+					}
+				}
+
+				// Apply the credential + author + signing-key updates as one
+				// critical section so a concurrent session_cred_state snapshot
+				// never sees a half-applied update (new author, old key, etc.).
+				sessionCredStateMu.Lock()
 				setCredential(sess.UUID, host, CredentialBag{
 					Username: strings.TrimSpace(payload.Username),
 					Token:    payload.Token,
@@ -5274,25 +5337,19 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 					Name:  strings.TrimSpace(payload.Name),
 					Email: strings.TrimSpace(payload.Email),
 				})
-
-				signingFingerprint := ""
-				signingError := ""
-				if pem := strings.TrimSpace(payload.SigningPrivateKeyPEM); pem != "" {
-					key, err := parseSigningKey([]byte(pem), payload.SigningPassphrase, strings.TrimSpace(payload.SigningKeyLabel))
-					if err != nil {
-						signingError = err.Error()
-						log.Printf("Session %s: signing key parse failed: %v", sess.UUID, err)
-					} else {
-						setSigningKey(sess.UUID, key)
-						signingFingerprint = key.Fingerprint
-						log.Printf("Session %s: stored signing key (fp=%s, label=%q)", sess.UUID, key.Fingerprint, key.Label)
-					}
+				if haveParsedKey {
+					setSigningKey(sess.UUID, parsedKey)
+					log.Printf("Session %s: stored signing key (fp=%s, label=%q)", sess.UUID, parsedKey.Fingerprint, parsedKey.Label)
 				}
+				sessionCredStateMu.Unlock()
 
 				if err := writeSessionGitconfig(sess.UUID); err != nil {
 					log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
 				}
 				log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
+				// Push the refreshed state to all conns of this session so
+				// co-viewers do not go stale (idempotent; see BroadcastJSON).
+				sess.BroadcastJSON(buildSessionCredState(sess.UUID, sess.effectiveWorkDir()))
 				ack := map[string]any{
 					"type":  "credentials_stored",
 					"host":  host,
@@ -5369,6 +5426,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 						}
 						ack["fingerprint"] = key.Fingerprint
 						log.Printf("Session %s: stored signing key (fp=%s, label=%q)", sess.UUID, key.Fingerprint, key.Label)
+						// Refresh all conns: a freshly auto-restored key may flip
+						// signing_active true (e.g. after the connect-time snapshot
+						// reported "no signing key" before auto-restore landed).
+						sess.BroadcastJSON(buildSessionCredState(sess.UUID, sess.effectiveWorkDir()))
 					}
 				}
 				if err := conn.WriteJSON(ack); err != nil {
@@ -5830,9 +5891,9 @@ type RecordingListItem struct {
 	KeptAt      *time.Time `json:"kept_at,omitempty"`
 	HasChat     bool       `json:"has_chat,omitempty"`
 	HasTerminal bool       `json:"has_terminal,omitempty"`
-	HasTiming bool       `json:"has_timing"`
-	SizeBytes int64      `json:"size_bytes"`
-	IsActive  bool       `json:"is_active,omitempty"`
+	HasTiming   bool       `json:"has_timing"`
+	SizeBytes   int64      `json:"size_bytes"`
+	IsActive    bool       `json:"is_active,omitempty"`
 }
 
 // RecordingInfo holds recording data for template rendering
@@ -5842,15 +5903,15 @@ type RecordingInfo struct {
 	Name            string
 	Agent           string
 	AgentBadgeClass string
-	EndedAgo        string     // "15m ago", "2h ago", "yesterday"
-	EndedAt         time.Time  // actual timestamp for sorting
-	KeptAt          *time.Time // When user marked this recording to keep (nil = recent, auto-deletable)
-	IsKept          bool       // Convenience field for templates
-	ExpiresIn       string     // "59m", "30m" - time until auto-deletion (only for non-kept)
-	HasChat         bool       // has a chat .events.jsonl child recording
-	HasTerminal     bool       // has a terminal .log child recording
-	ChatUUID        string     // child UUID for chat playback URL
-	TerminalUUIDs   []string   // child UUIDs for terminal playback
+	EndedAgo        string           // "15m ago", "2h ago", "yesterday"
+	EndedAt         time.Time        // actual timestamp for sorting
+	KeptAt          *time.Time       // When user marked this recording to keep (nil = recent, auto-deletable)
+	IsKept          bool             // Convenience field for templates
+	ExpiresIn       string           // "59m", "30m" - time until auto-deletion (only for non-kept)
+	HasChat         bool             // has a chat .events.jsonl child recording
+	HasTerminal     bool             // has a terminal .log child recording
+	ChatUUID        string           // child UUID for chat playback URL
+	TerminalUUIDs   []string         // child UUIDs for terminal playback
 	SizeHuman       string           // human-readable total size ("2.4 GB")
 	SummaryLine     string           // one-line summary from last chat event
 	RestartUUID     string           // fresh UUID for "restart" link
@@ -6286,6 +6347,7 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 // Query params:
 //   - render=embedded: use embedded approach (data in HTML, no streaming)
 //   - (default): use streaming approach (fetch data via JS)
+//
 // getSessionSummaryFromChat reads the last event from an agent-chat events JSONL file
 // and returns a summary line and status color.
 // summaryLine: "{who}: {message start}" -- always starts from beginning, truncated by CSS.
