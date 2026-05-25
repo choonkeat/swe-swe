@@ -6,6 +6,8 @@
 
 Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [Let us know](https://github.com/choonkeat/swe-swe/issues)!
 
+![swe-swe in action: agent chat, app preview, and a live docs pane side by side](docs/images/swe-swe-screenshot.png)
+
 ## Features
 
 - **Containerized agent + browser**: each session runs in its own container with a browser for agentic testing (Playwright MCP plus a live Agent View).
