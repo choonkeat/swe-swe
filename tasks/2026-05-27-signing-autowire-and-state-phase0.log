@@ -1,2 +1,4 @@
 070813 BEFORE: Phase 0 implemented per-sid write mutex (sessionGitconfigLock) + atomicWriteFile (tmp+rename) in session_gitconfig.go; allowed_signers written+renamed before the referencing gitconfig; removeSessionGitconfig now holds the lock and removes gitconfig before allowed_signers. Added TestSessionGitconfig_ConcurrentWrites (16 writers x 50 iters + reader loop).
 070813 BEFORE: Will run 'make test'. EXPECT: all suites pass, including the new concurrency test (no torn-read, gitconfig [user] email matches allowed_signers principal).
+070924 AFTER: 'make test' GOT: all suites PASS (cli, server, mcp-lazy-init, git-sign-swe-swe). Matches expectation.
+070924 AFTER: 'make test-server TEST_SERVER_ARGS="-race -run TestSessionGitconfig"' GOT: PASS under -race -- TestSessionGitconfig_ConcurrentWrites passed (0.75s), no data race reported. Matches expectation: serialized atomic writes hold under 16x50 concurrent writers + reader.
