@@ -115,9 +115,14 @@ func codexFindLastChatReply(path, toolName string) (string, error) {
 	return lastCallID, nil
 }
 
-// codexCopyUntil cuts AFTER the function_call_output whose call_id matches
-// anchorCallID. This includes the tool result in the forked session so the
-// resumed agent sees the user's reply before deciding what to do next.
+// codexCopyUntil cuts AFTER the function_call (the agent's tool call)
+// whose call_id matches anchorCallID. We deliberately stop BEFORE the
+// matching function_call_output so the forked rollout's tail is in a
+// WAITING shape -- the assistant has issued the agent-chat call, no
+// response folded in -- avoiding the PENDING-ACTION runaway where the
+// resumed agent autonomously executes the source's trailing directive.
+// See forkconvo/claude.go's claudeFindLastChatReply doc for the full
+// reasoning; codex's design problem is symmetric.
 func codexCopyUntil(srcPath, dstPath, oldSessionID, newSessionID, anchorCallID string) error {
 	in, err := os.Open(srcPath)
 	if err != nil {
@@ -146,7 +151,7 @@ func codexCopyUntil(srcPath, dstPath, oldSessionID, newSessionID, anchorCallID s
 		}
 		var ev codexEvent
 		if err := json.Unmarshal([]byte(line), &ev); err == nil &&
-			ev.Payload.Type == "function_call_output" &&
+			ev.Payload.Type == "function_call" &&
 			ev.Payload.CallID == anchorCallID {
 			found = true
 			break
@@ -159,6 +164,46 @@ func codexCopyUntil(srcPath, dstPath, oldSessionID, newSessionID, anchorCallID s
 		return fmt.Errorf("anchor call_id %s not present in %s", anchorCallID, srcPath)
 	}
 	return nil
+}
+
+// CodexIsTailActive reports whether the source codex rollout ends with an
+// unresolved non-chat function_call -- the codex analogue of
+// ClaudeIsTailActive. Agent-chat namespace calls (send_message,
+// check_messages, ...) are skipped: a parked agent-chat call is the
+// natural WAITING state and safe to fork at.
+func CodexIsTailActive(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	scanner := newBigScanner(f)
+	pending := make(map[string]bool)
+	for scanner.Scan() {
+		var ev codexEvent
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			continue
+		}
+		if ev.Type != "response_item" {
+			continue
+		}
+		switch ev.Payload.Type {
+		case "function_call":
+			if ev.Payload.Namespace == chatMCPNamespaceCodex {
+				continue
+			}
+			pending[ev.Payload.CallID] = true
+		case "function_call_output":
+			if ev.Payload.CallID != "" {
+				delete(pending, ev.Payload.CallID)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, err
+	}
+	return len(pending) > 0, nil
 }
 
 type codexEvent struct {

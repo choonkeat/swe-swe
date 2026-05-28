@@ -7326,6 +7326,29 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve the per-agent rollout file once: needed by the ACTIVE-tail
+	// guard below and by the bubble anchor resolver further down.
+	agentJsonl, jerr := agentSessionFilePath(src.Assistant, src.WorkDir, agentSessionID)
+	if jerr != nil {
+		http.Error(w, "locate agent session file: "+jerr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// ACTIVE-tail guard: refuse to fork a source whose agent is mid-work
+	// with an unresolved non-chat tool_use (bash/edit/grep/...). Truncating
+	// mid-tool-call either yields an invalid resume point or silently
+	// strips in-flight work the user hasn't seen the result of, so we'd
+	// rather make the caller wait for the source to settle.
+	active, aerr := forkSourceTailActive(src.Assistant, agentJsonl)
+	if aerr != nil {
+		http.Error(w, "classify source tail state: "+aerr.Error(), http.StatusInternalServerError)
+		return
+	}
+	if active {
+		http.Error(w, "source session has an in-flight tool call (agent is mid-work); wait for it to settle before forking", http.StatusConflict)
+		return
+	}
+
 	// Resolve the anchor. Default = last chat reply (existing semantics).
 	// If ?bubble= is set, walk the bubble-anchored path: locate the bubble
 	// in the chat events file, map to the agent tool_use id, pass that as
@@ -7343,11 +7366,6 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		bubbleSeq, perr := strconv.ParseInt(bubbleRaw, 10, 64)
 		if perr != nil || bubbleSeq <= 0 {
 			http.Error(w, "bubble param must be a positive integer", http.StatusBadRequest)
-			return
-		}
-		agentJsonl, jerr := agentSessionFilePath(src.Assistant, src.WorkDir, agentSessionID)
-		if jerr != nil {
-			http.Error(w, "locate agent session file: "+jerr.Error(), http.StatusInternalServerError)
 			return
 		}
 		resolved, rerr := resolveBubbleAnchor(src.ChatLogPath, agentJsonl, src.Assistant, bubbleSeq, mode)
@@ -7468,6 +7486,23 @@ func agentSessionFilePath(assistant, workDir, agentSessionID string) (string, er
 		return match, nil
 	}
 	return "", fmt.Errorf("agentSessionFilePath: unsupported assistant %q", assistant)
+}
+
+// forkSourceTailActive dispatches to the per-agent tail-state classifier in
+// the forkconvo package. Returns true when the source agent is mid-work
+// with an unresolved non-chat tool_use (bash/edit/grep/...), in which case
+// /api/fork refuses the request with 409. Agent-chat parks (send_message
+// waiting on user) do NOT count as active -- those are the natural safe
+// fork point. Unsupported assistants return (false, nil); the caller has
+// already filtered them earlier.
+func forkSourceTailActive(assistant, agentJsonl string) (bool, error) {
+	switch assistant {
+	case "claude":
+		return forkconvo.ClaudeIsTailActive(agentJsonl)
+	case "codex":
+		return forkconvo.CodexIsTailActive(agentJsonl)
+	}
+	return false, nil
 }
 
 // findLatestClaudeSessionInWorkDir returns the session id (filename minus
