@@ -4341,6 +4341,11 @@ func startSessionMdServe(sess *Session) error {
 		"-dir", sess.WorkDir,
 		"-addr", fmt.Sprintf(":%d", sess.FilesPort),
 	)
+	// Put npx + the md-serve child it spawns into their own process group so
+	// stopSessionMdServe can kill both with a single kill(-pgid). Without this,
+	// SIGKILL on the captured npx PID would orphan md-serve (which then survives
+	// as a re-parented child of swe-swe-server, still holding sess.FilesPort).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Use a clean PORT-free environment so md-serve cannot accidentally pick up
 	// the server's own PORT and ignore -addr. We still inherit the rest of the
 	// environment (PATH for the md-serve binary, etc.) minus any PORT entry.
@@ -4374,18 +4379,22 @@ func startSessionMdServe(sess *Session) error {
 	return nil
 }
 
-// stopSessionMdServe kills the per-session md-serve process, if one was started.
+// stopSessionMdServe kills the per-session md-serve process group, if one was
+// started. We must kill the whole process group (kill(-pgid)) rather than the
+// captured PID alone: the captured PID is the npx wrapper, and md-serve runs as
+// its child. Killing only the wrapper would leave md-serve orphaned and still
+// bound to sess.FilesPort. startSessionMdServe sets Setpgid so pgid == filesPID.
 func stopSessionMdServe(sess *Session) {
 	if sess.FilesPID == 0 {
 		return
 	}
-	if err := syscall.Kill(sess.FilesPID, syscall.SIGKILL); err != nil {
-		// Process may have already exited
+	if err := syscall.Kill(-sess.FilesPID, syscall.SIGKILL); err != nil {
+		// Process group may have already exited
 		if !errors.Is(err, syscall.ESRCH) {
-			log.Printf("Failed to kill md-serve process PID %d for session %s: %v", sess.FilesPID, sess.UUID, err)
+			log.Printf("Failed to kill md-serve process group %d for session %s: %v", sess.FilesPID, sess.UUID, err)
 		}
 	} else {
-		log.Printf("[KILL] Killed md-serve process PID %d for session %s (server PID %d)", sess.FilesPID, sess.UUID, os.Getpid())
+		log.Printf("[KILL] Killed md-serve process group %d for session %s (server PID %d)", sess.FilesPID, sess.UUID, os.Getpid())
 	}
 	sess.FilesPID = 0
 }
