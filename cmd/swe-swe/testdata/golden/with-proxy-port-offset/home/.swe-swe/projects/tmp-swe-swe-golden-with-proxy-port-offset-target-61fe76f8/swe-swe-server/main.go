@@ -4332,8 +4332,12 @@ func stopSessionBrowser(sess *Session) {
 // working directory, listening on sess.FilesPort. md-serve renders the workDir
 // as a read-only, live-reloading repo browser for the Files tab. The process is
 // non-critical: a failure to start is logged but does not abort session creation.
+//
+// Invoked via `npx -y @choonkeat/md-serve@latest` so the Files tab always gets
+// the published latest at session start, rather than whatever version was baked
+// into the image at build time.
 func startSessionMdServe(sess *Session) error {
-	cmd := exec.Command("md-serve",
+	cmd := exec.Command("npx", "-y", "@choonkeat/md-serve@latest",
 		"-dir", sess.WorkDir,
 		"-addr", fmt.Sprintf(":%d", sess.FilesPort),
 	)

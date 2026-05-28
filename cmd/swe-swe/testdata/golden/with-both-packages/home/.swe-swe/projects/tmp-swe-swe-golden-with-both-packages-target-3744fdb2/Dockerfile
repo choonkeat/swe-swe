@@ -112,10 +112,9 @@ RUN apt-get update && apt-get install -y \
     vim \
     && rm -rf /var/lib/apt/lists/*
 
-# Install md-serve for the per-session Files tab (read-only repo browser).
-# Pinned so image builds are reproducible. Always installed (core feature,
-# not agent-specific), launched per session by swe-swe-server with -addr.
-RUN npm install -g @choonkeat/md-serve@0.1.0
+# md-serve (per-session Files tab) is invoked at runtime via
+# `npx -y @choonkeat/md-serve@latest` by swe-swe-server, so the published
+# latest is fetched at session start rather than baked into the image.
 
 # Install Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
