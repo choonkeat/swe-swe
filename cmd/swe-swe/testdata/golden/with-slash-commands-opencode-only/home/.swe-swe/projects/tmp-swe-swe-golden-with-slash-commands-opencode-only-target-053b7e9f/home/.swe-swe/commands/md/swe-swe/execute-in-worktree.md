@@ -18,10 +18,10 @@ Create a new agent session on a worktree branch and execute a task plan file in 
    - `assistant`: same agent as current session (e.g., `claude`)
    - `name`: the derived branch name
    - `branch`: the derived branch name
-   - `extra_args`: if THIS session has agent chat enabled (you can call `send_message` / `send_progress`), pass `--channels server:agent-chat` so the spawned session also gets a working chat channel. Omit it only if the current session has no chat. (Note: the agent-chat MCP tools may *appear* available by default even without a channel -- passing `--channels` is what actually wires chat to the UI.)
+   - `extra_args`: always pass `--channels server:agent-chat` so the spawned session gets a working chat channel wired to the UI. (Note: the agent-chat MCP tools may *appear* available by default even without a channel -- passing `--channels` is what actually wires chat to the UI, so do not skip it.)
 5. **Wait 15 seconds** for the agent to initialize
-6. **Send the chat directive first** using `send_session_input` (only if you enabled chat in step 4):
-   - Text: `IMPORTANT: The user is watching the agent chat UI, not your terminal. Use send_message / send_progress for ALL user-visible output -- do not rely on the TUI.\n`
+6. **Send the session directive first** using `send_session_input`:
+   - Text: `IMPORTANT: The user is watching the agent chat UI, not your terminal. Use send_message / send_progress for ALL user-visible output -- do not rely on the TUI. WRAP-UP: when the task is complete, export this chat to markdown using the agent-chat export_chat_md tool (writes ./agent-chats/) and git commit it together with your work.\n`
 7. **Send the task command** using `send_session_input`:
    - Text: `/swe-swe:execute-step-by-step {task file path}\n`
 8. **Report back via chat UI**: Use `send_message` (not just terminal text) to tell the user the session UUID, branch name, and that work has started. The user cannot see your terminal output -- always communicate via `send_message` or `send_progress`.
