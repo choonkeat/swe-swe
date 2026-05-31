@@ -118,20 +118,42 @@ func ensureRelativeSymlink(linkPath, targetPath string) error {
 	info, err := os.Lstat(linkPath)
 	if err == nil {
 		if info.Mode()&os.ModeSymlink == 0 {
-			// Preserve existing real directories/files. This keeps upgrades from
-			// clobbering user-owned command directories or older swe-swe installs;
-			// the canonical store is still written for new projections.
-			return nil
-		}
-		current, err := os.Readlink(linkPath)
-		if err != nil {
-			return fmt.Errorf("reading symlink %s: %w", linkPath, err)
-		}
-		if current == relTarget {
-			return nil
-		}
-		if err := os.Remove(linkPath); err != nil {
-			return fmt.Errorf("replacing symlink %s: %w", linkPath, err)
+			// Existing path is a real file/dir, not a symlink. Legacy installs
+			// (pre-symlink design) left swe-swe's own projections here as real
+			// dirs; the old guard then skipped them forever, freezing stale
+			// commands even though init faithfully refreshes the canonical store
+			// every run. Migrate a swe-swe-managed dir to a symlink so updates
+			// propagate, but never clobber a dir holding user-owned files.
+			managed, reason := isManagedProjection(linkPath, targetPath)
+			if !managed {
+				log.Printf("init: preserving %s (not a swe-swe-managed projection: %s)", linkPath, reason)
+				return nil
+			}
+			// Log any files that the symlink will not reproduce -- swe-swe's own
+			// leftovers from older bundles (renamed/removed commands, the README
+			// marker). Silent truncation is how the freeze bug hid for weeks.
+			if entries, derr := os.ReadDir(linkPath); derr == nil {
+				for _, entry := range entries {
+					if _, serr := os.Stat(filepath.Join(targetPath, entry.Name())); serr != nil {
+						log.Printf("init: dropping stale swe-swe file %s during migration", filepath.Join(linkPath, entry.Name()))
+					}
+				}
+			}
+			if err := os.RemoveAll(linkPath); err != nil {
+				return fmt.Errorf("removing stale managed projection %s: %w", linkPath, err)
+			}
+			log.Printf("init: migrated swe-swe-managed dir %s to symlink -> %s", linkPath, relTarget)
+		} else {
+			current, err := os.Readlink(linkPath)
+			if err != nil {
+				return fmt.Errorf("reading symlink %s: %w", linkPath, err)
+			}
+			if current == relTarget {
+				return nil
+			}
+			if err := os.Remove(linkPath); err != nil {
+				return fmt.Errorf("replacing symlink %s: %w", linkPath, err)
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("checking symlink %s: %w", linkPath, err)
@@ -141,6 +163,55 @@ func ensureRelativeSymlink(linkPath, targetPath string) error {
 		return fmt.Errorf("creating symlink %s -> %s: %w", linkPath, relTarget, err)
 	}
 	return nil
+}
+
+// isManagedProjection reports whether linkPath is a swe-swe-owned projection
+// directory that is safe to migrate to a symlink into the canonical store at
+// targetPath. A directory qualifies when it is flat (no subdirectories) and
+// shows a swe-swe ownership signal: it holds swe-swe's README.adoc marker, or
+// at least one file whose name matches a current bundled command in the store.
+// Such a dir is swe-swe-generated even when it also carries renamed/removed
+// commands from older bundles (those stale leftovers are dropped on migration,
+// which is correct). A directory with no swe-swe signal -- e.g. one holding
+// only a user's own command -- is preserved. The returned reason explains a
+// non-managed verdict for logging.
+func isManagedProjection(linkPath, targetPath string) (bool, string) {
+	entries, err := os.ReadDir(linkPath)
+	if err != nil {
+		return false, fmt.Sprintf("cannot read dir: %v", err)
+	}
+	signal := false
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			return false, fmt.Sprintf("contains subdirectory %q", name)
+		}
+		if isSweSweReadme(filepath.Join(linkPath, name)) {
+			signal = true
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(targetPath, name)); err == nil {
+			signal = true
+		}
+	}
+	if !signal {
+		return false, "no swe-swe-owned files (README marker or bundled command name) present"
+	}
+	return true, ""
+}
+
+// isSweSweReadme reports whether path is swe-swe's generated README marker --
+// a file named README.adoc whose contents identify it as swe-swe's. Used as one
+// ownership signal when deciding whether a real dir is safe to migrate.
+func isSweSweReadme(path string) bool {
+	if filepath.Base(path) != "README.adoc" {
+		return false
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(content), "swe-swe Bundled Slash Commands")
 }
 
 // allAgents lists all available AI agents that can be installed

@@ -919,7 +919,10 @@ func TestInstallBundledSlashCommandsUsesCanonicalStoreAndSymlinks(t *testing.T) 
 		filepath.Join(homeDir, ".swe-swe", "commands", "toml", "swe-swe"))
 }
 
-func TestInstallBundledSlashCommandsLeavesExistingRealDirs(t *testing.T) {
+// A real dir holding a file that is NOT a bundled command (a user's own
+// addition) must be preserved untouched -- migrating it would clobber user
+// content.
+func TestInstallBundledSlashCommandsPreservesRealDirsWithForeignFiles(t *testing.T) {
 	homeDir := t.TempDir()
 	existingDir := filepath.Join(homeDir, ".claude", "commands", "swe-swe")
 	if err := os.MkdirAll(existingDir, 0755); err != nil {
@@ -938,11 +941,77 @@ func TestInstallBundledSlashCommandsLeavesExistingRealDirs(t *testing.T) {
 		t.Fatalf("stat existing dir: %v", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		t.Fatalf("existing real dir should not be replaced by a symlink")
+		t.Fatalf("real dir with a foreign file should not be replaced by a symlink")
 	}
 	if got, err := os.ReadFile(customFile); err != nil || string(got) != "custom" {
-		t.Fatalf("existing file was not preserved, got %q err=%v", got, err)
+		t.Fatalf("user-owned file was not preserved, got %q err=%v", got, err)
 	}
+}
+
+// A legacy real dir whose entries are all stale copies of bundled commands is
+// swe-swe-owned, so init must migrate it to a symlink into the canonical store
+// -- otherwise shipped command updates never reach it (the freeze bug).
+func TestInstallBundledSlashCommandsMigratesManagedRealDir(t *testing.T) {
+	homeDir := t.TempDir()
+	existingDir := filepath.Join(homeDir, ".claude", "commands", "swe-swe")
+	if err := os.MkdirAll(existingDir, 0755); err != nil {
+		t.Fatalf("mkdir existing dir: %v", err)
+	}
+	// A legacy real dir holding only a STALE copy of a bundled command name.
+	staleFile := filepath.Join(existingDir, "setup.md")
+	if err := os.WriteFile(staleFile, []byte("STALE"), 0644); err != nil {
+		t.Fatalf("write stale file: %v", err)
+	}
+
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands: %v", err)
+	}
+
+	// The managed real dir should now be a symlink into the canonical store...
+	assertSymlinkTarget(t, existingDir,
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
+	// ...so the stale copy is gone, replaced by the fresh bundled command.
+	got, err := os.ReadFile(staleFile)
+	if err != nil {
+		t.Fatalf("read setup.md through migrated symlink: %v", err)
+	}
+	if string(got) == "STALE" {
+		t.Fatalf("stale content was not refreshed after migration")
+	}
+}
+
+// A legacy real dir carrying swe-swe's README marker plus an orphaned command
+// from an older bundle (a name no longer in the store) is still swe-swe-owned:
+// it must migrate, and the orphaned leftover must NOT survive the symlink.
+func TestInstallBundledSlashCommandsMigratesDirWithReadmeAndOrphan(t *testing.T) {
+	homeDir := t.TempDir()
+	existingDir := filepath.Join(homeDir, ".claude", "commands", "swe-swe")
+	if err := os.MkdirAll(existingDir, 0755); err != nil {
+		t.Fatalf("mkdir existing dir: %v", err)
+	}
+	readme := filepath.Join(existingDir, "README.adoc")
+	if err := os.WriteFile(readme, []byte("= swe-swe Bundled Slash Commands\n"), 0644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	// An old bundled command since renamed/removed -- a name absent from the
+	// current store, so the strict "all entries in store" rule would freeze it.
+	orphan := filepath.Join(existingDir, "old-removed-command.md")
+	if err := os.WriteFile(orphan, []byte("orphan"), 0644); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands: %v", err)
+	}
+
+	assertSymlinkTarget(t, existingDir,
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
+	// The symlink exposes only the current bundle, so the orphan is gone.
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatalf("orphaned command should not survive migration, stat err=%v", err)
+	}
+	// And a current command is now reachable through the symlink.
+	assertFileExists(t, filepath.Join(existingDir, "setup.md"))
 }
 
 func assertFileExists(t *testing.T, path string) {
