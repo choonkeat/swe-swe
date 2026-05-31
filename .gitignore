@@ -27,6 +27,14 @@ deploy/digitalocean/manifest.json
 
 # Worktree symlinks
 .claude
+# ...but track the dev-only reboot command (everything else under .claude stays ignored)
+!.claude/
+.claude/*
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/swe-swe/
+.claude/commands/swe-swe/*
+!.claude/commands/swe-swe/reboot.md
 .playwright-mcp
 .test-repos
 tools/
