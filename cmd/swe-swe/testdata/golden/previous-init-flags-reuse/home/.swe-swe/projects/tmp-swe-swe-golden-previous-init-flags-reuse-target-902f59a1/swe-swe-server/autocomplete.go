@@ -272,7 +272,21 @@ func discoverSlashCommands(dir string, ext string) []autocompleteItem {
 
 	var items []autocompleteItem
 	for _, entry := range entries {
-		if entry.IsDir() {
+		// Resolve symlinks before deciding dir-vs-file. The canonical swe-swe
+		// command namespace is a SYMLINK (~/.claude/commands/swe-swe ->
+		// ~/.swe-swe/commands/md/swe-swe), and os.ReadDir reports a
+		// symlink-to-dir with IsDir()==false. Without following the link the
+		// whole namespace is skipped, so no swe-swe:* command ever appears in
+		// autocomplete for sessions that reach it through the system-level
+		// store (every repo except one with a real project-level swe-swe dir).
+		// os.Stat resolves the link the same way discoverSkills does.
+		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(dir, entry.Name())); err == nil {
+				isDir = info.IsDir()
+			}
+		}
+		if isDir {
 			// Namespaced: namespace/command.ext
 			nsName := entry.Name()
 			nsPath := filepath.Join(dir, nsName)

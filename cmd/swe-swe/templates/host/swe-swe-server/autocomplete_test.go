@@ -351,6 +351,30 @@ func TestSlashCommandDiscovery(t *testing.T) {
 		}
 	})
 
+	t.Run("discovers commands through a symlinked namespace dir", func(t *testing.T) {
+		// The canonical swe-swe namespace ships as a SYMLINK
+		// (~/.claude/commands/swe-swe -> ~/.swe-swe/commands/md/swe-swe).
+		// os.ReadDir reports a symlink-to-dir with IsDir()==false, so the
+		// scanner must follow the link or the whole namespace is skipped --
+		// the exact reason swe-swe:* commands showed "No results" in every
+		// repo that reached them through the system-level store.
+		linkParent := filepath.Join(tmpDir, "symlinked-commands")
+		mkdirAll(t, linkParent)
+		store := filepath.Join(tmpDir, "store", "swe-swe")
+		mkdirAll(t, store)
+		writeFile(t, filepath.Join(store, "merge-worktree.md"),
+			"---\ndescription: Merge a git worktree branch into local main\n---\n")
+		if err := os.Symlink(store, filepath.Join(linkParent, "swe-swe")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		assertSymlink(t, filepath.Join(linkParent, "swe-swe"))
+
+		items := discoverSlashCommands(linkParent, "md")
+		if !hasAutocompleteValue(items, "swe-swe:merge-worktree") {
+			t.Fatalf("expected swe-swe:merge-worktree via symlinked namespace, got %+v", items)
+		}
+	})
+
 	t.Run("fuzzy filters by query", func(t *testing.T) {
 		items := discoverSlashCommands(claudeDir, "md")
 		filtered := filterAutocomplete(items, "setup")
