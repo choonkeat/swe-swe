@@ -952,8 +952,9 @@ func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
 		"exitCode": exitCode,
 	}
 
-	// Include worktree info if session is in a worktree
-	if strings.HasPrefix(s.WorkDir, worktreeDir) && s.BranchName != "" {
+	// Include worktree info if session is in a worktree (default repo's
+	// /worktrees/<x> or an external repo's /repos/{name}/worktrees/<x>).
+	if isWorktreeWorkDir(s.WorkDir) && s.BranchName != "" {
 		msg["worktree"] = map[string]string{
 			"path":         s.WorkDir,
 			"branch":       s.BranchName,
@@ -962,6 +963,19 @@ func buildExitMessage(s *Session, exitCode int) map[string]interface{} {
 	}
 
 	return msg
+}
+
+// isWorktreeWorkDir reports whether workDir is a swe-swe-managed git worktree
+// checkout -- it sits directly inside a "worktrees" directory. This covers both
+// the default repo's /worktrees/<branch> and an external repo's
+// /repos/{name}/worktrees/<branch>. Branch names are flattened by
+// worktreeDirName (slashes -> "--"), so a worktree dir is always a single
+// segment whose parent is literally "worktrees".
+func isWorktreeWorkDir(workDir string) bool {
+	if workDir == "" {
+		return false
+	}
+	return filepath.Base(filepath.Dir(filepath.Clean(workDir))) == "worktrees"
 }
 
 // BroadcastExit sends a process exit notification to all connected clients
@@ -2940,7 +2954,12 @@ func getMainRepoBranch() string {
 	return strings.TrimSpace(string(output))
 }
 
-// worktreeExists checks if a worktree directory already exists for the given branch name
+// worktreeExists checks if a worktree directory already exists for the given
+// branch name in the DEFAULT repo (/worktrees). This is intentionally scoped to
+// the default repo: its only caller (handleWorktreeCheckAPI) receives a session
+// name with no repo context, and the same branch name in a different external
+// repo is a legitimately distinct worktree -- treating it as a conflict here
+// would produce false positives. See listWorktrees for the cross-repo view.
 func worktreeExists(branchName string) bool {
 	worktreePath := worktreeDir + "/" + worktreeDirName(branchName)
 	_, err := os.Stat(worktreePath)
@@ -2975,32 +2994,37 @@ type WorktreeInfo struct {
 	ActiveSession *WorktreeSessionInfo `json:"activeSession,omitempty"`
 }
 
-// listWorktrees returns a list of existing worktree directories
+// listWorktrees returns a list of existing worktree directories across every
+// repo: the default repo's /worktrees plus each external repo's
+// /repos/{name}/worktrees. Path disambiguates worktrees that share a branch
+// name across different repos.
 func listWorktrees() ([]WorktreeInfo, error) {
-	// Check if worktree directory exists
-	if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
-		return []WorktreeInfo{}, nil // No worktrees yet
-	}
-
-	entries, err := os.ReadDir(worktreeDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read worktree directory: %w", err)
-	}
-
-	var worktrees []WorktreeInfo
-	for _, entry := range entries {
-		if entry.IsDir() {
-			// Convert directory name back to branch name (e.g., "style--foo" -> "style/foo")
-			worktrees = append(worktrees, WorktreeInfo{
-				Name: branchNameFromDir(entry.Name()),
-				Path: worktreeDir + "/" + entry.Name(),
-			})
+	// Collect every worktrees container. The default repo's dedicated
+	// /worktrees, then one per external repo at /repos/{name}/worktrees.
+	containers := []string{worktreeDir}
+	if repoEntries, err := os.ReadDir(reposDir); err == nil {
+		for _, re := range repoEntries {
+			if re.IsDir() {
+				containers = append(containers, filepath.Join(reposDir, re.Name(), "worktrees"))
+			}
 		}
 	}
 
-	// Return empty slice instead of nil for consistent JSON encoding
-	if worktrees == nil {
-		worktrees = []WorktreeInfo{}
+	worktrees := []WorktreeInfo{}
+	for _, container := range containers {
+		entries, err := os.ReadDir(container)
+		if err != nil {
+			continue // container may not exist yet
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				// Convert directory name back to branch name (e.g., "style--foo" -> "style/foo")
+				worktrees = append(worktrees, WorktreeInfo{
+					Name: branchNameFromDir(entry.Name()),
+					Path: filepath.Join(container, entry.Name()),
+				})
+			}
+		}
 	}
 
 	return worktrees, nil
@@ -3675,21 +3699,39 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 // resolveWorkingDirectory calculates the working directory for a session
 // based on repoPath and optional branchName.
 // - Branch blank: return repoPath (no worktree)
-// - /workspace + branch: /worktrees/{branch}
-// - External + branch: /repos/{sanitized-url}/worktree/{branch}
+// - /workspace (or any of its worktrees) + branch: /worktrees/{branch}
+// - External /repos/{name}/workspace (or its worktrees) + branch:
+//   /repos/{name}/worktrees/{branch}
+//
+// Worktrees are always anchored off the MAIN repo, never nested under whatever
+// checkout we were launched from. Launching a session from /worktrees/<x>
+// (itself a worktree of /workspace) must create siblings under /worktrees, not
+// /worktrees/worktrees/<branch>; likewise an external-repo worktree must not
+// nest a second "worktrees" level. Each repo keeps its own worktrees container
+// so the same branch name in different repos never shares a physical directory.
 func resolveWorkingDirectory(repoPath, branchName string) string {
 	if branchName == "" {
 		return repoPath
 	}
 
-	// For /workspace, use /worktrees directory
-	if repoPath == "/workspace" {
-		return filepath.Join(worktreeDir, worktreeDirName(branchName))
+	dirName := worktreeDirName(branchName)
+
+	// Default repo: /workspace and all of its worktrees (/worktrees/<x>) share
+	// the dedicated /worktrees directory.
+	if repoPath == "/workspace" || strings.HasPrefix(repoPath, worktreeDir+"/") {
+		return filepath.Join(worktreeDir, dirName)
 	}
 
-	// For external repos, use worktrees subdirectory within the repo
-	// e.g., /repos/github.com-user-repo/worktrees/feature-branch
-	return filepath.Join(filepath.Dir(repoPath), "worktrees", worktreeDirName(branchName))
+	// repoPath is itself an external-repo worktree (its parent dir is named
+	// "worktrees", e.g. /repos/{name}/worktrees/<x>): reuse that same container
+	// instead of nesting another level.
+	if filepath.Base(filepath.Dir(repoPath)) == "worktrees" {
+		return filepath.Join(filepath.Dir(repoPath), dirName)
+	}
+
+	// External main checkout (/repos/{name}/workspace): worktrees live in a
+	// sibling /repos/{name}/worktrees directory.
+	return filepath.Join(filepath.Dir(repoPath), "worktrees", dirName)
 }
 
 // createWorktreeInRepo creates a worktree for a specific repo

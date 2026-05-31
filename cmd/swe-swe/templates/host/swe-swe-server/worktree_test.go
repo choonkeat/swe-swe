@@ -678,6 +678,13 @@ func TestBuildExitMessage(t *testing.T) {
 			exitCode:       1,
 			expectWorktree: true,
 		},
+		{
+			name:           "external repo worktree includes worktree info",
+			workDir:        "/repos/github.com-user-repo/worktrees/feature-x",
+			branchName:     "feature-x",
+			exitCode:       0,
+			expectWorktree: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -768,6 +775,13 @@ func TestListWorktrees(t *testing.T) {
 	originalWorktreeDir := worktreeDir
 	defer func() { worktreeDir = originalWorktreeDir }()
 
+	// Point reposDir at an empty dir so the cross-repo scan finds no external
+	// worktrees and these default-repo assertions stay deterministic. The
+	// external-repo case is covered by its own subtest below.
+	originalReposDir := reposDir
+	defer func() { reposDir = originalReposDir }()
+	reposDir = t.TempDir()
+
 	t.Run("non-existent directory returns empty list", func(t *testing.T) {
 		worktreeDir = "/nonexistent/path/that/does/not/exist"
 
@@ -828,12 +842,56 @@ func TestListWorktrees(t *testing.T) {
 			t.Error("expected fix-bug-123 in worktrees")
 		}
 	})
+
+	t.Run("includes external repo worktrees", func(t *testing.T) {
+		// Default repo worktrees live under worktreeDir...
+		defWt := t.TempDir()
+		worktreeDir = defWt
+		os.Mkdir(filepath.Join(defWt, "default-branch"), 0755)
+
+		// ...and external repos at reposDir/{name}/worktrees/<branch>.
+		repos := t.TempDir()
+		reposDir = repos
+		repoA := filepath.Join(repos, "github.com-user-repo-a", "worktrees")
+		repoB := filepath.Join(repos, "github.com-user-repo-b", "worktrees")
+		os.MkdirAll(filepath.Join(repoA, "shared-name"), 0755)
+		os.MkdirAll(filepath.Join(repoB, "shared-name"), 0755) // same branch, different repo
+
+		worktrees, err := listWorktrees()
+		if err != nil {
+			t.Fatalf("listWorktrees() returned error: %v", err)
+		}
+
+		// 1 default + 2 external (same branch name, distinct physical paths).
+		if len(worktrees) != 3 {
+			t.Fatalf("expected 3 worktrees, got %d: %+v", len(worktrees), worktrees)
+		}
+
+		paths := make(map[string]bool)
+		for _, wt := range worktrees {
+			paths[wt.Path] = true
+		}
+		for _, want := range []string{
+			filepath.Join(defWt, "default-branch"),
+			filepath.Join(repoA, "shared-name"),
+			filepath.Join(repoB, "shared-name"),
+		} {
+			if !paths[want] {
+				t.Errorf("expected worktree path %s in results", want)
+			}
+		}
+	})
 }
 
 func TestHandleWorktreesAPI(t *testing.T) {
 	// Save original worktreeDir and restore after test
 	originalWorktreeDir := worktreeDir
 	defer func() { worktreeDir = originalWorktreeDir }()
+
+	// Isolate the cross-repo scan from the host's real /repos.
+	originalReposDir := reposDir
+	defer func() { reposDir = originalReposDir }()
+	reposDir = t.TempDir()
 
 	t.Run("GET returns JSON with worktrees", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -918,6 +976,11 @@ func TestHandleWorktreesAPI_WithActiveSession(t *testing.T) {
 	// Save original worktreeDir and sessions, restore after test
 	originalWorktreeDir := worktreeDir
 	defer func() { worktreeDir = originalWorktreeDir }()
+
+	// Isolate the cross-repo scan from the host's real /repos.
+	originalReposDir := reposDir
+	defer func() { reposDir = originalReposDir }()
+	reposDir = t.TempDir()
 
 	t.Run("returns activeSession for worktree with running session", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -1494,6 +1557,12 @@ func TestResolveWorkingDirectory(t *testing.T) {
 		// External repo with branch
 		{"external with branch", "/repos/github.com-user-repo/workspace", "feature-x", "/repos/github.com-user-repo/worktrees/feature-x"},
 		{"external with hierarchical branch", "/repos/github.com-user-repo/workspace", "feat/test", "/repos/github.com-user-repo/worktrees/feat--test"},
+
+		// Launched from a NESTED worktree -- must anchor off the main repo, not
+		// double the "worktrees" segment (regression: /worktrees/worktrees/<b>).
+		{"nested default worktree", "/worktrees/fix-worktree", "verify-x", "/worktrees/verify-x"},
+		{"nested default worktree hierarchical", "/worktrees/fix-worktree", "feat/x", "/worktrees/feat--x"},
+		{"nested external worktree", "/repos/github.com-user-repo/worktrees/feat-a", "feat-b", "/repos/github.com-user-repo/worktrees/feat-b"},
 	}
 
 	for _, tt := range tests {
