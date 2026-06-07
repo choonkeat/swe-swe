@@ -62,6 +62,7 @@ RUN apt-get update && apt-get install -y \
     jq \
     less \
     lsof \
+    poppler-utils \
     unzip \
     vim \
     && rm -rf /var/lib/apt/lists/*
