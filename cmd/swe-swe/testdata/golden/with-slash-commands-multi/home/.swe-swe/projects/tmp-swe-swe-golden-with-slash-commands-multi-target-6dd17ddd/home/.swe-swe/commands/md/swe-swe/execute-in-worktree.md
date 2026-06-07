@@ -20,11 +20,11 @@ Create a new agent session on a worktree branch and execute a task plan file in 
    - `branch`: the derived branch name
    - `extra_args`: always pass `--channels server:agent-chat` so the spawned session gets a working chat channel wired to the UI. (Note: the agent-chat MCP tools may *appear* available by default even without a channel -- passing `--channels` is what actually wires chat to the UI, so do not skip it.)
 5. **Wait 15 seconds** for the agent to initialize
-6. **Send the session directive first** using `send_session_input`:
-   - Text: `IMPORTANT: The user is watching the agent chat UI, not your terminal. Use send_message / send_progress for ALL user-visible output -- do not rely on the TUI. WRAP-UP: when the task is complete, export this chat to markdown using the agent-chat export_chat_md tool (writes ./agent-chats/) and git commit it together with your work.\n`
-7. **Send the task command** using `send_session_input`:
-   - Text: `/swe-swe:execute-step-by-step {task file path}\n`
-8. **Report back via chat UI**: Use `send_message` (not just terminal text) to tell the user the session UUID, branch name, and that work has started. The user cannot see your terminal output -- always communicate via `send_message` or `send_progress`.
+6. **Send the task command with the directive appended, as ONE input** using `send_session_input`. The slash command MUST come first (so the TUI recognises and expands it); the directive text after the task path flows into the command's `$ARGUMENTS` and is read in the same turn:
+   - Text: `/swe-swe:execute-step-by-step {task file path} -- IMPORTANT: The user is watching the agent chat UI, not your terminal. Use send_message / send_progress for ALL user-visible output -- do not rely on the TUI. WRAP-UP: when the task is complete, export this chat to markdown using the agent-chat export_chat_md tool (writes ./agent-chats/) and git commit it together with your work.\n`
+   - Keep it on a SINGLE line with one trailing `\n` -- an embedded newline submits the command early, and the rest queues as a separate draft that never runs.
+   - Do NOT send the directive as a separate message before the command. A separate input starts its own turn; the agent finishes it with "no pending instruction" and the real command stays queued and never executes.
+7. **Report back via chat UI**: Use `send_message` (not just terminal text) to tell the user the session UUID, branch name, and that work has started. The user cannot see your terminal output -- always communicate via `send_message` or `send_progress`.
 
 ## Example
 
