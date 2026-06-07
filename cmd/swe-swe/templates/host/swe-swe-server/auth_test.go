@@ -114,16 +114,31 @@ func TestResolveCookieDomain(t *testing.T) {
 	cases := []struct {
 		name           string
 		publicHostname string
+		requestHost    string
 		want           string
 	}{
-		{"empty (legacy mode -> host-only)", "", ""},
-		{"single label", "abc-tunnel.example.com", "abc-tunnel.example.com"},
-		{"two labels", "tunnel.example.com", "tunnel.example.com"},
+		// Legacy mode: always host-only regardless of how reached.
+		{"empty (legacy mode -> host-only)", "", "tunnel.example.com", ""},
+		{"empty (legacy mode, localhost)", "", "localhost:8080", ""},
+		// Tunnel mode reached via the apex hostname or a per-port
+		// subdomain: pin the cookie to the apex for cross-subdomain auth.
+		{"apex host exact", "tunnel.example.com", "tunnel.example.com", "tunnel.example.com"},
+		{"per-port subdomain", "tunnel.example.com", "3000.tunnel.example.com", "tunnel.example.com"},
+		{"per-port subdomain with port", "tunnel.example.com", "3000.tunnel.example.com:443", "tunnel.example.com"},
+		// Tunnel mode but reached locally (--tunnel-local-ports): the
+		// browser host does not domain-match the apex, so a host-only
+		// cookie is the only one the browser will accept.
+		{"localhost with port -> host-only", "tunnel.example.com", "localhost:8080", ""},
+		{"127.0.0.1 with port -> host-only", "tunnel.example.com", "127.0.0.1:8080", ""},
+		{"LAN IP -> host-only", "tunnel.example.com", "192.168.1.50:8080", ""},
+		// Guard against naive suffix matching: a host that merely ends
+		// with the apex string but is not a subdomain must not match.
+		{"suffix lookalike -> host-only", "tunnel.example.com", "eviltunnel.example.com", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := resolveCookieDomain(tc.publicHostname); got != tc.want {
-				t.Errorf("resolveCookieDomain(%q) = %q, want %q", tc.publicHostname, got, tc.want)
+			if got := resolveCookieDomain(tc.publicHostname, tc.requestHost); got != tc.want {
+				t.Errorf("resolveCookieDomain(%q, %q) = %q, want %q", tc.publicHostname, tc.requestHost, got, tc.want)
 			}
 		})
 	}
@@ -145,10 +160,15 @@ func TestAuthLoginPostHandlerSetsCookieDomain(t *testing.T) {
 	cases := []struct {
 		name        string
 		hostname    string
+		requestHost string
 		wantDomain  string
 	}{
-		{"legacy mode -> no Domain attr", "", ""},
-		{"tunnel mode -> Domain matches publicHostname", "fake-tunnel.example.com", "fake-tunnel.example.com"},
+		{"legacy mode -> no Domain attr", "", "example.com", ""},
+		{"tunnel mode via apex -> Domain matches publicHostname", "fake-tunnel.example.com", "3000.fake-tunnel.example.com", "fake-tunnel.example.com"},
+		// --tunnel-local-ports: tunnel is live but the browser logs in
+		// over localhost. The cookie must be host-only or the browser
+		// rejects it (the regression this guards against).
+		{"tunnel live but localhost login -> host-only", "fake-tunnel.example.com", "localhost:8080", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,6 +176,7 @@ func TestAuthLoginPostHandlerSetsCookieDomain(t *testing.T) {
 
 			form := strings.NewReader("password=test-secret")
 			req := httptest.NewRequest("POST", "/swe-swe-auth/login", form)
+			req.Host = tc.requestHost
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			// Use a unique RemoteAddr so the rate limiter does not reject
 			// successive subtests.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -299,18 +300,38 @@ func resolveCookieSecure(r *http.Request) bool {
 }
 
 // resolveCookieDomain decides the Domain attribute for the session cookie.
-// In tunnel mode (publicHostname non-empty), the browser lands on
+// In tunnel mode (publicHostname non-empty) the browser lands on
 // "{port}.{publicHostname}" subdomains -- the auth cookie must be set
 // with Domain=publicHostname so it is sent across all per-port subdomains.
-// In legacy mode, return empty so the cookie is host-only on whatever
-// hostname the user reached the server with.
+//
+// But tunnel mode and local access are not mutually exclusive: with
+// --tunnel-local-ports the same server also answers on localhost:{port}
+// and LAN addresses. A cookie stamped Domain={tunnel-hostname} is rejected
+// by the browser on a localhost login (RFC 6265 requires Domain to
+// domain-match the request host), silently breaking that login. So we
+// only pin the cookie to the apex when the browser actually reached us
+// via the tunnel hostname (or a subdomain of it); any other host --
+// localhost, 127.0.0.1, a LAN IP -- gets a host-only cookie (Domain="").
+// Legacy mode (publicHostname empty) is always host-only.
+//
+// requestHost is r.Host and may carry a :port suffix, which we strip.
 //
 // Per RFC 6265 a leading "." in Domain is deprecated and stripped on
 // parse, so Domain=foo.example.com already matches bar.foo.example.com.
 // We omit the dot for clean wire output -- net/http's Cookie.String()
 // also strips it.
-func resolveCookieDomain(publicHostname string) string {
-	return publicHostname
+func resolveCookieDomain(publicHostname, requestHost string) string {
+	if publicHostname == "" {
+		return ""
+	}
+	host := requestHost
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == publicHostname || strings.HasSuffix(host, "."+publicHostname) {
+		return publicHostname
+	}
+	return ""
 }
 
 // authLoginPostHandler validates password, sets cookie, and redirects.
@@ -357,7 +378,7 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		Name:     authCookieName,
 		Value:    authSignCookie(secret),
 		Path:     "/",
-		Domain:   resolveCookieDomain(getLiveTunnelHostname()),
+		Domain:   resolveCookieDomain(getLiveTunnelHostname(), r.Host),
 		MaxAge:   authCookieMaxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,

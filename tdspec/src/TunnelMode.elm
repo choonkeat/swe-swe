@@ -314,7 +314,15 @@ Without tunnel mode (or before the first `RegisterOk`), the cookie
 is host-only -- fine for a single-page session, but breaks the
 per-port iframe scheme because `{port}.{publicHostname}` subdomains
 have no cookie. With tunnel mode and a live hostname, the cookie's
-`Domain` is set to the apex so all subdomains share auth state.
+`Domain` is set to the apex so all subdomains share auth state --
+**but only when the browser actually reached the server via that
+apex**. Tunnel mode and local access coexist: with
+`--tunnel-local-ports` the same server answers on `localhost:{port}`
+and LAN addresses. A cookie stamped `Domain={apex}` is rejected by
+the browser on a localhost login (RFC 6265 requires `Domain` to
+domain-match the request host), so the resolver must fall back to
+host-only there. That is why the resolver also takes the request
+host, not just the public hostname.
 
 This is the single load-bearing piece in ADR-0043 #1 -- the bug
 that makes a sidecar tunnel against `swe-swe up` fail with a login
@@ -324,12 +332,16 @@ Variants:
 
   - `HostOnly`: `Domain=""`. Cookie is bound to whatever host the
     request came in on. Per-port subdomain iframes won't see it.
+    Used in legacy mode, AND in tunnel mode when the request host
+    is not the apex or a subdomain of it (localhost, 127.0.0.1, LAN
+    IP under `--tunnel-local-ports`).
   - `ApexDomain h`: `Domain=h`. Cookie is shared across all
     subdomains under the apex (e.g.
     `27000.<unique>-tunnel.<server-suffix>` reads the same cookie as
-    the main UI).
+    the main UI). Used only when the request host equals the apex or
+    is a subdomain of it.
 
-Source: `auth.go:312-314`.
+Source: `auth.go:312-333`.
 
 -}
 type CookieDomainResolution
@@ -337,23 +349,33 @@ type CookieDomainResolution
     | ApexDomain PublicHostname
 
 
-{-| `resolveCookieDomain publicHostname` -- mirrors
-`auth.go:resolveCookieDomain`.
+{-| `resolveCookieDomain publicHostname requestHost` -- mirrors
+`auth.go:resolveCookieDomain`. `requestHost` is the request `Host`
+header with any `:port` suffix already stripped.
 
-    resolveCookieDomain (PublicHostname "")
+    resolveCookieDomain (PublicHostname "") "anything"
         --> HostOnly
 
-    resolveCookieDomain (PublicHostname "myproject-tunnel.example")
+    resolveCookieDomain (PublicHostname "myproject-tunnel.example") "myproject-tunnel.example"
         --> ApexDomain (PublicHostname "myproject-tunnel.example")
 
+    resolveCookieDomain (PublicHostname "myproject-tunnel.example") "3000.myproject-tunnel.example"
+        --> ApexDomain (PublicHostname "myproject-tunnel.example")
+
+    resolveCookieDomain (PublicHostname "myproject-tunnel.example") "localhost"
+        --> HostOnly
+
 -}
-resolveCookieDomain : PublicHostname -> CookieDomainResolution
-resolveCookieDomain (PublicHostname h) =
+resolveCookieDomain : PublicHostname -> String -> CookieDomainResolution
+resolveCookieDomain (PublicHostname h) requestHost =
     if h == "" then
         HostOnly
 
-    else
+    else if requestHost == h || String.endsWith ("." ++ h) requestHost then
         ApexDomain (PublicHostname h)
+
+    else
+        HostOnly
 
 
 {-| How the frontend builds iframe URLs (preview, Agent View, VNC,
