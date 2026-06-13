@@ -2505,10 +2505,15 @@ func main() {
 	startSubreaper()
 	startBrokerListener()
 
-	// Signal-aware shutdown: cancel serverCtx on SIGINT/SIGTERM
+	// Signal-aware shutdown: cancel serverCtx on SIGINT/SIGTERM.
+	// We use an explicit signal.Notify channel rather than
+	// signal.NotifyContext so the shutdown log can name WHICH signal
+	// fired (NotifyContext cancels the context but hides the signal).
 	var serverCancel context.CancelFunc
-	serverCtx, serverCancel = signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	serverCtx, serverCancel = context.WithCancel(context.Background())
 	defer serverCancel()
+	shutdownSig := make(chan os.Signal, 1)
+	signal.Notify(shutdownSig, syscall.SIGINT, syscall.SIGTERM)
 
 	// Tailscale bootstrap -- dormant unless TS_AUTHKEY is set.
 	startTailscale(serverCtx, tsCfg)
@@ -2527,12 +2532,18 @@ func main() {
 	srv := &http.Server{Addr: listenAddr, Handler: handler}
 	go func() {
 		defer recoverGoroutine("shutdown handler")
-		<-serverCtx.Done()
-		// serverCtx is a signal.NotifyContext(SIGINT, SIGTERM), so reaching
-		// here means one of those signals was delivered from outside this
-		// process. Log the parent so an unexplained graceful exit can be
-		// attributed (su -> docker stop forwarded; init/orchestrator -> platform).
-		log.Printf("Shutting down server (SIGINT/SIGTERM received) -- parent %s", describeParentProcess())
+		sig := <-shutdownSig
+		// Restore default disposition so a second SIGINT/SIGTERM force-
+		// terminates instead of hanging on a wedged graceful shutdown.
+		signal.Stop(shutdownSig)
+		// Propagate cancellation to tailscale, the landing server, and all
+		// session child contexts derived from serverCtx.
+		serverCancel()
+		// Reaching here means SIGINT/SIGTERM was delivered from outside this
+		// process (the only path to a graceful exit 0). Name the signal and
+		// log the parent so an unexplained exit can be attributed (su ->
+		// docker stop forwarded; init/orchestrator -> platform).
+		log.Printf("Shutting down server (received signal %v) -- parent %s", sig, describeParentProcess())
 		// Close all sessions in parallel.  Each Session.Close routes through
 		// killSessionProcessGroup which has a SIGTERM grace period of up to
 		// 3 seconds; closing serially under sessionsMu would gate every
