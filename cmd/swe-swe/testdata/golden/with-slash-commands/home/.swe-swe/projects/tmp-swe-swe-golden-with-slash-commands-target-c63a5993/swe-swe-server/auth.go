@@ -27,6 +27,14 @@ const (
 	authRateLimitWindow  = 5 * time.Minute
 	authRateLimitMax     = 10 // max attempts per IP per window
 	authRateLimitCleanup = 10 * time.Minute
+
+	// Global ceiling on failed login attempts across ALL throttle keys in a
+	// window. The per-key limiter can be sidestepped by an attacker who
+	// rotates a forged identifier (e.g. X-Forwarded-For) so every attempt
+	// lands in its own bucket; this ceiling is the backstop that no per-key
+	// trick can dodge. Sized well above any plausible legitimate burst but
+	// far below brute-force speed.
+	authGlobalRateLimitMax = 200
 )
 
 // authLoginLimiter tracks failed login attempts per IP for rate limiting.
@@ -85,6 +93,120 @@ func (rl *authRateLimiter) cleanup() {
 			rl.attempts[ip] = recent
 		}
 	}
+}
+
+// authGlobalLimiter is the global failed-attempt backstop. See
+// authGlobalRateLimitMax.
+var authGlobalLimiter = &authGlobalRateLimiter{}
+
+// authGlobalRateLimiter is a simple sliding-window counter of failed login
+// attempts, not keyed by anything. It exists so a brute-forcer who defeats the
+// per-key limiter (by rotating X-Forwarded-For) is still capped.
+type authGlobalRateLimiter struct {
+	mu    sync.Mutex
+	times []time.Time
+}
+
+// allow returns true if fewer than max failed attempts occurred in the window.
+func (g *authGlobalRateLimiter) allow(max int) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	cutoff := time.Now().Add(-authRateLimitWindow)
+	recent := g.times[:0]
+	for _, t := range g.times {
+		if t.After(cutoff) {
+			recent = append(recent, t)
+		}
+	}
+	g.times = recent
+	return len(recent) < max
+}
+
+// record adds a failed attempt.
+func (g *authGlobalRateLimiter) record() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.times = append(g.times, time.Now())
+}
+
+// loginThrottleKey returns the identifier used to bucket login attempts.
+//
+// By default this is the transport peer address (RemoteAddr host), which the
+// client cannot forge. X-Forwarded-For is consulted ONLY when
+// SWE_TRUST_FORWARDED_FOR=true, i.e. the operator has confirmed a trusted
+// proxy fronts the server and sets that header. Trusting X-Forwarded-For
+// unconditionally lets an attacker rotate the value to dodge the per-key
+// limiter entirely (see authGlobalRateLimiter for the backstop).
+func loginThrottleKey(r *http.Request) string {
+	if os.Getenv("SWE_TRUST_FORWARDED_FOR") == "true" {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if idx := strings.Index(xff, ","); idx != -1 {
+				xff = xff[:idx]
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// safeRedirect constrains a post-login redirect target to a same-origin,
+// rooted path. Anything else -- absolute URLs, protocol-relative ("//host"),
+// backslash-smuggled ("/\host"), scheme-bearing ("javascript:..."), or values
+// that don't start with a single "/" -- collapses to "/". This closes the
+// open-redirect / login-token-relay vector on the trusted origin.
+func safeRedirect(target string) string {
+	if target == "" {
+		return "/"
+	}
+	// Must be rooted, and must not be protocol-relative or backslash-smuggled.
+	if !strings.HasPrefix(target, "/") ||
+		strings.HasPrefix(target, "//") ||
+		strings.HasPrefix(target, "/\\") {
+		return "/"
+	}
+	// Defense in depth: parse and reject anything that carries a scheme or host.
+	if u, err := url.Parse(target); err != nil || u.IsAbs() || u.Host != "" {
+		return "/"
+	}
+	return target
+}
+
+// checkWebSocketOrigin is the Upgrader.CheckOrigin allow-list. It permits:
+//   - requests with no Origin header (non-browser clients), and
+//   - browser requests whose Origin host matches the request host, the live
+//     tunnel apex, or a "{port}.{apex}" per-port subdomain.
+//
+// Everything else is rejected, closing the cross-site WebSocket hijacking
+// vector that "return true" left open.
+func checkWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // non-browser client; no Origin to validate
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	// Same host as the request (covers localhost / LAN / apex, with or
+	// without a port on r.Host).
+	if reqHost, _, err := net.SplitHostPort(r.Host); err == nil {
+		if host == reqHost {
+			return true
+		}
+	} else if host == r.Host {
+		return true
+	}
+	// Tunnel apex and any "{port}.{apex}" per-port subdomain.
+	if ph := getLiveTunnelHostname(); ph != "" {
+		if host == ph || strings.HasSuffix(host, "."+ph) {
+			return true
+		}
+	}
+	return false
 }
 
 // authSignCookie creates an HMAC-signed cookie value.
@@ -346,18 +468,13 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 	password := r.FormValue("password")
 	redirectURL := r.FormValue("redirect")
 
-	// Rate limit check
-	clientIP := r.Header.Get("X-Forwarded-For")
-	if clientIP == "" {
-		clientIP = r.RemoteAddr
-	}
-	// Use first IP if X-Forwarded-For contains multiple
-	if idx := strings.Index(clientIP, ","); idx != -1 {
-		clientIP = strings.TrimSpace(clientIP[:idx])
-	}
+	// Rate limit check. The per-key bucket throttles a single source; the
+	// global ceiling backstops an attacker who rotates the throttle key
+	// (e.g. a spoofed X-Forwarded-For) to dodge the per-key limiter.
+	clientKey := loginThrottleKey(r)
 
-	if !authLoginLimiter.allow(clientIP) {
-		log.Printf("Rate limited: ip=%s", clientIP)
+	if !authLoginLimiter.allow(clientKey) || !authGlobalLimiter.allow(authGlobalRateLimitMax) {
+		log.Printf("Rate limited: key=%s", clientKey)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte(authRenderLoginForm(redirectURL, "Too many attempts. Please wait a few minutes.")))
@@ -367,7 +484,8 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 	// Constant-time password comparison
 	passwordMatch := subtle.ConstantTimeCompare([]byte(password), []byte(secret)) == 1
 	if password == "" || !passwordMatch {
-		authLoginLimiter.record(clientIP)
+		authLoginLimiter.record(clientKey)
+		authGlobalLimiter.record()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(authRenderLoginForm(redirectURL, "Invalid password")))
@@ -385,11 +503,10 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		Secure:   resolveCookieSecure(r),
 	})
 
-	// Redirect to original URL or home
-	if redirectURL == "" {
-		redirectURL = "/"
-	}
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	// Redirect to original URL or home. safeRedirect rejects off-site
+	// targets so a successful login can't be used to bounce the user to an
+	// attacker origin (open redirect).
+	http.Redirect(w, r, safeRedirect(redirectURL), http.StatusFound)
 }
 
 // authVerifyHandler checks the session cookie and returns 200 (valid) or redirects to login.
