@@ -1931,6 +1931,9 @@ func main() {
 	}
 
 	log.Printf("swe-swe-server %s (%s)", Version, GitCommit)
+	// Baseline parent identity at boot. Paired with the shutdown log, this
+	// makes a graceful "exit 0" attributable to whoever forwarded the signal.
+	log.Printf("[STARTUP] pid=%d launched by %s", os.Getpid(), describeParentProcess())
 
 	// Change to working directory if specified
 	if workingDir != "" {
@@ -2525,7 +2528,11 @@ func main() {
 	go func() {
 		defer recoverGoroutine("shutdown handler")
 		<-serverCtx.Done()
-		log.Println("Shutting down server...")
+		// serverCtx is a signal.NotifyContext(SIGINT, SIGTERM), so reaching
+		// here means one of those signals was delivered from outside this
+		// process. Log the parent so an unexplained graceful exit can be
+		// attributed (su -> docker stop forwarded; init/orchestrator -> platform).
+		log.Printf("Shutting down server (SIGINT/SIGTERM received) -- parent %s", describeParentProcess())
 		// Close all sessions in parallel.  Each Session.Close routes through
 		// killSessionProcessGroup which has a SIGTERM grace period of up to
 		// 3 seconds; closing serially under sessionsMu would gate every
@@ -7116,6 +7123,30 @@ func killSessionProcessGroup(s *Session) {
 			log.Printf("Killed escaped descendant process %d (session pid %d)", dpid, pid)
 		}
 	}
+}
+
+// describeParentProcess returns a human-readable description of this
+// process's parent: ppid plus the parent's comm and full cmdline read
+// from /proc. A graceful "exit 0" only happens when SIGINT/SIGTERM is
+// delivered from outside the process (see the shutdown handler in main),
+// so recording WHO the parent is at startup and at shutdown is the
+// cheapest way to attribute an unexplained graceful exit -- e.g. parent
+// "su" means docker-mode container stop forwarded the signal, while an
+// init/orchestrator parent points at the platform. On any /proc read
+// error it still returns the numeric ppid so the caller always logs
+// something.
+func describeParentProcess() string {
+	ppid := os.Getppid()
+	comm := ""
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", ppid)); err == nil {
+		comm = strings.TrimSpace(string(b))
+	}
+	cmdline := ""
+	if b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", ppid)); err == nil {
+		// /proc cmdline is NUL-separated; render it space-separated.
+		cmdline = strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " "))
+	}
+	return fmt.Sprintf("ppid=%d comm=%q cmdline=%q", ppid, comm, cmdline)
 }
 
 // startSignalMonitor logs all catchable signals for crash forensics.
