@@ -11,13 +11,10 @@ import (
 )
 
 func TestHandleAutocompleteAPI(t *testing.T) {
-	// Save and restore mcpAuthKey
-	origKey := mcpAuthKey
-	mcpAuthKey = "test-api-key"
-	defer func() { mcpAuthKey = origKey }()
+	registerTestSessionKey(t, "test-uuid", testAPIKey)
 
 	t.Run("GET returns method not allowed", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/autocomplete/test-uuid?key="+mcpAuthKey, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/autocomplete/test-uuid?key="+testAPIKey, nil)
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusMethodNotAllowed {
@@ -44,7 +41,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 	})
 
 	t.Run("missing session UUID returns 400", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":""}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/?key="+testAPIKey, strings.NewReader(`{"type":"slash-command","query":""}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -53,7 +50,10 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 	})
 
 	t.Run("unknown session returns 404", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/nonexistent-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":""}`))
+		// Authenticate as nonexistent-uuid (valid key) so the request passes
+		// auth and reaches the session lookup, which then misses -> 404.
+		registerTestSessionKey(t, "nonexistent-uuid", "nonexistent-key")
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/nonexistent-uuid?key=nonexistent-key", strings.NewReader(`{"type":"slash-command","query":""}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusNotFound {
@@ -71,7 +71,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 		defer delete(sessions, "test-uuid")
 
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{invalid`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey, strings.NewReader(`{invalid`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusBadRequest {
@@ -154,7 +154,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 		defer delete(sessions, "test-uuid")
 
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":"zzzzpi"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey, strings.NewReader(`{"type":"slash-command","query":"zzzzpi"}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusOK {
@@ -186,7 +186,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 		defer delete(sessions, "test-uuid")
 
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":"zzzzclaude"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey, strings.NewReader(`{"type":"slash-command","query":"zzzzclaude"}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusOK {
@@ -220,7 +220,7 @@ func TestHandleAutocompleteAPI(t *testing.T) {
 		}
 		defer delete(sessions, "test-uuid")
 
-		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey, strings.NewReader(`{"type":"slash-command","query":""}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey, strings.NewReader(`{"type":"slash-command","query":""}`))
 		w := httptest.NewRecorder()
 		handleAutocompleteAPI(w, req)
 		if w.Code != http.StatusOK {
@@ -942,9 +942,7 @@ func TestFirstSentence(t *testing.T) {
 // autocomplete with the [skill] hint prefix, even when the session's
 // assistant is not Claude. Confirms the agent-agnostic discovery wiring.
 func TestHandleAutocompleteAPI_SkillsSurfaced(t *testing.T) {
-	origKey := mcpAuthKey
-	mcpAuthKey = "test-api-key"
-	defer func() { mcpAuthKey = origKey }()
+	registerTestSessionKey(t, "test-uuid", testAPIKey)
 
 	origHome := os.Getenv("HOME")
 	tmpHome := t.TempDir()
@@ -969,7 +967,7 @@ func TestHandleAutocompleteAPI_SkillsSurfaced(t *testing.T) {
 	}
 	defer delete(sessions, "test-uuid")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey,
+	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey,
 		strings.NewReader(`{"type":"slash-command","query":""}`))
 	w := httptest.NewRecorder()
 	handleAutocompleteAPI(w, req)
@@ -1000,9 +998,7 @@ func TestHandleAutocompleteAPI_SkillsSurfaced(t *testing.T) {
 // only one entry appears in autocomplete and project-level wins (its
 // description survives).
 func TestHandleAutocompleteAPI_SkillsDedupProjectWins(t *testing.T) {
-	origKey := mcpAuthKey
-	mcpAuthKey = "test-api-key"
-	defer func() { mcpAuthKey = origKey }()
+	registerTestSessionKey(t, "test-uuid", testAPIKey)
 
 	tmpHome := t.TempDir()
 	origHome := os.Getenv("HOME")
@@ -1028,7 +1024,7 @@ func TestHandleAutocompleteAPI_SkillsDedupProjectWins(t *testing.T) {
 	}
 	defer delete(sessions, "test-uuid")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey,
+	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey,
 		strings.NewReader(`{"type":"slash-command","query":""}`))
 	w := httptest.NewRecorder()
 	handleAutocompleteAPI(w, req)
@@ -1060,9 +1056,7 @@ func TestHandleAutocompleteAPI_SkillsDedupProjectWins(t *testing.T) {
 // ~/.codex/skills/foo) collapse into a single autocomplete entry. The
 // first scanned wins (deterministic order: .swe-swe, .claude, .codex, ...).
 func TestHandleAutocompleteAPI_SkillsDedupAcrossAgentDirs(t *testing.T) {
-	origKey := mcpAuthKey
-	mcpAuthKey = "test-api-key"
-	defer func() { mcpAuthKey = origKey }()
+	registerTestSessionKey(t, "test-uuid", testAPIKey)
 
 	tmpHome := t.TempDir()
 	origHome := os.Getenv("HOME")
@@ -1089,7 +1083,7 @@ func TestHandleAutocompleteAPI_SkillsDedupAcrossAgentDirs(t *testing.T) {
 	}
 	defer delete(sessions, "test-uuid")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+mcpAuthKey,
+	req := httptest.NewRequest(http.MethodPost, "/api/autocomplete/test-uuid?key="+testAPIKey,
 		strings.NewReader(`{"type":"slash-command","query":""}`))
 	w := httptest.NewRecorder()
 	handleAutocompleteAPI(w, req)

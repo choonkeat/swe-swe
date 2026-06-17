@@ -6,10 +6,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	crypto_rand "crypto/rand"
 	"crypto/tls"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -1452,10 +1450,6 @@ var (
 	// serverCtx is cancelled on SIGINT/SIGTERM for graceful shutdown.
 	// Session contexts derive from this so all processes are cleaned up.
 	serverCtx context.Context
-
-	// mcpAuthKey authenticates requests to the global orchestration MCP server.
-	// Generated at boot, injected into sessions as MCP_AUTH_KEY env var.
-	mcpAuthKey string
 )
 
 // detectAvailableAssistants checks which AI assistants are installed and populates availableAssistants.
@@ -1912,10 +1906,8 @@ func main() {
 		}
 	}
 
-	// Generate auth key for global MCP orchestration endpoint
-	authKeyBytes := make([]byte, 32)
-	crypto_rand.Read(authKeyBytes)
-	mcpAuthKey = hex.EncodeToString(authKeyBytes)
+	// MCP auth keys are issued per session (see mcp_authkey.go), so there is
+	// no global orchestration key to generate at boot.
 
 	// Handle --version flag
 	if *version {
@@ -2020,13 +2012,10 @@ func main() {
 		func(r *http.Request) *mcp.Server { return orchMCPSrv },
 		&mcp.StreamableHTTPOptions{Stateless: true},
 	)
-	http.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("key") != mcpAuthKey {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		orchHandler.ServeHTTP(w, r)
-	}))
+	// mcpAuthMiddleware authenticates by the per-session key and injects the
+	// resolved caller session UUID into the request context, so create_session
+	// can inherit the calling session's git credentials (see mcp_authkey.go).
+	http.Handle("/mcp", mcpAuthMiddleware(orchHandler))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Root path: show assistant selection page
@@ -4502,6 +4491,12 @@ type SessionParams struct {
 	SessionMode         string // "terminal" or "chat"
 	ExtraArgs           string // extra CLI flags appended to the agent command (whitespace-split)
 	PrepopulateChatLog  string // when non-empty, copy this file into the new session's chat event log before the agent starts (used by /api/fork)
+	// InheritCredsFrom names a session whose git credentials/signing this
+	// new session should inherit (set by MCP create_session from the
+	// authenticated calling session). Distinct from ParentUUID, which also
+	// implies terminal-child semantics (shared ports, "terminal" recording);
+	// inheritance must NOT trigger those, so it has its own field.
+	InheritCredsFrom string
 }
 
 // getOrCreateSession returns an existing session or creates a new one
@@ -4696,7 +4691,10 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		SID:           p.UUID,
 	})
 	env = append(env, fmt.Sprintf("SESSION_UUID=%s", p.UUID))
-	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", mcpAuthKey))
+	// Per-session MCP auth key: authenticates this session's agent to the
+	// orchestration /mcp endpoint and the per-session HTTP APIs, and lets
+	// the server identify the caller (see mcp_authkey.go).
+	env = append(env, fmt.Sprintf("MCP_AUTH_KEY=%s", issueSessionKey(p.UUID)))
 
 	// Set up chat event log recording for chat sessions
 	var chatRecordingUUID string
@@ -4803,6 +4801,13 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		},
 	}
 	sessions[p.UUID] = sess
+
+	// Inherit git credentials/signing from the authenticated calling session
+	// (MCP create_session). Done after the session is registered so the
+	// child's gitconfig is rewritten against its real workDir.
+	if p.InheritCredsFrom != "" {
+		inheritSessionCredentials(p.InheritCredsFrom, p.UUID, workDir)
+	}
 
 	// If the agent session id wasn't known synchronously, watch the agent's
 	// session directory for the new file. The per-assistant spawn lock is
@@ -7120,6 +7125,7 @@ func killSessionProcessGroup(s *Session) {
 	untrackPid(pid)
 	unregisterSessionPid(pid)
 	clearSessionCredentials(s.UUID)
+	clearSessionKey(s.UUID)
 	removeSessionGitconfig(s.UUID)
 
 	// Kill any descendant processes that escaped the process group.
@@ -7723,12 +7729,6 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// API key authentication (shared with MCP endpoint)
-	if key := r.URL.Query().Get("key"); key == "" || key != mcpAuthKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Parse UUID from path: /api/session/{uuid}/browser/start
 	path := strings.TrimPrefix(r.URL.Path, "/api/session/")
 	path = strings.TrimSuffix(path, "/browser/start")
@@ -7736,6 +7736,13 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 
 	if sessionUUID == "" {
 		http.Error(w, "Missing session UUID", http.StatusBadRequest)
+		return
+	}
+
+	// Per-session key auth: the caller's key must belong to this very
+	// session, so one session can never start another's browser.
+	if !sessionKeyMatchesPath(r, sessionUUID) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -7976,15 +7983,24 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if args.RepoPath == "" {
 			return nil, nil, fmt.Errorf("repo_path is required")
 		}
+		// The calling session is identified by its per-session MCP auth key
+		// (injected by mcpAuthMiddleware). Hard-fail when absent: without a
+		// trusted caller identity we cannot safely inherit credentials, and
+		// an unauthenticated /mcp request should never reach here.
+		parentUUID := callerSessionFromContext(ctx)
+		if parentUUID == "" {
+			return nil, nil, fmt.Errorf("unauthenticated: missing calling session identity")
+		}
 		sessionUUID := uuid.New().String()
 		sess, _, err := getOrCreateSession(SessionParams{
-			UUID:        sessionUUID,
-			Assistant:   args.Assistant,
-			Name:        args.Name,
-			Branch:      args.Branch,
-			RepoPath:    args.RepoPath,
-			SessionMode: "chat",
-			ExtraArgs:   args.ExtraArgs,
+			UUID:             sessionUUID,
+			Assistant:        args.Assistant,
+			Name:             args.Name,
+			Branch:           args.Branch,
+			RepoPath:         args.RepoPath,
+			SessionMode:      "chat",
+			ExtraArgs:        args.ExtraArgs,
+			InheritCredsFrom: parentUUID,
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create session: %w", err)

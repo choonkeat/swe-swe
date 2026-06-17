@@ -13,7 +13,10 @@
 // broker socket.
 package main
 
-import "sync"
+import (
+	"log"
+	"sync"
+)
 
 // CredentialBag is what the server stores per (session, host).
 type CredentialBag struct {
@@ -97,6 +100,60 @@ func getAuthor(sid string) (AuthorIdent, bool) {
 	defer sessionAuthorMu.RUnlock()
 	a, ok := sessionAuthor[sid]
 	return a, ok
+}
+
+// inheritSessionCredentials copies a parent session's git auth state --
+// HTTPS credentials (per host), author identity, and SSH signing key --
+// onto a freshly created child session, then regenerates the child's
+// per-session gitconfig so commit signing and credential-helper lookups
+// work immediately without the user re-entering anything.
+//
+// Copying is strictly one-way (parent -> child). The caller MUST have
+// authenticated the parent identity; create_session derives it from the
+// unforgeable per-session MCP auth key (see mcp_authkey.go), never from a
+// client-supplied argument. No-op when the parent is empty/unknown or when
+// parent and child are the same session.
+func inheritSessionCredentials(parentUUID, childUUID, childWorkDir string) {
+	if parentUUID == "" || childUUID == "" || parentUUID == childUUID {
+		return
+	}
+
+	// Snapshot the parent's per-host credentials under the read lock, then
+	// write them to the child outside it (setCredential takes the write lock).
+	sessionCredsMu.RLock()
+	var hosts map[string]CredentialBag
+	if m, ok := sessionCreds[parentUUID]; ok {
+		hosts = make(map[string]CredentialBag, len(m))
+		for h, c := range m {
+			hosts[h] = c
+		}
+	}
+	sessionCredsMu.RUnlock()
+
+	inherited := false
+	for h, c := range hosts {
+		setCredential(childUUID, h, c)
+		inherited = true
+	}
+	if a, ok := getAuthor(parentUUID); ok {
+		setAuthor(childUUID, a)
+		inherited = true
+	}
+	if k, ok := getSigningKey(parentUUID); ok {
+		setSigningKey(childUUID, k)
+		inherited = true
+	}
+	if !inherited {
+		return
+	}
+
+	// Regenerate the child gitconfig so the inherited author/signing key
+	// take effect. The env-build step already wrote a baseline file; this
+	// layers the inherited [user]/signing config on top.
+	if err := writeSessionGitconfig(childUUID, childWorkDir); err != nil {
+		log.Printf("Session %s: gitconfig rewrite after credential inheritance failed: %v", childUUID, err)
+	}
+	log.Printf("Session %s inherited git credentials/signing from parent %s", childUUID, parentUUID)
 }
 
 // listCredentialHosts returns the hosts for which sid has credentials.

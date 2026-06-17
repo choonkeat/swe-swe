@@ -31,16 +31,17 @@ func handleAutocompleteAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// API key authentication (shared with MCP endpoint)
-	if key := r.URL.Query().Get("key"); key == "" || key != mcpAuthKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Parse session UUID from path: /api/autocomplete/{uuid}
 	sessionUUID := strings.TrimPrefix(r.URL.Path, "/api/autocomplete/")
 	if sessionUUID == "" {
 		http.Error(w, "missing session UUID", http.StatusBadRequest)
+		return
+	}
+
+	// Per-session key auth: the caller's key must belong to this very
+	// session, so one session can never query another's autocomplete.
+	if !sessionKeyMatchesPath(r, sessionUUID) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
