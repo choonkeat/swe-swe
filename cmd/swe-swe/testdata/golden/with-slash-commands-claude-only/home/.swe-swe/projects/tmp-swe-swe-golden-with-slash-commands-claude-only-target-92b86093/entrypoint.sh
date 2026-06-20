@@ -70,7 +70,7 @@ cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
 #!/bin/sh
 URL="${1:-}"
 [ -z "$URL" ] && exit 0
-curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)" >/dev/null 2>&1 &
+curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)&key=$MCP_AUTH_KEY" >/dev/null 2>&1 &
 echo "-> Preview: $URL" >&2
 SHIM
 chmod +x /home/app/.swe-swe/bin/swe-swe-open

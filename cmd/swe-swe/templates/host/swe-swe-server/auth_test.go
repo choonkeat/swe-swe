@@ -355,6 +355,75 @@ func TestAuthMiddlewareExemptPaths(t *testing.T) {
 	}
 }
 
+func TestProxyOpenControlPath(t *testing.T) {
+	cases := []struct {
+		path     string
+		wantUUID string
+		wantOK   bool
+	}{
+		{"/proxy/abc-123/preview/__agent-reverse-proxy-debug__/open", "abc-123", true},
+		{"/proxy//preview/__agent-reverse-proxy-debug__/open", "", false},
+		{"/proxy/abc/123/preview/__agent-reverse-proxy-debug__/open", "", false},
+		{"/proxy/abc-123/preview/", "", false},
+		{"/proxy/abc-123/preview/__agent-reverse-proxy-debug__/open/extra", "", false},
+		{"/api/autocomplete/abc-123", "", false},
+	}
+	for _, c := range cases {
+		uuid, ok := proxyOpenControlPath(c.path)
+		if ok != c.wantOK || uuid != c.wantUUID {
+			t.Errorf("proxyOpenControlPath(%q) = (%q, %v), want (%q, %v)", c.path, uuid, ok, c.wantUUID, c.wantOK)
+		}
+	}
+}
+
+func TestAuthMiddlewareOpenControlKeyAuth(t *testing.T) {
+	secret := "test-password"
+	reached := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := authMiddleware(inner, secret)
+
+	uuid := "open-ctl-uuid"
+	key := issueSessionKey(uuid)
+	otherKey := issueSessionKey("some-other-uuid")
+	base := "/proxy/" + uuid + "/preview/__agent-reverse-proxy-debug__/open?url=https%3A%2F%2Fexample.com"
+
+	// No key -> unauthorized, no cookie redirect, inner never reached.
+	reached = false
+	req := httptest.NewRequest("GET", base, nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("no key: expected 401, got %d", rr.Code)
+	}
+	if reached {
+		t.Error("no key: inner handler should not be reached")
+	}
+
+	// Valid key scoped to this session -> passes through.
+	reached = false
+	req = httptest.NewRequest("GET", base+"&key="+key, nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !reached {
+		t.Errorf("valid key: expected 200 + inner reached, got %d reached=%v", rr.Code, reached)
+	}
+
+	// Key belonging to a different session -> unauthorized.
+	reached = false
+	req = httptest.NewRequest("GET", base+"&key="+otherKey, nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("cross-session key: expected 401, got %d", rr.Code)
+	}
+	if reached {
+		t.Error("cross-session key: inner handler should not be reached")
+	}
+}
+
 func TestAuthLoginPostWrongPassword(t *testing.T) {
 	secret := "correct-password"
 	form := url.Values{}

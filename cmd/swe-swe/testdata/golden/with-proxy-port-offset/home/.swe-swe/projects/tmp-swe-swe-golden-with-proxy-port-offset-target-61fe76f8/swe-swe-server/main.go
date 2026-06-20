@@ -1255,6 +1255,14 @@ func (s *Session) RestartProcess(cmdStr string) error {
 		SessionMode:   s.SessionMode,
 		SID:           s.UUID,
 	})
+	// Mirror the initial-spawn env (see createSession): SESSION_UUID and the
+	// per-session MCP key must survive a restart, or the in-container shims
+	// (open/xdg-open -> preview proxy open endpoint) break afterwards.
+	// issueSessionKey is idempotent, so this returns the same key.
+	cmd.Env = append(cmd.Env,
+		fmt.Sprintf("SESSION_UUID=%s", s.UUID),
+		fmt.Sprintf("MCP_AUTH_KEY=%s", issueSessionKey(s.UUID)),
+	)
 	if s.WorkDir != "" {
 		cmd.Dir = s.WorkDir
 	}

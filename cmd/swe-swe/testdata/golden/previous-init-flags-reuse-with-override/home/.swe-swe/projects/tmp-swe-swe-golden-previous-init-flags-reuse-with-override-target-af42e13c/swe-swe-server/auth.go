@@ -538,10 +538,29 @@ func authVerifyHandler(secret string) http.HandlerFunc {
 	}
 }
 
+// proxyOpenControlPath reports whether path is the preview proxy's open-URL
+// control endpoint (/proxy/{uuid}/preview/__agent-reverse-proxy-debug__/open)
+// and returns the embedded session UUID. This endpoint is driven by the
+// in-container open/xdg-open shims -- non-browser clients with no auth cookie
+// -- so it is authorized by the per-session MCP key rather than the cookie.
+func proxyOpenControlPath(path string) (uuid string, ok bool) {
+	const prefix = "/proxy/"
+	const suffix = "/preview/__agent-reverse-proxy-debug__/open"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return "", false
+	}
+	uuid = strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if uuid == "" || strings.Contains(uuid, "/") {
+		return "", false
+	}
+	return uuid, true
+}
+
 // authMiddleware wraps an http.Handler with cookie-based authentication.
 // Unauthenticated requests are redirected to /swe-swe-auth/login.
 // Exempt paths: /swe-swe-auth/login, /swe-swe-auth/verify, /ssl/*, /mcp,
-// /api/session/*, /api/autocomplete/* (these use API key auth instead).
+// /api/session/*, /api/autocomplete/* (these use API key auth instead), and
+// the preview proxy open-URL control endpoint (per-session MCP key auth).
 func authMiddleware(next http.Handler, secret string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -555,6 +574,19 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 			(strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/browser/start")) ||
 			strings.HasPrefix(path, "/api/autocomplete/") {
 			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Preview proxy open-URL control endpoint. Driven by the in-container
+		// open/xdg-open shims, which are non-browser clients with no auth
+		// cookie. Authorize it with the per-session MCP key scoped to the path
+		// UUID instead -- same scheme as /api/autocomplete and /browser/start.
+		if uuid, ok := proxyOpenControlPath(path); ok {
+			if sessionKeyMatchesPath(r, uuid) {
+				next.ServeHTTP(w, r)
+			} else {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			}
 			return
 		}
 
