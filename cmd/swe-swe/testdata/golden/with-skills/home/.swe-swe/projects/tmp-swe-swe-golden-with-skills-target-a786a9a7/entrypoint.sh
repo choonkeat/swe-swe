@@ -207,6 +207,59 @@ claude_mcp_setup() {
 claude_mcp_setup
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 
+# Guard the built-in AskUserQuestion tool. Its multiple-choice menu renders
+# only in the local terminal TUI, which is invisible to a user talking through
+# the web chat UI (agent-chat) -- calling it there hangs the agent forever on
+# input the user can never give. This PreToolUse hook blocks the tool (exit 2,
+# which feeds stderr back to the agent so it switches to the send_message MCP
+# tool) UNLESS the session opted out with AGENT_CHAT_DISABLE=1. swe-swe-server
+# sets AGENT_CHAT_DISABLE=1 for non-chat (terminal) sessions where the TUI IS
+# the user surface, and leaves it unset for agent-chat sessions. Fail-safe is
+# block: a wrongly shown menu hard-hangs the agent, a wrongly blocked one just
+# nudges it to send_message. Hooks are snapshotted at session start, so the
+# env var (read at tool-call time) is the per-session knob; this file is static.
+mkdir -p /home/app/.claude
+CLAUDE_SETTINGS=/home/app/.claude/settings.json
+cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$AGENT_CHAT_DISABLE\" = \"1\" ] && exit 0; echo 'BLOCKED: do not use the built-in AskUserQuestion tool -- its menu renders only in the local TUI, which the user may not see (e.g. an agent-chat session). Ask via the agent-chat send_message tool instead (question -> text, primary option -> first_quick_reply, rest -> more_quick_replies). To allow the built-in tool, set AGENT_CHAT_DISABLE=1.' >&2; exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}
+SETTINGSEOF
+if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+  # Merge idempotently into existing settings: drop any prior AskUserQuestion
+  # matcher, append ours, preserve every other key and PreToolUse entry.
+  TMP_SETTINGS=$(mktemp)
+  if jq --slurpfile add /tmp/swe-claude-settings.json \
+       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion"))) + ($add[0].hooks.PreToolUse))' \
+       "$CLAUDE_SETTINGS" > "$TMP_SETTINGS" 2>/dev/null; then
+    mv "$TMP_SETTINGS" "$CLAUDE_SETTINGS"
+  else
+    # Existing file was not valid JSON; overwrite with our fragment.
+    rm -f "$TMP_SETTINGS"
+    cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
+  fi
+elif [ -s "$CLAUDE_SETTINGS" ]; then
+  # File exists but jq is unavailable: do not risk clobbering it.
+  echo -e "${YELLOW}[warn] jq unavailable; left existing ~/.claude/settings.json untouched (AskUserQuestion guard not installed)${NC}"
+else
+  cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
+fi
+rm -f /tmp/swe-claude-settings.json
+
+echo -e "${GREEN}[ok] Installed AskUserQuestion guard hook${NC}"
+
 # Install Pi mcp-bridge extension into the global Pi config dir so every
 # session in every workspace gets the swe-swe / agent-chat / playwright /
 # preview / whiteboard MCPs without per-workspace setup. Pi prefers a

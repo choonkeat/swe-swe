@@ -121,11 +121,52 @@ body {
 .bubble h1 { font-size: 1.2em; }
 .bubble h2 { font-size: 1.1em; }
 .bubble h3 { font-size: 1.0em; }
+.bubble h4,
+.bubble h5,
+.bubble h6 { font-size: 0.95em; }
+
+.bubble hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 0.4rem 0;
+}
 
 .bubble ul,
 .bubble ol {
   margin: 0.2rem 0;
   padding-left: 1.2em;
+}
+
+.bubble li {
+  margin: 0.1rem 0;
+}
+
+.bubble blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  margin: 0.3rem 0;
+  padding: 0.2rem 0 0.2rem 0.6rem;
+  color: #b0b4c0;
+}
+
+.bubble blockquote blockquote {
+  margin: 0.2rem 0;
+}
+
+.bubble table {
+  border-collapse: collapse;
+  margin: 0.3rem 0;
+  font-size: 0.85em;
+}
+
+.bubble th,
+.bubble td {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.25rem 0.5rem;
+}
+
+.bubble th {
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 600;
 }
 
 .bubble a {
@@ -134,6 +175,11 @@ body {
 }
 
 .bubble.user a { color: #fff; }
+
+.bubble.user blockquote {
+  border-left-color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.85);
+}
 
 .bubble img {
   max-width: 100%;
@@ -181,9 +227,9 @@ body {
   width: 100%;
 }
 
-/* ------------------------------------------------------------
-   Archive layout (used by index.html -- sidebar + main pane)
-   ------------------------------------------------------------ */
+/* ────────────────────────────────────────────────────────────
+   Archive layout (used by index.html — sidebar + main pane)
+   ──────────────────────────────────────────────────────────── */
 
 body.archive {
   padding: 0;
