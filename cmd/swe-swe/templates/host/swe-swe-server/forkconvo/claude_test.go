@@ -221,6 +221,23 @@ func TestClaudeIsTailActive(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			// Regression: ToolSearch (deferred-tool loader) flushes its
+			// tool_result event to the .jsonl BEFORE its own tool_use line
+			// (result ts later, but written first). An order-sensitive walk
+			// (delete-on-result, add-on-use) miscounts this as pending and
+			// reports ACTIVE -> /api/fork 409s forever on any settled
+			// recording that ever used ToolSearch. The pairing is order-
+			// independent: the result exists, so the tail is NOT active.
+			name: "idle: tool_result line precedes its tool_use line (ToolSearch reorder)",
+			lines: []string{
+				asstWithToolUse(t, "e1", "mcp__swe-swe-agent-chat__send_message", "ts1"),
+				userToolResult(t, "e2", "ts1", "User responded: go"),
+				userToolResult(t, "e3", "ts2", "search results"), // result FIRST
+				asstWithToolUse(t, "e4", "ToolSearch", "ts2"),     // use SECOND
+			},
+			want: false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -214,8 +214,17 @@ func ClaudeIsTailActive(path string) (bool, error) {
 	}
 	defer f.Close()
 
+	// Pairing is ORDER-INDEPENDENT: gather every non-chat tool_use id and
+	// every tool_result id across the whole file, then subtract. A line-by-
+	// line "add-on-use, delete-on-result" walk assumes each tool_use line
+	// precedes its tool_result line -- but ToolSearch (the deferred-tool
+	// loader) flushes its result event to the .jsonl BEFORE its own tool_use
+	// line, so the running walk never clears it and falsely reports ACTIVE,
+	// permanently 409-ing /api/fork on otherwise-settled recordings. Tool ids
+	// are unique, so set-difference is both correct and immune to flush order.
 	scanner := newBigScanner(f)
-	pending := make(map[string]bool)
+	uses := make(map[string]bool)
+	results := make(map[string]bool)
 	for scanner.Scan() {
 		var ev claudeEvent
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
@@ -230,12 +239,12 @@ func ClaudeIsTailActive(path string) (bool, error) {
 				if strings.HasPrefix(c.Name, chatMCPToolPrefixClaude) {
 					continue
 				}
-				pending[c.ID] = true
+				uses[c.ID] = true
 			}
 		case "user":
 			for _, c := range ev.Message.Content {
 				if c.Type == "tool_result" && c.ToolUseID != "" {
-					delete(pending, c.ToolUseID)
+					results[c.ToolUseID] = true
 				}
 			}
 		}
@@ -243,7 +252,12 @@ func ClaudeIsTailActive(path string) (bool, error) {
 	if err := scanner.Err(); err != nil {
 		return false, err
 	}
-	return len(pending) > 0, nil
+	for id := range uses {
+		if !results[id] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // claudeCopyUntil streams src into dst, rewriting every literal occurrence of

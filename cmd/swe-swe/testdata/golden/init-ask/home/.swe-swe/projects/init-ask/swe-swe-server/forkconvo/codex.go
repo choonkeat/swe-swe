@@ -178,8 +178,14 @@ func CodexIsTailActive(path string) (bool, error) {
 	}
 	defer f.Close()
 
+	// Order-independent pairing (see ClaudeIsTailActive): gather all non-chat
+	// function_call ids and all function_call_output ids, then subtract. A
+	// running add/delete walk would miscount any call whose output line is
+	// flushed ahead of its call line; call ids are unique so set-difference
+	// is correct regardless of file order.
 	scanner := newBigScanner(f)
-	pending := make(map[string]bool)
+	calls := make(map[string]bool)
+	outputs := make(map[string]bool)
 	for scanner.Scan() {
 		var ev codexEvent
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
@@ -193,17 +199,22 @@ func CodexIsTailActive(path string) (bool, error) {
 			if ev.Payload.Namespace == chatMCPNamespaceCodex {
 				continue
 			}
-			pending[ev.Payload.CallID] = true
+			calls[ev.Payload.CallID] = true
 		case "function_call_output":
 			if ev.Payload.CallID != "" {
-				delete(pending, ev.Payload.CallID)
+				outputs[ev.Payload.CallID] = true
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return false, err
 	}
-	return len(pending) > 0, nil
+	for id := range calls {
+		if !outputs[id] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type codexEvent struct {
