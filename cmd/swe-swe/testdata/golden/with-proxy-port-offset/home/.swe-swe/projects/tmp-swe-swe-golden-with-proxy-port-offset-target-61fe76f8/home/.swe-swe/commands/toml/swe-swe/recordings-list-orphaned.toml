@@ -78,12 +78,19 @@ last agent snippet).
   page, not the chat iframe's own origin.)
 
 **Table B -- Live sessions** (sorted below Table A, each marked `live`). Columns: short
-uuid, name, assistant, duration, clients (`clientCount`), workDir. These are active;
-the user can open them directly.
+uuid, name, assistant, duration, clients (`clientCount`), workDir, and a **fork link**.
+These are active, so the action is **fork** (branch a copy), not resume:
+
+- "fork link" = `[fork](/api/fork/<full-session-uuid>)`. `/api/fork` resolves live
+  sessions in-memory, so the live session's own uuid works directly. Clicking branches
+  the running conversation into a NEW live session from its last chat reply; the
+  original session keeps running untouched. (If the source agent is mid-tool-call at
+  click time, fork returns 409 -- just retry once it's idle.)
+- The user can also just open a live one directly at `/session/<uuid>`.
 
 End with hints:
 - ``Resume an orphaned one with `/swe-swe:recordings-resume <id>`.``
-- ``Live ones are already running -- open at `/session/<uuid>` (or fork a copy with `/swe-swe:recordings-resume <uuid>`).``
+- ``Fork a live one with its `[fork]` link (or `/swe-swe:recordings-resume <uuid>`); open it directly at `/session/<uuid>`.``
 
 Keep it to the two tables + the hints. Do not dump full transcripts.
 '''
