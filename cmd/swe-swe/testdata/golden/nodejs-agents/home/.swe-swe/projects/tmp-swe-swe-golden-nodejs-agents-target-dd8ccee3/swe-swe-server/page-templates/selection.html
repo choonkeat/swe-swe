@@ -1574,7 +1574,7 @@
                             {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
                             <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
                             {{if .Query.Assistant}}<span class="recording-card__separator"></span><a href="/session/{{.RestartUUID}}?{{.Query.Encode}}" class="btn-view btn-view--restart" title="Start new session with same settings">+ New</a>{{end}}
-                            {{if and $.ResumeEnabled .CanResume}}<a href="/api/fork/{{.UUID}}" class="btn-view btn-view--resume" title="Resume this conversation (fork: restores chat history and reattaches the agent)">Resume</a>{{end}}
+                            {{if .CanResume}}<a href="/api/fork/{{.UUID}}" class="btn-view btn-view--resume" title="Resume this conversation (fork: restores chat history and reattaches the agent)">Resume</a>{{end}}
                         </div>
                     </div>
                     {{end}}
