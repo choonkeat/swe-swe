@@ -211,7 +211,7 @@ func TestFingerprintClaudeSessionByEvents_MatchesAcrossCandidates(t *testing.T) 
 	t.Setenv("CLAUDE_HOME", claudeHome)
 
 	workDir := "/repos/test-project/workspace"
-	encoded := strings.ReplaceAll(workDir, "/", "-")
+	encoded := encodeClaudeProjectDir(workDir)
 	projectDir := filepath.Join(claudeHome, "projects", encoded)
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		t.Fatal(err)
@@ -265,7 +265,7 @@ func TestFingerprintClaudeSessionByEvents_NoMatchIsError(t *testing.T) {
 	claudeHome := t.TempDir()
 	t.Setenv("CLAUDE_HOME", claudeHome)
 	workDir := "/repos/test-project/workspace"
-	encoded := strings.ReplaceAll(workDir, "/", "-")
+	encoded := encodeClaudeProjectDir(workDir)
 	projectDir := filepath.Join(claudeHome, "projects", encoded)
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
 		t.Fatal(err)

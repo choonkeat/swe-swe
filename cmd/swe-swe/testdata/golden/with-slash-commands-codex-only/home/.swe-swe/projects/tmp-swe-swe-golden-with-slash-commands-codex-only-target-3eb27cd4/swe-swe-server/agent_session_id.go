@@ -143,6 +143,16 @@ func injectAgentSessionID(assistant string, argv []string) ([]string, string) {
 // session-state file for `workDir`, or "" if we don't have a watcher path for
 // the agent. The returned directory may not yet exist (e.g. codex creates a
 // date-stamped subdir on first run).
+// encodeClaudeProjectDir encodes a workdir the way Claude Code names its
+// ~/.claude/projects/<dir> rollout folder: every path separator AND dot is
+// replaced with a dash (e.g. /repos/github.com-x/workspace ->
+// -repos-github-com-x-workspace). Replacing only "/" left dots intact, so any
+// workdir containing "." (notably github.com-... repo paths) never matched the
+// real folder and fork/resume could not locate the rollout.
+func encodeClaudeProjectDir(workDir string) string {
+	return strings.NewReplacer("/", "-", ".", "-").Replace(workDir)
+}
+
 func agentSessionDir(assistant, workDir string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -151,9 +161,9 @@ func agentSessionDir(assistant, workDir string) string {
 	switch assistant {
 	case "claude":
 		if v := os.Getenv("CLAUDE_HOME"); v != "" {
-			return filepath.Join(v, "projects", strings.ReplaceAll(workDir, "/", "-"))
+			return filepath.Join(v, "projects", encodeClaudeProjectDir(workDir))
 		}
-		return filepath.Join(home, ".claude", "projects", strings.ReplaceAll(workDir, "/", "-"))
+		return filepath.Join(home, ".claude", "projects", encodeClaudeProjectDir(workDir))
 	case "codex":
 		if v := os.Getenv("CODEX_HOME"); v != "" {
 			return filepath.Join(v, "sessions")
