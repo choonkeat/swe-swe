@@ -1716,7 +1716,18 @@ class TerminalUI extends HTMLElement {
                             this.setAgentChatTabVisible(true);
                             const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');
                             if (chatIframe) {
-                                chatIframe.src = (chosenUrl || acPathUrl) + '/';
+                                // Pass the parent (top-level) window URL so agent-chat
+                                // can resolve relative markdown links/images against the
+                                // page the user actually sees, not the iframe's own origin.
+                                // Captured at src-construction time; goes stale if swe-swe
+                                // navigates without recreating the iframe (accepted for v1).
+                                let chatSrc = (chosenUrl || acPathUrl) + '/';
+                                try {
+                                    const u = new URL(chatSrc, window.location.href);
+                                    u.searchParams.set('parent_url', window.location.href);
+                                    chatSrc = u.toString();
+                                } catch (e) { /* keep chatSrc as-is on malformed URL */ }
+                                chatIframe.src = chatSrc;
                                 chatIframe.onload = () => {
                                     const ph = this.querySelector('.terminal-ui__agent-chat-placeholder');
                                     if (ph) ph.classList.add('hidden');
