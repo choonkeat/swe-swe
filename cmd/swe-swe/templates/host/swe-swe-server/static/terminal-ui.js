@@ -1725,6 +1725,14 @@ class TerminalUI extends HTMLElement {
                                 try {
                                     const u = new URL(chatSrc, window.location.href);
                                     u.searchParams.set('parent_url', window.location.href);
+                                    // fork_session enables agent-chat's per-bubble "fork"
+                                    // button: it builds /api/fork/<fork_session>?bubble=<seq>
+                                    // &mode=after resolved against parent_url. This is the
+                                    // live swe-swe session uuid, which /api/fork resolves
+                                    // in-memory.
+                                    if (this.sessionUUID) {
+                                        u.searchParams.set('fork_session', this.sessionUUID);
+                                    }
                                     chatSrc = u.toString();
                                 } catch (e) { /* keep chatSrc as-is on malformed URL */ }
                                 chatIframe.src = chatSrc;
