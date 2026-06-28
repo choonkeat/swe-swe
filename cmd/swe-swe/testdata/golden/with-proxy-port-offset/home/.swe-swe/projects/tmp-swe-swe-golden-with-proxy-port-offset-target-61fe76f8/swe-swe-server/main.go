@@ -4619,8 +4619,20 @@ func pendingSessionSweeper() {
 	}
 }
 
-// getOrCreateSession returns an existing session or creates a new one
-func getOrCreateSession(p SessionParams) (*Session, bool, error) {
+// errSessionGone is returned by getOrCreateSession when a UUID has no live
+// session and creation is not permitted (allowCreate=false). It is the
+// load-bearing signal of the no-ghost-session invariant: a bare GET /
+// navigation / WS-reconnect to an unknown or ended UUID must NOT spawn a
+// session. The WS handler translates this into a "session_gone" client message.
+var errSessionGone = errors.New("session gone")
+
+// getOrCreateSession returns an existing session, or creates a new one when
+// allowCreate is true. When allowCreate is false and no live session exists for
+// p.UUID, it returns errSessionGone WITHOUT creating anything. The live-check
+// and the create decision happen under a single lock acquisition, so a second
+// concurrent WS connect (e.g. after consuming the staged intent) cannot race
+// between "is it live?" and "insert it" and spuriously see the session as gone.
+func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, error) {
 	// Memory guard: check before acquiring lock (avoid deadlock with getMaxSessionRSS)
 	if p.ParentUUID == "" { // only guard top-level sessions, not child sessions
 		if err := checkMemoryForNewSession(); err != nil {
@@ -4637,10 +4649,17 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 			log.Printf("Cleaning up dead session on reconnect: %s (exit code=%d)", p.UUID, sess.Cmd.ProcessState.ExitCode())
 			sess.Close()
 			delete(sessions, p.UUID)
-			// Fall through to create a new session
+			// Fall through to create a new session (only if allowCreate)
 		} else {
 			return sess, false, nil // existing session
 		}
+	}
+
+	// No live session for this UUID. Creation requires explicit permission --
+	// otherwise this is a stale/ended/bogus UUID and we refuse rather than
+	// materialize a ghost session.
+	if !allowCreate {
+		return nil, false, errSessionGone
 	}
 
 	// Find the assistant config
@@ -5258,7 +5277,37 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		params = staged.params
 	}
 
-	sess, isNew, err := getOrCreateSession(params)
+	// Creation is permitted only when there is an explicit intent for this
+	// UUID: either a staged "new"/"fork" intent, or this is a child shell
+	// whose live parent was already validated above (a specified-but-missing
+	// parent returned earlier, so parentUUID != "" here implies a live parent).
+	// Otherwise getOrCreateSession returns errSessionGone for an unknown UUID
+	// instead of materializing a ghost session -- and a live session always
+	// attaches regardless (the allowCreate flag only governs the create path).
+	allowCreate := isPending || parentUUID != ""
+
+	sess, isNew, err := getOrCreateSession(params, allowCreate)
+	if errors.Is(err, errSessionGone) {
+		// No live session and no permission to create: stale tab, ended
+		// session, or a bogus/bookmarked UUID. Tell the client it's gone (and
+		// whether it can be resumed via fork) so it can show an ended screen
+		// with [Resume]/[New] instead of a blank or ghost terminal.
+		_, _, _, ferr := validateForkSourceCheap(sessionUUID)
+		canResume := ferr == nil
+		log.Printf("Session %s gone (no live session, no creation intent); canResume=%v (remote=%s)", sessionUUID, canResume, remoteAddr)
+		if data, jerr := json.Marshal(map[string]interface{}{
+			"type":      "session_gone",
+			"uuid":      sessionUUID,
+			"canResume": canResume,
+		}); jerr == nil {
+			conn.WriteMessage(websocket.TextMessage, data)
+		}
+		// 4003: gone, do NOT reconnect (distinct from 4001 parent-retry and
+		// 4002 fatal-creation-error).
+		conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(4003, "session gone"))
+		return
+	}
 	if err != nil {
 		log.Printf("Session creation error: %v (remote=%s)", err, remoteAddr)
 		// Send the full error as JSON before closing -- the WS close-reason
@@ -8225,6 +8274,9 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			return nil, nil, fmt.Errorf("unauthenticated: missing calling session identity")
 		}
 		sessionUUID := uuid.New().String()
+		// MCP create_session is an explicit, authenticated creation action: it
+		// mints the UUID and creates eagerly (allowCreate=true). The browser
+		// later attaches to this now-live session via the WS live path.
 		sess, _, err := getOrCreateSession(SessionParams{
 			UUID:             sessionUUID,
 			Assistant:        args.Assistant,
@@ -8234,7 +8286,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			SessionMode:      "chat",
 			ExtraArgs:        args.ExtraArgs,
 			InheritCredsFrom: parentUUID,
-		})
+		}, true)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create session: %w", err)
 		}

@@ -1323,6 +1323,16 @@ class TerminalUI extends HTMLElement {
                 return;
             }
 
+            // Session gone: no live session and no creation intent (stale tab,
+            // ended session, bogus/bookmarked URL). Do NOT reconnect -- a retry
+            // would just be refused again. Render an ended screen with a Resume
+            // (fork) action when the conversation can be resumed, plus New.
+            if (event.code === 4003) {
+                this.processExited = true;
+                this.renderSessionGone(this._sessionGoneCanResume === true);
+                return;
+            }
+
             // Show close reason in status bar for debugging
             this.updateStatus('error', `Disconnected: ${reason}`);
             // Brief delay to show the error before scheduling reconnect
@@ -1491,6 +1501,14 @@ class TerminalUI extends HTMLElement {
                 // -- the WS close-reason field would otherwise truncate the
                 // most useful tail of git's output.
                 this._sessionErrorMsg = typeof msg.message === 'string' ? msg.message : '';
+                break;
+            case 'session_gone':
+                // No live session and no creation intent for this UUID: a stale
+                // tab, an ended session, or a bookmarked/bogus URL. Stash whether
+                // it can be resumed (forked); the onclose 4003 handler renders
+                // the ended screen. The server closes with 4003 right after.
+                this._sessionGone = true;
+                this._sessionGoneCanResume = msg.canResume === true;
                 break;
             case 'credentials_stored':
                 // Server acked set_credentials. Hosts list reflects what the
@@ -1828,6 +1846,49 @@ class TerminalUI extends HTMLElement {
                 break;
             default:
                 console.log('Unknown JSON message:', msg);
+        }
+    }
+
+    // renderSessionGone replaces the terminal UI with an "ended" screen shown
+    // when the server reports session_gone (no live session, no creation intent
+    // -- a stale tab, ended session, or bogus/bookmarked URL). It deliberately
+    // does NOT auto-create or reconnect; the user chooses Resume (fork, when
+    // available) or starting fresh. This is the user-facing half of the
+    // no-ghost-session invariant.
+    renderSessionGone(canResume) {
+        this.stopUptimeTimer();
+        this.stopHeartbeat();
+
+        // In a panel iframe, let the parent close/replace the pane rather than
+        // painting an ended screen inside a small embedded frame.
+        if (window.self !== window.top) {
+            window.parent.postMessage({ type: 'swe-swe-session-ended', reason: 'gone' }, '*');
+            return;
+        }
+
+        const resumeBtn = canResume
+            ? `<a class="session-gone__btn session-gone__btn--primary" href="/api/fork/${encodeURIComponent(this.uuid)}">Resume conversation</a>`
+            : '';
+        this.innerHTML = `
+            <div class="session-gone" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg-terminal,#1e1e1e);font-family:'Inter',system-ui,sans-serif;color:var(--text-primary,#e0e0e0);">
+                <div style="width:440px;max-width:calc(100vw - 32px);background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3a3a3a);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.5);padding:24px;">
+                    <h1 style="font-size:18px;font-weight:600;margin:0 0 10px;">This session has ended</h1>
+                    <p style="font-size:14px;line-height:1.5;color:var(--text-secondary,#b0b0b0);margin:0 0 18px;">
+                        ${canResume
+                            ? 'The session is no longer running. You can resume it (fork: restores the chat history and reattaches the agent) or start a new one.'
+                            : 'The session is no longer running. Start a new session to continue.'}
+                    </p>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;">
+                        <a class="session-gone__btn" href="/" style="font-size:14px;font-weight:500;padding:9px 18px;border-radius:6px;text-decoration:none;border:1px solid var(--border-color,#3a3a3a);color:var(--text-secondary,#b0b0b0);">New session</a>
+                        ${resumeBtn}
+                    </div>
+                </div>
+            </div>`;
+        // Minimal styling for the primary button (kept inline-adjacent so we
+        // don't depend on terminal-ui.css being loaded for this state).
+        const primary = this.querySelector('.session-gone__btn--primary');
+        if (primary) {
+            primary.style.cssText = "font-size:14px;font-weight:500;padding:9px 18px;border-radius:6px;text-decoration:none;border:1px solid transparent;background:var(--accent,#7c3aed);color:#fff;";
         }
     }
 
