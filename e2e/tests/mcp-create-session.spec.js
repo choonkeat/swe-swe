@@ -1,6 +1,7 @@
 import { test, expect, request as apiRequest } from '@playwright/test';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
+import { openSessionViaPost } from './_helpers/sessions.js';
 
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 
@@ -90,8 +91,7 @@ test.describe('MCP create_session', () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     const cookie = await getAuthCookie(page);
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'terminal' });
     await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
     await page.waitForTimeout(2_000);
     await context.close();

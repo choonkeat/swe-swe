@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
+import { openSessionViaPost } from './_helpers/sessions.js';
 
 const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
 
@@ -27,8 +28,7 @@ const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
 //     make e2e-down                                                        # state-file mode
 
 async function createSessionAndWaitForStatus(page) {
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode' });
 
     return page.waitForFunction(() => {
         const ui = window.terminalUI;

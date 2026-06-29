@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
+import { openSessionViaPost } from './_helpers/sessions.js';
 
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 
@@ -8,8 +9,7 @@ const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.POR
 
 // Helper: create a chat session and wait for all port info via WebSocket
 async function createChatSessionAndGetPorts(page) {
-  const uuid = crypto.randomUUID();
-  await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+  const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
 
   // Wait for the terminal UI to receive port info via WebSocket
   // terminal-ui.js stores the instance at window.terminalUI (line 190)
