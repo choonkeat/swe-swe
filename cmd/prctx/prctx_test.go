@@ -2,6 +2,69 @@ package main
 
 import "testing"
 
+func TestMapDiscussions(t *testing.T) {
+	pos := &glPosition{NewPath: "a.go", NewLine: 12, HeadSHA: "abc"}
+	inline := glDiscussion{
+		ID: "disc1",
+		Notes: []glNote{
+			{ID: 1, Body: "inline root", Type: "DiffNote", Resolved: true, Position: pos},
+			{ID: 2, Body: "inline reply", Type: "DiffNote", Position: pos},
+		},
+	}
+	general := glDiscussion{
+		ID:    "disc2",
+		Notes: []glNote{{ID: 3, Body: "general note"}},
+	}
+	// Removed-line comment: NewLine 0 -> falls back to old path/line, side LEFT.
+	removed := glDiscussion{
+		ID: "disc3",
+		Notes: []glNote{
+			{ID: 4, Body: "on removed line", Type: "DiffNote",
+				Position: &glPosition{OldPath: "b.go", OldLine: 7, HeadSHA: "def"}},
+		},
+	}
+
+	threads, notes := mapDiscussions([]glDiscussion{inline, general, removed})
+	if len(threads) != 2 {
+		t.Fatalf("got %d threads, want 2", len(threads))
+	}
+	if len(notes) != 1 || notes[0].Body != "general note" {
+		t.Fatalf("notes = %+v, want one general note", notes)
+	}
+	if threads[0].ID != "disc1" || !threads[0].Resolved || len(threads[0].Comments) != 2 {
+		t.Errorf("thread 0: id=%s resolved=%v comments=%d, want disc1/true/2",
+			threads[0].ID, threads[0].Resolved, len(threads[0].Comments))
+	}
+	if threads[0].Path != "a.go" || threads[0].Line != 12 || threads[0].Side != "RIGHT" {
+		t.Errorf("thread 0 anchor = %s:%d %s, want a.go:12 RIGHT", threads[0].Path, threads[0].Line, threads[0].Side)
+	}
+	if threads[1].Path != "b.go" || threads[1].Line != 7 || threads[1].Side != "LEFT" {
+		t.Errorf("thread 1 anchor = %s:%d %s, want b.go:7 LEFT", threads[1].Path, threads[1].Line, threads[1].Side)
+	}
+}
+
+func TestProviderFor(t *testing.T) {
+	cases := []struct {
+		host string
+		typ  string
+		ok   bool
+	}{
+		{"github.com", "main.githubProvider", true},
+		{"gitlab.com", "main.gitlabProvider", true},
+		{"gitlab.example.org", "main.gitlabProvider", true},
+		{"bitbucket.org", "", false},
+	}
+	for _, c := range cases {
+		p, err := providerFor(PRRef{Host: c.host})
+		if c.ok && err != nil {
+			t.Errorf("providerFor(%q): unexpected error %v", c.host, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("providerFor(%q): expected error, got %T", c.host, p)
+		}
+	}
+}
+
 func TestParseRef(t *testing.T) {
 	cases := []struct {
 		in   string

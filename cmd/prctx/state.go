@@ -11,9 +11,10 @@ import (
 // so it is never accidentally committed. Code changes are git's job; this file
 // only tracks review threads, notes, staged drafts, and idempotency stamps.
 type State struct {
-	Ref     PRRef    `json:"ref"`
-	Branch  string   `json:"branch"`
-	BaseSHA string   `json:"base_sha"`
+	Ref      PRRef  `json:"ref"`
+	Branch   string `json:"branch"`
+	BaseSHA  string `json:"base_sha"`
+	StartSHA string `json:"start_sha"`
 	// HeadAtFetch is the head sha when we last fetched. flush compares it (and
 	// live git HEAD) to warn about unpushed local commits.
 	HeadAtFetch string   `json:"head_at_fetch"`

@@ -43,11 +43,26 @@ type Note struct {
 
 // Review is the full snapshot pulled by Fetch.
 type Review struct {
-	Branch  string   `json:"branch"`
-	BaseSHA string   `json:"base_sha"`
-	HeadSHA string   `json:"head_sha"`
-	Threads []Thread `json:"threads"`
-	Notes   []Note   `json:"notes"`
+	Branch  string `json:"branch"`
+	BaseSHA string `json:"base_sha"`
+	HeadSHA string `json:"head_sha"`
+	// StartSHA is GitLab's diff start sha (the merge-base used for positions).
+	// Empty for GitHub.
+	StartSHA string   `json:"start_sha"`
+	Threads  []Thread `json:"threads"`
+	Notes    []Note   `json:"notes"`
+}
+
+// Anchor is everything a provider needs to position a NEW inline comment.
+// GitHub uses only Path/Line/Side/HeadSHA; GitLab additionally needs BaseSHA
+// and StartSHA for its position object.
+type Anchor struct {
+	Path     string
+	Line     int
+	Side     string // "RIGHT" or "LEFT"
+	BaseSHA  string
+	HeadSHA  string
+	StartSHA string
 }
 
 // Provider is the adapter interface. The only provider-specific code lives
@@ -57,9 +72,9 @@ type Provider interface {
 	Fetch(ref PRRef) (*Review, error)
 	// PostReply adds a reply to an existing thread; returns the new comment id.
 	PostReply(ref PRRef, threadID, body string) (int64, error)
-	// PostComment creates a new inline comment (its own thread) anchored to
-	// (path, line, side) on commitSHA; returns the new comment id.
-	PostComment(ref PRRef, path string, line int, side, commitSHA, body string) (int64, error)
+	// PostComment creates a new inline comment (its own thread) at the given
+	// anchor; returns the new comment id.
+	PostComment(ref PRRef, a Anchor, body string) (int64, error)
 	// ResolveThread marks a thread resolved.
 	ResolveThread(ref PRRef, threadID string) error
 	// Approve / Reject set the review verdict (separate, atomic, never bundled

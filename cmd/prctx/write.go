@@ -99,15 +99,16 @@ func (p githubProvider) ResolveThread(ref PRRef, threadID string) error {
 	return p.graphql(ref, resolveThreadMutation, vars, &resp)
 }
 
-func (p githubProvider) PostComment(ref PRRef, path string, line int, side, commitSHA, body string) (int64, error) {
+func (p githubProvider) PostComment(ref PRRef, a Anchor, body string) (int64, error) {
+	side := a.Side
 	if side == "" {
 		side = "RIGHT"
 	}
 	in := map[string]interface{}{
 		"body":      body,
-		"commit_id": commitSHA,
-		"path":      path,
-		"line":      line,
+		"commit_id": a.HeadSHA,
+		"path":      a.Path,
+		"line":      a.Line,
 		"side":      side,
 	}
 	var resp struct {
