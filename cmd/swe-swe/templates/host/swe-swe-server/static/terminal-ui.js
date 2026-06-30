@@ -585,6 +585,7 @@ class TerminalUI extends HTMLElement {
                                 <section class="settings-panel__pane" data-pane="git" role="tabpanel" hidden>
                                     <h3 class="settings-panel__pane-title">Git HTTPS credentials</h3>
                                     <p class="settings-panel__pane-sub">In-memory on the server only. Never written to disk; cleared when this session ends.</p>
+                                    <p class="settings-panel__pane-sub">Tokens for github.com and gitlab.com are also exported as GH_TOKEN / GITLAB_TOKEN to newly opened sessions (for CLI tools like prctx); the current session is unaffected.</p>
                                     <div class="settings-panel__field-row">
                                         <label class="settings-panel__label" for="settings-cred-host">Host</label>
                                         <input type="text" id="settings-cred-host" class="settings-panel__input" placeholder="github.com">
