@@ -1,10 +1,10 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 
-test: ascii-check check-gomod-sync test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe
+test: ascii-check check-gomod-sync check-prctx-sync test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe test-prctx
 
 # ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
 # See scripts/ascii-allowlist.txt for the per-file character allowlist
@@ -20,6 +20,35 @@ test-cli:
 
 test-mcp-lazy-init:
 	go test -v ./cmd/mcp-lazy-init
+
+# prctx canonical source lives in cmd/prctx (with tests); a non-test copy is
+# bundled into the container image via cmd/swe-swe/templates/host/prctx.
+test-prctx:
+	go test -v ./cmd/prctx
+
+# Guard against the bundled prctx copy drifting from the tested canonical one.
+# Compares every non-test .go file; fails with a diff if they differ.
+check-prctx-sync:
+	@for f in cmd/prctx/*.go; do \
+		case "$$f" in *_test.go) continue;; esac; \
+		t="cmd/swe-swe/templates/host/prctx/$$(basename $$f)"; \
+		if ! diff -q "$$f" "$$t" >/dev/null 2>&1; then \
+			echo "prctx bundle out of sync: $$f != $$t"; \
+			echo "run: make sync-prctx"; \
+			diff "$$f" "$$t" || true; \
+			exit 1; \
+		fi; \
+	done
+	@echo "prctx bundle in sync."
+
+# Regenerate the bundled prctx copy from the canonical cmd/prctx source.
+sync-prctx:
+	@rm -f cmd/swe-swe/templates/host/prctx/*.go
+	@for f in cmd/prctx/*.go; do \
+		case "$$f" in *_test.go) continue;; esac; \
+		cp "$$f" cmd/swe-swe/templates/host/prctx/; \
+	done
+	@echo "prctx bundle synced from cmd/prctx."
 
 # Test the swe-swe-server template code
 # Copies template to temp dir, sets up go.mod, runs tests, syncs go.sum back
