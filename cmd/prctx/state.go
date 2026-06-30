@@ -67,6 +67,55 @@ func saveState(s *State) error {
 	return nil
 }
 
+// stateBase returns the prctx state root directory.
+func stateBase() (string, error) {
+	base := os.Getenv("XDG_STATE_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("locate home dir: %w", err)
+		}
+		base = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(base, "prctx"), nil
+}
+
+// saveCurrent records the last-touched ref so subsequent commands can omit it.
+func saveCurrent(ref PRRef) error {
+	base, err := stateBase()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(ref, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(base, "current.json"), data, 0o644)
+}
+
+// loadCurrent reads the last-touched ref.
+func loadCurrent() (PRRef, error) {
+	base, err := stateBase()
+	if err != nil {
+		return PRRef{}, err
+	}
+	data, err := os.ReadFile(filepath.Join(base, "current.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return PRRef{}, fmt.Errorf("no current PR -- pass a PR url/number or run `prctx fetch` first")
+		}
+		return PRRef{}, err
+	}
+	var ref PRRef
+	if err := json.Unmarshal(data, &ref); err != nil {
+		return PRRef{}, err
+	}
+	return ref, nil
+}
+
 func loadState(ref PRRef) (*State, error) {
 	p, err := statePath(ref)
 	if err != nil {
