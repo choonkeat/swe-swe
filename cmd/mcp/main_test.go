@@ -89,6 +89,12 @@ func TestParseToolArgs(t *testing.T) {
 			t.Error("expected integer parse error")
 		}
 	})
+
+	t.Run("array flag with invalid JSON", func(t *testing.T) {
+		if _, err := parseToolArgs(s, []string{"--text", "x", "--tags", "notjson"}); err == nil {
+			t.Error("expected JSON parse error for array flag")
+		}
+	})
 }
 
 // fakeSocketServer answers tools/list and tools/call on a unix socket, standing
@@ -251,5 +257,62 @@ func TestRunUnavailableServer(t *testing.T) {
 	}
 	if !strings.Contains(errStr, "unavailable") {
 		t.Errorf("expected 'unavailable' error, got %q", errStr)
+	}
+}
+
+// TestRunIsErrorExit proves a tool result flagged isError still prints its
+// content but exits non-zero, so the agent's shell sees the failure.
+func TestRunIsErrorExit(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		if method == "tools/list" {
+			return json.RawMessage(echoToolsList)
+		}
+		return json.RawMessage(`{"content":[{"type":"text","text":"boom"}],"isError":true}`)
+	})
+	out, _, code := runCapture(t, dir, "svc", "echo", "--text", "x")
+	if code != 1 {
+		t.Errorf("expected exit 1 on isError result, got %d", code)
+	}
+	if !strings.Contains(out, "boom") {
+		t.Errorf("expected error content printed, got %q", out)
+	}
+}
+
+// TestRunUnknownTool proves calling a tool the server does not expose fails
+// cleanly with a helpful message.
+func TestRunUnknownTool(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(echoToolsList)
+	})
+	_, errStr, code := runCapture(t, dir, "svc", "missing", "--x", "1")
+	if code == 0 {
+		t.Error("expected non-zero exit for unknown tool")
+	}
+	if !strings.Contains(errStr, "no tool") {
+		t.Errorf("expected 'no tool' error, got %q", errStr)
+	}
+}
+
+// TestTopHelpListsServers proves the socket directory is the registry: every
+// <name>.sock is surfaced as a server, sorted.
+func TestTopHelpListsServers(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"beta.sock", "alpha.sock", "notasocket"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, _, code := runCapture(t, dir)
+	if code != 0 {
+		t.Fatalf("top help exit %d", code)
+	}
+	if !strings.Contains(out, "alpha") || !strings.Contains(out, "beta") {
+		t.Errorf("top help missing discovered servers: %q", out)
+	}
+	if strings.Contains(out, "notasocket") {
+		t.Errorf("top help listed a non-socket file: %q", out)
+	}
+	if strings.Index(out, "alpha") > strings.Index(out, "beta") {
+		t.Errorf("servers not sorted: %q", out)
 	}
 }
