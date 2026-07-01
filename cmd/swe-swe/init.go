@@ -255,6 +255,10 @@ type InitConfig struct {
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	WithVSCode          bool                `json:"withVSCode,omitempty"`
+	// MCPLess routes MCP servers through the mcp-cli-proxy daemon + `mcp` CLI
+	// instead of the agent's native MCP client, for environments where MCP is
+	// gated but the CLI agent is not. See tasks/2026-07-01-mcp-less-cli-proxy.md.
+	MCPLess             bool                `json:"mcpLess,omitempty"`
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
@@ -621,6 +625,7 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
+	mcpLess := fs.Bool("mcp-less", false, "Route MCP servers through the mcp-cli-proxy daemon + `mcp` CLI instead of the agent's native MCP client (for MCP-gated environments)")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no VS Code = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
@@ -869,6 +874,9 @@ func handleInit() {
 		if !explicitFlags["with-vscode"] {
 			*withVSCode = savedConfig.WithVSCode
 		}
+		if !explicitFlags["mcp-less"] {
+			*mcpLess = savedConfig.MCPLess
+		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
 		}
@@ -938,6 +946,7 @@ func handleInit() {
 		NpmPackages: npmPkgs,
 		WithDocker:  *withDocker,
 		WithVSCode:  *withVSCode,
+		MCPLess:     *mcpLess,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:
