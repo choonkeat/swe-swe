@@ -23,6 +23,19 @@ var ghClient = &http.Client{
 
 type githubProvider struct{}
 
+// ghPermHint appends a token-permission tip when the server response looks like
+// an authorization failure, so a failed flush explains what to fix.
+func ghPermHint(msg string) string {
+	m := strings.ToLower(msg)
+	if strings.Contains(m, "not accessible by") ||
+		strings.Contains(m, "resource not accessible") ||
+		strings.Contains(m, "must have push access") ||
+		strings.Contains(m, "forbidden") {
+		return "\nhint: this token lacks write access. GitHub needs \"Pull requests: Read and write\" (fine-grained PAT) or the \"repo\" scope (classic PAT). See `prctx` (no args) for the full list."
+	}
+	return ""
+}
+
 func (githubProvider) token() (string, error) {
 	t := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 	if t == "" {
@@ -67,7 +80,7 @@ func (p githubProvider) graphql(ref PRRef, query string, vars map[string]interfa
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("graphql: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return fmt.Errorf("graphql: %s: %s%s", resp.Status, strings.TrimSpace(string(body)), ghPermHint(string(body)))
 	}
 	// GraphQL returns 200 even for query errors; surface them explicitly.
 	var envelope struct {
@@ -76,7 +89,7 @@ func (p githubProvider) graphql(ref PRRef, query string, vars map[string]interfa
 		} `json:"errors"`
 	}
 	if err := json.Unmarshal(body, &envelope); err == nil && len(envelope.Errors) > 0 {
-		return fmt.Errorf("graphql: %s", envelope.Errors[0].Message)
+		return fmt.Errorf("graphql: %s%s", envelope.Errors[0].Message, ghPermHint(envelope.Errors[0].Message))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("decode graphql response: %w", err)
