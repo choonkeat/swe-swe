@@ -675,14 +675,26 @@ test.describe('terminal-ui tab switching', () => {
     // opaque response) rather than throwing -- mirrors ports.spec.js.
     const url = new URL(BASE_URL);
     const filesUrl = `${url.protocol}//${url.hostname}:${filesProxyPort}/`;
-    const reachable = await page.evaluate(async (fetchUrl) => {
-      try {
-        const r = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000), mode: 'no-cors' });
-        return { ok: true, type: r.type };
-      } catch (e) {
-        return { ok: false, error: e.message };
-      }
-    }, filesUrl);
+    // Retry the reachability probe: the per-session md-serve is launched via
+    // `npx -y @choonkeat/md-serve@latest`, whose cold `@latest` registry check
+    // can lag several seconds behind the (instant) Go files-proxy bind. A
+    // single-shot fetch races that startup and flakes; poll like ports.spec's
+    // fetchPortWithRetry. Cross-origin, so no-cors -- an opaque resolved
+    // response means the port answered.
+    let reachable = { ok: false, error: 'not attempted' };
+    for (let i = 0; i < 8; i++) {
+      reachable = await page.evaluate(async (fetchUrl) => {
+        try {
+          const r = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000), mode: 'no-cors' });
+          return { ok: true, type: r.type };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      }, filesUrl);
+      if (reachable.ok) break;
+      console.log(`  Retry ${i + 1}/8 for files port ${filesProxyPort}: ${reachable.error}`);
+      await page.waitForTimeout(2000);
+    }
     expect(reachable.ok).toBe(true);
   });
 
