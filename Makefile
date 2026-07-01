@@ -263,6 +263,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-repos-dir FLAGS="--repos-dir /data/repos"
 	@$(MAKE) _golden-variant NAME=with-proxy-port-offset FLAGS="--proxy-port-offset 50000"
 	@$(MAKE) _golden-variant NAME=with-vscode FLAGS="--with-vscode"
+	@$(MAKE) _golden-variant NAME=mcp-less FLAGS="--mcp-less"
 	@$(MAKE) _golden-variant NAME=tunnel-mode FLAGS="--tunnel-server-url https://tunnel.example.com"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-mtls FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-local-ports FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-local-ports"
