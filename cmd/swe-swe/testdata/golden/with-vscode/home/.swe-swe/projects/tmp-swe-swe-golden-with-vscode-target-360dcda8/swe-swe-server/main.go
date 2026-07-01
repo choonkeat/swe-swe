@@ -89,6 +89,10 @@ type forkConfirmData struct {
 	Bubble     string
 	Mode       string
 	Error      string
+	// OfferForkWhole adds a "Fork the whole session instead" button to the
+	// error modal. Set when a per-bubble fork failed but a whole-session fork
+	// (no bubble anchor -> last-persisted-reply) would still succeed.
+	OfferForkWhole bool
 }
 
 var upgrader = websocket.Upgrader{
@@ -7663,6 +7667,25 @@ func handleForkConfirmPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// renderForkError renders the fork-confirm modal in its error state (styled
+// HTML) instead of dumping raw text. The per-bubble fork flow opens in a new
+// browser tab, so a plain http.Error would leave the user staring at an
+// unstyled error string (see the reported blank-page 409). When offerWhole is
+// true the modal also offers a "Fork the whole session instead" button, which
+// POSTs without a bubble anchor (last-persisted-reply semantics).
+func renderForkError(w http.ResponseWriter, status int, sourceUUID, message string, offerWhole bool) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	data := forkConfirmData{
+		SourceUUID:     sourceUUID,
+		Error:          message,
+		OfferForkWhole: offerWhole,
+	}
+	if err := forkConfirmTemplate.Execute(w, data); err != nil {
+		log.Printf("fork error page render error: %v", err)
+	}
+}
+
 // handleForkExecute performs the actual fork on POST: full validation (including
 // the active-tail guard), forkconvo.Fork (writes the new rollout), stages the
 // "fork" creation intent, and 302-redirects to the new session.
@@ -7720,7 +7743,11 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if active {
-		http.Error(w, "source session has an in-flight tool call (agent is mid-work); wait for it to settle before forking", http.StatusConflict)
+		// A whole-session fork hits this same guard, so don't offer it.
+		renderForkError(w, http.StatusConflict,
+			sourceUUID,
+			"This session's agent is mid-work on a tool call. Wait for it to finish, then try forking again.",
+			false)
 		return
 	}
 
@@ -7746,13 +7773,35 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resolved, rerr := resolveBubbleAnchor(src.ChatLogPath, agentJsonl, src.Assistant, bubbleSeq, mode)
-		if rerr != nil {
-			http.Error(w, "resolve bubble anchor: "+rerr.Error(), http.StatusConflict)
+		switch {
+		case rerr == nil:
+			log.Printf("INFO: /api/fork %s: bubble seq=%d resolved via %s -> %s (tool=%s, kind=%s)",
+				sourceUUID, bubbleSeq, resolved.ResolverUsed, resolved.AnchorID, resolved.ToolName, resolved.BubbleKind)
+			forkOpts.Anchor = resolved.AnchorID
+		case errors.Is(rerr, ErrAnchorNotYetPersisted):
+			// The freshest bubble's tool_use hasn't been flushed to the agent
+			// transcript yet (the agent may still be blocked inside that
+			// send_message). Fork at the last persisted reply -- identical to a
+			// manual session-id fork -- instead of erroring. forkOpts.Anchor is
+			// already AnchorLastChatReply from the default above.
+			log.Printf("INFO: /api/fork %s: bubble seq=%d not yet persisted to transcript; falling back to last-chat-reply anchor",
+				sourceUUID, bubbleSeq)
+		case errors.Is(rerr, ErrProgressBubbleNotForkable):
+			// The active-tail guard already passed, so a whole-session fork works.
+			renderForkError(w, http.StatusConflict, sourceUUID,
+				"That was a progress update, not a reply, so it can't be used as a fork point. You can fork the whole session instead.",
+				true)
+			return
+		default:
+			// Any other anchor failure. The active-tail guard passed above, so a
+			// whole-session fork is a viable fallback -- offer it rather than
+			// dumping the raw error onto a blank page.
+			log.Printf("WARN: /api/fork %s: bubble seq=%d anchor unresolved: %v", sourceUUID, bubbleSeq, rerr)
+			renderForkError(w, http.StatusConflict, sourceUUID,
+				"Couldn't pin this fork to that specific message. You can fork the whole session instead.",
+				true)
 			return
 		}
-		log.Printf("INFO: /api/fork %s: bubble seq=%d resolved via %s -> %s (tool=%s, kind=%s)",
-			sourceUUID, bubbleSeq, resolved.ResolverUsed, resolved.AnchorID, resolved.ToolName, resolved.BubbleKind)
-		forkOpts.Anchor = resolved.AnchorID
 	}
 
 	forkRes, err := forkconvo.Fork(forkOpts)
