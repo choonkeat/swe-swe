@@ -61,3 +61,37 @@ func TestBuildSessionEnv_AgentChatDisableGate(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveStagedMode guards the "new"-session staging fix. Regression:
+// POST /api/session/new stages the creation intent with assistant only and
+// echoes the requested mode onto the redirect query; the WS handler that
+// materializes the session then replaces its params with the staged intent.
+// Before the fix that override dropped the query's session mode, so a
+// "Start Chat" POST (session=chat) materialized as a terminal session --
+// AGENT_CHAT_DISABLE=1, the agent-chat sidecar never bound its port, and chat
+// was dead. resolveStagedMode preserves the query mode when the staged intent
+// left it unset, while never clobbering an explicit staged mode (fork path).
+func TestResolveStagedMode(t *testing.T) {
+	cases := []struct {
+		name       string
+		stagedMode string
+		urlMode    string
+		want       string
+	}{
+		// The regression: "new" staged assistant only (empty mode); the
+		// redirect query carried session=chat.
+		{"new-staging chat falls back to query mode", "", "chat", "chat"},
+		{"new-staging terminal falls back to query mode", "", "terminal", "terminal"},
+		{"empty staged and empty query stays empty (terminal default)", "", "", ""},
+		// Fork stages SessionMode explicitly; the query must never clobber it.
+		{"explicit staged chat wins over query", "chat", "terminal", "chat"},
+		{"explicit staged chat wins over empty query", "chat", "", "chat"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveStagedMode(tc.stagedMode, tc.urlMode); got != tc.want {
+				t.Fatalf("resolveStagedMode(%q, %q) = %q, want %q", tc.stagedMode, tc.urlMode, got, tc.want)
+			}
+		})
+	}
+}

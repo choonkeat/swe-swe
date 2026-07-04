@@ -4587,6 +4587,18 @@ func stageSession(uuid string, params SessionParams, kind, orphanCleanupPath str
 	pendingSessionsMu.Unlock()
 }
 
+// resolveStagedMode returns the effective session mode when materializing a
+// staged session: the staged intent's own mode wins, falling back to the mode
+// carried on the redirect query (urlMode) when the intent left it unset. The
+// "new" staging path historically staged assistant only, so without this
+// fallback a "Start Chat" POST would materialize as a terminal session.
+func resolveStagedMode(stagedMode, urlMode string) string {
+	if stagedMode != "" {
+		return stagedMode
+	}
+	return urlMode
+}
+
 // takePendingSession atomically removes and returns the staged intent for uuid,
 // if any. ok is false when no intent was staged.
 func takePendingSession(uuid string) (stagedSession, bool) {
@@ -5285,6 +5297,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		// the staged params -- the URL only carries assistant + session
 		// mode for routing, the staged entry carries the real wiring.
 		staged.params.UUID = sessionUUID
+		// A staged intent that left SessionMode unset falls back to the mode
+		// carried on the redirect query (read into sessionMode above), so
+		// ?session=chat is not silently downgraded to "terminal" here -- which
+		// would leave the agent-chat sidecar unbound, the chat probe forever
+		// failing, and chat dead. Fork staging sets SessionMode explicitly, so
+		// this never clobbers it.
+		staged.params.SessionMode = resolveStagedMode(staged.params.SessionMode, sessionMode)
 		params = staged.params
 	}
 
@@ -7573,8 +7592,10 @@ func handleNewSessionAPI(w http.ResponseWriter, r *http.Request) {
 	newUUID := uuid.New().String()
 	// Pure gate token: the WS handler resolves workdir/branch/worktree from the
 	// echoed query params below, so the staged params only mark the UUID as
-	// create-permitted.
-	stageSession(newUUID, SessionParams{UUID: newUUID, Assistant: assistant}, "new", "")
+	// create-permitted. SessionMode is the exception: carry it in the staged
+	// intent (mirroring the fork path) so a "Start Chat" POST materializes as a
+	// chat session even though the WS override replaces params with these.
+	stageSession(newUUID, SessionParams{UUID: newUUID, Assistant: assistant, SessionMode: r.FormValue("session")}, "new", "")
 
 	// Echo the dialog's params onto the redirect so the WS handler resolves the
 	// session exactly as the old navigation did.
