@@ -469,7 +469,15 @@ type Session struct {
 	// RemoteBrowserID is the session id returned by a remote browser-backend
 	// (empty in local mode); set when -agent-view points at a backend URL.
 	RemoteBrowserID string
-	FilesPID        int // PID of the per-session md-serve process (0 if not started)
+	// RemoteVNCTarget is "host:port" of the remote websockify when Agent View
+	// runs on a remote backend; the per-session VNC reverse proxy targets it
+	// instead of localhost. Empty in local mode.
+	RemoteVNCTarget string
+	// RemoteCDPProxyServer is a local reverse proxy on sess.CDPPort forwarding
+	// to the remote chromium's CDP endpoint, so the agent's Playwright MCP
+	// (--cdp-endpoint http://localhost:CDPPort) works unchanged in remote mode.
+	RemoteCDPProxyServer *http.Server
+	FilesPID             int // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -1829,6 +1837,15 @@ func main() {
 		"Agent View backend: local (in-process display stack) | off (hide the "+
 			"tab) | <backend-url> (offload to a swe-swe/browser-backend). "+
 			"Env: SWE_AGENT_VIEW.")
+	mode := flag.String("mode", "server",
+		"server (default) | browser-backend (run the standalone Agent View "+
+			"allocation service instead of the swe-swe UI server).")
+	browserBackendMax := flag.Int("browser-backend-max", 0,
+		"browser-backend mode: max concurrent browser sessions (0 = auto from "+
+			"the VNC port range).")
+	browserBackendHost := flag.String("browser-backend-host", "",
+		"browser-backend mode: hostname clients should dial for the CDP/VNC "+
+			"ports (env: SWE_BROWSER_BACKEND_HOST).")
 	flag.Parse()
 
 	// Resolve the Agent View backend (flag -> env -> default "local"). On a
@@ -1849,6 +1866,15 @@ func main() {
 	// log the correct OPEN AT URL ({port}.{hostname}) when it learns the
 	// tunnel hostname; tunneld demuxes by the same port.
 	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+
+	// browser-backend mode: run the standalone Agent View allocation service
+	// instead of the UI server. Same binary + same display stack, exposed over
+	// the network for lean (dockerless) hosts to offload Agent View to.
+	if *mode == "browser-backend" {
+		host := firstNonEmpty(*browserBackendHost, os.Getenv("SWE_BROWSER_BACKEND_HOST"), "")
+		token := os.Getenv("SWE_BROWSER_BACKEND_TOKEN")
+		log.Fatal(runBrowserBackend(listenAddr, *browserBackendMax, token, host))
+	}
 
 	// Tunnel-mode subprocess supervisor. Trigger is non-empty
 	// --tunnel-server-url (or its env equivalent). When set, spawn the
@@ -4277,135 +4303,23 @@ func displayNumberFromPreview(previewPort int) int {
 
 // startSessionBrowser starts per-session Xvfb, Chromium, x11vnc, and noVNC processes.
 // The session gets its own isolated X11 display and browser instance.
+// startSessionBrowser brings up the local in-process Agent View stack for a
+// session by delegating to the shared startBrowserProcs (see browser_backend.go).
+// The x11vnc internal port is offset by the VNC range size so it never collides
+// with a session's websockify port.
 func startSessionBrowser(sess *Session) error {
-	display := displayNumberFromPreview(sess.PreviewPort)
-	displayStr := fmt.Sprintf(":%d", display)
-
-	// 1. Start Xvfb on a unique display with Unix socket only (no TCP)
-	xvfbCmd := exec.Command("Xvfb", displayStr, "-screen", "0", "1024x768x24", "-nolisten", "tcp")
-	if err := xvfbCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start Xvfb on display %s: %w", displayStr, err)
-	}
-	xvfbPID := xvfbCmd.Process.Pid
-	trackPid(xvfbPID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, xvfbPID)
-	log.Printf("Started Xvfb on display %s (PID %d) for session %s", displayStr, xvfbPID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("Xvfb wait (PID %d, session %s)", xvfbPID, sess.UUID))
-		defer untrackPid(xvfbPID)
-		err := xvfbCmd.Wait()
-		if err != nil {
-			log.Printf("Xvfb exited with error (PID %d, session %s): %v", xvfbPID, sess.UUID, err)
-		} else {
-			log.Printf("Xvfb exited normally (PID %d, session %s)", xvfbPID, sess.UUID)
-		}
-	}()
-
-	// Wait briefly for Xvfb to initialize
-	time.Sleep(500 * time.Millisecond)
-
-	// 2. Start Chromium with remote debugging on the session's CDP port.
-	// Each session gets its own --user-data-dir to avoid Chrome's singleton
-	// profile lock, which would cause all but the first instance to delegate
-	// to the first and immediately exit.
-	chromiumBinary := "chromium"
-	if _, err := exec.LookPath("chromium"); err != nil {
-		chromiumBinary = "chromium-browser" // fallback name on some distros
-	}
-	userDataDir := fmt.Sprintf("/tmp/chromium-session-%s", sess.UUID)
-	sess.BrowserDataDir = userDataDir
-	chromeCmd := exec.Command(chromiumBinary,
-		"--no-sandbox",
-		"--test-type",
-		"--disable-gpu",
-		"--disable-software-rasterizer",
-		"--disable-dev-shm-usage",
-		"--remote-debugging-address=0.0.0.0",
-		fmt.Sprintf("--remote-debugging-port=%d", sess.CDPPort),
-		fmt.Sprintf("--user-data-dir=%s", userDataDir),
-		"--remote-allow-origins=*",
-		"--window-size=1024,768",
-		"--start-maximized",
+	b, err := startBrowserProcs(
+		sess.UUID,
+		displayNumberFromPreview(sess.PreviewPort),
+		sess.CDPPort,
+		sess.VNCPort,
+		sess.VNCPort+(vncPortEnd-vncPortStart+1),
 	)
-	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
-	if err := chromeCmd.Start(); err != nil {
-		stopSessionBrowser(sess)
-		return fmt.Errorf("failed to start Chromium on CDP port %d: %w", sess.CDPPort, err)
+	if err != nil {
+		return err
 	}
-	chromePID := chromeCmd.Process.Pid
-	trackPid(chromePID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, chromePID)
-	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for session %s", sess.CDPPort, displayStr, chromePID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("Chromium wait (PID %d, session %s)", chromePID, sess.UUID))
-		defer untrackPid(chromePID)
-		err := chromeCmd.Wait()
-		if err != nil {
-			log.Printf("Chromium exited with error (PID %d, session %s): %v", chromePID, sess.UUID, err)
-		} else {
-			log.Printf("Chromium exited normally (PID %d, session %s)", chromePID, sess.UUID)
-		}
-	}()
-
-	// Wait for Chrome to start
-	time.Sleep(1 * time.Second)
-
-	// 3. Start x11vnc on an internal port (raw VNC protocol, consumed by noVNC)
-	// Offset by the range size so internal ports never collide with session VNC ports
-	x11vncInternalPort := sess.VNCPort + (vncPortEnd - vncPortStart + 1)
-	x11vncCmd := exec.Command("x11vnc",
-		"-display", displayStr,
-		"-forever",
-		"-shared",
-		"-nopw",
-		"-rfbport", fmt.Sprintf("%d", x11vncInternalPort),
-		"-xkb",
-	)
-	if err := x11vncCmd.Start(); err != nil {
-		stopSessionBrowser(sess)
-		return fmt.Errorf("failed to start x11vnc on port %d: %w", x11vncInternalPort, err)
-	}
-	x11vncPID := x11vncCmd.Process.Pid
-	trackPid(x11vncPID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, x11vncPID)
-	log.Printf("Started x11vnc on port %d, display %s (PID %d) for session %s", x11vncInternalPort, displayStr, x11vncPID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("x11vnc wait (PID %d, session %s)", x11vncPID, sess.UUID))
-		defer untrackPid(x11vncPID)
-		err := x11vncCmd.Wait()
-		if err != nil {
-			log.Printf("x11vnc exited with error (PID %d, session %s): %v", x11vncPID, sess.UUID, err)
-		} else {
-			log.Printf("x11vnc exited normally (PID %d, session %s)", x11vncPID, sess.UUID)
-		}
-	}()
-
-	// 4. Start noVNC (websockify) proxy on the session's VNC port
-	// Bridges WebSocket (VNCPort) to raw VNC (x11vncInternalPort)
-	noVNCCmd := exec.Command("websockify",
-		"--web", "/usr/share/novnc",
-		fmt.Sprintf("%d", sess.VNCPort),
-		fmt.Sprintf("localhost:%d", x11vncInternalPort),
-	)
-	if err := noVNCCmd.Start(); err != nil {
-		stopSessionBrowser(sess)
-		return fmt.Errorf("failed to start noVNC proxy on port %d: %w", sess.VNCPort, err)
-	}
-	noVNCPID := noVNCCmd.Process.Pid
-	trackPid(noVNCPID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, noVNCPID)
-	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCPID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("noVNC wait (PID %d, session %s)", noVNCPID, sess.UUID))
-		defer untrackPid(noVNCPID)
-		err := noVNCCmd.Wait()
-		if err != nil {
-			log.Printf("noVNC exited with error (PID %d, session %s): %v", noVNCPID, sess.UUID, err)
-		} else {
-			log.Printf("noVNC exited normally (PID %d, session %s)", noVNCPID, sess.UUID)
-		}
-	}()
-
+	sess.BrowserPIDs = b.pids
+	sess.BrowserDataDir = b.dataDir
 	sess.BrowserStarted = true
 	return nil
 }
@@ -4973,11 +4887,18 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		vncReverseProxy := httputil.NewSingleHostReverseProxy(vncTarget)
 		// websockify presents itself with its own Host; rewriting the Host
 		// header to match the target avoids virtual-host filters and CORS
-		// quirks if websockify ever adds them.
+		// quirks if websockify ever adds them. The target is resolved per
+		// request so a remote browser-backend (sess.RemoteVNCTarget, set on
+		// browser/start) redirects here without rebuilding the proxy; local
+		// mode keeps targeting localhost:vncPort.
 		vncReverseProxy.Director = func(req *http.Request) {
+			host := vncTarget.Host
+			if sess.RemoteVNCTarget != "" {
+				host = sess.RemoteVNCTarget
+			}
 			req.URL.Scheme = "http"
-			req.URL.Host = vncTarget.Host
-			req.Host = vncTarget.Host
+			req.URL.Host = host
+			req.Host = host
 		}
 		vncPP := vncProxyPort(vncPort)
 		vncSrv := &http.Server{

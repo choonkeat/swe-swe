@@ -1631,6 +1631,17 @@ class TerminalUI extends HTMLElement {
                 const prevTunnelStatus = this.tunnelStatus;
                 this.tunnelStatus = msg.tunnelStatus || null;
                 this._renderTunnelStatusBanner(prevTunnelStatus, this.tunnelStatus);
+                // Agent View availability: the server reports whether the
+                // display stack (local) or remote backend can serve the tab.
+                // When false (e.g. a lean dockerless host with no chromium),
+                // hide the tab and stop offering it in the slot "+" menu;
+                // the other tabs are unaffected. Undefined (older servers) is
+                // treated as available for backward compatibility.
+                const prevAgentViewAvailable = this.agentViewAvailable;
+                this.agentViewAvailable = msg.agentViewAvailable !== false;
+                if (prevAgentViewAvailable !== this.agentViewAvailable) {
+                    this.setAgentViewTabVisible(this.agentViewAvailable);
+                }
                 // Browser (CDP chrome) just came online -- show the Agent View
                 // tab and auto-add it to its preset-defined home slot (same
                 // spirit as the old "open right panel" auto-switch).
@@ -5475,7 +5486,7 @@ class TerminalUI extends HTMLElement {
     // probed. agent-terminal / preview / shell are always known.
     _isPaneKnown(paneId) {
         if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing || !!this._agentChatPending;
-        if (paneId === 'browser') return !!this.vncProxyPort;
+        if (paneId === 'browser') return !!this.vncProxyPort && this.agentViewAvailable !== false;
         if (paneId === 'files') return !!this.filesProxyPort;
         return true;
     }
