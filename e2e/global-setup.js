@@ -25,6 +25,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const STORAGE_STATE_PATH = path.join(__dirname, '.auth', 'state.json');
 
 export default async function globalSetup(config) {
+  // Dockerless mode runs with auth disabled (no SWE_SWE_PASSWORD), so there
+  // is no login form to drive. Skip the login/baseline-cleanup dance and just
+  // persist an empty storage state so the config's storageState path exists;
+  // the dockerless spec opts into an empty cookie jar per-file anyway.
+  if (process.env.E2E_DOCKERLESS) {
+    fs.mkdirSync(path.dirname(STORAGE_STATE_PATH), { recursive: true });
+    fs.writeFileSync(STORAGE_STATE_PATH, JSON.stringify({ cookies: [], origins: [] }));
+    console.log('[global-setup] E2E_DOCKERLESS: open-auth mode, skipping login');
+    return;
+  }
+
   const browser = await chromium.launch({
     executablePath: '/usr/bin/chromium',
     args: ['--no-sandbox', '--disable-gpu'],

@@ -112,6 +112,23 @@ else
     warn "md-serve not observed yet (lazy/clean-host dependent)"
 fi
 
+echo "=== Phase 6: Playwright live-tab coverage ==="
+# Drives the actual tabs over a real browser/websocket -- the parts curl
+# cannot reach (PTY transport, md-serve via npx, preview proxy wiring).
+# Needs chromium + an agent CLI (opencode) on the host; set
+# E2E_SKIP_PLAYWRIGHT=1 to run the curl-only contract on a bare runner.
+if [ "${E2E_SKIP_PLAYWRIGHT:-}" = "1" ]; then
+    warn "Playwright live-tab suite skipped (E2E_SKIP_PLAYWRIGHT=1)"
+else
+    if ( cd "$WORKSPACE_DIR/e2e" && npm install --silent 2>/dev/null \
+            && E2E_DOCKERLESS=1 E2E_BASE_URL="http://127.0.0.1:$E2E_PORT" \
+               npx playwright test dockerless-tabs.spec.js ); then
+        pass "Playwright live-tab suite passed"
+    else
+        fail "Playwright live-tab suite failed"
+    fi
+fi
+
 echo "=== Result ==="
 if [ "$FAILS" -eq 0 ]; then
     echo "DOCKERLESS E2E: PASS"
