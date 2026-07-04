@@ -55,3 +55,23 @@ func TestExtractDockerlessBinaries(t *testing.T) {
 		}
 	}
 }
+
+// The mode marker is how `swe-swe up` decides to run the host-native server
+// instead of docker compose. A fresh metadata dir is not dockerless; one
+// written by writeDockerlessMarker is.
+func TestDockerlessMarker(t *testing.T) {
+	sweDir := t.TempDir()
+	if isDockerlessProject(sweDir) {
+		t.Errorf("fresh metadata dir reported as dockerless")
+	}
+	if err := writeDockerlessMarker(sweDir); err != nil {
+		t.Fatalf("writeDockerlessMarker: %v", err)
+	}
+	if !isDockerlessProject(sweDir) {
+		t.Errorf("after writeDockerlessMarker, isDockerlessProject = false")
+	}
+	// A metadata dir that does not exist is not dockerless (no panic).
+	if isDockerlessProject(filepath.Join(sweDir, "does-not-exist")) {
+		t.Errorf("missing dir reported as dockerless")
+	}
+}

@@ -976,6 +976,11 @@ func handleInit() {
 		}
 	}
 
+	if config.Dockerless {
+		executeDockerlessInit(absPath, sweDir, config)
+		return
+	}
+
 	executeInit(absPath, sweDir, config, sslMode, sslHost, sslDomain)
 }
 
