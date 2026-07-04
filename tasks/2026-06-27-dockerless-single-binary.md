@@ -5,7 +5,7 @@
 **In progress.**
 
 - [x] **Phase 0** -- Remove vscode entirely. Done 2026-06-27. Removed `--with-vscode` flag + `WithVSCode` config/reuse, `VSCODE_SERVICES` compose block + `code-server/Dockerfile` + `nginx-vscode.conf`, `withVSCode` template params, the vscode pane/option/iframe + `buildVSCodeUrl`/`_vscodeEnabled`/`getVSCodeUrl` from the JS, and the `with-vscode` golden variant. `make test` green; 327 node tests green; golden has 0 vscode/code-server refs. See -phase0.log.
-- [ ] **Phase 1** -- Build static-linux binaries + `go:embed` the payload into the `swe-swe` CLI
+- [x] **Phase 1** -- Build static-linux binaries + `go:embed` the payload into the `swe-swe` CLI. Done 2026-06-28 (commit 36d04ee3c). `make dockerless-payload` builds the six host-arch static-linux binaries; CLI `go:embed`s them; `TestDockerlessPayloadEmbedsBinaries` asserts each is a correct-arch ELF (TDD RED->GREEN). Payload 29MB; CLI delta 9.2MB->38.9MB when referenced. NB: linker DCE strips the embed from `make build` until Phase 2 references it (verified via go-test binary). Deferred: multi-arch matrix in build-platforms; script/config staging moves to Phase 2 init. See -phase1.log.
 - [ ] **Phase 2** -- `swe-swe init --dockerless` dumps the payload + wires it; `swe-swe up`/`--open`/`down` dispatch; `--dockerless` errors on non-Linux CLI
 - [ ] **Phase 3** -- Thin Dockerfile `COPY`s the same embedded payload (drop the Go-builder stage + toolchain base)
 - [ ] **Phase 4** -- Tunnel works dockerless (decouple tunnel from compose mode)
