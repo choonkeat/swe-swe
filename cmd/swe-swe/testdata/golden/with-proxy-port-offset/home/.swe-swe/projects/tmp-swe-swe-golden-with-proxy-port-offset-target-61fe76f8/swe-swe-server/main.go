@@ -78,6 +78,18 @@ func recoverGoroutine(where string) {
 
 var indexTemplate *template.Template
 var selectionTemplate *template.Template
+var forkConfirmTemplate *template.Template
+
+// forkConfirmData feeds the GET /api/fork confirm page. When Error is non-empty
+// the source could not be validated and the Fork button is suppressed.
+type forkConfirmData struct {
+	SourceUUID string
+	SourceName string
+	Assistant  string
+	Bubble     string
+	Mode       string
+	Error      string
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -1436,16 +1448,21 @@ var (
 	sessions   = make(map[string]*Session)
 	sessionsMu sync.RWMutex
 
-	// pendingForks holds SessionParams staged by /api/fork that have not yet
-	// been materialized into a live session. The first WebSocket client to
-	// open the new session URL consumes the entry, calls getOrCreateSession
-	// from inside the WS handler, and -- because the UUID is brand new at
-	// that point -- gets isNew=true exactly like a normal "+ New" session.
-	// This is important: it ensures the PTY starts after the client's
-	// geometry is known, so claude renders its first frame at the right
-	// size and a joining-client snapshot is never needed.
-	pendingForks   = make(map[string]SessionParams)
-	pendingForksMu sync.Mutex
+	// pendingSessions holds creation intents staged by POST /api/session
+	// (kind "new") and POST /api/fork (kind "fork") that have not yet been
+	// materialized into a live session. The first WebSocket client to open the
+	// new session URL consumes the entry, calls getOrCreateSession from inside
+	// the WS handler, and -- because the UUID is brand new at that point --
+	// gets isNew=true. This is important: it ensures the PTY starts after the
+	// client's geometry is known, so claude renders its first frame at the
+	// right size and a joining-client snapshot is never needed.
+	//
+	// It is also the load-bearing invariant of the no-ghost-session design: a
+	// session materializes ONLY when its UUID has a staged intent here (or is
+	// already live). A bare GET/navigation/WS-reconnect to an unknown UUID
+	// must NOT create a session.
+	pendingSessions   = make(map[string]stagedSession)
+	pendingSessionsMu sync.Mutex
 
 	shellCmd            string
 	shellRestartCmd     string
@@ -1978,6 +1995,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	forkConfirmContent, err := pageTemplatesFS.ReadFile("page-templates/fork-confirm.html")
+	if err != nil {
+		log.Fatal(err)
+	}
+	forkConfirmTemplate, err = template.New("fork-confirm").Parse(string(forkConfirmContent))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Serve static files from embedded filesystem
 	staticContent, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -2007,6 +2033,7 @@ func main() {
 	// Start session reaper and compression worker
 	go sessionReaper()
 	go compressionWorker()
+	go pendingSessionSweeper()
 
 	// Global MCP orchestration server
 	orchMCPSrv := mcp.NewServer(&mcp.Implementation{
@@ -2310,7 +2337,18 @@ func main() {
 			return
 		}
 
-		// Session fork API endpoint: GET /api/fork/{source-uuid} -> 302 /session/{new-uuid}
+		// New-session staging endpoint: POST /api/session/new -> 302 /session/{new-uuid}.
+		// Stages a "new" creation intent so the WS handler is permitted to
+		// materialize the session. Must be checked before the generic
+		// "/api/session/" + suffix routes below.
+		if r.URL.Path == "/api/session/new" {
+			handleNewSessionAPI(w, r)
+			return
+		}
+
+		// Session fork API endpoint:
+		//   GET  /api/fork/{source-uuid} -> skeleton confirm page (no side effects)
+		//   POST /api/fork/{source-uuid} -> fork + 302 /session/{new-uuid}
 		if strings.HasPrefix(r.URL.Path, "/api/fork/") {
 			handleSessionForkAPI(w, r)
 			return
@@ -3714,10 +3752,10 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 
 // resolveWorkingDirectory calculates the working directory for a session
 // based on repoPath and optional branchName.
-// - Branch blank: return repoPath (no worktree)
-// - /workspace (or any of its worktrees) + branch: /worktrees/{branch}
-// - External /repos/{name}/workspace (or its worktrees) + branch:
-//   /repos/{name}/worktrees/{branch}
+//   - Branch blank: return repoPath (no worktree)
+//   - /workspace (or any of its worktrees) + branch: /worktrees/{branch}
+//   - External /repos/{name}/workspace (or its worktrees) + branch:
+//     /repos/{name}/worktrees/{branch}
 //
 // Worktrees are always anchored off the MAIN repo, never nested under whatever
 // checkout we were launched from. Launching a session from /worktrees/<x>
@@ -4507,6 +4545,80 @@ type SessionParams struct {
 	InheritCredsFrom string
 }
 
+// stagedSession is a creation intent parked in pendingSessions until the first
+// WebSocket client materializes it. kind is "new" or "fork" (logging/diagnostics
+// only); stagedAt drives TTL eviction by the sweeper. orphanCleanupPath, when
+// non-empty, is a file written up front by the staging handler (the forked agent
+// rollout .jsonl that forkconvo.Fork creates) that must be removed if the intent
+// is evicted unconsumed. It is NEVER the source session's chat log -- only a
+// file the fork itself created -- so deleting it on eviction is safe.
+type stagedSession struct {
+	params            SessionParams
+	kind              string // "new" | "fork"
+	stagedAt          time.Time
+	orphanCleanupPath string
+}
+
+// pendingSessionTTL bounds how long an unconsumed creation intent lives. A POST
+// that 302s but whose WS never connects (tab closed, network died) would
+// otherwise leak the map entry -- and, for forks, the rollout .jsonl that
+// forkconvo.Fork already wrote to disk. The sweeper evicts entries older than
+// this and cleans up the orphaned file recorded in orphanCleanupPath.
+const pendingSessionTTL = 10 * time.Minute
+
+// stageSession parks a creation intent for uuid. kind is "new" or "fork".
+// orphanCleanupPath (may be empty) names a file the caller wrote up front that
+// the sweeper should delete if this intent is evicted unconsumed -- it must be a
+// file the caller itself created, never a shared/source file.
+func stageSession(uuid string, params SessionParams, kind, orphanCleanupPath string) {
+	pendingSessionsMu.Lock()
+	pendingSessions[uuid] = stagedSession{params: params, kind: kind, stagedAt: time.Now(), orphanCleanupPath: orphanCleanupPath}
+	pendingSessionsMu.Unlock()
+}
+
+// takePendingSession atomically removes and returns the staged intent for uuid,
+// if any. ok is false when no intent was staged.
+func takePendingSession(uuid string) (stagedSession, bool) {
+	pendingSessionsMu.Lock()
+	defer pendingSessionsMu.Unlock()
+	staged, ok := pendingSessions[uuid]
+	if ok {
+		delete(pendingSessions, uuid)
+	}
+	return staged, ok
+}
+
+// pendingSessionSweeper evicts creation intents that were never consumed within
+// pendingSessionTTL. For forks it also removes the orphaned chat log that
+// forkconvo.Fork wrote on the POST, so an abandoned fork doesn't leak a .jsonl.
+func pendingSessionSweeper() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		var evicted []stagedSession
+		pendingSessionsMu.Lock()
+		for uuid, staged := range pendingSessions {
+			if now.Sub(staged.stagedAt) > pendingSessionTTL {
+				evicted = append(evicted, staged)
+				delete(pendingSessions, uuid)
+			}
+		}
+		pendingSessionsMu.Unlock()
+		for _, staged := range evicted {
+			log.Printf("pendingSessions: evicted stale %s intent %s (age > %s)", staged.kind, staged.params.UUID, pendingSessionTTL)
+			// orphanCleanupPath is a file the staging handler itself created
+			// (e.g. a forked agent rollout .jsonl). It is never a source/shared
+			// file, so removing it on eviction cannot lose another session's data.
+			if staged.orphanCleanupPath != "" {
+				if err := os.Remove(staged.orphanCleanupPath); err != nil && !os.IsNotExist(err) {
+					log.Printf("pendingSessions: failed to remove orphaned file %s: %v", staged.orphanCleanupPath, err)
+				}
+			}
+		}
+	}
+}
+
 // getOrCreateSession returns an existing session or creates a new one
 func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 	// Memory guard: check before acquiring lock (avoid deadlock with getMaxSessionRSS)
@@ -5115,19 +5227,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 	// Optional extra CLI flags appended to the agent invocation (e.g. "--channels server:agent-chat")
 	extraArgs := r.URL.Query().Get("extra_args")
 
-	// /api/fork stages SessionParams under sessionUUID and 302-redirects the
-	// browser here without spawning anything. If this UUID has a staged
-	// entry, consume it and use those params instead of the URL query --
-	// they carry the source session's WorkDir, ExtraArgs (with --resume
-	// appended), PrepopulateChatLog, etc. The entry is removed on first
-	// consumption so a reconnect after the session is live falls through
-	// to the normal existing-session path.
-	pendingForksMu.Lock()
-	staged, isPendingFork := pendingForks[sessionUUID]
-	if isPendingFork {
-		delete(pendingForks, sessionUUID)
-	}
-	pendingForksMu.Unlock()
+	// POST /api/session ("new") and POST /api/fork ("fork") stage a creation
+	// intent under sessionUUID and 302-redirect the browser here without
+	// spawning anything. If this UUID has a staged entry, consume it and use
+	// those params instead of the URL query -- they carry the real wiring
+	// (WorkDir, ExtraArgs with --resume appended, PrepopulateChatLog, etc.).
+	// The entry is removed on first consumption so a reconnect after the
+	// session is live falls through to the normal existing-session path.
+	staged, isPending := takePendingSession(sessionUUID)
 
 	params := SessionParams{
 		UUID:                sessionUUID,
@@ -5143,12 +5250,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		SessionMode:         sessionMode,
 		ExtraArgs:           extraArgs,
 	}
-	if isPendingFork {
+	if isPending {
 		// Preserve the UUID from the URL but override everything else with
 		// the staged params -- the URL only carries assistant + session
 		// mode for routing, the staged entry carries the real wiring.
-		staged.UUID = sessionUUID
-		params = staged
+		staged.params.UUID = sessionUUID
+		params = staged.params
 	}
 
 	sess, isNew, err := getOrCreateSession(params)
@@ -7367,43 +7474,149 @@ func endSessionByUUID(sessionUUID string) error {
 // Fork supports chat-mode claude and codex sessions, live or ended. Pi
 // is deliberately deferred to pi's native runtime.fork; other agents have
 // no forkconvo support yet.
-func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+// handleNewSessionAPI handles POST /api/session/new. It mints a UUID, stages a
+// "new" creation intent for it, and 302-redirects to /session/{uuid} with the
+// dialog's params echoed onto the URL.
+//
+// The staged intent is the load-bearing gate of the no-ghost-session design:
+// the WS handler will only materialize a session whose UUID is either already
+// live or has a staged intent here. The session's real wiring (workdir, branch,
+// worktree creation) is still resolved by the WS handler from these query
+// params, exactly as the old window.location navigation did -- the intent only
+// grants permission to create.
+func handleNewSessionAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sourceUUID := strings.TrimPrefix(r.URL.Path, "/api/fork/")
-	sourceUUID = strings.TrimSuffix(sourceUUID, "/")
-	if sourceUUID == "" {
-		http.Error(w, "Missing source session UUID", http.StatusBadRequest)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	assistant := r.FormValue("assistant")
+	if assistant == "" {
+		http.Error(w, "missing assistant", http.StatusBadRequest)
+		return
+	}
+	var validAssistant bool
+	for _, a := range availableAssistants {
+		if a.Binary == assistant {
+			validAssistant = true
+			break
+		}
+	}
+	if !validAssistant {
+		http.Error(w, "unknown assistant: "+assistant, http.StatusBadRequest)
 		return
 	}
 
+	newUUID := uuid.New().String()
+	// Pure gate token: the WS handler resolves workdir/branch/worktree from the
+	// echoed query params below, so the staged params only mark the UUID as
+	// create-permitted.
+	stageSession(newUUID, SessionParams{UUID: newUUID, Assistant: assistant}, "new", "")
+
+	// Echo the dialog's params onto the redirect so the WS handler resolves the
+	// session exactly as the old navigation did.
+	q := url.Values{}
+	q.Set("assistant", assistant)
+	for _, key := range []string{"session", "name", "branch", "pwd", "extra_args", "debug", "theme"} {
+		if v := r.FormValue(key); v != "" {
+			q.Set(key, v)
+		}
+	}
+	http.Redirect(w, r, "/session/"+newUUID+"?"+q.Encode(), http.StatusFound)
+}
+
+// forkSourceUUID extracts the source session UUID from an /api/fork/{uuid} path.
+func forkSourceUUID(r *http.Request) string {
+	u := strings.TrimPrefix(r.URL.Path, "/api/fork/")
+	return strings.TrimSuffix(u, "/")
+}
+
+// validateForkSourceCheap runs the side-effect-free guards shared by the GET
+// confirm page and the POST executor: the source must resolve, be a chat-mode
+// session with a chat event log, and use a fork-capable assistant. It does NOT
+// run the active-tail guard or write anything. Returns the resolved source and
+// the forkconvo agent, or an HTTP status + error to surface.
+func validateForkSourceCheap(sourceUUID string) (*hydratedForkSource, forkconvo.Agent, int, error) {
+	if sourceUUID == "" {
+		return nil, "", http.StatusBadRequest, fmt.Errorf("missing source session UUID")
+	}
 	src, err := resolveForkSource(sourceUUID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+		return nil, "", http.StatusNotFound, err
 	}
 	if src.SessionMode != "chat" {
-		http.Error(w, "fork supports chat-mode sessions only", http.StatusBadRequest)
-		return
+		return nil, "", http.StatusBadRequest, fmt.Errorf("fork supports chat-mode sessions only")
 	}
 	if src.ChatLogPath == "" {
-		http.Error(w, "source session has no chat event log (predates fork support?)", http.StatusConflict)
-		return
+		return nil, "", http.StatusConflict, fmt.Errorf("source session has no chat event log (predates fork support?)")
 	}
-
-	// Map src.Assistant to the per-agent forkconvo.Agent constant. Bail
-	// loudly for assistants we know we don't support yet (pi has its own
-	// native /fork; gemini/opencode/aider/goose have no forkconvo at all).
-	var fcAgent forkconvo.Agent
 	switch src.Assistant {
 	case "claude":
-		fcAgent = forkconvo.AgentClaude
+		return src, forkconvo.AgentClaude, 0, nil
 	case "codex":
-		fcAgent = forkconvo.AgentCodex
+		return src, forkconvo.AgentCodex, 0, nil
 	default:
-		http.Error(w, fmt.Sprintf("fork does not support assistant %q (claude and codex only)", src.Assistant), http.StatusBadRequest)
+		return nil, "", http.StatusBadRequest, fmt.Errorf("fork does not support assistant %q (claude and codex only)", src.Assistant)
+	}
+}
+
+// handleSessionForkAPI dispatches by method:
+//
+//	GET  /api/fork/{uuid} -> a skeleton confirm page (no side effects). This
+//	     makes the fork URL safe to follow passively (prefetch, unfurl, refresh,
+//	     back-button) -- nothing is forked until the user confirms.
+//	POST /api/fork/{uuid} -> actually fork + stage + 302 to the new session.
+func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		handleForkConfirmPage(w, r)
+	case http.MethodPost:
+		handleForkExecute(w, r)
+	default:
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleForkConfirmPage renders the GET skeleton + confirm modal. It runs only
+// the cheap, side-effect-free guards so the modal can show a real error or a
+// ready-to-fork prompt; the heavy guards (active-tail) and the fork itself run
+// on POST. bubble/mode from the query are carried forward as hidden form fields.
+func handleForkConfirmPage(w http.ResponseWriter, r *http.Request) {
+	sourceUUID := forkSourceUUID(r)
+	data := forkConfirmData{
+		SourceUUID: sourceUUID,
+		Bubble:     r.URL.Query().Get("bubble"),
+		Mode:       r.URL.Query().Get("mode"),
+	}
+	src, _, _, verr := validateForkSourceCheap(sourceUUID)
+	if verr != nil {
+		data.Error = verr.Error()
+	} else {
+		data.SourceName = src.Name
+		data.Assistant = src.Assistant
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := forkConfirmTemplate.Execute(w, data); err != nil {
+		log.Printf("fork confirm page render error: %v", err)
+	}
+}
+
+// handleForkExecute performs the actual fork on POST: full validation (including
+// the active-tail guard), forkconvo.Fork (writes the new rollout), stages the
+// "fork" creation intent, and 302-redirects to the new session.
+func handleForkExecute(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	sourceUUID := forkSourceUUID(r)
+
+	src, fcAgent, status, err := validateForkSourceCheap(sourceUUID)
+	if err != nil {
+		http.Error(w, err.Error(), status)
 		return
 	}
 
@@ -7461,11 +7674,13 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		SourceSessionID: agentSessionID,
 		Anchor:          forkconvo.AnchorLastChatReply,
 	}
-	mode := r.URL.Query().Get("mode")
+	// bubble/mode arrive as POST form fields (carried forward from the GET
+	// confirm page's hidden inputs).
+	mode := r.FormValue("mode")
 	if mode == "" {
 		mode = "after"
 	}
-	if bubbleRaw := r.URL.Query().Get("bubble"); bubbleRaw != "" {
+	if bubbleRaw := r.FormValue("bubble"); bubbleRaw != "" {
 		bubbleSeq, perr := strconv.ParseInt(bubbleRaw, 10, 64)
 		if perr != nil || bubbleSeq <= 0 {
 			http.Error(w, "bubble param must be a positive integer", http.StatusBadRequest)
@@ -7498,14 +7713,18 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		forkName = "fork: " + forkName
 	}
 
-	// Stage the SessionParams; the first WS client to hit /session/<newUUID>
+	// Stage the creation intent; the first WS client to hit /session/<newUUID>
 	// will materialize the session from this entry. Starting the PTY only
 	// after a client connects ensures the agent's first render happens at
 	// the client's actual geometry, sidestepping the "blocked-on-stdin
 	// during SIGWINCH leaves a blank screen" bug that an eager
 	// getOrCreateSession would hit here.
-	pendingForksMu.Lock()
-	pendingForks[newUUID] = SessionParams{
+	//
+	// orphanCleanupPath = the rollout .jsonl forkconvo.Fork just created for
+	// the NEW session id. If the user never connects, the sweeper deletes it.
+	// (Best-effort: an unresolvable path just means no cleanup, never an error.)
+	orphanPath, _ := agentSessionFilePath(src.Assistant, src.WorkDir, forkRes.NewSessionID)
+	stageSession(newUUID, SessionParams{
 		UUID:               newUUID,
 		Assistant:          src.Assistant,
 		Name:               forkName,
@@ -7514,8 +7733,7 @@ func handleSessionForkAPI(w http.ResponseWriter, r *http.Request) {
 		ExtraArgs:          extraArgs,
 		Theme:              src.Theme,
 		PrepopulateChatLog: src.ChatLogPath,
-	}
-	pendingForksMu.Unlock()
+	}, "fork", orphanPath)
 
 	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)
 }
