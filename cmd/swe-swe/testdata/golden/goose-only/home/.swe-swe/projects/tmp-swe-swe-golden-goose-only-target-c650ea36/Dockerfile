@@ -21,6 +21,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server . && \
 COPY mcp-lazy-init/main.go /build-mcp-lazy-init/main.go
 RUN cd /build-mcp-lazy-init && go mod init mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
 
+# Build mcp-cli-proxy (per-server stdio MCP adapter for MCP-less mode, stdlib only)
+COPY mcp-cli-proxy/main.go /build-mcp-cli-proxy/main.go
+RUN cd /build-mcp-cli-proxy && go mod init mcp-cli-proxy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-cli-proxy/mcp-cli-proxy .
+
 # Build swe-swe-broker-probe (per-session credential broker measurement tool, stdlib only)
 COPY swe-swe-broker-probe/main.go /build-swe-swe-broker-probe/main.go
 RUN cd /build-swe-swe-broker-probe && go mod init swe-swe-broker-probe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-swe-broker-probe/swe-swe-broker-probe .
@@ -129,6 +133,7 @@ RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
 COPY --from=server-builder /build/swe-swe-fork-convo /usr/local/bin/swe-swe-fork-convo
 COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
+COPY --from=server-builder /build-mcp-cli-proxy/mcp-cli-proxy /usr/local/bin/mcp-cli-proxy
 COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
 COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
 COPY --from=server-builder /build-git-sign-swe-swe/git-sign-swe-swe /usr/local/bin/git-sign-swe-swe

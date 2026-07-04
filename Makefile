@@ -1,10 +1,10 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 
-test: ascii-check check-gomod-sync check-prctx-sync test-cli test-mcp-lazy-init test-server test-git-sign-swe-swe test-prctx
+test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync test-cli test-mcp-lazy-init test-mcp-cli-proxy test-server test-git-sign-swe-swe test-prctx
 
 # ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
 # See scripts/ascii-allowlist.txt for the per-file character allowlist
@@ -20,6 +20,35 @@ test-cli:
 
 test-mcp-lazy-init:
 	go test -v ./cmd/mcp-lazy-init
+
+# mcp-cli-proxy canonical source lives in cmd/mcp-cli-proxy (with tests); a
+# non-test copy is bundled into the container image via
+# cmd/swe-swe/templates/host/mcp-cli-proxy.
+test-mcp-cli-proxy:
+	go test -v ./cmd/mcp-cli-proxy
+
+# Guard against the bundled mcp-cli-proxy copy drifting from the tested one.
+check-mcp-cli-proxy-sync:
+	@for f in cmd/mcp-cli-proxy/*.go; do \
+		case "$$f" in *_test.go) continue;; esac; \
+		t="cmd/swe-swe/templates/host/mcp-cli-proxy/$$(basename $$f)"; \
+		if ! diff -q "$$f" "$$t" >/dev/null 2>&1; then \
+			echo "mcp-cli-proxy bundle out of sync: $$f != $$t"; \
+			echo "run: make sync-mcp-cli-proxy"; \
+			diff "$$f" "$$t" || true; \
+			exit 1; \
+		fi; \
+	done
+	@echo "mcp-cli-proxy bundle in sync."
+
+# Regenerate the bundled mcp-cli-proxy copy from the canonical source.
+sync-mcp-cli-proxy:
+	@rm -f cmd/swe-swe/templates/host/mcp-cli-proxy/*.go
+	@for f in cmd/mcp-cli-proxy/*.go; do \
+		case "$$f" in *_test.go) continue;; esac; \
+		cp "$$f" cmd/swe-swe/templates/host/mcp-cli-proxy/; \
+	done
+	@echo "mcp-cli-proxy bundle synced from cmd/mcp-cli-proxy."
 
 # prctx canonical source lives in cmd/prctx (with tests); a non-test copy is
 # bundled into the container image via cmd/swe-swe/templates/host/prctx.
