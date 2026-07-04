@@ -137,7 +137,13 @@ type browserProcs struct {
 // identified by id, on the given X display and ports (cdpPort = chromium remote
 // debugging; vncPort = websockify/noVNC; vncInternalPort = x11vnc raw). On any
 // step failing, processes started so far are killed before returning.
-func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int) (*browserProcs, error) {
+//
+// resolveLocalhostTo, when non-empty, maps the hostname "localhost" inside
+// chromium to that address (--host-resolver-rules). A REMOTE backend needs
+// this so pages the agent opens at http://localhost:<port> reach the dev
+// server on the swe-swe host, not this box. IP-literal URLs (127.0.0.1)
+// bypass the resolver and are out of scope. Local mode passes "".
+func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
 	b := &browserProcs{}
 	displayStr := fmt.Sprintf(":%d", display)
 
@@ -170,7 +176,7 @@ func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int
 	}
 	userDataDir := fmt.Sprintf("/tmp/chromium-session-%s", id)
 	b.dataDir = userDataDir
-	chromeCmd := exec.Command(chromiumBinary,
+	chromeArgs := []string{
 		"--no-sandbox",
 		"--test-type",
 		"--disable-gpu",
@@ -182,7 +188,12 @@ func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int
 		"--remote-allow-origins=*",
 		"--window-size=1024,768",
 		"--start-maximized",
-	)
+	}
+	if resolveLocalhostTo != "" {
+		chromeArgs = append(chromeArgs,
+			fmt.Sprintf("--host-resolver-rules=MAP localhost %s", resolveLocalhostTo))
+	}
+	chromeCmd := exec.Command(chromiumBinary, chromeArgs...)
 	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
 	if err := chromeCmd.Start(); err != nil {
 		b.stop()

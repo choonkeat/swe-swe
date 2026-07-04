@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -36,7 +37,14 @@ var remoteAllocate = allocateRemoteBrowser
 
 // allocateRemoteBrowser POSTs to <backend>/sessions and returns the allocation.
 func allocateRemoteBrowser(backendURL, token, sessionID string) (*allocResponse, error) {
-	body, _ := json.Marshal(map[string]string{"sessionId": sessionID})
+	payload := map[string]string{"sessionId": sessionID}
+	// Where chromium-on-the-backend should resolve "localhost" (the agent's
+	// dev-server URLs). The backend defaults to this request's source address,
+	// which is right unless NAT hides us -- then the operator overrides it.
+	if v := os.Getenv("SWE_AGENT_VIEW_LOCALHOST"); v != "" {
+		payload["resolveLocalhostTo"] = v
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(backendURL, "/")+"/sessions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

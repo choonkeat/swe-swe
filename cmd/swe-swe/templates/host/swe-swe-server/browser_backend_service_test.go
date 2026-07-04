@@ -10,13 +10,20 @@ import (
 
 // stubStarter replaces the real process spawn so the allocation API can be
 // tested without a display stack. It records the ports it was handed.
-func withStubStarter(t *testing.T) {
+func withStubStarter(t *testing.T) *starterCalls {
 	t.Helper()
+	calls := &starterCalls{}
 	orig := browserProcsStarter
-	browserProcsStarter = func(id string, display, cdpPort, vncPort, vncInternalPort int) (*browserProcs, error) {
+	browserProcsStarter = func(id string, display, cdpPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
+		calls.resolveLocalhostTo = append(calls.resolveLocalhostTo, resolveLocalhostTo)
 		return &browserProcs{}, nil // no real processes
 	}
 	t.Cleanup(func() { browserProcsStarter = orig })
+	return calls
+}
+
+type starterCalls struct {
+	resolveLocalhostTo []string
 }
 
 func TestBrowserBackendCreateAndDelete(t *testing.T) {
@@ -60,6 +67,27 @@ func TestBrowserBackendCreateAndDelete(t *testing.T) {
 	bb.ServeHTTP(rrDel2, httptest.NewRequest(http.MethodDelete, "/sessions/s1", nil))
 	if rrDel2.Code != http.StatusNotFound {
 		t.Errorf("delete unknown: got %d, want 404", rrDel2.Code)
+	}
+}
+
+func TestBrowserBackendResolveLocalhost(t *testing.T) {
+	calls := withStubStarter(t)
+	bb := newBrowserBackend(4, "", "h")
+
+	// Default: derived from the allocation request's source address.
+	req1 := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"sessionId":"a"}`))
+	req1.RemoteAddr = "203.0.113.7:51234"
+	bb.ServeHTTP(httptest.NewRecorder(), req1)
+
+	// Explicit body override wins (NAT case).
+	req2 := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"sessionId":"b","resolveLocalhostTo":"198.51.100.9"}`))
+	req2.RemoteAddr = "203.0.113.7:51235"
+	bb.ServeHTTP(httptest.NewRecorder(), req2)
+
+	want := []string{"203.0.113.7", "198.51.100.9"}
+	if len(calls.resolveLocalhostTo) != 2 ||
+		calls.resolveLocalhostTo[0] != want[0] || calls.resolveLocalhostTo[1] != want[1] {
+		t.Errorf("starter resolveLocalhostTo = %v, want %v", calls.resolveLocalhostTo, want)
 	}
 }
 

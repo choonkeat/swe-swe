@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -95,9 +96,19 @@ type allocResponse struct {
 func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SessionID string `json:"sessionId"`
+		// ResolveLocalhostTo overrides where chromium's "localhost" points
+		// (e.g. behind NAT). Defaults to the allocation request's source
+		// address -- the swe-swe host as this backend sees it.
+		ResolveLocalhostTo string `json:"resolveLocalhostTo"`
 	}
 	// Body is optional; ignore decode errors on an empty body.
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	resolveLocalhostTo := req.ResolveLocalhostTo
+	if resolveLocalhostTo == "" {
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			resolveLocalhostTo = host
+		}
+	}
 
 	bb.mu.Lock()
 	// Idempotency first: a re-POST for a live id must return that instance
@@ -128,7 +139,7 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort}
 	bb.mu.Unlock()
 
-	procs, err := browserProcsStarter(id, display, cdpPort, vncPort, vncInternal)
+	procs, err := browserProcsStarter(id, display, cdpPort, vncPort, vncInternal, resolveLocalhostTo)
 	if err != nil {
 		bb.mu.Lock()
 		delete(bb.sessions, id)

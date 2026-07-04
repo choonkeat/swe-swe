@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, chromium } from '@playwright/test';
 import crypto from 'crypto';
 
 // Agent View over a REMOTE browser-backend (scripts/e2e-agent-view-remote.sh):
@@ -85,5 +85,26 @@ test.describe('agent view via remote backend', () => {
     // Give noVNC a beat to paint the first framebuffer update before the shot.
     await page.waitForTimeout(2000);
     await page.screenshot({ path: `${SHOT_DIR}/03-agent-view-canvas.png` });
+
+    // localhost resolution (--host-resolver-rules): drive the REMOTE chromium
+    // over CDP through the session's local reverse-proxy and load a page the
+    // swe-swe HOST serves at localhost. On the image tier the backend's own
+    // localhost is a different network namespace, so this only passes if the
+    // resolver mapping points chromium back at the swe-swe host.
+    const cdpPort = await page.evaluate(() => window.terminalUI.cdpPort);
+    expect(cdpPort).toBeTruthy();
+    const cdpBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+    try {
+      const ctx = cdpBrowser.contexts()[0];
+      const remotePage = ctx.pages()[0] || await ctx.newPage();
+      const hostPort = new URL(BASE_URL).port;
+      await remotePage.goto(`http://localhost:${hostPort}/`, { timeout: 30_000 });
+      await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
+      // The navigation is visible through the VNC pane too -- capture it.
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: `${SHOT_DIR}/04-remote-localhost-nav.png` });
+    } finally {
+      await cdpBrowser.close();
+    }
   });
 });

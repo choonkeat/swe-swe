@@ -4314,6 +4314,8 @@ func startSessionBrowser(sess *Session) error {
 		sess.CDPPort,
 		sess.VNCPort,
 		sess.VNCPort+(vncPortEnd-vncPortStart+1),
+		// Local mode: chromium already shares localhost with the dev server.
+		"",
 	)
 	if err != nil {
 		return err
