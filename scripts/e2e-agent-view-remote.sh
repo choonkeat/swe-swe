@@ -97,7 +97,9 @@ if [ "$E2E_AV_BACKEND" = "image" ]; then
     MARKER_PID=$!
     LOCALHOST_NAV_PORT="$MARKER_PORT"
     BACKEND_CONTAINER="swe-av-e2e-$$"
-    docker run -d --name "$BACKEND_CONTAINER" --network=host \
+    # --hostname: host networking would otherwise inherit the HOST's hostname,
+    # which then shows in the noVNC status bar (and thus in screenshots).
+    docker run -d --name "$BACKEND_CONTAINER" --network=host --hostname browser-backend \
         -e SWE_PORT="$BACKEND_PORT" \
         -e SWE_CDP_PORTS="$BACKEND_CDP" -e SWE_VNC_PORTS="$BACKEND_VNC" \
         -e SWE_BROWSER_BACKEND_TOKEN="$TOKEN" \
