@@ -857,12 +857,14 @@ done`,
 	chownGemini := ""
 	chownGoose := ""
 	chownPi := ""
+	chownClaude := ""
 	if withDocker {
 		chownOpencode = "chown -R app: /home/app/.config/opencode"
 		chownCodex = "chown -R app: /home/app/.codex"
 		chownGemini = "chown -R app: /home/app/.gemini"
 		chownGoose = "chown -R app: /home/app/.config/goose"
 		chownPi = "chown -R app: /home/app/.pi"
+		chownClaude = "chown -R app: /home/app/.claude"
 	}
 
 	// Generate Claude MCP setup block (varies by docker mode)
@@ -974,6 +976,9 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 		}
 		if strings.Contains(line, "{{CHOWN_PI}}") {
 			line = strings.ReplaceAll(line, "{{CHOWN_PI}}", chownPi)
+		}
+		if strings.Contains(line, "{{CHOWN_CLAUDE}}") {
+			line = strings.ReplaceAll(line, "{{CHOWN_CLAUDE}}", chownClaude)
 		}
 
 		if !skip {

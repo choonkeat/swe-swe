@@ -84,10 +84,21 @@ Each session gets these environment variables automatically:
 |----------|-------------|---------|
 | `PORT` | Preview app port (from `--preview-ports` range) | `3000` |
 | `AGENT_CHAT_PORT` | Agent chat MCP port (`PORT` + 1000) | `4000` |
+| `AGENT_CHAT_DISABLE` | Set to `1` for non-chat (terminal) sessions; unset for agent-chat sessions | `1` |
 | `PUBLIC_PORT` | Public no-auth port (from `--public-ports` range) | `5000` |
 | `SESSION_UUID` | Unique session identifier | `a1b2c3...` |
 
 The `PUBLIC_PORT` is accessible externally without authentication, unlike `PORT` and `AGENT_CHAT_PORT` which are behind ForwardAuth. Use it for webhooks, public APIs, or shareable preview URLs that don't require login.
+
+`AGENT_CHAT_DISABLE` controls the built-in `AskUserQuestion` guard hook that swe-swe installs into `~/.claude/settings.json`. That tool's multiple-choice menu renders only in the local terminal TUI, which is invisible to a user talking through the web chat UI -- calling it there hangs the agent forever. The hook therefore blocks `AskUserQuestion` (forcing the agent to ask via the agent-chat `send_message` tool) unless `AGENT_CHAT_DISABLE=1`:
+
+| `AGENT_CHAT_DISABLE` | Behaviour |
+|----------------------|-----------|
+| `1` | Allow the built-in tool (the TUI is the real user surface) |
+| unset | Block it, forcing `send_message` |
+| `0`, `true`, anything else | Block it (only the literal `1` allows) |
+
+swe-swe-server sets `AGENT_CHAT_DISABLE=1` for non-chat (terminal) sessions and leaves it unset for agent-chat sessions, so the fail-safe default in web chat is to block. Hooks are snapshotted at session start, so this env var (read at tool-call time) is the per-session knob.
 
 <a id="sweswe-env"></a>
 ### .swe-swe/env
