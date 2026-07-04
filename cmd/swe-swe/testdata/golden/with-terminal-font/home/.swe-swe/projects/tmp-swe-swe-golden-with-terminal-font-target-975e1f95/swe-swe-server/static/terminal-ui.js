@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString } from './modules/url-builder.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -58,7 +58,7 @@ function buildPresetIcon(rects) {
 }
 
 // Display order for slot tab bars (same in every slot).
-const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'files', 'vscode', 'shell', 'browser'];
+const PANES_IN_ORDER = ['agent-terminal', 'agent-chat', 'preview', 'files', 'shell', 'browser'];
 
 // Human-readable labels for slot tab bar buttons.
 const PANE_LABELS = {
@@ -66,7 +66,6 @@ const PANE_LABELS = {
     'agent-chat':     'Agent Chat',
     'preview':        'Preview',
     'files':          'Files',
-    'vscode':         'Code',
     'shell':          'Terminal',
     'browser':        'Agent View',
 };
@@ -83,7 +82,7 @@ const CHAT_LOADING_FRAMES = [
 // Subset of panes that render iframes. Used by the "legacy activeTab" mirror
 // so pre-preset code (setPreviewURL, refreshIframe, VNC probe) can find the
 // current right-side iframe without knowing about slots.
-const IFRAME_PANES_PRIORITY = ['preview', 'vscode', 'shell', 'browser'];
+const IFRAME_PANES_PRIORITY = ['preview', 'shell', 'browser'];
 
 // Per-preset gutter spec. Each gutter sits on the boundary between two
 // adjacent slots (`between`) and lets the user drag-resize that boundary.
@@ -283,7 +282,7 @@ class TerminalUI extends HTMLElement {
         // Preset-driven workspace state. `preset` is one of the LAYOUT_PRESETS ids
         // (classic, single, two-row, l-bigR, stacked-R, stacked-L, t-splitBot,
         // quadrants). `activeBySlot` maps slot id (a/b/c/d) -> pane id
-        // (agent-terminal / agent-chat / preview / vscode / shell / browser).
+        // (agent-terminal / agent-chat / preview / shell / browser).
         // Loaded from localStorage; falls back to classic defaults on missing/
         // invalid state. See terminal-ui.css for the grid-template-areas per preset.
         const _layoutState = loadLayoutState();
@@ -716,7 +715,6 @@ class TerminalUI extends HTMLElement {
                         <option value="agent-chat" hidden disabled>Agent Chat</option>
                         <option value="preview">App Preview</option>
                         <option value="files" hidden disabled>Files</option>
-                        <option value="vscode" hidden disabled>Code</option>
                         <option value="shell">Terminal</option>
                         <option value="browser" hidden disabled>Agent View</option>
                     </select>
@@ -804,19 +802,6 @@ class TerminalUI extends HTMLElement {
                                     </div>
                                 </div>
                                 <iframe class="terminal-ui__iframe" data-pane="files" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
-                            </div>
-                        </div>
-
-                        <!-- Code (code-server) pane-host -->
-                        <div class="terminal-ui__pane-host" data-pane="vscode" hidden>
-                            <div class="terminal-ui__iframe-slot" data-pane="vscode">
-                                <div class="terminal-ui__iframe-placeholder hidden">
-                                    <div class="terminal-ui__iframe-placeholder-status">
-                                        <span class="terminal-ui__iframe-placeholder-dot"></span>
-                                        <span class="terminal-ui__iframe-placeholder-text">Loading Code...</span>
-                                    </div>
-                                </div>
-                                <iframe class="terminal-ui__iframe" data-pane="vscode" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
                             </div>
                         </div>
 
@@ -947,7 +932,6 @@ class TerminalUI extends HTMLElement {
         // Register file path link provider for clickable paths
         if (typeof registerFileLinkProvider === 'function') {
             registerFileLinkProvider(this.term, {
-                getVSCodeUrl: () => buildVSCodeUrl(getBaseUrl(window.location), this.workDir),
                 onCopy: (path) => this.showStatusNotification('Copied: ' + path),
                 onHint
             });
@@ -1006,7 +990,6 @@ class TerminalUI extends HTMLElement {
         // Build services list (filter out entries with null URLs -- e.g. preview before sessionUUID arrives)
         const baseUrl = getBaseUrl(window.location);
         const serviceEntries = [
-            
             { name: 'preview', label: 'App Preview', url: this.getPreviewBaseUrl() },
         ];
         if (this.browserStarted) {
@@ -3116,9 +3099,6 @@ class TerminalUI extends HTMLElement {
             const baseUrl = getBaseUrl(window.location);
             let url;
             switch (tab) {
-                case 'vscode':
-                    url = buildVSCodeUrl(baseUrl, this.workDir);
-                    break;
                 case 'shell':
                     const shellUUID = deriveShellUUID(this.uuid);
                     url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
@@ -4839,7 +4819,7 @@ class TerminalUI extends HTMLElement {
     //   1. Preset's defaults declares the pane explicitly -> use that slot.
     //   2. Chat-like panes (agent-terminal/agent-chat) share the slot that
     //      holds agent-terminal in defaults ("old left panel").
-    //   3. Iframe-like panes (preview/vscode/shell/browser) share the slot
+    //   3. Iframe-like panes (preview/shell/browser) share the slot
     //      that holds preview in defaults ("old right panel").
     //   4. Fall back to the preset's first slot.
     _paneHome(paneId) {
@@ -4884,10 +4864,6 @@ class TerminalUI extends HTMLElement {
                 if (!this.sessionUUID) return;
                 this._paneLoaded.add('preview');
                 this.setPreviewURL(null);
-                break;
-            case 'vscode':
-                this._paneLoaded.add('vscode');
-                this.setIframeUrl(buildVSCodeUrl(baseUrl, this.workDir), 'vscode');
                 break;
             case 'files': {
                 // Cross-origin only -- md-serve emits root-relative links, so a
@@ -5501,7 +5477,6 @@ class TerminalUI extends HTMLElement {
         if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing || !!this._agentChatPending;
         if (paneId === 'browser') return !!this.vncProxyPort;
         if (paneId === 'files') return !!this.filesProxyPort;
-        if (paneId === 'vscode') return this._vscodeEnabled();
         return true;
     }
 
@@ -5542,22 +5517,12 @@ class TerminalUI extends HTMLElement {
     }
 
     // Re-render slot frames + header picker. Useful when probe state changes
-    // (chat/vnc/vscode becoming available mid-session).
+    // (chat/vnc becoming available mid-session).
     _rerenderSlotTabs() {
         const workspace = this.querySelector('.terminal-ui__workspace');
         if (!workspace) return;
         const preset = LAYOUT_PRESETS[this.preset] || LAYOUT_PRESETS.classic;
         this._renderSlotFrames(preset);
-    }
-
-    // vscode (code-server) is only shown when the init variant asks for it.
-    // The server-rendered mobile <option> uses a Go-template placeholder that
-    // collapses to empty-string (enabled) or `hidden disabled` (disabled), so
-    // we mirror that signal here.
-    _vscodeEnabled() {
-        const opt = this.querySelector('.terminal-ui__mobile-nav-select option[value="vscode"]');
-        if (!opt) return false;
-        return !(opt.hidden || opt.disabled);
     }
 
     // Mirror the first iframe-capable pane into this.activeTab so pre-preset
@@ -5571,7 +5536,7 @@ class TerminalUI extends HTMLElement {
 
     // === Split-Pane UI Methods ===
 
-    // Per-pane iframe lookups: each pane ("preview", "vscode", "shell", "browser")
+    // Per-pane iframe lookups: each pane ("preview", "shell", "browser")
     // has its own <iframe> and placeholder, all mounted at once and toggled via
     // the [hidden] attribute on the slot wrapper. This preserves state across
     // tab switches -- src is set once per pane and not reset.
@@ -5655,8 +5620,6 @@ class TerminalUI extends HTMLElement {
             }
             case 'browser':
                 return this.getBrowserViewUrl();
-            case 'vscode':
-                return this._vscodeEnabled() ? buildVSCodeUrl(getBaseUrl(window.location), this.workDir) : null;
             case 'files': {
                 const filesUrl = this.effectivePublicHostname
                     ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
@@ -5890,7 +5853,7 @@ class TerminalUI extends HTMLElement {
         if (!terminalUi) return;
 
         // Hide all pane slots; leave their iframes mounted so state (scroll,
-        // form inputs, code-server session, xterm-over-iframe buffer) persists.
+        // form inputs, xterm-over-iframe buffer) persists.
         this._hideAllPaneSlots();
 
         // Remove class to hide iframe pane
@@ -6022,7 +5985,7 @@ class TerminalUI extends HTMLElement {
     }
 
     /**
-     * Set iframe src for a specific pane (shell / vscode / browser).
+     * Set iframe src for a specific pane (shell / browser).
      * Idempotent: does nothing if the iframe is already at the requested URL,
      * which preserves pane state across tab switches.
      *

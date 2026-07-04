@@ -192,25 +192,25 @@ test('renderServiceLinks returns empty for undefined services', () => {
 
 test('renderServiceLinks renders single service', () => {
     const html = renderServiceLinks({
-        services: [{ name: 'vscode', label: 'VSCode', url: '/vscode/' }]
+        services: [{ name: 'browser', label: 'Browser', url: '/browser/' }]
     });
     assert.match(html, /terminal-ui__status-service-links/);
-    assert.match(html, /href="\/vscode\/"/);
-    assert.match(html, /target="swe-swe-vscode"/);
-    assert.match(html, /data-tab="vscode"/);
-    assert.match(html, />VSCode</);
+    assert.match(html, /href="\/browser\/"/);
+    assert.match(html, /target="swe-swe-browser"/);
+    assert.match(html, /data-tab="browser"/);
+    assert.match(html, />Browser</);
 });
 
 test('renderServiceLinks renders multiple services with separators', () => {
     const html = renderServiceLinks({
         services: [
             { name: 'shell', label: 'Shell', url: '/shell/' },
-            { name: 'vscode', label: 'VSCode', url: '/vscode/' },
+            { name: 'browser', label: 'Browser', url: '/browser/' },
             { name: 'preview', label: 'Preview', url: '/preview/' }
         ]
     });
     assert.match(html, />Shell</);
-    assert.match(html, />VSCode</);
+    assert.match(html, />Browser</);
     assert.match(html, />Preview</);
     // Check for separators between (but not after last)
     const separatorMatches = html.match(/terminal-ui__status-link-sep/g);
@@ -331,11 +331,11 @@ test('integration: render full connected status', () => {
     const serviceLinks = renderServiceLinks({
         services: [
             { name: 'shell', label: 'Shell', url: '/shell/' },
-            { name: 'vscode', label: 'VSCode', url: '/vscode/' }
+            { name: 'browser', label: 'Browser', url: '/browser/' }
         ]
     });
     assert.match(serviceLinks, /Shell/);
-    assert.match(serviceLinks, /VSCode/);
+    assert.match(serviceLinks, /Browser/);
 
     // Get custom links
     const customLinks = renderCustomLinks('[Docs](http://docs.example.com)');

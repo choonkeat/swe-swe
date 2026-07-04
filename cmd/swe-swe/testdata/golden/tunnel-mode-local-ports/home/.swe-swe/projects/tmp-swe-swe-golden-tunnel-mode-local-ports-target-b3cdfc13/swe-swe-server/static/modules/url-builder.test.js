@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildVSCodeUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -36,41 +36,6 @@ test('getBaseUrl handles localhost without port', () => {
     );
 });
 
-// buildVSCodeUrl tests
-test('buildVSCodeUrl with workDir encodes folder parameter', () => {
-    assert.strictEqual(
-        buildVSCodeUrl('http://localhost:8080', '/workspace'),
-        'http://localhost:8080/vscode/?folder=%2Fworkspace'
-    );
-});
-
-test('buildVSCodeUrl without workDir returns base vscode path', () => {
-    assert.strictEqual(
-        buildVSCodeUrl('http://localhost:8080', ''),
-        'http://localhost:8080/vscode/'
-    );
-});
-
-test('buildVSCodeUrl with null workDir returns base vscode path', () => {
-    assert.strictEqual(
-        buildVSCodeUrl('http://localhost:8080', null),
-        'http://localhost:8080/vscode/'
-    );
-});
-
-test('buildVSCodeUrl encodes special characters in workDir', () => {
-    assert.strictEqual(
-        buildVSCodeUrl('http://localhost:8080', '/path with spaces'),
-        'http://localhost:8080/vscode/?folder=%2Fpath%20with%20spaces'
-    );
-});
-
-test('buildVSCodeUrl handles https base URL', () => {
-    assert.strictEqual(
-        buildVSCodeUrl('https://example.com', '/home/user/project'),
-        'https://example.com/vscode/?folder=%2Fhome%2Fuser%2Fproject'
-    );
-});
 
 // buildShellUrl tests
 test('buildShellUrl without debug mode', () => {

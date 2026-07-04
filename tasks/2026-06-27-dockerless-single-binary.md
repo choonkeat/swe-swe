@@ -2,9 +2,9 @@
 
 ## Status
 
-**Planned.** Not started.
+**In progress.**
 
-- [ ] **Phase 0** -- Remove vscode entirely
+- [x] **Phase 0** -- Remove vscode entirely. Done 2026-06-27. Removed `--with-vscode` flag + `WithVSCode` config/reuse, `VSCODE_SERVICES` compose block + `code-server/Dockerfile` + `nginx-vscode.conf`, `withVSCode` template params, the vscode pane/option/iframe + `buildVSCodeUrl`/`_vscodeEnabled`/`getVSCodeUrl` from the JS, and the `with-vscode` golden variant. `make test` green; 327 node tests green; golden has 0 vscode/code-server refs. See -phase0.log.
 - [ ] **Phase 1** -- Multi-call `swe-swe-server` (fold helper binaries as subcommands + `install`)
 - [ ] **Phase 2** -- Prebuilt server binary + thin Dockerfile (drop the Go-toolchain build/runtime stages)
 - [ ] **Phase 3** -- `swe-swe init --dockerless` host installer (replay entrypoint.sh on the host) + configurable paths
