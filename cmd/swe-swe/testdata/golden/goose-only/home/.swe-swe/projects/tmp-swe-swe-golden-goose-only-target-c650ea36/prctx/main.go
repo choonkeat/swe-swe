@@ -80,7 +80,16 @@ Sync:
   prctx reject  [<pr>] [--body <text>] set verdict: request changes
 
 <pr> is a PR/MR url or number; omit it to use the last-fetched PR.
-Env: GITHUB_TOKEN (or GH_TOKEN) for GitHub; GITLAB_TOKEN for GitLab.
+
+Env & token permissions:
+  GITHUB_TOKEN (or GH_TOKEN) for GitHub:
+    - fine-grained PAT: "Pull requests: Read and write" (+ "Contents: Read").
+      Read-only (fetch/show) works with just "Read".
+    - classic PAT: "repo" scope (or "public_repo" for public repos only).
+  GITLAB_TOKEN for GitLab:
+    - "api" scope (read + write). "read_api" is enough for fetch/show only.
+  Staging (reply/comment/resolve/drop) is local and needs no token;
+  only flush/approve/reject write to the server.
 `)
 }
 
