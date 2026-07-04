@@ -19,6 +19,7 @@ func TestParseToolArgs(t *testing.T) {
 			"ratio":{"type":"number"},
 			"flag":{"type":"boolean"},
 			"tags":{"type":"array"},
+			"opts":{"type":["null","array"],"items":{"type":"string"}},
 			"mode":{"type":"string","enum":["a","b"]}
 		},
 		"required":["text"]
@@ -95,6 +96,45 @@ func TestParseToolArgs(t *testing.T) {
 			t.Error("expected JSON parse error for array flag")
 		}
 	})
+
+	// Regression: real MCP schemas express nullable/optional array fields as a
+	// UNION type -- `"type":["null","array"]` -- not a bare "array". The client
+	// must recognize "array" inside the union and JSON-decode the value; the bug
+	// was that a union type failed to parse into a plain string field, silently
+	// became "", defaulted to string, and forwarded the raw text uncoerced, so
+	// the server rejected it (agent-chat send_message --more_quick_replies).
+	t.Run("union nullable-array coerces JSON to array", func(t *testing.T) {
+		got, err := parseToolArgs(s, []string{"--text", "x", "--opts", `["a","b"]`})
+		if err != nil {
+			t.Fatal(err)
+		}
+		arr, ok := got["opts"].([]any)
+		if !ok || len(arr) != 2 {
+			t.Errorf("opts should decode to a 2-element array, got %#v (%T)", got["opts"], got["opts"])
+		}
+	})
+
+	t.Run("union nullable-array rejects raw string", func(t *testing.T) {
+		if _, err := parseToolArgs(s, []string{"--text", "x", "--opts", "notjson"}); err == nil {
+			t.Error("expected JSON parse error for union array flag, got nil")
+		}
+	})
+}
+
+// TestToolHelpUnionType proves a union `["null","array"]` renders as "array" in
+// help, not "string", so the agent knows to pass JSON.
+func TestToolHelpUnionType(t *testing.T) {
+	const list = `{"tools":[{"name":"send","description":"send","inputSchema":{"type":"object","properties":{"opts":{"type":["null","array"],"items":{"type":"string"}}},"required":[]}}]}`
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(list)
+	})
+	out, _, code := runCapture(t, dir, "svc", "send", "-h")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	if !strings.Contains(out, "--opts array") {
+		t.Errorf("union type should display as array, got %q", out)
+	}
 }
 
 // fakeSocketServer answers tools/list and tools/call on a unix socket, standing
