@@ -89,6 +89,13 @@ type forkConfirmData struct {
 	Bubble     string
 	Mode       string
 	Error      string
+	// InitSha is the fork source repo's init-commit SHA. The confirm page
+	// emits it so the client can look up this repo's env-vars blob in
+	// localStorage ((origin, init_sha) key, same as the settings panel /
+	// new-session dialog) and attach it to the fork POST -- so the forked
+	// session inherits the repo env vars. Empty when the workdir is not a git
+	// repo (or its worktree is gone); the client then simply attaches nothing.
+	InitSha string
 	// OfferForkWhole adds a "Fork the whole session instead" button to the
 	// error modal. Set when a per-bubble fork failed but a whole-session fork
 	// (no bubble anchor -> last-persisted-reply) would still succeed.
@@ -7803,6 +7810,10 @@ func handleForkConfirmPage(w http.ResponseWriter, r *http.Request) {
 	} else {
 		data.SourceName = src.Name
 		data.Assistant = src.Assistant
+		// Expose the repo init_sha so the page can locate this repo's env-vars
+		// blob in localStorage and attach it to the fork POST (see the script
+		// in fork-confirm.html). Empty for a non-git / missing workdir.
+		data.InitSha = repoInitSHA(src.WorkDir)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := forkConfirmTemplate.Execute(w, data); err != nil {
@@ -7984,6 +7995,11 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 		ExtraArgs:          extraArgs,
 		Theme:              src.Theme,
 		PrepopulateChatLog: src.ChatLogPath,
+		// Repo env vars the fork inherits, sent by the confirm page from the
+		// browser's localStorage blob (the source session's own env store may
+		// already be cleared -- forks routinely resume ended sessions). Applied
+		// to the store before the forked session spawns. Memory-only.
+		EnvRaw: r.FormValue("env"),
 	}, "fork", orphanPath)
 
 	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)

@@ -117,7 +117,10 @@
                <span class="src">{{if .SourceName}}{{.SourceName}}{{else}}this conversation{{end}}</span>
                and reattaches the agent so you can continue from here.</p>
             <div class="meta">Agent: {{.Assistant}}{{if .Bubble}} &middot; from message #{{.Bubble}} ({{.Mode}}){{end}}</div>
-            <form method="POST" action="/api/fork/{{.SourceUUID}}">
+            <!-- Informational (not a choice): populated by the script below when
+                 this browser holds repo env vars for the fork's repo. -->
+            <p class="meta" id="fork-env-note" hidden></p>
+            <form method="POST" action="/api/fork/{{.SourceUUID}}" id="fork-form" data-init-sha="{{.InitSha}}">
                 <input type="hidden" name="bubble" value="{{.Bubble}}">
                 <input type="hidden" name="mode" value="{{.Mode}}">
                 <div class="actions">
@@ -128,5 +131,44 @@
             {{end}}
         </div>
     </div>
+    {{if not .Error}}
+    <script>
+        // Repo env vars a fork inherits. The blob is held in this browser's
+        // localStorage, keyed by (origin, init_sha) -- the same scheme the
+        // terminal-ui settings panel and the new-session dialog use. The fork
+        // source's env store may already be gone (it is cleared when a session
+        // ends, and forks routinely resume ended sessions), so the browser is
+        // the source of truth. Attach the blob to the POST as name="env"; the
+        // server applies it to the store before the forked session spawns.
+        (function () {
+            var form = document.getElementById('fork-form');
+            if (!form) return; // error state: no fork happening
+            var initSha = form.getAttribute('data-init-sha') || '';
+            if (!initSha) return; // non-git workdir: nothing to key on
+            var blob = '';
+            try { blob = localStorage.getItem('swe-swe-env:' + window.location.origin + '|' + initSha) || ''; } catch (e) { blob = ''; }
+            if (!blob || !blob.trim()) return;
+            // Tell the user (a statement, not a choice).
+            var count = blob.split('\n').filter(function (l) {
+                var s = l.trim();
+                return s && s.indexOf('#') !== 0 && s.indexOf('=') > 0;
+            }).length;
+            var note = document.getElementById('fork-env-note');
+            if (note) {
+                note.textContent = count + (count === 1 ? ' environment variable' : ' environment variables')
+                    + ' saved for this repo will be applied to the fork.';
+                note.hidden = false;
+            }
+            form.addEventListener('submit', function () {
+                if (form.querySelector('input[name="env"]')) return;
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'env';
+                input.value = blob;
+                form.appendChild(input);
+            });
+        })();
+    </script>
+    {{end}}
 </body>
 </html>
