@@ -12,11 +12,17 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# MCP-less mode: swe-swe-server hosts the MCP servers via mcp-cli-proxy per
+# session; skip writing every agent's native MCP config below.
+export SWE_MCP_LESS=1
+
 
 
 
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.config/opencode
 cat > /home/app/.config/opencode/opencode.json << 'EOF'
 {
@@ -46,6 +52,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
 EOF
 
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
+fi
 
 
 

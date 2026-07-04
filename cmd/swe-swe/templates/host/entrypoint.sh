@@ -12,6 +12,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+{{MCP_LESS_EXPORT}}
+
 # {{IF DOCKER}}
 # Add app user to docker socket's group for permission to use Docker CLI
 if [ -S /var/run/docker.sock ]; then
@@ -39,6 +41,8 @@ fi
 # {{IF OPENCODE}}
 # Create OpenCode MCP configuration
 # OpenCode uses a different schema: type="local" and command as array
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.config/opencode
 cat > /home/app/.config/opencode/opencode.json << 'EOF'
 {
@@ -68,6 +72,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
 EOF
 {{CHOWN_OPENCODE}}
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
+fi
 # {{ENDIF}}
 
 # {{IF CODEX}}
@@ -77,6 +82,8 @@ echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 # the other agents use, since $VAR would expand to empty inside the sandbox.
 # Instead we run npx (or mcp-lazy-init) directly and let Codex substitute
 # $VAR references in args from the declared env_vars whitelist.
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
@@ -105,10 +112,13 @@ env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
 EOF
 {{CHOWN_CODEX}}
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
+fi
 # {{ENDIF}}
 
 # {{IF GEMINI}}
 # Create Gemini MCP configuration
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.gemini
 cat > /home/app/.gemini/settings.json << 'EOF'
 {
@@ -138,10 +148,13 @@ cat > /home/app/.gemini/settings.json << 'EOF'
 EOF
 {{CHOWN_GEMINI}}
 echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
+fi
 # {{ENDIF}}
 
 # {{IF GOOSE}}
 # Create Goose MCP configuration (YAML format)
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.config/goose
 cat > /home/app/.config/goose/config.yaml << 'EOF'
 extensions:
@@ -178,6 +191,7 @@ extensions:
 EOF
 {{CHOWN_GOOSE}}
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
+fi
 # Wrapper: auto-run 'goose configure' if no provider is configured
 mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
@@ -193,8 +207,11 @@ echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
 # Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 {{CLAUDE_MCP_SETUP}}
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
+fi
 
 # Guard the built-in AskUserQuestion tool. Its multiple-choice menu renders
 # only in the local terminal TUI, which is invisible to a user talking through
@@ -248,6 +265,36 @@ fi
 rm -f /tmp/swe-claude-settings.json
 {{CHOWN_CLAUDE}}
 echo -e "${GREEN}[ok] Installed AskUserQuestion guard hook${NC}"
+
+# MCP-less steering: with no native MCP client, the agent must reach every tool
+# through the `mcp` CLI (sockets in $SWE_MCP_DIR, one per server). The blocking
+# send_message contract is the load-bearing rule -- run it, wait, and treat its
+# stdout as the user's reply. Written to ~/.claude/CLAUDE.md (user memory).
+if [ -n "$SWE_MCP_LESS" ]; then
+mkdir -p /home/app/.claude
+cat > /home/app/.claude/CLAUDE.md << 'MCPLESSEOF'
+# MCP-less mode
+
+This environment has NO MCP client. Reach every tool through the `mcp` CLI,
+which mirrors the tool id `mcp__<server>__<tool>`:
+
+    mcp                          # list servers (the socket dir is the registry)
+    mcp <server>                 # list a server's tools
+    mcp <server> <tool> -h       # show a tool's flags (from its JSON Schema)
+    mcp <server> <tool> [--flags] # call the tool; its result prints to stdout
+
+Talk to the user through agent-chat -- it is the ONLY channel the user sees:
+
+- Start each turn with `mcp swe-swe-agent-chat check_messages`.
+- EVERY user-visible message MUST go through
+  `mcp swe-swe-agent-chat send_message --text "..." --first_quick_reply "..."`.
+- `send_message` BLOCKS until the user replies; the reply is RETURNED as the
+  command's stdout. Never background it; end every turn on it.
+- Non-blocking status: `mcp swe-swe-agent-chat send_progress --text "..."`.
+MCPLESSEOF
+{{CHOWN_CLAUDE}}
+echo -e "${GREEN}[ok] Installed MCP-less agent steering (~/.claude/CLAUDE.md)${NC}"
+fi
 # {{ENDIF}}
 
 # {{IF PI}}
@@ -256,10 +303,13 @@ echo -e "${GREEN}[ok] Installed AskUserQuestion guard hook${NC}"
 # preview / whiteboard MCPs without per-workspace setup. Pi prefers a
 # project-local .pi/extensions/ override, so /workspace can still drop a
 # custom mcp-bridge.ts to hack on it.
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.pi/agent/extensions
 cp /tmp/pi-mcp-bridge.ts /home/app/.pi/agent/extensions/mcp-bridge.ts
 {{CHOWN_PI}}
 echo -e "${GREEN}[ok] Installed Pi mcp-bridge extension${NC}"
+fi
 # {{ENDIF}}
 
 # Resolve internal server port. SWE_PORT is set by both compose (via the

@@ -145,7 +145,7 @@ type schema struct {
 }
 
 type property struct {
-	Type        string   `json:"type"`
+	Type        typeName `json:"type"`
 	Description string   `json:"description"`
 	Enum        []any    `json:"enum"`
 	Items       *itemDef `json:"items"`
@@ -153,6 +153,39 @@ type property struct {
 
 type itemDef struct {
 	Type string `json:"type"`
+}
+
+// typeName holds a JSON Schema "type", which may be a single string
+// (`"array"`) or a union expressed as an array (`["null","array"]`). Real MCP
+// schemas use the union form for nullable/optional fields, so a plain `string`
+// field silently dropped it -- the field became "", defaulted to string, and
+// the value was forwarded uncoerced.
+type typeName struct{ names []string }
+
+func (t *typeName) UnmarshalJSON(b []byte) error {
+	var single string
+	if json.Unmarshal(b, &single) == nil {
+		t.names = []string{single}
+		return nil
+	}
+	var arr []string
+	if json.Unmarshal(b, &arr) == nil {
+		t.names = arr
+		return nil
+	}
+	// Unrecognized shape: leave empty so kind() falls back to "string".
+	return nil
+}
+
+// kind returns the canonical type used for coercion and help, ignoring "null"
+// so nullable unions resolve to their real type (e.g. ["null","array"] -> array).
+func (p property) kind() string {
+	for _, n := range p.Type.names {
+		if n != "null" && n != "" {
+			return n
+		}
+	}
+	return "string"
 }
 
 func parseSchema(raw json.RawMessage) schema {
@@ -172,7 +205,7 @@ func firstLine(s string) string {
 
 // coerce converts a flag's string value to the Go type the schema calls for.
 func coerce(p property, raw string) (any, error) {
-	switch p.Type {
+	switch p.kind() {
 	case "boolean":
 		return strconv.ParseBool(raw)
 	case "integer":
@@ -211,7 +244,7 @@ func parseToolArgs(s schema, args []string) (map[string]any, error) {
 			return nil, fmt.Errorf("unknown flag --%s", name)
 		}
 		if !haveVal {
-			if p.Type == "boolean" {
+			if p.kind() == "boolean" {
 				valStr = "true" // bare --flag means true
 			} else {
 				i++
@@ -394,10 +427,7 @@ func printToolHelp(server string, t tool, out *os.File) {
 	fmt.Fprintf(out, "\nFlags:\n")
 	for _, n := range names {
 		p := s.Properties[n]
-		typ := p.Type
-		if typ == "" {
-			typ = "string"
-		}
+		typ := p.kind()
 		req := ""
 		if required[n] {
 			req = " (required)"

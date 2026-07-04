@@ -18,6 +18,7 @@
   "hostUID": 1000,
   "hostGID": 1000,
   "proxyPortOffset": 20000,
+  "mcpLess": true,
   "tunnelServerURL": "https://tunnel.example.com",
   "tunnelLocalPorts": true,
   "cliVersion": "dev"

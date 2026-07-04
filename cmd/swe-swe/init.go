@@ -625,7 +625,7 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
-	mcpLess := fs.Bool("mcp-less", false, "Route MCP servers through the mcp-cli-proxy daemon + `mcp` CLI instead of the agent's native MCP client (for MCP-gated environments)")
+	mcpLess := fs.Bool("mcp-less", true, "Route MCP servers through the mcp-cli-proxy daemon + `mcp` CLI instead of the agent's native MCP client (for MCP-gated environments). Default; pass --mcp-less=false for the legacy agent-hosted native-MCP path")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no VS Code = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
@@ -1394,7 +1394,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process entrypoint.sh template with conditional sections
 		if hostFile == "templates/host/entrypoint.sh" {
-			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands, config.Skills))
+			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands, config.Skills, config.MCPLess))
 		}
 
 		// Inject version info and proxy port offset into swe-swe-server main.go

@@ -12,6 +12,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# MCP-less mode: swe-swe-server hosts the MCP servers via mcp-cli-proxy per
+# session; skip writing every agent's native MCP config below.
+export SWE_MCP_LESS=1
+
 
 
 
@@ -25,10 +29,13 @@ NC='\033[0m' # No Color
 # preview / whiteboard MCPs without per-workspace setup. Pi prefers a
 # project-local .pi/extensions/ override, so /workspace can still drop a
 # custom mcp-bridge.ts to hack on it.
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.pi/agent/extensions
 cp /tmp/pi-mcp-bridge.ts /home/app/.pi/agent/extensions/mcp-bridge.ts
 
 echo -e "${GREEN}[ok] Installed Pi mcp-bridge extension${NC}"
+fi
 
 # Resolve internal server port. SWE_PORT is set by both compose (via the
 # swe-swe service environment block) and dockerfile-only mode (via ENV in

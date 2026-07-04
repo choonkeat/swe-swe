@@ -18,5 +18,6 @@
   "hostUID": 1000,
   "hostGID": 1000,
   "proxyPortOffset": 50000,
+  "mcpLess": true,
   "cliVersion": "dev"
 }

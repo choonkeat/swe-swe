@@ -12,6 +12,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# MCP-less mode: swe-swe-server hosts the MCP servers via mcp-cli-proxy per
+# session; skip writing every agent's native MCP config below.
+export SWE_MCP_LESS=1
+
 
 # Copy slash commands to agent directories
 if [ -d "/home/app/.swe-swe/commands/md/ck/.git" ]; then
@@ -41,6 +45,8 @@ fi
 # the other agents use, since $VAR would expand to empty inside the sandbox.
 # Instead we run npx (or mcp-lazy-init) directly and let Codex substitute
 # $VAR references in args from the declared env_vars whitelist.
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
@@ -69,6 +75,7 @@ env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
 EOF
 
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
+fi
 
 
 

@@ -1138,7 +1138,7 @@ func TestProcessEntrypointTemplateSlashCommandsUseCanonicalStore(t *testing.T) {
 	input := `# {{IF SLASH_COMMANDS}}
 {{SLASH_COMMANDS_COPY}}
 # {{ENDIF}}`
-	got := processEntrypointTemplate(input, []string{"claude", "pi"}, false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil)
+	got := processEntrypointTemplate(input, []string{"claude", "pi"}, false, []SlashCommandsRepo{{Alias: "ck", URL: "https://github.com/choonkeat/slash-commands.git"}}, nil, false)
 
 	mustContain := []string{
 		`/home/app/.swe-swe/commands/md/ck`,
@@ -1171,7 +1171,7 @@ func TestProcessEntrypointTemplateSkillsInstall(t *testing.T) {
 	input := `# {{IF SKILLS}}
 {{SKILLS_INSTALL}}
 # {{ENDIF}}`
-	got := processEntrypointTemplate(input, []string{"claude", "codex", "gemini"}, false, nil, []SkillsRepo{{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"}})
+	got := processEntrypointTemplate(input, []string{"claude", "codex", "gemini"}, false, nil, []SkillsRepo{{Alias: "eng", URL: "https://github.com/mattpocock/skills.git"}}, false)
 
 	mustContain := []string{
 		`/home/app/.swe-swe/skills-src/eng`,
@@ -1214,7 +1214,7 @@ func TestProcessEntrypointTemplateSkillsOmittedWhenAbsent(t *testing.T) {
 {{SKILLS_INSTALL}}
 # {{ENDIF}}
 after`
-	got := processEntrypointTemplate(input, []string{"claude"}, false, nil, nil)
+	got := processEntrypointTemplate(input, []string{"claude"}, false, nil, nil, false)
 	if strings.Contains(got, "SKILLS_INSTALL") || strings.Contains(got, "skills-src") {
 		t.Fatalf("expected skills block to be omitted, got:\n%s", got)
 	}

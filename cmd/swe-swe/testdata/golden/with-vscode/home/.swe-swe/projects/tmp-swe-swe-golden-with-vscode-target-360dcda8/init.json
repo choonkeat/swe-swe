@@ -19,5 +19,6 @@
   "hostGID": 1000,
   "proxyPortOffset": 20000,
   "withVSCode": true,
+  "mcpLess": true,
   "cliVersion": "dev"
 }

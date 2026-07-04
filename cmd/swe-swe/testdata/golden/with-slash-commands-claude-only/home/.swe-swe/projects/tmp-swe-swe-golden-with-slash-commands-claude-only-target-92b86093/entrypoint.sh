@@ -12,6 +12,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# MCP-less mode: swe-swe-server hosts the MCP servers via mcp-cli-proxy per
+# session; skip writing every agent's native MCP config below.
+export SWE_MCP_LESS=1
+
 
 # Copy slash commands to agent directories
 if [ -d "/home/app/.swe-swe/commands/md/ck/.git" ]; then
@@ -41,6 +45,8 @@ fi
 # Create Claude MCP configuration (user scope = cross-project)
 # Uses claude mcp add which writes to ~/.claude.json
 # Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
+# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
+if [ -z "$SWE_MCP_LESS" ]; then
 claude_mcp_setup() {
   unset CLAUDECODE
   claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
@@ -56,6 +62,7 @@ claude_mcp_setup() {
 }
 claude_mcp_setup
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
+fi
 
 # Guard the built-in AskUserQuestion tool. Its multiple-choice menu renders
 # only in the local terminal TUI, which is invisible to a user talking through
@@ -109,6 +116,36 @@ fi
 rm -f /tmp/swe-claude-settings.json
 
 echo -e "${GREEN}[ok] Installed AskUserQuestion guard hook${NC}"
+
+# MCP-less steering: with no native MCP client, the agent must reach every tool
+# through the `mcp` CLI (sockets in $SWE_MCP_DIR, one per server). The blocking
+# send_message contract is the load-bearing rule -- run it, wait, and treat its
+# stdout as the user's reply. Written to ~/.claude/CLAUDE.md (user memory).
+if [ -n "$SWE_MCP_LESS" ]; then
+mkdir -p /home/app/.claude
+cat > /home/app/.claude/CLAUDE.md << 'MCPLESSEOF'
+# MCP-less mode
+
+This environment has NO MCP client. Reach every tool through the `mcp` CLI,
+which mirrors the tool id `mcp__<server>__<tool>`:
+
+    mcp                          # list servers (the socket dir is the registry)
+    mcp <server>                 # list a server's tools
+    mcp <server> <tool> -h       # show a tool's flags (from its JSON Schema)
+    mcp <server> <tool> [--flags] # call the tool; its result prints to stdout
+
+Talk to the user through agent-chat -- it is the ONLY channel the user sees:
+
+- Start each turn with `mcp swe-swe-agent-chat check_messages`.
+- EVERY user-visible message MUST go through
+  `mcp swe-swe-agent-chat send_message --text "..." --first_quick_reply "..."`.
+- `send_message` BLOCKS until the user replies; the reply is RETURNED as the
+  command's stdout. Never background it; end every turn on it.
+- Non-blocking status: `mcp swe-swe-agent-chat send_progress --text "..."`.
+MCPLESSEOF
+
+echo -e "${GREEN}[ok] Installed MCP-less agent steering (~/.claude/CLAUDE.md)${NC}"
+fi
 
 
 # Resolve internal server port. SWE_PORT is set by both compose (via the
