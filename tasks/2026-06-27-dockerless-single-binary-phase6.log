@@ -1,0 +1,10 @@
+002750 PHASE 6 START (Mac-native dockerless). Reconnaissance via GOOS=darwin cross-compile gave the compiler-verified coupling list.
+COMPILE-BLOCKERS (now fixed via build-tag split, Linux byte-identical):
+  - broker peerPID: syscall.Ucred/GetsockoptUcred/SO_PEERCRED -> peercred_linux.go + peercred_other.go (returns error; broker fails open like the socket-taken path).
+  - startSubreaper: syscall.SYS_PRCTL (PR_SET_CHILD_SUBREAPER) -> subreaper_linux.go + subreaper_other.go (no-op; orphans reparent to launchd).
+6a GREEN: swe-swe-server now cross-compiles for darwin/arm64 + darwin/amd64; linux build + make test unchanged (exit 0).
+RUNTIME couplings still pending (need a Mac to verify, cannot test from Linux):
+  - broker identity: /proc/<pid> ancestry walk + SO_PEERCRED is unportable; macOS needs per-session socket paths (the socket = identity) -> redesign.
+  - abstract socket name "@swe-swe-broker": leading @ = Linux abstract ns; on macOS it is a literal filename -> use a filesystem socket path on darwin.
+  - PTY recording: util-linux `script -q -f -T/-I/-O` -> BSD script differs entirely; needs a darwin recorder or Go-native PTY recording.
+BUILD/PACKAGING pending: darwin payload binaries + OS-aware dockerlessPayloadBinDir (currently linux-only) + embed-both strategy; lift dockerlessGOOSGuard once runtime ports land.

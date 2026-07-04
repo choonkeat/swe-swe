@@ -22,7 +22,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -185,26 +184,9 @@ func handleBrokerConn(c *net.UnixConn) {
 	}
 }
 
-// peerPID returns the kernel-reported pid of the connection's peer via
-// SO_PEERCRED. Cannot be forged by the peer.
-func peerPID(c *net.UnixConn) (int, error) {
-	raw, err := c.SyscallConn()
-	if err != nil {
-		return 0, err
-	}
-	var ucred *syscall.Ucred
-	var sockErr error
-	ctlErr := raw.Control(func(fd uintptr) {
-		ucred, sockErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
-	})
-	if ctlErr != nil {
-		return 0, ctlErr
-	}
-	if sockErr != nil {
-		return 0, sockErr
-	}
-	return int(ucred.Pid), nil
-}
+// peerPID is platform-specific: SO_PEERCRED on Linux (peercred_linux.go),
+// unsupported elsewhere (peercred_other.go). It returns the kernel-reported
+// pid of the connection's peer; cannot be forged by the peer.
 
 func brokerWriteJSON(c *net.UnixConn, v any) {
 	if err := json.NewEncoder(c).Encode(v); err != nil {
