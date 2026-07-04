@@ -239,7 +239,7 @@ type SessionPageQuery struct {
 	SessionMode string // "chat" or "terminal"; omit if terminal (default)
 	Name        string // display name (optional)
 	BranchName  string // git branch / worktree (optional)
-	WorkDir     string // working directory; omit if "/workspace" (default)
+	WorkDir     string // working directory; omit if the default workspaceDir
 	ParentUUID  string // parent session UUID (shell sub-sessions)
 	Debug       bool   // debug UI flag
 	ExtraArgs   string // extra CLI flags appended to the agent command (optional)
@@ -262,7 +262,7 @@ func (q SessionPageQuery) Encode() template.URL {
 	if q.BranchName != "" {
 		v.Set("branch", q.BranchName)
 	}
-	if q.WorkDir != "" && q.WorkDir != "/workspace" {
+	if q.WorkDir != "" && q.WorkDir != workspaceDir {
 		v.Set("pwd", q.WorkDir)
 	}
 	if q.ParentUUID != "" {
@@ -537,8 +537,8 @@ func buildSessionEnv(p SessionEnvParams) []string {
 		fmt.Sprintf("PUBLIC_PORT=%d", p.PublicPort),
 		fmt.Sprintf("BROWSER_CDP_PORT=%d", p.CDPPort),
 		fmt.Sprintf("BROWSER_VNC_PORT=%d", p.VNCPort),
-		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
-		"PATH=/workspace/.swe-swe/proxy:/home/app/.swe-swe/proxy:/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
+		"BROWSER="+filepath.Join(sweHomeDir, "bin", "swe-swe-open"),
+		"PATH="+filepath.Join(workspaceDir, ".swe-swe", "proxy")+":"+filepath.Join(sweHomeDir, "proxy")+":"+filepath.Join(sweHomeDir, "bin")+":"+os.Getenv("PATH"),
 		// Wire the per-session credential helper into git for HTTPS remotes.
 		// The helper (git-credential-swe-swe) dials @swe-swe-broker, which
 		// resolves the calling session via SO_PEERCRED + ancestry walk and
@@ -1809,7 +1809,28 @@ func main() {
 			"then connects without one and a daemon running with "+
 			"--mtls-ca will reject the handshake. Env: "+
 			"SWE_TUNNEL_CLIENT_CERT.")
+	workspaceFlag := flag.String("workspace", "",
+		"Main repo directory the agent operates in. Default /workspace "+
+			"(container). Env: SWE_WORKSPACE_DIR. Set for host-native runs.")
+	worktreesFlag := flag.String("worktrees", "",
+		"Directory holding per-session git worktrees. Default /worktrees. "+
+			"Env: SWE_WORKTREES_DIR.")
+	reposFlag := flag.String("repos", "",
+		"Directory for external repo clones. Default /repos. "+
+			"Env: SWE_REPOS_DIR.")
+	sweHomeFlag := flag.String("swe-home", "",
+		"The .swe-swe home holding per-session proxy/ and bin/ (helpers + "+
+			"swe-swe-open shim). Default /home/app/.swe-swe. Env: SWE_HOME_DIR.")
 	flag.Parse()
+
+	// Resolve host paths: flag -> env -> default. Defaults reproduce the
+	// container layout, so compose mode is unchanged; dockerless `swe-swe up`
+	// passes -workspace/-swe-home (etc.) for host-native paths.
+	workspaceDir = firstNonEmpty(*workspaceFlag, os.Getenv("SWE_WORKSPACE_DIR"), workspaceDir)
+	worktreeDir = firstNonEmpty(*worktreesFlag, os.Getenv("SWE_WORKTREES_DIR"), worktreeDir)
+	reposDir = firstNonEmpty(*reposFlag, os.Getenv("SWE_REPOS_DIR"), reposDir)
+	sweHomeDir = firstNonEmpty(*sweHomeFlag, os.Getenv("SWE_HOME_DIR"), sweHomeDir)
+	recordingsDir = filepath.Join(workspaceDir, ".swe-swe", "recordings")
 
 	// Resolve the swe-swe-server bind early so the tunnel supervisor can
 	// log the correct OPEN AT URL ({port}.{hostname}) when it learns the
@@ -2195,7 +2216,7 @@ func main() {
 			defaultRepoUrl, err := getWorkspaceOriginURL()
 			if err != nil {
 				// Fallback to /workspace if we can't get origin URL
-				defaultRepoUrl = "/workspace"
+				defaultRepoUrl = workspaceDir
 			}
 
 			prevPage := recordingsPage - 1
@@ -2657,6 +2678,19 @@ func branchNameFromDir(dirName string) string {
 // ensure this directory exists with proper permissions for the app user.
 var worktreeDir = "/worktrees"
 
+// workspaceDir is the main repo directory the agent operates in. It defaults
+// to the container path /workspace and is overridable via -workspace (env
+// SWE_WORKSPACE_DIR) for host-native (dockerless) runs where the repo lives
+// at an arbitrary host path.
+var workspaceDir = "/workspace"
+
+// sweHomeDir is the .swe-swe home that holds the per-session proxy/ and bin/
+// dirs (credential/signing helpers + the swe-swe-open shim). Defaults to the
+// container path /home/app/.swe-swe; overridable via -swe-home (env
+// SWE_HOME_DIR) so a dockerless run can point at the dumped project bin/.
+// (firstNonEmpty, used to resolve flag -> env -> default, lives in tailscale.go.)
+var sweHomeDir = "/home/app/.swe-swe"
+
 // excludeFromSymlink lists entries that should never be symlinked to worktrees
 var excludeFromSymlink = []string{".git"}
 
@@ -2962,7 +2996,7 @@ func getGitRoot() (string, error) {
 
 // getMainRepoBranch returns the current branch of the main repo (/workspace)
 func getMainRepoBranch() string {
-	cmd := exec.Command("git", "-C", "/workspace", "branch", "--show-current")
+	cmd := exec.Command("git", "-C", workspaceDir, "branch", "--show-current")
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -3235,7 +3269,7 @@ func sanitizeRepoURL(repoURL string) string {
 
 // getWorkspaceOriginURL returns the origin remote URL of /workspace repo
 func getWorkspaceOriginURL() (string, error) {
-	cmd := exec.Command("git", "-C", "/workspace", "remote", "get-url", "origin")
+	cmd := exec.Command("git", "-C", workspaceDir, "remote", "get-url", "origin")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get origin URL: %w", err)
@@ -3341,7 +3375,7 @@ func isWorkspaceRepo(repoURL string) bool {
 	}
 
 	// Check if it's a local path that is /workspace
-	if repoURL == "/workspace" || repoURL == "/workspace/" {
+	if repoURL == workspaceDir || repoURL == workspaceDir+"/" {
 		return true
 	}
 
@@ -3424,7 +3458,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 
 // handleRepoPrepareWorkspace handles the workspace mode - use /workspace or an existing repo path with soft fetch
 func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
-	workDir := "/workspace"
+	workDir := workspaceDir
 	isWorkspace := true
 
 	if repoPath != "" {
@@ -3649,11 +3683,11 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 
 	repoPath := r.URL.Query().Get("path")
 	if repoPath == "" {
-		repoPath = "/workspace"
+		repoPath = workspaceDir
 	}
 
 	// Security check: only allow /workspace or /repos/* paths
-	if repoPath != "/workspace" && !strings.HasPrefix(repoPath, reposDir+"/") {
+	if repoPath != workspaceDir && !strings.HasPrefix(repoPath, reposDir+"/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid repository path"})
@@ -3734,7 +3768,7 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 
 	// Default repo: /workspace and all of its worktrees (/worktrees/<x>) share
 	// the dedicated /worktrees directory.
-	if repoPath == "/workspace" || strings.HasPrefix(repoPath, worktreeDir+"/") {
+	if repoPath == workspaceDir || strings.HasPrefix(repoPath, worktreeDir+"/") {
 		return filepath.Join(worktreeDir, dirName)
 	}
 
@@ -4556,7 +4590,7 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		// If repoPath provided, use it as base; otherwise default to /workspace
 		baseRepo := p.RepoPath
 		if baseRepo == "" {
-			baseRepo = "/workspace"
+			baseRepo = workspaceDir
 		}
 
 		// If branch is provided, create/use worktree.
@@ -8213,7 +8247,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args prepareRepoArgs) (*mcp.CallToolResult, any, error) {
 		switch args.Mode {
 		case "workspace":
-			workDir := "/workspace"
+			workDir := workspaceDir
 			if args.Path != "" {
 				cleaned := filepath.Clean(args.Path)
 				if !strings.HasPrefix(cleaned, reposDir+"/") {
