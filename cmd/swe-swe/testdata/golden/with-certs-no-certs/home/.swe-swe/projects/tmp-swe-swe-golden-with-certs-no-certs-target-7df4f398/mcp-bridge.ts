@@ -433,15 +433,20 @@ class McpBridge {
       client: new HttpMcpClient("swe-swe", `http://localhost:${sweServerPort}/mcp${sweAuthKey ? `?key=${sweAuthKey}` : ""}`),
     });
 
-    // swe-swe-preview is NOT wired here. The /proxy/<uuid>/preview/mcp
-    // endpoint sits behind swe-swe-server's cookie-based authMiddleware (no
-    // MCP_AUTH_KEY bypass), so calling it from a session subprocess returns
-    // the login HTML. Other agents' configs (claude/codex/gemini/goose/
-    // opencode) wire the same URL via agent-reverse-proxy and hit the same
-    // wall -- this is a pre-existing limitation, not a pi-only issue. A fix
-    // would require exempting /proxy/<uuid>/preview/mcp from authMiddleware
-    // (with key-auth instead) or having the bridge perform a login round-
-    // trip; out of scope for this extension.
+    // swe-swe-preview: agent-reverse-proxy MCP served by swe-swe-server at
+    // /proxy/<uuid>/preview/mcp. authMiddleware key-exempts this path (via
+    // proxyPreviewMCPPath + sessionKeyMatchesPath), so the per-session
+    // MCP_AUTH_KEY authorizes it -- same scheme as /mcp and browser/start.
+    // Requires SESSION_UUID; without it we can't build the scoped path.
+    if (sessionUuid) {
+      endpoints.push({
+        name: "swe-swe-preview",
+        client: new HttpMcpClient(
+          "swe-swe-preview",
+          `http://localhost:${sweServerPort}/proxy/${sessionUuid}/preview/mcp${sweAuthKey ? `?key=${sweAuthKey}` : ""}`,
+        ),
+      });
+    }
 
     // swe-swe-agent-chat: spawn agent-chat with --no-stdio-mcp so it serves
     // MCP over HTTP, then bridge to it. The agent-chat process also serves the

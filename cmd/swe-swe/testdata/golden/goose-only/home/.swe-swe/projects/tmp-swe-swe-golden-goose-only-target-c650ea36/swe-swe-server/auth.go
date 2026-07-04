@@ -556,6 +556,25 @@ func proxyOpenControlPath(path string) (uuid string, ok bool) {
 	return uuid, true
 }
 
+// proxyPreviewMCPPath reports whether path is the preview proxy's MCP
+// endpoint (/proxy/{uuid}/preview/mcp) and returns the embedded session UUID.
+// This endpoint is driven by the mcp-cli-proxy fleet / agent MCP client --
+// headless, non-browser clients with no auth cookie -- so it is authorized by
+// the per-session MCP key rather than the cookie, same as the open-URL control
+// endpoint and /api/session/{uuid}/browser/start.
+func proxyPreviewMCPPath(path string) (uuid string, ok bool) {
+	const prefix = "/proxy/"
+	const suffix = "/preview/mcp"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return "", false
+	}
+	uuid = strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if uuid == "" || strings.Contains(uuid, "/") {
+		return "", false
+	}
+	return uuid, true
+}
+
 // authMiddleware wraps an http.Handler with cookie-based authentication.
 // Unauthenticated requests are redirected to /swe-swe-auth/login.
 // Exempt paths: /swe-swe-auth/login, /swe-swe-auth/verify, /ssl/*, /mcp,
@@ -582,6 +601,19 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 		// cookie. Authorize it with the per-session MCP key scoped to the path
 		// UUID instead -- same scheme as /api/autocomplete and /browser/start.
 		if uuid, ok := proxyOpenControlPath(path); ok {
+			if sessionKeyMatchesPath(r, uuid) {
+				next.ServeHTTP(w, r)
+			} else {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			}
+			return
+		}
+
+		// Preview proxy MCP endpoint. Driven by the mcp-cli-proxy fleet (or a
+		// native agent MCP client) -- headless clients with no auth cookie.
+		// Authorize with the per-session MCP key scoped to the path UUID, same
+		// scheme as the open-URL control endpoint above.
+		if uuid, ok := proxyPreviewMCPPath(path); ok {
 			if sessionKeyMatchesPath(r, uuid) {
 				next.ServeHTTP(w, r)
 			} else {

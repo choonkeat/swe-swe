@@ -56,7 +56,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     },
     "swe-swe-preview": {
       "type": "local",
-      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"]
+      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
     },
     "swe-swe-whiteboard": {
       "type": "local",

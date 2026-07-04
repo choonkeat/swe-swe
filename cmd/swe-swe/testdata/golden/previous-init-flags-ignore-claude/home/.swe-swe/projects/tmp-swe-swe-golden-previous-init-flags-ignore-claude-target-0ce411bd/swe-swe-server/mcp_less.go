@@ -64,7 +64,7 @@ func mcpLessProxySpecs(sessionMode string) []proxySpec {
 		},
 		proxySpec{
 			Name: "swe-swe-preview",
-			Argv: shExec("npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"),
+			Argv: shExec("npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"),
 		},
 		proxySpec{
 			Name: "swe-swe-whiteboard",
