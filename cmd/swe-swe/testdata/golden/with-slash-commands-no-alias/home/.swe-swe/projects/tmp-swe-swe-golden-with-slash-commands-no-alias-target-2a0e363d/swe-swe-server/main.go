@@ -2221,6 +2221,10 @@ func main() {
 				Debug                bool
 				DefaultRepoUrl       string
 				Version              string
+				// ResumeEnabled gates the per-recording "Resume" (fork)
+				// button behind the ?resume=1 query flag while the feature
+				// is being dogfooded.
+				ResumeEnabled bool
 			}{
 				Agents:               agents,
 				Recordings:           recordings,
@@ -2235,6 +2239,7 @@ func main() {
 				Debug:                debugMode,
 				DefaultRepoUrl:       defaultRepoUrl,
 				Version:              Version + " (" + GitCommit + ")",
+				ResumeEnabled:        r.URL.Query().Get("resume") == "1",
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
@@ -6031,6 +6036,7 @@ type RecordingInfo struct {
 	SummaryLine     string           // one-line summary from last chat event
 	RestartUUID     string           // fresh UUID for "restart" link
 	Query           SessionPageQuery // params to restart a similar session
+	CanResume       bool             // forkable via /api/fork (chat mode, claude/codex, has chat log)
 }
 
 func agentBadgeClass(agent string) string {
@@ -6257,6 +6263,9 @@ func loadEndedRecordings() []RecordingInfo {
 					WorkDir:     meta.WorkDir,
 					ExtraArgs:   meta.ExtraArgs,
 				}
+				// Forkable via /api/fork only for chat-mode claude/codex
+				// recordings that have a chat event log to prepopulate.
+				info.CanResume = info.HasChat && meta.SessionMode == "chat" && (binary == "claude" || binary == "codex")
 				// Prefer the cached summary if it was extracted at end-of-session.
 				// This avoids decompressing the entire .log.gz on every homepage render.
 				info.SummaryLine = meta.SummaryLine

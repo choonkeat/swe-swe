@@ -585,6 +585,13 @@
         .btn-view--restart:hover {
             background: var(--accent-10);
         }
+        .btn-view--resume {
+            border-color: #22c55e;
+            color: #22c55e;
+        }
+        .btn-view--resume:hover {
+            background: rgba(34, 197, 94, 0.12);
+        }
         .recording-card__view-label {
             font-size: 11px;
             color: var(--text-muted);
@@ -1567,6 +1574,7 @@
                             {{if .HasChat}}<a href="/recording/{{.UUID}}/chat" class="btn-view">Chat</a>{{end}}
                             <a href="/recording/{{.UUID}}" class="btn-view">Agent</a>
                             {{if .Query.Assistant}}<span class="recording-card__separator"></span><a href="/session/{{.RestartUUID}}?{{.Query.Encode}}" class="btn-view btn-view--restart" title="Start new session with same settings">+ New</a>{{end}}
+                            {{if and $.ResumeEnabled .CanResume}}<a href="/api/fork/{{.UUID}}" class="btn-view btn-view--resume" title="Resume this conversation (fork: restores chat history and reattaches the agent)">Resume</a>{{end}}
                         </div>
                     </div>
                     {{end}}
