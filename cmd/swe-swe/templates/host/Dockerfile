@@ -52,7 +52,7 @@ RUN cd /build-git-sign-swe-swe && go mod init git-sign-swe-swe && CGO_ENABLED=0 
 # Alpine doesn't ship git; go install ...@<commit-sha> needs VCS to
 # resolve a raw hash even when fetching via the module proxy.
 RUN apk add --no-cache git
-ARG SWE_SWE_TUNNEL_REF=0d5d65a879d4b68379f24b41e1ce8aa3a812010e
+ARG SWE_SWE_TUNNEL_REF=89610e0af1dc6f4121052f8bbce6f9fef125a300
 RUN CGO_ENABLED=0 GOOS=linux GOBIN=/build-swe-swe-tunnel \
     go install -ldflags="-s -w" \
     github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@${SWE_SWE_TUNNEL_REF}
