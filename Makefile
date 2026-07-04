@@ -63,6 +63,10 @@ swe-swe-fork-convo:
 DOCKERLESS_PAYLOAD_DIR := cmd/swe-swe/dockerless-payload
 DOCKERLESS_ARCH := $(shell go env GOARCH)
 DOCKERLESS_BIN := $(DOCKERLESS_PAYLOAD_DIR)/bin/linux-$(DOCKERLESS_ARCH)
+# Pinned swe-swe-tunnel client ref embedded in the dockerless payload so
+# tunnel mode works with no Docker. KEEP IN SYNC with the Dockerfile's
+# SWE_SWE_TUNNEL_REF ARG (templates/host/Dockerfile).
+SWE_SWE_TUNNEL_REF := 0d5d65a879d4b68379f24b41e1ce8aa3a812010e
 .PHONY: dockerless-payload _payload-helper
 dockerless-payload:
 	@rm -rf $(DOCKERLESS_BIN)
@@ -88,6 +92,11 @@ dockerless-payload:
 	@$(MAKE) _payload-helper NAME=swe-swe-broker-probe
 	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
 	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
+	@# swe-swe-tunnel client (external repo, pinned ref) -- enables tunnel mode
+	@# in dockerless. go install resolves via GOPROXY; matches the Dockerfile.
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) GOBIN=$(CURDIR)/$(DOCKERLESS_BIN) \
+		go install -ldflags="-s -w" \
+		github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@$(SWE_SWE_TUNNEL_REF)
 	@echo "dockerless payload built: $(DOCKERLESS_BIN)"
 
 _payload-helper:

@@ -106,12 +106,13 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 // dir, loopback bind on the chosen port), and the environment with the dumped
 // bin/ prepended to PATH so the git credential/signing helpers resolve. Pure
 // for testability; the actual exec lives in handleDockerlessCommand.
-func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string) (bin string, args, env []string) {
+func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig) (bin string, args, env []string) {
 	binDir := filepath.Join(sweDir, "bin")
 	bin = filepath.Join(binDir, "swe-swe-server")
 	// Host-native paths: the project is the workspace; the dumped sweDir is
 	// the .swe-swe home (sweDir/bin holds the helpers + swe-swe-open shim);
-	// worktrees/repos live under sweDir. Loopback bind = no LAN exposure.
+	// worktrees/repos live under sweDir. Loopback bind = no LAN exposure
+	// (also exactly what tunnel mode wants: the tunnel client dials loopback).
 	args = []string{
 		"-working-directory", absPath,
 		"-workspace", absPath,
@@ -119,6 +120,20 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string) 
 		"-worktrees", filepath.Join(sweDir, "worktrees"),
 		"-repos", filepath.Join(sweDir, "repos"),
 		"-bind", "127.0.0.1:" + port,
+	}
+	// Tunnel mode (no Docker): point the server at the embedded tunnel client
+	// dumped into bin/ and pass through the saved tunnel config.
+	if tunnel.serverURL != "" {
+		args = append(args,
+			"-tunnel-server-url", tunnel.serverURL,
+			"-tunnel-bin", filepath.Join(binDir, "swe-swe-tunnel"),
+		)
+		if tunnel.clientCert != "" {
+			args = append(args, "-tunnel-client-cert", tunnel.clientCert)
+		}
+		if tunnel.localPorts {
+			args = append(args, "-tunnel-local-ports")
+		}
 	}
 
 	env = make([]string, 0, len(baseEnv)+2)
@@ -181,6 +196,28 @@ func writeDockerlessOpenShim(binDir string) error {
 	return nil
 }
 
+// tunnelConfig carries the dockerless tunnel settings from init.json through
+// to the server flags. Zero value (empty serverURL) = tunnel disabled.
+type tunnelConfig struct {
+	serverURL  string
+	clientCert string
+	localPorts bool
+}
+
+// loadDockerlessTunnelConfig reads the saved tunnel settings for a dockerless
+// project. Missing/unreadable config = tunnel disabled (zero value).
+func loadDockerlessTunnelConfig(sweDir string) tunnelConfig {
+	cfg, err := loadInitConfig(sweDir)
+	if err != nil {
+		return tunnelConfig{}
+	}
+	return tunnelConfig{
+		serverURL:  cfg.TunnelServerURL,
+		clientCert: cfg.TunnelClientCert,
+		localPorts: cfg.TunnelLocalPorts,
+	}
+}
+
 // handleDockerlessCommand is the dockerless counterpart to the docker-compose
 // passthrough: it runs the dumped server directly instead of `docker compose`.
 // Supports `up [--open]` (foreground) and `down`.
@@ -198,7 +235,11 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 	switch command {
 	case "up":
 		port := dockerlessPort(os.Getenv)
-		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ())
+		tunnel := loadDockerlessTunnelConfig(sweDir)
+		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel)
+		if tunnel.serverURL != "" {
+			fmt.Printf("Tunnel mode: connecting via %s\n", tunnel.serverURL)
+		}
 		if _, err := os.Stat(bin); err != nil {
 			log.Fatalf("dockerless server not found at %s -- re-run `swe-swe init --dockerless`: %v", bin, err)
 		}

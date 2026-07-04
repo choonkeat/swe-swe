@@ -83,7 +83,7 @@ func TestDockerlessMarker(t *testing.T) {
 func TestDockerlessServerInvocation(t *testing.T) {
 	sweDir := "/home/u/.swe-swe/projects/proj"
 	absPath := "/work/proj"
-	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"})
+	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"}, tunnelConfig{})
 
 	if want := filepath.Join(sweDir, "bin", "swe-swe-server"); bin != want {
 		t.Errorf("bin = %q, want %q", bin, want)
@@ -187,8 +187,34 @@ func TestWriteDockerlessMCPConfig(t *testing.T) {
 	}
 }
 
+// With no tunnel config, no tunnel flags are passed. With a tunnel serverURL,
+// -tunnel-server-url + -tunnel-bin (pointing at the dumped client) are added.
+func TestDockerlessServerInvocationTunnel(t *testing.T) {
+	sweDir := "/home/u/.swe-swe/projects/proj"
+	// Disabled: no tunnel args.
+	_, args, _ := dockerlessServerInvocation(sweDir, "/p", "1977", nil, tunnelConfig{})
+	if argsContainValue(args, "-tunnel-server-url") {
+		t.Errorf("unexpected tunnel args when disabled: %v", args)
+	}
+	// Enabled.
+	_, args, _ = dockerlessServerInvocation(sweDir, "/p", "1977", nil,
+		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem", localPorts: true})
+	if !argsContainPair(args, "-tunnel-server-url", "https://tunnel.example.com") {
+		t.Errorf("args %v missing -tunnel-server-url", args)
+	}
+	if !argsContainPair(args, "-tunnel-bin", filepath.Join(sweDir, "bin", "swe-swe-tunnel")) {
+		t.Errorf("args %v missing -tunnel-bin pointing at dumped client", args)
+	}
+	if !argsContainPair(args, "-tunnel-client-cert", "/c.pem") {
+		t.Errorf("args %v missing -tunnel-client-cert", args)
+	}
+	if !argsContainValue(args, "-tunnel-local-ports") {
+		t.Errorf("args %v missing -tunnel-local-ports", args)
+	}
+}
+
 func TestDockerlessServerInvocationSetsServerPort(t *testing.T) {
-	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"})
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{})
 	found := false
 	for _, e := range env {
 		if e == "SWE_SERVER_PORT=1977" {

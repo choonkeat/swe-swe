@@ -27,6 +27,9 @@ var dockerlessBinaries = []string{
 	"mcp-lazy-init",
 	"swe-swe-broker-probe",
 	"swe-swe-fork-convo",
+	// External tunnel client (pinned ref), embedded so `swe-swe up` can run
+	// tunnel mode with no Docker. Only spawned when -tunnel-server-url is set.
+	"swe-swe-tunnel",
 }
 
 // dockerlessPayloadBinDir returns the embed path holding the static-linux
