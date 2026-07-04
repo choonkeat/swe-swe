@@ -50,14 +50,20 @@ type Review struct {
 	Notes   []Note   `json:"notes"`
 }
 
-// Provider is the adapter interface. The first vertical slice implements Fetch
-// only; the write path (PostReply, PostComment, ResolveThread, Approve, Reject)
-// lands in the next slice and is listed here so the shape is visible.
+// Provider is the adapter interface. The only provider-specific code lives
+// behind it; everything else (state, render, staging, flush orchestration) is
+// shared. Each write method maps to one atomic upstream action.
 type Provider interface {
 	Fetch(ref PRRef) (*Review, error)
-	// PostReply(ref PRRef, threadID, body string) (int64, error)
-	// PostComment(ref PRRef, path string, line int, side, sha, body string) (int64, error)
-	// ResolveThread(ref PRRef, threadID string) error
-	// Approve(ref PRRef) error
-	// Reject(ref PRRef) error
+	// PostReply adds a reply to an existing thread; returns the new comment id.
+	PostReply(ref PRRef, threadID, body string) (int64, error)
+	// PostComment creates a new inline comment (its own thread) anchored to
+	// (path, line, side) on commitSHA; returns the new comment id.
+	PostComment(ref PRRef, path string, line int, side, commitSHA, body string) (int64, error)
+	// ResolveThread marks a thread resolved.
+	ResolveThread(ref PRRef, threadID string) error
+	// Approve / Reject set the review verdict (separate, atomic, never bundled
+	// with comments). body is optional context.
+	Approve(ref PRRef, body string) error
+	Reject(ref PRRef, body string) error
 }
