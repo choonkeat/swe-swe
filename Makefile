@@ -15,7 +15,7 @@ ascii-check:
 ascii-fix:
 	@bash scripts/ascii-fix.sh
 
-test-cli:
+test-cli: dockerless-payload
 	go test -v ./cmd/swe-swe
 
 test-mcp-lazy-init:
@@ -139,6 +139,81 @@ swe-swe-fork-convo:
 	@rm -rf /tmp/swe-swe-fork-convo-build
 	@echo "built: bin/swe-swe-fork-convo"
 
+# --- Dockerless embedded payload ---
+# Build the static-linux helper binaries the `swe-swe` CLI go:embeds and
+# dumps on `swe-swe init --dockerless` (and that the thin Dockerfile COPYs).
+# All are CGO_ENABLED=0 so one Linux set runs on alpine/bookworm/slim alike.
+# The payload carries host binaries for the CLI's own OS/arch (dockerless
+# dumps them on the host; Docker mode builds in-container). Build for the host
+# GOOS/GOARCH: linux-* on Linux, darwin-* on macOS (Phase 6). The outputs are
+# build artifacts (gitignored); a committed .gitkeep keeps the go:embed
+# directive compilable without them.
+DOCKERLESS_PAYLOAD_DIR := cmd/swe-swe/dockerless-payload
+DOCKERLESS_OS := $(shell go env GOOS)
+DOCKERLESS_ARCH := $(shell go env GOARCH)
+DOCKERLESS_BIN := $(DOCKERLESS_PAYLOAD_DIR)/bin/$(DOCKERLESS_OS)-$(DOCKERLESS_ARCH)
+# Pinned swe-swe-tunnel client ref embedded in the dockerless payload so
+# tunnel mode works with no Docker. KEEP IN SYNC with the Dockerfile's
+# SWE_SWE_TUNNEL_REF ARG (templates/host/Dockerfile).
+SWE_SWE_TUNNEL_REF := 0d5d65a879d4b68379f24b41e1ce8aa3a812010e
+.PHONY: dockerless-payload _payload-helper
+dockerless-payload:
+	@rm -rf $(DOCKERLESS_BIN)
+	@mkdir -p $(DOCKERLESS_BIN)
+	@# server + fork-convo share the swe-swe-server module; mirror the
+	@# test-server copy-out flow (go.mod.txt -> go.mod) so the build sees the
+	@# same module shape the container build produces.
+	@rm -rf /tmp/swe-swe-payload-server
+	@mkdir -p /tmp/swe-swe-payload-server
+	@cp -r $(SERVER_TEMPLATE)/. /tmp/swe-swe-payload-server/
+	@mkdir -p /tmp/swe-swe-payload-server/container-templates/.swe-swe/docs
+	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* /tmp/swe-swe-payload-server/container-templates/.swe-swe/docs/
+	@mv /tmp/swe-swe-payload-server/go.mod.txt /tmp/swe-swe-payload-server/go.mod
+	@mv /tmp/swe-swe-payload-server/go.sum.txt /tmp/swe-swe-payload-server/go.sum
+	cd /tmp/swe-swe-payload-server && go mod tidy && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-server . && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-fork-convo ./cmd/swe-swe-fork-convo
+	@cp /tmp/swe-swe-payload-server/go.sum $(SERVER_TEMPLATE)/go.sum.txt
+	@rm -rf /tmp/swe-swe-payload-server
+	@# stdlib-only helpers: each is a standalone `go mod init` build, exactly
+	@# as the Dockerfile builds them.
+	@$(MAKE) _payload-helper NAME=mcp-lazy-init
+	@$(MAKE) _payload-helper NAME=swe-swe-broker-probe
+	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
+	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
+	@# swe-swe-tunnel client (external repo, pinned ref) -- enables tunnel mode
+	@# in dockerless. Built in a throwaway module via `go build -o` rather than
+	@# `go install` so it cross-compiles (go install refuses cross-builds when
+	@# GOBIN is set); resolves via GOPROXY, matching the Dockerfile.
+	@rm -rf /tmp/swe-swe-payload-tunnel
+	@mkdir -p /tmp/swe-swe-payload-tunnel
+	cd /tmp/swe-swe-payload-tunnel && go mod init tunnelbuild >/dev/null 2>&1 && \
+		go get github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@$(SWE_SWE_TUNNEL_REF) >/dev/null 2>&1 && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" \
+		-o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-tunnel \
+		github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel
+	@rm -rf /tmp/swe-swe-payload-tunnel
+	@echo "dockerless payload built: $(DOCKERLESS_BIN)"
+
+# Thin swe-swe/browser-backend image: the relocatable Agent View allocation
+# service. Reuses the static swe-swe-server from the dockerless payload (run as
+# `-mode browser-backend`) + only the display stack. See docker/browser-backend.
+# The image is a Linux container regardless of build host, so force a linux
+# payload (the server is CGO-free and cross-compiles to linux from macOS too).
+browser-backend-image:
+	$(MAKE) dockerless-payload DOCKERLESS_OS=linux
+	docker build -f docker/browser-backend/Dockerfile \
+		--build-arg ARCH=$(DOCKERLESS_ARCH) \
+		-t swe-swe/browser-backend .
+
+_payload-helper:
+	@rm -rf /tmp/swe-swe-payload-$(NAME)
+	@mkdir -p /tmp/swe-swe-payload-$(NAME)
+	@cp cmd/swe-swe/templates/host/$(NAME)/main.go /tmp/swe-swe-payload-$(NAME)/main.go
+	cd /tmp/swe-swe-payload-$(NAME) && go mod init $(NAME) >/dev/null 2>&1 && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
+	@rm -rf /tmp/swe-swe-payload-$(NAME)
+
 # Test the git-sign-swe-swe wrapper template (stdlib only).
 # The wrapper ships as a standalone binary built inside Dockerfile;
 # we mirror the same go-mod-init-in-tmp pattern so the test runs
@@ -187,6 +262,8 @@ test-e2e-legacy:
 #        make e2e-test        -> run playwright tests against all running modes
 #        make e2e-down        -> tear down all running modes
 #        make test-e2e        -> full sequential flow: up, test, down for each mode
+#        make test-e2e-dockerless       -> host-native (no Docker) full flow
+#        make test-e2e-dockerless-smoke -> dockerless contract only (no browser)
 
 e2e-up-simple:
 	./scripts/e2e-up.sh simple
@@ -200,6 +277,11 @@ e2e-test:
 e2e-down:
 	./scripts/e2e-down.sh
 
+# Host-native (dockerless) e2e: no Docker daemon. Boots the dumped server
+# directly and asserts the dockerless contract (payload + serving endpoints).
+e2e-dockerless:
+	./scripts/e2e-dockerless.sh
+
 test-e2e:
 	./scripts/e2e-up.sh simple
 	./scripts/e2e-test.sh simple $(E2E_ARGS) || (./scripts/e2e-down.sh simple; exit 1)
@@ -207,6 +289,30 @@ test-e2e:
 	./scripts/e2e-up.sh compose
 	./scripts/e2e-test.sh compose $(E2E_ARGS) || (./scripts/e2e-down.sh compose; exit 1)
 	./scripts/e2e-down.sh compose
+
+# Host-native (dockerless) umbrella -- mirrors `test-e2e` for the no-Docker
+# path. The harness self-contains init + up + assert + teardown (trap), so
+# these just name the two run modes. Run manually / before releases; NOT part
+# of `make test` (it boots a server + drives a real browser -> too heavy and
+# flaky for the fast unit gate).
+test-e2e-dockerless:
+	./scripts/e2e-dockerless.sh
+
+# Lighter smoke for runners without chromium / an agent CLI: asserts the
+# dockerless contract + serving endpoints over curl, skips the Playwright tabs.
+test-e2e-dockerless-smoke:
+	E2E_SKIP_PLAYWRIGHT=1 ./scripts/e2e-dockerless.sh
+
+# Agent View over a REMOTE browser-backend: allocation API, CDP forwarder,
+# VNC proxy, vnc-ready, noVNC canvas, and chromium's localhost resolving back
+# to the swe-swe host. Binary tier runs the dumped server directly (needs the
+# display stack); image tier builds + runs docker/browser-backend (needs
+# Docker) and is the genuine cross-namespace proof.
+test-e2e-agent-view-remote:
+	./scripts/e2e-agent-view-remote.sh
+
+test-e2e-agent-view-remote-image:
+	E2E_AV_BACKEND=image ./scripts/e2e-agent-view-remote.sh
 
 # --- Manual tunnel-mode test ---
 # Spins up a real swe-swe container in tunnel mode against
@@ -270,7 +376,7 @@ BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo "dev")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-build-cli:
+build-cli: dockerless-payload
 	@rm -f cmd/swe-swe/templates/host/swe-swe-server/go.mod cmd/swe-swe/templates/host/swe-swe-server/go.sum
 	mkdir -p ./dist
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe
@@ -319,7 +425,6 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=with-status-bar-font FLAGS="--status-bar-font-size 14 --status-bar-font-family monospace"
 	@$(MAKE) _golden-variant NAME=with-repos-dir FLAGS="--repos-dir /data/repos"
 	@$(MAKE) _golden-variant NAME=with-proxy-port-offset FLAGS="--proxy-port-offset 50000"
-	@$(MAKE) _golden-variant NAME=with-vscode FLAGS="--with-vscode"
 	@$(MAKE) _golden-variant NAME=mcp-less FLAGS="--mcp-less"
 	@$(MAKE) _golden-variant NAME=tunnel-mode FLAGS="--tunnel-server-url https://tunnel.example.com"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-mtls FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt"

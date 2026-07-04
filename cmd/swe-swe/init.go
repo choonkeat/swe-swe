@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -254,12 +255,12 @@ type InitConfig struct {
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
-	WithVSCode          bool                `json:"withVSCode,omitempty"`
 	// MCPLess routes MCP servers through the mcp-cli-proxy daemon + `mcp` CLI
 	// instead of the agent's native MCP client, for environments where MCP is
 	// gated but the CLI agent is not. See tasks/2026-07-01-mcp-less-cli-proxy.md.
 	MCPLess             bool                `json:"mcpLess,omitempty"`
-	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && !WithVSCode
+	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && no tunnel
+	Dockerless          bool                `json:"-"` // mode flag: host-native, no Docker (marker file written separately)
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
 	TunnelLocalPorts    bool                `json:"tunnelLocalPorts,omitempty"`
@@ -624,9 +625,9 @@ func handleInit() {
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
-	withVSCode := fs.Bool("with-vscode", false, "Include VS Code (code-server) in the container stack")
 	mcpLess := fs.Bool("mcp-less", true, "Route MCP servers through the mcp-cli-proxy daemon + `mcp` CLI instead of the agent's native MCP client (for MCP-gated environments). Default; pass --mcp-less=false for the legacy agent-hosted native-MCP path")
-	// Note: dockerfile-only mode is auto-detected (no SSL + no VS Code = dockerfile-only)
+	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux host only)")
+	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
 	sslFlag := fs.String("ssl", "no", "SSL mode: 'no', 'selfsign', 'selfsign@hostname', 'letsencrypt@domain', 'letsencrypt-staging@domain'")
@@ -667,6 +668,15 @@ func handleInit() {
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
 	fs.Parse(os.Args[2:])
+
+	// Dockerless is host-native: refuse early on a non-Linux CLI before
+	// writing anything, since the embedded binaries are static-Linux only.
+	if *dockerless {
+		if err := dockerlessGOOSGuard(runtime.GOOS); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+	}
 
 	// Validate --previous-init-flags
 	if *previousInitFlags != "" && *previousInitFlags != "reuse" && *previousInitFlags != "ignore" {
@@ -871,9 +881,6 @@ func handleInit() {
 		if !explicitFlags["with-docker"] {
 			*withDocker = savedConfig.WithDocker
 		}
-		if !explicitFlags["with-vscode"] {
-			*withVSCode = savedConfig.WithVSCode
-		}
 		if !explicitFlags["mcp-less"] {
 			*mcpLess = savedConfig.MCPLess
 		}
@@ -945,13 +952,13 @@ func handleInit() {
 		AptPackages: aptPkgs,
 		NpmPackages: npmPkgs,
 		WithDocker:  *withDocker,
-		WithVSCode:  *withVSCode,
 		MCPLess:     *mcpLess,
+		Dockerless:  *dockerless,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:
 		// service, drop per-port labels, add SWE_TUNNEL_SERVER_URL env.
-		DockerfileOnly:      *sslFlag == "no" && !*withVSCode && *tunnelServerURL == "",
+		DockerfileOnly:      *sslFlag == "no" && *tunnelServerURL == "",
 		SlashCommands:       slashCmds,
 		Skills:              skillRepos,
 		SSL:                 *sslFlag,
@@ -976,6 +983,11 @@ func handleInit() {
 		if sslErr != nil {
 			log.Fatalf("Invalid SSL value in saved config: %v", sslErr)
 		}
+	}
+
+	if config.Dockerless {
+		executeDockerlessInit(absPath, sweDir, config)
+		return
 	}
 
 	executeInit(absPath, sweDir, config, sslMode, sslHost, sslDomain)
@@ -1042,10 +1054,10 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		}
 	}
 
-	// Set home directory ownership to UID 1000 (code-server user) recursively.
-	// This is needed when running as root on Linux, otherwise code-server
-	// cannot write to its home directory. Errors are ignored because this
-	// only works when running as root on Linux.
+	// Set home directory ownership to UID 1000 (the container's app user)
+	// recursively. This is needed when running as root on Linux, otherwise
+	// the app user cannot write to its home directory. Errors are ignored
+	// because this only works when running as root on Linux.
 	filepath.Walk(homeDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil {
 			os.Chown(path, 1000, 1000)
@@ -1257,13 +1269,6 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 			log.Fatalf("Failed to read embedded file %q: %v", hostFile, err)
 		}
 
-		// Skip code-server files when VSCode is not enabled
-		if !config.WithVSCode {
-			if hostFile == "templates/host/code-server/Dockerfile" || hostFile == "templates/host/nginx-vscode.conf" {
-				continue
-			}
-		}
-
 		// Auth is now embedded in swe-swe-server -- skip standalone auth service files
 		if strings.HasPrefix(hostFile, "templates/host/auth/") {
 			continue
@@ -1280,8 +1285,6 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		// (docker-compose.yml is NOT skipped -- a minimal shim is generated instead)
 		if config.DockerfileOnly {
 			if hostFile == "templates/host/traefik-dynamic.yml" ||
-				hostFile == "templates/host/code-server/Dockerfile" ||
-				hostFile == "templates/host/nginx-vscode.conf" ||
 				hostFile == "templates/host/.dockerignore" {
 				continue
 			}
@@ -1383,13 +1386,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
     restart: unless-stopped
 `, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
-				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert, config.TunnelLocalPorts))
+				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert, config.TunnelLocalPorts))
 			}
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.WithVSCode, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert, config.TunnelLocalPorts))
+			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelClientCert, config.TunnelLocalPorts))
 		}
 
 		// Process entrypoint.sh template with conditional sections
@@ -1408,12 +1411,12 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process terminal-ui.js template with UI customization values
 		if hostFile == "templates/host/swe-swe-server/static/terminal-ui.js" {
-			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily, config.WithVSCode))
+			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily))
 		}
 
 		// Process terminal-ui.css template with UI customization values
 		if hostFile == "templates/host/swe-swe-server/static/styles/terminal-ui.css" {
-			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily, config.WithVSCode))
+			content = []byte(processTerminalUITemplate(string(content), config.StatusBarFontSize, config.StatusBarFontFamily, config.TerminalFontSize, config.TerminalFontFamily))
 		}
 
 		// Calculate destination path, preserving subdirectories

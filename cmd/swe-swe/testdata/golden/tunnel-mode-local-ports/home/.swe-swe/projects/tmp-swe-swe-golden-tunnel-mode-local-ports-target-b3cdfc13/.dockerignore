@@ -1,7 +1,7 @@
 # Exclude runtime directories from Docker build context
 # These are mounted as volumes at runtime, not needed during build
 
-# VSCode/code-server home directory (extensions, settings, history)
+# Runtime home directory (persistent state, mounted as a volume)
 home/
 
 # Pre-built binaries (if any)

@@ -91,7 +91,7 @@ export function renderStatusInfo(state) {
 }
 
 /**
- * Render service links (Shell, VSCode, Preview, Browser).
+ * Render service links (Shell, Preview, Browser).
  * @param {{
  *   services: Array<{name: string, label: string, url: string}>
  * }} config - Service configuration

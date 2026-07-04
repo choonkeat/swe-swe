@@ -204,7 +204,6 @@ function registerColorLinkProvider(terminal, options) {
  * Register a file link provider with the terminal.
  * @param {Terminal} terminal - xterm.js Terminal instance
  * @param {Object} options - Configuration options
- * @param {Function} options.getVSCodeUrl - Function returning the VS Code URL
  * @param {Function} [options.onLinkClick] - Optional callback when a link is clicked
  * @param {Function} [options.onCopy] - Optional callback when path is copied (receives path string)
  * @param {Function} [options.onHint] - Optional callback to show hint when clicked without modifier
@@ -311,11 +310,6 @@ function registerFileLinkProvider(terminal, options) {
 
                         if (options.onCopy) {
                             options.onCopy(text);
-                        }
-
-                        // Open VS Code
-                        if (options.getVSCodeUrl) {
-                            window.open(options.getVSCodeUrl(), 'swe-swe-vscode');
                         }
 
                         // Call optional callback

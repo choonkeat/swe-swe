@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -63,7 +63,10 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("POST returns 500 when browser cannot start", func(t *testing.T) {
+	t.Run("POST returns 200 unavailable when the display stack is absent", func(t *testing.T) {
+		// Graceful degradation (Phase 5): a lean host with no Xvfb/chromium/
+		// x11vnc/websockify must report Agent View unavailable so the UI hides
+		// the tab -- NOT 500 on a doomed spawn. The other tabs are unaffected.
 		sess := &Session{
 			UUID:        testUUID,
 			PreviewPort: 3000,
@@ -73,19 +76,27 @@ func TestHandleBrowserStartAPI(t *testing.T) {
 		sessions[testUUID] = sess
 		sessionsMu.Unlock()
 
-		// Clear PATH so Xvfb binary cannot be found
-		origPath := os.Getenv("PATH")
-		os.Setenv("PATH", "")
-		defer os.Setenv("PATH", origPath)
+		// Simulate a host without the display stack installed.
+		origLook, origBackend := lookPath, agentViewBackend
+		lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+		agentViewBackend = "local"
+		defer func() { lookPath, agentViewBackend = origLook, origBackend }()
 
 		req := httptest.NewRequest(http.MethodPost, "/api/session/"+testUUID+"/browser/start?key="+testAPIKey, nil)
 		w := httptest.NewRecorder()
 		handleBrowserStartAPI(w, req)
-		if w.Code != http.StatusInternalServerError {
-			t.Errorf("expected 500, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+		var resp map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to parse response: %v", err)
+		}
+		if resp["status"] != "unavailable" {
+			t.Errorf("expected status=unavailable, got %q", resp["status"])
 		}
 		if sess.BrowserStarted {
-			t.Error("expected BrowserStarted to remain false after failed start")
+			t.Error("expected BrowserStarted to remain false when unavailable")
 		}
 	})
 

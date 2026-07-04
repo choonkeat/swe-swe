@@ -20,9 +20,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -79,6 +79,18 @@ func findSessionForPID(pid int) string {
 // goroutine. Fail-open: a Listen error logs and returns; sessions still
 // work without a reachable broker.
 func startBrokerListener() {
+	// The broker identifies callers via SO_PEERCRED + a /proc ancestry walk,
+	// both Linux-specific (see peercred_*.go). Off Linux it cannot resolve a
+	// caller to a session, and brokerSocketName ("@...") is not an abstract
+	// socket there but a literal filename -- so disable it cleanly rather than
+	// litter the workspace with a stray socket file. Clients fail open exactly
+	// as they do on Linux when the broker is unreachable (git falls back to its
+	// normal credential flow). Full macOS support needs per-session sockets
+	// (Phase 6, tracked in the dockerless plan).
+	if runtime.GOOS != "linux" {
+		log.Printf("[BROKER] disabled on %s -- per-session credential broker is Linux-only for now (Phase 6)", runtime.GOOS)
+		return
+	}
 	addr := &net.UnixAddr{Name: brokerSocketName, Net: "unix"}
 	l, err := net.ListenUnix("unix", addr)
 	if err != nil {
@@ -185,26 +197,9 @@ func handleBrokerConn(c *net.UnixConn) {
 	}
 }
 
-// peerPID returns the kernel-reported pid of the connection's peer via
-// SO_PEERCRED. Cannot be forged by the peer.
-func peerPID(c *net.UnixConn) (int, error) {
-	raw, err := c.SyscallConn()
-	if err != nil {
-		return 0, err
-	}
-	var ucred *syscall.Ucred
-	var sockErr error
-	ctlErr := raw.Control(func(fd uintptr) {
-		ucred, sockErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
-	})
-	if ctlErr != nil {
-		return 0, ctlErr
-	}
-	if sockErr != nil {
-		return 0, sockErr
-	}
-	return int(ucred.Pid), nil
-}
+// peerPID is platform-specific: SO_PEERCRED on Linux (peercred_linux.go),
+// unsupported elsewhere (peercred_other.go). It returns the kernel-reported
+// pid of the connection's peer; cannot be forged by the peer.
 
 func brokerWriteJSON(c *net.UnixConn, v any) {
 	if err := json.NewEncoder(c).Encode(v); err != nil {

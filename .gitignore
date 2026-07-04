@@ -2,6 +2,9 @@ dist/
 npm-platforms/
 node_modules/
 cmd/swe-swe/bin
+# Dockerless embedded payload binaries are build artifacts (make dockerless-payload);
+# the committed .gitkeep keeps the go:embed directive compilable without them.
+cmd/swe-swe/dockerless-payload/bin/linux-*/
 tmp/
 /.swe-swe/
 /swe-swe/

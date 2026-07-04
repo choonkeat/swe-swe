@@ -262,7 +262,7 @@ type SessionPageQuery struct {
 	SessionMode string // "chat" or "terminal"; omit if terminal (default)
 	Name        string // display name (optional)
 	BranchName  string // git branch / worktree (optional)
-	WorkDir     string // working directory; omit if "/workspace" (default)
+	WorkDir     string // working directory; omit if the default workspaceDir
 	ParentUUID  string // parent session UUID (shell sub-sessions)
 	Debug       bool   // debug UI flag
 	ExtraArgs   string // extra CLI flags appended to the agent command (optional)
@@ -285,7 +285,7 @@ func (q SessionPageQuery) Encode() template.URL {
 	if q.BranchName != "" {
 		v.Set("branch", q.BranchName)
 	}
-	if q.WorkDir != "" && q.WorkDir != "/workspace" {
+	if q.WorkDir != "" && q.WorkDir != workspaceDir {
 		v.Set("pwd", q.WorkDir)
 	}
 	if q.ParentUUID != "" {
@@ -486,10 +486,22 @@ type Session struct {
 	CDPPort        int    // Chrome DevTools Protocol port for this session
 	VNCPort        int    // VNC port for browser view for this session
 	FilesPort      int    // Files (md-serve) port for this session
-	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
-	BrowserDataDir string // Per-session Chromium user data directory
+	BrowserPIDs    []int         // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
+	BrowserDataDir string        // Per-session Chromium user data directory
+	BrowserProcs   *browserProcs // Full handle incl. the CDP forwarder server
 	BrowserStarted bool   // Whether browser processes have been started
-	FilesPID       int    // PID of the per-session md-serve process (0 if not started)
+	// RemoteBrowserID is the session id returned by a remote browser-backend
+	// (empty in local mode); set when -agent-view points at a backend URL.
+	RemoteBrowserID string
+	// RemoteVNCTarget is "host:port" of the remote websockify when Agent View
+	// runs on a remote backend; the per-session VNC reverse proxy targets it
+	// instead of localhost. Empty in local mode.
+	RemoteVNCTarget string
+	// RemoteCDPProxyServer is a local reverse proxy on sess.CDPPort forwarding
+	// to the remote chromium's CDP endpoint, so the agent's Playwright MCP
+	// (--cdp-endpoint http://localhost:CDPPort) works unchanged in remote mode.
+	RemoteCDPProxyServer *http.Server
+	FilesPID             int // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -563,8 +575,8 @@ func buildSessionEnv(p SessionEnvParams) []string {
 		fmt.Sprintf("PUBLIC_PORT=%d", p.PublicPort),
 		fmt.Sprintf("BROWSER_CDP_PORT=%d", p.CDPPort),
 		fmt.Sprintf("BROWSER_VNC_PORT=%d", p.VNCPort),
-		"BROWSER=/home/app/.swe-swe/bin/swe-swe-open",
-		"PATH=/workspace/.swe-swe/proxy:/home/app/.swe-swe/proxy:/home/app/.swe-swe/bin:"+os.Getenv("PATH"),
+		"BROWSER="+filepath.Join(sweHomeDir, "bin", "swe-swe-open"),
+		"PATH="+filepath.Join(workspaceDir, ".swe-swe", "proxy")+":"+filepath.Join(sweHomeDir, "proxy")+":"+filepath.Join(sweHomeDir, "bin")+":"+os.Getenv("PATH"),
 		// Wire the per-session credential helper into git for HTTPS remotes.
 		// The helper (git-credential-swe-swe) dials @swe-swe-broker, which
 		// resolves the calling session via SO_PEERCRED + ancestry walk and
@@ -892,27 +904,28 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		agentChatPort = s.AgentChatPort
 	}
 	status := map[string]interface{}{
-		"type":             "status",
-		"sessionUUID":      s.UUID,
-		"viewers":          viewers,
-		"cols":             cols,
-		"rows":             rows,
-		"assistant":        s.AssistantConfig.Name,
-		"sessionName":      s.Name,
-		"uuidShort":        uuidShort,
-		"workDir":          workDir,
-		"previewPort":      s.PreviewPort,
-		"agentChatPort":    agentChatPort,
-		"previewProxyPort": previewProxyPort(s.PreviewPort),
-		"publicPort":       s.PublicPort,
-		"cdpPort":          s.CDPPort,
-		"vncPort":          s.VNCPort,
-		"vncProxyPort":     vncProxyPort(s.VNCPort),
-		"filesProxyPort":   filesProxyPort(s.FilesPort),
-		"yoloMode":         s.yoloMode,
-		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
-		"browserStarted":   s.BrowserStarted,
-		"publicHostname":   getLiveTunnelHostname(),
+		"type":               "status",
+		"sessionUUID":        s.UUID,
+		"viewers":            viewers,
+		"cols":               cols,
+		"rows":               rows,
+		"assistant":          s.AssistantConfig.Name,
+		"sessionName":        s.Name,
+		"uuidShort":          uuidShort,
+		"workDir":            workDir,
+		"previewPort":        s.PreviewPort,
+		"agentChatPort":      agentChatPort,
+		"previewProxyPort":   previewProxyPort(s.PreviewPort),
+		"publicPort":         s.PublicPort,
+		"cdpPort":            s.CDPPort,
+		"vncPort":            s.VNCPort,
+		"vncProxyPort":       vncProxyPort(s.VNCPort),
+		"filesProxyPort":     filesProxyPort(s.FilesPort),
+		"yoloMode":           s.yoloMode,
+		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
+		"browserStarted":     s.BrowserStarted,
+		"agentViewAvailable": agentViewAvailable(),
+		"publicHostname":     getLiveTunnelHostname(),
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
@@ -1134,8 +1147,8 @@ func (s *Session) Close() {
 		s.FilesProxyServer.Shutdown(shutdownCtx)
 	}
 
-	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
-	stopSessionBrowser(s)
+	// Stop the session's Agent View backend (local stack or remote allocation)
+	stopSessionAgentView(s)
 
 	// Stop the per-session md-serve (Files tab)
 	stopSessionMdServe(s)
@@ -1881,12 +1894,88 @@ func main() {
 			"then connects without one and a daemon running with "+
 			"--mtls-ca will reject the handshake. Env: "+
 			"SWE_TUNNEL_CLIENT_CERT.")
+	workspaceFlag := flag.String("workspace", "",
+		"Main repo directory the agent operates in. Default /workspace "+
+			"(container). Env: SWE_WORKSPACE_DIR. Set for host-native runs.")
+	worktreesFlag := flag.String("worktrees", "",
+		"Directory holding per-session git worktrees. Default /worktrees. "+
+			"Env: SWE_WORKTREES_DIR.")
+	reposFlag := flag.String("repos", "",
+		"Directory for external repo clones. Default /repos. "+
+			"Env: SWE_REPOS_DIR.")
+	sweHomeFlag := flag.String("swe-home", "",
+		"The .swe-swe home holding per-session proxy/ and bin/ (helpers + "+
+			"swe-swe-open shim). Default /home/app/.swe-swe. Env: SWE_HOME_DIR.")
+	agentView := flag.String("agent-view", "local",
+		"Agent View backend: local (in-process display stack) | off (hide the "+
+			"tab) | <backend-url> (offload to a swe-swe/browser-backend). "+
+			"Env: SWE_AGENT_VIEW.")
+	mode := flag.String("mode", "server",
+		"server (default) | browser-backend (run the standalone Agent View "+
+			"allocation service instead of the swe-swe UI server).")
+	browserBackendMax := flag.Int("browser-backend-max", 0,
+		"browser-backend mode: max concurrent browser sessions (0 = auto from "+
+			"the VNC port range).")
+	browserBackendHost := flag.String("browser-backend-host", "",
+		"browser-backend mode: hostname clients should dial for the CDP/VNC "+
+			"ports (env: SWE_BROWSER_BACKEND_HOST).")
 	flag.Parse()
+
+	// Resolve the Agent View backend (flag -> env -> default "local"). On a
+	// lean host with no display stack, local mode reports the tab unavailable
+	// rather than 500ing on browser/start.
+	resolveAgentViewBackend(*agentView, flagPassed("agent-view"))
+
+	// Resolve host paths: flag -> env -> default. Defaults reproduce the
+	// container layout, so compose mode is unchanged; dockerless `swe-swe up`
+	// passes -workspace/-swe-home (etc.) for host-native paths.
+	workspaceDir = firstNonEmpty(*workspaceFlag, os.Getenv("SWE_WORKSPACE_DIR"), workspaceDir)
+	worktreeDir = firstNonEmpty(*worktreesFlag, os.Getenv("SWE_WORKTREES_DIR"), worktreeDir)
+	reposDir = firstNonEmpty(*reposFlag, os.Getenv("SWE_REPOS_DIR"), reposDir)
+	sweHomeDir = firstNonEmpty(*sweHomeFlag, os.Getenv("SWE_HOME_DIR"), sweHomeDir)
+	recordingsDir = filepath.Join(workspaceDir, ".swe-swe", "recordings")
 
 	// Resolve the swe-swe-server bind early so the tunnel supervisor can
 	// log the correct OPEN AT URL ({port}.{hostname}) when it learns the
 	// tunnel hostname; tunneld demuxes by the same port.
 	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+
+	// Override CDP port range from environment (set by docker-compose).
+	// Parsed BEFORE the browser-backend dispatch: the allocation service
+	// hands these exact ports to clients, so ignoring the env there meant
+	// the container's published/documented ranges silently did not apply.
+	if portRange := os.Getenv("SWE_CDP_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					cdpPortStart = start
+					cdpPortEnd = end
+				}
+			}
+		}
+	}
+
+	// Override VNC port range from environment (set by docker-compose).
+	// Same before-dispatch requirement as SWE_CDP_PORTS above.
+	if portRange := os.Getenv("SWE_VNC_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					vncPortStart = start
+					vncPortEnd = end
+				}
+			}
+		}
+	}
+
+	// browser-backend mode: run the standalone Agent View allocation service
+	// instead of the UI server. Same binary + same display stack, exposed over
+	// the network for lean (dockerless) hosts to offload Agent View to.
+	if *mode == "browser-backend" {
+		host := firstNonEmpty(*browserBackendHost, os.Getenv("SWE_BROWSER_BACKEND_HOST"), "")
+		token := os.Getenv("SWE_BROWSER_BACKEND_TOKEN")
+		log.Fatal(runBrowserBackend(listenAddr, *browserBackendMax, token, host))
+	}
 
 	// Tunnel-mode subprocess supervisor. Trigger is non-empty
 	// --tunnel-server-url (or its env equivalent). When set, spawn the
@@ -1955,29 +2044,8 @@ func main() {
 		}
 	}
 
-	// Override CDP port range from environment (set by docker-compose)
-	if portRange := os.Getenv("SWE_CDP_PORTS"); portRange != "" {
-		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
-			if start, err := strconv.Atoi(parts[0]); err == nil {
-				if end, err := strconv.Atoi(parts[1]); err == nil {
-					cdpPortStart = start
-					cdpPortEnd = end
-				}
-			}
-		}
-	}
-
-	// Override VNC port range from environment (set by docker-compose)
-	if portRange := os.Getenv("SWE_VNC_PORTS"); portRange != "" {
-		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
-			if start, err := strconv.Atoi(parts[0]); err == nil {
-				if end, err := strconv.Atoi(parts[1]); err == nil {
-					vncPortStart = start
-					vncPortEnd = end
-				}
-			}
-		}
-	}
+	// (SWE_CDP_PORTS / SWE_VNC_PORTS are parsed earlier, before the
+	// browser-backend mode dispatch.)
 
 	// Override proxy port offset from environment (set by docker-compose / .env)
 	if offsetStr := os.Getenv("SWE_PROXY_PORT_OFFSET"); offsetStr != "" {
@@ -2277,7 +2345,7 @@ func main() {
 			defaultRepoUrl, err := getWorkspaceOriginURL()
 			if err != nil {
 				// Fallback to /workspace if we can't get origin URL
-				defaultRepoUrl = "/workspace"
+				defaultRepoUrl = workspaceDir
 			}
 
 			prevPage := recordingsPage - 1
@@ -2756,6 +2824,19 @@ func branchNameFromDir(dirName string) string {
 // ensure this directory exists with proper permissions for the app user.
 var worktreeDir = "/worktrees"
 
+// workspaceDir is the main repo directory the agent operates in. It defaults
+// to the container path /workspace and is overridable via -workspace (env
+// SWE_WORKSPACE_DIR) for host-native (dockerless) runs where the repo lives
+// at an arbitrary host path.
+var workspaceDir = "/workspace"
+
+// sweHomeDir is the .swe-swe home that holds the per-session proxy/ and bin/
+// dirs (credential/signing helpers + the swe-swe-open shim). Defaults to the
+// container path /home/app/.swe-swe; overridable via -swe-home (env
+// SWE_HOME_DIR) so a dockerless run can point at the dumped project bin/.
+// (firstNonEmpty, used to resolve flag -> env -> default, lives in tailscale.go.)
+var sweHomeDir = "/home/app/.swe-swe"
+
 // excludeFromSymlink lists entries that should never be symlinked to worktrees
 var excludeFromSymlink = []string{".git"}
 
@@ -3061,7 +3142,7 @@ func getGitRoot() (string, error) {
 
 // getMainRepoBranch returns the current branch of the main repo (/workspace)
 func getMainRepoBranch() string {
-	cmd := exec.Command("git", "-C", "/workspace", "branch", "--show-current")
+	cmd := exec.Command("git", "-C", workspaceDir, "branch", "--show-current")
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -3334,7 +3415,7 @@ func sanitizeRepoURL(repoURL string) string {
 
 // getWorkspaceOriginURL returns the origin remote URL of /workspace repo
 func getWorkspaceOriginURL() (string, error) {
-	cmd := exec.Command("git", "-C", "/workspace", "remote", "get-url", "origin")
+	cmd := exec.Command("git", "-C", workspaceDir, "remote", "get-url", "origin")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get origin URL: %w", err)
@@ -3440,7 +3521,7 @@ func isWorkspaceRepo(repoURL string) bool {
 	}
 
 	// Check if it's a local path that is /workspace
-	if repoURL == "/workspace" || repoURL == "/workspace/" {
+	if repoURL == workspaceDir || repoURL == workspaceDir+"/" {
 		return true
 	}
 
@@ -3523,7 +3604,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 
 // handleRepoPrepareWorkspace handles the workspace mode - use /workspace or an existing repo path with soft fetch
 func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
-	workDir := "/workspace"
+	workDir := workspaceDir
 	isWorkspace := true
 
 	if repoPath != "" {
@@ -3748,11 +3829,11 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 
 	repoPath := r.URL.Query().Get("path")
 	if repoPath == "" {
-		repoPath = "/workspace"
+		repoPath = workspaceDir
 	}
 
 	// Security check: only allow /workspace or /repos/* paths
-	if repoPath != "/workspace" && !strings.HasPrefix(repoPath, reposDir+"/") {
+	if repoPath != workspaceDir && !strings.HasPrefix(repoPath, reposDir+"/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid repository path"})
@@ -3838,7 +3919,7 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 
 	// Default repo: /workspace and all of its worktrees (/worktrees/<x>) share
 	// the dedicated /worktrees directory.
-	if repoPath == "/workspace" || strings.HasPrefix(repoPath, worktreeDir+"/") {
+	if repoPath == workspaceDir || strings.HasPrefix(repoPath, worktreeDir+"/") {
 		return filepath.Join(worktreeDir, dirName)
 	}
 
@@ -4334,135 +4415,29 @@ func displayNumberFromPreview(previewPort int) int {
 
 // startSessionBrowser starts per-session Xvfb, Chromium, x11vnc, and noVNC processes.
 // The session gets its own isolated X11 display and browser instance.
+// startSessionBrowser brings up the local in-process Agent View stack for a
+// session by delegating to the shared startBrowserProcs (see browser_backend.go).
+// The x11vnc internal port is offset by the VNC range size so it never collides
+// with a session's websockify port.
 func startSessionBrowser(sess *Session) error {
-	display := displayNumberFromPreview(sess.PreviewPort)
-	displayStr := fmt.Sprintf(":%d", display)
-
-	// 1. Start Xvfb on a unique display with Unix socket only (no TCP)
-	xvfbCmd := exec.Command("Xvfb", displayStr, "-screen", "0", "1024x768x24", "-nolisten", "tcp")
-	if err := xvfbCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start Xvfb on display %s: %w", displayStr, err)
-	}
-	xvfbPID := xvfbCmd.Process.Pid
-	trackPid(xvfbPID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, xvfbPID)
-	log.Printf("Started Xvfb on display %s (PID %d) for session %s", displayStr, xvfbPID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("Xvfb wait (PID %d, session %s)", xvfbPID, sess.UUID))
-		defer untrackPid(xvfbPID)
-		err := xvfbCmd.Wait()
-		if err != nil {
-			log.Printf("Xvfb exited with error (PID %d, session %s): %v", xvfbPID, sess.UUID, err)
-		} else {
-			log.Printf("Xvfb exited normally (PID %d, session %s)", xvfbPID, sess.UUID)
-		}
-	}()
-
-	// Wait briefly for Xvfb to initialize
-	time.Sleep(500 * time.Millisecond)
-
-	// 2. Start Chromium with remote debugging on the session's CDP port.
-	// Each session gets its own --user-data-dir to avoid Chrome's singleton
-	// profile lock, which would cause all but the first instance to delegate
-	// to the first and immediately exit.
-	chromiumBinary := "chromium"
-	if _, err := exec.LookPath("chromium"); err != nil {
-		chromiumBinary = "chromium-browser" // fallback name on some distros
-	}
-	userDataDir := fmt.Sprintf("/tmp/chromium-session-%s", sess.UUID)
-	sess.BrowserDataDir = userDataDir
-	chromeCmd := exec.Command(chromiumBinary,
-		"--no-sandbox",
-		"--test-type",
-		"--disable-gpu",
-		"--disable-software-rasterizer",
-		"--disable-dev-shm-usage",
-		"--remote-debugging-address=0.0.0.0",
-		fmt.Sprintf("--remote-debugging-port=%d", sess.CDPPort),
-		fmt.Sprintf("--user-data-dir=%s", userDataDir),
-		"--remote-allow-origins=*",
-		"--window-size=1024,768",
-		"--start-maximized",
+	b, err := startBrowserProcs(
+		sess.UUID,
+		displayNumberFromPreview(sess.PreviewPort),
+		sess.CDPPort,
+		// Chromium's real loopback CDP port, offset past the range like the
+		// x11vnc internal VNC port below.
+		sess.CDPPort+(cdpPortEnd-cdpPortStart+1),
+		sess.VNCPort,
+		sess.VNCPort+(vncPortEnd-vncPortStart+1),
+		// Local mode: chromium already shares localhost with the dev server.
+		"",
 	)
-	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
-	if err := chromeCmd.Start(); err != nil {
-		stopSessionBrowser(sess)
-		return fmt.Errorf("failed to start Chromium on CDP port %d: %w", sess.CDPPort, err)
+	if err != nil {
+		return err
 	}
-	chromePID := chromeCmd.Process.Pid
-	trackPid(chromePID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, chromePID)
-	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for session %s", sess.CDPPort, displayStr, chromePID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("Chromium wait (PID %d, session %s)", chromePID, sess.UUID))
-		defer untrackPid(chromePID)
-		err := chromeCmd.Wait()
-		if err != nil {
-			log.Printf("Chromium exited with error (PID %d, session %s): %v", chromePID, sess.UUID, err)
-		} else {
-			log.Printf("Chromium exited normally (PID %d, session %s)", chromePID, sess.UUID)
-		}
-	}()
-
-	// Wait for Chrome to start
-	time.Sleep(1 * time.Second)
-
-	// 3. Start x11vnc on an internal port (raw VNC protocol, consumed by noVNC)
-	// Offset by the range size so internal ports never collide with session VNC ports
-	x11vncInternalPort := sess.VNCPort + (vncPortEnd - vncPortStart + 1)
-	x11vncCmd := exec.Command("x11vnc",
-		"-display", displayStr,
-		"-forever",
-		"-shared",
-		"-nopw",
-		"-rfbport", fmt.Sprintf("%d", x11vncInternalPort),
-		"-xkb",
-	)
-	if err := x11vncCmd.Start(); err != nil {
-		stopSessionBrowser(sess)
-		return fmt.Errorf("failed to start x11vnc on port %d: %w", x11vncInternalPort, err)
-	}
-	x11vncPID := x11vncCmd.Process.Pid
-	trackPid(x11vncPID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, x11vncPID)
-	log.Printf("Started x11vnc on port %d, display %s (PID %d) for session %s", x11vncInternalPort, displayStr, x11vncPID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("x11vnc wait (PID %d, session %s)", x11vncPID, sess.UUID))
-		defer untrackPid(x11vncPID)
-		err := x11vncCmd.Wait()
-		if err != nil {
-			log.Printf("x11vnc exited with error (PID %d, session %s): %v", x11vncPID, sess.UUID, err)
-		} else {
-			log.Printf("x11vnc exited normally (PID %d, session %s)", x11vncPID, sess.UUID)
-		}
-	}()
-
-	// 4. Start noVNC (websockify) proxy on the session's VNC port
-	// Bridges WebSocket (VNCPort) to raw VNC (x11vncInternalPort)
-	noVNCCmd := exec.Command("websockify",
-		"--web", "/usr/share/novnc",
-		fmt.Sprintf("%d", sess.VNCPort),
-		fmt.Sprintf("localhost:%d", x11vncInternalPort),
-	)
-	if err := noVNCCmd.Start(); err != nil {
-		stopSessionBrowser(sess)
-		return fmt.Errorf("failed to start noVNC proxy on port %d: %w", sess.VNCPort, err)
-	}
-	noVNCPID := noVNCCmd.Process.Pid
-	trackPid(noVNCPID)
-	sess.BrowserPIDs = append(sess.BrowserPIDs, noVNCPID)
-	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for session %s", sess.VNCPort, x11vncInternalPort, noVNCPID, sess.UUID)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("noVNC wait (PID %d, session %s)", noVNCPID, sess.UUID))
-		defer untrackPid(noVNCPID)
-		err := noVNCCmd.Wait()
-		if err != nil {
-			log.Printf("noVNC exited with error (PID %d, session %s): %v", noVNCPID, sess.UUID, err)
-		} else {
-			log.Printf("noVNC exited normally (PID %d, session %s)", noVNCPID, sess.UUID)
-		}
-	}()
-
+	sess.BrowserPIDs = b.pids
+	sess.BrowserDataDir = b.dataDir
+	sess.BrowserProcs = b
 	sess.BrowserStarted = true
 	return nil
 }
@@ -4470,6 +4445,12 @@ func startSessionBrowser(sess *Session) error {
 // stopSessionBrowser kills all browser processes for a session and cleans up
 // the per-session Chromium user data directory.
 func stopSessionBrowser(sess *Session) {
+	// Close the CDP forwarder first so its port frees with the processes.
+	if sess.BrowserProcs != nil && sess.BrowserProcs.cdpSrv != nil {
+		sess.BrowserProcs.cdpSrv.Close()
+		sess.BrowserProcs.cdpSrv = nil
+	}
+	sess.BrowserProcs = nil
 	for _, pid := range sess.BrowserPIDs {
 		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 			// Process may have already exited
@@ -4772,7 +4753,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		// If repoPath provided, use it as base; otherwise default to /workspace
 		baseRepo := p.RepoPath
 		if baseRepo == "" {
-			baseRepo = "/workspace"
+			baseRepo = workspaceDir
 		}
 
 		// If branch is provided, create/use worktree.
@@ -5179,11 +5160,18 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		vncReverseProxy := httputil.NewSingleHostReverseProxy(vncTarget)
 		// websockify presents itself with its own Host; rewriting the Host
 		// header to match the target avoids virtual-host filters and CORS
-		// quirks if websockify ever adds them.
+		// quirks if websockify ever adds them. The target is resolved per
+		// request so a remote browser-backend (sess.RemoteVNCTarget, set on
+		// browser/start) redirects here without rebuilding the proxy; local
+		// mode keeps targeting localhost:vncPort.
 		vncReverseProxy.Director = func(req *http.Request) {
+			host := vncTarget.Host
+			if sess.RemoteVNCTarget != "" {
+				host = sess.RemoteVNCTarget
+			}
 			req.URL.Scheme = "http"
-			req.URL.Host = vncTarget.Host
-			req.Host = vncTarget.Host
+			req.URL.Host = host
+			req.Host = host
 		}
 		vncPP := vncProxyPort(vncPort)
 		vncSrv := &http.Server{
@@ -6176,12 +6164,29 @@ func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []
 	timingPath := fmt.Sprintf("%s/%s.timing", recordingsDir, prefix)
 	inputPath := fmt.Sprintf("%s/%s.input", recordingsDir, prefix)
 
-	wrapperScript := fmt.Sprintf(
-		`script -q -f -T %[1]q -I %[2]q -O %[3]q -c %[4]q`,
-		timingPath, inputPath, logPath, fullCmd,
-	)
-
+	wrapperScript := scriptWrapperCommand(runtime.GOOS, logPath, timingPath, inputPath, fullCmd)
 	return "bash", []string{"-c", wrapperScript}
+}
+
+// scriptWrapperCommand builds the shell command that records a PTY session.
+// Linux uses util-linux `script` with separate timing/input/output files,
+// enabling timed playback. macOS/BSD `script` has none of those flags
+// (-f/-T/-I/-O), so it records combined output to the .log file only -- no
+// timing file, so playback is plain (untimed) on macOS. The caller still
+// computes the .timing/.input paths; they simply will not exist on macOS,
+// which the cleanup + playback paths already tolerate (they stat for
+// existence and gate on HasTiming).
+func scriptWrapperCommand(goos, logPath, timingPath, inputPath, fullCmd string) string {
+	if goos == "linux" {
+		return fmt.Sprintf(
+			`script -q -f -T %[1]q -I %[2]q -O %[3]q -c %[4]q`,
+			timingPath, inputPath, logPath, fullCmd,
+		)
+	}
+	// BSD/macOS: `script [-q] file command ...` -- record combined output to
+	// the log file; run the command via bash -c to preserve the full command
+	// string (BSD script takes the command as trailing argv, not -c).
+	return fmt.Sprintf(`script -q %[1]q /bin/bash -c %[2]q`, logPath, fullCmd)
 }
 
 // resolveLogPath returns the path to a recording's log file, checking for both
@@ -7531,22 +7536,10 @@ func startSignalMonitor() {
 	log.Printf("[SIGNAL] monitor started for pid=%d (verbose=%v)", os.Getpid(), verbose)
 }
 
-// startSubreaper marks this process as a subreaper so orphaned descendants
-// are reparented to us instead of PID 1, then starts the orphan reaper goroutine
-// (see reaper.go) to keep zombies from accumulating.  The reaper polls /proc
-// instead of using SIGCHLD and skips pids in trackedPids, so it cannot race
-// with the per-Session cmd.Wait() callers (PTY reader, killSessionProcessGroup,
-// browser supervisors) -- those callers must call trackPid right after
-// cmd.Start() and untrackPid right after cmd.Wait() returns.
-func startSubreaper() {
-	// PR_SET_CHILD_SUBREAPER = 36
-	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, 36, 1, 0); errno != 0 {
-		log.Printf("[SUBREAPER] prctl(PR_SET_CHILD_SUBREAPER) failed: %v", errno)
-		return
-	}
-	log.Printf("[SUBREAPER] enabled for pid=%d -- orphaned children will be reparented here", os.Getpid())
-	startOrphanReaper()
-}
+// startSubreaper is platform-specific: on Linux it marks this process as a
+// child subreaper (prctl) and starts the /proc orphan reaper (subreaper_linux.go);
+// elsewhere it is a no-op (subreaper_other.go), since PR_SET_CHILD_SUBREAPER and
+// /proc are Linux-specific.
 
 // startHeartbeat writes the current timestamp to /tmp/swe-swe-heartbeat every
 // second. On unexpected death (SIGKILL), the file's mtime reveals when the
@@ -8284,18 +8277,19 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := startSessionBrowser(sess); err != nil {
-		log.Printf("Failed to start browser for session %s: %v", sessionUUID, err)
+	status, err := startSessionAgentView(sess)
+	if err != nil {
+		log.Printf("Failed to start Agent View for session %s: %v", sessionUUID, err)
 		http.Error(w, fmt.Sprintf("Failed to start browser: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Push browserStarted:true to all connected WebSocket clients
+	// Push the updated status (browserStarted / agentViewAvailable) to clients.
 	sess.BroadcastStatus()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"started"}`))
+	fmt.Fprintf(w, `{"status":%q}`, status)
 }
 
 // handleVNCReadyAPI handles GET /api/session/{uuid}/vnc-ready
@@ -8324,13 +8318,18 @@ func handleVNCReadyAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if sess.VNCPort == 0 {
+	// Remote backend: probe the remote websockify -- the same target the VNC
+	// proxy dials (sess.VNCPort is the local pool port; unused in remote mode).
+	target := fmt.Sprintf("localhost:%d", sess.VNCPort)
+	if sess.RemoteVNCTarget != "" {
+		target = sess.RemoteVNCTarget
+	} else if sess.VNCPort == 0 {
 		http.Error(w, "VNC not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	// TCP connect to websockify to check if it's listening
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", sess.VNCPort), 500*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", target, 500*time.Millisecond)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -8779,7 +8778,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args prepareRepoArgs) (*mcp.CallToolResult, any, error) {
 		switch args.Mode {
 		case "workspace":
-			workDir := "/workspace"
+			workDir := workspaceDir
 			if args.Path != "" {
 				cleaned := filepath.Clean(args.Path)
 				if !strings.HasPrefix(cleaned, reposDir+"/") {

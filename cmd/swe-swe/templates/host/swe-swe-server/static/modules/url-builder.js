@@ -15,19 +15,6 @@ export function getBaseUrl(location) {
 }
 
 /**
- * Build the VSCode URL.
- * @param {string} baseUrl - The base URL
- * @param {string} workDir - The workspace directory (optional)
- * @returns {string} VSCode URL with optional folder parameter
- */
-export function buildVSCodeUrl(baseUrl, workDir) {
-    if (workDir) {
-        return `${baseUrl}/vscode/?folder=${encodeURIComponent(workDir)}`;
-    }
-    return `${baseUrl}/vscode/`;
-}
-
-/**
  * Build the shell session URL.
  * @param {{baseUrl: string, shellUUID: string, parentUUID: string, debug: boolean}} config - Shell URL config
  * @returns {string} Shell session URL

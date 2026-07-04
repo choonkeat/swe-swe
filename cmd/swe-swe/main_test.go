@@ -770,7 +770,6 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
-		{"with-vscode", []string{"--with-vscode"}},
 		{"mcp-less", []string{"--mcp-less"}},
 		{"tunnel-mode", []string{"--tunnel-server-url", "https://tunnel.example.com"}},
 		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
@@ -1286,7 +1285,7 @@ func TestProcessSimpleTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processSimpleTemplate(tt.input, tt.withDocker, false, "no", 1000, 1000, "", "", "", nil, nil, 20000, "", "", false)
+			result := processSimpleTemplate(tt.input, tt.withDocker, "no", 1000, 1000, "", "", "", nil, nil, 20000, "", "", false)
 			if result != tt.expected {
 				t.Errorf("processSimpleTemplate mismatch.\nExpected:\n%s\n\nGot:\n%s", tt.expected, result)
 			}
@@ -1584,7 +1583,6 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"AptPackages":         true,
 		"NpmPackages":         true,
 		"WithDocker":          true,
-		"WithVSCode":          true,
 		"MCPLess":             true,
 		"SlashCommands":       true,
 		"Skills":              true,
@@ -1607,7 +1605,8 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 	notReused := map[string]bool{
 		"HostUID":        true, // host's current uid, re-detected each init
 		"HostGID":        true, // host's current gid, re-detected each init
-		"DockerfileOnly": true, // computed from SSL/WithVSCode/tunnel (json:"-")
+		"DockerfileOnly": true, // computed from SSL/tunnel (json:"-")
+		"Dockerless":     true, // mode flag, not persisted (json:"-"); marker file written separately
 		"CLIVersion":     true, // stamped by saveInitConfig on every write
 	}
 
