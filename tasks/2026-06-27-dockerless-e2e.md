@@ -12,12 +12,20 @@ green even on the shared dogfood box (uses clean env + non-colliding port
 ranges, avoids the global `@swe-swe-broker`). Keeps the dockerless path
 (`tasks/2026-06-27-dockerless-single-binary.md`) from regressing.
 
-**Still TODO (Phase 2):** drive the live tabs with Playwright (parameterize the
-existing specs by base URL) so per-tab *rendering* + websocket PTY + md-serve +
-agent-chat are asserted, not just the serving endpoints; the Agent View
-local/remote variants; the tunnel variant; and CI wiring. The curl harness
-necessarily skips websocket-triggered backends (md-serve only starts on ws
-connect), so it emits a WARN there rather than a hard assertion.
+**Phase 2 shipped (Playwright live tabs).** `e2e/tests/dockerless-tabs.spec.js`
+(gated on `E2E_DOCKERLESS`, open-auth empty cookie jar; `global-setup.js` skips
+login in that mode) drives a real browser/websocket against the live dockerless
+server and asserts the parts curl cannot reach: session connects + per-session
+proxy ports delivered over WS; **Files md-serve (npx) answers on
+`filesProxyPort`** (the key host-dependency tab); Preview iframe wired to the
+preview proxy. The harness runs it as Phase 6 (`E2E_SKIP_PLAYWRIGHT=1` escape
+hatch for bare runners). 3/3 green against a real instance; full harness 18
+PASS / 1 WARN / 0 FAIL.
+
+**Still TODO:** Agent Chat probe-success (needs a working agent / LLM auth) and
+**Agent View** (needs the browser stack -- single-binary plan Phase 5,
+local/remote variants); the tunnel variant; and CI wiring so the dockerless
+path runs on PRs alongside the container e2e.
 
 ## Problem
 
