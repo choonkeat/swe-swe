@@ -1,0 +1,89 @@
+import { test, expect } from '@playwright/test';
+import crypto from 'crypto';
+
+// Agent View over a REMOTE browser-backend (scripts/e2e-agent-view-remote.sh):
+// the dockerless instance runs with SWE_AGENT_VIEW=<backend url>, so opening
+// Agent View must allocate a browser on the backend (POST /sessions), wire the
+// local CDP reverse-proxy + VNC proxy to it, turn vnc-ready 200, and render
+// the noVNC viewer in the UI.
+//
+// The lazy-start trigger is exercised the way a real agent does it: the shell
+// PTY has $SWE_SERVER_PORT/$SESSION_UUID/$MCP_AUTH_KEY in its env, and the
+// spec types the same browser/start curl that mcp-lazy-init fires on first
+// playwright-MCP use.
+
+const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+const BACKEND_URL = process.env.E2E_BACKEND_URL || '';
+const SHOT_DIR = process.env.E2E_SCREENSHOT_DIR || 'test-results/agent-view';
+
+// Dockerless runs open (no password): empty cookie jar.
+test.use({ storageState: { cookies: [], origins: [] } });
+
+test.describe('agent view via remote backend', () => {
+  test.skip(!process.env.E2E_AGENT_VIEW, 'agent-view-only: set E2E_AGENT_VIEW=1');
+
+  test('remote backend serves Agent View end-to-end', async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const uuid = crypto.randomUUID();
+    await page.goto(`/session/${uuid}?assistant=shell&session=chat`);
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+
+    // WS init: per-session ports + agentViewAvailable (remote => true even on
+    // a lean host).
+    await page.waitForFunction(() => {
+      const ui = window.terminalUI;
+      return ui && ui.sessionUUID && ui.vncProxyPort;
+    }, null, { timeout: 60_000 });
+    const available = await page.evaluate(() => window.terminalUI.agentViewAvailable !== false);
+    expect(available).toBe(true);
+    await page.screenshot({ path: `${SHOT_DIR}/01-session-before-start.png` });
+
+    // Backend is idle before the lazy start.
+    if (BACKEND_URL) {
+      const before = await (await request.get(`${BACKEND_URL}/health`)).json();
+      expect(before.sessions).toBe(0);
+    }
+
+    // Trigger the lazy start from inside the PTY -- the agent's own path.
+    await page.locator('.terminal-ui__terminal').first().click();
+    await page.keyboard.type(
+      'curl -s -X POST "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY"; echo');
+    await page.keyboard.press('Enter');
+
+    // The server pushes browserStarted over the WS, which auto-adds the
+    // Agent View pane.
+    await page.waitForFunction(() => window.terminalUI.browserStarted === true,
+      null, { timeout: 60_000 });
+    await page.screenshot({ path: `${SHOT_DIR}/02-browser-started.png` });
+
+    // Backend allocated exactly one browser for this session.
+    if (BACKEND_URL) {
+      const after = await (await request.get(`${BACKEND_URL}/health`)).json();
+      expect(after.sessions).toBe(1);
+    }
+
+    // vnc-ready flips 200 -- probing the REMOTE websockify (the Phase A fix).
+    await expect.poll(async () => {
+      return page.evaluate(async (u) => {
+        const r = await fetch(`/api/session/${u}/vnc-ready`);
+        return r.status;
+      }, uuid);
+    }, { timeout: 60_000, intervals: [1000] }).toBe(200);
+
+    // The Agent View iframe points at the VNC proxy and the noVNC viewer
+    // actually renders its canvas over the proxied remote websockify.
+    const src = await page.waitForFunction(() => {
+      const iframe = window.terminalUI.querySelector('.terminal-ui__iframe[data-pane="browser"]');
+      return iframe?.getAttribute('src') || null;
+    }, null, { timeout: 30_000 }).then(h => h.jsonValue());
+    expect(src).toBeTruthy();
+    const vncProxyPort = await page.evaluate(() => window.terminalUI.vncProxyPort);
+    expect(src).toContain(`:${vncProxyPort}`);
+
+    const vncFrame = page.frameLocator('.terminal-ui__iframe[data-pane="browser"]');
+    await expect(vncFrame.locator('canvas').first()).toBeVisible({ timeout: 60_000 });
+    // Give noVNC a beat to paint the first framebuffer update before the shot.
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: `${SHOT_DIR}/03-agent-view-canvas.png` });
+  });
+});
