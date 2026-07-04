@@ -107,6 +107,58 @@ func TestInheritSessionEnv(t *testing.T) {
 	inheritSessionEnv("", child)
 }
 
+// TestInheritedEnvReachesChildProcess is a REGRESSION test for the spawn-time
+// ordering bug where a var saved for one session did not reach a newly spawned
+// session's PROCESS env -- only its in-memory store. The store must be
+// populated BEFORE buildSessionEnv (which bakes the result into cmd.Env that
+// pty.Start freezes); getOrCreateSession now does exactly that.
+//
+// This test mirrors that fixed order and asserts the var lands in the built
+// env for BOTH delivery paths:
+//   - inheritSessionEnv (MCP create_session / fork copies the parent's blob)
+//   - SessionParams.EnvRaw (browser new-session blob staged on the POST)
+//
+// The pre-fix code ran inheritSessionEnv AFTER buildSessionEnv, so the env was
+// already frozen and the child launched without the var. The neighbouring
+// TestInheritSessionEnv stayed green throughout because it only checks the
+// store copy (getSessionEnvRaw), never the built process env -- the same blind
+// spot the e2e suite had (no test spawned a second session and ran printenv).
+func TestInheritedEnvReachesChildProcess(t *testing.T) {
+	// Path 1: inherited blob (create_session / fork).
+	t.Run("inherit", func(t *testing.T) {
+		parent, child := "sid-inherit-parent", "sid-inherit-child"
+		defer clearSessionEnv(parent)
+		defer clearSessionEnv(child)
+		setSessionEnv(parent, "REPRO_ABC=1234\n")
+
+		// Fixed order, as in getOrCreateSession: inherit into the store first,
+		// THEN build the process env.
+		inheritSessionEnv(parent, child)
+		childProcessEnv := buildSessionEnv(SessionEnvParams{SID: child, SessionMode: "chat"})
+
+		if v, ok := envValue(childProcessEnv, "REPRO_ABC"); !ok || v != "1234" {
+			t.Fatalf("child process env REPRO_ABC = %q (present=%v), want 1234 -- inherited env did not reach the spawned process", v, ok)
+		}
+	})
+
+	// Path 2: EnvRaw staged on the browser creation intent.
+	t.Run("staged EnvRaw", func(t *testing.T) {
+		child := "sid-staged-child"
+		defer clearSessionEnv(child)
+
+		// getOrCreateSession applies p.EnvRaw to the store before buildSessionEnv.
+		p := SessionParams{UUID: child, EnvRaw: "REPRO_XYZ=hello\n"}
+		if p.EnvRaw != "" {
+			setSessionEnv(p.UUID, p.EnvRaw)
+		}
+		childProcessEnv := buildSessionEnv(SessionEnvParams{SID: child, SessionMode: "chat"})
+
+		if v, ok := envValue(childProcessEnv, "REPRO_XYZ"); !ok || v != "hello" {
+			t.Fatalf("child process env REPRO_XYZ = %q (present=%v), want hello -- staged EnvRaw did not reach the spawned process", v, ok)
+		}
+	})
+}
+
 // TestBuildSessionEnv_FileWinsOverStore locks in the precedence rule: the
 // checked-in .swe-swe/env file overrides the in-memory repo env-vars store on
 // key collisions, while non-colliding store vars still flow through.

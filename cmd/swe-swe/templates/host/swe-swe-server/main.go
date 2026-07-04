@@ -3793,6 +3793,11 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"branches": branches,
+		// init_sha lets the new-session dialog locate this repo's env-vars blob
+		// in localStorage (keyed by (origin, init_sha), same as the terminal-ui
+		// settings panel) so it can attach it to the creation POST. Empty for a
+		// non-git or shallow-history path -- the dialog then just skips env.
+		"init_sha": repoInitSHA(repoPath),
 	})
 }
 
@@ -4589,6 +4594,13 @@ type SessionParams struct {
 	// implies terminal-child semantics (shared ports, "terminal" recording);
 	// inheritance must NOT trigger those, so it has its own field.
 	InheritCredsFrom string
+	// EnvRaw is the browser's repo env-vars blob, carried on the creation
+	// intent from POST /api/session/new. It is applied to the session's env
+	// store BEFORE buildSessionEnv at spawn -- the WS materializes and spawns
+	// the PTY before it reads any client set_env frame, so this is the only
+	// way the blob reaches a brand-new browser session's process env. Never
+	// persisted; memory-only, exactly like set_env.
+	EnvRaw string
 }
 
 // stagedSession is a creation intent parked in pendingSessions until the first
@@ -4876,6 +4888,23 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, recPrefix)
 	log.Printf("Recording session to: %s/%s.{log,timing}", recordingsDir, recPrefix)
 
+	// Populate the child's repo env store BEFORE buildSessionEnv reads it --
+	// buildSessionEnv bakes the result into cmd.Env, which pty.Start freezes
+	// below, so anything not in the store by now never reaches the process.
+	// (a) MCP create_session / fork inherit the parent's blob; the credential
+	// counterpart, inheritSessionCredentials, is deferred until after session
+	// registration because it rewrites the child's gitconfig against the real
+	// workDir, but env only needs the two UUIDs, so it must run here, not there.
+	// (b) The browser new-session flow stages its blob on the creation intent
+	// (SessionParams.EnvRaw), delivered here because the WS materializes and
+	// spawns before it ever reads a client set_env frame.
+	if p.InheritCredsFrom != "" {
+		inheritSessionEnv(p.InheritCredsFrom, p.UUID)
+	}
+	if p.EnvRaw != "" {
+		setSessionEnv(p.UUID, p.EnvRaw)
+	}
+
 	env := buildSessionEnv(SessionEnvParams{
 		PreviewPort:   previewPort,
 		AgentChatPort: acPort,
@@ -5001,10 +5030,11 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 
 	// Inherit git credentials/signing from the authenticated calling session
 	// (MCP create_session). Done after the session is registered so the
-	// child's gitconfig is rewritten against its real workDir.
+	// child's gitconfig is rewritten against its real workDir. Repo env vars
+	// are NOT inherited here -- they are baked into cmd.Env at spawn, so
+	// inheritSessionEnv runs earlier (before buildSessionEnv), not here.
 	if p.InheritCredsFrom != "" {
 		inheritSessionCredentials(p.InheritCredsFrom, p.UUID, workDir)
-		inheritSessionEnv(p.InheritCredsFrom, p.UUID)
 	}
 
 	// If the agent session id wasn't known synchronously, watch the agent's
@@ -7681,6 +7711,12 @@ func handleNewSessionAPI(w http.ResponseWriter, r *http.Request) {
 		Theme:       r.FormValue("theme"),
 		SessionMode: r.FormValue("session"),
 		ExtraArgs:   r.FormValue("extra_args"),
+		// Repo env-vars blob for this repo, sent by the dialog when the browser
+		// holds one under the matching (origin, init_sha) trust key. Applied to
+		// the session env store at materialization, before the PTY spawns, so a
+		// brand-new session actually gets the vars (a set_env over the WS would
+		// arrive after spawn -- too late). Memory-only, never persisted.
+		EnvRaw: r.FormValue("env"),
 	}, "new", "")
 
 	// Echo the dialog's params onto the redirect so the WS handler resolves the

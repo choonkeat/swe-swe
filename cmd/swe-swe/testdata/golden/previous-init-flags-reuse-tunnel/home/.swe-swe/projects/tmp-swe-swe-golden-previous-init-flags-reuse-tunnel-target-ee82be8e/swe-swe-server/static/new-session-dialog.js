@@ -51,6 +51,10 @@
         sessionColor: '',
         whereKey: '',
         extraArgs: '',
+        // init_sha of the selected repo (from /api/repo/branches). Used to
+        // locate this repo's env-vars blob in localStorage so it can ride the
+        // creation POST and reach the new session's process before it spawns.
+        initSha: '',
         lastExtraArgsPrefill: '' // last value we auto-filled into extraArgsInput
     };
 
@@ -153,6 +157,7 @@
         dialogState.sessionColor = '';
         dialogState.whereKey = '';
         dialogState.extraArgs = '';
+        dialogState.initSha = '';
         dialogState.lastExtraArgsPrefill = '';
         if (extraArgsInput) extraArgsInput.value = '';
 
@@ -376,6 +381,7 @@
                     })
                     .then(function(branchData) {
                         hideLoading();
+                        dialogState.initSha = branchData.init_sha || '';
                         var branches = branchData.branches || [];
                         branchList.innerHTML = '';
                         branches.forEach(function(branch) {
@@ -607,8 +613,35 @@
             input.value = value;
             form.appendChild(input);
         });
+        // Attach this repo's env-vars blob (if the browser holds one under the
+        // matching (origin, init_sha) key) so the server can inject it BEFORE
+        // the new session spawns. Without this the vars would only arrive via
+        // set_env after spawn -- too late for the process env. Same-origin,
+        // cookie-authenticated POST over the page's TLS: same trust surface as
+        // the set_env WS message. Silently skipped when init_sha is unknown
+        // (non-git repo) or no blob is saved for this repo.
+        var envBlob = readRepoEnvBlob(dialogState.initSha);
+        if (envBlob) {
+            var envInput = document.createElement('input');
+            envInput.type = 'hidden';
+            envInput.name = 'env';
+            envInput.value = envBlob;
+            form.appendChild(envInput);
+        }
         document.body.appendChild(form);
         form.submit();
+    }
+
+    // Read the repo env-vars blob saved by the terminal-ui settings panel,
+    // keyed by (origin, init_sha) -- the same localStorage scheme the panel and
+    // its auto-sync use. Returns '' when initSha is empty or nothing is stored.
+    function readRepoEnvBlob(initSha) {
+        if (!initSha) return '';
+        try {
+            return localStorage.getItem('swe-swe-env:' + window.location.origin + '|' + initSha) || '';
+        } catch (e) {
+            return '';
+        }
     }
 
     // Start Agent Terminal session

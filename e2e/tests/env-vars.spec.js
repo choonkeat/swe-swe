@@ -170,6 +170,56 @@ test.describe('per-repo environment variables UI', () => {
     await expect(page.locator('#settings-nav-badge-env')).toHaveText('1');
   });
 
+  // REGRESSION: the blob a user saves must actually reach a NEWLY spawned
+  // session's PROCESS env -- not just the store/UI. Every other test here is
+  // single-session and checks only UI/localStorage, which is exactly why the
+  // spawn-time ordering bug shipped. This one carries the blob on the creation
+  // POST (the same field the new-session dialog attaches) and then runs
+  // `printenv` inside the spawned shell to prove the var is present.
+  test('saved env var reaches a newly spawned session process', async ({ page }) => {
+    // Land on an authenticated page so page.request shares the auth cookie.
+    await openSession(page);
+
+    const marker = 'ENVOK' + crypto.randomUUID().slice(0, 8).replace(/-/g, '');
+
+    // POST /api/session/new with the env blob attached, exactly as the dialog
+    // does once it has resolved the repo's (origin, init_sha) localStorage
+    // entry. Don't follow the redirect -- read the minted UUID from Location.
+    const resp = await page.request.post('/api/session/new', {
+      form: { assistant: 'shell', session: 'terminal', env: `REPRO_ENV_VAR=${marker}\n` },
+      maxRedirects: 0,
+    });
+    const loc = resp.headers()['location'];
+    expect(loc, `no redirect from /api/session/new (status ${resp.status()})`).toBeTruthy();
+    await page.goto(loc);
+
+    // Attach to the spawned shell.
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
+
+    // Drive the shell over raw WS bytes (same path as typing into the pane).
+    // `printenv` prints ONLY when the var is in the process env; a missing var
+    // yields an empty line, so the resolved `RESULT=[<marker>]` appears only if
+    // the fix delivered the var before spawn. The typed command echoes the
+    // literal `$REPRO_ENV_VAR`, never the marker, so seeing the marker proves
+    // execution (not just echo).
+    await page.evaluate(() => {
+      const enc = new TextEncoder();
+      window.terminalUI.ws.send(enc.encode("printf 'RESULT=[%s]\\n' \"$REPRO_ENV_VAR\"\n"));
+    });
+
+    await page.waitForFunction((m) => {
+      const term = window.terminalUI?.term;
+      if (!term) return false;
+      const buf = term.buffer.active;
+      for (let y = 0; y < buf.length; y++) {
+        const line = buf.getLine(y);
+        if (line && line.translateToString().includes('RESULT=[' + m + ']')) return true;
+      }
+      return false;
+    }, marker, { timeout: 30_000 });
+  });
+
   test('forget on this device clears the stored blob and the server copy', async ({ page }) => {
     await openSession(page);
     const key = await envLocalKey(page);
