@@ -81,6 +81,7 @@ func clearSessionCredentials(sid string) {
 
 	clearSigningKey(sid)
 	clearSessionEffectiveEmail(sid)
+	clearSessionEnv(sid)
 }
 
 func setAuthor(sid string, ident AuthorIdent) {

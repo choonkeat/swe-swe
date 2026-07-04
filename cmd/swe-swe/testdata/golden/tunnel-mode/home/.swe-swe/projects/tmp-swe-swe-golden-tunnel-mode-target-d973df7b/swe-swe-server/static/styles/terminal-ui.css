@@ -895,6 +895,28 @@ terminal-ui.embedded-in-iframe .mobile-only {
     box-shadow: none;
 }
 
+/* Repo env vars: masked summary shown in place of the textarea until the
+   user clicks Reveal, so a shared browser never renders secrets by default. */
+.settings-panel__env-masked {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border-secondary);
+    border-radius: 6px;
+}
+
+.settings-panel__env-masked[hidden] {
+    display: none;
+}
+
+.settings-panel__env-masked-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
 .settings-panel__field--yolo {
     display: none;
 }

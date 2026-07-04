@@ -528,6 +528,11 @@ class TerminalUI extends HTMLElement {
                                     <span class="settings-panel__nav-label">SSH Signing</span>
                                     <span class="settings-panel__nav-badge" id="settings-nav-badge-ssh" hidden></span>
                                 </button>
+                                <span class="settings-panel__nav-section">Repo</span>
+                                <button class="settings-panel__nav-item" role="tab" data-tab="env" aria-selected="false">
+                                    <span class="settings-panel__nav-label">Environment variables</span>
+                                    <span class="settings-panel__nav-badge" id="settings-nav-badge-env" hidden></span>
+                                </button>
                             </nav>
                             <div class="settings-panel__pane-host">
                                 <!-- PROFILE -->
@@ -637,6 +642,27 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__btn settings-panel__btn--primary" id="settings-cred-signing-save" type="button">Save key</button>
                                     </div>
                                     <p class="settings-panel__hint settings-panel__hint--inline">Verify derives the public key, signs a test payload, and confirms the signature parses &mdash; proves the passphrase is right and the key is loadable. It does not contact your forge.</p>
+                                </section>
+
+                                <!-- REPO ENV VARS -->
+                                <section class="settings-panel__pane" data-pane="env" role="tabpanel" hidden>
+                                    <h3 class="settings-panel__pane-title">Environment variables</h3>
+                                    <p class="settings-panel__pane-sub">Held in server memory only &mdash; never written to disk, never committed. Injected into newly opened sessions in this repo; the current session is unaffected. Auto-sent to trusted browsers over TLS when the repo matches.</p>
+                                    <div class="settings-panel__field-row settings-panel__field-row--stacked">
+                                        <label class="settings-panel__label" for="settings-env-vars">Variables for this repo</label>
+                                        <div class="settings-panel__env-masked" id="settings-env-masked" hidden>
+                                            <span class="settings-panel__env-masked-text" id="settings-env-masked-text"></span>
+                                            <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-env-reveal" type="button">Reveal &amp; edit</button>
+                                        </div>
+                                        <textarea id="settings-env-vars" class="settings-panel__input settings-panel__input--multiline" rows="8" placeholder="# One KEY=VALUE per line. # comments and $VAR expansion supported.&#10;OPENAI_API_KEY=sk-...&#10;DATABASE_URL=postgres://app:$DB_PASSWORD@db/prod" autocomplete="off" spellcheck="false"></textarea>
+                                    </div>
+                                    <p class="settings-panel__hint settings-panel__hint--warn" id="settings-env-dropped" hidden></p>
+                                    <div class="settings-panel__pane-footer">
+                                        <span class="settings-panel__pane-status" id="settings-env-status"></span>
+                                        <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-env-forget" type="button" hidden>Forget on this device</button>
+                                        <button class="settings-panel__btn settings-panel__btn--primary" id="settings-env-save" type="button">Save env vars</button>
+                                    </div>
+                                    <p class="settings-panel__hint settings-panel__hint--inline">Parsed like <code>.swe-swe/env</code>, but that checked-in file wins on collisions. Reserved keys (PATH, GH_TOKEN, GIT_CONFIG_*, ports&hellip;) are ignored so the credential broker keeps working.</p>
                                 </section>
                             </div>
                         </div>
@@ -1560,6 +1586,37 @@ class TerminalUI extends HTMLElement {
                     }
                 }
                 break;
+            case 'env_stored':
+                // Server acked set_env. dropped[] carries the reserved keys it
+                // refused so the user learns they were ignored.
+                this._envStored = true;
+                this._envDropped = Array.isArray(msg.dropped) ? msg.dropped : [];
+                this._renderEnvDropped(this._envDropped);
+                {
+                    const status = this.querySelector('#settings-env-status');
+                    if (status) {
+                        status.textContent = this._envDropped.length
+                            ? ('Saved. ' + this._envDropped.length + ' reserved key' + (this._envDropped.length === 1 ? '' : 's') + ' ignored.')
+                            : 'Saved. Applies to your next session.';
+                        status.setAttribute('data-state', 'ok');
+                    }
+                }
+                this._refreshSettingsNavBadges();
+                if (this._envManualSaveInFlight) {
+                    // User-initiated save: offer to trust this browser so a
+                    // future visit auto-sends without a manual Save.
+                    this._envManualSaveInFlight = false;
+                    this._maybePromptEnvTrust();
+                }
+                break;
+            case 'env_cleared':
+                // Server acked clear_env (Forget on this device).
+                this._envCleared = true;
+                this._envCount = 0;
+                this._envDropped = [];
+                this._renderEnvDropped([]);
+                this._refreshSettingsNavBadges();
+                break;
             case 'signing_key_stored':
                 // Server acked set_signing_key. Save flow OR auto-restore.
                 this._signingVerified = '';
@@ -1612,6 +1669,9 @@ class TerminalUI extends HTMLElement {
                 this._signingInactiveReason = typeof msg.signing_inactive_reason === 'string'
                     ? msg.signing_inactive_reason : '';
                 this._signingStateKnown = true;
+                if (typeof msg.env_count === 'number') {
+                    this._envCount = msg.env_count;
+                }
                 this._refreshCredsStatus();
                 this._refreshSigningStatus();
                 this._refreshLocalSigningOverridesWarning();
@@ -2329,6 +2389,20 @@ class TerminalUI extends HTMLElement {
             sigForget.addEventListener('click', () => this._forgetSigningKeyOnThisDevice());
         }
         this._refreshSigningForgetButton();
+
+        // Repo env vars pane: Save / Reveal / Forget.
+        const envSave = panel.querySelector('#settings-env-save');
+        if (envSave) {
+            envSave.addEventListener('click', () => this._saveEnvVars());
+        }
+        const envReveal = panel.querySelector('#settings-env-reveal');
+        if (envReveal) {
+            envReveal.addEventListener('click', () => this._revealEnvVars());
+        }
+        const envForget = panel.querySelector('#settings-env-forget');
+        if (envForget) {
+            envForget.addEventListener('click', () => this._forgetEnvOnThisDevice());
+        }
     }
 
     // Show/hide the "Forget on this device" button based on whether
@@ -2428,6 +2502,159 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    // ---- Repo environment variables ------------------------------------
+    // Keyed by (origin, init_sha) so they auto-sync only for the matching
+    // repo, sharing the same trust scope as the HTTPS PAT. Values live in
+    // localStorage (like the PAT) but the pane keeps them masked behind an
+    // explicit Reveal so a shared browser never renders secrets by default.
+
+    _envLocalKey() {
+        return 'swe-swe-env:' + window.location.origin + '|' + (this.dataset.initSha || '');
+    }
+    _readEnvLocal() {
+        try { return localStorage.getItem(this._envLocalKey()); } catch (e) { return null; }
+    }
+    _writeEnvLocal(raw) {
+        try {
+            if (!raw || !raw.trim()) localStorage.removeItem(this._envLocalKey());
+            else localStorage.setItem(this._envLocalKey(), raw);
+        } catch (e) {}
+    }
+
+    // Server-managed keys the textarea can't override; counted-out of the
+    // badge/summary so the browser's number matches what the server keeps.
+    static get RESERVED_ENV_KEYS() {
+        return new Set([
+            'PATH', 'HOME', 'TERM', 'PORT', 'BROWSER',
+            'AGENT_CHAT_PORT', 'AGENT_CHAT_DISABLE', 'PUBLIC_PORT',
+            'BROWSER_CDP_PORT', 'BROWSER_VNC_PORT', 'COLORFGBG',
+            'GH_TOKEN', 'GITLAB_TOKEN',
+            'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL',
+        ]);
+    }
+    _countEnvVars(raw) {
+        if (!raw) return 0;
+        let n = 0;
+        for (const line of raw.split('\n')) {
+            const t = line.trim();
+            if (!t || t.startsWith('#')) continue;
+            const eq = t.indexOf('=');
+            if (eq <= 0) continue;
+            const key = t.slice(0, eq).trim();
+            if (TerminalUI.RESERVED_ENV_KEYS.has(key)) continue;
+            n++;
+        }
+        return n;
+    }
+    // The count this browser will sync: its own localStorage blob if present,
+    // else the server-reported count (inherited/co-viewer sessions).
+    _envVarCount() {
+        const raw = this._readEnvLocal();
+        if (raw && raw.trim()) return this._countEnvVars(raw);
+        return (typeof this._envCount === 'number' && this._envCount > 0) ? this._envCount : 0;
+    }
+
+    // Render the pane: masked summary when vars are stored and not revealed,
+    // an editable textarea otherwise. Save is hidden while masked so the
+    // primary affordance is Reveal (editing blind would clobber the blob).
+    populateEnvSection() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const textarea = panel.querySelector('#settings-env-vars');
+        const masked = panel.querySelector('#settings-env-masked');
+        const maskedText = panel.querySelector('#settings-env-masked-text');
+        const saveBtn = panel.querySelector('#settings-env-save');
+        const forgetBtn = panel.querySelector('#settings-env-forget');
+        if (!textarea) return;
+        const raw = this._readEnvLocal();
+        const hasStored = !!(raw && raw.trim());
+        const n = this._envVarCount();
+        if (hasStored && !this._envRevealed) {
+            textarea.value = '';
+            textarea.hidden = true;
+            if (masked) masked.hidden = false;
+            if (maskedText) maskedText.textContent = n + (n === 1 ? ' variable' : ' variables') + ' saved on this device';
+            if (saveBtn) saveBtn.hidden = true;
+        } else {
+            if (masked) masked.hidden = true;
+            textarea.hidden = false;
+            textarea.value = raw || '';
+            if (saveBtn) saveBtn.hidden = false;
+        }
+        if (forgetBtn) forgetBtn.hidden = !(hasStored || n > 0);
+        this._renderEnvDropped(this._envDropped || []);
+        this._refreshSettingsNavBadges();
+    }
+
+    _revealEnvVars() {
+        this._envRevealed = true;
+        this.populateEnvSection();
+        const textarea = this.querySelector('#settings-env-vars');
+        if (textarea) textarea.focus();
+    }
+
+    _renderEnvDropped(dropped) {
+        const el = this.querySelector('#settings-env-dropped');
+        if (!el) return;
+        if (Array.isArray(dropped) && dropped.length) {
+            el.textContent = 'Ignored reserved key' + (dropped.length === 1 ? '' : 's') + ': ' +
+                dropped.join(', ') + ' -- managed by swe-swe (credential broker, proxies, ports).';
+            el.hidden = false;
+        } else {
+            el.hidden = true;
+        }
+    }
+
+    _saveEnvVars() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const textarea = panel.querySelector('#settings-env-vars');
+        if (!textarea) return;
+        const raw = textarea.value;
+        this._writeEnvLocal(raw);
+        this._envManualSaveInFlight = true;
+        this._envStored = false;
+        this.sendJSON({ type: 'set_env', data: { raw } });
+        const status = panel.querySelector('#settings-env-status');
+        if (status) {
+            status.textContent = 'Sending...';
+            status.removeAttribute('data-state');
+        }
+    }
+
+    // Clears the blob on this browser AND the server copy (so a co-viewer's
+    // next session doesn't inherit stale vars). Leaves the shared (origin,
+    // init_sha) trust intact -- the PAT / signing key still rely on it.
+    _forgetEnvOnThisDevice() {
+        try { localStorage.removeItem(this._envLocalKey()); } catch (e) {}
+        this._envCount = 0;
+        this._envRevealed = false;
+        this._envCleared = false;
+        this.sendJSON({ type: 'clear_env' });
+        this.populateEnvSection();
+        const status = this.querySelector('#settings-env-status');
+        if (status) {
+            status.textContent = 'Forgotten on this device.';
+            status.removeAttribute('data-state');
+        }
+    }
+
+    // Offer to trust this browser to auto-send saved env vars on future
+    // visits to this repo. Writes the SAME (origin, init_sha) trust entry the
+    // PAT/signing key use, so one decision covers all three.
+    _maybePromptEnvTrust() {
+        const initSha = this.dataset.initSha || '';
+        if (!initSha || !this._signingAutoSendSafe()) return;
+        const existing = this._readSigningTrust(initSha);
+        if (existing && !this._signingTrustExpired(existing)) return;
+        const shortSha = initSha.slice(0, 7);
+        const msg = 'Trust this browser to auto-send your saved repo env vars on future visits to this repo (init ' + shortSha + ')?\n\nYou can revoke this with "Forget on this device" in Settings > Environment variables.';
+        try {
+            if (window.confirm(msg)) this._writeCredsTrust(initSha);
+        } catch (e) {}
+        this._refreshCredsForgetButton();
+    }
+
     // Switch between sidebar nav panes.
     _switchSettingsTab(tab) {
         const panel = this.querySelector('.settings-panel');
@@ -2450,6 +2677,9 @@ class TerminalUI extends HTMLElement {
         if (tab === 'ssh') {
             this._refreshSigningForgetButton();
             this._refreshLocalSigningOverridesWarning();
+        }
+        if (tab === 'env') {
+            this.populateEnvSection();
         }
     }
 
@@ -2999,6 +3229,14 @@ class TerminalUI extends HTMLElement {
                 },
             });
         }
+
+        // Repo env vars share the same (origin, init_sha) trust gate validated
+        // above -- so if this browser holds a blob for this repo, auto-send it
+        // too. Injected into the next session's process env at spawn.
+        const envRaw = this._readEnvLocal();
+        if (envRaw && envRaw.trim()) {
+            this.sendJSON({ type: 'set_env', data: { raw: envRaw } });
+        }
     }
 
     _refreshSigningStatus() {
@@ -3088,6 +3326,17 @@ class TerminalUI extends HTMLElement {
                 sshBadge.setAttribute('data-state', 'ok');
             } else {
                 sshBadge.setAttribute('hidden', '');
+            }
+        }
+        const envBadge = panel.querySelector('#settings-nav-badge-env');
+        if (envBadge) {
+            const n = this._envVarCount();
+            if (n > 0) {
+                envBadge.textContent = String(n);
+                envBadge.removeAttribute('hidden');
+                envBadge.setAttribute('data-state', 'ok');
+            } else {
+                envBadge.setAttribute('hidden', '');
             }
         }
     }
@@ -3409,6 +3658,11 @@ class TerminalUI extends HTMLElement {
 
         // Per-session git credentials
         this.populateCredentialsSection();
+
+        // Repo env vars. Re-mask on every panel open: reveal is a per-open
+        // gesture so a shared browser never shows secrets by default.
+        this._envRevealed = false;
+        this.populateEnvSection();
     }
 
     // Populate the credentials section from localStorage. Token is intentionally

@@ -64,6 +64,7 @@ func buildSessionCredState(sid, workDir string) map[string]any {
 	hosts := listCredentialHosts(sid)
 	author, _ := getAuthor(sid)
 	key, hasKey := getSigningKey(sid)
+	envCount := sessionEnvCount(sid)
 	sessionCredStateMu.Unlock()
 
 	fingerprint := ""
@@ -83,5 +84,10 @@ func buildSessionCredState(sid, workDir string) map[string]any {
 		"local_gpg_overrides":     localOverrides,
 		"signing_active":          active,
 		"signing_inactive_reason": reason,
+		// Repo env vars: count only, never the keys or values. Drives the
+		// Settings nav badge + the "N vars saved" masked state so the panel
+		// reflects real server state without echoing secrets back.
+		"env_present": envCount > 0,
+		"env_count":   envCount,
 	}
 }

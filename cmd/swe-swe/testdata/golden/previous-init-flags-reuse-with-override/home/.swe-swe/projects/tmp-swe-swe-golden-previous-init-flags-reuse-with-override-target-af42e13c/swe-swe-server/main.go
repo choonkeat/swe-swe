@@ -595,6 +595,18 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	// session (or the next PTY restart), not the running process. Placed before
 	// the .swe-swe/env load so a user-defined GH_TOKEN/GITLAB_TOKEN wins.
 	env = append(env, sessionTokenEnv(p.SID)...)
+	// Repo env vars saved via the Settings panel (in-memory, per session).
+	// Reserved keys (PATH, GH_TOKEN, GIT_CONFIG_*, ports...) are dropped so
+	// the textarea can't break the credential broker or proxies. Placed
+	// before the .swe-swe/env file load so the checked-in file wins any
+	// collision. $VAR expands against the session env built above.
+	if p.SID != "" {
+		kept, dropped := sessionEnvVars(p.SID, envLookup(env))
+		if len(dropped) > 0 {
+			log.Printf("Session %s: repo env vars dropped reserved keys: %v", p.SID, dropped)
+		}
+		env = append(env, kept...)
+	}
 	// Append user-defined vars from .swe-swe/env (last so they take precedence).
 	// Expand $VAR references against the session env built above, so a line like
 	// PATH=/usr/local/go/bin:$PATH prepends to the SESSION PATH (which includes
@@ -627,21 +639,38 @@ func envLookup(env []string) func(string) string {
 }
 
 func loadEnvFile(path string, lookup func(string) string) []string {
-	if lookup == nil {
-		lookup = os.Getenv
-	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
+	return parseEnvLines(string(data), lookup, nil, nil)
+}
+
+// parseEnvLines parses KEY=VALUE lines from raw text, skipping blanks and
+// #-comments and expanding $VAR references in each value against earlier
+// lines then `lookup` (nil -> os.Getenv). If drop is non-nil and returns
+// true for a (trimmed) key, that line is skipped entirely -- not stored,
+// not available for later expansion -- and the key is appended to *dropped.
+// Shared by loadEnvFile (.swe-swe/env, no drops) and the repo env-vars
+// store (drops reserved keys) so both parse identically.
+func parseEnvLines(raw string, lookup func(string) string, drop func(string) bool, dropped *[]string) []string {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	var entries []string
 	local := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		if key, val, ok := strings.Cut(line, "="); ok {
+			if drop != nil && drop(strings.TrimSpace(key)) {
+				if dropped != nil {
+					*dropped = append(*dropped, strings.TrimSpace(key))
+				}
+				continue
+			}
 			val = os.Expand(val, func(k string) string {
 				if v, ok := local[k]; ok {
 					return v
@@ -4975,6 +5004,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// child's gitconfig is rewritten against its real workDir.
 	if p.InheritCredsFrom != "" {
 		inheritSessionCredentials(p.InheritCredsFrom, p.UUID, workDir)
+		inheritSessionEnv(p.InheritCredsFrom, p.UUID)
 	}
 
 	// If the agent session id wasn't known synchronously, watch the agent's
@@ -5685,6 +5715,44 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				}
 				if err := conn.WriteJSON(ack); err != nil {
 					log.Printf("Session %s: failed to ack test_credentials: %v", sess.UUID, err)
+				}
+			case "set_env":
+				// Browser supplies the repo env-vars textarea blob over the
+				// authenticated WS. Stored in memory only (never on disk);
+				// injected into NEWLY opened sessions by buildSessionEnv. The
+				// current session is unaffected -- env is materialized at spawn.
+				var payload struct {
+					Raw string `json:"raw"`
+				}
+				if err := json.Unmarshal(msg.Data, &payload); err != nil {
+					log.Printf("Session %s: set_env invalid payload: %v", sess.UUID, err)
+					continue
+				}
+				sessionCredStateMu.Lock()
+				setSessionEnv(sess.UUID, payload.Raw)
+				sessionCredStateMu.Unlock()
+				// Reserved keys the user tried to set are reported back so the
+				// UI can show which were ignored. Lookup is throwaway here (we
+				// only use the dropped list, not the expanded values).
+				_, dropped := sessionEnvVars(sess.UUID, os.Getenv)
+				log.Printf("Session %s: stored repo env vars (%d reserved keys dropped)", sess.UUID, len(dropped))
+				sess.BroadcastJSON(buildSessionCredState(sess.UUID, sess.effectiveWorkDir()))
+				if dropped == nil {
+					dropped = []string{}
+				}
+				if err := conn.WriteJSON(map[string]any{"type": "env_stored", "dropped": dropped}); err != nil {
+					log.Printf("Session %s: failed to ack set_env: %v", sess.UUID, err)
+				}
+			case "clear_env":
+				// "Forget on this device" also clears the server-side copy so a
+				// co-viewer's next session doesn't silently inherit stale vars.
+				sessionCredStateMu.Lock()
+				clearSessionEnv(sess.UUID)
+				sessionCredStateMu.Unlock()
+				log.Printf("Session %s: cleared repo env vars", sess.UUID)
+				sess.BroadcastJSON(buildSessionCredState(sess.UUID, sess.effectiveWorkDir()))
+				if err := conn.WriteJSON(map[string]any{"type": "env_cleared"}); err != nil {
+					log.Printf("Session %s: failed to ack clear_env: %v", sess.UUID, err)
 				}
 			case "set_signing_key":
 				// Browser supplies an SSH signing key independent of the
