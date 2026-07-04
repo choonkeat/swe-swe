@@ -4981,8 +4981,41 @@ class TerminalUI extends HTMLElement {
                 // Defer if the proxy port hasn't arrived yet -- the WS Status
                 // handler re-kicks us once filesProxyPort flips from null.
                 if (!filesUrl) return;
-                this._paneLoaded.add('files');
-                this.setIframeUrl(filesUrl + '/', 'files');
+                if (this._filesReady) {
+                    this._paneLoaded.add('files');
+                    this.setIframeUrl(filesUrl + '/', 'files');
+                    break;
+                }
+                // md-serve readiness probe: the per-session md-serve is
+                // launched via `npx -y @choonkeat/md-serve@latest`, whose cold
+                // start lags several seconds behind the (instant) Go files-proxy
+                // bind. Setting the iframe src before md-serve answers leaves the
+                // pane blank until a manual reload. Probe the same-origin
+                // /files-ready endpoint (real status codes, unlike a cross-origin
+                // no-cors fetch) before loading -- mirrors the browser/VNC path.
+                const filesPlaceholder = this._placeholderFor('files');
+                const filesPlaceholderText = filesPlaceholder ? filesPlaceholder.querySelector('.terminal-ui__iframe-placeholder-text') : null;
+                if (filesPlaceholder) filesPlaceholder.classList.remove('hidden');
+                if (filesPlaceholderText) filesPlaceholderText.textContent = 'Connecting to files...';
+                if (!this._filesProbing) {
+                    this._filesProbing = true;
+                    const filesProbeUrl = `${baseUrl}/api/session/${this.uuid}/files-ready`;
+                    probeUntilReady(filesProbeUrl, {
+                        method: 'GET',
+                        maxAttempts: 30,
+                        baseDelay: 1000,
+                        maxDelay: 5000,
+                    }).then(() => {
+                        this._filesReady = true;
+                        this._filesProbing = false;
+                        if (this._slotForPane('files')) {
+                            this._paneLoaded.add('files');
+                            this.setIframeUrl(filesUrl + '/', 'files');
+                        }
+                    }).catch(() => {
+                        this._filesProbing = false;
+                    });
+                }
                 break;
             }
             case 'shell': {

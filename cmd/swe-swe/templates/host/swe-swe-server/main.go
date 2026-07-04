@@ -2377,6 +2377,12 @@ func main() {
 			return
 		}
 
+		// Files (md-serve) readiness probe -- same rationale as vnc-ready.
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/files-ready") {
+			handleFilesReadyAPI(w, r)
+			return
+		}
+
 		// Recording playback page and raw session data
 		if strings.HasPrefix(r.URL.Path, "/recording/") {
 			path := strings.TrimPrefix(r.URL.Path, "/recording/")
@@ -8179,6 +8185,54 @@ func handleVNCReadyAPI(w http.ResponseWriter, r *http.Request) {
 
 	// TCP connect to websockify to check if it's listening
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", sess.VNCPort), 500*time.Millisecond)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"ready":false}`))
+		return
+	}
+	conn.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ready":true}`))
+}
+
+// handleFilesReadyAPI handles GET /api/session/{uuid}/files-ready
+// Returns 200 if the per-session md-serve is listening on the session's
+// FilesPort, 503 otherwise. Same-origin probe endpoint so the Files pane can
+// check a real status code instead of an opaque cross-origin no-cors response,
+// and defer loading its iframe until md-serve has finished its (slow, npx
+// @latest) cold start -- otherwise the pane renders blank until a manual reload.
+func handleFilesReadyAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/session/")
+	sessionUUID := strings.TrimSuffix(path, "/files-ready")
+
+	if sessionUUID == "" {
+		http.Error(w, "Missing session UUID", http.StatusBadRequest)
+		return
+	}
+
+	sessionsMu.RLock()
+	sess, exists := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	if sess.FilesPort == 0 {
+		http.Error(w, "Files not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// TCP connect to md-serve to check if it's listening yet.
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", sess.FilesPort), 500*time.Millisecond)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
