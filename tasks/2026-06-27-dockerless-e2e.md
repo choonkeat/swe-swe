@@ -22,10 +22,18 @@ preview proxy. The harness runs it as Phase 6 (`E2E_SKIP_PLAYWRIGHT=1` escape
 hatch for bare runners). 3/3 green against a real instance; full harness 18
 PASS / 1 WARN / 0 FAIL.
 
+**Umbrella targets (option 2).** `make test-e2e-dockerless` (full, with
+Playwright) and `make test-e2e-dockerless-smoke` (`E2E_SKIP_PLAYWRIGHT=1`,
+curl-only contract for runners with no chromium/agent CLI) mirror the
+container `test-e2e` convention. Deliberately NOT in `make test` -- they boot a
+server + drive a browser, too heavy/flaky for the fast unit gate. There is no
+GitHub Actions in this repo today; a hosted-CI job (`runs-on: ubuntu-latest` +
+`make test-e2e-dockerless`, separate from the unit job) is only meaningful once
+CI infra exists.
+
 **Still TODO:** Agent Chat probe-success (needs a working agent / LLM auth) and
 **Agent View** (needs the browser stack -- single-binary plan Phase 5,
-local/remote variants); the tunnel variant; and CI wiring so the dockerless
-path runs on PRs alongside the container e2e.
+local/remote variants); the tunnel variant.
 
 ## Problem
 

@@ -155,6 +155,8 @@ test-e2e-legacy:
 #        make e2e-test        -> run playwright tests against all running modes
 #        make e2e-down        -> tear down all running modes
 #        make test-e2e        -> full sequential flow: up, test, down for each mode
+#        make test-e2e-dockerless       -> host-native (no Docker) full flow
+#        make test-e2e-dockerless-smoke -> dockerless contract only (no browser)
 
 e2e-up-simple:
 	./scripts/e2e-up.sh simple
@@ -180,6 +182,19 @@ test-e2e:
 	./scripts/e2e-up.sh compose
 	./scripts/e2e-test.sh compose $(E2E_ARGS) || (./scripts/e2e-down.sh compose; exit 1)
 	./scripts/e2e-down.sh compose
+
+# Host-native (dockerless) umbrella -- mirrors `test-e2e` for the no-Docker
+# path. The harness self-contains init + up + assert + teardown (trap), so
+# these just name the two run modes. Run manually / before releases; NOT part
+# of `make test` (it boots a server + drives a real browser -> too heavy and
+# flaky for the fast unit gate).
+test-e2e-dockerless:
+	./scripts/e2e-dockerless.sh
+
+# Lighter smoke for runners without chromium / an agent CLI: asserts the
+# dockerless contract + serving endpoints over curl, skips the Playwright tabs.
+test-e2e-dockerless-smoke:
+	E2E_SKIP_PLAYWRIGHT=1 ./scripts/e2e-dockerless.sh
 
 # --- Manual tunnel-mode test ---
 # Spins up a real swe-swe container in tunnel mode against
