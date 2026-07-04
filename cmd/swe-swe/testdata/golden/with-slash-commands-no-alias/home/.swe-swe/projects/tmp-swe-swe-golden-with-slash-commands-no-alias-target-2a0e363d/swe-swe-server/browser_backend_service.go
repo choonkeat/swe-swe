@@ -33,6 +33,33 @@ import (
 // unit-tested without spawning a real Xvfb/chromium/x11vnc/websockify stack.
 var browserProcsStarter = startBrowserProcs
 
+// defaultLoopbackDomains are the dev hostnames that conventionally resolve to
+// loopback and so must be remapped to the swe-swe host when chromium runs on
+// a remote backend. Each entry maps both the bare name and its subdomains
+// (*.lvh.me tenants etc). Deliberately NOT *.nip.io / *.sslip.io -- those
+// encode arbitrary IPs (10.0.0.5.nip.io) that must keep resolving normally.
+var defaultLoopbackDomains = []string{"localhost", "lvh.me", "localtest.me"}
+
+// buildLoopbackResolverRules renders a chromium --host-resolver-rules value
+// mapping every domain (bare + wildcard) to addr. Empty addr or domains ->
+// empty string (no flag).
+func buildLoopbackResolverRules(domains []string, addr string) string {
+	if addr == "" {
+		return ""
+	}
+	var rules []string
+	for _, d := range domains {
+		d = strings.TrimSpace(strings.TrimPrefix(d, "*."))
+		if d == "" {
+			continue
+		}
+		rules = append(rules,
+			fmt.Sprintf("MAP %s %s", d, addr),
+			fmt.Sprintf("MAP *.%s %s", d, addr))
+	}
+	return strings.Join(rules, ", ")
+}
+
 type backendSession struct {
 	id      string
 	slot    int
@@ -96,10 +123,13 @@ type allocResponse struct {
 func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SessionID string `json:"sessionId"`
-		// ResolveLocalhostTo overrides where chromium's "localhost" points
-		// (e.g. behind NAT). Defaults to the allocation request's source
-		// address -- the swe-swe host as this backend sees it.
+		// ResolveLocalhostTo overrides where chromium's loopback-style dev
+		// hostnames point (e.g. behind NAT). Defaults to the allocation
+		// request's source address -- the swe-swe host as this backend sees it.
 		ResolveLocalhostTo string `json:"resolveLocalhostTo"`
+		// LoopbackDomains overrides defaultLoopbackDomains (each maps bare +
+		// wildcard) for projects using other loopback DNS schemes.
+		LoopbackDomains []string `json:"loopbackDomains"`
 	}
 	// Body is optional; ignore decode errors on an empty body.
 	_ = json.NewDecoder(r.Body).Decode(&req)
@@ -109,6 +139,11 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 			resolveLocalhostTo = host
 		}
 	}
+	loopbackDomains := req.LoopbackDomains
+	if len(loopbackDomains) == 0 {
+		loopbackDomains = defaultLoopbackDomains
+	}
+	hostResolverRules := buildLoopbackResolverRules(loopbackDomains, resolveLocalhostTo)
 
 	bb.mu.Lock()
 	// Idempotency first: a re-POST for a live id must return that instance
@@ -142,7 +177,7 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort}
 	bb.mu.Unlock()
 
-	procs, err := browserProcsStarter(id, display, cdpPort, cdpInternal, vncPort, vncInternal, resolveLocalhostTo)
+	procs, err := browserProcsStarter(id, display, cdpPort, cdpInternal, vncPort, vncInternal, hostResolverRules)
 	if err != nil {
 		bb.mu.Lock()
 		delete(bb.sessions, id)

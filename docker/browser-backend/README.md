@@ -60,13 +60,20 @@ The agent host must be able to reach the backend's **API port** *and* the
 
 ## Localhost resolution
 
-Chromium here resolves the hostname `localhost` back to the **swe-swe host**
-(`--host-resolver-rules`), so pages the agent opens at `http://localhost:3000`
-reach the dev server there, not this box. The target defaults to the
-allocation request's source address; override per-host with
-`SWE_AGENT_VIEW_LOCALHOST` on the swe-swe side (NAT) or per-request with the
-`resolveLocalhostTo` field on `POST /sessions`. IP-literal URLs
-(`http://127.0.0.1:3000`) bypass the resolver and stay local to this box.
+Chromium here resolves loopback-style dev hostnames back to the **swe-swe
+host** (`--host-resolver-rules`), so pages the agent opens at
+`http://localhost:3000` or `http://tenant1.lvh.me:3000` reach the dev server
+there, not this box. Default domain set (each bare + `*.` wildcard):
+`localhost`, `lvh.me`, `localtest.me`. Deliberately NOT `*.nip.io`/`*.sslip.io`
+-- those encode arbitrary IPs that must keep resolving normally.
+
+- Target address: defaults to the allocation request's source address;
+  override per-host with `SWE_AGENT_VIEW_LOCALHOST` on the swe-swe side (NAT)
+  or per-request with `resolveLocalhostTo` on `POST /sessions`.
+- Domain set: override with `SWE_AGENT_VIEW_LOOPBACK_DOMAINS` (comma-separated)
+  on the swe-swe side, or `loopbackDomains` (array) on `POST /sessions`.
+- IP-literal URLs (`http://127.0.0.1:3000`) bypass the resolver and stay
+  local to this box.
 
 ## CDP forwarder
 

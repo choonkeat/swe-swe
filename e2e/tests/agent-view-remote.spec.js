@@ -105,6 +105,14 @@ test.describe('agent view via remote backend', () => {
       // The navigation is visible through the VNC pane too -- capture it.
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `${SHOT_DIR}/04-remote-localhost-nav.png` });
+
+      // Wildcard loopback domains: *.lvh.me (subdomain dev DNS) must resolve
+      // to the swe-swe host too. The MAP rule bypasses real DNS entirely, so
+      // this asserts the wildcard mapping itself -- works even offline.
+      await remotePage.goto(`http://app.lvh.me:${navPort}/`, { timeout: 30_000 });
+      await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
+      await page.waitForTimeout(1500);
+      await page.screenshot({ path: `${SHOT_DIR}/05-remote-lvh-me-nav.png` });
     } finally {
       await cdpBrowser.close();
     }

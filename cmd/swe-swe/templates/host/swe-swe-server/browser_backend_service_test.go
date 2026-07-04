@@ -14,8 +14,8 @@ func withStubStarter(t *testing.T) *starterCalls {
 	t.Helper()
 	calls := &starterCalls{}
 	orig := browserProcsStarter
-	browserProcsStarter = func(id string, display, cdpPort, cdpInternalPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
-		calls.resolveLocalhostTo = append(calls.resolveLocalhostTo, resolveLocalhostTo)
+	browserProcsStarter = func(id string, display, cdpPort, cdpInternalPort, vncPort, vncInternalPort int, hostResolverRules string) (*browserProcs, error) {
+		calls.hostResolverRules = append(calls.hostResolverRules, hostResolverRules)
 		return &browserProcs{}, nil // no real processes
 	}
 	t.Cleanup(func() { browserProcsStarter = orig })
@@ -23,7 +23,7 @@ func withStubStarter(t *testing.T) *starterCalls {
 }
 
 type starterCalls struct {
-	resolveLocalhostTo []string
+	hostResolverRules []string
 }
 
 func TestBrowserBackendCreateAndDelete(t *testing.T) {
@@ -70,24 +70,47 @@ func TestBrowserBackendCreateAndDelete(t *testing.T) {
 	}
 }
 
+func TestBuildLoopbackResolverRules(t *testing.T) {
+	got := buildLoopbackResolverRules([]string{"localhost", "lvh.me"}, "203.0.113.7")
+	want := "MAP localhost 203.0.113.7, MAP *.localhost 203.0.113.7, MAP lvh.me 203.0.113.7, MAP *.lvh.me 203.0.113.7"
+	if got != want {
+		t.Errorf("rules = %q, want %q", got, want)
+	}
+	// Caller-supplied wildcards normalize to bare + wildcard (no MAP *.*.d).
+	if got := buildLoopbackResolverRules([]string{"*.myapp.test"}, "h"); got != "MAP myapp.test h, MAP *.myapp.test h" {
+		t.Errorf("wildcard input: got %q", got)
+	}
+	if got := buildLoopbackResolverRules([]string{"localhost"}, ""); got != "" {
+		t.Errorf("empty addr should produce no rules, got %q", got)
+	}
+}
+
 func TestBrowserBackendResolveLocalhost(t *testing.T) {
 	calls := withStubStarter(t)
 	bb := newBrowserBackend(4, "", "h")
 
-	// Default: derived from the allocation request's source address.
+	// Default: derived from the allocation request's source address, over the
+	// default loopback domain set (localhost + lvh.me + localtest.me).
 	req1 := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"sessionId":"a"}`))
 	req1.RemoteAddr = "203.0.113.7:51234"
 	bb.ServeHTTP(httptest.NewRecorder(), req1)
 
-	// Explicit body override wins (NAT case).
-	req2 := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"sessionId":"b","resolveLocalhostTo":"198.51.100.9"}`))
+	// Explicit body overrides win: address (NAT case) + domain list.
+	req2 := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(
+		`{"sessionId":"b","resolveLocalhostTo":"198.51.100.9","loopbackDomains":["myapp.test"]}`))
 	req2.RemoteAddr = "203.0.113.7:51235"
 	bb.ServeHTTP(httptest.NewRecorder(), req2)
 
-	want := []string{"203.0.113.7", "198.51.100.9"}
-	if len(calls.resolveLocalhostTo) != 2 ||
-		calls.resolveLocalhostTo[0] != want[0] || calls.resolveLocalhostTo[1] != want[1] {
-		t.Errorf("starter resolveLocalhostTo = %v, want %v", calls.resolveLocalhostTo, want)
+	want := []string{
+		buildLoopbackResolverRules(defaultLoopbackDomains, "203.0.113.7"),
+		"MAP myapp.test 198.51.100.9, MAP *.myapp.test 198.51.100.9",
+	}
+	if len(calls.hostResolverRules) != 2 ||
+		calls.hostResolverRules[0] != want[0] || calls.hostResolverRules[1] != want[1] {
+		t.Errorf("starter hostResolverRules = %v, want %v", calls.hostResolverRules, want)
+	}
+	if !strings.Contains(want[0], "MAP *.lvh.me 203.0.113.7") {
+		t.Errorf("default rules missing *.lvh.me: %q", want[0])
 	}
 }
 

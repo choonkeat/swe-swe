@@ -37,12 +37,24 @@ var remoteAllocate = allocateRemoteBrowser
 
 // allocateRemoteBrowser POSTs to <backend>/sessions and returns the allocation.
 func allocateRemoteBrowser(backendURL, token, sessionID string) (*allocResponse, error) {
-	payload := map[string]string{"sessionId": sessionID}
-	// Where chromium-on-the-backend should resolve "localhost" (the agent's
-	// dev-server URLs). The backend defaults to this request's source address,
-	// which is right unless NAT hides us -- then the operator overrides it.
+	payload := map[string]any{"sessionId": sessionID}
+	// Where chromium-on-the-backend should resolve loopback-style dev
+	// hostnames (localhost, *.lvh.me, ...). The backend defaults to this
+	// request's source address, which is right unless NAT hides us -- then
+	// the operator overrides it.
 	if v := os.Getenv("SWE_AGENT_VIEW_LOCALHOST"); v != "" {
 		payload["resolveLocalhostTo"] = v
+	}
+	// Extra/replacement loopback domain list (comma-separated) for projects
+	// using wildcard dev DNS beyond the backend's defaults.
+	if v := os.Getenv("SWE_AGENT_VIEW_LOOPBACK_DOMAINS"); v != "" {
+		var domains []string
+		for _, d := range strings.Split(v, ",") {
+			if d = strings.TrimSpace(d); d != "" {
+				domains = append(domains, d)
+			}
+		}
+		payload["loopbackDomains"] = domains
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(backendURL, "/")+"/sessions", bytes.NewReader(body))
