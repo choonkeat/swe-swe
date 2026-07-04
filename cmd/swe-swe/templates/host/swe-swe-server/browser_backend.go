@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // Agent View (the agent-drivable Chromium shown over VNC) is the only tab that
@@ -126,3 +129,156 @@ var startRemoteAgentView = func(sess *Session) (string, error) {
 
 // stopRemoteAgentView mirrors startRemoteAgentView (Phase 5d).
 var stopRemoteAgentView = func(sess *Session) {}
+
+// browserProcs holds the four OS processes backing one isolated Agent View
+// browser (Xvfb + chromium + x11vnc + websockify) plus its chromium profile
+// dir. It is the shared core behind both the in-process session backend
+// (local mode) and the standalone browser-backend service.
+type browserProcs struct {
+	pids    []int
+	dataDir string
+}
+
+// startBrowserProcs launches the Agent View stack for an isolated instance
+// identified by id, on the given X display and ports (cdpPort = chromium remote
+// debugging; vncPort = websockify/noVNC; vncInternalPort = x11vnc raw). On any
+// step failing, processes started so far are killed before returning.
+func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int) (*browserProcs, error) {
+	b := &browserProcs{}
+	displayStr := fmt.Sprintf(":%d", display)
+
+	// 1. Xvfb on a unique display, Unix socket only (no TCP).
+	xvfbCmd := exec.Command("Xvfb", displayStr, "-screen", "0", "1024x768x24", "-nolisten", "tcp")
+	if err := xvfbCmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start Xvfb on display %s: %w", displayStr, err)
+	}
+	xvfbPID := xvfbCmd.Process.Pid
+	trackPid(xvfbPID)
+	b.pids = append(b.pids, xvfbPID)
+	log.Printf("Started Xvfb on display %s (PID %d) for browser %s", displayStr, xvfbPID, id)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("Xvfb wait (PID %d, browser %s)", xvfbPID, id))
+		defer untrackPid(xvfbPID)
+		if err := xvfbCmd.Wait(); err != nil {
+			log.Printf("Xvfb exited with error (PID %d, browser %s): %v", xvfbPID, id, err)
+		} else {
+			log.Printf("Xvfb exited normally (PID %d, browser %s)", xvfbPID, id)
+		}
+	}()
+	time.Sleep(500 * time.Millisecond)
+
+	// 2. Chromium with remote debugging. Each instance gets its own
+	// --user-data-dir to avoid Chrome's singleton profile lock (which would
+	// make all but the first instance delegate to the first and exit).
+	chromiumBinary := "chromium"
+	if _, err := exec.LookPath("chromium"); err != nil {
+		chromiumBinary = "chromium-browser" // fallback name on some distros
+	}
+	userDataDir := fmt.Sprintf("/tmp/chromium-session-%s", id)
+	b.dataDir = userDataDir
+	chromeCmd := exec.Command(chromiumBinary,
+		"--no-sandbox",
+		"--test-type",
+		"--disable-gpu",
+		"--disable-software-rasterizer",
+		"--disable-dev-shm-usage",
+		"--remote-debugging-address=0.0.0.0",
+		fmt.Sprintf("--remote-debugging-port=%d", cdpPort),
+		fmt.Sprintf("--user-data-dir=%s", userDataDir),
+		"--remote-allow-origins=*",
+		"--window-size=1024,768",
+		"--start-maximized",
+	)
+	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
+	if err := chromeCmd.Start(); err != nil {
+		b.stop()
+		return nil, fmt.Errorf("failed to start Chromium on CDP port %d: %w", cdpPort, err)
+	}
+	chromePID := chromeCmd.Process.Pid
+	trackPid(chromePID)
+	b.pids = append(b.pids, chromePID)
+	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for browser %s", cdpPort, displayStr, chromePID, id)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("Chromium wait (PID %d, browser %s)", chromePID, id))
+		defer untrackPid(chromePID)
+		if err := chromeCmd.Wait(); err != nil {
+			log.Printf("Chromium exited with error (PID %d, browser %s): %v", chromePID, id, err)
+		} else {
+			log.Printf("Chromium exited normally (PID %d, browser %s)", chromePID, id)
+		}
+	}()
+	time.Sleep(1 * time.Second)
+
+	// 3. x11vnc on an internal raw-VNC port consumed by noVNC.
+	x11vncCmd := exec.Command("x11vnc",
+		"-display", displayStr,
+		"-forever",
+		"-shared",
+		"-nopw",
+		"-rfbport", fmt.Sprintf("%d", vncInternalPort),
+		"-xkb",
+	)
+	if err := x11vncCmd.Start(); err != nil {
+		b.stop()
+		return nil, fmt.Errorf("failed to start x11vnc on port %d: %w", vncInternalPort, err)
+	}
+	x11vncPID := x11vncCmd.Process.Pid
+	trackPid(x11vncPID)
+	b.pids = append(b.pids, x11vncPID)
+	log.Printf("Started x11vnc on port %d, display %s (PID %d) for browser %s", vncInternalPort, displayStr, x11vncPID, id)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("x11vnc wait (PID %d, browser %s)", x11vncPID, id))
+		defer untrackPid(x11vncPID)
+		if err := x11vncCmd.Wait(); err != nil {
+			log.Printf("x11vnc exited with error (PID %d, browser %s): %v", x11vncPID, id, err)
+		} else {
+			log.Printf("x11vnc exited normally (PID %d, browser %s)", x11vncPID, id)
+		}
+	}()
+
+	// 4. websockify (noVNC) bridging the WebSocket vncPort to raw vncInternalPort.
+	noVNCCmd := exec.Command("websockify",
+		"--web", "/usr/share/novnc",
+		fmt.Sprintf("%d", vncPort),
+		fmt.Sprintf("localhost:%d", vncInternalPort),
+	)
+	if err := noVNCCmd.Start(); err != nil {
+		b.stop()
+		return nil, fmt.Errorf("failed to start noVNC proxy on port %d: %w", vncPort, err)
+	}
+	noVNCPID := noVNCCmd.Process.Pid
+	trackPid(noVNCPID)
+	b.pids = append(b.pids, noVNCPID)
+	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for browser %s", vncPort, vncInternalPort, noVNCPID, id)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("noVNC wait (PID %d, browser %s)", noVNCPID, id))
+		defer untrackPid(noVNCPID)
+		if err := noVNCCmd.Wait(); err != nil {
+			log.Printf("noVNC exited with error (PID %d, browser %s): %v", noVNCPID, id, err)
+		} else {
+			log.Printf("noVNC exited normally (PID %d, browser %s)", noVNCPID, id)
+		}
+	}()
+
+	return b, nil
+}
+
+// stop kills all processes for this browser and removes its profile dir.
+func (b *browserProcs) stop() {
+	for _, pid := range b.pids {
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+			if !errors.Is(err, syscall.ESRCH) {
+				log.Printf("Failed to kill browser process PID %d: %v", pid, err)
+			}
+		} else {
+			log.Printf("[KILL] Killed browser process PID %d (server PID %d)", pid, os.Getpid())
+		}
+	}
+	b.pids = nil
+	if b.dataDir != "" {
+		if err := os.RemoveAll(b.dataDir); err != nil {
+			log.Printf("Failed to clean up browser data dir %s: %v", b.dataDir, err)
+		}
+		b.dataDir = ""
+	}
+}
