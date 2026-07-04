@@ -1,0 +1,8 @@
+153220 PHASE 5 START (full: client seam + remote browser-backend service). User: "Also build the remote service now."
+DESIGN (minimize churn on embedded server source):
+  5a Capability detect + graceful degrade: browserStackAvailable() via LookPath(Xvfb/chromium|chromium-browser/x11vnc/websockify); local mode missing stack -> Agent View "unavailable" (no 500); WS status carries agentViewAvailable; browser/start returns {"status":"unavailable"}. RED test first.
+  5b Extract process-level startBrowser/stopBrowser (id,cdpPort,vncPort,display) from startSessionBrowser; sess wrapper keeps behavior (golden unchanged).
+  5c browser-backend subcommand of swe-swe-server (reuse binary+stack): allocation API POST/DELETE /sessions, GET ready, /health, bearer token (SWE_BROWSER_BACKEND_TOKEN), max-sessions cap; uses startBrowser.
+  5d remote client: -agent-view=<url> -> browser/start calls backend POST /sessions, wires CDP (BROWSER_CDP_PORT->remote) + VNC proxy to remote vncURL.
+  5e thin swe-swe/browser-backend image (browser stack + binary, runs subcommand).
+  5f tests + dockerless e2e (lean host degrade; remote allocate).
