@@ -99,6 +99,14 @@ dockerless-payload:
 		github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@$(SWE_SWE_TUNNEL_REF)
 	@echo "dockerless payload built: $(DOCKERLESS_BIN)"
 
+# Thin swe-swe/browser-backend image: the relocatable Agent View allocation
+# service. Reuses the static swe-swe-server from the dockerless payload (run as
+# `-mode browser-backend`) + only the display stack. See docker/browser-backend.
+browser-backend-image: dockerless-payload
+	docker build -f docker/browser-backend/Dockerfile \
+		--build-arg ARCH=$(DOCKERLESS_ARCH) \
+		-t swe-swe/browser-backend .
+
 _payload-helper:
 	@rm -rf /tmp/swe-swe-payload-$(NAME)
 	@mkdir -p /tmp/swe-swe-payload-$(NAME)
