@@ -6,3 +6,5 @@ DESIGN (minimize churn on embedded server source):
   5d remote client: -agent-view=<url> -> browser/start calls backend POST /sessions, wires CDP (BROWSER_CDP_PORT->remote) + VNC proxy to remote vncURL.
   5e thin swe-swe/browser-backend image (browser stack + binary, runs subcommand).
   5f tests + dockerless e2e (lean host degrade; remote allocate).
+154113 5a GREEN (server-side graceful degradation). browser_backend.go: -agent-view flag (local|off|<url>) + SWE_AGENT_VIEW, browserStackAvailable() via LookPath, agentViewAvailable(), startSessionAgentView dispatcher + remote stubs (filled 5d). main.go: RemoteBrowserID field, agentViewAvailable in WS status, handler returns {"status":"unavailable"} (no 500) on missing stack, session cleanup uses stopSessionAgentView. Updated browser_start_test to new contract. make test exit 0.
+  NOTE: golden regen absorbed latent Phase 2e path-agnostic drift (committed source had workspaceDir/sweHomeDir but golden copies still had /workspace). TestGoldenFiles only diffs Dockerfile/entrypoint/compose, NOT swe-swe-server/*.go, so it was never asserted -- regen syncs the on-disk copies. No test-behavior change.

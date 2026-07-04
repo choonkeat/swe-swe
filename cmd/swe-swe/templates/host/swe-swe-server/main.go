@@ -466,7 +466,10 @@ type Session struct {
 	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string // Per-session Chromium user data directory
 	BrowserStarted bool   // Whether browser processes have been started
-	FilesPID       int    // PID of the per-session md-serve process (0 if not started)
+	// RemoteBrowserID is the session id returned by a remote browser-backend
+	// (empty in local mode); set when -agent-view points at a backend URL.
+	RemoteBrowserID string
+	FilesPID        int // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -830,27 +833,28 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		agentChatPort = s.AgentChatPort
 	}
 	status := map[string]interface{}{
-		"type":             "status",
-		"sessionUUID":      s.UUID,
-		"viewers":          viewers,
-		"cols":             cols,
-		"rows":             rows,
-		"assistant":        s.AssistantConfig.Name,
-		"sessionName":      s.Name,
-		"uuidShort":        uuidShort,
-		"workDir":          workDir,
-		"previewPort":      s.PreviewPort,
-		"agentChatPort":    agentChatPort,
-		"previewProxyPort": previewProxyPort(s.PreviewPort),
-		"publicPort":       s.PublicPort,
-		"cdpPort":          s.CDPPort,
-		"vncPort":          s.VNCPort,
-		"vncProxyPort":     vncProxyPort(s.VNCPort),
-		"filesProxyPort":   filesProxyPort(s.FilesPort),
-		"yoloMode":         s.yoloMode,
-		"yoloSupported":    s.AssistantConfig.YoloRestartCmd != "",
-		"browserStarted":   s.BrowserStarted,
-		"publicHostname":   getLiveTunnelHostname(),
+		"type":               "status",
+		"sessionUUID":        s.UUID,
+		"viewers":            viewers,
+		"cols":               cols,
+		"rows":               rows,
+		"assistant":          s.AssistantConfig.Name,
+		"sessionName":        s.Name,
+		"uuidShort":          uuidShort,
+		"workDir":            workDir,
+		"previewPort":        s.PreviewPort,
+		"agentChatPort":      agentChatPort,
+		"previewProxyPort":   previewProxyPort(s.PreviewPort),
+		"publicPort":         s.PublicPort,
+		"cdpPort":            s.CDPPort,
+		"vncPort":            s.VNCPort,
+		"vncProxyPort":       vncProxyPort(s.VNCPort),
+		"filesProxyPort":     filesProxyPort(s.FilesPort),
+		"yoloMode":           s.yoloMode,
+		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
+		"browserStarted":     s.BrowserStarted,
+		"agentViewAvailable": agentViewAvailable(),
+		"publicHostname":     getLiveTunnelHostname(),
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
@@ -1067,8 +1071,8 @@ func (s *Session) Close() {
 		s.FilesProxyServer.Shutdown(shutdownCtx)
 	}
 
-	// Stop per-session browser processes (Xvfb, Chromium, x11vnc, noVNC)
-	stopSessionBrowser(s)
+	// Stop the session's Agent View backend (local stack or remote allocation)
+	stopSessionAgentView(s)
 
 	// Stop the per-session md-serve (Files tab)
 	stopSessionMdServe(s)
@@ -1821,7 +1825,16 @@ func main() {
 	sweHomeFlag := flag.String("swe-home", "",
 		"The .swe-swe home holding per-session proxy/ and bin/ (helpers + "+
 			"swe-swe-open shim). Default /home/app/.swe-swe. Env: SWE_HOME_DIR.")
+	agentView := flag.String("agent-view", "local",
+		"Agent View backend: local (in-process display stack) | off (hide the "+
+			"tab) | <backend-url> (offload to a swe-swe/browser-backend). "+
+			"Env: SWE_AGENT_VIEW.")
 	flag.Parse()
+
+	// Resolve the Agent View backend (flag -> env -> default "local"). On a
+	// lean host with no display stack, local mode reports the tab unavailable
+	// rather than 500ing on browser/start.
+	resolveAgentViewBackend(*agentView, flagPassed("agent-view"))
 
 	// Resolve host paths: flag -> env -> default. Defaults reproduce the
 	// container layout, so compose mode is unchanged; dockerless `swe-swe up`
@@ -3748,10 +3761,10 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 
 // resolveWorkingDirectory calculates the working directory for a session
 // based on repoPath and optional branchName.
-// - Branch blank: return repoPath (no worktree)
-// - /workspace (or any of its worktrees) + branch: /worktrees/{branch}
-// - External /repos/{name}/workspace (or its worktrees) + branch:
-//   /repos/{name}/worktrees/{branch}
+//   - Branch blank: return repoPath (no worktree)
+//   - /workspace (or any of its worktrees) + branch: /worktrees/{branch}
+//   - External /repos/{name}/workspace (or its worktrees) + branch:
+//     /repos/{name}/worktrees/{branch}
 //
 // Worktrees are always anchored off the MAIN repo, never nested under whatever
 // checkout we were launched from. Launching a session from /worktrees/<x>
@@ -7803,18 +7816,19 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := startSessionBrowser(sess); err != nil {
-		log.Printf("Failed to start browser for session %s: %v", sessionUUID, err)
+	status, err := startSessionAgentView(sess)
+	if err != nil {
+		log.Printf("Failed to start Agent View for session %s: %v", sessionUUID, err)
 		http.Error(w, fmt.Sprintf("Failed to start browser: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Push browserStarted:true to all connected WebSocket clients
+	// Push the updated status (browserStarted / agentViewAvailable) to clients.
 	sess.BroadcastStatus()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"started"}`))
+	fmt.Fprintf(w, `{"status":%q}`, status)
 }
 
 // handleVNCReadyAPI handles GET /api/session/{uuid}/vnc-ready
