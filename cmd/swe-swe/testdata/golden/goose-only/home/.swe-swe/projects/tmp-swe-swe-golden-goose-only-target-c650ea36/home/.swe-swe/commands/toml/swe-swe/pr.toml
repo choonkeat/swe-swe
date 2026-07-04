@@ -1,0 +1,55 @@
+description = "Discuss and resolve a GitHub PR / GitLab MR over chat using the prctx CLI, then flush replies/comments/verdict upstream"
+
+prompt = '''
+Work a GitHub pull request or GitLab merge request conversationally with the
+user, using the bundled `prctx` CLI (already on `$PATH`): pull the review context
+in, discuss and draft over chat, then push everything back upstream.
+
+`$ARGUMENTS` is a PR/MR url or number (a bare number resolves owner/repo from the
+git `origin` remote). If empty, ask which PR/MR, or use the last-fetched one.
+
+## Auth
+
+`prctx` reads `GH_TOKEN` (GitHub) / `GITLAB_TOKEN` (GitLab) from the env. In a
+swe-swe session these are exported automatically from the token saved in
+Settings > Credentials > Git HTTPS for github.com / gitlab.com. If a call fails
+with a "token is not set" error, tell the user to save the host token in that
+panel and reopen the session (env is injected at session start).
+
+## Workflow
+
+### 1. Fetch and show
+```bash
+prctx fetch "$ARGUMENTS"
+```
+Pulls review threads + top-level notes into local state and prints them. The
+code diff is the worktree (via git) -- read files directly. Summarize open
+threads for the user.
+
+### 2. Discuss and stage (local only, nothing sent)
+```bash
+prctx reply   <thread-id> "your reply text"
+prctx comment <file>:<line> "new comment text"
+prctx resolve <thread-id>
+prctx drop    <thread-id|draft-id>
+prctx show
+```
+Thread ids come from `prctx show`. Make code changes as normal edits + commits on
+the branch -- that is plain git, not part of `prctx`.
+
+### 3. Flush and verdict (the only steps that write upstream)
+Confirm with the user first. Push code first if you committed (`prctx flush`
+warns + refuses if local HEAD is ahead of the fetched PR head; it never pushes).
+```bash
+prctx flush                    # post staged replies/comments/resolves (idempotent)
+prctx approve                  # or: prctx reject   -- verdict is separate + atomic
+```
+Report what was posted and the resulting PR/MR state.
+
+## Rules
+- Never flush/approve/reject without explicit user confirmation -- these write
+  upstream as the user's own identity.
+- Replies anchor to thread ids, not line numbers, so they survive code changes.
+- flush is idempotent (posted items are stamped); a re-run after a partial
+  failure resumes without double-posting.
+'''

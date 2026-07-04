@@ -33,6 +33,11 @@ RUN cd /build-git-credential-swe-swe && go mod init git-credential-swe-swe && CG
 COPY git-sign-swe-swe/main.go /build-git-sign-swe-swe/main.go
 RUN cd /build-git-sign-swe-swe && go mod init git-sign-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-sign-swe-swe/git-sign-swe-swe .
 
+# Build prctx (standalone PR/MR review CLI, stdlib only). Multi-file package;
+# copy the whole dir. Available on $PATH in every session for the /pr commands.
+COPY prctx/*.go /build-prctx/
+RUN cd /build-prctx && go mod init prctx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-prctx/prctx .
+
 
 # Stage 2: Main development environment
 FROM golang:1.24-bookworm
@@ -141,6 +146,7 @@ COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp
 COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
 COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
 COPY --from=server-builder /build-git-sign-swe-swe/git-sign-swe-swe /usr/local/bin/git-sign-swe-swe
+COPY --from=server-builder /build-prctx/prctx /usr/local/bin/prctx
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
