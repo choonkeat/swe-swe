@@ -88,7 +88,9 @@ only worth doing if any tooling keys off `pending_reply` alone. If addressed, pr
 the invariant ("pending_reply is authoritative only when posted_reply_id == 0") over mutating the
 struct, to keep the idempotency stamp + reply text intact for audit/history.
 
-**Status**: [ ] PENDING (decide if needed)
+**Status**: [x] DONE -- chose to strip `pending_reply` in a shallow copy at the
+`renderJSON` boundary when `posted_reply_id != 0`, leaving on-disk state (stamp +
+text) intact for audit/idempotency.
 
 ---
 

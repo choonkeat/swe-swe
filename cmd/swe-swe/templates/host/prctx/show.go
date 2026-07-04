@@ -50,9 +50,21 @@ func render(w io.Writer, s *State) {
 }
 
 func renderJSON(w io.Writer, s *State) error {
+	// Present a posted reply as not-pending. On disk we keep both the stamp and
+	// the reply text (audit/idempotency), but a `--json` consumer should see
+	// pending_reply only while it is genuinely unsent -- so clear it in a shallow
+	// copy once PostedReplyID is set, without mutating the saved state.
+	out := *s
+	out.Threads = make([]Thread, len(s.Threads))
+	copy(out.Threads, s.Threads)
+	for i := range out.Threads {
+		if out.Threads[i].PostedReplyID != 0 {
+			out.Threads[i].PendingReply = ""
+		}
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(s)
+	return enc.Encode(&out)
 }
 
 func oneLine(s string) string {
