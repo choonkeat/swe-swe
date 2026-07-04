@@ -1,0 +1,1 @@
+085300 DOCKERLESS E2E (verify tabs live) start. Plan: boot a clean dockerless instance (no Docker, tunnel env unset), then verify session page + per-tab backends (Agent Terminal PTY/ws, Terminal, Preview proxy, Files md-serve via npx, Agent Chat MCP) come up, via browser MCP if reachable else HTTP/process checks.
