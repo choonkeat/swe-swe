@@ -15,7 +15,7 @@ ascii-check:
 ascii-fix:
 	@bash scripts/ascii-fix.sh
 
-test-cli:
+test-cli: dockerless-payload
 	go test -v ./cmd/swe-swe
 
 test-mcp-lazy-init:
@@ -52,6 +52,51 @@ swe-swe-fork-convo:
 	cd /tmp/swe-swe-fork-convo-build && go build -o $(CURDIR)/bin/swe-swe-fork-convo ./cmd/swe-swe-fork-convo
 	@rm -rf /tmp/swe-swe-fork-convo-build
 	@echo "built: bin/swe-swe-fork-convo"
+
+# --- Dockerless embedded payload ---
+# Build the static-linux helper binaries the `swe-swe` CLI go:embeds and
+# dumps on `swe-swe init --dockerless` (and that the thin Dockerfile COPYs).
+# All are CGO_ENABLED=0 so one Linux set runs on alpine/bookworm/slim alike.
+# Phase 1 targets the host arch only (Linux-host-first); the darwin host set
+# is a Phase 6 follow-up. The outputs are build artifacts (gitignored);
+# a committed .gitkeep keeps the go:embed directive compilable without them.
+DOCKERLESS_PAYLOAD_DIR := cmd/swe-swe/dockerless-payload
+DOCKERLESS_ARCH := $(shell go env GOARCH)
+DOCKERLESS_BIN := $(DOCKERLESS_PAYLOAD_DIR)/bin/linux-$(DOCKERLESS_ARCH)
+.PHONY: dockerless-payload _payload-helper
+dockerless-payload:
+	@rm -rf $(DOCKERLESS_BIN)
+	@mkdir -p $(DOCKERLESS_BIN)
+	@# server + fork-convo share the swe-swe-server module; mirror the
+	@# test-server copy-out flow (go.mod.txt -> go.mod) so the build sees the
+	@# same module shape the container build produces.
+	@rm -rf /tmp/swe-swe-payload-server
+	@mkdir -p /tmp/swe-swe-payload-server
+	@cp -r $(SERVER_TEMPLATE)/. /tmp/swe-swe-payload-server/
+	@mkdir -p /tmp/swe-swe-payload-server/container-templates/.swe-swe/docs
+	@cp $(CONTAINER_TEMPLATES)/.swe-swe/docs/* /tmp/swe-swe-payload-server/container-templates/.swe-swe/docs/
+	@mv /tmp/swe-swe-payload-server/go.mod.txt /tmp/swe-swe-payload-server/go.mod
+	@mv /tmp/swe-swe-payload-server/go.sum.txt /tmp/swe-swe-payload-server/go.sum
+	cd /tmp/swe-swe-payload-server && go mod tidy && \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-server . && \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-fork-convo ./cmd/swe-swe-fork-convo
+	@cp /tmp/swe-swe-payload-server/go.sum $(SERVER_TEMPLATE)/go.sum.txt
+	@rm -rf /tmp/swe-swe-payload-server
+	@# stdlib-only helpers: each is a standalone `go mod init` build, exactly
+	@# as the Dockerfile builds them.
+	@$(MAKE) _payload-helper NAME=mcp-lazy-init
+	@$(MAKE) _payload-helper NAME=swe-swe-broker-probe
+	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
+	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
+	@echo "dockerless payload built: $(DOCKERLESS_BIN)"
+
+_payload-helper:
+	@rm -rf /tmp/swe-swe-payload-$(NAME)
+	@mkdir -p /tmp/swe-swe-payload-$(NAME)
+	@cp cmd/swe-swe/templates/host/$(NAME)/main.go /tmp/swe-swe-payload-$(NAME)/main.go
+	cd /tmp/swe-swe-payload-$(NAME) && go mod init $(NAME) >/dev/null 2>&1 && \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
+	@rm -rf /tmp/swe-swe-payload-$(NAME)
 
 # Test the git-sign-swe-swe wrapper template (stdlib only).
 # The wrapper ships as a standalone binary built inside Dockerfile;
@@ -184,7 +229,7 @@ BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo "dev")
 LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)
 
-build-cli:
+build-cli: dockerless-payload
 	@rm -f cmd/swe-swe/templates/host/swe-swe-server/go.mod cmd/swe-swe/templates/host/swe-swe-server/go.sum
 	mkdir -p ./dist
 	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ./dist/swe-swe.linux-amd64 ./cmd/swe-swe

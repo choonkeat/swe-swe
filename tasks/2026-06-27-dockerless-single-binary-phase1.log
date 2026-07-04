@@ -2,3 +2,60 @@
   - swe-swe-open is NOT a Go binary: it is a shell heredoc written by entrypoint.sh:220 (+ symlinks for xdg-open/open/etc at :228). Cannot "fold" as-is; options: reimplement as a Go subcommand, or have `install` emit the shim.
   - 4 Go helpers (git-credential-swe-swe 125L, git-sign-swe-swe 236L, mcp-lazy-init 234L, swe-swe-broker-probe 49L) live in standalone dirs with throwaway go.mod; Dockerfile builds each separately (lines 31-45) and COPYs to /usr/local/bin (252-258). Folding them into the server module rewrites that Dockerfile section + Makefile test targets (test-mcp-lazy-init, test-git-sign-swe-swe) -- overlaps Phase 2.
   - swe-swe-fork-convo already lives in-module (swe-swe-server/cmd/swe-swe-fork-convo + forkconvo pkg) -- the pattern to mirror.
+
+---
+
+PHASE 1 implementation (2026-06-28). TDD RED->GREEN.
+
+Approach correction vs the investigation note above: we do NOT fold the four
+stdlib helpers into the server module (risky, overlaps Phase 2). The CLI just
+embeds their compiled outputs. Helpers stay separate, individually testable.
+
+What landed:
+- cmd/swe-swe/payload.go: `//go:embed all:dockerless-payload` -> var
+  dockerlessPayload embed.FS; `dockerlessBinaries` (single source of truth for
+  the six: swe-swe-server, git-credential-swe-swe, git-sign-swe-swe,
+  mcp-lazy-init, swe-swe-broker-probe, swe-swe-fork-convo);
+  `dockerlessPayloadBinDir(goarch)` -> "dockerless-payload/bin/linux-<arch>".
+- cmd/swe-swe/payload_test.go: TestDockerlessPayloadEmbedsBinaries -- per host
+  GOARCH, opens each embedded binary, asserts non-empty + ELF (debug/elf) +
+  ELFCLASS64 + machine matches arch (amd64->EM_X86_64, arm64->EM_AARCH64).
+- Makefile: `dockerless-payload` target builds all six CGO_ENABLED=0
+  GOOS=linux GOARCH=$(go env GOARCH) -ldflags="-s -w" into
+  cmd/swe-swe/dockerless-payload/bin/linux-<arch>/. Server + fork-convo use the
+  test-server copy-out flow (go.mod.txt -> go.mod in /tmp); the four stdlib
+  helpers each `go mod init` + build (mirrors the Dockerfile). `build-cli` and
+  `test-cli` now depend on `dockerless-payload`.
+- .gitignore: cmd/swe-swe/dockerless-payload/bin/linux-*/ (binaries are build
+  artifacts). Committed .gitkeep keeps the go:embed compilable on fresh checkout.
+
+TDD trace:
+- RED: payload.go + .gitkeep present, no binaries -> the test reports all six
+  "file does not exist" (package compiles cleanly; not a build error).
+- GREEN: `make dockerless-payload` builds the six -> test passes 6/6.
+- `make test` green end-to-end; go.sum.txt did not churn.
+
+Sizes:
+- Payload linux-amd64 = 29MB (server 13.7M, mcp-lazy-init 5.9M, git-sign 2.7M,
+  git-credential 2.5M, broker-probe 2.4M, fork-convo 2.4M). Within ~25-30MB.
+- CLI delta: 9.2MB -> 38.9MB when the embed is referenced (+29.7MB).
+
+IMPORTANT FINDING -- linker DCE strips the unreferenced embed:
+`make build` produces a 9.2MB CLI even though the payload is embedded, because
+Go's linker dead-code-eliminates dockerlessPayload while NO non-test code
+references it yet. Confirmed two ways: (a) `go list -f '{{.EmbedFiles}}'`
+lists all six; (b) temporarily adding a real reference -> CLI jumps to 38.9MB.
+The `go test` binary references the var (payload_test.go), so the embed is
+genuinely present + verified there -- that test is the authoritative Phase 1
+guarantee. Decision: NO no-op keepalive. Phase 2 (`init --dockerless` reads +
+dumps the payload) is the first real consumer; the 29.7MB lands in the shipped
+CLI then. Documented so the small `make build` artifact is not mistaken for a
+broken embed.
+
+Deferred within Phase 1 (kept this commit focused):
+- Multi-arch matrix: build-platforms should build the per-arch Linux set so
+  each published CLI embeds the right arch (darwin CLI embeds the linux image
+  set). dockerless-payload currently builds host arch only = the
+  Linux-host-first first cut. Tracked in the distribution task.
+- Script/config staging (swe-swe-open shim + MCP/env config): emitted by
+  `init --dockerless` in Phase 2, not pre-staged into the embed tree.
