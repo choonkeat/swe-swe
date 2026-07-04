@@ -87,6 +87,13 @@ func handlePassthrough(command string, args []string) {
 		}
 	}
 
+	// Dockerless projects run the dumped host-native server directly instead
+	// of docker compose.
+	if isDockerlessProject(sweDir) {
+		handleDockerlessCommand(command, sweDir, absPath, remainingArgs)
+		return
+	}
+
 	// For "up" command: check if CLI version is newer than generated config
 	if command == "up" && Version != "dev" {
 		remainingArgs = checkAndUpgrade(sweDir, absPath, remainingArgs)

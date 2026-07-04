@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -74,4 +75,52 @@ func TestDockerlessMarker(t *testing.T) {
 	if isDockerlessProject(filepath.Join(sweDir, "does-not-exist")) {
 		t.Errorf("missing dir reported as dockerless")
 	}
+}
+
+// `swe-swe up` on a dockerless project execs the dumped server with the
+// project as working dir, the dumped bin/ on PATH, and a loopback bind.
+func TestDockerlessServerInvocation(t *testing.T) {
+	sweDir := "/home/u/.swe-swe/projects/proj"
+	absPath := "/work/proj"
+	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"})
+
+	if want := filepath.Join(sweDir, "bin", "swe-swe-server"); bin != want {
+		t.Errorf("bin = %q, want %q", bin, want)
+	}
+	if !argsContainPair(args, "-working-directory", absPath) {
+		t.Errorf("args %v missing -working-directory %s", args, absPath)
+	}
+	// Binds loopback on the chosen port by default (no surprise LAN exposure).
+	if !argsContainValue(args, "127.0.0.1:1977") {
+		t.Errorf("args %v missing loopback bind 127.0.0.1:1977", args)
+	}
+	// bin/ is prepended to PATH so the git/helper shims resolve.
+	binDir := filepath.Join(sweDir, "bin")
+	foundPath := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "PATH=") && strings.HasPrefix(strings.TrimPrefix(e, "PATH="), binDir) {
+			foundPath = true
+		}
+	}
+	if !foundPath {
+		t.Errorf("env %v has no PATH starting with %s", env, binDir)
+	}
+}
+
+func argsContainValue(args []string, v string) bool {
+	for _, a := range args {
+		if a == v {
+			return true
+		}
+	}
+	return false
+}
+
+func argsContainPair(args []string, flag, val string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag && args[i+1] == val {
+			return true
+		}
+	}
+	return false
 }

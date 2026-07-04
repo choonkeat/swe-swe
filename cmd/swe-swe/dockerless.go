@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // dockerlessMarkerFile names the sentinel inside the metadata dir that marks a
@@ -81,6 +84,102 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 	fmt.Printf("\nInitialized dockerless swe-swe project at %s\n", absPath)
 	fmt.Printf("View all projects: swe-swe list\n")
 	fmt.Printf("Next: cd %s && swe-swe up\n", absPath)
+}
+
+// dockerlessServerInvocation builds the command to run the dumped server for a
+// dockerless project: the server binary path, its args (project as working
+// dir, loopback bind on the chosen port), and the environment with the dumped
+// bin/ prepended to PATH so the git credential/signing helpers resolve. Pure
+// for testability; the actual exec lives in handleDockerlessCommand.
+func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string) (bin string, args, env []string) {
+	binDir := filepath.Join(sweDir, "bin")
+	bin = filepath.Join(binDir, "swe-swe-server")
+	args = []string{"-working-directory", absPath, "-bind", "127.0.0.1:" + port}
+
+	env = make([]string, 0, len(baseEnv)+1)
+	pathSet := false
+	for _, e := range baseEnv {
+		if strings.HasPrefix(e, "PATH=") {
+			env = append(env, "PATH="+binDir+string(os.PathListSeparator)+strings.TrimPrefix(e, "PATH="))
+			pathSet = true
+			continue
+		}
+		env = append(env, e)
+	}
+	if !pathSet {
+		env = append(env, "PATH="+binDir)
+	}
+	return bin, args, env
+}
+
+// handleDockerlessCommand is the dockerless counterpart to the docker-compose
+// passthrough: it runs the dumped server directly instead of `docker compose`.
+// Supports `up [--open]` (foreground) and `down`.
+func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
+	open := false
+	var rest []string
+	for _, a := range args {
+		if a == "--open" {
+			open = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+
+	switch command {
+	case "up":
+		port := dockerlessPort(os.Getenv)
+		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ())
+		if _, err := os.Stat(bin); err != nil {
+			log.Fatalf("dockerless server not found at %s -- re-run `swe-swe init --dockerless`: %v", bin, err)
+		}
+		sargs = append(sargs, rest...)
+		url := fmt.Sprintf("http://127.0.0.1:%s/", port)
+		fmt.Printf("Starting dockerless swe-swe at %s (Ctrl-C to stop)\n", url)
+		if open {
+			go openBrowserWhenReady(url, net.JoinHostPort("127.0.0.1", port))
+		}
+		cmd := exec.Command(bin, sargs...)
+		cmd.Env = env
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				os.Exit(ee.ExitCode())
+			}
+			log.Fatalf("swe-swe-server: %v", err)
+		}
+	case "down":
+		fmt.Println("Dockerless swe-swe runs in the foreground; stop it with Ctrl-C in the terminal running `swe-swe up`.")
+	default:
+		log.Fatalf("`swe-swe %s` is not supported in dockerless mode (use: `swe-swe up [--open]` or `swe-swe down`)", command)
+	}
+}
+
+// openBrowserWhenReady waits for the server to accept connections on addr, then
+// best-effort opens the URL in the host browser. Errors are non-fatal.
+func openBrowserWhenReady(url, addr string) {
+	for i := 0; i < 100; i++ {
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			_ = exec.Command("xdg-open", url).Start()
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// dockerlessPort returns the port the dockerless server should bind, honoring
+// SWE_PORT/PORT from the environment and defaulting to 1977.
+func dockerlessPort(getenv func(string) string) string {
+	for _, k := range []string{"SWE_PORT", "PORT"} {
+		if v := getenv(k); v != "" {
+			return v
+		}
+	}
+	return "1977"
 }
 
 // extractDockerlessBinaries writes the embedded static-Linux binaries for the
