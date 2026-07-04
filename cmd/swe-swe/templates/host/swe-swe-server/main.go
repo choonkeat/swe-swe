@@ -5821,12 +5821,29 @@ func wrapWithScript(cmdName string, cmdArgs []string, prefix string) (string, []
 	timingPath := fmt.Sprintf("%s/%s.timing", recordingsDir, prefix)
 	inputPath := fmt.Sprintf("%s/%s.input", recordingsDir, prefix)
 
-	wrapperScript := fmt.Sprintf(
-		`script -q -f -T %[1]q -I %[2]q -O %[3]q -c %[4]q`,
-		timingPath, inputPath, logPath, fullCmd,
-	)
-
+	wrapperScript := scriptWrapperCommand(runtime.GOOS, logPath, timingPath, inputPath, fullCmd)
 	return "bash", []string{"-c", wrapperScript}
+}
+
+// scriptWrapperCommand builds the shell command that records a PTY session.
+// Linux uses util-linux `script` with separate timing/input/output files,
+// enabling timed playback. macOS/BSD `script` has none of those flags
+// (-f/-T/-I/-O), so it records combined output to the .log file only -- no
+// timing file, so playback is plain (untimed) on macOS. The caller still
+// computes the .timing/.input paths; they simply will not exist on macOS,
+// which the cleanup + playback paths already tolerate (they stat for
+// existence and gate on HasTiming).
+func scriptWrapperCommand(goos, logPath, timingPath, inputPath, fullCmd string) string {
+	if goos == "linux" {
+		return fmt.Sprintf(
+			`script -q -f -T %[1]q -I %[2]q -O %[3]q -c %[4]q`,
+			timingPath, inputPath, logPath, fullCmd,
+		)
+	}
+	// BSD/macOS: `script [-q] file command ...` -- record combined output to
+	// the log file; run the command via bash -c to preserve the full command
+	// string (BSD script takes the command as trailing argv, not -c).
+	return fmt.Sprintf(`script -q %[1]q /bin/bash -c %[2]q`, logPath, fullCmd)
 }
 
 // resolveLogPath returns the path to a recording's log file, checking for both

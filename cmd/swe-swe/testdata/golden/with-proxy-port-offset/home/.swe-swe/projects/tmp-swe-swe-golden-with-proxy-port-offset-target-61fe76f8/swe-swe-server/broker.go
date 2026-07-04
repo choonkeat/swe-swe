@@ -20,6 +20,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -78,6 +79,18 @@ func findSessionForPID(pid int) string {
 // goroutine. Fail-open: a Listen error logs and returns; sessions still
 // work without a reachable broker.
 func startBrokerListener() {
+	// The broker identifies callers via SO_PEERCRED + a /proc ancestry walk,
+	// both Linux-specific (see peercred_*.go). Off Linux it cannot resolve a
+	// caller to a session, and brokerSocketName ("@...") is not an abstract
+	// socket there but a literal filename -- so disable it cleanly rather than
+	// litter the workspace with a stray socket file. Clients fail open exactly
+	// as they do on Linux when the broker is unreachable (git falls back to its
+	// normal credential flow). Full macOS support needs per-session sockets
+	// (Phase 6, tracked in the dockerless plan).
+	if runtime.GOOS != "linux" {
+		log.Printf("[BROKER] disabled on %s -- per-session credential broker is Linux-only for now (Phase 6)", runtime.GOOS)
+		return
+	}
 	addr := &net.UnixAddr{Name: brokerSocketName, Net: "unix"}
 	l, err := net.ListenUnix("unix", addr)
 	if err != nil {
