@@ -7558,7 +7558,7 @@ func agentSessionFilePath(assistant, workDir, agentSessionID string) (string, er
 		if workDir == "" {
 			return "", fmt.Errorf("empty workdir")
 		}
-		encoded := strings.ReplaceAll(workDir, "/", "-")
+		encoded := encodeClaudeProjectDir(workDir)
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
@@ -7625,7 +7625,7 @@ func findLatestClaudeSessionInWorkDir(workDir string) (string, error) {
 	if workDir == "" {
 		return "", fmt.Errorf("empty workdir")
 	}
-	encoded := strings.ReplaceAll(workDir, "/", "-")
+	encoded := encodeClaudeProjectDir(workDir)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

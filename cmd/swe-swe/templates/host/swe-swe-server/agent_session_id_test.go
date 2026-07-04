@@ -173,3 +173,18 @@ func TestAgentSessionDir_HonorsHomeOverride(t *testing.T) {
 		t.Errorf("encoded workdir missing in %q", got)
 	}
 }
+
+// TestAgentSessionDir_ReplacesDotsInWorkdir guards the bug where a workdir
+// containing "." (e.g. a github.com-... repo path) was encoded with only "/"
+// replaced, leaving the dot intact -- so it never matched Claude's actual
+// ~/.claude/projects/<dir> folder name (which replaces "." with "-" too),
+// and fork/resume could not locate the rollout.
+func TestAgentSessionDir_ReplacesDotsInWorkdir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CLAUDE_HOME", tmp)
+	got := agentSessionDir("claude", "/repos/github.com-choonkeat-x/workspace")
+	want := tmp + "/projects/-repos-github-com-choonkeat-x-workspace"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
