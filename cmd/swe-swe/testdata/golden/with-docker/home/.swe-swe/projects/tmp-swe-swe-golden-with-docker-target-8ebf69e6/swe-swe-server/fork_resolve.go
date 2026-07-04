@@ -89,6 +89,35 @@ var ErrBubbleNotFound = errors.New("bubble seq not found in events log")
 // must fall back to fork-after-the-preceding-user-message semantics.
 var ErrChannelsAgentBubble = errors.New("channels-mode agent bubble has no MCP tool_use to anchor on")
 
+// ErrProgressBubbleNotForkable means the bubble came from send_progress /
+// send_verbal_progress. agent-chat publishes those as agentMessage/verbalReply
+// (only AgentToolName distinguishes them), but they are non-blocking mid-turn
+// status emissions, not conversation turn boundaries. Anchoring a fork on one
+// would cut forkconvo mid-work, so we refuse.
+var ErrProgressBubbleNotForkable = errors.New("progress bubbles cannot be used as a fork anchor")
+
+// ErrAnchorNotYetPersisted means the requested bubble is the freshest
+// agent-side bubble for its tool -- agent-chat stamped it (the agent may still
+// be blocked inside that send_message) before the CLI flushed the matching
+// tool_use line into its transcript. The events log is momentarily one bubble
+// ahead of the .jsonl. Callers should fall back to the last-persisted-reply
+// anchor (equivalent to a manual session-id fork) rather than error.
+var ErrAnchorNotYetPersisted = errors.New("newest chat bubble's tool_use not yet flushed to agent transcript")
+
+// notEnoughCallsError is returned by findNthMCPToolCall when the transcript
+// holds fewer than the requested number of matching MCP calls. It carries the
+// counts so resolveBubbleAnchor can recognise the exact "one short" flush-race
+// signature (want == found+1) without string matching.
+type notEnoughCallsError struct {
+	found int64
+	want  int64
+	tool  string
+}
+
+func (e *notEnoughCallsError) Error() string {
+	return fmt.Sprintf("only %d of %d expected %s calls present", e.found, e.want, e.tool)
+}
+
 // resolveBubbleAnchor is the entry point. It returns the agent-side anchor
 // for the bubble at bubbleSeq in eventsPath, looking up the corresponding
 // tool_use_id / call_id in agentJsonl.
@@ -100,9 +129,15 @@ func resolveBubbleAnchor(eventsPath, agentJsonl, agent string, bubbleSeq int64, 
 
 	var toolName string
 	var toolSeq int64
+	// agentSide is true for bubbles the agent emitted (agentMessage/verbalReply)
+	// whose stamp lives on the bubble itself at bubbleSeq. The flush-race
+	// fallback only applies to these -- userMessage bubbles anchor via a
+	// separate userMessagesConsumed event and have their own not-drained path.
+	agentSide := false
 	switch bubble.Type {
 	case "agentMessage", "verbalReply":
 		toolName, toolSeq = bubble.AgentToolName, bubble.AgentToolSeq
+		agentSide = true
 	case "userMessage":
 		if consumed == nil {
 			return nil, ErrBubbleNotDrained
@@ -112,9 +147,28 @@ func resolveBubbleAnchor(eventsPath, agentJsonl, agent string, bubbleSeq int64, 
 		return nil, fmt.Errorf("bubble seq=%d has unsupported type %q", bubbleSeq, bubble.Type)
 	}
 
+	// Progress updates are not turn boundaries; refuse them defensively even if
+	// the UI offered the action. (The agent-chat UI also gates this.)
+	if toolName == "send_progress" || toolName == "send_verbal_progress" {
+		return nil, ErrProgressBubbleNotForkable
+	}
+
 	if toolSeq > 0 && toolName != "" {
 		id, err := findNthMCPToolCall(agentJsonl, agent, toolName, toolSeq)
 		if err != nil {
+			// Latest-bubble flush race: the events log stamped bubble #N
+			// before the CLI wrote that tool_use line to its transcript. The
+			// signature is exact -- want == found+1 (off by exactly one) AND
+			// this is the newest bubble for the tool. Fall back to the last
+			// persisted reply. A larger gap, or a non-tail bubble, is a genuine
+			// inconsistency we must not paper over.
+			var ne *notEnoughCallsError
+			if agentSide && errors.As(err, &ne) && ne.want == ne.found+1 {
+				newest, nerr := isNewestToolBubble(eventsPath, toolName, bubbleSeq)
+				if nerr == nil && newest {
+					return nil, ErrAnchorNotYetPersisted
+				}
+			}
 			return nil, fmt.Errorf("locate %s call #%d in %s: %w", toolName, toolSeq, agentJsonl, err)
 		}
 		return &ResolvedAnchor{
@@ -157,7 +211,37 @@ func findNthMCPToolCall(path, agent, toolName string, n int64) (string, error) {
 	if err := sc.Err(); err != nil {
 		return "", err
 	}
-	return "", fmt.Errorf("only %d of %d expected %s calls present", count, n, toolName)
+	return "", &notEnoughCallsError{found: count, want: n, tool: toolName}
+}
+
+// isNewestToolBubble reports whether bubbleSeq is the highest-seq event in
+// eventsPath carrying AgentToolName==toolName. It confines the
+// not-yet-persisted fallback to the freshest bubble for that tool (the one the
+// agent may still be blocked inside), never an older gap in the middle of the
+// log.
+func isNewestToolBubble(eventsPath, toolName string, bubbleSeq int64) (bool, error) {
+	f, err := os.Open(eventsPath)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 16<<20)
+	var maxSeq int64
+	for sc.Scan() {
+		var ev bubbleEvent
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+			continue
+		}
+		if ev.AgentToolName == toolName && ev.Seq > maxSeq {
+			maxSeq = ev.Seq
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return false, err
+	}
+	return maxSeq == bubbleSeq, nil
 }
 
 // mcpToolCallID extracts the tool_use_id / call_id from one JSONL line, if

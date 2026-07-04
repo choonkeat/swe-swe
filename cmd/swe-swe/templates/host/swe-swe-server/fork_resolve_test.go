@@ -288,6 +288,104 @@ func TestResolveBubbleAnchor_LegacyTextFallback_ChannelsAgentBubble(t *testing.T
 	}
 }
 
+// A bubble stamped send_progress must never resolve to an anchor -- progress
+// updates are mid-turn, not turn boundaries.
+func TestResolveBubbleAnchor_ProgressBubble_Refused(t *testing.T) {
+	events := writeResolveEventsFile(t, []string{
+		mustJSON(t, bubbleEvent{Type: "agentMessage", Seq: 1, Text: "working on it", AgentToolName: "send_progress", AgentToolSeq: 1}),
+	})
+	// Transcript has the send_progress tool_use, so absent the guard the
+	// resolver would happily anchor on it.
+	jsonl := writeClaudeJSONL(t, []string{
+		mustJSON(t, map[string]any{
+			"type": "assistant",
+			"message": map[string]any{
+				"content": []any{
+					map[string]any{"type": "tool_use", "id": "toolu_prog", "name": "mcp__swe-swe-agent-chat__send_progress"},
+				},
+			},
+		}),
+	})
+
+	_, err := resolveBubbleAnchor(events, jsonl, "claude", 1, "after")
+	if !errors.Is(err, ErrProgressBubbleNotForkable) {
+		t.Errorf("want ErrProgressBubbleNotForkable, got %v", err)
+	}
+}
+
+// The freshest send_message bubble whose tool_use hasn't been flushed to the
+// transcript yet (want == found+1, and it's the newest bubble) should fall
+// back rather than error.
+func TestResolveBubbleAnchor_LatestBubbleRace_FallsBack(t *testing.T) {
+	events := writeResolveEventsFile(t, []string{
+		mustJSON(t, bubbleEvent{Type: "agentMessage", Seq: 5, Text: "first", AgentToolName: "send_message", AgentToolSeq: 1}),
+		// Newest send_message bubble; the agent is still blocked inside it, so
+		// its tool_use line is not in the transcript below.
+		mustJSON(t, bubbleEvent{Type: "agentMessage", Seq: 10, Text: "second (in flight)", AgentToolName: "send_message", AgentToolSeq: 2}),
+	})
+	jsonl := writeClaudeJSONL(t, []string{
+		mustJSON(t, map[string]any{
+			"type": "assistant",
+			"message": map[string]any{
+				"content": []any{
+					map[string]any{"type": "tool_use", "id": "toolu_A", "name": "mcp__swe-swe-agent-chat__send_message"},
+				},
+			},
+		}),
+	})
+
+	_, err := resolveBubbleAnchor(events, jsonl, "claude", 10, "after")
+	if !errors.Is(err, ErrAnchorNotYetPersisted) {
+		t.Errorf("want ErrAnchorNotYetPersisted, got %v", err)
+	}
+}
+
+// A missing tool_use for a NON-newest bubble is a genuine inconsistency, not
+// the flush race -- must error, never silently fall back.
+func TestResolveBubbleAnchor_MissingButNotNewest_Errors(t *testing.T) {
+	events := writeResolveEventsFile(t, []string{
+		// The bubble we fork (seq=5) is missing from the transcript...
+		mustJSON(t, bubbleEvent{Type: "agentMessage", Seq: 5, Text: "older", AgentToolName: "send_message", AgentToolSeq: 1}),
+		// ...but a later send_message bubble exists, so seq=5 is not the tail.
+		mustJSON(t, bubbleEvent{Type: "agentMessage", Seq: 10, Text: "newer", AgentToolName: "send_message", AgentToolSeq: 2}),
+	})
+	jsonl := writeClaudeJSONL(t, []string{}) // no send_message lines at all
+
+	_, err := resolveBubbleAnchor(events, jsonl, "claude", 5, "after")
+	if errors.Is(err, ErrAnchorNotYetPersisted) {
+		t.Errorf("non-newest gap must not fall back, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "only 0 of 1") {
+		t.Errorf("want 'only 0 of 1' error, got %v", err)
+	}
+}
+
+// A gap larger than one (want > found+1) is not the single-bubble flush race,
+// even for the newest bubble -- must error.
+func TestResolveBubbleAnchor_GapGreaterThanOne_Errors(t *testing.T) {
+	events := writeResolveEventsFile(t, []string{
+		mustJSON(t, bubbleEvent{Type: "agentMessage", Seq: 10, Text: "newest", AgentToolName: "send_message", AgentToolSeq: 3}),
+	})
+	jsonl := writeClaudeJSONL(t, []string{
+		mustJSON(t, map[string]any{
+			"type": "assistant",
+			"message": map[string]any{
+				"content": []any{
+					map[string]any{"type": "tool_use", "id": "toolu_A", "name": "mcp__swe-swe-agent-chat__send_message"},
+				},
+			},
+		}),
+	})
+
+	_, err := resolveBubbleAnchor(events, jsonl, "claude", 10, "after")
+	if errors.Is(err, ErrAnchorNotYetPersisted) {
+		t.Errorf("gap>1 must not fall back, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "only 1 of 3") {
+		t.Errorf("want 'only 1 of 3' error, got %v", err)
+	}
+}
+
 func TestBuildForkResumeArgs(t *testing.T) {
 	tests := []struct {
 		name      string
