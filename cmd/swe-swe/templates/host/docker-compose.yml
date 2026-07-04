@@ -260,7 +260,6 @@ services:
 # {{ENDIF}}
     restart: unless-stopped
 
-{{VSCODE_SERVICES}}
 networks:
   swe-network:
     driver: bridge

@@ -1603,7 +1603,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 	notReused := map[string]bool{
 		"HostUID":        true, // host's current uid, re-detected each init
 		"HostGID":        true, // host's current gid, re-detected each init
-		"DockerfileOnly": true, // computed from SSL/WithVSCode/tunnel (json:"-")
+		"DockerfileOnly": true, // computed from SSL/tunnel (json:"-")
 		"CLIVersion":     true, // stamped by saveInitConfig on every write
 	}
 
