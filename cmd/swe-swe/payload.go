@@ -32,8 +32,11 @@ var dockerlessBinaries = []string{
 	"swe-swe-tunnel",
 }
 
-// dockerlessPayloadBinDir returns the embed path holding the static-linux
-// binaries for the given GOARCH, e.g. "dockerless-payload/bin/linux-amd64".
-func dockerlessPayloadBinDir(goarch string) string {
-	return fmt.Sprintf("dockerless-payload/bin/linux-%s", goarch)
+// dockerlessPayloadBinDir returns the embed path holding the static host
+// binaries for the given GOOS/GOARCH, e.g. "dockerless-payload/bin/linux-amd64"
+// or "dockerless-payload/bin/darwin-arm64". The dockerless payload carries
+// host binaries only (Docker mode builds in-container), so the CLI embeds the
+// set for the OS/arch it was built for.
+func dockerlessPayloadBinDir(goos, goarch string) string {
+	return fmt.Sprintf("dockerless-payload/bin/%s-%s", goos, goarch)
 }

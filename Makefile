@@ -57,12 +57,15 @@ swe-swe-fork-convo:
 # Build the static-linux helper binaries the `swe-swe` CLI go:embeds and
 # dumps on `swe-swe init --dockerless` (and that the thin Dockerfile COPYs).
 # All are CGO_ENABLED=0 so one Linux set runs on alpine/bookworm/slim alike.
-# Phase 1 targets the host arch only (Linux-host-first); the darwin host set
-# is a Phase 6 follow-up. The outputs are build artifacts (gitignored);
-# a committed .gitkeep keeps the go:embed directive compilable without them.
+# The payload carries host binaries for the CLI's own OS/arch (dockerless
+# dumps them on the host; Docker mode builds in-container). Build for the host
+# GOOS/GOARCH: linux-* on Linux, darwin-* on macOS (Phase 6). The outputs are
+# build artifacts (gitignored); a committed .gitkeep keeps the go:embed
+# directive compilable without them.
 DOCKERLESS_PAYLOAD_DIR := cmd/swe-swe/dockerless-payload
+DOCKERLESS_OS := $(shell go env GOOS)
 DOCKERLESS_ARCH := $(shell go env GOARCH)
-DOCKERLESS_BIN := $(DOCKERLESS_PAYLOAD_DIR)/bin/linux-$(DOCKERLESS_ARCH)
+DOCKERLESS_BIN := $(DOCKERLESS_PAYLOAD_DIR)/bin/$(DOCKERLESS_OS)-$(DOCKERLESS_ARCH)
 # Pinned swe-swe-tunnel client ref embedded in the dockerless payload so
 # tunnel mode works with no Docker. KEEP IN SYNC with the Dockerfile's
 # SWE_SWE_TUNNEL_REF ARG (templates/host/Dockerfile).
@@ -82,8 +85,8 @@ dockerless-payload:
 	@mv /tmp/swe-swe-payload-server/go.mod.txt /tmp/swe-swe-payload-server/go.mod
 	@mv /tmp/swe-swe-payload-server/go.sum.txt /tmp/swe-swe-payload-server/go.sum
 	cd /tmp/swe-swe-payload-server && go mod tidy && \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-server . && \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-fork-convo ./cmd/swe-swe-fork-convo
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-server . && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-fork-convo ./cmd/swe-swe-fork-convo
 	@cp /tmp/swe-swe-payload-server/go.sum $(SERVER_TEMPLATE)/go.sum.txt
 	@rm -rf /tmp/swe-swe-payload-server
 	@# stdlib-only helpers: each is a standalone `go mod init` build, exactly
@@ -93,16 +96,26 @@ dockerless-payload:
 	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
 	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
 	@# swe-swe-tunnel client (external repo, pinned ref) -- enables tunnel mode
-	@# in dockerless. go install resolves via GOPROXY; matches the Dockerfile.
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) GOBIN=$(CURDIR)/$(DOCKERLESS_BIN) \
-		go install -ldflags="-s -w" \
-		github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@$(SWE_SWE_TUNNEL_REF)
+	@# in dockerless. Built in a throwaway module via `go build -o` rather than
+	@# `go install` so it cross-compiles (go install refuses cross-builds when
+	@# GOBIN is set); resolves via GOPROXY, matching the Dockerfile.
+	@rm -rf /tmp/swe-swe-payload-tunnel
+	@mkdir -p /tmp/swe-swe-payload-tunnel
+	cd /tmp/swe-swe-payload-tunnel && go mod init tunnelbuild >/dev/null 2>&1 && \
+		go get github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel@$(SWE_SWE_TUNNEL_REF) >/dev/null 2>&1 && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" \
+		-o $(CURDIR)/$(DOCKERLESS_BIN)/swe-swe-tunnel \
+		github.com/choonkeat/swe-swe-tunnel/cmd/swe-swe-tunnel
+	@rm -rf /tmp/swe-swe-payload-tunnel
 	@echo "dockerless payload built: $(DOCKERLESS_BIN)"
 
 # Thin swe-swe/browser-backend image: the relocatable Agent View allocation
 # service. Reuses the static swe-swe-server from the dockerless payload (run as
 # `-mode browser-backend`) + only the display stack. See docker/browser-backend.
-browser-backend-image: dockerless-payload
+# The image is a Linux container regardless of build host, so force a linux
+# payload (the server is CGO-free and cross-compiles to linux from macOS too).
+browser-backend-image:
+	$(MAKE) dockerless-payload DOCKERLESS_OS=linux
 	docker build -f docker/browser-backend/Dockerfile \
 		--build-arg ARCH=$(DOCKERLESS_ARCH) \
 		-t swe-swe/browser-backend .
@@ -112,7 +125,7 @@ _payload-helper:
 	@mkdir -p /tmp/swe-swe-payload-$(NAME)
 	@cp cmd/swe-swe/templates/host/$(NAME)/main.go /tmp/swe-swe-payload-$(NAME)/main.go
 	cd /tmp/swe-swe-payload-$(NAME) && go mod init $(NAME) >/dev/null 2>&1 && \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
 	@rm -rf /tmp/swe-swe-payload-$(NAME)
 
 # Test the git-sign-swe-swe wrapper template (stdlib only).

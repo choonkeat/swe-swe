@@ -43,11 +43,24 @@ func isDockerlessProject(sweDir string) bool {
 // flags -- so dumping them on macOS/Windows would produce a broken setup.
 // Mac-native dockerless (darwin binaries + portable couplings) is Phase 6.
 func dockerlessGOOSGuard(goos string) error {
-	if goos != "linux" {
-		return fmt.Errorf("swe-swe init --dockerless is supported on a Linux host only for now (this is a %s build); use Docker mode here, or see Phase 6 for native macOS support", goos)
+	switch goos {
+	case "linux":
+		return nil
+	case "darwin":
+		// macOS is supported but the runtime ports are still in progress
+		// (Phase 6): the per-session credential broker and PTY recording are
+		// Linux-specific and degrade on darwin -- see dockerlessDarwinWarning.
+		return nil
+	default:
+		return fmt.Errorf("swe-swe init --dockerless supports Linux and macOS hosts (this is a %s build); use Docker mode here", goos)
 	}
-	return nil
 }
+
+// dockerlessDarwinWarning is printed on a macOS dockerless init so the user
+// knows which subsystems are not yet ported (Phase 6).
+const dockerlessDarwinWarning = "Note: macOS dockerless is experimental. The per-session git credential " +
+	"broker and PTY session recording are not yet ported to macOS and will be " +
+	"inactive; all six tabs otherwise work. Track: tasks/2026-06-27-dockerless-single-binary.md (Phase 6)."
 
 // executeDockerlessInit performs a host-native (no-Docker) init: it dumps the
 // embedded binaries into the metadata dir, writes the mode marker + project
@@ -64,10 +77,13 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 	// Dump the prebuilt host-native binaries (server + helpers) into the
 	// metadata dir's bin/, which `swe-swe up` puts on PATH and exec's.
 	binDir := filepath.Join(sweDir, "bin")
-	if err := extractDockerlessBinaries(binDir, runtime.GOARCH); err != nil {
+	if err := extractDockerlessBinaries(binDir, runtime.GOOS, runtime.GOARCH); err != nil {
 		log.Fatalf("Failed to extract dockerless binaries: %v", err)
 	}
 	fmt.Printf("Extracted %d host-native binaries to %s\n", len(dockerlessBinaries), binDir)
+	if runtime.GOOS == "darwin" {
+		fmt.Println(dockerlessDarwinWarning)
+	}
 
 	// Emit the swe-swe-open shim + xdg-open/open/... symlinks into bin/ so the
 	// agent's URL-open habits route into the Preview pane (entrypoint.sh does
@@ -336,15 +352,15 @@ func writeDockerlessMCPConfig(projectDir string) error {
 // extractDockerlessBinaries writes the embedded static-Linux binaries for the
 // given GOARCH into destDir, each as an executable (0755) file. destDir is
 // created if missing. embed.FS strips the executable bit, so we restore it.
-func extractDockerlessBinaries(destDir, goarch string) error {
+func extractDockerlessBinaries(destDir, goos, goarch string) error {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("create %s: %w", destDir, err)
 	}
-	srcDir := dockerlessPayloadBinDir(goarch)
+	srcDir := dockerlessPayloadBinDir(goos, goarch)
 	for _, name := range dockerlessBinaries {
 		data, err := dockerlessPayload.ReadFile(filepath.Join(srcDir, name))
 		if err != nil {
-			return fmt.Errorf("read embedded %s (is the %s payload built for this arch?): %w", name, goarch, err)
+			return fmt.Errorf("read embedded %s (is the %s/%s payload built? run `make dockerless-payload` on this host): %w", name, goos, goarch, err)
 		}
 		dst := filepath.Join(destDir, name)
 		if err := os.WriteFile(dst, data, 0755); err != nil {

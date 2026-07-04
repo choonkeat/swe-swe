@@ -14,13 +14,17 @@ import (
 // `swe-swe init --dockerless` must refuse on a non-Linux CLI rather than
 // dump binaries that cannot run. Mac-native support is Phase 6.
 func TestDockerlessGOOSGuard(t *testing.T) {
-	for _, goos := range []string{"darwin", "windows", "freebsd"} {
-		if err := dockerlessGOOSGuard(goos); err == nil {
-			t.Errorf("dockerlessGOOSGuard(%q) = nil, want error (non-Linux must be refused)", goos)
+	// Linux + macOS are supported (macOS is experimental, Phase 6); other
+	// platforms are still refused.
+	for _, goos := range []string{"linux", "darwin"} {
+		if err := dockerlessGOOSGuard(goos); err != nil {
+			t.Errorf("dockerlessGOOSGuard(%q) = %v, want nil", goos, err)
 		}
 	}
-	if err := dockerlessGOOSGuard("linux"); err != nil {
-		t.Errorf("dockerlessGOOSGuard(\"linux\") = %v, want nil", err)
+	for _, goos := range []string{"windows", "freebsd"} {
+		if err := dockerlessGOOSGuard(goos); err == nil {
+			t.Errorf("dockerlessGOOSGuard(%q) = nil, want error (unsupported platform)", goos)
+		}
 	}
 }
 
@@ -31,7 +35,7 @@ func TestExtractDockerlessBinaries(t *testing.T) {
 	// The Makefile builds the host arch into the embed; on this Linux CI
 	// host that is runtime.GOARCH.
 	dest := t.TempDir()
-	if err := extractDockerlessBinaries(dest, runtime.GOARCH); err != nil {
+	if err := extractDockerlessBinaries(dest, runtime.GOOS, runtime.GOARCH); err != nil {
 		t.Fatalf("extractDockerlessBinaries: %v", err)
 	}
 	for _, name := range dockerlessBinaries {
@@ -44,7 +48,7 @@ func TestExtractDockerlessBinaries(t *testing.T) {
 		if info.Mode().Perm()&0111 == 0 {
 			t.Errorf("%s: mode %v is not executable", name, info.Mode().Perm())
 		}
-		want, err := dockerlessPayload.ReadFile(filepath.Join(dockerlessPayloadBinDir(runtime.GOARCH), name))
+		want, err := dockerlessPayload.ReadFile(filepath.Join(dockerlessPayloadBinDir(runtime.GOOS, runtime.GOARCH), name))
 		if err != nil {
 			t.Fatalf("read embed %s: %v", name, err)
 		}

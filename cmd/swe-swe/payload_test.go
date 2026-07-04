@@ -32,12 +32,13 @@ func elfMachineForArch(goarch string) (elf.Machine, bool) {
 // not committed to git. Running this test outside `make` (without first
 // building the payload) is expected to fail until the binaries exist.
 func TestDockerlessPayloadEmbedsBinaries(t *testing.T) {
-	wantMachine, ok := elfMachineForArch(runtime.GOARCH)
-	if !ok {
-		t.Fatalf("unsupported host arch %q for dockerless payload test", runtime.GOARCH)
-	}
+	// The embed carries host binaries for the CLI's own GOOS/GOARCH. On Linux
+	// we additionally assert the ELF machine matches; on other hosts (e.g.
+	// macOS, where they are Mach-O) we assert presence + non-empty, which the
+	// cross-compile in the Makefile already format-validates.
+	wantMachine, machineKnown := elfMachineForArch(runtime.GOARCH)
 
-	binDir := dockerlessPayloadBinDir(runtime.GOARCH)
+	binDir := dockerlessPayloadBinDir(runtime.GOOS, runtime.GOARCH)
 	for _, name := range dockerlessBinaries {
 		name := name
 		t.Run(name, func(t *testing.T) {
@@ -55,6 +56,12 @@ func TestDockerlessPayloadEmbedsBinaries(t *testing.T) {
 				t.Fatalf("embedded %s is empty", p)
 			}
 
+			if runtime.GOOS != "linux" {
+				return // non-ELF host: presence + non-empty is enough here
+			}
+			if !machineKnown {
+				t.Fatalf("unsupported host arch %q for dockerless payload ELF check", runtime.GOARCH)
+			}
 			ef, err := elf.NewFile(bytes.NewReader(data))
 			if err != nil {
 				t.Fatalf("embedded %s is not a valid ELF: %v", p, err)
