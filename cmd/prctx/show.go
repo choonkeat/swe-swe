@@ -24,7 +24,7 @@ func render(w io.Writer, s *State) {
 		for _, c := range t.Comments {
 			fmt.Fprintf(w, "  %s: %s\n", c.Author, oneLine(c.Body))
 		}
-		if t.PendingReply != "" {
+		if t.PendingReply != "" && t.PostedReplyID == 0 {
 			fmt.Fprintf(w, "  > staged reply: %s\n", oneLine(t.PendingReply))
 		}
 		if t.PendingResolve {
