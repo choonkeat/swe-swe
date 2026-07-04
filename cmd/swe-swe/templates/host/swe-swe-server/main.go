@@ -498,6 +498,9 @@ type Session struct {
 	// Agent Chat sidecar (nil for terminal-only sessions)
 	AgentChatCmd    *exec.Cmd
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
+	// MCP-less mode: the mcp-cli-proxy processes swe-swe-server launched for this
+	// session (nil in native-MCP mode). Killed on session teardown.
+	McpLessProxies []*exec.Cmd
 	SessionMode     string             // "terminal" or "chat"
 	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
 	AgentSessionID  string             // agent-side conversation id (e.g. Claude .jsonl stem); captured at spawn for /api/fork
@@ -1109,6 +1112,11 @@ func (s *Session) Close() {
 	if s.agentChatCancel != nil {
 		s.agentChatCancel()
 	}
+
+	// MCP-less mode: kill this session's mcp-cli-proxy fleet. These are children
+	// of swe-swe-server (not the agent's process group), so killSessionProcessGroup
+	// below does not reach them -- stop them explicitly.
+	stopMcpLessFleet(s.McpLessProxies)
 
 	// Shut down per-port proxy servers
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -4958,6 +4966,23 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		_, sessionCancel = context.WithCancel(serverCtx)
 	}
 
+	// MCP-less mode: swe-swe-server (not the agent's native MCP client) owns the
+	// MCP servers. Launch one mcp-cli-proxy per server for this session --
+	// agent-chat only for chat sessions -- and point the agent's `mcp` CLI at
+	// this session's socket dir via SWE_MCP_DIR. The agent boots with NO MCP
+	// config (the entrypoint skips it in mcp-less mode) and reaches every tool
+	// through `mcp <server> <tool>` over these sockets.
+	var mcpLessProxies []*exec.Cmd
+	if mcpLessEnabled() {
+		mcpSockDir := filepath.Join(mcpLessSocketRoot, p.UUID)
+		env = append(env, "SWE_MCP_DIR="+mcpSockDir)
+		var fleetErr error
+		mcpLessProxies, fleetErr = launchMcpLessFleet(p.SessionMode, mcpSockDir, env)
+		if fleetErr != nil {
+			log.Printf("Session %s: mcp-less fleet launch failed: %v", p.UUID, fleetErr)
+		}
+	}
+
 	cmd := exec.Command(cmdName, cmdArgs...)
 	cmd.Env = env
 	if workDir != "" {
@@ -5013,6 +5038,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
 		agentChatCancel: sessionCancel,
+		McpLessProxies:  mcpLessProxies,
 		SessionMode:     p.SessionMode,
 		ChatLogPath:     chatLogPath,
 		AgentSessionID:  agentSessionID,

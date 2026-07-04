@@ -1,5 +1,26 @@
 package main
 
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+// mcpCliProxyBin is the proxy daemon binary; a package var so tests can point it
+// at a stub.
+var mcpCliProxyBin = "mcp-cli-proxy"
+
+// mcpLessSocketRoot is the base dir under which each session gets its own
+// <root>/<uuid>/ socket dir. The agent's `mcp` client is pointed here via
+// SWE_MCP_DIR, so concurrent sessions never collide on socket names.
+const mcpLessSocketRoot = "/workspace/.swe-swe/run/mcp"
+
+// mcpLessEnabled reports whether this container runs in MCP-less mode. The
+// entrypoint exports SWE_MCP_LESS=1 when `swe-swe init --mcp-less`.
+func mcpLessEnabled() bool { return os.Getenv("SWE_MCP_LESS") != "" }
+
 // MCP-less mode: instead of the agent's native MCP client spawning each server
 // over stdio, swe-swe-server launches one long-lived `mcp-cli-proxy` per server
 // per session, and the agent reaches them through the `mcp` CLI over unix
@@ -55,4 +76,52 @@ func mcpLessProxySpecs(sessionMode string) []proxySpec {
 		},
 	)
 	return specs
+}
+
+// launchMcpLessFleet starts one mcp-cli-proxy per spec for a session, dropping
+// each server's socket into socketDir (created if missing) and giving every
+// child the session env so the `sh -c exec` shells expand the per-session vars.
+// It returns the started commands for teardown. Best-effort: a proxy that fails
+// to start is logged and skipped (agent-chat health is surfaced separately), so
+// one bad server never blocks the rest.
+func launchMcpLessFleet(sessionMode, socketDir string, env []string) ([]*exec.Cmd, error) {
+	if err := os.MkdirAll(socketDir, 0o755); err != nil {
+		return nil, fmt.Errorf("mcp-less socket dir %s: %w", socketDir, err)
+	}
+	var cmds []*exec.Cmd
+	for _, spec := range mcpLessProxySpecs(sessionMode) {
+		sock := filepath.Join(socketDir, spec.socketName())
+		args := append([]string{"--name", spec.Name, "--socket", sock, "--"}, spec.Argv...)
+		cmd := exec.Command(mcpCliProxyBin, args...)
+		cmd.Env = env
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			log.Printf("mcp-less: failed to start proxy %s: %v", spec.Name, err)
+			continue
+		}
+		pid := cmd.Process.Pid
+		log.Printf("mcp-less: started proxy %s (pid %d) socket %s", spec.Name, pid, sock)
+		trackPid(pid)
+		cmds = append(cmds, cmd)
+		// No silent Wait (coding rule): reap and log name+pid+exit. The proxy
+		// self-restarts its own child; we do not restart the proxy process here
+		// (container restart is the backstop) -- but we always record its exit.
+		go func(name string, c *exec.Cmd, pid int) {
+			err := c.Wait()
+			log.Printf("mcp-less: proxy %s (pid %d) exited: %v", name, pid, err)
+			untrackPid(pid)
+		}(spec.Name, cmd, pid)
+	}
+	return cmds, nil
+}
+
+// stopMcpLessFleet kills every proxy in the fleet. The per-proxy reaper
+// goroutine started in launchMcpLessFleet logs each exit and untracks its pid.
+func stopMcpLessFleet(cmds []*exec.Cmd) {
+	for _, c := range cmds {
+		if c != nil && c.Process != nil {
+			c.Process.Kill()
+		}
+	}
 }
