@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
+import { openSessionViaPost } from './_helpers/sessions.js';
 
 // Auth cookie comes from the suite-wide storageState (see playwright.config.js
 // + global-setup.js); no per-test login is needed.
@@ -9,8 +10,7 @@ async function waitForUi(page, predicate) {
 }
 
 async function openSession(page) {
-  const uuid = crypto.randomUUID();
-  await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
+  const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'terminal' });
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   // The set_credentials WS message is silently dropped if the socket is not
   // OPEN yet; wait until the sessionUUID has been delivered (proxy for "WS
@@ -349,8 +349,7 @@ test.describe('per-session SSH commit signing UI', () => {
     // is the same sid the broker resolves for the helper's connect,
     // sidestepping the sibling-session creds gap (research addendum
     // 2026-04-26 finding #1).
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=shell`);
+    const uuid = await openSessionViaPost(page, { assistant: 'shell' });
     await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
     await waitForUi(page, () => window.terminalUI && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
     await page.evaluate(() => {

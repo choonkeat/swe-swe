@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
-import { endSessions } from './_helpers/sessions.js';
+import { endSessions, openSessionViaPost } from './_helpers/sessions.js';
 
 // Same base-url resolution ports.spec.js uses, for the cross-origin
 // filesProxyPort reachability check in the Files-tab test.
@@ -28,17 +28,15 @@ async function waitForUi(page, predicate) {
 let testSessions = [];
 
 async function openChatSession(page) {
-  const uuid = crypto.randomUUID();
+  const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
   testSessions.push(uuid);
-  await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   return uuid;
 }
 
 async function openTerminalSession(page) {
-  const uuid = crypto.randomUUID();
+  const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'terminal' });
   testSessions.push(uuid);
-  await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   return uuid;
 }
@@ -167,11 +165,11 @@ test.describe('terminal-ui tab switching', () => {
     // slot has agent-terminal in its tabs, override to agent-terminal in
     // memory. Saved preference is untouched. The probe-success handler
     // flips back to agent-chat (persist:false) once chat is loadable.
-    const uuid = crypto.randomUUID();
-
     // Pre-seed localStorage with active:'agent-chat' before the page boots
     // its custom element. We need to be at the same origin for localStorage
-    // to apply -- the login in beforeEach already put us there.
+    // to apply -- the login in beforeEach already put us there. The layout key
+    // is global (not per-uuid), so it persists across the POST -> redirect that
+    // openSessionViaPost performs to mint+open the session.
     await page.goto('/'); // any same-origin URL is fine
     await page.evaluate(() => {
       localStorage.setItem('swe-swe-layout-v1', JSON.stringify({
@@ -183,7 +181,7 @@ test.describe('terminal-ui tab switching', () => {
       }));
     });
 
-    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
     await waitForUi(page, () => window.terminalUI && window.terminalUI.activeBySlot);
 
     // Boot-time override should have demoted slot a's active to agent-terminal
@@ -235,8 +233,7 @@ test.describe('terminal-ui tab switching', () => {
     //
     // Auto-opens driven by session runtime state should be ephemeral;
     // only manual user tab actions persist.
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode&session=terminal`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'terminal' });
     await waitForUi(page, () => window.terminalUI && window.terminalUI.activeBySlot);
 
     // Drive the auto-open code path directly: this is what the WS-init
@@ -354,8 +351,7 @@ test.describe('terminal-ui tab switching', () => {
     // Race the probe: navigate and immediately start polling for the spinner
     // character in the Agent Chat tab label. If the probe is fast enough we may
     // never observe it -- retry a few times.
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
 
     // Poll aggressively for up to 3 seconds to catch the pending window.
     // Use \u-escaped range so this source file stays ASCII.
@@ -397,8 +393,7 @@ test.describe('terminal-ui tab switching', () => {
     // hidden behind it. Mobile should mirror desktop: stay on Agent Terminal
     // until the chat iframe is actually loadable, then flip.
     await page.setViewportSize({ width: 400, height: 800 });
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
 
     // Wait until the mobile init has run (data-mobile-active is set).
     await page.waitForFunction(() => {
@@ -437,8 +432,7 @@ test.describe('terminal-ui tab switching', () => {
     // openChatSession helper's `.terminal-ui__terminal` locator (hidden on
     // mobile when session=chat) isn't what we rely on.
     await page.setViewportSize({ width: 400, height: 800 });
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
 
     // Wait until the custom element has mounted + WS has delivered session.
     await waitForUi(page, () => window.terminalUI && window.terminalUI.sessionUUID);

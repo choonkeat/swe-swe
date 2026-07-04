@@ -14,6 +14,37 @@ export async function login(page) {
   ]);
 }
 
+// Open a new session through the real creation flow: POST /api/session/new
+// (which stages a creation intent and 302s to /session/{minted-uuid}), then
+// navigate to that redirect target. Returns the server-minted UUID.
+//
+// This mirrors what the New-session dialog / recording "+ New" form do in the
+// product. Bare `page.goto('/session/{client-uuid}?...')` no longer creates a
+// session by design (no-ghost-session invariant: the WS refuses to materialize
+// a UUID with no staged intent), so specs must go through this helper.
+export async function openSessionViaPost(page, opts = {}) {
+  const { assistant = 'opencode', session, name, branch, pwd, extra_args } = opts;
+  const form = { assistant };
+  if (session) form.session = session;
+  if (name) form.name = name;
+  if (branch) form.branch = branch;
+  if (pwd) form.pwd = pwd;
+  if (extra_args) form.extra_args = extra_args;
+
+  // Don't follow the redirect -- read the minted UUID out of the Location.
+  const resp = await page.request.post('/api/session/new', { form, maxRedirects: 0 });
+  const loc = resp.headers()['location'];
+  if (!loc) {
+    throw new Error(`/api/session/new did not redirect (status ${resp.status()})`);
+  }
+  const m = loc.match(/\/session\/([a-f0-9-]{36})/);
+  if (!m) {
+    throw new Error(`unexpected /api/session/new redirect location: ${loc}`);
+  }
+  await page.goto(loc);
+  return m[1];
+}
+
 // End every session currently visible on the home page. Uses the page's
 // auth cookie via page.evaluate so we don't need a separate cookie jar.
 //

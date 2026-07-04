@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
+import { openSessionViaPost } from './_helpers/sessions.js';
 
 // Auth cookie comes from the suite-wide storageState (see playwright.config.js
 // + global-setup.js); no per-test login is needed.
@@ -7,8 +8,7 @@ import crypto from 'crypto';
 test.describe('Agent Browser E2E', () => {
   test('OpenCode chat session: playwright visits example.com and takes screenshot', async ({ page }) => {
     // Create a chat session with OpenCode
-    const uuid = crypto.randomUUID();
-    await page.goto(`/session/${uuid}?assistant=opencode&session=chat`);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
 
     // Agent Chat tab should appear immediately for ?session=chat. The
     // preset-grid rewrite (commit 033e4b05b) replaced the old
