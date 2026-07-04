@@ -557,9 +557,9 @@
         }
     });
 
-    // Build session URL (shared by both start buttons).
+    // Build the session params (shared by both start buttons).
     // Mirrors url-builder.js:buildSessionPageUrl -- keep param contract in sync.
-    function buildSessionUrl(sessionMode) {
+    function buildSessionParams(sessionMode) {
         var p = new URLSearchParams();
         p.set('assistant', dialogState.selectedAgent);
         if (sessionMode && sessionMode !== 'terminal') p.set('session', sessionMode);
@@ -585,19 +585,40 @@
             }
         }
 
-        return '/session/' + dialogState.sessionUUID + '?' + p.toString();
+        return p;
+    }
+
+    // Start a session by POSTing the params to /api/session/new. The server
+    // mints the UUID, stages a "new" creation intent, and 302-redirects to
+    // /session/{uuid}; a native form submit follows that redirect. Creation
+    // MUST go through this POST -- a bare navigation to /session/{uuid} no
+    // longer materializes a session (no-ghost-session invariant), so the
+    // staged intent is what grants permission to create.
+    function startSession(sessionMode) {
+        if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        var params = buildSessionParams(sessionMode);
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/session/new';
+        params.forEach(function(value, key) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value;
+            form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
     }
 
     // Start Agent Terminal session
     startTerminalBtn.addEventListener('click', function() {
-        if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
-        window.location.href = buildSessionUrl('terminal');
+        startSession('terminal');
     });
 
     // Start Agent Chat session
     startChatBtn.addEventListener('click', function() {
-        if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
-        window.location.href = buildSessionUrl('chat');
+        startSession('chat');
     });
 
     // Dialog open

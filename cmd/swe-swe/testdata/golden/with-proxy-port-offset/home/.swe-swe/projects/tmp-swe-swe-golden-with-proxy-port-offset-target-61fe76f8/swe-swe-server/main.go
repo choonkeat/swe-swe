@@ -7518,9 +7518,12 @@ func handleNewSessionAPI(w http.ResponseWriter, r *http.Request) {
 
 	// Echo the dialog's params onto the redirect so the WS handler resolves the
 	// session exactly as the old navigation did.
+	// "color" is CSS-only (the client reads it off the URL to theme the page);
+	// the server doesn't act on it but must echo it so the look survives the
+	// POST -> redirect, exactly as the old query-string navigation carried it.
 	q := url.Values{}
 	q.Set("assistant", assistant)
-	for _, key := range []string{"session", "name", "branch", "pwd", "extra_args", "debug", "theme"} {
+	for _, key := range []string{"session", "name", "branch", "pwd", "extra_args", "debug", "theme", "color"} {
 		if v := r.FormValue(key); v != "" {
 			q.Set(key, v)
 		}
