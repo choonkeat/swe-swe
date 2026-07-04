@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -74,6 +75,13 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 	if err := writeDockerlessOpenShim(binDir); err != nil {
 		log.Fatalf("Failed to write swe-swe-open shim: %v", err)
 	}
+
+	// Project-scoped MCP config (option ii): no global ~/.claude.json
+	// pollution. Claude reads .mcp.json from the project root at launch.
+	if err := writeDockerlessMCPConfig(absPath); err != nil {
+		log.Fatalf("Failed to write .mcp.json: %v", err)
+	}
+	fmt.Printf("Wrote MCP config to %s\n", filepath.Join(absPath, ".mcp.json"))
 
 	if err := writeDockerlessMarker(sweDir); err != nil {
 		log.Fatalf("Failed to write dockerless marker: %v", err)
@@ -241,6 +249,47 @@ func dockerlessPort(getenv func(string) string) string {
 		}
 	}
 	return "1977"
+}
+
+// mcpServerSpec is one entry in a Claude Code .mcp.json (stdio transport).
+type mcpServerSpec struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+}
+
+// dockerlessMCPServers returns the swe-swe MCP servers, mirroring the
+// `claude mcp add` commands the container entrypoint registers
+// (templates.go claude_mcp_setup). The `sh -c '... $VAR ...'` form is kept
+// verbatim so the session env vars (SWE_SERVER_PORT/SESSION_UUID/
+// MCP_AUTH_KEY/BROWSER_CDP_PORT) the server sets expand at agent-launch time.
+func dockerlessMCPServers() map[string]mcpServerSpec {
+	sh := func(script string) mcpServerSpec { return mcpServerSpec{Command: "sh", Args: []string{"-c", script}} }
+	return map[string]mcpServerSpec{
+		"swe-swe-agent-chat": sh("exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
+		"swe-swe-playwright": sh("exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"),
+		"swe-swe-preview":    sh("exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"),
+		"swe-swe-whiteboard": {Command: "npx", Args: []string{"-y", "@choonkeat/agent-whiteboard"}},
+		"swe-swe":            sh("exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"),
+	}
+}
+
+// writeDockerlessMCPConfig writes a project-scoped .mcp.json into projectDir
+// (option ii: no global ~/.claude.json pollution). Claude Code, launched with
+// cwd=projectDir by the server, reads it. Overwrites any existing file so
+// re-init picks up command changes.
+func writeDockerlessMCPConfig(projectDir string) error {
+	doc := struct {
+		MCPServers map[string]mcpServerSpec `json:"mcpServers"`
+	}{MCPServers: dockerlessMCPServers()}
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal .mcp.json: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0644); err != nil {
+		return fmt.Errorf("write .mcp.json: %w", err)
+	}
+	return nil
 }
 
 // extractDockerlessBinaries writes the embedded static-Linux binaries for the

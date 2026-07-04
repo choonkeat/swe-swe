@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -149,6 +150,40 @@ func TestWriteDockerlessOpenShim(t *testing.T) {
 	// Idempotent: a second call must not error on existing symlinks.
 	if err := writeDockerlessOpenShim(binDir); err != nil {
 		t.Fatalf("re-run writeDockerlessOpenShim: %v", err)
+	}
+}
+
+// init --dockerless writes a project-scoped .mcp.json with the five swe-swe
+// MCP servers, preserving the `sh -c` form so session env vars expand at
+// launch.
+func TestWriteDockerlessMCPConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeDockerlessMCPConfig(dir); err != nil {
+		t.Fatalf("writeDockerlessMCPConfig: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("read .mcp.json: %v", err)
+	}
+	var doc struct {
+		MCPServers map[string]mcpServerSpec `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe-whiteboard", "swe-swe"} {
+		if _, ok := doc.MCPServers[name]; !ok {
+			t.Errorf("missing MCP server %q", name)
+		}
+	}
+	// agent-chat keeps the sh -c form with the autocomplete env-var URL.
+	ac := doc.MCPServers["swe-swe-agent-chat"]
+	if ac.Command != "sh" || len(ac.Args) != 2 || !strings.Contains(ac.Args[1], "$SWE_SERVER_PORT") {
+		t.Errorf("agent-chat spec not preserved: %+v", ac)
+	}
+	// whiteboard is a plain npx command (no shell).
+	if wb := doc.MCPServers["swe-swe-whiteboard"]; wb.Command != "npx" {
+		t.Errorf("whiteboard command = %q, want npx", wb.Command)
 	}
 }
 
