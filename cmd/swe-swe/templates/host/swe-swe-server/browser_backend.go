@@ -121,14 +121,8 @@ func stopSessionAgentView(sess *Session) {
 	stopSessionBrowser(sess)
 }
 
-// startRemoteAgentView is wired to the swe-swe/browser-backend allocation API
-// in remoteAgentView (Phase 5d). Defined here so the dispatcher type-checks.
-var startRemoteAgentView = func(sess *Session) (string, error) {
-	return "", fmt.Errorf("remote agent-view backend %q not yet wired", agentViewBackend)
-}
-
-// stopRemoteAgentView mirrors startRemoteAgentView (Phase 5d).
-var stopRemoteAgentView = func(sess *Session) {}
+// startRemoteAgentView / stopRemoteAgentView are implemented in
+// browser_backend_remote.go (Phase 5d).
 
 // browserProcs holds the four OS processes backing one isolated Agent View
 // browser (Xvfb + chromium + x11vnc + websockify) plus its chromium profile

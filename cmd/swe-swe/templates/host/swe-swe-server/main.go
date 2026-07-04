@@ -469,7 +469,15 @@ type Session struct {
 	// RemoteBrowserID is the session id returned by a remote browser-backend
 	// (empty in local mode); set when -agent-view points at a backend URL.
 	RemoteBrowserID string
-	FilesPID        int // PID of the per-session md-serve process (0 if not started)
+	// RemoteVNCTarget is "host:port" of the remote websockify when Agent View
+	// runs on a remote backend; the per-session VNC reverse proxy targets it
+	// instead of localhost. Empty in local mode.
+	RemoteVNCTarget string
+	// RemoteCDPProxyServer is a local reverse proxy on sess.CDPPort forwarding
+	// to the remote chromium's CDP endpoint, so the agent's Playwright MCP
+	// (--cdp-endpoint http://localhost:CDPPort) works unchanged in remote mode.
+	RemoteCDPProxyServer *http.Server
+	FilesPID             int // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
 	pendingReplacement string // If set, replace process with this command instead of ending session
@@ -4879,11 +4887,18 @@ func getOrCreateSession(p SessionParams) (*Session, bool, error) {
 		vncReverseProxy := httputil.NewSingleHostReverseProxy(vncTarget)
 		// websockify presents itself with its own Host; rewriting the Host
 		// header to match the target avoids virtual-host filters and CORS
-		// quirks if websockify ever adds them.
+		// quirks if websockify ever adds them. The target is resolved per
+		// request so a remote browser-backend (sess.RemoteVNCTarget, set on
+		// browser/start) redirects here without rebuilding the proxy; local
+		// mode keeps targeting localhost:vncPort.
 		vncReverseProxy.Director = func(req *http.Request) {
+			host := vncTarget.Host
+			if sess.RemoteVNCTarget != "" {
+				host = sess.RemoteVNCTarget
+			}
 			req.URL.Scheme = "http"
-			req.URL.Host = vncTarget.Host
-			req.Host = vncTarget.Host
+			req.URL.Host = host
+			req.Host = host
 		}
 		vncPP := vncProxyPort(vncPort)
 		vncSrv := &http.Server{
