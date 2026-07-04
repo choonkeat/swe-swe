@@ -70,7 +70,15 @@ func flush(w io.Writer, prov Provider, s *State, force bool) error {
 		if d.PostedID != 0 {
 			continue
 		}
-		id, err := prov.PostComment(s.Ref, d.Path, d.Line, "RIGHT", s.HeadAtFetch, d.Body)
+		anchor := Anchor{
+			Path:     d.Path,
+			Line:     d.Line,
+			Side:     "RIGHT",
+			BaseSHA:  s.BaseSHA,
+			HeadSHA:  s.HeadAtFetch,
+			StartSHA: s.StartSHA,
+		}
+		id, err := prov.PostComment(s.Ref, anchor, d.Body)
 		if err != nil {
 			return fmt.Errorf("post comment %s (%s:%d): %w", d.ID, d.Path, d.Line, err)
 		}

@@ -80,16 +80,22 @@ Sync:
   prctx reject  [<pr>] [--body <text>] set verdict: request changes
 
 <pr> is a PR/MR url or number; omit it to use the last-fetched PR.
-Env: GITHUB_TOKEN (or GH_TOKEN) for GitHub API calls.
+Env: GITHUB_TOKEN (or GH_TOKEN) for GitHub; GITLAB_TOKEN for GitLab.
 `)
 }
 
-// providerFor selects the adapter for a ref's host. GitLab lands next slice.
+// providerFor selects the adapter for a ref's host. Self-hosted GitLab is
+// detected by a "gitlab." host prefix; self-hosted GitHub Enterprise is not
+// auto-detected yet.
 func providerFor(ref PRRef) (Provider, error) {
-	if ref.Host == "github.com" {
+	switch {
+	case ref.Host == "github.com":
 		return githubProvider{}, nil
+	case ref.Host == "gitlab.com" || strings.HasPrefix(ref.Host, "gitlab."):
+		return gitlabProvider{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported host %q (github.com and gitlab.com supported)", ref.Host)
 	}
-	return nil, fmt.Errorf("unsupported host %q (only GitHub is implemented so far)", ref.Host)
 }
 
 var reDigits = regexp.MustCompile(`^\d+$`)
@@ -141,6 +147,7 @@ func cmdFetch(args []string) error {
 	}
 	s.Branch = rev.Branch
 	s.BaseSHA = rev.BaseSHA
+	s.StartSHA = rev.StartSHA
 	s.HeadAtFetch = rev.HeadSHA
 	s.Threads = rev.Threads
 	s.Notes = rev.Notes
