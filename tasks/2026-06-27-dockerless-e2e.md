@@ -2,8 +2,22 @@
 
 ## Status
 
-**Planned.** Not started. Keeps the dockerless path
+**Phase 1 shipped (curl-based core).** `make e2e-dockerless`
+(`scripts/e2e-dockerless.sh`) boots `swe-swe init --dockerless` + `swe-swe up`
+with NO Docker daemon and asserts the dockerless contract: all 7 dumped
+binaries + `swe-swe-open` shim + browser symlinks + `mode=dockerless` marker +
+project `.mcp.json`; the server serves the homepage (200); and a session page
+renders `<terminal-ui>` rooted at the project dir (path-agnostic server). Runs
+green even on the shared dogfood box (uses clean env + non-colliding port
+ranges, avoids the global `@swe-swe-broker`). Keeps the dockerless path
 (`tasks/2026-06-27-dockerless-single-binary.md`) from regressing.
+
+**Still TODO (Phase 2):** drive the live tabs with Playwright (parameterize the
+existing specs by base URL) so per-tab *rendering* + websocket PTY + md-serve +
+agent-chat are asserted, not just the serving endpoints; the Agent View
+local/remote variants; the tunnel variant; and CI wiring. The curl harness
+necessarily skips websocket-triggered backends (md-serve only starts on ws
+connect), so it emits a WARN there rather than a hard assertion.
 
 ## Problem
 

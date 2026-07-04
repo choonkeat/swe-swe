@@ -168,6 +168,11 @@ e2e-test:
 e2e-down:
 	./scripts/e2e-down.sh
 
+# Host-native (dockerless) e2e: no Docker daemon. Boots the dumped server
+# directly and asserts the dockerless contract (payload + serving endpoints).
+e2e-dockerless:
+	./scripts/e2e-dockerless.sh
+
 test-e2e:
 	./scripts/e2e-up.sh simple
 	./scripts/e2e-test.sh simple $(E2E_ARGS) || (./scripts/e2e-down.sh simple; exit 1)
