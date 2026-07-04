@@ -7590,12 +7590,24 @@ func handleNewSessionAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newUUID := uuid.New().String()
-	// Pure gate token: the WS handler resolves workdir/branch/worktree from the
-	// echoed query params below, so the staged params only mark the UUID as
-	// create-permitted. SessionMode is the exception: carry it in the staged
-	// intent (mirroring the fork path) so a "Start Chat" POST materializes as a
-	// chat session even though the WS override replaces params with these.
-	stageSession(newUUID, SessionParams{UUID: newUUID, Assistant: assistant, SessionMode: r.FormValue("session")}, "new", "")
+	// Stage the full creation wiring from the dialog. The WS handler that
+	// materializes the session replaces its URL-derived params with this staged
+	// entry (params = staged.params), so any field NOT staged here is silently
+	// lost -- which is how the session name, branch, pwd, extra_args and chat
+	// mode all went missing after the staging refactor (a2a0a4802). Mirror the
+	// fork path and stage them all. WorkDir is intentionally left empty:
+	// getOrCreateSession resolves it from RepoPath+Branch downstream, exactly as
+	// the pre-staging query-string flow did.
+	stageSession(newUUID, SessionParams{
+		UUID:        newUUID,
+		Assistant:   assistant,
+		Name:        r.FormValue("name"),
+		Branch:      deriveBranchName(r.FormValue("branch")),
+		RepoPath:    r.FormValue("pwd"),
+		Theme:       r.FormValue("theme"),
+		SessionMode: r.FormValue("session"),
+		ExtraArgs:   r.FormValue("extra_args"),
+	}, "new", "")
 
 	// Echo the dialog's params onto the redirect so the WS handler resolves the
 	// session exactly as the old navigation did.

@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"regexp"
+	"strings"
+	"testing"
+)
 
 // envValue returns (value, present) for the LAST occurrence of key in a
 // KEY=VALUE slice, matching exec semantics where the last assignment wins.
@@ -93,5 +100,65 @@ func TestResolveStagedMode(t *testing.T) {
 				t.Fatalf("resolveStagedMode(%q, %q) = %q, want %q", tc.stagedMode, tc.urlMode, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestHandleNewSessionAPI_StagesFullWiring guards the higher-severity half of
+// the staging regression. The WS handler that materializes a "new" session
+// replaces its URL-derived params with the staged intent, so any dialog field
+// left unstaged is silently lost. When pwd was dropped, getOrCreateSession fell
+// back to baseRepo "/workspace" -- so every new session opened in the wrong
+// directory, and its name (derived from the working directory) collapsed to a
+// bare UUID. This asserts the "new" POST stages the full wiring: name, pwd
+// (RepoPath), branch, session mode, and extra_args.
+func TestHandleNewSessionAPI_StagesFullWiring(t *testing.T) {
+	saved := availableAssistants
+	availableAssistants = []AssistantConfig{{Binary: "opencode"}}
+	defer func() { availableAssistants = saved }()
+
+	form := url.Values{
+		"assistant":  {"opencode"},
+		"session":    {"chat"},
+		"name":       {"My Session"},
+		"pwd":        {"/workspace/project-x"},
+		"branch":     {"feature/new thing"},
+		"extra_args": {"--channels server:agent-chat"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/session/new", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+
+	handleNewSessionAPI(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 redirect; body=%q", rec.Code, rec.Body.String())
+	}
+	loc := rec.Header().Get("Location")
+	m := regexp.MustCompile(`/session/([0-9a-f-]{36})`).FindStringSubmatch(loc)
+	if m == nil {
+		t.Fatalf("redirect Location %q carries no session UUID", loc)
+	}
+	staged, ok := takePendingSession(m[1])
+	if !ok {
+		t.Fatalf("no staged intent found for minted UUID %s", m[1])
+	}
+	p := staged.params
+	if p.Name != "My Session" {
+		t.Errorf("staged Name = %q, want %q", p.Name, "My Session")
+	}
+	// The crux: the working directory must survive so it isn't defaulted to
+	// /workspace (which also collapses the derived name).
+	if p.RepoPath != "/workspace/project-x" {
+		t.Errorf("staged RepoPath = %q, want %q", p.RepoPath, "/workspace/project-x")
+	}
+	if p.SessionMode != "chat" {
+		t.Errorf("staged SessionMode = %q, want chat", p.SessionMode)
+	}
+	if p.ExtraArgs != "--channels server:agent-chat" {
+		t.Errorf("staged ExtraArgs = %q, want the dialog value", p.ExtraArgs)
+	}
+	// Branch is sanitized through deriveBranchName (spaces -> hyphens).
+	if want := deriveBranchName("feature/new thing"); p.Branch != want {
+		t.Errorf("staged Branch = %q, want %q", p.Branch, want)
 	}
 }
