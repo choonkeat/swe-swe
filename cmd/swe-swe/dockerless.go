@@ -68,6 +68,13 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 	}
 	fmt.Printf("Extracted %d host-native binaries to %s\n", len(dockerlessBinaries), binDir)
 
+	// Emit the swe-swe-open shim + xdg-open/open/... symlinks into bin/ so the
+	// agent's URL-open habits route into the Preview pane (entrypoint.sh does
+	// this in the container).
+	if err := writeDockerlessOpenShim(binDir); err != nil {
+		log.Fatalf("Failed to write swe-swe-open shim: %v", err)
+	}
+
 	if err := writeDockerlessMarker(sweDir); err != nil {
 		log.Fatalf("Failed to write dockerless marker: %v", err)
 	}
@@ -94,9 +101,19 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string) (bin string, args, env []string) {
 	binDir := filepath.Join(sweDir, "bin")
 	bin = filepath.Join(binDir, "swe-swe-server")
-	args = []string{"-working-directory", absPath, "-bind", "127.0.0.1:" + port}
+	// Host-native paths: the project is the workspace; the dumped sweDir is
+	// the .swe-swe home (sweDir/bin holds the helpers + swe-swe-open shim);
+	// worktrees/repos live under sweDir. Loopback bind = no LAN exposure.
+	args = []string{
+		"-working-directory", absPath,
+		"-workspace", absPath,
+		"-swe-home", sweDir,
+		"-worktrees", filepath.Join(sweDir, "worktrees"),
+		"-repos", filepath.Join(sweDir, "repos"),
+		"-bind", "127.0.0.1:" + port,
+	}
 
-	env = make([]string, 0, len(baseEnv)+1)
+	env = make([]string, 0, len(baseEnv)+2)
 	pathSet := false
 	for _, e := range baseEnv {
 		if strings.HasPrefix(e, "PATH=") {
@@ -109,7 +126,51 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string) 
 	if !pathSet {
 		env = append(env, "PATH="+binDir)
 	}
+	// The swe-swe-open shim (and other per-session wiring) reads
+	// SWE_SERVER_PORT; the server passes it through to sessions. In the
+	// container the entrypoint exports it; here `swe-swe up` does.
+	env = append(env, "SWE_SERVER_PORT="+port)
 	return bin, args, env
+}
+
+// dockerlessOpenShimNames are the browser-launcher command names symlinked to
+// swe-swe-open so an agent's `xdg-open`/`open`/etc. route URLs to the Preview
+// pane (mirrors entrypoint.sh).
+var dockerlessOpenShimNames = []string{"xdg-open", "open", "x-www-browser", "www-browser", "sensible-browser"}
+
+// dockerlessOpenShim is the swe-swe-open script: it POSTs the URL to the
+// per-session preview reverse-proxy so links open in the Preview pane. It
+// reads SWE_SERVER_PORT/SESSION_UUID/MCP_AUTH_KEY from the session env the
+// server sets. Identical in spirit to the entrypoint.sh heredoc.
+const dockerlessOpenShim = `#!/bin/sh
+URL="${1:-}"
+[ -z "$URL" ] && exit 0
+curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)&key=$MCP_AUTH_KEY" >/dev/null 2>&1 &
+echo "-> Preview: $URL" >&2
+`
+
+// writeDockerlessOpenShim writes swe-swe-open (0755) into binDir and creates
+// the xdg-open/open/... symlinks pointing at it. Existing symlinks are
+// replaced so re-init is idempotent.
+func writeDockerlessOpenShim(binDir string) error {
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("create %s: %w", binDir, err)
+	}
+	shim := filepath.Join(binDir, "swe-swe-open")
+	if err := os.WriteFile(shim, []byte(dockerlessOpenShim), 0755); err != nil {
+		return fmt.Errorf("write swe-swe-open: %w", err)
+	}
+	if err := os.Chmod(shim, 0755); err != nil {
+		return fmt.Errorf("chmod swe-swe-open: %w", err)
+	}
+	for _, name := range dockerlessOpenShimNames {
+		link := filepath.Join(binDir, name)
+		_ = os.Remove(link)
+		if err := os.Symlink("swe-swe-open", link); err != nil {
+			return fmt.Errorf("symlink %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // handleDockerlessCommand is the dockerless counterpart to the docker-compose

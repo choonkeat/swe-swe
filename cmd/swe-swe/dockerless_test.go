@@ -90,6 +90,19 @@ func TestDockerlessServerInvocation(t *testing.T) {
 	if !argsContainPair(args, "-working-directory", absPath) {
 		t.Errorf("args %v missing -working-directory %s", args, absPath)
 	}
+	// Host-native paths wired through to the server.
+	if !argsContainPair(args, "-workspace", absPath) {
+		t.Errorf("args %v missing -workspace %s", args, absPath)
+	}
+	if !argsContainPair(args, "-swe-home", sweDir) {
+		t.Errorf("args %v missing -swe-home %s", args, sweDir)
+	}
+	if !argsContainPair(args, "-worktrees", filepath.Join(sweDir, "worktrees")) {
+		t.Errorf("args %v missing -worktrees", args)
+	}
+	if !argsContainPair(args, "-repos", filepath.Join(sweDir, "repos")) {
+		t.Errorf("args %v missing -repos", args)
+	}
 	// Binds loopback on the chosen port by default (no surprise LAN exposure).
 	if !argsContainValue(args, "127.0.0.1:1977") {
 		t.Errorf("args %v missing loopback bind 127.0.0.1:1977", args)
@@ -104,6 +117,51 @@ func TestDockerlessServerInvocation(t *testing.T) {
 	}
 	if !foundPath {
 		t.Errorf("env %v has no PATH starting with %s", env, binDir)
+	}
+}
+
+// init --dockerless writes the swe-swe-open shim (executable) plus the
+// xdg-open/open/... symlinks into bin/, and SWE_SERVER_PORT is wired into the
+// server env so the shim resolves the preview endpoint.
+func TestWriteDockerlessOpenShim(t *testing.T) {
+	binDir := t.TempDir()
+	if err := writeDockerlessOpenShim(binDir); err != nil {
+		t.Fatalf("writeDockerlessOpenShim: %v", err)
+	}
+	shim := filepath.Join(binDir, "swe-swe-open")
+	fi, err := os.Stat(shim)
+	if err != nil {
+		t.Fatalf("swe-swe-open missing: %v", err)
+	}
+	if fi.Mode().Perm()&0o100 == 0 {
+		t.Errorf("swe-swe-open not executable: %v", fi.Mode())
+	}
+	for _, name := range dockerlessOpenShimNames {
+		target, err := os.Readlink(filepath.Join(binDir, name))
+		if err != nil {
+			t.Errorf("%s not a symlink: %v", name, err)
+			continue
+		}
+		if target != "swe-swe-open" {
+			t.Errorf("%s -> %q, want swe-swe-open", name, target)
+		}
+	}
+	// Idempotent: a second call must not error on existing symlinks.
+	if err := writeDockerlessOpenShim(binDir); err != nil {
+		t.Fatalf("re-run writeDockerlessOpenShim: %v", err)
+	}
+}
+
+func TestDockerlessServerInvocationSetsServerPort(t *testing.T) {
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"})
+	found := false
+	for _, e := range env {
+		if e == "SWE_SERVER_PORT=1977" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("env %v missing SWE_SERVER_PORT=1977", env)
 	}
 }
 
