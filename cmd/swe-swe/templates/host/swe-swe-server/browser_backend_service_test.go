@@ -78,6 +78,14 @@ func TestBrowserBackendCapacity(t *testing.T) {
 	if rr2.Code != http.StatusServiceUnavailable {
 		t.Errorf("over-capacity create: got %d, want 503", rr2.Code)
 	}
+
+	// Re-POST for the LIVE id at capacity is idempotent, not 503 -- its own
+	// slot is what filled the pool.
+	rr3 := httptest.NewRecorder()
+	bb.ServeHTTP(rr3, httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"sessionId":"a"}`)))
+	if rr3.Code != http.StatusOK {
+		t.Errorf("idempotent re-create at capacity: got %d, want 200", rr3.Code)
+	}
 }
 
 func TestBrowserBackendAuth(t *testing.T) {

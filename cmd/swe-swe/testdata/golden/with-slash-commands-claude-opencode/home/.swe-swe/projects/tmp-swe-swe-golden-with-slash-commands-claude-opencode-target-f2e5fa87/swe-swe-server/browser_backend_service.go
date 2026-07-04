@@ -100,6 +100,15 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	bb.mu.Lock()
+	// Idempotency first: a re-POST for a live id must return that instance
+	// even when the pool is at capacity (its own slot is what filled it).
+	if req.SessionID != "" {
+		if existing, ok := bb.sessions[req.SessionID]; ok {
+			bb.mu.Unlock()
+			bb.writeAlloc(w, existing)
+			return
+		}
+	}
 	slot := bb.allocSlot()
 	if slot < 0 {
 		bb.mu.Unlock()
@@ -109,12 +118,6 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	id := req.SessionID
 	if id == "" {
 		id = fmt.Sprintf("bb-%d", slot)
-	}
-	if existing, ok := bb.sessions[id]; ok {
-		// Idempotent: re-allocating the same id returns the live instance.
-		bb.mu.Unlock()
-		bb.writeAlloc(w, existing)
-		return
 	}
 	cdpPort := cdpPortStart + slot
 	vncPort := vncPortStart + slot

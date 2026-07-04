@@ -7783,13 +7783,18 @@ func handleVNCReadyAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if sess.VNCPort == 0 {
+	// Remote backend: probe the remote websockify -- the same target the VNC
+	// proxy dials (sess.VNCPort is the local pool port; unused in remote mode).
+	target := fmt.Sprintf("localhost:%d", sess.VNCPort)
+	if sess.RemoteVNCTarget != "" {
+		target = sess.RemoteVNCTarget
+	} else if sess.VNCPort == 0 {
 		http.Error(w, "VNC not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	// TCP connect to websockify to check if it's listening
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", sess.VNCPort), 500*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", target, 500*time.Millisecond)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
