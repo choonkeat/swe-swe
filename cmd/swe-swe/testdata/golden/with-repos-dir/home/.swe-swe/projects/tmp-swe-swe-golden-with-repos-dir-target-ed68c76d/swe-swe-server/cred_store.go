@@ -15,6 +15,7 @@ package main
 
 import (
 	"log"
+	"strings"
 	"sync"
 )
 
@@ -154,6 +155,37 @@ func inheritSessionCredentials(parentUUID, childUUID, childWorkDir string) {
 		log.Printf("Session %s: gitconfig rewrite after credential inheritance failed: %v", childUUID, err)
 	}
 	log.Printf("Session %s inherited git credentials/signing from parent %s", childUUID, parentUUID)
+}
+
+// sessionTokenEnv maps a session's stored per-host HTTPS tokens onto the
+// conventional CLI env var names so tools like prctx can authenticate without
+// the user re-entering anything:
+//
+//	github.com            -> GH_TOKEN
+//	gitlab.com, gitlab.*  -> GITLAB_TOKEN
+//
+// Only hosts with a non-empty token contribute. When multiple hosts map to the
+// same env var (e.g. gitlab.com plus a self-hosted gitlab.*), the last one
+// wins; that ambiguity is inherent to a single-valued env var and is out of
+// scope to resolve here.
+func sessionTokenEnv(sid string) []string {
+	if sid == "" {
+		return nil
+	}
+	var out []string
+	for _, host := range listCredentialHosts(sid) {
+		c, ok := getCredential(sid, host)
+		if !ok || c.Token == "" {
+			continue
+		}
+		switch {
+		case host == "github.com":
+			out = append(out, "GH_TOKEN="+c.Token)
+		case host == "gitlab.com" || strings.HasPrefix(host, "gitlab."):
+			out = append(out, "GITLAB_TOKEN="+c.Token)
+		}
+	}
+	return out
 }
 
 // listCredentialHosts returns the hosts for which sid has credentials.

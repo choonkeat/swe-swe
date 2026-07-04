@@ -541,7 +541,7 @@ type SessionEnvParams struct {
 }
 
 func buildSessionEnv(p SessionEnvParams) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT")
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", p.PreviewPort),
@@ -584,6 +584,13 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	} else {
 		env = append(env, "COLORFGBG=15;0") // light-on-dark
 	}
+	// Surface the session's stored per-host HTTPS tokens under the conventional
+	// CLI env var names (github.com -> GH_TOKEN, gitlab.com/gitlab.* ->
+	// GITLAB_TOKEN) so tools like prctx pick them up without re-entry. Env is
+	// materialized at spawn, so a token saved mid-session reaches the NEXT
+	// session (or the next PTY restart), not the running process. Placed before
+	// the .swe-swe/env load so a user-defined GH_TOKEN/GITLAB_TOKEN wins.
+	env = append(env, sessionTokenEnv(p.SID)...)
 	// Append user-defined vars from .swe-swe/env (last so they take precedence).
 	// Expand $VAR references against the session env built above, so a line like
 	// PATH=/usr/local/go/bin:$PATH prepends to the SESSION PATH (which includes
