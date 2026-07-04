@@ -1,68 +1,44 @@
-# Distribution: ship the server binary via npm
+# Distribution: ship binaries via the embedded payload (npm)
 
 ## Status
 
-**Planned.** Not started. Makes
-`tasks/2026-06-27-dockerless-single-binary.md` Phase 2 actually
-installable by end users.
-
-## Problem
-
-Today the npm package ships only the per-platform **`swe-swe` CLI**
-(`package.json` `bin`/`files: ["bin"]`; built by `build-cli` /
-`build-platforms`, released by `publish` in the Makefile). The
-**`swe-swe-server`** binary is never distributed -- it is compiled inside
-`docker build` from embedded source. For the dockerless DX
-(`docs/dockerless.md`: `npm i -g swe-swe` then `swe-swe up`) the server
-binary must arrive on the user's machine via npm too.
+**Planned / mostly subsumed.** The embedded-payload approach (see
+`tasks/2026-06-27-dockerless-single-binary.md` "Approach: embedded
+payload") changes how binaries are distributed: the `swe-swe` CLI
+`go:embed`s the prebuilt binaries and dumps them on
+`swe-swe init --dockerless`. So there is **no separate server binary to
+publish** -- npm ships the CLI exactly as today, and the CLI carries the
+payload. This file now only tracks the packaging deltas that the embed
+model still needs.
 
 Distribution is **npm/npx only**. No Homebrew.
 
-## Goals / non-goals
+## What the embed model already gives us
 
-- **Goal:** `npm i -g swe-swe` (or `npx -y swe-swe`) puts both `swe-swe`
-  and the server binary on the machine, for every supported platform, so
-  `swe-swe up` (dockerless) can locate and exec the server.
-- **Goal:** the user never names the server binary -- `swe-swe up` finds
-  it next to itself.
-- **Non-goal:** Homebrew formula (explicitly dropped).
-- **Non-goal:** changing how docker mode builds the server (it can keep
-  compiling from embedded source, or switch to COPY of the shipped
-  binary -- decided in Phase 2).
+- One `npm i -g swe-swe` (or `npx -y swe-swe`) delivers the CLI + every
+  binary it embeds. No second install step, no `swe-swe-server` in the
+  user's vocabulary.
+- Per-platform delivery already exists: `build-platforms` builds the CLI
+  per GOOS/GOARCH and npm uses per-platform optionalDependencies, so each
+  user downloads one artifact.
 
-## Decisions to make
+## Remaining packaging work
 
-- **One binary or two?** Either (a) ship `swe-swe` + `swe-swe-server` as
-  two binaries in the npm artifact, or (b) make `swe-swe` itself the
-  multi-call binary (Phase 1) so there is a single file and `swe-swe up`
-  re-execs itself in server mode. (b) is the cleanest packaging and keeps
-  "the user only types `swe-swe`" literally true. Prefer (b) unless
-  size/build reasons block it.
-- **Per-platform delivery.** Mirror the existing `build-platforms`
-  matrix (linux amd64/arm64, darwin amd64/arm64, ...). Note dockerless
-  *runs* only on Linux for now (Linux-only couplings), but the CLI half
-  installs everywhere; `swe-swe up --dockerless` can refuse non-Linux
-  with a clear message until macOS support lands.
+1. **Build matrix carries the payload.** Ensure `build-platforms` runs
+   the Phase 1 binary-build + payload-stage step before each per-platform
+   CLI build, so every published CLI embeds the correct Linux set (and,
+   in Phase 6, the darwin host set for darwin CLIs). See Phase 1 of the
+   main task.
+2. **Size budget.** Embedding the binaries adds ~25-30MB per CLI
+   platform. Confirm the npm per-platform packages stay within sane
+   limits; record before/after. `-ldflags="-s -w"` already applied.
+3. **`npx -y swe-swe` path.** Verify the no-global-install path still
+   works end-to-end with the larger artifact (download + dump + run).
+4. **Version coherence.** The embedded `swe-swe-server` reports the same
+   version as the CLI (stamped at build time, as `init.go` already does
+   for the in-image source today).
 
-## Work
+## Non-goals
 
-1. Extend `build-platforms` to also build the server (or the unified
-   multi-call binary) for each target; update `dist/` layout.
-2. Update `package.json` (`bin`, `files`) and the npm publish flow
-   (`publish` target) to include the server binary per platform. Match
-   the existing per-platform install mechanism the CLI already uses
-   (`install.sh` / postinstall).
-3. `swe-swe up` (dockerless dispatch, Phase 3) locates the server binary
-   relative to its own path and execs it; error clearly if missing.
-4. Keep `npx -y swe-swe` working (no global install) end-to-end.
-5. Size check: `-ldflags="-s -w"` already used; record the artifact size
-   delta from adding the server.
-
-## Verify
-
-- Clean machine: `npm i -g swe-swe && swe-swe init --dockerless &&
-  swe-swe up` works with no separate server install step.
-- `npx -y swe-swe init --dockerless` then `npx -y swe-swe up` works.
-- `swe-swe --version` and the server's version agree (single source).
-- Non-Linux host: `swe-swe up --dockerless` fails with a clear "Linux
-  only for now" message rather than a confusing runtime error.
+- Homebrew formula (dropped).
+- A standalone published `swe-swe-server` artifact (the CLI embeds it).

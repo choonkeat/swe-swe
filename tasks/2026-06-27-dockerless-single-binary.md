@@ -5,11 +5,12 @@
 **In progress.**
 
 - [x] **Phase 0** -- Remove vscode entirely. Done 2026-06-27. Removed `--with-vscode` flag + `WithVSCode` config/reuse, `VSCODE_SERVICES` compose block + `code-server/Dockerfile` + `nginx-vscode.conf`, `withVSCode` template params, the vscode pane/option/iframe + `buildVSCodeUrl`/`_vscodeEnabled`/`getVSCodeUrl` from the JS, and the `with-vscode` golden variant. `make test` green; 327 node tests green; golden has 0 vscode/code-server refs. See -phase0.log.
-- [ ] **Phase 1** -- Multi-call `swe-swe-server` (fold helper binaries as subcommands + `install`)
-- [ ] **Phase 2** -- Prebuilt server binary + thin Dockerfile (drop the Go-toolchain build/runtime stages)
-- [ ] **Phase 3** -- `swe-swe init --dockerless` host installer (replay entrypoint.sh on the host) + configurable paths
+- [ ] **Phase 1** -- Build static-linux binaries + `go:embed` the payload into the `swe-swe` CLI
+- [ ] **Phase 2** -- `swe-swe init --dockerless` dumps the payload + wires it; `swe-swe up`/`--open`/`down` dispatch; `--dockerless` errors on non-Linux CLI
+- [ ] **Phase 3** -- Thin Dockerfile `COPY`s the same embedded payload (drop the Go-builder stage + toolchain base)
 - [ ] **Phase 4** -- Tunnel works dockerless (decouple tunnel from compose mode)
 - [ ] **Phase 5** -- Pluggable browser backend (`local` default / `remote`) so Agent View (Tier D) can run elsewhere
+- [ ] **Phase 6** (follow-up) -- Mac-native dockerless: build darwin binaries + fix the two Linux-only couplings, lift the non-Linux error
 
 ## Problem
 
@@ -22,20 +23,48 @@ base. Distribution therefore *requires* Docker, even though the server
 itself already `go:embed`s all of its web assets, page templates,
 agent-chat UI, and container docs (`main.go:51-60`).
 
-We want two prebuilt binaries and zero required Docker:
+We want zero required Docker, all six UI tabs working
+(**Agent Terminal, Terminal, Preview, Files, Agent Chat, Agent View**),
+and the user only ever typing `swe-swe`.
 
-1. `swe-swe` -- the existing standalone host CLI, gaining a flag to
-   initialise a dockerless host-native `swe-swe-server` setup.
-2. `swe-swe-server` -- a standalone host binary whose heavy Tier-D
-   browser dependency (Agent View) can be pointed at a backend running
-   somewhere else; default config reproduces today's behavior.
+## Approach: embedded payload (decided 2026-06-27)
 
-All six UI tabs must remain functional in the dockerless setup:
-**Agent Terminal, Terminal, Preview, Files, Agent Chat, Agent View.**
+Rather than a busybox-style multi-call binary, the `swe-swe` CLI
+**`go:embed`s the prebuilt binaries + shell scripts + config it needs**
+and dumps them on `swe-swe init --dockerless` -- exactly the pattern the
+CLI already uses for its `templates/` tree, extended to compiled outputs.
+Helpers stay as separate stdlib binaries (no risky package surgery, still
+individually testable); the CLI just carries their compiled outputs.
+
+There are **two audiences** for these binaries, which determines what to
+embed:
+
+- **Docker mode** -- binaries run *inside the container* = always Linux.
+- **Dockerless mode** -- binaries run *on the host* = the host's OS/arch.
+
+| CLI build    | embeds (dockerless host set) | embeds (docker image set, always Linux) |
+|--------------|------------------------------|------------------------------------------|
+| linux/amd64  | linux/amd64                  | linux/amd64 (dedup)                      |
+| linux/arm64  | linux/arm64                  | linux/arm64 (dedup)                      |
+| darwin/*     | *(none yet -- Phase 6)*      | linux/amd64 + linux/arm64                |
+
+All binaries are `CGO_ENABLED=0` static, so one Linux set runs on
+alpine/bookworm/slim alike. **First cut targets Linux-host dockerless**
+(linux CLI embeds one Linux set serving both audiences). The darwin CLI
+embeds only the Linux image set; **`--dockerless` on a non-Linux CLI must
+error out** with a clear "Linux host only for now" message until Phase 6.
+
+The embedded payload (one tree, two consumers -- `init --dockerless`
+dumps it to the host; the thin Dockerfile `COPY`s it into the image):
+
+- **Binaries**: `swe-swe-server`, `git-credential-swe-swe`,
+  `git-sign-swe-swe`, `mcp-lazy-init`, `swe-swe-broker-probe`,
+  `swe-swe-fork-convo`.
+- **Scripts**: `swe-swe-open` shim (+ `xdg-open`/`open`/... symlink
+  names), any setup currently done by `entrypoint.sh`.
+- **Config**: MCP server registrations, env/PATH setup.
 
 ## Dependency reality (why this is tractable)
-
-Per-tab backend and dependency class:
 
 | Tab            | Backend                                          | Class            |
 |----------------|--------------------------------------------------|------------------|
@@ -46,147 +75,103 @@ Per-tab backend and dependency class:
 | Agent Chat     | `npx @choonkeat/agent-chat` (MCP)               | host npx/node    |
 | Agent View     | Xvfb + chromium + x11vnc + websockify + playwright MCP | Tier D (heavy) |
 
-Five of six tabs are already "single binary + npx + claude" with no
-Docker. Only **Agent View** needs the browser/VNC quartet, which cannot
-be embedded in a Go binary (~system packages). That is the only piece we
-must make relocatable.
-
-Helper binaries currently built separately (all stdlib-only `package
-main`, see Dockerfile:31-45): `git-credential-swe-swe`,
-`git-sign-swe-swe`, `swe-swe-open`, `mcp-lazy-init`,
-`swe-swe-broker-probe`, `swe-swe-fork-convo`. Folding these into one
-multi-call binary is what makes "single file" literally true.
+Five of six tabs are already "binaries + npx + claude" with no Docker.
+Only **Agent View** needs the browser/VNC quartet (system packages), so
+that is the only piece we must make relocatable (Phase 5).
 
 ## Goals / non-goals
 
 - **Goal:** a Linux host with `node`/`npx`, an agent CLI (`claude`), and
-  `git` can run all six tabs with `swe-swe init --dockerless` +
-  `swe-swe-server`, no Docker daemon involved.
+  `git` runs all six tabs via `swe-swe init --dockerless` + `swe-swe up`,
+  no Docker daemon involved.
+- **Goal:** the user only ever types `swe-swe`; `swe-swe-server` is
+  internal.
+- **Goal:** the same embedded binaries feed a thin Docker image.
 - **Goal:** tunnel mode does not require Docker.
-- **Goal:** Agent View works either co-located (default) or offloaded to
-  a remote browser backend.
-- **Non-goal (defer):** macOS-native host mode. Two Linux-only couplings
-  remain -- the abstract unix socket `@swe-swe-broker` (creds/signing)
-  and `script -T/-I/-O` recording syntax. Dockerless targets a Linux
-  host or single container for now.
-- **Non-goal:** dropping the existing compose/SSL/Traefik path. It stays
-  for users who want it; dockerless is an additional, simpler path.
+- **Goal:** Agent View works co-located (default) or offloaded.
+- **Non-goal (this cut):** Mac-native dockerless -- explicitly errors out
+  on non-Linux CLIs; delivered in Phase 6 (needs darwin binaries + fixing
+  the abstract-socket `@swe-swe-broker` and `script -T/-I/-O` couplings).
+- **Non-goal:** dropping the compose/SSL/Traefik path -- it stays.
 
 ---
 
 ## Phase 0 -- Remove vscode entirely
 
-vscode is dead weight for the target DX and is one of the three triggers
-that force compose mode (`init.go:945`:
-`*sslFlag == "no" && !*withVSCode && *tunnelServerURL == ""`).
-
-**Remove:**
-- `--with-vscode` flag + `WithVSCode` config (`init.go`, `init.json`).
-- `cmd/swe-swe/templates/host/code-server/Dockerfile`,
-  `cmd/swe-swe/templates/host/nginx-vscode.conf`.
-- `vscode-proxy` + `code-server` compose service generation
-  (`templates.go:591-655`, the `{{VSCODE_SERVICES}}` placeholder).
-- The `vscode` pane from `PANES_IN_ORDER` (`terminal-ui.js:60`) + its
-  label/layout entries; any vscode references in `link-provider.js`.
-- vscode test variants in `main_test.go`; `.dockerignore` code-server
-  lines.
-
-**Verify:** `make build golden-update`; diff shows only removals.
-`make test`. Grep `-ri vscode cmd/` returns nothing meaningful.
+(Done -- see Status.)
 
 ---
 
-## Phase 1 -- Multi-call `swe-swe-server`
+## Phase 1 -- Build static-linux binaries + embed the payload
 
-Make `swe-swe-server` a busybox-style multi-call binary. When invoked
-under an alias name (argv[0]) or via an explicit subcommand, it runs the
-corresponding helper instead of the server.
+- Makefile: add a stage that `CGO_ENABLED=0 GOOS=linux` builds the six
+  binaries from their sources (the server from
+  `templates/host/swe-swe-server` via the existing copy-out flow used by
+  `test-server`; the four stdlib helpers from `templates/host/<name>`;
+  `swe-swe-fork-convo` from the server module's `cmd/`) and stages them
+  into an embed dir, e.g. `cmd/swe-swe/dockerless-payload/bin/linux-<arch>/`.
+- Stage the scripts + config into the same payload tree.
+- `go:embed` the payload tree into the CLI (new `embed.FS`), alongside the
+  existing `templates` embed.
+- Build ordering: binaries -> stage payload -> build CLI. Wire into
+  `build-cli` / `build-platforms` so every published CLI carries the
+  Linux set (per-arch).
 
-- Fold these into the server module as internal packages dispatched up
-  front in `main()`: `git-credential-swe-swe`, `git-sign-swe-swe`,
-  `swe-swe-open`, `mcp-lazy-init`, `swe-swe-broker-probe`,
-  `swe-swe-fork-convo`.
-- Dispatch rule: if `filepath.Base(os.Args[0])` matches a known helper
-  name -> run it; else if `os.Args[1]` is a known subcommand -> run it;
-  else run the server.
-- Add `swe-swe-server install --prefix <dir>` (default `~/.swe-swe`):
-  creates `<prefix>/bin`, symlinks each helper + xdg-open shim names
-  (`xdg-open open x-www-browser www-browser sensible-browser`) back to
-  the server binary, and writes the per-session env/PATH config that
-  `entrypoint.sh:182-236` produces today.
-
-**Verify:** `swe-swe-server git-credential-swe-swe` behaves identically
-to the old standalone (broker round-trip test). `make test`. Dockerfile
-stage 1 stops building the 6 separate binaries (Phase 2 consumes this).
+**Verify (test-first where it bites):** a Go test asserts the embedded FS
+contains each expected binary and that each is an ELF for the right arch
+(`debug/elf` parse); `make build` produces a CLI whose embedded payload
+lists all six. Record the CLI size delta.
 
 ---
 
-## Phase 2 -- Prebuilt server binary + thin Dockerfile
+## Phase 2 -- `swe-swe init --dockerless` dumps + wires the payload
 
-- Add a real build target + release pipeline for `swe-swe-server`
-  (per-platform, like `build-cli` in `Makefile:187-195`). Source already
-  compiles standalone (own `go.mod.txt`/`go.sum.txt`, exercised by
-  `make` server test target).
-- Rewrite the generated `Dockerfile` to: base `node:24-bookworm-slim`,
-  `apt-get install` the host deps (`git git-lfs bash util-linux curl jq
+- `swe-swe init --dockerless`: **error out immediately if the CLI is not
+  a Linux build** (`runtime.GOOS != "linux"`) with a clear message; do
+  not write anything.
+- On Linux: extract the embedded payload into `./.swe-swe/` (binaries to
+  `./.swe-swe/bin`, restore `0755`), generate the `swe-swe-open` shim +
+  `xdg-open`/`open`/... symlinks, register the 5 MCP servers (agent-chat,
+  playwright, preview, whiteboard, orchestration) into `~/.claude.json`
+  (command strings `templates.go:866-885`), and set up env/PATH (mirroring
+  `entrypoint.sh:182-236`). Write a `mode: dockerless` marker beside
+  `init.json`. No Dockerfile, no compose, no `.env` (defaults:
+  `SWE_PORT=1977`).
+- Configurable paths (today hardcoded): add `-workspace`, `-worktrees`,
+  `-repos` flags (env fallbacks) to the server (currently
+  `worktreeDir = "/worktrees"` etc.), defaulting to cwd-relative dirs for
+  host mode.
+- `swe-swe up` dispatch: today `swe-swe` passes `up`/`down` to
+  `docker compose` (`main.go:34`). Detect the `mode: dockerless` marker
+  and instead exec the dumped `./.swe-swe/bin/swe-swe-server`. The user
+  never types `swe-swe-server`.
+  - `swe-swe up` -- start server (dockerless) or compose (compose mode).
+  - `swe-swe up --open` -- also open the browser at the listen URL.
+  - `swe-swe down` -- stop whichever was started.
+
+**Verify:** on a clean Linux box (node+claude+git, no Docker daemon),
+`swe-swe init --dockerless && swe-swe up` serves Agent Terminal,
+Terminal, Preview, Files, Agent Chat end-to-end (Agent View in Phase 5).
+`swe-swe up --open` launches the browser. On macOS, `swe-swe init
+--dockerless` errors cleanly and writes nothing.
+
+---
+
+## Phase 3 -- Thin Dockerfile from the same payload
+
+- Rewrite the generated `Dockerfile` to base `node:24-bookworm-slim`,
+  `apt-get install` host deps (`git git-lfs bash util-linux curl jq
   poppler-utils` + browser stack `chromium xvfb x11vnc novnc
-  websockify`), `npm i -g @anthropic-ai/claude-code` (+ other selected
-  agents), then `COPY` the prebuilt `swe-swe-server`. No Go builder
-  stage, no toolchain runtime base.
-- Keep the embedded-source path available behind a flag during
-  transition if needed, but default to prebuilt.
+  websockify`), `npm i -g @anthropic-ai/claude-code` (+ selected agents),
+  then `COPY` the **same embedded Linux binaries** (dumped into the build
+  context by `swe-swe init`). No Go-builder stage, no toolchain base.
+- Stop embedding the server *source* in the CLI once the image consumes
+  the prebuilt binary (the Makefile still builds it from
+  `templates/host/swe-swe-server` to produce the embedded binary).
 
 **Verify:** image builds and runs all six tabs (browser e2e via
-`docs/dev/test-container-workflow.md`). Image size materially smaller;
-record before/after. Build time drops (no Go compile).
-
----
-
-## Phase 3 -- `swe-swe init --dockerless` + configurable paths
-
-The host installer must replay what `entrypoint.sh` does in the
-container, on the host:
-
-- `claude mcp add` registration of the 5 MCP servers (agent-chat,
-  playwright, preview, whiteboard, orchestration) into `~/.claude.json`
-  (`entrypoint.sh:194`, command strings `templates.go:866-885`).
-- PATH-prepend of `<prefix>/proxy` + `<prefix>/bin`; `BROWSER` ->
-  `swe-swe-open` shim (`entrypoint.sh:218-231`). Reuses Phase 1
-  `install`.
-- Slash-commands / skills seeding equivalent (today
-  `writeBundledSlashCommands`, `entrypoint.sh` SLASH_COMMANDS_COPY).
-
-Configurable paths (today hardcoded, must become flags/env for host
-mode): `/workspace` (workdir), `/worktrees`, `/repos`,
-`/var/lib/tailscale`, `TLS_CERT_PATH`. Add `-workspace`, `-worktrees`,
-`-repos` flags (env fallbacks) read in `main.go` (currently
-`worktreeDir = "/worktrees"` etc.).
-
-`swe-swe init --dockerless` writes generated artifacts **into
-`./.swe-swe/`** only (env file, MCP config, a `mode: dockerless` marker
-alongside `init.json`). No `./run` script, no Dockerfile, no compose, no
-`.env` required (sane defaults: `SWE_PORT=1977`).
-
-The user-facing command stays `swe-swe up`. Today `swe-swe` passes
-`up`/`down`/etc. straight to `docker compose` (`main.go:34`). Make the
-CLI **detect dockerless mode** (read the `.swe-swe` marker / `init.json`)
-and, in that mode, exec the bundled server directly instead of docker
-compose. `swe-swe-server` is internal -- the user never types it.
-- `swe-swe up` -- starts the server (dockerless) or compose stack
-  (compose mode), transparently.
-- `swe-swe up --open` -- also opens the browser at the listen URL
-  (optional convenience).
-- `swe-swe down` -- stops whichever was started.
-
-Packaging: the npm/brew artifact ships both `swe-swe` and the
-`swe-swe-server` binary (or `swe-swe` is itself the multi-call binary);
-`swe-swe up` locates and execs it. No separate install step for the user.
-
-**Verify:** on a clean Linux box with node+claude+git, `swe-swe init
---dockerless && swe-swe up` serves all tabs except Agent View (Tier D
-covered in Phase 5). `swe-swe up --open` launches the browser. Agent
-Terminal, Terminal, Preview, Files, Agent Chat all functional
-end-to-end.
+`docs/dev/test-container-workflow.md`); image materially smaller; build
+time drops (no in-image Go compile). Record before/after size.
 
 ---
 
@@ -197,18 +182,16 @@ dockerless mode (`init.go:945`), even though the server already
 supervises the `swe-swe-tunnel` subprocess in-process
 (`tunnel_supervisor.go:522`, `SWE_TUNNEL_BIN`).
 
-- Remove `tunnelServerURL` from the compose-forcing condition; tunnel
-  becomes a config of the dockerless server too.
-- Host installer fetches/locates the `swe-swe-tunnel` binary (today
-  `go install` pinned to a commit in Dockerfile:47-58) -- either ship it
-  as an optional download or document `go install`. Wire `SWE_TUNNEL_BIN`
-  / `SWE_TUNNEL_SERVER_URL` / `SWE_TUNNEL_UNIQUE` /
-  `SWE_TUNNEL_CLIENT_CERT` for host mode.
+- Remove `tunnelServerURL` from the compose-forcing condition.
+- Embed/locate the `swe-swe-tunnel` binary (today `go install` pinned in
+  Dockerfile:47-58) for host mode; wire `SWE_TUNNEL_BIN` /
+  `SWE_TUNNEL_SERVER_URL` / `SWE_TUNNEL_UNIQUE` / `SWE_TUNNEL_CLIENT_CERT`.
 - In tunnel mode the server binds loopback and the tunnel client dials
-  out (already implemented) -- no Traefik, no Docker needed.
+  out (already implemented) -- no Traefik, no Docker.
 
 **Verify:** `swe-swe init --dockerless --tunnel-server-url <url>` +
-run -> reachable through the tunnel, all tabs functional, no Docker.
+`swe-swe up` -> reachable through the tunnel, all tabs functional, no
+Docker.
 
 ---
 
@@ -220,32 +203,39 @@ http://localhost:$BROWSER_CDP_PORT`); the VNC view is a reverse-proxy to
 `localhost:$VNCPort`; browser start is already on-demand via `POST
 /api/session/{uuid}/browser/start` + `mcp-lazy-init`.
 
-- Introduce a `BrowserBackend` interface with two implementations:
+- `BrowserBackend` interface, two implementations:
   - `local` (**default = today**): `startSessionBrowser` spawns
     Xvfb/chromium/x11vnc/websockify (`main.go:4231+`).
   - `remote`: on `browser/start`, call a browser service to allocate a
-    per-session chromium (own `user-data-dir` + display) and return
-    `{cdpURL, vncURL}`; point the CDP env + VNC proxy target at those.
+    per-session chromium and return `{cdpURL, vncURL}`; point the CDP env
+    + VNC proxy at those. (Service built in
+    `tasks/2026-06-27-browser-backend-service.md`.)
 - Internal config: `SWE_BROWSER_BACKEND=local|remote`,
-  `SWE_BROWSER_SERVICE_URL`. Remote backend needs: per-session
-  allocate/release protocol, auth, cleanup, and two routable network
-  paths (CDP for the agent + VNC websocket for the human).
-- User-facing surface is a flag on `swe-swe up` (persisted into
-  `.swe-swe` so subsequent `swe-swe up` reuses it):
-  - `--agent-view=local` (default) -- use the host browser stack.
-  - `--agent-view=<url>` -- remote backend, e.g.
-    `--agent-view=https://browsers.example.internal`. Maps to
-    `SWE_BROWSER_BACKEND=remote` + `SWE_BROWSER_SERVICE_URL=<url>`.
-  - `--agent-view=off` -- disable the pane.
-- The "somewhere else" is the existing Docker image reused as a
-  browser-only sidecar (`docker run ... swe-swe/browser-backend`), run on
-  any box. Document this. Graceful degradation: backend unreachable ->
-  Agent View shows "unavailable", other five tabs unaffected.
+  `SWE_BROWSER_SERVICE_URL`. User-facing flag on `swe-swe up` (persisted
+  to `.swe-swe`): `--agent-view=local|<url>|off`.
+- Graceful degradation: backend unreachable -> Agent View "unavailable",
+  other five tabs unaffected.
 
-**Verify:** `local` backend: Agent View works on a host that has the
-browser stack (unchanged behavior). `remote` backend: lean host binary
-with no chromium offloads Agent View to a sidecar and the pane renders +
-the agent can drive the browser via playwright MCP.
+**Verify:** `local`: Agent View works on a host with the browser stack
+(unchanged). `remote`: a lean host with no chromium offloads Agent View
+to a sidecar; the pane renders and the agent drives the browser.
+
+---
+
+## Phase 6 (follow-up) -- Mac-native dockerless
+
+- Build darwin/amd64 + darwin/arm64 binaries; darwin CLI embeds the
+  darwin host set (in addition to the Linux image set).
+- Fix the two Linux-only couplings:
+  - credential/signing broker `@swe-swe-broker` abstract unix socket ->
+    a filesystem unix socket under the home dir (portable).
+  - terminal recording `script -T/-I/-O` (GNU) -> detect BSD `script` (or
+    a portable PTY-record path).
+- Lift the Phase 2 non-Linux error once darwin dockerless is verified.
+
+**Verify:** `swe-swe init --dockerless && swe-swe up` on macOS serves all
+six tabs (Agent View via the browser stack on the Mac or a remote
+backend), no Docker.
 
 ---
 
@@ -253,12 +243,8 @@ the agent can drive the browser via playwright MCP.
 
 - `swe-swe init --dockerless` then `swe-swe up`: all six tabs, no Docker
   daemon, on a Linux host with node/claude/git (+ browser stack or a
-  remote browser backend for Agent View). `swe-swe up --open` opens the
-  browser. The user only ever types `swe-swe`; `swe-swe-server` stays
-  internal.
-- Tunnel mode: dockerless.
-- vscode: gone.
-- Existing compose/SSL/Traefik path: untouched, still available; `swe-swe
-  up` dispatches to the right backend automatically.
-- The server is a single multi-call binary that self-installs its helpers
-  (driven by `swe-swe up`, not by the user).
+  remote backend for Agent View). `swe-swe up --open` opens the browser.
+  The user only ever types `swe-swe`.
+- The same embedded static-Linux binaries feed a thin Docker image.
+- Tunnel mode: dockerless. vscode: gone. Compose/SSL/Traefik: untouched.
+- macOS: docker mode works; `--dockerless` errors cleanly until Phase 6.
