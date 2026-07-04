@@ -1,0 +1,4 @@
+145839 PHASE 1 investigation.
+  - swe-swe-open is NOT a Go binary: it is a shell heredoc written by entrypoint.sh:220 (+ symlinks for xdg-open/open/etc at :228). Cannot "fold" as-is; options: reimplement as a Go subcommand, or have `install` emit the shim.
+  - 4 Go helpers (git-credential-swe-swe 125L, git-sign-swe-swe 236L, mcp-lazy-init 234L, swe-swe-broker-probe 49L) live in standalone dirs with throwaway go.mod; Dockerfile builds each separately (lines 31-45) and COPYs to /usr/local/bin (252-258). Folding them into the server module rewrites that Dockerfile section + Makefile test targets (test-mcp-lazy-init, test-git-sign-swe-swe) -- overlaps Phase 2.
+  - swe-swe-fork-convo already lives in-module (swe-swe-server/cmd/swe-swe-fork-convo + forkconvo pkg) -- the pattern to mirror.
