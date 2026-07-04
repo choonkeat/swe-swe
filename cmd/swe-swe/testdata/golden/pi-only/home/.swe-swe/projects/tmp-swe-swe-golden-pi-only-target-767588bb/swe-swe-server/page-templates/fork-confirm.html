@@ -104,6 +104,12 @@
             <div class="error">{{.Error}}</div>
             <div class="actions">
                 <a class="btn btn-cancel" href="/">Back to sessions</a>
+                {{if .OfferForkWhole}}
+                <form method="POST" action="/api/fork/{{.SourceUUID}}" style="margin:0">
+                    <input type="hidden" name="mode" value="after">
+                    <button type="submit" class="btn btn-fork">Fork the whole session instead</button>
+                </form>
+                {{end}}
             </div>
             {{else}}
             <h1>Fork this conversation?</h1>
