@@ -1,0 +1,2 @@
+073237 PHASE 2 start. Sub-steps (each TDD+commit): 2a --dockerless flag + non-Linux GOOS guard; 2b payload extraction (0755) helper; 2c init --dockerless dumps payload + marker + swe-swe-open shim + MCP/env wiring; 2d swe-swe up dispatch on mode:dockerless marker (up/--open/down); 2e server -workspace/-worktrees/-repos flags.
+073237 2a RED: adding TestDockerlessGOOSGuard expecting dockerlessGOOSGuard("darwin")!=nil, ("windows")!=nil, ("linux")==nil. Function does not exist yet -> compile failure = RED.
