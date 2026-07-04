@@ -9,7 +9,8 @@
 //
 //	mcp                         list servers
 //	mcp <server>                list a server's tools
-//	mcp <server> <tool> -h      show a tool's flags (from its JSON Schema)
+//	mcp <server> --full         full docs for every tool (what native MCP injects)
+//	mcp <server> <tool> -h      full docs for one tool (from its JSON Schema)
 //	mcp <server> <tool> [flags] call the tool; print its result
 //
 // Flags are synthesized from each tool's inputSchema. Results render as:
@@ -44,8 +45,18 @@ func socketDir() string {
 
 type tool struct {
 	Name        string          `json:"name"`
+	Title       string          `json:"title"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema"`
+	Annotations toolAnnotations `json:"annotations"`
+}
+
+// toolAnnotations are the MCP tool annotations a native client would surface
+// (title + behavior hints). Pointers distinguish "absent" from "false".
+type toolAnnotations struct {
+	Title           string `json:"title"`
+	ReadOnlyHint    *bool  `json:"readOnlyHint"`
+	DestructiveHint *bool  `json:"destructiveHint"`
 }
 
 type rpcResponse struct {
@@ -142,13 +153,18 @@ func listServers() []string {
 type schema struct {
 	Properties map[string]property `json:"properties"`
 	Required   []string            `json:"required"`
+	// RawProperties keeps each property's original JSON so help can surface
+	// schema keywords the typed renderer doesn't model (nested objects, oneOf,
+	// minimum, format, ...) instead of silently dropping them.
+	RawProperties map[string]json.RawMessage `json:"-"`
 }
 
 type property struct {
-	Type        typeName `json:"type"`
-	Description string   `json:"description"`
-	Enum        []any    `json:"enum"`
-	Items       *itemDef `json:"items"`
+	Type        typeName        `json:"type"`
+	Description string          `json:"description"`
+	Enum        []any           `json:"enum"`
+	Items       *itemDef        `json:"items"`
+	Default     json.RawMessage `json:"default"`
 }
 
 type itemDef struct {
@@ -192,8 +208,54 @@ func parseSchema(raw json.RawMessage) schema {
 	var s schema
 	if len(raw) > 0 {
 		json.Unmarshal(raw, &s)
+		var rawView struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if json.Unmarshal(raw, &rawView) == nil {
+			s.RawProperties = rawView.Properties
+		}
 	}
 	return s
+}
+
+// knownPropKeys are the schema keywords printToolHelp renders natively; any
+// other keyword on a property is exotic and gets echoed as raw JSON.
+var knownPropKeys = map[string]bool{
+	"type": true, "description": true, "enum": true, "items": true, "default": true,
+}
+
+// exoticSubset returns the compact JSON of a property's schema keywords that
+// the help renderer does not model, or "" when everything was rendered. This
+// guarantees -h never silently drops schema information. "items" counts as
+// rendered only in its simple {"type": ...} form.
+func exoticSubset(raw json.RawMessage) string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
+	}
+	extra := map[string]json.RawMessage{}
+	for k, v := range m {
+		if !knownPropKeys[k] {
+			extra[k] = v
+			continue
+		}
+		if k == "items" {
+			var im map[string]json.RawMessage
+			if json.Unmarshal(v, &im) != nil {
+				extra[k] = v // e.g. tuple form: items as an array of schemas
+				continue
+			}
+			delete(im, "type")
+			if len(im) > 0 {
+				extra[k] = v
+			}
+		}
+	}
+	if len(extra) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(extra) // map keys marshal sorted: deterministic output
+	return string(b)
 }
 
 func firstLine(s string) string {
@@ -370,7 +432,8 @@ func printTopHelp(out *os.File) {
 Usage:
   mcp <server> <tool> [flags]   call a tool
   mcp <server>                  list a server's tools
-  mcp <server> <tool> -h        show a tool's flags
+  mcp <server> <tool> -h        full docs for one tool
+  mcp <server> --full           full docs for every tool
 
 The command mirrors the tool id mcp__<server>__<tool>:
   mcp__swe-swe-agent-chat__send_message  ->  mcp swe-swe-agent-chat send_message --text "..."
@@ -401,12 +464,70 @@ func printServerHelp(server string, out *os.File) error {
 	for _, t := range tools {
 		fmt.Fprintf(out, "  %-*s  %s\n", width, t.Name, firstLine(t.Description))
 	}
-	fmt.Fprintf(out, "\nRun: mcp %s <tool> -h\n", server)
+	fmt.Fprintf(out, "\nRun: mcp %s <tool> -h   full docs for one tool\n", server)
+	fmt.Fprintf(out, "     mcp %s --full       full docs for every tool\n", server)
 	return nil
+}
+
+// annotationLine renders the tool's title and behavior hints, mirroring what a
+// native MCP client would surface from `title` / `annotations`.
+func annotationLine(t tool) string {
+	title := t.Annotations.Title
+	if title == "" {
+		title = t.Title
+	}
+	var marks []string
+	if t.Annotations.ReadOnlyHint != nil && *t.Annotations.ReadOnlyHint {
+		marks = append(marks, "[read-only]")
+	}
+	if t.Annotations.DestructiveHint != nil && *t.Annotations.DestructiveHint {
+		marks = append(marks, "[destructive]")
+	}
+	parts := title
+	if len(marks) > 0 {
+		if parts != "" {
+			parts += "  "
+		}
+		parts += strings.Join(marks, " ")
+	}
+	return parts
+}
+
+// typeLabel names a flag's value type, expanding simple array item types
+// ("array of string") so the agent knows what JSON to pass.
+func typeLabel(p property) string {
+	k := p.kind()
+	if k == "array" && p.Items != nil && p.Items.Type != "" {
+		return "array of " + p.Items.Type
+	}
+	return k
+}
+
+// defaultLabel renders a schema default: bare for strings, JSON otherwise.
+func defaultLabel(p property) string {
+	if len(p.Default) == 0 || string(p.Default) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(p.Default, &s) == nil {
+		return s
+	}
+	return string(p.Default)
+}
+
+func enumLabel(enum []any) string {
+	vals := make([]string, len(enum))
+	for i, e := range enum {
+		vals[i] = fmt.Sprint(e)
+	}
+	return strings.Join(vals, ", ")
 }
 
 func printToolHelp(server string, t tool, out *os.File) {
 	fmt.Fprintf(out, "mcp %s %s [flags]\n", server, t.Name)
+	if line := annotationLine(t); line != "" {
+		fmt.Fprintf(out, "%s\n", line)
+	}
 	if t.Description != "" {
 		fmt.Fprintf(out, "\n%s\n", t.Description)
 	}
@@ -419,27 +540,60 @@ func printToolHelp(server string, t tool, out *os.File) {
 	for _, r := range s.Required {
 		required[r] = true
 	}
-	names := make([]string, 0, len(s.Properties))
+	// Required flags first, then optional; alphabetical within each group.
+	var reqNames, optNames []string
 	for n := range s.Properties {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	fmt.Fprintf(out, "\nFlags:\n")
-	for _, n := range names {
-		p := s.Properties[n]
-		typ := p.kind()
-		req := ""
 		if required[n] {
-			req = " (required)"
+			reqNames = append(reqNames, n)
+		} else {
+			optNames = append(optNames, n)
 		}
-		fmt.Fprintf(out, "  --%s %s%s\n", n, typ, req)
+	}
+	sort.Strings(reqNames)
+	sort.Strings(optNames)
+	fmt.Fprintf(out, "\nFlags:\n")
+	for _, n := range append(reqNames, optNames...) {
+		p := s.Properties[n]
+		var attrs []string
+		if required[n] {
+			attrs = append(attrs, "required")
+		}
+		if d := defaultLabel(p); d != "" {
+			attrs = append(attrs, "default: "+d)
+		}
+		head := fmt.Sprintf("--%s %s", n, typeLabel(p))
+		if len(attrs) > 0 {
+			head += " (" + strings.Join(attrs, ", ") + ")"
+		}
+		fmt.Fprintf(out, "  %s\n", head)
 		if p.Description != "" {
-			fmt.Fprintf(out, "      %s\n", firstLine(p.Description))
+			for _, line := range strings.Split(strings.TrimRight(p.Description, "\n"), "\n") {
+				fmt.Fprintf(out, "      %s\n", line)
+			}
 		}
 		if len(p.Enum) > 0 {
-			fmt.Fprintf(out, "      one of: %v\n", p.Enum)
+			fmt.Fprintf(out, "      one of: %s\n", enumLabel(p.Enum))
+		}
+		if ex := exoticSubset(s.RawProperties[n]); ex != "" {
+			fmt.Fprintf(out, "      schema: %s\n", ex)
 		}
 	}
+}
+
+// printServerFull dumps every tool's full help -- the byte-for-byte equivalent
+// of what a native MCP client would inject into the agent's context.
+func printServerFull(server string, out *os.File) error {
+	tools, err := listTools(server)
+	if err != nil {
+		return err
+	}
+	for i := range tools {
+		if i > 0 {
+			fmt.Fprintf(out, "\n---\n\n")
+		}
+		printToolHelp(server, tools[i], out)
+	}
+	return nil
 }
 
 func isHelp(a string) bool { return a == "-h" || a == "--help" || a == "help" }
@@ -454,6 +608,13 @@ func run(args []string, out, errOut *os.File) int {
 	server := args[0]
 	if len(args) == 1 || isHelp(args[1]) {
 		if err := printServerHelp(server, out); err != nil {
+			fmt.Fprintf(errOut, "mcp: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if args[1] == "--full" {
+		if err := printServerFull(server, out); err != nil {
 			fmt.Fprintf(errOut, "mcp: %v\n", err)
 			return 1
 		}

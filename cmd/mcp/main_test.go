@@ -137,6 +137,88 @@ func TestToolHelpUnionType(t *testing.T) {
 	}
 }
 
+// richToolsList exercises everything hi-def help must surface: annotations
+// (title + readOnlyHint), schema defaults, multi-line flag descriptions, array
+// item types, and exotic schema keywords (minimum) that must never be dropped.
+const richToolsList = `{"tools":[
+  {"name":"shoot","description":"Take a screenshot.\n\nSecond paragraph of tool docs.",
+   "annotations":{"title":"Take a screenshot","readOnlyHint":true},
+   "inputSchema":{"type":"object","properties":{
+     "scale":{"type":"string","enum":["css","device"],"default":"css","description":"Image resolution scale.\nSecond line of flag docs."},
+     "tags":{"type":"array","items":{"type":"string"},"description":"Labels."},
+     "depth":{"type":"integer","minimum":1,"description":"How deep."}
+   },"required":["scale"]}},
+  {"name":"nuke","description":"Delete everything.","annotations":{"destructiveHint":true},
+   "inputSchema":{"type":"object","properties":{}}}
+]}`
+
+// TestToolHelpFullFidelity proves -h renders the full tool definition a native
+// MCP client would inject: no truncation, defaults, annotations, item types,
+// required-first ordering, and a raw-JSON fallback for unmodeled keywords.
+func TestToolHelpFullFidelity(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(richToolsList)
+	})
+	out, _, code := runCapture(t, dir, "svc", "shoot", "-h")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{
+		"Take a screenshot  [read-only]",       // annotations title + hint
+		"Second paragraph of tool docs.",       // full tool description
+		"--scale string (required, default: css)", // default from schema, not prose
+		"Second line of flag docs.",            // full multi-line flag description
+		"one of: css, device",
+		"--tags array of string", // item type expanded
+		`schema: {"minimum":1}`,  // exotic keyword surfaced, not dropped
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("tool help missing %q:\n%s", want, out)
+		}
+	}
+	// Required flags come first: --scale before optional --depth and --tags.
+	if strings.Index(out, "--scale") > strings.Index(out, "--depth") {
+		t.Errorf("required flag should be listed first:\n%s", out)
+	}
+}
+
+// TestToolHelpDestructiveHint proves destructiveHint=true is marked even when
+// the tool has no title.
+func TestToolHelpDestructiveHint(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(richToolsList)
+	})
+	out, _, code := runCapture(t, dir, "svc", "nuke", "-h")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	if !strings.Contains(out, "[destructive]") {
+		t.Errorf("expected [destructive] marker:\n%s", out)
+	}
+}
+
+// TestServerFullDumpsAllTools proves --full prints every tool's full docs in
+// one shot -- the MCP-less equivalent of native tool-definition injection.
+func TestServerFullDumpsAllTools(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(richToolsList)
+	})
+	out, _, code := runCapture(t, dir, "svc", "--full")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{
+		"mcp svc shoot [flags]",
+		"Second paragraph of tool docs.",
+		"mcp svc nuke [flags]",
+		"Delete everything.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--full missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // fakeSocketServer answers tools/list and tools/call on a unix socket, standing
 // in for an mcp-cli-proxy without needing a child process.
 func fakeSocketServer(t *testing.T, server string, handler func(method string, params json.RawMessage) json.RawMessage) string {
