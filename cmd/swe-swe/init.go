@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -255,6 +256,7 @@ type InitConfig struct {
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && no tunnel
+	Dockerless          bool                `json:"-"` // mode flag: host-native, no Docker (marker file written separately)
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
 	TunnelLocalPorts    bool                `json:"tunnelLocalPorts,omitempty"`
@@ -619,6 +621,7 @@ func handleInit() {
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
+	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux host only)")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
@@ -660,6 +663,15 @@ func handleInit() {
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
 	fs.Parse(os.Args[2:])
+
+	// Dockerless is host-native: refuse early on a non-Linux CLI before
+	// writing anything, since the embedded binaries are static-Linux only.
+	if *dockerless {
+		if err := dockerlessGOOSGuard(runtime.GOOS); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+	}
 
 	// Validate --previous-init-flags
 	if *previousInitFlags != "" && *previousInitFlags != "reuse" && *previousInitFlags != "ignore" {
@@ -932,6 +944,7 @@ func handleInit() {
 		AptPackages: aptPkgs,
 		NpmPackages: npmPkgs,
 		WithDocker:  *withDocker,
+		Dockerless:  *dockerless,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:
