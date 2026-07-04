@@ -119,6 +119,20 @@ func TestCodexIsTailActive(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			// Regression (mirror of the Claude ToolSearch-reorder case):
+			// a function_call_output line written ahead of its function_call
+			// line must still pair up. Order-independent set-difference -> NOT
+			// active.
+			name: "idle: output line precedes its call line",
+			lines: []string{
+				codexFunctionCall(t, chatMCPNamespaceCodex, "send_message", "call_s1"),
+				codexFunctionCallOutput(t, "call_s1", "User responded: go"),
+				codexFunctionCallOutput(t, "call_b1", "result"), // output FIRST
+				codexFunctionCall(t, "shell", "exec", "call_b1"), // call SECOND
+			},
+			want: false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
