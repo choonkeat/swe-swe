@@ -131,6 +131,9 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 		id = fmt.Sprintf("bb-%d", slot)
 	}
 	cdpPort := cdpPortStart + slot
+	// Internal ports sit one range-size above their public counterparts:
+	// chromium's loopback-only CDP and x11vnc's raw VNC.
+	cdpInternal := cdpPort + (cdpPortEnd - cdpPortStart + 1)
 	vncPort := vncPortStart + slot
 	vncInternal := vncPort + (vncPortEnd - vncPortStart + 1)
 	display := slot + 10 // avoid :0 (the host's own display)
@@ -139,7 +142,7 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort}
 	bb.mu.Unlock()
 
-	procs, err := browserProcsStarter(id, display, cdpPort, vncPort, vncInternal, resolveLocalhostTo)
+	procs, err := browserProcsStarter(id, display, cdpPort, cdpInternal, vncPort, vncInternal, resolveLocalhostTo)
 	if err != nil {
 		bb.mu.Lock()
 		delete(bb.sessions, id)

@@ -463,8 +463,9 @@ type Session struct {
 	CDPPort        int    // Chrome DevTools Protocol port for this session
 	VNCPort        int    // VNC port for browser view for this session
 	FilesPort      int    // Files (md-serve) port for this session
-	BrowserPIDs    []int  // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
-	BrowserDataDir string // Per-session Chromium user data directory
+	BrowserPIDs    []int         // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
+	BrowserDataDir string        // Per-session Chromium user data directory
+	BrowserProcs   *browserProcs // Full handle incl. the CDP forwarder server
 	BrowserStarted bool   // Whether browser processes have been started
 	// RemoteBrowserID is the session id returned by a remote browser-backend
 	// (empty in local mode); set when -agent-view points at a backend URL.
@@ -1867,6 +1868,34 @@ func main() {
 	// tunnel hostname; tunneld demuxes by the same port.
 	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
 
+	// Override CDP port range from environment (set by docker-compose).
+	// Parsed BEFORE the browser-backend dispatch: the allocation service
+	// hands these exact ports to clients, so ignoring the env there meant
+	// the container's published/documented ranges silently did not apply.
+	if portRange := os.Getenv("SWE_CDP_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					cdpPortStart = start
+					cdpPortEnd = end
+				}
+			}
+		}
+	}
+
+	// Override VNC port range from environment (set by docker-compose).
+	// Same before-dispatch requirement as SWE_CDP_PORTS above.
+	if portRange := os.Getenv("SWE_VNC_PORTS"); portRange != "" {
+		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
+			if start, err := strconv.Atoi(parts[0]); err == nil {
+				if end, err := strconv.Atoi(parts[1]); err == nil {
+					vncPortStart = start
+					vncPortEnd = end
+				}
+			}
+		}
+	}
+
 	// browser-backend mode: run the standalone Agent View allocation service
 	// instead of the UI server. Same binary + same display stack, exposed over
 	// the network for lean (dockerless) hosts to offload Agent View to.
@@ -1943,29 +1972,8 @@ func main() {
 		}
 	}
 
-	// Override CDP port range from environment (set by docker-compose)
-	if portRange := os.Getenv("SWE_CDP_PORTS"); portRange != "" {
-		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
-			if start, err := strconv.Atoi(parts[0]); err == nil {
-				if end, err := strconv.Atoi(parts[1]); err == nil {
-					cdpPortStart = start
-					cdpPortEnd = end
-				}
-			}
-		}
-	}
-
-	// Override VNC port range from environment (set by docker-compose)
-	if portRange := os.Getenv("SWE_VNC_PORTS"); portRange != "" {
-		if parts := strings.SplitN(portRange, "-", 2); len(parts) == 2 {
-			if start, err := strconv.Atoi(parts[0]); err == nil {
-				if end, err := strconv.Atoi(parts[1]); err == nil {
-					vncPortStart = start
-					vncPortEnd = end
-				}
-			}
-		}
-	}
+	// (SWE_CDP_PORTS / SWE_VNC_PORTS are parsed earlier, before the
+	// browser-backend mode dispatch.)
 
 	// Override proxy port offset from environment (set by docker-compose / .env)
 	if offsetStr := os.Getenv("SWE_PROXY_PORT_OFFSET"); offsetStr != "" {
@@ -4312,6 +4320,9 @@ func startSessionBrowser(sess *Session) error {
 		sess.UUID,
 		displayNumberFromPreview(sess.PreviewPort),
 		sess.CDPPort,
+		// Chromium's real loopback CDP port, offset past the range like the
+		// x11vnc internal VNC port below.
+		sess.CDPPort+(cdpPortEnd-cdpPortStart+1),
 		sess.VNCPort,
 		sess.VNCPort+(vncPortEnd-vncPortStart+1),
 		// Local mode: chromium already shares localhost with the dev server.
@@ -4322,6 +4333,7 @@ func startSessionBrowser(sess *Session) error {
 	}
 	sess.BrowserPIDs = b.pids
 	sess.BrowserDataDir = b.dataDir
+	sess.BrowserProcs = b
 	sess.BrowserStarted = true
 	return nil
 }
@@ -4329,6 +4341,12 @@ func startSessionBrowser(sess *Session) error {
 // stopSessionBrowser kills all browser processes for a session and cleans up
 // the per-session Chromium user data directory.
 func stopSessionBrowser(sess *Session) {
+	// Close the CDP forwarder first so its port frees with the processes.
+	if sess.BrowserProcs != nil && sess.BrowserProcs.cdpSrv != nil {
+		sess.BrowserProcs.cdpSrv.Close()
+		sess.BrowserProcs.cdpSrv = nil
+	}
+	sess.BrowserProcs = nil
 	for _, pid := range sess.BrowserPIDs {
 		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 			// Process may have already exited

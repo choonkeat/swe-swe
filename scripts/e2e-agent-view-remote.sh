@@ -34,6 +34,8 @@ SCREENSHOT_DIR="${E2E_SCREENSHOT_DIR:-$WORKSPACE_DIR/e2e/test-results/agent-view
 SERVER_PID=""
 BACKEND_PID=""
 BACKEND_CONTAINER=""
+MARKER_PID=""
+MARKER_PORT=42999
 FAILS=0
 
 pass() { echo "  [PASS] $1"; }
@@ -46,6 +48,7 @@ cleanup() {
     pkill -f "bin/swe-swe-server.*127.0.0.1:$E2E_PORT" 2>/dev/null || true
     [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
     [ -n "$BACKEND_CONTAINER" ] && docker rm -f "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
+    [ -n "$MARKER_PID" ] && kill "$MARKER_PID" 2>/dev/null || true
     rm -rf "$TEST_DIR"
 }
 trap cleanup EXIT
@@ -65,15 +68,36 @@ SWEDIR="$(ls -d "$HOME_DIR"/.swe-swe/projects/*/ | head -1)"
 echo "  metadata dir: $SWEDIR"
 
 echo "=== Phase 3: start the browser-backend ($E2E_AV_BACKEND tier) ==="
+LOCALHOST_NAV_PORT=""
+BACKEND_HOST="127.0.0.1"
 if [ "$E2E_AV_BACKEND" = "image" ]; then
     make browser-backend-image >/dev/null || { fail "browser-backend image build"; exit 1; }
+    # --network=host: the service must be dialable at the SAME host:port from
+    # this harness AND from browsers/vnc-clients; per-range -p publishing binds
+    # the HOST loopback, which is unreachable when the harness itself runs
+    # inside a container (the dogfood box). Host networking works in both
+    # environments; ports are high + short-lived, and the API is token-gated.
+    # When the harness runs in a container, the host-network service is at the
+    # default-route gateway; on a bare host it is plain loopback.
+    if [ -f /.dockerenv ]; then
+        BACKEND_HOST="$(ip route | awk '/default/{print $3}')"
+        MARKER_BIND=""    # bind all: unpublished container ports stay private
+    else
+        MARKER_BIND="--bind 127.0.0.1"
+    fi
+    # localhost-resolution proof: the remote chromium must load THIS page via
+    # http://localhost:<port>. In the containerized-harness case that is a
+    # genuine cross-namespace hop (chromium in the host netns -> mapping ->
+    # this harness's netns); its own localhost serves nothing on that port.
+    mkdir -p "$TEST_DIR/marker"
+    printf '<title>swe-swe-marker</title>cross-namespace localhost OK\n' > "$TEST_DIR/marker/index.html"
+    # shellcheck disable=SC2086
+    python3 -m http.server "$MARKER_PORT" $MARKER_BIND --directory "$TEST_DIR/marker" \
+        > /dev/null 2>&1 &
+    MARKER_PID=$!
+    LOCALHOST_NAV_PORT="$MARKER_PORT"
     BACKEND_CONTAINER="swe-av-e2e-$$"
-    # Publish the API port + the backend's CDP/VNC ranges 1:1 (the service
-    # advertises these exact ports back to the client).
-    docker run -d --name "$BACKEND_CONTAINER" \
-        -p "127.0.0.1:$BACKEND_PORT:$BACKEND_PORT" \
-        -p "127.0.0.1:42500-42509:42500-42509" \
-        -p "127.0.0.1:42600-42609:42600-42609" \
+    docker run -d --name "$BACKEND_CONTAINER" --network=host \
         -e SWE_PORT="$BACKEND_PORT" \
         -e SWE_CDP_PORTS="$BACKEND_CDP" -e SWE_VNC_PORTS="$BACKEND_VNC" \
         -e SWE_BROWSER_BACKEND_TOKEN="$TOKEN" \
@@ -88,7 +112,7 @@ fi
 
 backend_ready=0
 for _ in $(seq 1 30); do
-    if curl -s --max-time 2 "http://127.0.0.1:$BACKEND_PORT/health" | grep -q '"sessions"'; then
+    if curl -s --max-time 2 "http://$BACKEND_HOST:$BACKEND_PORT/health" | grep -q '"sessions"'; then
         backend_ready=1; break
     fi
     sleep 1
@@ -101,7 +125,7 @@ echo "=== Phase 4: boot the dockerless instance pointed at the backend ==="
     -u SWE_TUNNEL_SERVER_URL -u SWE_TUNNEL_UNIQUE -u SWE_TUNNEL_BIN -u SWE_TUNNEL_CLIENT_CERT \
     -u SWE_SWE_PASSWORD \
     HOME="$HOME_DIR" SWE_PORT="$E2E_PORT" \
-    SWE_AGENT_VIEW="http://127.0.0.1:$BACKEND_PORT" \
+    SWE_AGENT_VIEW="http://$BACKEND_HOST:$BACKEND_PORT" \
     SWE_BROWSER_BACKEND_TOKEN="$TOKEN" \
     SWE_PREVIEW_PORTS=42000-42019 SWE_AGENT_CHAT_PORTS=42100-42119 \
     SWE_PUBLIC_PORTS=42200-42219 SWE_CDP_PORTS="$INSTANCE_CDP" SWE_VNC_PORTS="$INSTANCE_VNC" \
@@ -121,7 +145,8 @@ done
 echo "=== Phase 5: Playwright -- Agent View over the remote backend ==="
 if ( cd "$WORKSPACE_DIR/e2e" && npm install --silent 2>/dev/null \
         && E2E_DOCKERLESS=1 E2E_AGENT_VIEW=1 E2E_BASE_URL="http://127.0.0.1:$E2E_PORT" \
-           E2E_BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" \
+           E2E_BACKEND_URL="http://$BACKEND_HOST:$BACKEND_PORT" \
+           E2E_LOCALHOST_NAV_PORT="$LOCALHOST_NAV_PORT" \
            E2E_SCREENSHOT_DIR="$SCREENSHOT_DIR" \
            npx playwright test agent-view-remote.spec.js ); then
     pass "Playwright Agent View remote suite passed"
@@ -130,7 +155,17 @@ else
 fi
 
 echo "=== Phase 6: backend saw the allocation ==="
-HEALTH="$(curl -s "http://127.0.0.1:$BACKEND_PORT/health")"
+# The allocated stack must be on the CONFIGURED ranges -- browser-backend mode
+# once ignored SWE_CDP_PORTS/SWE_VNC_PORTS and silently allocated defaults.
+if [ "$E2E_AV_BACKEND" = "image" ]; then
+    BACKEND_LOGS="$(docker logs "$BACKEND_CONTAINER" 2>&1)"
+else
+    BACKEND_LOGS="$(cat "$TEST_DIR/backend.log")"
+fi
+echo "$BACKEND_LOGS" | grep -q "CDP port ${BACKEND_CDP%%-*}" \
+    && pass "chromium allocated on configured CDP range ($BACKEND_CDP)" \
+    || fail "chromium NOT on configured CDP range; got: $(echo "$BACKEND_LOGS" | grep -o 'CDP port [0-9]*' | head -1)"
+HEALTH="$(curl -s "http://$BACKEND_HOST:$BACKEND_PORT/health")"
 echo "  backend /health: $HEALTH"
 # The spec closes its page, but session teardown is WS-disconnect driven and
 # async -- a live or already-freed session are both correct here. Assert the

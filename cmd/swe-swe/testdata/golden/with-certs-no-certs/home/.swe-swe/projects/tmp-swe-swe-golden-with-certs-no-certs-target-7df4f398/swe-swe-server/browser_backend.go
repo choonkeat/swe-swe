@@ -1,9 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -126,24 +132,34 @@ func stopSessionAgentView(sess *Session) {
 
 // browserProcs holds the four OS processes backing one isolated Agent View
 // browser (Xvfb + chromium + x11vnc + websockify) plus its chromium profile
-// dir. It is the shared core behind both the in-process session backend
-// (local mode) and the standalone browser-backend service.
+// dir and the CDP forwarder. It is the shared core behind both the in-process
+// session backend (local mode) and the standalone browser-backend service.
 type browserProcs struct {
 	pids    []int
 	dataDir string
+	cdpSrv  *http.Server
 }
 
 // startBrowserProcs launches the Agent View stack for an isolated instance
 // identified by id, on the given X display and ports (cdpPort = chromium remote
-// debugging; vncPort = websockify/noVNC; vncInternalPort = x11vnc raw). On any
-// step failing, processes started so far are killed before returning.
+// debugging as consumed by clients; cdpInternalPort = where chromium actually
+// listens, see below; vncPort = websockify/noVNC; vncInternalPort = x11vnc
+// raw). On any step failing, processes started so far are killed before
+// returning.
+//
+// Headful chromium (ours runs under Xvfb) IGNORES --remote-debugging-address
+// and always binds CDP to loopback -- so a remote backend's advertised CDP
+// port was never reachable cross-host. Chromium therefore listens on
+// 127.0.0.1:cdpInternalPort and a reverse proxy serves 0.0.0.0:cdpPort,
+// rewriting the /json discovery bodies so debugger URLs keep pointing at
+// cdpPort (mirrors the x11vnc internal / websockify external VNC split).
 //
 // resolveLocalhostTo, when non-empty, maps the hostname "localhost" inside
 // chromium to that address (--host-resolver-rules). A REMOTE backend needs
 // this so pages the agent opens at http://localhost:<port> reach the dev
 // server on the swe-swe host, not this box. IP-literal URLs (127.0.0.1)
 // bypass the resolver and are out of scope. Local mode passes "".
-func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
+func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
 	b := &browserProcs{}
 	displayStr := fmt.Sprintf(":%d", display)
 
@@ -182,8 +198,9 @@ func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int
 		"--disable-gpu",
 		"--disable-software-rasterizer",
 		"--disable-dev-shm-usage",
-		"--remote-debugging-address=0.0.0.0",
-		fmt.Sprintf("--remote-debugging-port=%d", cdpPort),
+		// Loopback-only regardless of flags (headful chromium); the CDP
+		// forwarder below exposes it on cdpPort.
+		fmt.Sprintf("--remote-debugging-port=%d", cdpInternalPort),
 		fmt.Sprintf("--user-data-dir=%s", userDataDir),
 		"--remote-allow-origins=*",
 		"--window-size=1024,768",
@@ -213,6 +230,50 @@ func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int
 		}
 	}()
 	time.Sleep(1 * time.Second)
+
+	// 2b. CDP forwarder: expose chromium's loopback-only CDP on cdpPort for
+	// all interfaces. A reverse proxy (not a raw TCP splice) so the /json*
+	// discovery bodies can keep advertising cdpPort -- downstream consumers
+	// (playwright MCP, the remote client's own rewriting proxy) never see the
+	// internal port. httputil.ReverseProxy passes the CDP websocket upgrade
+	// through.
+	internalCDP := fmt.Sprintf("127.0.0.1:%d", cdpInternalPort)
+	externalCDP := fmt.Sprintf("127.0.0.1:%d", cdpPort)
+	cdpTarget := &url.URL{Scheme: "http", Host: internalCDP}
+	cdpProxy := httputil.NewSingleHostReverseProxy(cdpTarget)
+	cdpProxy.Director = func(req *http.Request) {
+		req.URL.Scheme = "http"
+		req.URL.Host = internalCDP
+		req.Host = internalCDP
+	}
+	cdpProxy.ModifyResponse = func(resp *http.Response) error {
+		if !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+			return nil
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		body = rewriteCDPHosts(body, internalCDP, externalCDP)
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		resp.ContentLength = int64(len(body))
+		resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+		return nil
+	}
+	cdpLn, err := net.Listen("tcp", fmt.Sprintf(":%d", cdpPort))
+	if err != nil {
+		b.stop()
+		return nil, fmt.Errorf("CDP forwarder listen on %d: %w", cdpPort, err)
+	}
+	b.cdpSrv = &http.Server{Handler: cdpProxy}
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("CDP forwarder for browser %s", id))
+		if err := b.cdpSrv.Serve(cdpLn); err != nil && err != http.ErrServerClosed {
+			log.Printf("CDP forwarder error (browser %s): %v", id, err)
+		}
+	}()
+	log.Printf("Started CDP forwarder :%d -> %s for browser %s", cdpPort, internalCDP, id)
 
 	// 3. x11vnc on an internal raw-VNC port consumed by noVNC.
 	x11vncCmd := exec.Command("x11vnc",
@@ -270,6 +331,10 @@ func startBrowserProcs(id string, display, cdpPort, vncPort, vncInternalPort int
 
 // stop kills all processes for this browser and removes its profile dir.
 func (b *browserProcs) stop() {
+	if b.cdpSrv != nil {
+		b.cdpSrv.Close()
+		b.cdpSrv = nil
+	}
 	for _, pid := range b.pids {
 		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 			if !errors.Is(err, syscall.ESRCH) {

@@ -58,12 +58,27 @@ display; the service caps concurrency at the VNC port-range size (override with
 The agent host must be able to reach the backend's **API port** *and* the
 **CDP/VNC port ranges** it returns. Terminate TLS at the box or behind a proxy.
 
-## Out of scope (follow-ups)
+## Localhost resolution
 
-- **Loopback hostname mapping** — when chromium runs here, the agent's
-  `http://localhost:3000` dev server resolves to *this* box, not the swe-swe
-  host. The intended fix is chromium `--host-resolver-rules`; see
-  `tasks/2026-06-27-browser-backend-service.md`.
-- **Remote `vnc-ready`** — the readiness probe currently checks the local VNC
-  port on the swe-swe host; in remote mode it should consult the backend's
-  `/sessions/{id}/ready`.
+Chromium here resolves the hostname `localhost` back to the **swe-swe host**
+(`--host-resolver-rules`), so pages the agent opens at `http://localhost:3000`
+reach the dev server there, not this box. The target defaults to the
+allocation request's source address; override per-host with
+`SWE_AGENT_VIEW_LOCALHOST` on the swe-swe side (NAT) or per-request with the
+`resolveLocalhostTo` field on `POST /sessions`. IP-literal URLs
+(`http://127.0.0.1:3000`) bypass the resolver and stay local to this box.
+
+## CDP forwarder
+
+Headful chromium ignores `--remote-debugging-address` and binds CDP to
+loopback only. Each session therefore runs chromium on an internal loopback
+port (one range-size above `cdpPort`) behind a reverse-proxy forwarder that
+serves the advertised `cdpPort` on all interfaces and keeps the `/json`
+discovery URLs pointing at it.
+
+## e2e
+
+`make test-e2e-agent-view-remote` (binary tier, no Docker) /
+`make test-e2e-agent-view-remote-image` (this image) prove the full loop:
+allocation, vnc-ready, noVNC canvas in the UI, and the cross-namespace
+localhost navigation.

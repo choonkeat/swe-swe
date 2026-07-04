@@ -217,6 +217,17 @@ test-e2e-dockerless:
 test-e2e-dockerless-smoke:
 	E2E_SKIP_PLAYWRIGHT=1 ./scripts/e2e-dockerless.sh
 
+# Agent View over a REMOTE browser-backend: allocation API, CDP forwarder,
+# VNC proxy, vnc-ready, noVNC canvas, and chromium's localhost resolving back
+# to the swe-swe host. Binary tier runs the dumped server directly (needs the
+# display stack); image tier builds + runs docker/browser-backend (needs
+# Docker) and is the genuine cross-namespace proof.
+test-e2e-agent-view-remote:
+	./scripts/e2e-agent-view-remote.sh
+
+test-e2e-agent-view-remote-image:
+	E2E_AV_BACKEND=image ./scripts/e2e-agent-view-remote.sh
+
 # --- Manual tunnel-mode test ---
 # Spins up a real swe-swe container in tunnel mode against
 # $$TUNNEL_SERVER_URL (required). Set it in .swe-swe/env (gitignored) or

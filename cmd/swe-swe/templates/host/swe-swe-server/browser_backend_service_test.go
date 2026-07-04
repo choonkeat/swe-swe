@@ -14,7 +14,7 @@ func withStubStarter(t *testing.T) *starterCalls {
 	t.Helper()
 	calls := &starterCalls{}
 	orig := browserProcsStarter
-	browserProcsStarter = func(id string, display, cdpPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
+	browserProcsStarter = func(id string, display, cdpPort, cdpInternalPort, vncPort, vncInternalPort int, resolveLocalhostTo string) (*browserProcs, error) {
 		calls.resolveLocalhostTo = append(calls.resolveLocalhostTo, resolveLocalhostTo)
 		return &browserProcs{}, nil // no real processes
 	}

@@ -90,15 +90,17 @@ test.describe('agent view via remote backend', () => {
     // over CDP through the session's local reverse-proxy and load a page the
     // swe-swe HOST serves at localhost. On the image tier the backend's own
     // localhost is a different network namespace, so this only passes if the
-    // resolver mapping points chromium back at the swe-swe host.
+    // resolver mapping points chromium back at the swe-swe host (the harness
+    // serves a marker page for it -- E2E_LOCALHOST_NAV_PORT -- because the
+    // instance itself binds loopback by design).
     const cdpPort = await page.evaluate(() => window.terminalUI.cdpPort);
     expect(cdpPort).toBeTruthy();
     const cdpBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
     try {
       const ctx = cdpBrowser.contexts()[0];
       const remotePage = ctx.pages()[0] || await ctx.newPage();
-      const hostPort = new URL(BASE_URL).port;
-      await remotePage.goto(`http://localhost:${hostPort}/`, { timeout: 30_000 });
+      const navPort = process.env.E2E_LOCALHOST_NAV_PORT || new URL(BASE_URL).port;
+      await remotePage.goto(`http://localhost:${navPort}/`, { timeout: 30_000 });
       await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
       // The navigation is visible through the VNC pane too -- capture it.
       await page.waitForTimeout(1500);
