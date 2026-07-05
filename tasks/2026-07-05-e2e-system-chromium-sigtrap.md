@@ -1,8 +1,8 @@
-# Infra: system `/usr/bin/chromium` SIGTRAPs on launch (breaks e2e harness)
+# Infra: Debian chromium 150 SIGTRAPs on launch (broke browser feature + e2e)
 
 Date: 2026-07-05
-Type: infra / environment (not application code)
-Status: worked around in-repo; root fix pending on the image
+Type: infra / image + e2e harness
+Status: RESOLVED -- image pinned to chromium 147; e2e harness has an auto-fallback
 
 ## Symptom
 
@@ -21,46 +21,68 @@ $ /usr/bin/chromium --headless --no-sandbox --disable-gpu \
 ... Trace/breakpoint trap (core dumped)   # exit 133 = 128 + SIGTRAP(5)
 ```
 
-## Root cause (as far as diagnosable on the box)
+## Root cause: it is the chromium VERSION, not the kernel
 
-- System package: `chromium 150.0.7871.46-1~deb12u1` (Debian bookworm),
-  binary `/usr/lib/chromium/chromium` dated 2026-07-04 -- a recent update.
-- The crash is in the **zygote**: newer Chromium builds (the system 150 AND
-  Playwright's bundled `chromium-1208`) both fail with
-  `Failed to send GetTerminationStatus message to zygote`. Only the older
-  Playwright `chromium-1124` (dated 2026-03-03) launches cleanly.
-- `ldd` shows no missing libraries; kernel is `6.8.0-134-generic`. `gdb` and
-  `strace` are not installed, so the exact trapping syscall was not captured,
-  but the "only old chromium works / newer zygote dies" pattern points to a
-  syscall/seccomp incompatibility the newer build hits on this kernel.
-- The swe-swe MCP browser keeps working only because it is a `1124`-era
-  process still resident in memory from before the package update; it is not
-  evidence that a fresh launch works.
+- The broken build is `chromium 150.0.7871.46-1~deb12u1` from the Debian
+  **bookworm-security** pocket. It SIGTRAPs on launch -- the zygote dies
+  (`Failed to send GetTerminationStatus message to zygote`), so every browser
+  feature is dead.
+- Proven to be version-specific, not host-specific: on the SAME host kernel
+  (`6.8.0-134-generic`), chromium **149.0.7827.114** launches fine inside a
+  swe-swe container while chromium **150** cores on the host. Playwright's
+  bundled `chromium-1208` fails the same way as 150; only the older `1124`
+  launches. `ldd` shows no missing libs; `gdb`/`strace` were unavailable to
+  capture the exact trapping syscall.
+- The release image was NOT yet broken only by luck: an image built before
+  150 hit the mirror had 149. But `apt-get install chromium` is unpinned, so
+  the next rebuild would pull the broken 150 and ship a dead browser feature.
 
-## In-repo workaround (shipped)
+## apt availability (why we pin to 147, not 149)
 
-The e2e harness now selects a chromium that actually launches instead of
-hard-coding the (broken) system binary:
+- `150.0.7871.46-1~deb12u1` -- bookworm-**security** (broken, current)
+- `149.0.7827.114-1~deb12u1` -- bookworm-security (works, but being purged;
+  the host mirror already dropped it, so it is not a stable pin)
+- `147.0.7727.137-1~deb12u1` -- bookworm/**main** (works; the base-distro
+  pocket, permanently available and not bumped by security churn)
 
-- `e2e/playwright.config.js` and `e2e/global-setup.js` honor a `CHROMIUM_BIN`
-  env var, defaulting to `/usr/bin/chromium` (so CI on a healthy host is
-  unchanged).
-- `scripts/e2e-test.sh` probes `/usr/bin/chromium` with a headless
-  `about:blank` render; if it fails, it falls back to the newest working
-  Playwright-bundled `chromium-*` and exports `CHROMIUM_BIN`. Fully automatic
-  -- `make e2e-test` just works on this box.
+So 147 from main is the only stable, known-good pin.
 
-This makes the suite runnable but does NOT fix the system chromium itself.
+## Fix 1 (shipped): pin the image to chromium 147
 
-## Real fix (image / infra -- pending)
+The real fix -- so releases are not broken by default. Both image Dockerfiles
+now install a pinned, known-good chromium and hold it:
 
-Pick one:
+- `cmd/swe-swe/templates/host/Dockerfile` (main image, embedded + re-golden'd)
+- `docker/browser-backend/Dockerfile` (lean browser-backend image)
 
-1. Pin/downgrade the system `chromium` package in the container image to a
-   known-good build (pre-150, matching what launches here), or hold the
-   package so a security update cannot silently reintroduce a broken build.
-2. Install `strace`+`gdb` on the box, capture the exact SIGTRAP/SIGSYS
-   syscall, and adjust the seccomp profile / kernel config so Chromium 150's
-   zygote can start. Then the harness can drop back to `/usr/bin/chromium`.
+```
+chromium=147.0.7727.137-1~deb12u1
+chromium-common=147.0.7727.137-1~deb12u1   # must match, else apt pulls 150
+&& apt-mark hold chromium chromium-common  # a later apt run can't bump it
+```
 
-Owner: infra. Until then, the `CHROMIUM_BIN` auto-fallback keeps e2e green.
+Verified end-to-end: a fresh `make e2e-up-simple` rebuild installs 147 (both
+held) and chromium launches in-container (headless about:blank -> exit 0).
+
+When bookworm/main's chromium eventually rolls to a new point-release version,
+bump the pinned string in both Dockerfiles (the exact-version pin fails the
+build loudly if the string is purged -- far better than silently pulling a
+broken build).
+
+## Fix 2 (shipped): e2e harness auto-selects a launchable chromium
+
+Separate from the image: the Playwright e2e suite runs chromium on the HOST,
+and this dev box's host still has the broken system 150 until it is rebuilt.
+
+- `e2e/playwright.config.js` + `e2e/global-setup.js` honor a `CHROMIUM_BIN`
+  env var (default `/usr/bin/chromium`, so a healthy CI host is unchanged).
+- `scripts/e2e-test.sh` probes `/usr/bin/chromium`; when it fails, it falls
+  back to the newest working Playwright-bundled `chromium-*` and exports
+  `CHROMIUM_BIN`. Fully automatic -- `make e2e-test` just works.
+
+## Still open (optional)
+
+The exact trapping syscall in chromium 150 was never captured (no gdb/strace).
+Not needed now that we pin away from it, but if 150+ must be adopted later,
+install `strace`/`gdb`, catch the SIGTRAP/SIGSYS, and adjust the seccomp
+profile accordingly.

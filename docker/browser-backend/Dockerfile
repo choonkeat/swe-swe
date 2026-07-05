@@ -19,13 +19,20 @@ FROM debian:bookworm-slim
 
 # Display stack only -- no agent CLIs, no Go toolchain, no web assets beyond
 # the noVNC viewer. Mirrors the browser layer of the main image.
+#
+# Chromium is PINNED to 147 from bookworm/main; the bookworm-security pocket
+# shipped 150.0.7871.46 whose zygote SIGTRAPs on launch. Keep this in sync with
+# cmd/swe-swe/templates/host/Dockerfile. See
+# tasks/2026-07-05-e2e-system-chromium-sigtrap.md.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
+    chromium=147.0.7727.137-1~deb12u1 \
+    chromium-common=147.0.7727.137-1~deb12u1 \
     xvfb \
     x11vnc \
     novnc \
     websockify \
     ca-certificates \
+    && apt-mark hold chromium chromium-common \
     && rm -rf /var/lib/apt/lists/*
 
 # Prebuilt static swe-swe-server from the dockerless payload (built by
