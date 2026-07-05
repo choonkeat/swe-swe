@@ -266,6 +266,11 @@ type SessionPageQuery struct {
 	ParentUUID  string // parent session UUID (shell sub-sessions)
 	Debug       bool   // debug UI flag
 	ExtraArgs   string // extra CLI flags appended to the agent command (optional)
+	// CheckoutBranch is the branch the session's WorkDir was on at start,
+	// captured even when no worktree branch was requested. It is the prefill
+	// fallback for a recording's "+ New" (see PrefillBranch) and is deliberately
+	// NOT part of Encode() so restart/session URLs stay unchanged.
+	CheckoutBranch string
 }
 
 // RepoRoot maps the session's working directory back to the repo checkout the
@@ -286,6 +291,18 @@ func (q SessionPageQuery) RepoRoot() string {
 		return filepath.Join(filepath.Dir(filepath.Dir(workDir)), "workspace")
 	}
 	return workDir
+}
+
+// PrefillBranch is the branch a recording's "+ New" button should pre-fill into
+// the New Session dialog: the explicit worktree branch when one was used, else
+// the branch the session's checkout was actually on. Kept separate from
+// BranchName/Encode() so only the prefill -- not restart URLs -- gains the
+// checkout fallback.
+func (q SessionPageQuery) PrefillBranch() string {
+	if q.BranchName != "" {
+		return q.BranchName
+	}
+	return q.CheckoutBranch
 }
 
 // Encode returns a URL-encoded query string (without leading "?").
@@ -364,7 +381,12 @@ type RecordingMetadata struct {
 	AgentBinary   string     `json:"agent_binary,omitempty"`   // binary name for URLs (e.g. "claude"); empty in old recordings
 	RecordingType string     `json:"recording_type,omitempty"` // "agent", "chat", "terminal"
 	SessionMode   string     `json:"session_mode,omitempty"`   // "terminal" or "chat"
-	BranchName    string     `json:"branch_name,omitempty"`    // git branch / worktree name
+	BranchName    string     `json:"branch_name,omitempty"`    // git branch / worktree name (set only when a worktree branch was requested)
+	// CheckoutBranch is the branch the session's WorkDir was actually on at
+	// start. Unlike BranchName it is captured even when no worktree branch was
+	// passed (default-workspace / dogfood sessions), so a recording's "+ New"
+	// can prefill the branch that otherwise survives only inside the display name.
+	CheckoutBranch string    `json:"checkout_branch,omitempty"`
 	StartedAt     time.Time  `json:"started_at"`
 	EndedAt       *time.Time `json:"ended_at,omitempty"`
 	KeptAt        *time.Time `json:"kept_at,omitempty"` // When user marked this recording to keep (nil = recent, auto-deletable)
@@ -4026,6 +4048,16 @@ func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 		return repoPath, nil
 	}
 
+	// If the requested branch is already the one checked out in this repo, run
+	// directly in the repo instead of `git worktree add`-ing a branch git
+	// considers already checked out (which fails with "already checked out at
+	// ..."). This is exactly what a recording's "+ New" produces when the branch
+	// it recovered from the checkout is still the repo's current branch.
+	if cur, err := getCurrentBranch(repoPath); err == nil && cur == branchName {
+		log.Printf("Branch %s is already checked out at %s; running in place", branchName, repoPath)
+		return repoPath, nil
+	}
+
 	worktreePath := resolveWorkingDirectory(repoPath, branchName)
 
 	// Check if worktree already exists
@@ -5072,6 +5104,14 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// Set initial terminal size
 	pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
 
+	// Capture the branch the working directory is actually on so a recording's
+	// "+ New" can prefill it even when no worktree branch was passed. Skip a
+	// detached HEAD ("HEAD") -- there's no branch name to reproduce.
+	checkoutBranch, _ := getCurrentBranch(workDir)
+	if checkoutBranch == "HEAD" {
+		checkoutBranch = ""
+	}
+
 	now := time.Now()
 	sess := &Session{
 		UUID:            p.UUID,
@@ -5115,6 +5155,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 			RecordingType:  recType,
 			SessionMode:    p.SessionMode,
 			BranchName:     p.Branch,
+			CheckoutBranch: checkoutBranch,
 			StartedAt:      now,
 			Command:        append([]string{cmdName}, cmdArgs...),
 			MaxCols:        80, // Default starting size
@@ -6614,12 +6655,13 @@ func loadEndedRecordings() []RecordingInfo {
 					binary = strings.ToLower(meta.Agent)
 				}
 				info.Query = SessionPageQuery{
-					Assistant:   binary,
-					SessionMode: meta.SessionMode,
-					Name:        meta.Name,
-					BranchName:  meta.BranchName,
-					WorkDir:     meta.WorkDir,
-					ExtraArgs:   meta.ExtraArgs,
+					Assistant:      binary,
+					SessionMode:    meta.SessionMode,
+					Name:           meta.Name,
+					BranchName:     meta.BranchName,
+					CheckoutBranch: meta.CheckoutBranch,
+					WorkDir:        meta.WorkDir,
+					ExtraArgs:      meta.ExtraArgs,
 				}
 				// Forkable via /api/fork only for chat-mode claude/codex
 				// recordings that have a chat event log to prepopulate.

@@ -22,6 +22,16 @@ import { endSessions, openSessionViaPost } from './_helpers/sessions.js';
 
 const EXTERNAL_REPO = '/repos/e2e-dialog-repo/workspace';
 
+// A second external repo whose checkout sits on a NON-default branch, with no
+// worktree/branch ever passed to the session. This mirrors the real dogfood
+// sessions (e.g. "choonkeat/swe-swe@mcp-less"): they run directly in a checkout
+// that happens to be on a feature branch, so the branch lives only in the git
+// checkout -- never in the session's worktree-branch param. The recording's
+// "+ New" prefill must recover the branch from the checkout, not from the
+// (empty) worktree-branch field.
+const DOGFOOD_REPO = '/repos/e2e-dogfood-repo/workspace';
+const DOGFOOD_BRANCH = 'dogfood-branch';
+
 // Helper: get the e2e swe-swe container name (works for both simple and
 // compose modes). Same lookup mcp-create-session.spec.js uses.
 function getContainerName() {
@@ -50,6 +60,26 @@ function setupExternalRepo(containerName) {
 
 function removeExternalRepo(containerName) {
   execSync(`docker exec ${containerName} sh -c 'rm -rf /repos/e2e-dialog-repo'`);
+}
+
+// Create an external repo checked out on a non-default branch. No remote is
+// needed; the point is a checkout sitting on DOGFOOD_BRANCH so a session run
+// directly in it records that branch nowhere but the checkout itself.
+function setupDogfoodRepo(containerName) {
+  execSync(`docker exec ${containerName} sh -c '
+    rm -rf /repos/e2e-dogfood-repo &&
+    mkdir -p ${DOGFOOD_REPO} &&
+    cd ${DOGFOOD_REPO} &&
+    git init -q -b main &&
+    git config user.email e2e@test.invalid &&
+    git config user.name e2e &&
+    git commit -q --allow-empty -m init &&
+    git checkout -q -b ${DOGFOOD_BRANCH}
+  '`);
+}
+
+function removeDogfoodRepo(containerName) {
+  execSync(`docker exec ${containerName} sh -c 'rm -rf /repos/e2e-dogfood-repo'`);
 }
 
 async function openDialog(page) {
@@ -115,11 +145,15 @@ let testSessions = [];
 
 test.describe('new-session dialog', () => {
   test.beforeAll(() => {
-    setupExternalRepo(getContainerName());
+    const c = getContainerName();
+    setupExternalRepo(c);
+    setupDogfoodRepo(c);
   });
 
   test.afterAll(() => {
-    removeExternalRepo(getContainerName());
+    const c = getContainerName();
+    removeExternalRepo(c);
+    removeDogfoodRepo(c);
   });
 
   test.beforeEach(() => {
@@ -248,5 +282,45 @@ test.describe('new-session dialog', () => {
     expect(url.searchParams.get('session')).toBe('chat');
     expect(url.searchParams.get('branch')).toBe('e2e-chat-prefill');
     expect(url.searchParams.get('pwd')).toBeNull();
+  });
+
+  // Regression: real dogfood sessions run directly in a checkout on a feature
+  // branch, passing NO worktree-branch param -- so the recording's
+  // branch_name is empty and the branch survives only in the git checkout.
+  // The "+ New" prefill must recover the branch from the checkout, otherwise
+  // the dialog's Branch field opens blank (the reported bug).
+  test('recording + New recovers the branch from the checkout when no worktree param was passed', async ({ page }) => {
+    // No `branch` here: the session runs directly in the DOGFOOD_REPO checkout,
+    // which is on DOGFOOD_BRANCH. This is exactly how the reported recording
+    // ("choonkeat/swe-swe@mcp-less") was created.
+    const { name, button: btn } = await recordingNewButton(page, {
+      assistant: 'opencode',
+      pwd: DOGFOOD_REPO,
+    });
+
+    // The "+ New" button must carry the checkout's branch even though no
+    // worktree-branch was ever passed.
+    const ds = await btn.evaluate((el) => Object.assign({}, el.dataset));
+    expect(ds.assistant).toBe('opencode');
+    expect(ds.pwd).toBe(DOGFOOD_REPO);
+    expect(ds.branch).toBe(DOGFOOD_BRANCH);
+
+    // Opening the dialog pre-fills the Branch field with the recovered branch.
+    await btn.click();
+    await expect(page.locator('#new-session-start-terminal')).toBeEnabled({ timeout: 15_000 });
+    expect(await page.locator('#new-session-mode').inputValue()).toBe(DOGFOOD_REPO);
+    expect(await page.locator('#new-session-branch').inputValue()).toBe(DOGFOOD_BRANCH);
+    await expect(page.locator('.dialog__agent--selected')).toHaveAttribute('data-agent', 'opencode');
+
+    // Start reproduces the branch: because DOGFOOD_BRANCH is already the
+    // checkout's current branch, the new session runs in the repo root itself
+    // (no conflicting worktree), and the branch param round-trips.
+    await page.click('#new-session-start-terminal');
+    await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
+    const url = new URL(page.url());
+    testSessions.push(url.pathname.split('/')[2]);
+    expect(url.searchParams.get('branch')).toBe(DOGFOOD_BRANCH);
+    expect(url.searchParams.get('pwd')).toBe(DOGFOOD_REPO);
+    expect(url.searchParams.get('name')).toBe(name);
   });
 });

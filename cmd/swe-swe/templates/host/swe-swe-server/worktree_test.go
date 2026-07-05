@@ -2082,3 +2082,59 @@ func TestSessionPageQueryRepoRoot(t *testing.T) {
 		})
 	}
 }
+
+// PrefillBranch prefers an explicit worktree branch, else falls back to the
+// branch the session's checkout was on -- so a recording's "+ New" can recover
+// the branch of a default-workspace/dogfood session that passed no worktree
+// branch (its branch_name is empty; the branch lives only in the checkout).
+func TestSessionPageQueryPrefillBranch(t *testing.T) {
+	tests := []struct {
+		name           string
+		branchName     string
+		checkoutBranch string
+		expected       string
+	}{
+		{"worktree branch wins", "feature-x", "main", "feature-x"},
+		{"falls back to checkout branch", "", "mcp-less", "mcp-less"},
+		{"nothing to prefill", "", "", ""},
+		{"worktree branch, no checkout", "feature-x", "", "feature-x"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := SessionPageQuery{BranchName: tt.branchName, CheckoutBranch: tt.checkoutBranch}
+			if got := q.PrefillBranch(); got != tt.expected {
+				t.Errorf("PrefillBranch(BranchName=%q, CheckoutBranch=%q) = %q, want %q",
+					tt.branchName, tt.checkoutBranch, got, tt.expected)
+			}
+		})
+	}
+}
+
+// A recording's "+ New" prefills the checkout branch; starting that session
+// requests a worktree for a branch that is still the repo's current checkout.
+// git worktree add would fail ("already checked out"), so createWorktreeInRepo
+// must run in the repo directly instead.
+func TestCreateWorktreeInRepoRunsInPlaceForCurrentBranch(t *testing.T) {
+	dir := setupTestGitRepo(t, map[string]struct {
+		content string
+		tracked bool
+		mode    os.FileMode
+		symlink string
+	}{
+		"README.md": {content: "hello", tracked: true},
+	})
+
+	cur, err := getCurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("getCurrentBranch(%q) failed: %v", dir, err)
+	}
+
+	got, err := createWorktreeInRepo(dir, cur)
+	if err != nil {
+		t.Fatalf("createWorktreeInRepo(%q, %q) errored: %v", dir, cur, err)
+	}
+	if got != dir {
+		t.Errorf("createWorktreeInRepo(%q, %q) = %q, want the repo dir itself (run in place)", dir, cur, got)
+	}
+}
