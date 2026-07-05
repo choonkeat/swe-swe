@@ -16,6 +16,47 @@ import (
 // Claude's .jsonl when the agent invokes one of the agent-chat MCP tools.
 const chatMCPToolPrefixClaude = "mcp__swe-swe-agent-chat__"
 
+// chatCLIServerClaude is the agent-chat server name as invoked through the
+// `mcp` CLI in MCP-less sessions: `mcp swe-swe-agent-chat send_message ...`
+// runs inside a Bash tool_use, so those sessions contain ZERO native
+// mcp__swe-swe-agent-chat__* tool_use entries.
+const chatCLIServerClaude = "swe-swe-agent-chat"
+
+// claudeBashAgentChatTool reports whether a Bash tool_use command invokes an
+// agent-chat tool through the `mcp` CLI, and which tool. Matching is
+// field-based: a bare `mcp` token immediately followed by the server name.
+// Quoted mentions (grep patterns, --text payloads) keep their surrounding
+// quote characters attached to the field, so they don't match.
+func claudeBashAgentChatTool(command string) (tool string, ok bool) {
+	fields := strings.Fields(command)
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] != "mcp" || fields[i+1] != chatCLIServerClaude {
+			continue
+		}
+		if i+2 < len(fields) && !strings.HasPrefix(fields[i+2], "-") {
+			return fields[i+2], true
+		}
+		return "", true
+	}
+	return "", false
+}
+
+// claudeContentBashCommand extracts input.command from a Bash tool_use.
+// Parsed lazily (Input stays a json.RawMessage) so a non-object or oddly
+// shaped input on OTHER tools can never poison the whole line's unmarshal.
+func claudeContentBashCommand(c claudeContent) string {
+	if c.Name != "Bash" || len(c.Input) == 0 {
+		return ""
+	}
+	var in struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(c.Input, &in); err != nil {
+		return ""
+	}
+	return in.Command
+}
+
 // claudeProjectsRoot is where Claude Code persists session jsonl files. The
 // directory under projectsRoot is the cwd path with slashes replaced by
 // dashes.
@@ -117,6 +158,11 @@ func forkClaude(opts Opts) (*Result, error) {
 // tool_use entry in the .jsonl -- the most recent check_messages call
 // is still a valid fork point because it represents the state right
 // before Claude responds.
+//
+// MCP-less sessions reach agent-chat through the `mcp` CLI inside Bash
+// tool_uses, so both the primary and fallback scans also match Bash
+// commands invoking `mcp swe-swe-agent-chat <tool>` -- otherwise such
+// sessions have no anchor at all and every fork fails.
 func claudeFindLastChatReply(path, toolName string) (string, error) {
 	fq := chatMCPToolPrefixClaude + toolName
 	f, err := os.Open(path)
@@ -146,6 +192,12 @@ func claudeFindLastChatReply(path, toolName string) (string, error) {
 			if strings.HasPrefix(c.Name, chatMCPToolPrefixClaude) {
 				lastFallback = ev.UUID
 			}
+			if cliTool, ok := claudeBashAgentChatTool(claudeContentBashCommand(c)); ok {
+				if cliTool == toolName {
+					lastPrimary = ev.UUID
+				}
+				lastFallback = ev.UUID
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -157,7 +209,7 @@ func claudeFindLastChatReply(path, toolName string) (string, error) {
 	if lastFallback != "" {
 		return lastFallback, nil
 	}
-	return "", fmt.Errorf("no %s* tool_use found", chatMCPToolPrefixClaude)
+	return "", fmt.Errorf("no %s* tool_use or `mcp %s` Bash call found", chatMCPToolPrefixClaude, chatCLIServerClaude)
 }
 
 // claudeFindAssistantEventByToolUseID scans for the assistant event whose
@@ -207,6 +259,10 @@ func claudeFindAssistantEventByToolUseID(path, toolUseID string) (string, error)
 // Agent-chat tool calls (send_message, check_messages, ...) are NOT
 // counted as active even when their tool_result is absent -- a parked
 // send_message is the natural WAITING state and is safe to fork at.
+// That exemption covers both shapes: native mcp__swe-swe-agent-chat__*
+// tool_uses AND Bash tool_uses invoking `mcp swe-swe-agent-chat ...`
+// (MCP-less mode), where the blocking send_message is a Bash call that
+// stays result-less for as long as the user takes to reply.
 func ClaudeIsTailActive(path string) (bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -237,6 +293,9 @@ func ClaudeIsTailActive(path string) (bool, error) {
 					continue
 				}
 				if strings.HasPrefix(c.Name, chatMCPToolPrefixClaude) {
+					continue
+				}
+				if _, ok := claudeBashAgentChatTool(claudeContentBashCommand(c)); ok {
 					continue
 				}
 				uses[c.ID] = true
@@ -317,8 +376,9 @@ type claudeMessage struct {
 }
 
 type claudeContent struct {
-	Type      string `json:"type"`
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	ToolUseID string `json:"tool_use_id,omitempty"`
+	Type      string          `json:"type"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	ToolUseID string          `json:"tool_use_id,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 }

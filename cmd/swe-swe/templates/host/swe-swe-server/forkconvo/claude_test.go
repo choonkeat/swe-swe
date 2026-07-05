@@ -42,6 +42,20 @@ func asstWithToolUse(t *testing.T, evUUID, toolName, toolUseID string) string {
 	})
 }
 
+// asstWithBashToolUse builds an assistant event line containing one Bash
+// tool_use running the given shell command (the MCP-less agent-chat shape).
+func asstWithBashToolUse(t *testing.T, evUUID, command, toolUseID string) string {
+	return mustJSON(t, map[string]any{
+		"type": "assistant",
+		"uuid": evUUID,
+		"message": map[string]any{
+			"content": []any{
+				map[string]any{"type": "tool_use", "id": toolUseID, "name": "Bash", "input": map[string]any{"command": command, "description": "test"}},
+			},
+		},
+	})
+}
+
 // userToolResult builds a user event line that resolves a tool_use_id.
 func userToolResult(t *testing.T, evUUID, toolUseID, text string) string {
 	return mustJSON(t, map[string]any{
@@ -144,6 +158,62 @@ func TestClaudeFindLastChatReply_FallbackToCheckMessages(t *testing.T) {
 	}
 }
 
+// TestClaudeFindLastChatReply_MCPLessBashCLI covers MCP-less sessions,
+// where agent-chat is reached through the `mcp` CLI inside Bash tool_uses
+// and the .jsonl contains ZERO native mcp__swe-swe-agent-chat__* entries.
+// Regression: /api/fork on such recordings failed with "no
+// mcp__swe-swe-agent-chat__* tool_use found".
+func TestClaudeFindLastChatReply_MCPLessBashCLI(t *testing.T) {
+	jsonl := writeClaudeJSONL(t, []string{
+		asstWithBashToolUse(t, "evt-asst-1", `mcp swe-swe-agent-chat send_message --text "hello" --first_quick_reply "ok"`, "toolu_1"),
+		userToolResult(t, "evt-user-1", "toolu_1", "User responded: first"),
+		asstWithBashToolUse(t, "evt-asst-2", `mcp swe-swe-agent-chat send_message --text "done" --first_quick_reply "thanks"`, "toolu_2"),
+	})
+	got, err := claudeFindLastChatReply(jsonl, "send_message")
+	if err != nil {
+		t.Fatalf("claudeFindLastChatReply: %v", err)
+	}
+	if got != "evt-asst-2" {
+		t.Errorf("got %q, want %q (most recent CLI send_message)", got, "evt-asst-2")
+	}
+}
+
+// TestClaudeFindLastChatReply_MCPLessFallback: a session whose only
+// agent-chat CLI call is check_messages still resolves (fallback), same as
+// the native channels-mode fallback.
+func TestClaudeFindLastChatReply_MCPLessFallback(t *testing.T) {
+	jsonl := writeClaudeJSONL(t, []string{
+		asstWithBashToolUse(t, "evt-asst-1", "mcp swe-swe-agent-chat check_messages", "toolu_cm1"),
+		userToolResult(t, "evt-user-1", "toolu_cm1", `{"queue":"empty"}`),
+	})
+	got, err := claudeFindLastChatReply(jsonl, "send_message")
+	if err != nil {
+		t.Fatalf("claudeFindLastChatReply: %v", err)
+	}
+	if got != "evt-asst-1" {
+		t.Errorf("got %q, want %q (fallback to CLI check_messages)", got, "evt-asst-1")
+	}
+}
+
+// TestClaudeFindLastChatReply_QuotedMentionIsNotAnInvocation: a Bash call
+// that merely mentions the CLI inside a quoted string (grep pattern, echo)
+// must not be mistaken for an agent-chat call and steal the anchor.
+func TestClaudeFindLastChatReply_QuotedMentionIsNotAnInvocation(t *testing.T) {
+	jsonl := writeClaudeJSONL(t, []string{
+		asstWithBashToolUse(t, "evt-asst-1", `mcp swe-swe-agent-chat send_message --text "hi" --first_quick_reply "ok"`, "toolu_1"),
+		userToolResult(t, "evt-user-1", "toolu_1", "User responded: search the code"),
+		asstWithBashToolUse(t, "evt-asst-2", `grep -rn "mcp swe-swe-agent-chat" /workspace`, "toolu_2"),
+		userToolResult(t, "evt-user-2", "toolu_2", "no matches"),
+	})
+	got, err := claudeFindLastChatReply(jsonl, "send_message")
+	if err != nil {
+		t.Fatalf("claudeFindLastChatReply: %v", err)
+	}
+	if got != "evt-asst-1" {
+		t.Errorf("got %q, want %q (quoted mention in grep must not become the anchor)", got, "evt-asst-1")
+	}
+}
+
 func TestClaudeFindLastChatReply_NoChatToolUse(t *testing.T) {
 	jsonl := writeClaudeJSONL(t, []string{
 		asstTextOnly(t, "evt-asst-1", "plain text reply, no tool_use"),
@@ -151,6 +221,34 @@ func TestClaudeFindLastChatReply_NoChatToolUse(t *testing.T) {
 	_, err := claudeFindLastChatReply(jsonl, "send_message")
 	if err == nil {
 		t.Fatal("expected error when no agent-chat tool_use exists")
+	}
+}
+
+func TestClaudeBashAgentChatTool(t *testing.T) {
+	cases := []struct {
+		command  string
+		wantTool string
+		wantOK   bool
+	}{
+		{`mcp swe-swe-agent-chat send_message --text "hi" --first_quick_reply "ok"`, "send_message", true},
+		{`mcp swe-swe-agent-chat check_messages`, "check_messages", true},
+		{`cd /workspace && mcp swe-swe-agent-chat send_progress --text "working"`, "send_progress", true},
+		// Server named but no tool token (bare docs dump / flag first).
+		{`mcp swe-swe-agent-chat`, "", true},
+		{`mcp swe-swe-agent-chat --remind-help-text-throttle 0`, "", true},
+		// Quoted mentions keep their quote char attached to the field.
+		{`grep -rn "mcp swe-swe-agent-chat" /workspace`, "", false},
+		{`echo 'mcp swe-swe-agent-chat send_message'`, "", false},
+		// Other servers and unrelated commands.
+		{`mcp swe-swe list_sessions`, "", false},
+		{`make test`, "", false},
+		{``, "", false},
+	}
+	for _, tc := range cases {
+		tool, ok := claudeBashAgentChatTool(tc.command)
+		if tool != tc.wantTool || ok != tc.wantOK {
+			t.Errorf("claudeBashAgentChatTool(%q) = (%q, %v), want (%q, %v)", tc.command, tool, ok, tc.wantTool, tc.wantOK)
+		}
 	}
 }
 
@@ -218,6 +316,28 @@ func TestClaudeIsTailActive(t *testing.T) {
 				asstWithToolUse(t, "e2", "Bash", "tb2"),
 				userToolResult(t, "e3", "tb1", "ok"),
 				// tb2 unresolved -> ACTIVE
+			},
+			want: true,
+		},
+		{
+			// MCP-less mode: the blocking send_message is a Bash call
+			// running the `mcp` CLI, result-less until the user replies.
+			// That's the WAITING state, not mid-work.
+			name: "waiting: MCP-less CLI send_message parked (no result yet)",
+			lines: []string{
+				asstWithBashToolUse(t, "e1", `make test`, "tb1"),
+				userToolResult(t, "e2", "tb1", "ok"),
+				asstWithBashToolUse(t, "e3", `mcp swe-swe-agent-chat send_message --text "done" --first_quick_reply "ok"`, "ts1"),
+			},
+			want: false,
+		},
+		{
+			name: "active: MCP-less plain bash mid-run with no result",
+			lines: []string{
+				asstWithBashToolUse(t, "e1", `mcp swe-swe-agent-chat send_message --text "hi" --first_quick_reply "ok"`, "ts1"),
+				userToolResult(t, "e2", "ts1", "User responded: do X"),
+				asstWithBashToolUse(t, "e3", `make build`, "tb1"),
+				// no tool_result for tb1 yet -> ACTIVE
 			},
 			want: true,
 		},
