@@ -3512,6 +3512,60 @@ func deriveDefaultSessionName(repoPath string) string {
 	return ""
 }
 
+// renameSession validates and applies a new display name to sess: persists
+// metadata, broadcasts status, and propagates the rename to child shell
+// sessions as "<name> (Terminal)". Shared by every rename path (browser WS
+// rename_session, MCP set_session_name) so validation and child propagation
+// never diverge.
+func renameSession(sess *Session, name string) error {
+	name = strings.TrimSpace(name)
+	// Validate: max 256 chars, alphanumeric + spaces + hyphens + underscores + slashes + dots + @
+	if len(name) > 256 {
+		return fmt.Errorf("name too long (%d chars, max 256)", len(name))
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' || r == '/' || r == '.' || r == '@') {
+			return fmt.Errorf("invalid character %q in name %q", r, name)
+		}
+	}
+	sess.mu.Lock()
+	sess.Name = name
+	if sess.Metadata != nil {
+		sess.Metadata.Name = name
+	}
+	sess.mu.Unlock()
+	log.Printf("Session %s renamed to %q", sess.UUID, name)
+	// Save metadata with new name
+	if err := sess.saveMetadata(); err != nil {
+		log.Printf("Failed to save metadata: %v", err)
+	}
+	sess.BroadcastStatus()
+
+	// Propagate rename to child sessions (shell sessions opened from this agent session)
+	sessionsMu.RLock()
+	for _, childSess := range sessions {
+		if childSess.ParentUUID == sess.UUID {
+			childSess.mu.Lock()
+			var childName string
+			if name != "" {
+				childName = name + " (Terminal)"
+			}
+			childSess.Name = childName
+			if childSess.Metadata != nil {
+				childSess.Metadata.Name = childName
+			}
+			childSess.mu.Unlock()
+			log.Printf("Child session %s renamed to %q (parent %s renamed)", childSess.UUID, childName, sess.UUID)
+			if err := childSess.saveMetadata(); err != nil {
+				log.Printf("Failed to save child metadata: %v", err)
+			}
+			childSess.BroadcastStatus()
+		}
+	}
+	sessionsMu.RUnlock()
+	return nil
+}
+
 // isWorkspaceRepo checks if the given URL matches the /workspace repo's origin
 func isWorkspaceRepo(repoURL string) bool {
 	// Normalize input
@@ -5558,58 +5612,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				}
 			case "rename_session":
 				// Handle session rename request
-				name := strings.TrimSpace(msg.Name)
-				// Validate: max 256 chars, alphanumeric + spaces + hyphens + underscores + slashes + dots + @
-				if len(name) > 256 {
-					log.Printf("Session rename rejected: name too long (%d chars)", len(name))
-					continue
+				if err := renameSession(sess, msg.Name); err != nil {
+					log.Printf("Session rename rejected: %v", err)
 				}
-				valid := true
-				for _, r := range name {
-					if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' || r == '/' || r == '.' || r == '@') {
-						valid = false
-						break
-					}
-				}
-				if !valid {
-					log.Printf("Session rename rejected: invalid characters in name %q", name)
-					continue
-				}
-				sess.mu.Lock()
-				sess.Name = name
-				if sess.Metadata != nil {
-					sess.Metadata.Name = name
-				}
-				sess.mu.Unlock()
-				log.Printf("Session %s renamed to %q", sess.UUID, name)
-				// Save metadata with new name
-				if err := sess.saveMetadata(); err != nil {
-					log.Printf("Failed to save metadata: %v", err)
-				}
-				sess.BroadcastStatus()
-
-				// Propagate rename to child sessions (shell sessions opened from this agent session)
-				sessionsMu.RLock()
-				for _, childSess := range sessions {
-					if childSess.ParentUUID == sess.UUID {
-						childSess.mu.Lock()
-						var childName string
-						if name != "" {
-							childName = name + " (Terminal)"
-						}
-						childSess.Name = childName
-						if childSess.Metadata != nil {
-							childSess.Metadata.Name = childName
-						}
-						childSess.mu.Unlock()
-						log.Printf("Child session %s renamed to %q (parent %s renamed)", childSess.UUID, childName, sess.UUID)
-						if err := childSess.saveMetadata(); err != nil {
-							log.Printf("Failed to save child metadata: %v", err)
-						}
-						childSess.BroadcastStatus()
-					}
-				}
-				sessionsMu.RUnlock()
 			case "toggle_yolo":
 				// Handle YOLO mode toggle request
 				// Check if agent supports YOLO mode
@@ -8601,6 +8606,42 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			return nil, nil, err
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "session ended"}}}, nil, nil
+	})
+
+	// set_session_name
+	type setSessionNameArgs struct {
+		Name string `json:"name" jsonschema:"required,New display name; allowed chars: letters digits space - _ / . @ (max 256); recommended format: {short task title} {owner}/{repo}@{branch}"`
+		UUID string `json:"uuid,omitempty" jsonschema:"Session UUID to rename; defaults to the calling session"`
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_session_name",
+		Description: "Set a session's display name (shown in the session list and browser tab). Call it once the task at hand is clear, so the user can tell sessions apart; use '{short task title} {owner}/{repo}@{branch}'. Without uuid it renames the calling session.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args setSessionNameArgs) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(args.Name) == "" {
+			return nil, nil, fmt.Errorf("name is required")
+		}
+		targetUUID := args.UUID
+		if targetUUID == "" {
+			targetUUID = callerSessionFromContext(ctx)
+		}
+		if targetUUID == "" {
+			return nil, nil, fmt.Errorf("no uuid provided and missing calling session identity")
+		}
+		sessionsMu.RLock()
+		sess, exists := sessions[targetUUID]
+		sessionsMu.RUnlock()
+		if !exists {
+			return nil, nil, fmt.Errorf("session not found")
+		}
+		if err := renameSession(sess, args.Name); err != nil {
+			return nil, nil, err
+		}
+		sess.mu.RLock()
+		newName := sess.Name
+		sess.mu.RUnlock()
+		info := map[string]string{"uuid": targetUUID, "name": newName}
+		data, _ := json.Marshal(info)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
 	})
 
 	// get_session_output

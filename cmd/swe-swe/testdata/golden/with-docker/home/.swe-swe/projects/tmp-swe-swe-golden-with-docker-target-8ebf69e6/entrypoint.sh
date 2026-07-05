@@ -291,6 +291,9 @@ Talk to the user through agent-chat -- it is the ONLY channel the user sees:
 - `send_message` BLOCKS until the user replies; the reply is RETURNED as the
   command's stdout. Never background it; end every turn on it.
 - Non-blocking status: `mcp swe-swe-agent-chat send_progress --text "..."`.
+
+Once the task at hand is clear (and when it changes), name this session so the
+user can tell sessions apart: see `mcp swe-swe set_session_name -h`.
 MCPLESSEOF
 chown -R app: /home/app/.claude
 echo -e "${GREEN}[ok] Installed MCP-less agent steering (~/.claude/CLAUDE.md)${NC}"

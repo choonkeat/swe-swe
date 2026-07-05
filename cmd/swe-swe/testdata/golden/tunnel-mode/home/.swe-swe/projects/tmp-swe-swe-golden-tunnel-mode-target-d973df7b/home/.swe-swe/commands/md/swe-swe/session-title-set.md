@@ -1,0 +1,49 @@
+---
+description: Set this session's title to "{short title} {repo}@{branch}" via the swe-swe MCP
+---
+
+Set the display name of the CURRENT swe-swe session (shown in the session list and
+browser tab) to the format:
+
+    {short title} {owner}/{repo}@{branch}
+
+e.g. `fix login redirect choonkeat/swe-swe@main`
+
+## Steps
+
+### 1. Decide the short title
+
+- If `$ARGUMENTS` is non-empty, use it verbatim as the short title.
+- Otherwise derive a 3-6 word title from the current conversation's main task
+  (what the user asked for, not what tool you used). If there is no task yet,
+  ask the user for one instead of inventing a placeholder.
+
+### 2. Gather repo and branch (one bash pass)
+
+```bash
+branch=$(git branch --show-current)
+origin=$(git remote get-url origin 2>/dev/null)
+echo "branch=$branch origin=$origin"
+```
+
+- `{owner}/{repo}` = extract from the origin URL (strip protocol/host/`.git`, keep
+  the last two path segments). If there is no origin remote, use the workspace
+  directory's basename alone.
+- `{branch}` = the current branch from the working directory (this is correct in
+  worktree sessions too). If empty (detached HEAD), omit the `@{branch}` suffix.
+
+### 3. Compose and sanitize
+
+Compose `{short title} {owner}/{repo}@{branch}`. The server only accepts letters,
+digits, spaces, and `- _ / . @`, max 256 chars -- replace any other character with
+a space, collapse runs of spaces, and trim.
+
+### 4. Set the name
+
+Call the `mcp__swe-swe__set_session_name` tool with `name` set to the composed
+string. Do NOT pass `uuid` -- omitting it renames the calling session, which is
+exactly what we want.
+
+### 5. Confirm
+
+Reply to the user with the exact name that was set, in one short sentence.
