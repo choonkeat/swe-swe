@@ -18,9 +18,9 @@ var mcpCliProxyBin = "mcp-cli-proxy"
 // SWE_MCP_DIR, so concurrent sessions never collide on socket names.
 const mcpLessSocketRoot = "/workspace/.swe-swe/run/mcp"
 
-// mcpLessEnabled reports whether this container runs in MCP-less mode. The
-// entrypoint exports SWE_MCP_LESS=1 by default; `swe-swe init --with-mcp` opts
-// out and takes the legacy native-MCP path instead.
+// mcpLessEnabled reports whether this container runs in MCP-less mode. Native
+// MCP is the default; the entrypoint exports SWE_MCP_LESS=1 only when the
+// project was created with `swe-swe init --without-mcp`.
 func mcpLessEnabled() bool { return os.Getenv("SWE_MCP_LESS") != "" }
 
 // MCP-less mode: instead of the agent's native MCP client spawning each server

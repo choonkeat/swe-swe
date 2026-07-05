@@ -12,9 +12,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# MCP-less mode: swe-swe-server hosts the MCP servers via mcp-cli-proxy per
-# session; skip writing every agent's native MCP config below.
-export SWE_MCP_LESS=1
+
 
 # Add app user to docker socket's group for permission to use Docker CLI
 if [ -S /var/run/docker.sock ]; then
