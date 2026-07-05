@@ -625,7 +625,7 @@ func handleInit() {
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
-	mcpLess := fs.Bool("mcp-less", true, "Route MCP servers through the mcp-cli-proxy daemon + `mcp` CLI instead of the agent's native MCP client (for MCP-gated environments). Default; pass --mcp-less=false for the legacy agent-hosted native-MCP path")
+	withMCP := fs.Bool("with-mcp", false, "Let each agent spawn MCP servers with its own native MCP client (the legacy path). Off by default: swe-swe runs MCP-less, hosting the MCP servers in swe-swe-server via the mcp-cli-proxy daemon and exposing them to the agent through the 'mcp' CLI -- for environments where native MCP is gated but the CLI agent is not")
 	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux host only)")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
@@ -749,6 +749,11 @@ func handleInit() {
 			copyHomePaths = append(copyHomePaths, p)
 		}
 	}
+
+	// MCP-less is the default; --with-mcp opts into the legacy native-MCP path.
+	// The config/JSON still tracks the positive MCPLess field, so saved configs
+	// (which predate the flag rename) stay compatible.
+	mcpLess := !*withMCP
 
 	// Collect explicitly-set flags for reuse patching
 	explicitFlags := make(map[string]bool)
@@ -881,8 +886,8 @@ func handleInit() {
 		if !explicitFlags["with-docker"] {
 			*withDocker = savedConfig.WithDocker
 		}
-		if !explicitFlags["mcp-less"] {
-			*mcpLess = savedConfig.MCPLess
+		if !explicitFlags["with-mcp"] {
+			mcpLess = savedConfig.MCPLess
 		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
@@ -952,7 +957,7 @@ func handleInit() {
 		AptPackages: aptPkgs,
 		NpmPackages: npmPkgs,
 		WithDocker:  *withDocker,
-		MCPLess:     *mcpLess,
+		MCPLess:     mcpLess,
 		Dockerless:  *dockerless,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
