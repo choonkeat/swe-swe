@@ -429,11 +429,26 @@ func imageDir() string {
 // --- help ---------------------------------------------------------------------
 
 func printTopHelp(out *os.File) {
+	servers := listServers()
+	// Full docs for every server print FIRST -- bare `mcp -h` is the one
+	// command steering points agents at, so it must carry the entire registry
+	// (the byte-for-byte equivalent of what a native MCP client would inject).
+	// The short usage summary and server list print LAST: the dump is long,
+	// and the orientation an agent acts on next belongs closest to the end.
+	// A server whose socket won't answer degrades to an inline note instead
+	// of killing the dump.
+	for _, s := range servers {
+		fmt.Fprintf(out, "===== %s =====\n\n", s)
+		if err := printServerHelp(s, out); err != nil {
+			fmt.Fprintf(out, "(failed to load tools: %v)\n", err)
+		}
+		fmt.Fprint(out, "\n")
+	}
 	fmt.Fprint(out, `mcp - call MCP server tools over unix sockets (swe-swe MCP-less mode)
 
 Usage:
   mcp <server> <tool> [flags]   call a tool
-  mcp -h                        full docs for every server and tool (below)
+  mcp -h                        full docs for every server and tool (above)
   mcp <server>                  full docs for one server's tools
   mcp <server> <tool> -h        full docs for one tool
 
@@ -445,7 +460,6 @@ Global flags:
 The command mirrors the tool id mcp__<server>__<tool>:
   mcp__swe-swe-agent-chat__send_message  ->  mcp swe-swe-agent-chat send_message --text "..."
 `)
-	servers := listServers()
 	if len(servers) == 0 {
 		fmt.Fprintf(out, "\nNo servers found in %s\n", socketDir())
 		return
@@ -453,17 +467,6 @@ The command mirrors the tool id mcp__<server>__<tool>:
 	fmt.Fprintf(out, "\nServers (from %s):\n", socketDir())
 	for _, s := range servers {
 		fmt.Fprintf(out, "  %s\n", s)
-	}
-	// Full docs for every server follow -- bare `mcp -h` is the one command
-	// steering points agents at, so it must carry the entire registry (the
-	// byte-for-byte equivalent of what a native MCP client would inject).
-	// A server whose socket won't answer degrades to an inline note instead
-	// of killing the dump.
-	for _, s := range servers {
-		fmt.Fprintf(out, "\n===== %s =====\n\n", s)
-		if err := printServerHelp(s, out); err != nil {
-			fmt.Fprintf(out, "(failed to load tools: %v)\n", err)
-		}
 	}
 }
 
