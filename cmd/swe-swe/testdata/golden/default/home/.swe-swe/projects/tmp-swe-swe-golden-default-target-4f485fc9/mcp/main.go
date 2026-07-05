@@ -15,7 +15,10 @@
 // Flags are synthesized from each tool's inputSchema. Results render as:
 // text -> stdout, image -> written to a file whose path is printed, structured
 // -> JSON. Blocking tools (e.g. send_message, which waits for the user's reply)
-// simply block until the proxy returns -- there is no client-side timeout.
+// simply block until the proxy returns -- there is no client-side timeout. If
+// the proxy sends interim notifications while a call is in flight (a blocking
+// call announces its wait this way), they are relayed to stderr and the client
+// keeps waiting for the real response.
 //
 // Each call starts by printing a one-line <mcp>tip</mcp> reminder to stderr
 // pointing at the tool's -h docs: MCP-less agents never get tool docs
@@ -71,6 +74,14 @@ type toolAnnotations struct {
 type rpcResponse struct {
 	Result json.RawMessage `json:"result"`
 	Error  *rpcError       `json:"error"`
+	// ID and Method distinguish a response (has id) from an interim
+	// notification (has method, no id). Params.Data carries a notification's
+	// human text (e.g. a blocking-call warning from the proxy).
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params struct {
+		Data string `json:"data"`
+	} `json:"params"`
 }
 
 type rpcError struct {
@@ -90,8 +101,13 @@ func dial(server string) (net.Conn, error) {
 	return conn, nil
 }
 
-// rpc sends one request over conn and reads exactly one response line. There is
-// deliberately no read deadline: blocking tools may take arbitrarily long.
+// rpc sends one request over conn and returns the matching response. Interim
+// notifications (a line with a "method" and no "id") are relayed to stderr and
+// then skipped -- this is how a blocking call announces the wait, so an early
+// read of the client's captured output is never mistaken for "no reply". There
+// is deliberately no read deadline: blocking tools may take arbitrarily long.
+// Notifications go to os.Stderr directly (a diagnostic side-channel); the tool
+// result still flows through the caller's out/errOut.
 func rpc(conn net.Conn, method string, params any) (json.RawMessage, error) {
 	req := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
 	if params != nil {
@@ -106,20 +122,28 @@ func rpc(conn net.Conn, method string, params any) (json.RawMessage, error) {
 	}
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	if !sc.Scan() {
-		if err := sc.Err(); err != nil {
-			return nil, err
+	for sc.Scan() {
+		var resp rpcResponse
+		if err := json.Unmarshal(sc.Bytes(), &resp); err != nil {
+			return nil, fmt.Errorf("bad response: %w", err)
 		}
-		return nil, fmt.Errorf("no response from server")
+		// Interim notification (no id): relay its text and keep waiting for
+		// the response that matches this request.
+		if len(resp.ID) == 0 && resp.Method != "" {
+			if resp.Params.Data != "" {
+				fmt.Fprintln(os.Stderr, resp.Params.Data)
+			}
+			continue
+		}
+		if resp.Error != nil {
+			return nil, fmt.Errorf("%s", resp.Error.String())
+		}
+		return resp.Result, nil
 	}
-	var resp rpcResponse
-	if err := json.Unmarshal(sc.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("bad response: %w", err)
+	if err := sc.Err(); err != nil {
+		return nil, err
 	}
-	if resp.Error != nil {
-		return nil, fmt.Errorf("%s", resp.Error.String())
-	}
-	return resp.Result, nil
+	return nil, fmt.Errorf("no response from server")
 }
 
 func listTools(server string) ([]tool, error) {

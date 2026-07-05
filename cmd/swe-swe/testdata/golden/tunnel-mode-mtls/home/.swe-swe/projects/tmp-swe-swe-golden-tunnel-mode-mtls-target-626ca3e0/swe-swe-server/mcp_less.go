@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // mcpCliProxyBin is the proxy daemon binary; a package var so tests can point it
@@ -18,7 +19,8 @@ var mcpCliProxyBin = "mcp-cli-proxy"
 const mcpLessSocketRoot = "/workspace/.swe-swe/run/mcp"
 
 // mcpLessEnabled reports whether this container runs in MCP-less mode. The
-// entrypoint exports SWE_MCP_LESS=1 when `swe-swe init --mcp-less`.
+// entrypoint exports SWE_MCP_LESS=1 by default; `swe-swe init --with-mcp` opts
+// out and takes the legacy native-MCP path instead.
 func mcpLessEnabled() bool { return os.Getenv("SWE_MCP_LESS") != "" }
 
 // MCP-less mode: instead of the agent's native MCP client spawning each server
@@ -34,6 +36,12 @@ func mcpLessEnabled() bool { return os.Getenv("SWE_MCP_LESS") != "" }
 type proxySpec struct {
 	Name string
 	Argv []string
+	// BlockingTools names this server's tools whose call does not return until
+	// a human acts. Passed to mcp-cli-proxy as --blocking-tools so it emits an
+	// immediate "still waiting" notification the `mcp` client relays to stderr
+	// -- an early read of a blocking call's output is then never mistaken for
+	// "no reply". Empty for servers with no such tools.
+	BlockingTools []string
 }
 
 func (p proxySpec) socketName() string { return p.Name + ".sock" }
@@ -55,6 +63,8 @@ func mcpLessProxySpecs(sessionMode string) []proxySpec {
 		specs = append(specs, proxySpec{
 			Name: "swe-swe-agent-chat",
 			Argv: shExec("npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
+			// send_message / send_verbal_reply block until the user replies.
+			BlockingTools: []string{"send_message", "send_verbal_reply"},
 		})
 	}
 	specs = append(specs,
@@ -94,7 +104,12 @@ func launchMcpLessFleet(sessionMode, socketDir string, env []string, workDir str
 	var cmds []*exec.Cmd
 	for _, spec := range mcpLessProxySpecs(sessionMode) {
 		sock := filepath.Join(socketDir, spec.socketName())
-		args := append([]string{"--name", spec.Name, "--socket", sock, "--"}, spec.Argv...)
+		args := []string{"--name", spec.Name, "--socket", sock}
+		if len(spec.BlockingTools) > 0 {
+			args = append(args, "--blocking-tools", strings.Join(spec.BlockingTools, ","))
+		}
+		args = append(args, "--")
+		args = append(args, spec.Argv...)
 		cmd := exec.Command(mcpCliProxyBin, args...)
 		cmd.Env = env
 		cmd.Dir = workDir

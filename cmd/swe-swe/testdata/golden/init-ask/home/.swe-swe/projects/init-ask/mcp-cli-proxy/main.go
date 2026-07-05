@@ -39,6 +39,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -56,7 +57,12 @@ type config struct {
 	socketPath      string
 	protocolVersion string
 	maxRestarts     int
-	command         []string
+	// blockingTools names tools/call tool names whose call does not return
+	// until a human acts (agent-chat's send_message, send_verbal_reply). For
+	// these the proxy emits an immediate notifications/message frame so the
+	// client can surface the wait; the fleet launcher declares which they are.
+	blockingTools map[string]bool
+	command       []string
 }
 
 func parseArgs(args []string) (config, error) {
@@ -92,6 +98,17 @@ func parseArgs(args []string) (config, error) {
 			}
 			if _, err := fmt.Sscanf(args[i], "%d", &cfg.maxRestarts); err != nil {
 				return cfg, fmt.Errorf("--max-restarts must be an integer: %w", err)
+			}
+		case "--blocking-tools":
+			i++
+			if i >= len(args) {
+				return cfg, fmt.Errorf("--blocking-tools requires a value")
+			}
+			cfg.blockingTools = map[string]bool{}
+			for _, name := range strings.Split(args[i], ",") {
+				if name = strings.TrimSpace(name); name != "" {
+					cfg.blockingTools[name] = true
+				}
 			}
 		case "--":
 			cfg.command = args[i+1:]
@@ -147,7 +164,7 @@ type proxy struct {
 	logger *log.Logger
 
 	mu      sync.Mutex
-	cur     *child           // current child, nil while (re)starting
+	cur     *child            // current child, nil while (re)starting
 	pending map[int64]pending // internalID -> waiting client
 	nextID  int64
 
@@ -249,8 +266,54 @@ func (p *proxy) handleConn(nc net.Conn) {
 			delete(p.pending, internalID)
 			p.mu.Unlock()
 			writeRPCError(conn, peek.ID, -32000, "forward to mcp server failed: "+err.Error())
+			continue
+		}
+
+		// A blocking tool does not return until a human acts; announce the wait
+		// immediately (before the response can arrive) so an early or
+		// backgrounded read of the client's captured output is never mistaken
+		// for "no reply". The client relays this notification to its stderr.
+		if tool := blockingToolName(peek.Method, line, p.cfg.blockingTools); tool != "" {
+			conn.writeLine(blockingNotice(p.cfg.name, tool))
 		}
 	}
+}
+
+// blockingToolName returns the tools/call tool name if this request targets a
+// tool declared blocking, else "". It peeks params.name only when needed.
+func blockingToolName(method string, line []byte, set map[string]bool) string {
+	if method != "tools/call" || len(set) == 0 {
+		return ""
+	}
+	var peek struct {
+		Params struct {
+			Name string `json:"name"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(line, &peek); err != nil {
+		return ""
+	}
+	if set[peek.Params.Name] {
+		return peek.Params.Name
+	}
+	return ""
+}
+
+// blockingNotice builds an MCP notifications/message frame (no id, so the client
+// relays it to stderr and keeps waiting for the real response) warning that this
+// call blocks on a human. The full human-facing text lives here, in the proxy
+// that was told which tools block -- the client stays generic and just relays.
+func blockingNotice(server, tool string) []byte {
+	text := fmt.Sprintf(`<mcp>BLOCKING: "mcp %s %s" does not return until the user replies. `+
+		`If you are reading this, the reply has NOT arrived yet -- wait for the command to exit; `+
+		`never treat an empty or partial read as "no reply", and do not background this call to poll its output.</mcp>`,
+		server, tool)
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/message",
+		"params":  map[string]any{"level": "warning", "logger": "mcp-cli-proxy", "data": text},
+	})
+	return b
 }
 
 // replaceID rewrites the top-level "id" of a JSON-RPC message to newID.
@@ -499,7 +562,7 @@ func main() {
 	cfg, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-cli-proxy: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Usage: mcp-cli-proxy --name NAME --socket PATH [--protocol-version V] [--max-restarts N] -- COMMAND [ARGS...]\n")
+		fmt.Fprintf(os.Stderr, "Usage: mcp-cli-proxy --name NAME --socket PATH [--protocol-version V] [--max-restarts N] [--blocking-tools NAME,NAME] -- COMMAND [ARGS...]\n")
 		os.Exit(1)
 	}
 	if cfg.name == "" || cfg.socketPath == "" {
