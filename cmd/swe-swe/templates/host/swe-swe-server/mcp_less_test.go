@@ -69,7 +69,7 @@ func stubProxyBin(t *testing.T, logPath string) string {
 	bin := filepath.Join(dir, "mcp-cli-proxy")
 	// exec the sleep so the process we kill IS the sleep (no orphaned child
 	// holding the inherited stdout pipe open, which would stall `go test`).
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + logPath + "\"\nexec sleep 60\n"
+	script := "#!/bin/sh\nprintf 'cwd=%s %s\\n' \"$(pwd)\" \"$*\" >> \"" + logPath + "\"\nexec sleep 60\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +103,9 @@ func TestLaunchMcpLessFleet(t *testing.T) {
 
 	sockDir := filepath.Join(t.TempDir(), "run", "mcp", "uuid-123")
 	env := append(os.Environ(), "MCP_STUB_LOG="+logPath)
+	workDir := t.TempDir()
 
-	cmds, err := launchMcpLessFleet("chat", sockDir, env)
+	cmds, err := launchMcpLessFleet("chat", sockDir, env, workDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +120,13 @@ func TestLaunchMcpLessFleet(t *testing.T) {
 
 	lines := waitForLines(t, logPath, 5)
 	joined := strings.Join(lines, "\n")
+	// Every proxy must run with the session's workDir as cwd -- cwd-dependent
+	// tools (agent-chat autocomplete, export_chat_md) rely on it.
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "cwd="+workDir+" ") {
+			t.Errorf("proxy not launched in session workDir %q: %s", workDir, line)
+		}
+	}
 	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe-whiteboard", "swe-swe"} {
 		wantSock := filepath.Join(sockDir, name+".sock")
 		if !strings.Contains(joined, "--name "+name+" ") {
@@ -156,7 +164,8 @@ func TestLaunchMcpLessFleet_TerminalOmitsAgentChat(t *testing.T) {
 	t.Cleanup(func() { mcpCliProxyBin = old })
 
 	sockDir := filepath.Join(t.TempDir(), "mcp")
-	cmds, err := launchMcpLessFleet("terminal", sockDir, append(os.Environ(), "MCP_STUB_LOG="+logPath))
+	// Empty workDir = inherit the server's cwd (a session with no workDir).
+	cmds, err := launchMcpLessFleet("terminal", sockDir, append(os.Environ(), "MCP_STUB_LOG="+logPath), "")
 	if err != nil {
 		t.Fatal(err)
 	}

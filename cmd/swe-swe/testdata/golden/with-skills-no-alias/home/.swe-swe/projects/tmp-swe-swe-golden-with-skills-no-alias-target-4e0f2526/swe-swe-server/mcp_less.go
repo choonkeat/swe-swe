@@ -81,10 +81,13 @@ func mcpLessProxySpecs(sessionMode string) []proxySpec {
 // launchMcpLessFleet starts one mcp-cli-proxy per spec for a session, dropping
 // each server's socket into socketDir (created if missing) and giving every
 // child the session env so the `sh -c exec` shells expand the per-session vars.
-// It returns the started commands for teardown. Best-effort: a proxy that fails
-// to start is logged and skipped (agent-chat health is surfaced separately), so
-// one bad server never blocks the rest.
-func launchMcpLessFleet(sessionMode, socketDir string, env []string) ([]*exec.Cmd, error) {
+// Every proxy runs with the session's workDir as cwd -- in native-MCP mode the
+// agent spawns these servers from its own cwd, and cwd-dependent tools
+// (agent-chat filepath autocomplete, export_chat_md's ./agent-chats) rely on
+// that. It returns the started commands for teardown. Best-effort: a proxy that
+// fails to start is logged and skipped (agent-chat health is surfaced
+// separately), so one bad server never blocks the rest.
+func launchMcpLessFleet(sessionMode, socketDir string, env []string, workDir string) ([]*exec.Cmd, error) {
 	if err := os.MkdirAll(socketDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mcp-less socket dir %s: %w", socketDir, err)
 	}
@@ -94,6 +97,7 @@ func launchMcpLessFleet(sessionMode, socketDir string, env []string) ([]*exec.Cm
 		args := append([]string{"--name", spec.Name, "--socket", sock, "--"}, spec.Argv...)
 		cmd := exec.Command(mcpCliProxyBin, args...)
 		cmd.Env = env
+		cmd.Dir = workDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {

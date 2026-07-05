@@ -5012,7 +5012,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		mcpSockDir := filepath.Join(mcpLessSocketRoot, p.UUID)
 		env = append(env, "SWE_MCP_DIR="+mcpSockDir)
 		var fleetErr error
-		mcpLessProxies, fleetErr = launchMcpLessFleet(p.SessionMode, mcpSockDir, env)
+		mcpLessProxies, fleetErr = launchMcpLessFleet(p.SessionMode, mcpSockDir, env, workDir)
 		if fleetErr != nil {
 			log.Printf("Session %s: mcp-less fleet launch failed: %v", p.UUID, fleetErr)
 		}
