@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1886,4 +1888,197 @@ func TestHandleReposAPI(t *testing.T) {
 			t.Errorf("expected empty remoteURL for fake repo, got %q", result.Repos[0].RemoteURL)
 		}
 	})
+}
+
+// newRepoPrepareTestRepo creates a git repo laid out like an external repo
+// (<reposRoot>/testrepo/workspace) with one commit on branch main, and points
+// reposDir at reposRoot for the duration of the test. When
+// withUnreachableRemote is true, origin points at a path that does not exist,
+// so any `git fetch` against it fails fast.
+func newRepoPrepareTestRepo(t *testing.T, withUnreachableRemote bool) string {
+	t.Helper()
+
+	reposRoot := t.TempDir()
+	repoPath := filepath.Join(reposRoot, "testrepo", "workspace")
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test User")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	if withUnreachableRemote {
+		run("remote", "add", "origin", filepath.Join(reposRoot, "no-such-remote.git"))
+	}
+
+	oldReposDir := reposDir
+	reposDir = reposRoot
+	t.Cleanup(func() { reposDir = oldReposDir })
+
+	return repoPath
+}
+
+func prepareWorkspaceRequest(t *testing.T, repoPath string) map[string]interface{} {
+	t.Helper()
+
+	body := `{"mode": "workspace", "path": ` + strconv.Quote(repoPath) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/repo/prepare", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleRepoPrepareAPI(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	return result
+}
+
+// Workspace prepare must respond instantly: it reports whether the repo has a
+// remote (hasRemote) but never runs `git fetch` itself -- the dialog refreshes
+// branches in the background via /api/repo/branches?fetch=1 instead.
+func TestHandleRepoPrepareWorkspaceDoesNotFetch(t *testing.T) {
+	t.Run("unreachable remote: no fetch, no warning, hasRemote true", func(t *testing.T) {
+		repoPath := newRepoPrepareTestRepo(t, true)
+		result := prepareWorkspaceRequest(t, repoPath)
+
+		if result["hasRemote"] != true {
+			t.Errorf("expected hasRemote true, got %v", result["hasRemote"])
+		}
+		// The old synchronous fetch against the unreachable remote produced a
+		// "Using cached branches" warning. Prepare must not fetch at all.
+		if warning, ok := result["warning"]; ok {
+			t.Errorf("expected no warning (prepare must not fetch), got %v", warning)
+		}
+	})
+
+	t.Run("no remote: hasRemote false", func(t *testing.T) {
+		repoPath := newRepoPrepareTestRepo(t, false)
+		result := prepareWorkspaceRequest(t, repoPath)
+
+		if result["hasRemote"] != false {
+			t.Errorf("expected hasRemote false, got %v", result["hasRemote"])
+		}
+		if warning, ok := result["warning"]; ok {
+			t.Errorf("expected no warning, got %v", warning)
+		}
+	})
+}
+
+func branchesRequest(t *testing.T, rawQuery string) map[string]interface{} {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/repo/branches?"+rawQuery, nil)
+	w := httptest.NewRecorder()
+
+	handleRepoBranchesAPI(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	return result
+}
+
+func branchNames(t *testing.T, result map[string]interface{}) []string {
+	t.Helper()
+
+	raw, ok := result["branches"].([]interface{})
+	if !ok {
+		t.Fatalf("expected branches array, got %T", result["branches"])
+	}
+	names := make([]string, 0, len(raw))
+	for _, b := range raw {
+		names = append(names, b.(string))
+	}
+	return names
+}
+
+// fetch=1 makes the branches endpoint freshen remote refs first (soft-fail:
+// a failed fetch still returns cached branches, plus a warning). Without
+// fetch=1 the endpoint must stay purely local.
+func TestHandleRepoBranchesAPIFetchParam(t *testing.T) {
+	t.Run("fetch=1 with unreachable remote: cached branches plus warning", func(t *testing.T) {
+		repoPath := newRepoPrepareTestRepo(t, true)
+		result := branchesRequest(t, "path="+url.QueryEscape(repoPath)+"&fetch=1")
+
+		names := branchNames(t, result)
+		if len(names) == 0 || names[0] != "main" {
+			t.Errorf("expected cached branch list starting with 'main', got %v", names)
+		}
+		warning, _ := result["warning"].(string)
+		if warning == "" {
+			t.Errorf("expected warning about failed fetch, got none")
+		}
+	})
+
+	t.Run("without fetch param: no fetch attempted, no warning", func(t *testing.T) {
+		repoPath := newRepoPrepareTestRepo(t, true)
+		result := branchesRequest(t, "path="+url.QueryEscape(repoPath))
+
+		if warning, ok := result["warning"]; ok {
+			t.Errorf("expected no warning without fetch=1, got %v", warning)
+		}
+		if names := branchNames(t, result); len(names) == 0 || names[0] != "main" {
+			t.Errorf("expected branch list starting with 'main', got %v", names)
+		}
+	})
+
+	t.Run("fetch=1 without remote: no warning", func(t *testing.T) {
+		repoPath := newRepoPrepareTestRepo(t, false)
+		result := branchesRequest(t, "path="+url.QueryEscape(repoPath)+"&fetch=1")
+
+		if warning, ok := result["warning"]; ok {
+			t.Errorf("expected no warning for remoteless repo, got %v", warning)
+		}
+	})
+}
+
+// RepoRoot maps a session's working directory back to the repo checkout the
+// New Session dialog lists in its Where dropdown, so a recording's "+ New"
+// button can prefill the dialog. Empty string means the default workspace.
+func TestSessionPageQueryRepoRoot(t *testing.T) {
+	tests := []struct {
+		name     string
+		workDir  string
+		expected string
+	}{
+		{"empty workdir", "", ""},
+		{"default workspace", "/workspace", ""},
+		{"default repo worktree", "/worktrees/fix-login", ""},
+		{"default repo hierarchical worktree", "/worktrees/feat--x", ""},
+		{"external main checkout", "/repos/github.com-user-repo/workspace", "/repos/github.com-user-repo/workspace"},
+		{"external repo worktree", "/repos/github.com-user-repo/worktrees/feat-a", "/repos/github.com-user-repo/workspace"},
+		{"trailing slash", "/workspace/", ""},
+		{"unknown path passes through", "/somewhere/else", "/somewhere/else"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := SessionPageQuery{WorkDir: tt.workDir}
+			if got := q.RepoRoot(); got != tt.expected {
+				t.Errorf("RepoRoot(%q) = %q, want %q", tt.workDir, got, tt.expected)
+			}
+		})
+	}
 }

@@ -268,6 +268,26 @@ type SessionPageQuery struct {
 	ExtraArgs   string // extra CLI flags appended to the agent command (optional)
 }
 
+// RepoRoot maps the session's working directory back to the repo checkout the
+// New Session dialog lists in its Where dropdown (the inverse of
+// resolveWorkingDirectory): a worktree workdir belongs to its main repo, so
+// /worktrees/<b> -> default workspace and /repos/{name}/worktrees/<b> ->
+// /repos/{name}/workspace. Empty string means the default workspace (the
+// dialog's "workspace" option). Used by recordings' "+ New" prefill.
+func (q SessionPageQuery) RepoRoot() string {
+	if q.WorkDir == "" {
+		return ""
+	}
+	workDir := filepath.Clean(q.WorkDir)
+	if workDir == workspaceDir || strings.HasPrefix(workDir, worktreeDir+"/") {
+		return ""
+	}
+	if isWorktreeWorkDir(workDir) {
+		return filepath.Join(filepath.Dir(filepath.Dir(workDir)), "workspace")
+	}
+	return workDir
+}
+
 // Encode returns a URL-encoded query string (without leading "?").
 // Returns template.URL so html/template won't double-escape the & and = characters
 // when used inside href attributes.
@@ -3693,23 +3713,12 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 		return
 	}
 
-	// Check if workspace has any remotes configured
+	// Report whether a remote exists, but never fetch here: prepare must
+	// respond instantly so the dialog unblocks. The dialog freshens remote
+	// refs afterwards via /api/repo/branches?fetch=1 in the background.
 	remoteCmd := exec.Command("git", "-C", workDir, "remote")
 	remoteOutput, err := remoteCmd.Output()
-	hasRemote := err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0
-
-	if hasRemote {
-		log.Printf("Fetching all for %s", workDir)
-		cmd := exec.Command("git", "-C", workDir, "fetch", "--all")
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			// Soft fail - return warning instead of error
-			log.Printf("Git fetch failed (continuing with cached): %v, output: %s", err, string(output))
-			response["warning"] = "Unable to fetch latest changes. Using cached branches."
-		}
-	} else {
-		log.Printf("No remote configured for %s, skipping fetch", workDir)
-	}
+	response["hasRemote"] = err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -3897,6 +3906,23 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	// Clean path to prevent traversal
 	repoPath = filepath.Clean(repoPath)
 
+	// fetch=1: freshen remote refs before listing. Soft-fail -- a failed
+	// fetch still returns the cached branch list, plus a warning. The dialog
+	// calls this in the background after the instant no-fetch listing.
+	warning := ""
+	if r.URL.Query().Get("fetch") == "1" {
+		remoteOutput, err := exec.Command("git", "-C", repoPath, "remote").Output()
+		if err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0 {
+			log.Printf("Fetching all for %s", repoPath)
+			if out, err := exec.Command("git", "-C", repoPath, "fetch", "--all").CombinedOutput(); err != nil {
+				log.Printf("Git fetch failed (continuing with cached): %v, output: %s", err, string(out))
+				warning = "Unable to fetch latest changes. Using cached branches."
+			}
+		} else {
+			log.Printf("No remote configured for %s, skipping fetch", repoPath)
+		}
+	}
+
 	// Get all branches (local and remote)
 	cmd := exec.Command("git", "-C", repoPath, "branch", "-a", "--format=%(refname:short)")
 	output, err := cmd.Output()
@@ -3940,15 +3966,19 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 		return branches[i] < branches[j]
 	})
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	branchesResponse := map[string]interface{}{
 		"branches": branches,
 		// init_sha lets the new-session dialog locate this repo's env-vars blob
 		// in localStorage (keyed by (origin, init_sha), same as the terminal-ui
 		// settings panel) so it can attach it to the creation POST. Empty for a
 		// non-git or shallow-history path -- the dialog then just skips env.
 		"init_sha": repoInitSHA(repoPath),
-	})
+	}
+	if warning != "" {
+		branchesResponse["warning"] = warning
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(branchesResponse)
 }
 
 // resolveWorkingDirectory calculates the working directory for a session

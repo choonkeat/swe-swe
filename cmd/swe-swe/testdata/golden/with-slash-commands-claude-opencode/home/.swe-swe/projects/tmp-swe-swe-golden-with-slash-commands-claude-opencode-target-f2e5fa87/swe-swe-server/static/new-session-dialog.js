@@ -55,7 +55,14 @@
         // locate this repo's env-vars blob in localStorage so it can ride the
         // creation POST and reach the new session's process before it spawns.
         initSha: '',
-        lastExtraArgsPrefill: '' // last value we auto-filled into extraArgsInput
+        lastExtraArgsPrefill: '', // last value we auto-filled into extraArgsInput
+        // Settings carried over from a recording's "+ New" button, applied
+        // once the prefilled repo finishes preparing. Cleared if the user
+        // switches the Where selection before that happens.
+        pendingPrefill: null,
+        // Session display name carried over from a recording (recordings name
+        // their session via ?name=...); rides the creation POST unchanged.
+        prefillName: ''
     };
 
     // Apply prefill rule (c): set the extra-args field for the given agent
@@ -159,6 +166,7 @@
         dialogState.extraArgs = '';
         dialogState.initSha = '';
         dialogState.lastExtraArgsPrefill = '';
+        dialogState.prefillName = '';
         if (extraArgsInput) extraArgsInput.value = '';
 
         // Reset color picker
@@ -172,6 +180,7 @@
     function resetDialog() {
         modeSelect.value = '';
         dialogState.mode = '';
+        dialogState.pendingPrefill = null;
         if (whereCombo) whereCombo.value = '';
 
         // Hide everything below dropdown
@@ -277,13 +286,15 @@
         }
     }
 
-    // Fetch repos and populate dropdown with dynamic options
+    // Fetch repos and populate dropdown with dynamic options.
+    // Returns a promise that resolves once the options (and the where combo)
+    // are in their final state, so callers can select a dynamic option.
     function fetchAndPopulateRepos() {
         // Remove stale dynamic options first
         var dynamicOptions = modeSelect.querySelectorAll('option[data-dynamic]');
         dynamicOptions.forEach(function(opt) { opt.remove(); });
 
-        fetch('/api/repos')
+        return fetch('/api/repos')
             .then(function(response) {
                 if (!response.ok) return null;
                 return response.json();
@@ -310,6 +321,64 @@
             .finally(function() {
                 syncWhereComboOptions();
             });
+    }
+
+    // Fill the branch datalist/combo from a /api/repo/branches payload.
+    // setOptions leaves the combo's typed value alone, so a later refresh
+    // never clobbers what the user is entering.
+    function populateBranches(branchData) {
+        dialogState.initSha = branchData.init_sha || '';
+        var branches = branchData.branches || [];
+        branchList.innerHTML = '';
+        branches.forEach(function(branch) {
+            var option = document.createElement('option');
+            option.value = branch;
+            branchList.appendChild(option);
+        });
+        if (branchCombo) branchCombo.setOptions(branches);
+        if (branchData.warning) {
+            warningDiv.textContent = branchData.warning;
+            warningDiv.style.display = 'block';
+        }
+    }
+
+    // Freshen remote refs (git fetch) without blocking the dialog, then
+    // update the branch list. Best-effort: errors are ignored, and a result
+    // that arrives after the user switched repos is dropped.
+    function refreshBranchesInBackground(repoPath) {
+        fetch('/api/repo/branches?path=' + encodeURIComponent(repoPath) + '&fetch=1')
+            .then(function(response) {
+                return response.ok ? response.json() : null;
+            })
+            .then(function(branchData) {
+                if (!branchData) return;
+                if (dialogState.repoPath !== repoPath) return;
+                populateBranches(branchData);
+            })
+            .catch(function() {});
+    }
+
+    // Apply the settings a recording's "+ New" button carried over, once the
+    // prefilled repo has finished preparing. One-shot.
+    function applyPendingPrefill() {
+        var prefill = dialogState.pendingPrefill;
+        if (!prefill) return;
+        dialogState.pendingPrefill = null;
+        if (prefill.branch) {
+            branchInput.value = prefill.branch;
+            if (branchCombo) branchCombo.value = prefill.branch;
+            dialogState.selectedBranch = prefill.branch;
+        }
+        if (prefill.extraArgs) {
+            extraArgsInput.value = prefill.extraArgs;
+            dialogState.extraArgs = prefill.extraArgs;
+            // Treat like an auto-prefill: picking another agent may replace
+            // it with that agent's default, same as any untouched field.
+            dialogState.lastExtraArgsPrefill = prefill.extraArgs;
+        }
+        if (prefill.name) {
+            dialogState.prefillName = prefill.name;
+        }
     }
 
     // Prepare repo and show post-prepare fields
@@ -370,8 +439,10 @@
             if (dialogState.isNewProject || data.nonGit) {
                 hideLoading();
                 enableAgentOnly();
+                applyPendingPrefill();
             } else {
-                // Fetch branches
+                // List branches from local refs (instant) so the dialog is
+                // usable right away; freshen remote refs in the background.
                 return fetch('/api/repo/branches?path=' + encodeURIComponent(data.path))
                     .then(function(response) {
                         if (!response.ok) {
@@ -381,16 +452,12 @@
                     })
                     .then(function(branchData) {
                         hideLoading();
-                        dialogState.initSha = branchData.init_sha || '';
-                        var branches = branchData.branches || [];
-                        branchList.innerHTML = '';
-                        branches.forEach(function(branch) {
-                            var option = document.createElement('option');
-                            option.value = branch;
-                            branchList.appendChild(option);
-                        });
-                        if (branchCombo) branchCombo.setOptions(branches);
+                        populateBranches(branchData);
                         enableBranchAndAgent();
+                        applyPendingPrefill();
+                        if (data.hasRemote) {
+                            refreshBranchesInBackground(data.path);
+                        }
                     });
             }
         })
@@ -408,6 +475,12 @@
     modeSelect.addEventListener('change', function() {
         var value = modeSelect.value;
         dialogState.mode = value;
+
+        // A prefill only applies to the Where value it targeted; picking
+        // anything else means the user took over.
+        if (dialogState.pendingPrefill && dialogState.pendingPrefill.whereValue !== value) {
+            dialogState.pendingPrefill = null;
+        }
 
         // Empty placeholder: hide everything
         if (!value) {
@@ -574,6 +647,11 @@
         } else if (dialogState.selectedBranch) {
             p.set('branch', dialogState.selectedBranch);
         }
+        // Recording prefill: keep the session display name (independent of
+        // the create-mode project name above).
+        if (!dialogState.isNewProject && dialogState.prefillName) {
+            p.set('name', dialogState.prefillName);
+        }
         if (dialogState.repoPath && dialogState.repoPath !== '/workspace') {
             p.set('pwd', dialogState.repoPath);
         }
@@ -654,16 +732,28 @@
         startSession('chat');
     });
 
-    // Dialog open
-    window.openNewSessionDialog = function(preSelectedAgent, sessionUUID, debug) {
+    // Dialog open. prefill (optional) carries a recording's settings:
+    // {repoPath, branch, name, extraArgs} -- the Where selection is made
+    // automatically and the rest is applied once the repo has prepared, so
+    // the user can review/tweak everything before starting.
+    window.openNewSessionDialog = function(preSelectedAgent, sessionUUID, debug, prefill) {
         dialogState.sessionUUID = sessionUUID;
         dialogState.debug = debug;
         dialogState.preSelectedAgent = preSelectedAgent || '';
 
         resetDialog();
         loadRepoHistory();
-        fetchAndPopulateRepos();
+        var reposLoaded = fetchAndPopulateRepos();
         overlay.style.display = 'flex';
+
+        if (prefill) {
+            dialogState.pendingPrefill = prefill;
+            // Dynamic repo options only exist after /api/repos returns.
+            reposLoaded.then(function() {
+                selectPrefillWhere(prefill);
+            });
+            return;
+        }
 
         // Focus the Where combo-box so the user can start typing immediately.
         const whereCombo = document.getElementById('where-combo');
@@ -671,6 +761,23 @@
             whereCombo._input.focus();
         }
     };
+
+    // Select the Where option a prefill targets and kick off prepare. If the
+    // option no longer exists (repo deleted), the prefill is abandoned and
+    // the user picks manually.
+    function selectPrefillWhere(prefill) {
+        if (overlay.style.display === 'none') return; // dialog closed meanwhile
+        if (dialogState.pendingPrefill !== prefill) return; // superseded
+        var whereValue = prefill.repoPath || 'workspace';
+        prefill.whereValue = whereValue;
+        modeSelect.value = whereValue;
+        if (modeSelect.value !== whereValue) {
+            dialogState.pendingPrefill = null;
+            return;
+        }
+        if (whereCombo) whereCombo.value = whereValue;
+        modeSelect.dispatchEvent(new Event('change'));
+    }
 
     // Dialog close
     function closeDialog() {

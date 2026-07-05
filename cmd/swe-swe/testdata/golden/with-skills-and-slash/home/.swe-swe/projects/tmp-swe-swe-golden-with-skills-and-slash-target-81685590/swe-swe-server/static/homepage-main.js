@@ -152,6 +152,24 @@ function renameRecording(uuid, button) {
     });
 }
 
+// Open the New Session dialog pre-filled with a recording's settings
+// (assistant, repo, branch, name, extra args) so the user can tweak any of
+// them before starting, instead of creating the session immediately.
+function newSessionFromRecording(btn) {
+    var headerBtn = document.getElementById('btn-new-session');
+    openNewSessionDialog(
+        btn.dataset.assistant || '',
+        headerBtn ? headerBtn.dataset.uuid : '',
+        btn.dataset.debug === '1',
+        {
+            repoPath: btn.dataset.pwd || '',
+            branch: btn.dataset.branch || '',
+            name: btn.dataset.name || '',
+            extraArgs: btn.dataset.extraArgs || ''
+        }
+    );
+}
+
 // Event listeners for buttons (CSP-compliant - no inline handlers)
 document.addEventListener('DOMContentLoaded', function() {
     // New Session button
@@ -188,6 +206,8 @@ document.addEventListener('DOMContentLoaded', function() {
             keepRecording(uuid, btn);
         } else if (action === 'rename-recording') {
             renameRecording(uuid, btn);
+        } else if (action === 'new-from-recording') {
+            newSessionFromRecording(btn);
         }
     });
 });
