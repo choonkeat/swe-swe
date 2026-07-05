@@ -210,20 +210,22 @@ _payload-helper:
 	@rm -rf /tmp/swe-swe-payload-$(NAME)
 	@mkdir -p /tmp/swe-swe-payload-$(NAME)
 	@cp cmd/swe-swe/templates/host/$(NAME)/main.go /tmp/swe-swe-payload-$(NAME)/main.go
-	cd /tmp/swe-swe-payload-$(NAME) && go mod init $(NAME) >/dev/null 2>&1 && \
+	@cp cmd/swe-swe/templates/host/$(NAME)/go.mod.txt /tmp/swe-swe-payload-$(NAME)/go.mod
+	cd /tmp/swe-swe-payload-$(NAME) && \
 		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
 	@rm -rf /tmp/swe-swe-payload-$(NAME)
 
 # Test the git-sign-swe-swe wrapper template (stdlib only).
 # The wrapper ships as a standalone binary built inside Dockerfile;
-# we mirror the same go-mod-init-in-tmp pattern so the test runs
-# against the same module shape that the container build produces.
+# we copy the sources plus the bundled go.mod.txt into a tmp module so the
+# test runs against the same module shape that the container build produces.
 GIT_SIGN_TEMPLATE := cmd/swe-swe/templates/host/git-sign-swe-swe
 test-git-sign-swe-swe:
 	@rm -rf /tmp/git-sign-swe-swe-test
 	@mkdir -p /tmp/git-sign-swe-swe-test
 	@cp $(GIT_SIGN_TEMPLATE)/*.go /tmp/git-sign-swe-swe-test/
-	@cd /tmp/git-sign-swe-swe-test && go mod init git-sign-swe-swe >/dev/null 2>&1 && go test -v ./...
+	@cp $(GIT_SIGN_TEMPLATE)/go.mod.txt /tmp/git-sign-swe-swe-test/go.mod
+	@cd /tmp/git-sign-swe-swe-test && go test -v ./...
 	@rm -rf /tmp/git-sign-swe-swe-test
 
 # Check that common dependencies between go.mod and template go.mod.txt have matching versions

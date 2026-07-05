@@ -28,34 +28,37 @@ COPY swe-swe-server/cmd/ ./cmd/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server . && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-fork-convo ./cmd/swe-swe-fork-convo
 
+# Each helper tool ships its own go.mod (materialized from go.mod.txt by
+# swe-swe init) so builds don't run `go mod init` -- stdlib only, no go.sum.
+
 # Build mcp-lazy-init (generic lazy-init MCP proxy, stdlib only)
-COPY mcp-lazy-init/main.go /build-mcp-lazy-init/main.go
-RUN cd /build-mcp-lazy-init && go mod init mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
+COPY mcp-lazy-init/main.go mcp-lazy-init/go.mod /build-mcp-lazy-init/
+RUN cd /build-mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
 
 # Build mcp-cli-proxy (per-server stdio MCP adapter for MCP-less mode, stdlib only)
-COPY mcp-cli-proxy/main.go /build-mcp-cli-proxy/main.go
-RUN cd /build-mcp-cli-proxy && go mod init mcp-cli-proxy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-cli-proxy/mcp-cli-proxy .
+COPY mcp-cli-proxy/main.go mcp-cli-proxy/go.mod /build-mcp-cli-proxy/
+RUN cd /build-mcp-cli-proxy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-cli-proxy/mcp-cli-proxy .
 
 # Build mcp (agent-facing client for MCP-less mode, stdlib only)
-COPY mcp/main.go /build-mcp/main.go
-RUN cd /build-mcp && go mod init mcp && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp/mcp .
+COPY mcp/main.go mcp/go.mod /build-mcp/
+RUN cd /build-mcp && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp/mcp .
 
 # Build swe-swe-broker-probe (per-session credential broker measurement tool, stdlib only)
-COPY swe-swe-broker-probe/main.go /build-swe-swe-broker-probe/main.go
-RUN cd /build-swe-swe-broker-probe && go mod init swe-swe-broker-probe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-swe-broker-probe/swe-swe-broker-probe .
+COPY swe-swe-broker-probe/main.go swe-swe-broker-probe/go.mod /build-swe-swe-broker-probe/
+RUN cd /build-swe-swe-broker-probe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-swe-broker-probe/swe-swe-broker-probe .
 
 # Build git-credential-swe-swe (per-session git HTTPS credential helper, stdlib only)
-COPY git-credential-swe-swe/main.go /build-git-credential-swe-swe/main.go
-RUN cd /build-git-credential-swe-swe && go mod init git-credential-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-credential-swe-swe/git-credential-swe-swe .
+COPY git-credential-swe-swe/main.go git-credential-swe-swe/go.mod /build-git-credential-swe-swe/
+RUN cd /build-git-credential-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-credential-swe-swe/git-credential-swe-swe .
 
 # Build git-sign-swe-swe (per-session SSH commit-signing helper, stdlib only)
-COPY git-sign-swe-swe/main.go /build-git-sign-swe-swe/main.go
-RUN cd /build-git-sign-swe-swe && go mod init git-sign-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-sign-swe-swe/git-sign-swe-swe .
+COPY git-sign-swe-swe/main.go git-sign-swe-swe/go.mod /build-git-sign-swe-swe/
+RUN cd /build-git-sign-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-git-sign-swe-swe/git-sign-swe-swe .
 
 # Build prctx (standalone PR/MR review CLI, stdlib only). Multi-file package;
 # copy the whole dir. Available on $PATH in every session for the /pr commands.
-COPY prctx/*.go /build-prctx/
-RUN cd /build-prctx && go mod init prctx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-prctx/prctx .
+COPY prctx/*.go prctx/go.mod /build-prctx/
+RUN cd /build-prctx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-prctx/prctx .
 
 # {{IF TUNNEL}}
 # Build swe-swe-tunnel client from the upstream public repo. swe-swe-server
