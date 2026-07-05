@@ -8,6 +8,7 @@ package main
 // surfaces as a clean non-zero exit rather than a hang.
 
 import (
+	"bytes"
 	"net"
 	"os"
 	"os/exec"
@@ -26,12 +27,20 @@ func goBuild(t *testing.T, out, pkg string) {
 	}
 }
 
-// runMCP invokes the built mcp client with SWE_MCP_DIR pointed at sockDir.
+// runMCP invokes the built mcp client with SWE_MCP_DIR pointed at sockDir. It
+// returns stdout (the tool result / rendered help) on success; stderr carries
+// side-channel notices (the -h tip, blocking-call warnings) that must not
+// pollute result assertions, so it is folded in only on error, for diagnostics.
 func runMCP(bin, sockDir string, args ...string) (string, error) {
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(), "SWE_MCP_DIR="+sockDir)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String() + stderr.String(), err
+	}
+	return stdout.String(), nil
 }
 
 func TestIntegrationRealBinaries(t *testing.T) {
@@ -43,8 +52,8 @@ func TestIntegrationRealBinaries(t *testing.T) {
 	binDir := t.TempDir()
 	proxyBin := filepath.Join(binDir, "mcp-cli-proxy")
 	mcpBin := filepath.Join(binDir, "mcp")
-	goBuild(t, proxyBin, ".")       // this package
-	goBuild(t, mcpBin, "../mcp")    // the client CLI
+	goBuild(t, proxyBin, ".")    // this package
+	goBuild(t, mcpBin, "../mcp") // the client CLI
 
 	sockDir := t.TempDir()
 	sock := filepath.Join(sockDir, "svc.sock")
