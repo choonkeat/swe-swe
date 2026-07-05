@@ -146,8 +146,7 @@ This environment has NO MCP client. Reach every tool through the `mcp` CLI,
 which mirrors the tool id `mcp__<server>__<tool>`:
 
     mcp                          # list servers (the socket dir is the registry)
-    mcp <server>                 # list a server's tools
-    mcp <server> --full          # full docs for every tool (what native MCP injects)
+    mcp <server>                 # full docs for every tool (what native MCP injects)
     mcp <server> <tool> -h       # full docs for one tool
     mcp <server> <tool> [--flags] # call the tool; its result prints to stdout
 
