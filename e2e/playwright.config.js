@@ -31,7 +31,9 @@ export default defineConfig({
     storageState: storageStatePath,
     headless: true,
     launchOptions: {
-      executablePath: '/usr/bin/chromium',
+      // Default to the system chromium; CHROMIUM_BIN overrides it when that
+      // build is broken on the host (see scripts/e2e-test.sh + global-setup.js).
+      executablePath: process.env.CHROMIUM_BIN || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-gpu'],
     },
   },

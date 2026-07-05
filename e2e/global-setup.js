@@ -36,8 +36,13 @@ export default async function globalSetup(config) {
     return;
   }
 
+  // Default to the system chromium, but allow CHROMIUM_BIN to override it.
+  // Some boxes ship a chromium build that crashes on launch (e.g. a newer
+  // Debian package whose zygote dies on this kernel); scripts/e2e-test.sh
+  // detects that and points CHROMIUM_BIN at a working Playwright-bundled
+  // chromium. Keep this in sync with playwright.config.js.
   const browser = await chromium.launch({
-    executablePath: '/usr/bin/chromium',
+    executablePath: process.env.CHROMIUM_BIN || '/usr/bin/chromium',
     args: ['--no-sandbox', '--disable-gpu'],
   });
   const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
