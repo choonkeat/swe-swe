@@ -314,23 +314,16 @@ mkdir -p /home/app/.claude
 cat > /home/app/.claude/CLAUDE.md << 'MCPLESSEOF'
 # MCP-less mode
 
-This environment has NO MCP client. Reach every tool through the `mcp` CLI,
-which mirrors the tool id `mcp__<server>__<tool>`:
-
-    mcp                          # list servers (the socket dir is the registry)
-    mcp <server>                 # full docs for every tool (what native MCP injects)
-    mcp <server> <tool> -h       # full docs for one tool
-    mcp <server> <tool> [--flags] # call the tool; its result prints to stdout
-
-The -h output IS the tool's documentation -- a native MCP client would inject
-it into your context automatically; here you must pull it. Never guess flags.
+This environment has NO MCP client. Reach every tool through the `mcp` CLI.
+Run `mcp -h` FIRST -- and again after any context compaction. It prints the
+full documentation for every server and tool (what a native MCP client would
+inject into your context automatically). Never guess flags.
 
 Talk to the user through agent-chat -- it is the ONLY channel the user sees:
 
 - Start each turn with `mcp swe-swe-agent-chat check_messages`.
-- EVERY user-visible message MUST go through send_message. Before your first
-  send_message -- and again after any context compaction -- run
-  `mcp swe-swe-agent-chat send_message -h` and follow it exactly.
+- EVERY user-visible message MUST go through send_message, following its
+  documentation from `mcp -h` exactly.
 - `send_message` BLOCKS until the user replies; the reply is RETURNED as the
   command's stdout. Never background it; end every turn on it.
 - Non-blocking status: `mcp swe-swe-agent-chat send_progress --text "..."`.

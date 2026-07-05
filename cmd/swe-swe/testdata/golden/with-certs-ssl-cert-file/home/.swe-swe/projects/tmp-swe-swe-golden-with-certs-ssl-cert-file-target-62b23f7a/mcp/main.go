@@ -433,12 +433,13 @@ func printTopHelp(out *os.File) {
 
 Usage:
   mcp <server> <tool> [flags]   call a tool
-  mcp <server>                  full docs for every tool
+  mcp -h                        full docs for every server and tool (below)
+  mcp <server>                  full docs for one server's tools
   mcp <server> <tool> -h        full docs for one tool
 
 Global flags:
   --remind-help-text-throttle duration
-      how often the post-call <mcp>tip</mcp> docs reminder re-prints per tool
+      how often the pre-call <mcp>tip</mcp> docs reminder re-prints per tool
       (default 30m; 0 = every call)
 
 The command mirrors the tool id mcp__<server>__<tool>:
@@ -452,6 +453,17 @@ The command mirrors the tool id mcp__<server>__<tool>:
 	fmt.Fprintf(out, "\nServers (from %s):\n", socketDir())
 	for _, s := range servers {
 		fmt.Fprintf(out, "  %s\n", s)
+	}
+	// Full docs for every server follow -- bare `mcp -h` is the one command
+	// steering points agents at, so it must carry the entire registry (the
+	// byte-for-byte equivalent of what a native MCP client would inject).
+	// A server whose socket won't answer degrades to an inline note instead
+	// of killing the dump.
+	for _, s := range servers {
+		fmt.Fprintf(out, "\n===== %s =====\n\n", s)
+		if err := printServerHelp(s, out); err != nil {
+			fmt.Fprintf(out, "(failed to load tools: %v)\n", err)
+		}
 	}
 }
 
