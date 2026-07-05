@@ -8,8 +8,7 @@
 // The command surface mirrors the canonical MCP tool id `mcp__<server>__<tool>`:
 //
 //	mcp                         list servers
-//	mcp <server>                list a server's tools
-//	mcp <server> --full         full docs for every tool (what native MCP injects)
+//	mcp <server>                full docs for every tool (what native MCP injects)
 //	mcp <server> <tool> -h      full docs for one tool (from its JSON Schema)
 //	mcp <server> <tool> [flags] call the tool; print its result
 //
@@ -17,6 +16,13 @@
 // text -> stdout, image -> written to a file whose path is printed, structured
 // -> JSON. Blocking tools (e.g. send_message, which waits for the user's reply)
 // simply block until the proxy returns -- there is no client-side timeout.
+//
+// After a successful call a one-line <mcp>tip</mcp> reminder is printed to
+// stderr pointing at the tool's -h docs: MCP-less agents never get tool docs
+// injected into context and lose whatever they read at context compaction.
+// Throttled per (server, tool) via marker files in <socket dir>/.remind so a
+// hot loop is not spammed; tune with --remind-help-text-throttle (default 30m,
+// 0 = every call).
 package main
 
 import (
@@ -30,6 +36,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const defaultSocketDir = "/workspace/.swe-swe/run/mcp"
@@ -258,13 +265,6 @@ func exoticSubset(raw json.RawMessage) string {
 	return string(b)
 }
 
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
 // coerce converts a flag's string value to the Go type the schema calls for.
 func coerce(p property, raw string) (any, error) {
 	switch p.kind() {
@@ -431,9 +431,13 @@ func printTopHelp(out *os.File) {
 
 Usage:
   mcp <server> <tool> [flags]   call a tool
-  mcp <server>                  list a server's tools
+  mcp <server>                  full docs for every tool
   mcp <server> <tool> -h        full docs for one tool
-  mcp <server> --full           full docs for every tool
+
+Global flags:
+  --remind-help-text-throttle duration
+      how often the post-call <mcp>tip</mcp> docs reminder re-prints per tool
+      (default 30m; 0 = every call)
 
 The command mirrors the tool id mcp__<server>__<tool>:
   mcp__swe-swe-agent-chat__send_message  ->  mcp swe-swe-agent-chat send_message --text "..."
@@ -449,23 +453,19 @@ The command mirrors the tool id mcp__<server>__<tool>:
 	}
 }
 
+// printServerHelp dumps every tool's full help -- the byte-for-byte equivalent
+// of what a native MCP client would inject into the agent's context.
 func printServerHelp(server string, out *os.File) error {
 	tools, err := listTools(server)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s tools:\n", server)
-	width := 0
-	for _, t := range tools {
-		if len(t.Name) > width {
-			width = len(t.Name)
+	for i := range tools {
+		if i > 0 {
+			fmt.Fprintf(out, "\n---\n\n")
 		}
+		printToolHelp(server, tools[i], out)
 	}
-	for _, t := range tools {
-		fmt.Fprintf(out, "  %-*s  %s\n", width, t.Name, firstLine(t.Description))
-	}
-	fmt.Fprintf(out, "\nRun: mcp %s <tool> -h   full docs for one tool\n", server)
-	fmt.Fprintf(out, "     mcp %s --full       full docs for every tool\n", server)
 	return nil
 }
 
@@ -580,20 +580,61 @@ func printToolHelp(server string, t tool, out *os.File) {
 	}
 }
 
-// printServerFull dumps every tool's full help -- the byte-for-byte equivalent
-// of what a native MCP client would inject into the agent's context.
-func printServerFull(server string, out *os.File) error {
-	tools, err := listTools(server)
-	if err != nil {
-		return err
-	}
-	for i := range tools {
-		if i > 0 {
-			fmt.Fprintf(out, "\n---\n\n")
+// --- post-call -h reminder ------------------------------------------------
+
+// maybeRemindHelp prints a one-line <mcp>tip</mcp> to errOut after a
+// successful tool call, pointing at the tool's own -h docs. MCP-less agents
+// never get tool docs injected into context and lose whatever they did read
+// at context compaction -- and compaction is invisible to them, so the nudge
+// must come from outside. Throttled per (server, tool) via a marker file's
+// mtime under <socket dir>/.remind (never listed as a server: no .sock
+// suffix). throttle 0 prints on every call. State errors fail open: the
+// reminder matters more than the bookkeeping.
+func maybeRemindHelp(server, tool string, throttle time.Duration, errOut *os.File) {
+	dir := filepath.Join(socketDir(), ".remind")
+	marker := filepath.Join(dir, server+"__"+tool)
+	if throttle > 0 {
+		if fi, err := os.Stat(marker); err == nil && time.Since(fi.ModTime()) < throttle {
+			return
 		}
-		printToolHelp(server, tools[i], out)
 	}
-	return nil
+	fmt.Fprintf(errOut, "<mcp>tip: this tool's docs are not in your context and fade after compaction; refresh: mcp %s %s -h (all tools: mcp %s -h)</mcp>\n", server, tool, server)
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(marker, nil, 0o644)
+}
+
+// remindFlag is the global flag controlling the reminder throttle.
+const remindFlag = "--remind-help-text-throttle"
+
+// extractThrottleFlag strips --remind-help-text-throttle[=]<duration> from
+// args (any position) and returns the remaining args plus the throttle to
+// use. Accepts Go durations ("30m", "1h"); "0" prints the tip on every call.
+func extractThrottleFlag(args []string) ([]string, time.Duration, error) {
+	throttle := 30 * time.Minute
+	var rest []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		var raw string
+		switch {
+		case a == remindFlag:
+			i++
+			if i >= len(args) {
+				return nil, 0, fmt.Errorf("flag %s requires a value", remindFlag)
+			}
+			raw = args[i]
+		case strings.HasPrefix(a, remindFlag+"="):
+			raw = a[len(remindFlag)+1:]
+		default:
+			rest = append(rest, a)
+			continue
+		}
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%s: %w", remindFlag, err)
+		}
+		throttle = d
+	}
+	return rest, throttle, nil
 }
 
 func isHelp(a string) bool { return a == "-h" || a == "--help" || a == "help" }
@@ -601,6 +642,11 @@ func isHelp(a string) bool { return a == "-h" || a == "--help" || a == "help" }
 // --- main ---------------------------------------------------------------------
 
 func run(args []string, out, errOut *os.File) int {
+	args, throttle, err := extractThrottleFlag(args)
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
 	if len(args) == 0 || isHelp(args[0]) {
 		printTopHelp(out)
 		return 0
@@ -608,13 +654,6 @@ func run(args []string, out, errOut *os.File) int {
 	server := args[0]
 	if len(args) == 1 || isHelp(args[1]) {
 		if err := printServerHelp(server, out); err != nil {
-			fmt.Fprintf(errOut, "mcp: %v\n", err)
-			return 1
-		}
-		return 0
-	}
-	if args[1] == "--full" {
-		if err := printServerFull(server, out); err != nil {
 			fmt.Fprintf(errOut, "mcp: %v\n", err)
 			return 1
 		}
@@ -663,7 +702,11 @@ func run(args []string, out, errOut *os.File) int {
 		fmt.Fprintf(errOut, "mcp: %v\n", err)
 		return 1
 	}
-	return render(server, toolName, result, out, errOut)
+	code := render(server, toolName, result, out, errOut)
+	if code == 0 {
+		maybeRemindHelp(server, toolName, throttle, errOut)
+	}
+	return code
 }
 
 func main() {

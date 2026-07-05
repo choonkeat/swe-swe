@@ -197,13 +197,13 @@ func TestToolHelpDestructiveHint(t *testing.T) {
 	}
 }
 
-// TestServerFullDumpsAllTools proves --full prints every tool's full docs in
-// one shot -- the MCP-less equivalent of native tool-definition injection.
-func TestServerFullDumpsAllTools(t *testing.T) {
+// TestServerHelpDumpsAllTools proves `mcp <server> -h` prints every tool's
+// full docs in one shot.
+func TestServerHelpDumpsAllTools(t *testing.T) {
 	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
 		return json.RawMessage(richToolsList)
 	})
-	out, _, code := runCapture(t, dir, "svc", "--full")
+	out, _, code := runCapture(t, dir, "svc", "-h")
 	if code != 0 {
 		t.Fatal(code)
 	}
@@ -214,8 +214,75 @@ func TestServerFullDumpsAllTools(t *testing.T) {
 		"Delete everything.",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("--full missing %q:\n%s", want, out)
+			t.Errorf("server -h missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestRemindTip proves a successful call prints the one-line <mcp>tip</mcp>
+// docs reminder to stderr, throttled per (server, tool) via marker files in
+// the socket dir, and that --remind-help-text-throttle=0 disables throttling.
+func TestRemindTip(t *testing.T) {
+	handler := func(method string, params json.RawMessage) json.RawMessage {
+		if method == "tools/list" {
+			return json.RawMessage(echoToolsList)
+		}
+		return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
+	}
+	dir := fakeSocketServer(t, "svc", handler)
+
+	const tip = "<mcp>tip:"
+	out, errStr, code := runCapture(t, dir, "svc", "echo", "--text", "x")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	if !strings.Contains(errStr, tip) || !strings.Contains(errStr, "mcp svc echo -h") {
+		t.Errorf("first call should print tip on stderr, got %q", errStr)
+	}
+	if strings.Contains(out, tip) {
+		t.Errorf("tip must not pollute stdout: %q", out)
+	}
+	if strings.Count(errStr, "\n") > 1 || !strings.HasSuffix(strings.TrimSpace(errStr), "</mcp>") {
+		t.Errorf("tip must be a single <mcp>...</mcp> line, got %q", errStr)
+	}
+
+	// Second call within the default 30m window: throttled.
+	_, errStr, _ = runCapture(t, dir, "svc", "echo", "--text", "x")
+	if strings.Contains(errStr, tip) {
+		t.Errorf("second call should be throttled, got %q", errStr)
+	}
+
+	// throttle=0 prints on every call.
+	_, errStr, _ = runCapture(t, dir, "svc", "echo", "--text", "x", "--remind-help-text-throttle=0")
+	if !strings.Contains(errStr, tip) {
+		t.Errorf("throttle=0 should always print tip, got %q", errStr)
+	}
+
+	// -h is itself the docs: no tip.
+	_, errStr, _ = runCapture(t, dir, "svc", "echo", "-h")
+	if strings.Contains(errStr, tip) {
+		t.Errorf("-h should not print tip, got %q", errStr)
+	}
+
+	// Bad duration is a usage error.
+	_, errStr, code = runCapture(t, dir, "svc", "echo", "--text", "x", "--remind-help-text-throttle", "soon")
+	if code == 0 || !strings.Contains(errStr, "remind-help-text-throttle") {
+		t.Errorf("bad duration should fail with flag name, got code=%d %q", code, errStr)
+	}
+}
+
+// TestRemindTipSkippedOnIsError proves tool-level failures don't get the tip:
+// their content already carries the corrective instruction.
+func TestRemindTipSkippedOnIsError(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		if method == "tools/list" {
+			return json.RawMessage(echoToolsList)
+		}
+		return json.RawMessage(`{"content":[{"type":"text","text":"boom"}],"isError":true}`)
+	})
+	_, errStr, _ := runCapture(t, dir, "svc", "echo", "--text", "x")
+	if strings.Contains(errStr, "<mcp>tip:") {
+		t.Errorf("isError result should not print tip, got %q", errStr)
 	}
 }
 
@@ -341,7 +408,10 @@ func TestRunCallStructuredAndImage(t *testing.T) {
 	}
 }
 
-func TestRunServerHelpListsTools(t *testing.T) {
+// TestRunServerHelpIsFullDump proves `mcp <server>` prints every tool's FULL
+// docs (not a one-line index): this is the MCP-less equivalent of native
+// tool-definition context injection, so nothing may be truncated.
+func TestRunServerHelpIsFullDump(t *testing.T) {
 	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
 		return json.RawMessage(echoToolsList)
 	})
@@ -349,12 +419,10 @@ func TestRunServerHelpListsTools(t *testing.T) {
 	if code != 0 {
 		t.Fatal(code)
 	}
-	if !strings.Contains(out, "echo") || !strings.Contains(out, "Echo text back.") {
-		t.Errorf("server help missing tool listing: %q", out)
-	}
-	// description should be first-line only
-	if strings.Contains(out, "Second line.") {
-		t.Errorf("server help should show only first description line: %q", out)
+	for _, want := range []string{"mcp svc echo [flags]", "Echo text back.", "Second line.", "--text string (required)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("server help missing %q: %q", want, out)
+		}
 	}
 }
 
