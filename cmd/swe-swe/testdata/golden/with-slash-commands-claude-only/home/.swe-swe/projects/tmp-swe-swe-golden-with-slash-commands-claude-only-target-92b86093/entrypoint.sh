@@ -118,7 +118,7 @@ printf '%s' "$turn" | grep -q \
 # A check_messages that found an empty queue is an allowed silent turn.
 # (Escaped-JSON gap between the words is 5 chars: \":\" -- allow slack.)
 printf '%s' "$turn" | grep -q 'queue.\{0,8\}empty' && exit 0
-echo 'BLOCKED: this turn ends with no user-visible message, and the user sees only agent-chat -- your plain response text is invisible to them. Deliver your result now via mcp swe-swe-agent-chat send_message (or send_progress for a non-blocking status if work continues). Set AGENT_CHAT_DISABLE=1 to permit silent stops.' >&2
+echo 'BLOCKED: this turn ends with no user-visible message, and the user sees only agent-chat -- your TUI responses are invisible to them. Deliver your result now via mcp swe-swe-agent-chat send_message (or send_progress for a non-blocking status if work continues). Note: this Stop hook is active unless AGENT_CHAT_DISABLE=1 is set.' >&2
 exit 2
 STOPGUARDEOF
 chmod +x /home/app/.claude/hooks/swe-swe-stop-guard.sh
