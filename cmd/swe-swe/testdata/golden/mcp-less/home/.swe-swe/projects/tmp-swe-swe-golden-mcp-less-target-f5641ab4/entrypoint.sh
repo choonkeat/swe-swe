@@ -209,7 +209,51 @@ fi
 # block: a wrongly shown menu hard-hangs the agent, a wrongly blocked one just
 # nudges it to send_message. Hooks are snapshotted at session start, so the
 # env var (read at tool-call time) is the per-session knob; this file is static.
-mkdir -p /home/app/.claude
+#
+# Stop guard (same philosophy at turn-end): in an agent-chat session plain
+# response text is invisible, so a turn that ends without any user-visible
+# send looks like a crash. The Stop hook blocks the FIRST silent stop of a
+# turn (exit 2 feeds the instruction back to the agent); stop_hook_active
+# guarantees the second attempt always passes, so it can never loop. Sessions
+# without an agent-chat channel (terminal TUI, plain claude runs) are
+# detected inside the script and exempt.
+mkdir -p /home/app/.claude/hooks
+cat > /home/app/.claude/hooks/swe-swe-stop-guard.sh << 'STOPGUARDEOF'
+#!/bin/sh
+# swe-swe Stop guard: in agent-chat sessions every turn must end with a
+# user-visible message (send_message / send_progress / draw / send_verbal_*).
+# Exit 2 blocks the stop once per turn; stderr becomes the agent's instruction.
+[ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
+# Enforce only where this session actually has an agent-chat channel.
+if [ -n "$SWE_MCP_DIR" ]; then
+  [ -S "$SWE_MCP_DIR/swe-swe-agent-chat.sock" ] || exit 0
+else
+  [ -n "$AGENT_CHAT_PORT" ] || exit 0
+fi
+command -v jq >/dev/null 2>&1 || exit 0
+input=$(cat)
+# One nudge per turn: when this stop was already blocked once, let it pass.
+[ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false')" = "true" ] && exit 0
+tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
+[ -n "$tp" ] && [ -f "$tp" ] || exit 0
+# Slice the transcript from the last real user message. Tool results also
+# arrive as type:user lines; excluding them keeps the slice to this turn.
+n=$(grep -n '"type":"user"' "$tp" | grep -v tool_result | tail -1 | cut -d: -f1)
+[ -n "$n" ] || exit 0
+turn=$(tail -n +"$n" "$tp")
+# A user-visible send already happened this turn (mcp CLI or native MCP id).
+printf '%s' "$turn" | grep -q \
+  -e 'agent-chat send_message' -e 'agent-chat__send_message' \
+  -e 'agent-chat send_progress' -e 'agent-chat__send_progress' \
+  -e 'send_verbal_reply' -e 'send_verbal_progress' \
+  -e 'agent-chat draw' -e 'agent-chat__draw' && exit 0
+# A check_messages that found an empty queue is an allowed silent turn.
+# (Escaped-JSON gap between the words is 5 chars: \":\" -- allow slack.)
+printf '%s' "$turn" | grep -q 'queue.\{0,8\}empty' && exit 0
+echo 'BLOCKED: this turn ends with no user-visible message, and the user sees only agent-chat -- your plain response text is invisible to them. Deliver your result now via mcp swe-swe-agent-chat send_message (or send_progress for a non-blocking status if work continues). Set AGENT_CHAT_DISABLE=1 to permit silent stops.' >&2
+exit 2
+STOPGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-stop-guard.sh
 CLAUDE_SETTINGS=/home/app/.claude/settings.json
 cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 {
@@ -224,16 +268,27 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/app/.claude/hooks/swe-swe-stop-guard.sh"
+          }
+        ]
+      }
     ]
   }
 }
 SETTINGSEOF
 if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
   # Merge idempotently into existing settings: drop any prior AskUserQuestion
-  # matcher, append ours, preserve every other key and PreToolUse entry.
+  # matcher and any prior swe-swe-stop-guard Stop entry, append ours, preserve
+  # every other key and hook entry.
   TMP_SETTINGS=$(mktemp)
   if jq --slurpfile add /tmp/swe-claude-settings.json \
-       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion"))) + ($add[0].hooks.PreToolUse))' \
+       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion"))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
        "$CLAUDE_SETTINGS" > "$TMP_SETTINGS" 2>/dev/null; then
     mv "$TMP_SETTINGS" "$CLAUDE_SETTINGS"
   else
@@ -249,7 +304,7 @@ else
 fi
 rm -f /tmp/swe-claude-settings.json
 
-echo -e "${GREEN}[ok] Installed AskUserQuestion guard hook${NC}"
+echo -e "${GREEN}[ok] Installed AskUserQuestion + silent-stop guard hooks${NC}"
 
 # MCP-less steering: with no native MCP client, the agent must reach every tool
 # through the `mcp` CLI (sockets in $SWE_MCP_DIR, one per server). The blocking
