@@ -99,6 +99,13 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 	}
 	fmt.Printf("Wrote MCP config to %s\n", filepath.Join(absPath, ".mcp.json"))
 
+	// Claude hook guards (AskUserQuestion + silent-stop), project-scoped so
+	// the host user's global ~/.claude is never touched.
+	if err := writeDockerlessHooks(absPath, sweDir); err != nil {
+		log.Fatalf("Failed to write Claude hook guards: %v", err)
+	}
+	fmt.Printf("Wrote Claude hook guards to %s\n", filepath.Join(absPath, ".claude", "settings.local.json"))
+
 	if err := writeDockerlessMarker(sweDir); err != nil {
 		log.Fatalf("Failed to write dockerless marker: %v", err)
 	}
@@ -347,6 +354,82 @@ func writeDockerlessMCPConfig(projectDir string) error {
 		return fmt.Errorf("write .mcp.json: %w", err)
 	}
 	return nil
+}
+
+// writeDockerlessHooks installs the Claude hook guards that the container
+// entrypoint writes into ~/.claude on every boot. On a host we must NOT touch
+// the user's global ~/.claude/settings.json -- the guards would leak into
+// their unrelated claude sessions -- so the scripts go into the swe-swe
+// metadata dir and the wiring into the PROJECT's .claude/settings.local.json
+// (machine-local by convention, so the absolute script paths never get
+// committed). Merge is idempotent: prior swe-swe entries are dropped and
+// re-appended; every other key and hook entry is preserved. The guard scripts
+// self-exempt sessions without an agent-chat channel, so host TUI runs are
+// unaffected even though the hooks are installed.
+func writeDockerlessHooks(projectDir, sweDir string) error {
+	hooksDir := filepath.Join(sweDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		return fmt.Errorf("hooks dir: %w", err)
+	}
+	stopPath := filepath.Join(hooksDir, "swe-swe-stop-guard.sh")
+	askPath := filepath.Join(hooksDir, "swe-swe-ask-guard.sh")
+	if err := os.WriteFile(stopPath, []byte(stopGuardScript), 0o755); err != nil {
+		return fmt.Errorf("write stop guard: %w", err)
+	}
+	if err := os.WriteFile(askPath, []byte(askGuardScript), 0o755); err != nil {
+		return fmt.Errorf("write ask guard: %w", err)
+	}
+
+	settingsPath := filepath.Join(projectDir, ".claude", "settings.local.json")
+	root := map[string]any{}
+	if b, err := os.ReadFile(settingsPath); err == nil {
+		// Invalid JSON starts fresh, mirroring the entrypoint's jq fallback.
+		if json.Unmarshal(b, &root) != nil {
+			root = map[string]any{}
+		}
+	}
+	hooks, _ := root["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+	}
+	cmdEntry := func(matcher, cmd string) map[string]any {
+		e := map[string]any{
+			"hooks": []any{map[string]any{"type": "command", "command": cmd}},
+		}
+		if matcher != "" {
+			e["matcher"] = matcher
+		}
+		return e
+	}
+	// Drop any prior swe-swe guard entries so re-init never duplicates.
+	keep := func(list []any, ours func(map[string]any) bool) []any {
+		var out []any
+		for _, item := range list {
+			if m, ok := item.(map[string]any); ok && ours(m) {
+				continue
+			}
+			out = append(out, item)
+		}
+		return out
+	}
+	pre, _ := hooks["PreToolUse"].([]any)
+	pre = keep(pre, func(m map[string]any) bool { return m["matcher"] == "AskUserQuestion" })
+	hooks["PreToolUse"] = append(pre, cmdEntry("AskUserQuestion", askPath))
+	stop, _ := hooks["Stop"].([]any)
+	stop = keep(stop, func(m map[string]any) bool {
+		return strings.Contains(fmt.Sprint(m["hooks"]), "swe-swe-stop-guard")
+	})
+	hooks["Stop"] = append(stop, cmdEntry("", stopPath))
+	root["hooks"] = hooks
+
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		return fmt.Errorf("project .claude dir: %w", err)
+	}
+	data, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal settings.local.json: %w", err)
+	}
+	return os.WriteFile(settingsPath, append(data, '\n'), 0o644)
 }
 
 // extractDockerlessBinaries writes the embedded static-Linux binaries for the

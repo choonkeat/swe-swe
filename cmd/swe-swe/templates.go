@@ -1,10 +1,21 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
 )
+
+// Claude hook guard scripts, single-sourced here so the container entrypoint
+// (via {{STOP_GUARD_SCRIPT}}/{{ASK_GUARD_SCRIPT}} placeholders) and dockerless
+// init (writeDockerlessHooks) can never drift apart.
+//
+//go:embed hook-scripts/swe-swe-stop-guard.sh
+var stopGuardScript string
+
+//go:embed hook-scripts/swe-swe-ask-guard.sh
+var askGuardScript string
 
 // processDockerfileTemplate processes the Dockerfile template with conditional sections
 // based on selected agents, custom apt packages, custom npm packages, Docker access, enterprise certificates, slash commands, skills, and tunnel mode
@@ -902,6 +913,14 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 		// Handle CLAUDE_MCP_SETUP placeholder
 		if strings.Contains(line, "{{CLAUDE_MCP_SETUP}}") {
 			line = strings.ReplaceAll(line, "{{CLAUDE_MCP_SETUP}}", claudeMCPSetup)
+		}
+
+		// Handle hook guard script placeholders (heredoc bodies in entrypoint.sh)
+		if strings.Contains(line, "{{STOP_GUARD_SCRIPT}}") {
+			line = strings.ReplaceAll(line, "{{STOP_GUARD_SCRIPT}}", strings.TrimRight(stopGuardScript, "\n"))
+		}
+		if strings.Contains(line, "{{ASK_GUARD_SCRIPT}}") {
+			line = strings.ReplaceAll(line, "{{ASK_GUARD_SCRIPT}}", strings.TrimRight(askGuardScript, "\n"))
 		}
 
 		// Handle MCP_LESS_EXPORT placeholder

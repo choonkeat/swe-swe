@@ -218,57 +218,31 @@ fi
 # the web chat UI (agent-chat) -- calling it there hangs the agent forever on
 # input the user can never give. This PreToolUse hook blocks the tool (exit 2,
 # which feeds stderr back to the agent so it switches to the send_message MCP
-# tool) UNLESS the session opted out with AGENT_CHAT_DISABLE=1. swe-swe-server
-# sets AGENT_CHAT_DISABLE=1 for non-chat (terminal) sessions where the TUI IS
-# the user surface, and leaves it unset for agent-chat sessions. Fail-safe is
-# block: a wrongly shown menu hard-hangs the agent, a wrongly blocked one just
-# nudges it to send_message. Hooks are snapshotted at session start, so the
-# env var (read at tool-call time) is the per-session knob; this file is static.
+# tool). The guard script self-exempts sessions with no agent-chat channel
+# (terminal TUI, plain claude runs) and honors AGENT_CHAT_DISABLE=1, which
+# swe-swe-server also sets for non-chat (terminal) sessions where the TUI IS
+# the user surface. Fail-safe is block: a wrongly shown menu hard-hangs the
+# agent, a wrongly blocked one just nudges it to send_message. Hooks are
+# snapshotted at session start, so the env vars (read at tool-call time) are
+# the per-session knob; these files are static.
 #
 # Stop guard (same philosophy at turn-end): in an agent-chat session plain
 # response text is invisible, so a turn that ends without any user-visible
 # send looks like a crash. The Stop hook blocks the FIRST silent stop of a
 # turn (exit 2 feeds the instruction back to the agent); stop_hook_active
-# guarantees the second attempt always passes, so it can never loop. Sessions
-# without an agent-chat channel (terminal TUI, plain claude runs) are
-# detected inside the script and exempt.
+# guarantees the second attempt always passes, so it can never loop.
+#
+# Both script bodies are single-sourced from cmd/swe-swe/hook-scripts/
+# (injected at init time); dockerless init writes the same files.
 mkdir -p /home/app/.claude/hooks
 cat > /home/app/.claude/hooks/swe-swe-stop-guard.sh << 'STOPGUARDEOF'
-#!/bin/sh
-# swe-swe Stop guard: in agent-chat sessions every turn must end with a
-# user-visible message (send_message / send_progress / draw / send_verbal_*).
-# Exit 2 blocks the stop once per turn; stderr becomes the agent's instruction.
-[ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
-# Enforce only where this session actually has an agent-chat channel.
-if [ -n "$SWE_MCP_DIR" ]; then
-  [ -S "$SWE_MCP_DIR/swe-swe-agent-chat.sock" ] || exit 0
-else
-  [ -n "$AGENT_CHAT_PORT" ] || exit 0
-fi
-command -v jq >/dev/null 2>&1 || exit 0
-input=$(cat)
-# One nudge per turn: when this stop was already blocked once, let it pass.
-[ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false')" = "true" ] && exit 0
-tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
-[ -n "$tp" ] && [ -f "$tp" ] || exit 0
-# Slice the transcript from the last real user message. Tool results also
-# arrive as type:user lines; excluding them keeps the slice to this turn.
-n=$(grep -n '"type":"user"' "$tp" | grep -v tool_result | tail -1 | cut -d: -f1)
-[ -n "$n" ] || exit 0
-turn=$(tail -n +"$n" "$tp")
-# A user-visible send already happened this turn (mcp CLI or native MCP id).
-printf '%s' "$turn" | grep -q \
-  -e 'agent-chat send_message' -e 'agent-chat__send_message' \
-  -e 'agent-chat send_progress' -e 'agent-chat__send_progress' \
-  -e 'send_verbal_reply' -e 'send_verbal_progress' \
-  -e 'agent-chat draw' -e 'agent-chat__draw' && exit 0
-# A check_messages that found an empty queue is an allowed silent turn.
-# (Escaped-JSON gap between the words is 5 chars: \":\" -- allow slack.)
-printf '%s' "$turn" | grep -q 'queue.\{0,8\}empty' && exit 0
-echo 'BLOCKED: this turn ends with no user-visible message, and the user sees only agent-chat -- your plain response text is invisible to them. Deliver your result now via mcp swe-swe-agent-chat send_message (or send_progress for a non-blocking status if work continues). Set AGENT_CHAT_DISABLE=1 to permit silent stops.' >&2
-exit 2
+{{STOP_GUARD_SCRIPT}}
 STOPGUARDEOF
 chmod +x /home/app/.claude/hooks/swe-swe-stop-guard.sh
+cat > /home/app/.claude/hooks/swe-swe-ask-guard.sh << 'ASKGUARDEOF'
+{{ASK_GUARD_SCRIPT}}
+ASKGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-ask-guard.sh
 CLAUDE_SETTINGS=/home/app/.claude/settings.json
 cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 {
@@ -279,7 +253,7 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$AGENT_CHAT_DISABLE\" = \"1\" ] && exit 0; echo 'BLOCKED: do not use the built-in AskUserQuestion tool -- its menu renders only in the local TUI, which the user may not see (e.g. an agent-chat session). Ask via the agent-chat send_message tool instead (question -> text, primary option -> first_quick_reply, rest -> more_quick_replies). To allow the built-in tool, set AGENT_CHAT_DISABLE=1.' >&2; exit 2"
+            "command": "/home/app/.claude/hooks/swe-swe-ask-guard.sh"
           }
         ]
       }

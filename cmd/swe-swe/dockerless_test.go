@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -246,4 +247,80 @@ func argsContainPair(args []string, flag, val string) bool {
 		}
 	}
 	return false
+}
+
+// writeDockerlessHooks drops both guard scripts into <sweDir>/hooks and wires
+// them into the project's .claude/settings.local.json, preserving foreign
+// keys/hooks and staying idempotent across re-init.
+func TestWriteDockerlessHooks(t *testing.T) {
+	projectDir := t.TempDir()
+	sweDir := t.TempDir()
+
+	// Pre-existing settings with a foreign key, a foreign Stop hook, and a
+	// stale AskUserQuestion entry that must be replaced, not duplicated.
+	pre := `{
+  "model": "opus",
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "old-guard"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "my-notifier"}]}
+    ]
+  }
+}`
+	if err := os.MkdirAll(filepath.Join(projectDir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(projectDir, ".claude", "settings.local.json")
+	if err := os.WriteFile(settingsPath, []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Twice: second run must not duplicate entries.
+	for i := 0; i < 2; i++ {
+		if err := writeDockerlessHooks(projectDir, sweDir); err != nil {
+			t.Fatalf("writeDockerlessHooks run %d: %v", i+1, err)
+		}
+	}
+
+	for _, name := range []string{"swe-swe-stop-guard.sh", "swe-swe-ask-guard.sh"} {
+		fi, err := os.Stat(filepath.Join(sweDir, "hooks", name))
+		if err != nil {
+			t.Fatalf("hook script %s: %v", name, err)
+		}
+		if fi.Mode()&0o111 == 0 {
+			t.Errorf("hook script %s not executable", name)
+		}
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("settings.local.json invalid: %v", err)
+	}
+	if root["model"] != "opus" {
+		t.Errorf("foreign key dropped: model = %v", root["model"])
+	}
+	hooks := root["hooks"].(map[string]any)
+	pre2 := hooks["PreToolUse"].([]any)
+	if len(pre2) != 2 {
+		t.Fatalf("PreToolUse len = %d, want 2 (foreign + ours): %v", len(pre2), pre2)
+	}
+	joined := fmt.Sprint(pre2)
+	if !strings.Contains(joined, "my-linter") || !strings.Contains(joined, "swe-swe-ask-guard.sh") || strings.Contains(joined, "old-guard") {
+		t.Errorf("PreToolUse merge wrong: %s", joined)
+	}
+	stop := hooks["Stop"].([]any)
+	if len(stop) != 2 {
+		t.Fatalf("Stop len = %d, want 2 (foreign + ours): %v", len(stop), stop)
+	}
+	joined = fmt.Sprint(stop)
+	if !strings.Contains(joined, "my-notifier") || !strings.Contains(joined, "swe-swe-stop-guard.sh") {
+		t.Errorf("Stop merge wrong: %s", joined)
+	}
 }

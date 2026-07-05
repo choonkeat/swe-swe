@@ -231,20 +231,22 @@ fi
 # the web chat UI (agent-chat) -- calling it there hangs the agent forever on
 # input the user can never give. This PreToolUse hook blocks the tool (exit 2,
 # which feeds stderr back to the agent so it switches to the send_message MCP
-# tool) UNLESS the session opted out with AGENT_CHAT_DISABLE=1. swe-swe-server
-# sets AGENT_CHAT_DISABLE=1 for non-chat (terminal) sessions where the TUI IS
-# the user surface, and leaves it unset for agent-chat sessions. Fail-safe is
-# block: a wrongly shown menu hard-hangs the agent, a wrongly blocked one just
-# nudges it to send_message. Hooks are snapshotted at session start, so the
-# env var (read at tool-call time) is the per-session knob; this file is static.
+# tool). The guard script self-exempts sessions with no agent-chat channel
+# (terminal TUI, plain claude runs) and honors AGENT_CHAT_DISABLE=1, which
+# swe-swe-server also sets for non-chat (terminal) sessions where the TUI IS
+# the user surface. Fail-safe is block: a wrongly shown menu hard-hangs the
+# agent, a wrongly blocked one just nudges it to send_message. Hooks are
+# snapshotted at session start, so the env vars (read at tool-call time) are
+# the per-session knob; these files are static.
 #
 # Stop guard (same philosophy at turn-end): in an agent-chat session plain
 # response text is invisible, so a turn that ends without any user-visible
 # send looks like a crash. The Stop hook blocks the FIRST silent stop of a
 # turn (exit 2 feeds the instruction back to the agent); stop_hook_active
-# guarantees the second attempt always passes, so it can never loop. Sessions
-# without an agent-chat channel (terminal TUI, plain claude runs) are
-# detected inside the script and exempt.
+# guarantees the second attempt always passes, so it can never loop.
+#
+# Both script bodies are single-sourced from cmd/swe-swe/hook-scripts/
+# (injected at init time); dockerless init writes the same files.
 mkdir -p /home/app/.claude/hooks
 cat > /home/app/.claude/hooks/swe-swe-stop-guard.sh << 'STOPGUARDEOF'
 #!/bin/sh
@@ -282,6 +284,24 @@ echo 'BLOCKED: this turn ends with no user-visible message, and the user sees on
 exit 2
 STOPGUARDEOF
 chmod +x /home/app/.claude/hooks/swe-swe-stop-guard.sh
+cat > /home/app/.claude/hooks/swe-swe-ask-guard.sh << 'ASKGUARDEOF'
+#!/bin/sh
+# swe-swe AskUserQuestion guard: the built-in question tool's menu renders
+# only in the local terminal TUI. In an agent-chat session the user may never
+# see it, and the agent hangs forever on input that cannot arrive -- block it
+# and point at send_message. Sessions without an agent-chat channel (terminal
+# TUI, plain claude runs) are exempt, as is AGENT_CHAT_DISABLE=1.
+[ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
+# Enforce only where this session actually has an agent-chat channel.
+if [ -n "$SWE_MCP_DIR" ]; then
+  [ -S "$SWE_MCP_DIR/swe-swe-agent-chat.sock" ] || exit 0
+else
+  [ -n "$AGENT_CHAT_PORT" ] || exit 0
+fi
+echo 'BLOCKED: do not use the built-in AskUserQuestion tool -- its menu renders only in the local TUI, which the user may not see (e.g. an agent-chat session). Ask via the agent-chat send_message tool instead (question -> text, primary option -> first_quick_reply, rest -> more_quick_replies). To allow the built-in tool, set AGENT_CHAT_DISABLE=1.' >&2
+exit 2
+ASKGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-ask-guard.sh
 CLAUDE_SETTINGS=/home/app/.claude/settings.json
 cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 {
@@ -292,7 +312,7 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$AGENT_CHAT_DISABLE\" = \"1\" ] && exit 0; echo 'BLOCKED: do not use the built-in AskUserQuestion tool -- its menu renders only in the local TUI, which the user may not see (e.g. an agent-chat session). Ask via the agent-chat send_message tool instead (question -> text, primary option -> first_quick_reply, rest -> more_quick_replies). To allow the built-in tool, set AGENT_CHAT_DISABLE=1.' >&2; exit 2"
+            "command": "/home/app/.claude/hooks/swe-swe-ask-guard.sh"
           }
         ]
       }
