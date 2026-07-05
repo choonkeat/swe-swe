@@ -17,12 +17,14 @@
 // -> JSON. Blocking tools (e.g. send_message, which waits for the user's reply)
 // simply block until the proxy returns -- there is no client-side timeout.
 //
-// After a successful call a one-line <mcp>tip</mcp> reminder is printed to
-// stderr pointing at the tool's -h docs: MCP-less agents never get tool docs
+// Each call starts by printing a one-line <mcp>tip</mcp> reminder to stderr
+// pointing at the tool's -h docs: MCP-less agents never get tool docs
 // injected into context and lose whatever they read at context compaction.
-// Throttled per (server, tool) via marker files in <socket dir>/.remind so a
-// hot loop is not spammed; tune with --remind-help-text-throttle (default 30m,
-// 0 = every call).
+// It prints BEFORE the call runs (as soon as the tool name resolves) so
+// failures -- which need the docs most -- and long-blocking or killed calls
+// still carry it. Throttled per (server, tool) via marker files in
+// <socket dir>/.remind so a hot loop is not spammed; tune with
+// --remind-help-text-throttle (default 30m, 0 = every call).
 package main
 
 import (
@@ -582,14 +584,14 @@ func printToolHelp(server string, t tool, out *os.File) {
 
 // --- post-call -h reminder ------------------------------------------------
 
-// maybeRemindHelp prints a one-line <mcp>tip</mcp> to errOut after a
-// successful tool call, pointing at the tool's own -h docs. MCP-less agents
-// never get tool docs injected into context and lose whatever they did read
-// at context compaction -- and compaction is invisible to them, so the nudge
-// must come from outside. Throttled per (server, tool) via a marker file's
-// mtime under <socket dir>/.remind (never listed as a server: no .sock
-// suffix). throttle 0 prints on every call. State errors fail open: the
-// reminder matters more than the bookkeeping.
+// maybeRemindHelp prints a one-line <mcp>tip</mcp> to errOut ahead of a tool
+// call, pointing at the tool's own -h docs. MCP-less agents never get tool
+// docs injected into context and lose whatever they did read at context
+// compaction -- and compaction is invisible to them, so the nudge must come
+// from outside. Throttled per (server, tool) via a marker file's mtime under
+// <socket dir>/.remind (never listed as a server: no .sock suffix). throttle
+// 0 prints on every call. State errors fail open: the reminder matters more
+// than the bookkeeping.
 func maybeRemindHelp(server, tool string, throttle time.Duration, errOut *os.File) {
 	dir := filepath.Join(socketDir(), ".remind")
 	marker := filepath.Join(dir, server+"__"+tool)
@@ -684,6 +686,12 @@ func run(args []string, out, errOut *os.File) int {
 		return 0
 	}
 
+	// Tip goes out BEFORE the call: failed calls (bad flags, tool errors) need
+	// the docs pointer most, and a blocking call killed mid-wait still carried
+	// it. Printed only once the tool name resolved, so the refresh command it
+	// suggests is guaranteed to work.
+	maybeRemindHelp(server, toolName, throttle, errOut)
+
 	s := parseSchema(t.InputSchema)
 	arguments, err := parseToolArgs(s, rest)
 	if err != nil {
@@ -702,11 +710,7 @@ func run(args []string, out, errOut *os.File) int {
 		fmt.Fprintf(errOut, "mcp: %v\n", err)
 		return 1
 	}
-	code := render(server, toolName, result, out, errOut)
-	if code == 0 {
-		maybeRemindHelp(server, toolName, throttle, errOut)
-	}
-	return code
+	return render(server, toolName, result, out, errOut)
 }
 
 func main() {

@@ -219,9 +219,9 @@ func TestServerHelpDumpsAllTools(t *testing.T) {
 	}
 }
 
-// TestRemindTip proves a successful call prints the one-line <mcp>tip</mcp>
-// docs reminder to stderr, throttled per (server, tool) via marker files in
-// the socket dir, and that --remind-help-text-throttle=0 disables throttling.
+// TestRemindTip proves a call prints the one-line <mcp>tip</mcp> docs
+// reminder to stderr, throttled per (server, tool) via marker files in the
+// socket dir, and that --remind-help-text-throttle=0 disables throttling.
 func TestRemindTip(t *testing.T) {
 	handler := func(method string, params json.RawMessage) json.RawMessage {
 		if method == "tools/list" {
@@ -271,19 +271,51 @@ func TestRemindTip(t *testing.T) {
 	}
 }
 
-// TestRemindTipSkippedOnIsError proves tool-level failures don't get the tip:
-// their content already carries the corrective instruction.
-func TestRemindTipSkippedOnIsError(t *testing.T) {
-	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
-		if method == "tools/list" {
+// TestRemindTipPrecedesFailure proves the tip prints BEFORE the call runs, so
+// failed calls carry it too -- a wrong-flags failure is exactly the
+// forgotten-docs case, and it needs the pointer more than a success does.
+func TestRemindTipPrecedesFailure(t *testing.T) {
+	const tip = "<mcp>tip:"
+
+	t.Run("flag error", func(t *testing.T) {
+		dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
 			return json.RawMessage(echoToolsList)
+		})
+		_, errStr, code := runCapture(t, dir, "svc", "echo", "--nope", "y")
+		if code == 0 {
+			t.Fatal("expected flag error")
 		}
-		return json.RawMessage(`{"content":[{"type":"text","text":"boom"}],"isError":true}`)
+		ti, ei := strings.Index(errStr, tip), strings.Index(errStr, "unknown flag")
+		if ti < 0 || ei < 0 || ti > ei {
+			t.Errorf("tip should precede the flag error, got %q", errStr)
+		}
 	})
-	_, errStr, _ := runCapture(t, dir, "svc", "echo", "--text", "x")
-	if strings.Contains(errStr, "<mcp>tip:") {
-		t.Errorf("isError result should not print tip, got %q", errStr)
-	}
+
+	// isError results still get the tip.
+	t.Run("isError", func(t *testing.T) {
+		dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+			if method == "tools/list" {
+				return json.RawMessage(echoToolsList)
+			}
+			return json.RawMessage(`{"content":[{"type":"text","text":"boom"}],"isError":true}`)
+		})
+		_, errStr, _ := runCapture(t, dir, "svc", "echo", "--text", "x")
+		if !strings.Contains(errStr, tip) {
+			t.Errorf("isError call should still carry tip, got %q", errStr)
+		}
+	})
+
+	// Unknown tool gets no tip: the refresh command it suggests would not
+	// resolve, and that error path already points at `mcp <server> -h`.
+	t.Run("unknown tool", func(t *testing.T) {
+		dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+			return json.RawMessage(echoToolsList)
+		})
+		_, errStr, _ := runCapture(t, dir, "svc", "missing", "--x", "1")
+		if strings.Contains(errStr, tip) {
+			t.Errorf("unknown tool should not print tip, got %q", errStr)
+		}
+	})
 }
 
 // fakeSocketServer answers tools/list and tools/call on a unix socket, standing
