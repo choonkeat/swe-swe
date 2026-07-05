@@ -8117,6 +8117,32 @@ func forkSourceTailActive(assistant, agentJsonl string) (bool, error) {
 	return false, nil
 }
 
+// sessionTailBusy is the best-effort listing variant of the /api/fork
+// ACTIVE-tail guard: nil means unknown (assistant has no tail classifier,
+// no agent session id was captured, or the log couldn't be read). Unlike
+// the fork path it never falls back to fingerprint/mtime recovery -- a
+// listing shouldn't pay that cost, and only a definite answer should gate
+// a shutdown.
+func sessionTailBusy(assistant, workDir, agentSessionID string) *bool {
+	if agentSessionID == "" {
+		return nil
+	}
+	switch assistant {
+	case "claude", "codex":
+	default:
+		return nil
+	}
+	path, err := agentSessionFilePath(assistant, workDir, agentSessionID)
+	if err != nil {
+		return nil
+	}
+	busy, err := forkSourceTailActive(assistant, path)
+	if err != nil {
+		return nil
+	}
+	return &busy
+}
+
 // findLatestClaudeSessionInWorkDir returns the session id (filename minus
 // .jsonl) of the most recently modified Claude .jsonl in the project
 // directory that corresponds to workDir. Claude stores sessions under
@@ -8499,20 +8525,23 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	// list_sessions
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_sessions",
-		Description: "List all active agent sessions",
+		Description: "List all active agent sessions. busy=true means the agent is mid-work on an unresolved tool call (ending or forking it would truncate in-flight work); busy absent means unknown (agent has no tail classifier or no session id captured). recordingUUID feeds /api/fork/<recordingUUID>, which keeps working after the session ends -- post those as resume links before a planned shutdown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		type sessionInfo struct {
-			UUID        string `json:"uuid"`
-			Name        string `json:"name"`
-			Assistant   string `json:"assistant"`
-			ClientCount int    `json:"clientCount"`
-			Duration    string `json:"duration"`
-			WorkDir     string `json:"workDir"`
-			BranchName  string `json:"branchName,omitempty"`
-			PreviewPort int    `json:"previewPort"`
-			PublicPort  int    `json:"publicPort"`
+			UUID          string `json:"uuid"`
+			Name          string `json:"name"`
+			Assistant     string `json:"assistant"`
+			ClientCount   int    `json:"clientCount"`
+			Duration      string `json:"duration"`
+			WorkDir       string `json:"workDir"`
+			BranchName    string `json:"branchName,omitempty"`
+			PreviewPort   int    `json:"previewPort"`
+			PublicPort    int    `json:"publicPort"`
+			RecordingUUID string `json:"recordingUUID,omitempty"`
+			Busy          *bool  `json:"busy,omitempty"`
 		}
 		var result []sessionInfo
+		var agentSessionIDs []string
 		sessionsMu.RLock()
 		for _, sess := range sessions {
 			if sess.Cmd.ProcessState != nil {
@@ -8520,19 +8549,26 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			}
 			sess.mu.RLock()
 			result = append(result, sessionInfo{
-				UUID:        sess.UUID,
-				Name:        sess.Name,
-				Assistant:   sess.Assistant,
-				ClientCount: len(sess.wsClients),
-				Duration:    formatDuration(time.Since(sess.CreatedAt)),
-				WorkDir:     sess.WorkDir,
-				BranchName:  sess.BranchName,
-				PreviewPort: sess.PreviewPort,
-				PublicPort:  sess.PublicPort,
+				UUID:          sess.UUID,
+				Name:          sess.Name,
+				Assistant:     sess.Assistant,
+				ClientCount:   len(sess.wsClients),
+				Duration:      formatDuration(time.Since(sess.CreatedAt)),
+				WorkDir:       sess.WorkDir,
+				BranchName:    sess.BranchName,
+				PreviewPort:   sess.PreviewPort,
+				PublicPort:    sess.PublicPort,
+				RecordingUUID: sess.RecordingUUID,
 			})
+			agentSessionIDs = append(agentSessionIDs, sess.AgentSessionID)
 			sess.mu.RUnlock()
 		}
 		sessionsMu.RUnlock()
+		// Busy classification reads each agent's session log, so it runs
+		// after both locks are released.
+		for i := range result {
+			result[i].Busy = sessionTailBusy(result[i].Assistant, result[i].WorkDir, agentSessionIDs[i])
+		}
 		if result == nil {
 			result = []sessionInfo{}
 		}

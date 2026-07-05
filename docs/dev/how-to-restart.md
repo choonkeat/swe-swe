@@ -35,10 +35,22 @@ docker compose -p swe-swe-test down -t 10 2>/dev/null || true
 #
 # From an agent driving the reboot (e.g. via MCP):
 #   - list: mcp__swe-swe__list_sessions
+#   - IDLE GATE: check each session's `busy` field. busy=true means that agent is
+#     mid-work on an unresolved tool call -- ending it would truncate in-flight
+#     work and make a later resume rewind. Wait for it to settle (re-list) or ask
+#     the user before proceeding. busy absent = unknown (agent has no tail
+#     classifier); use judgment. A session parked on a blocking send_message
+#     (waiting for its user) reports busy=false -- that is the safe state.
+#   - RESUME LINKS: before ending anything, post a chat message listing each
+#     session's name with a resume link `[resume](/api/fork/<recordingUUID>)`
+#     (recordingUUID comes from list_sessions). /api/fork works on ended
+#     recordings, so these links become clickable as soon as the stack is back.
 #   - end:  mcp__swe-swe__end_session(uuid=...) for each uuid != $SESSION_UUID
 #
 # Skipping this step is not fatal — the compose down will still tear them down —
 # but other users/agents will see an abrupt disconnect instead of a clean shutdown.
+# Fallback for unplanned restarts (no goodbye message): /swe-swe:recordings-list-orphaned
+# -- the reboot cohort clusters at the top with endedAt in the shutdown minute.
 
 # 4. Stop the chrome container (it doesn't always respond to compose down)
 # Replace <project-name> with your actual compose project name (visible in `docker ps`)
