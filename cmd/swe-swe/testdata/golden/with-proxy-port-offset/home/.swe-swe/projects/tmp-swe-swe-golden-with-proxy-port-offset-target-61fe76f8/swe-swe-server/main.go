@@ -5542,6 +5542,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		Theme:               theme,
 		SessionMode:         sessionMode,
 		ExtraArgs:           extraArgs,
+		// A terminal child (ParentUUID set) inherits its parent agent
+		// session's git credentials/signing/author + repo env vars, so the
+		// user's Terminal tab gets the same PATs, commit signing, and env
+		// as the agent -- otherwise it spawns with an empty SID and a bare
+		// gitconfig. One-time snapshot at spawn; reuses the same inheritance
+		// path as MCP create_session. Empty parentUUID no-ops in the inherit
+		// helpers. Fork/new-session flows override params entirely below
+		// (isPending), so this only takes effect for live terminal spawns.
+		InheritCredsFrom: parentUUID,
 	}
 	if isPending {
 		// Preserve the UUID from the URL but override everything else with
