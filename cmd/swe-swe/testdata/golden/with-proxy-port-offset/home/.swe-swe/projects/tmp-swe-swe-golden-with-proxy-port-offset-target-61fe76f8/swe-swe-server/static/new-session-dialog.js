@@ -475,6 +475,27 @@
         cloneCredTokenInput.focus();
     }
 
+    // Pre-seed the (origin, initSha) autosync-trust entry -- the SAME key the
+    // terminal-ui signing/creds auto-restore uses (_signingTrustKey). Its
+    // presence is the user's consent to auto-send stored secrets for this
+    // repo, so seeding it after a user-authenticated clone lets the new
+    // session restore the PAT without a second "trust this device?" prompt.
+    // Preserves any signing fingerprint already bound.
+    function signingTrustKey(initSha) {
+        return 'swe-swe:signing-trust:' + window.location.origin + '|' + initSha;
+    }
+    function preseedCredsTrust(initSha) {
+        if (!initSha) return;
+        try {
+            var raw = localStorage.getItem(signingTrustKey(initSha));
+            var existing = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(signingTrustKey(initSha), JSON.stringify({
+                fingerprint: (existing && existing.fingerprint) || '',
+                savedAt: Date.now()
+            }));
+        } catch (e) {}
+    }
+
     // Handle a needsAuth response: REJECTED when a stored token was tried and
     // failed, FRESH otherwise.
     function handleCloneNeedsAuth(data) {
@@ -516,6 +537,12 @@
                 hideLoading();
                 handleCloneNeedsAuth(data);
                 return;
+            }
+            // Phase 3: a fresh clone the user authenticated with a PAT -- seed
+            // the autosync-trust entry so the new session auto-restores the PAT
+            // silently (no second trust prompt).
+            if (body.credToken && data.justCloned && data.initSha) {
+                preseedCredsTrust(data.initSha);
             }
             dialogState.repoPath = data.path;
             dialogState.isNewProject = data.isNew || false;
@@ -571,7 +598,10 @@
                         populateBranches(branchData);
                         enableBranchAndAgent();
                         applyPendingPrefill();
-                        if (data.hasRemote) {
+                        // A fresh clone already has all refs local, so the
+                        // background &fetch=1 call is redundant (and would be a
+                        // second credentialed remote call). Skip it.
+                        if (data.hasRemote && !data.justCloned) {
                             refreshBranchesInBackground(data.path);
                         }
                     });
