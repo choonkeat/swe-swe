@@ -58,7 +58,10 @@ var newTransientID = func() string {
 }
 
 // gitCredHelperEnv appends the three GIT_CONFIG vars that wire git to the
-// swe-swe credential helper (mirroring buildSessionEnv) onto a base env.
+// swe-swe credential helper (mirroring buildSessionEnv) onto a base env, plus
+// GIT_TERMINAL_PROMPT=0 so a missing or rejected credential makes git fail
+// fast (which cloneNeedsAuth then detects) instead of blocking the HTTP
+// handler on an interactive username/password prompt.
 // git-credential-swe-swe already lives on the default PATH (/usr/local/bin),
 // so no PATH surgery is needed -- os.Environ() carries it through.
 func gitCredHelperEnv(base []string) []string {
@@ -66,6 +69,7 @@ func gitCredHelperEnv(base []string) []string {
 		"GIT_CONFIG_COUNT=1",
 		"GIT_CONFIG_KEY_0=credential.helper",
 		"GIT_CONFIG_VALUE_0=swe-swe",
+		"GIT_TERMINAL_PROMPT=0",
 	)
 }
 
@@ -78,10 +82,14 @@ func gitCredHelperEnv(base []string) []string {
 // credential is cleared and the pid unregistered whether git succeeds or
 // fails, and is never persisted.
 func runGitWithTransientCred(host, username, token string, args ...string) ([]byte, error) {
-	// Bare path: no token -> inherit env, no credential helper wired. This is
-	// byte-for-byte the old `git clone <url> <dir>` behavior.
+	// Bare path: no token -> no credential helper wired, but still force
+	// non-interactive git (GIT_TERMINAL_PROMPT=0) so a private repo without
+	// credentials fails fast with an auth error instead of hanging the HTTP
+	// handler on git's username prompt.
 	if token == "" {
-		return exec.Command("git", args...).CombinedOutput()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+		return cmd.CombinedOutput()
 	}
 
 	if username == "" {

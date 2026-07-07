@@ -21,11 +21,13 @@ func TestGitCredHelperEnv(t *testing.T) {
 			t.Errorf("gitCredHelperEnv dropped base var %q", want)
 		}
 	}
-	// Helper wiring appended.
+	// Helper wiring appended, plus non-interactive so a bad/absent credential
+	// makes git fail fast instead of hanging on a prompt.
 	for _, want := range []string{
 		"GIT_CONFIG_COUNT=1",
 		"GIT_CONFIG_KEY_0=credential.helper",
 		"GIT_CONFIG_VALUE_0=swe-swe",
+		"GIT_TERMINAL_PROMPT=0",
 	} {
 		if !envContains(got, want) {
 			t.Errorf("gitCredHelperEnv missing %q", want)
@@ -60,6 +62,11 @@ func TestRunGitWithTransientCredBare(t *testing.T) {
 	childEnv := readFile(t, envFile)
 	if strings.Contains(childEnv, "GIT_CONFIG_VALUE_0=swe-swe") {
 		t.Errorf("bare run leaked credential.helper wiring into child env:\n%s", childEnv)
+	}
+	// Even bare, git must be non-interactive so a private repo without creds
+	// fails fast (returns needsAuth) instead of hanging on a prompt.
+	if !strings.Contains(childEnv, "GIT_TERMINAL_PROMPT=0") {
+		t.Errorf("bare run did not force GIT_TERMINAL_PROMPT=0 into child env:\n%s", childEnv)
 	}
 }
 
