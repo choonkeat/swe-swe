@@ -3661,6 +3661,11 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 		URL  string `json:"url"`  // for clone mode
 		Name string `json:"name"` // for create mode
 		Path string `json:"path"` // for workspace mode: optional existing repo path
+		// Optional HTTPS credentials for a private clone. Never persisted
+		// server-side beyond the transient broker context of the clone call.
+		CredHost     string `json:"credHost"`
+		CredUsername string `json:"credUsername"`
+		CredToken    string `json:"credToken"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -3688,7 +3693,7 @@ func handleRepoPrepareAPI(w http.ResponseWriter, r *http.Request) {
 	case "workspace":
 		handleRepoPrepareWorkspace(w, req.Path)
 	case "clone":
-		handleRepoPrepareClone(w, req.URL)
+		handleRepoPrepareClone(w, req.URL, req.CredHost, req.CredUsername, req.CredToken)
 	case "create":
 		handleRepoPrepareCreate(w, req.Name)
 	default:
@@ -3746,8 +3751,11 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// handleRepoPrepareClone handles the clone mode - clone external URL (hard fail)
-func handleRepoPrepareClone(w http.ResponseWriter, url string) {
+// handleRepoPrepareClone handles the clone mode - clone external URL (hard fail).
+// credHost/credUsername/credToken are optional HTTPS credentials wired through
+// the broker for the duration of the clone (private repos); all empty ->
+// bare clone (public repos). Never embeds credentials in the URL.
+func handleRepoPrepareClone(w http.ResponseWriter, url, credHost, credUsername, credToken string) {
 	if url == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -3766,14 +3774,19 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 	repoBase := filepath.Join(reposDir, sanitizedURL)
 	repoPath := filepath.Join(repoBase, "workspace")
 
+	justCloned := false
+
 	// Check if already cloned
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
 		// Already cloned, fetch instead (but still hard fail for clone mode)
 		log.Printf("Repository already exists at %s, fetching", repoPath)
-		cmd := exec.Command("git", "-C", repoPath, "fetch", "--all")
-		output, err := cmd.CombinedOutput()
+		output, err := runGitWithTransientCred(credHost, credUsername, credToken, "-C", repoPath, "fetch", "--all")
 		if err != nil {
 			log.Printf("Git fetch failed: %v, output: %s", err, string(output))
+			if cloneNeedsAuth(string(output)) {
+				writeCloneAuthNeeded(w, credHost)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git fetch failed: %s", string(output))})
@@ -3789,15 +3802,19 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 			return
 		}
 
-		cmd := exec.Command("git", "clone", url, repoPath)
-		output, err := cmd.CombinedOutput()
+		output, err := runGitWithTransientCred(credHost, credUsername, credToken, "clone", url, repoPath)
 		if err != nil {
 			log.Printf("Git clone failed: %v, output: %s", err, string(output))
+			if cloneNeedsAuth(string(output)) {
+				writeCloneAuthNeeded(w, credHost)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git clone failed: %s", string(output))})
 			return
 		}
+		justCloned = true
 	}
 
 	// Set up swe-swe files (.swe-swe/docs/*) and clean up legacy .mcp.json
@@ -3805,15 +3822,37 @@ func handleRepoPrepareClone(w http.ResponseWriter, url string) {
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
+	remoteOutput, remoteErr := exec.Command("git", "-C", repoPath, "remote").Output()
+
 	resp := map[string]interface{}{
 		"path":        repoPath,
 		"isWorkspace": false,
+		// justCloned lets the dialog skip the redundant background fetch: a
+		// fresh clone already has all refs local.
+		"justCloned": justCloned,
+		"hasRemote":  remoteErr == nil && len(strings.TrimSpace(string(remoteOutput))) > 0,
+		// initSha binds the browser's autosync-trust entry to this exact repo
+		// so a supplied PAT auto-restores in the new session without a second
+		// "trust this device?" prompt.
+		"initSha": repoInitSHA(repoPath),
 	}
 	if _, err := os.Stat(filepath.Join(repoPath, ".swe-swe", "env")); err == nil {
 		resp["hasEnvFile"] = true
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// writeCloneAuthNeeded emits the structured "the clone needs HTTPS auth"
+// response the dialog uses to reveal/rescue credential fields.
+func writeCloneAuthNeeded(w http.ResponseWriter, host string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"needsAuth": true,
+		"host":      host,
+		"error":     "Authentication required for this repository.",
+	})
 }
 
 // sanitizeProjectDirName converts a display name to a safe directory name.
@@ -8920,6 +8959,12 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		URL  string `json:"url,omitempty" jsonschema:"Repository URL (for clone mode)"`
 		Name string `json:"name,omitempty" jsonschema:"Project name (for create mode)"`
 		Path string `json:"path,omitempty" jsonschema:"Existing repo path (for workspace mode)"`
+		// Optional HTTPS credentials for cloning a private repo. The token is
+		// wired through the broker only for the duration of the clone and is
+		// never persisted or embedded in the URL.
+		CredHost     string `json:"credHost,omitempty" jsonschema:"HTTPS host for private clone credentials (for clone mode)"`
+		CredUsername string `json:"credUsername,omitempty" jsonschema:"HTTPS username for private clone (defaults to x-access-token)"`
+		CredToken    string `json:"credToken,omitempty" jsonschema:"HTTPS token/PAT for a private clone (for clone mode)"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "prepare_repo",
@@ -8960,16 +9005,14 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			repoBase := filepath.Join(reposDir, sanitizedURL)
 			repoPath := filepath.Join(repoBase, "workspace")
 			if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-				cmd := exec.Command("git", "-C", repoPath, "fetch", "--all")
-				if out, err := cmd.CombinedOutput(); err != nil {
+				if out, err := runGitWithTransientCred(args.CredHost, args.CredUsername, args.CredToken, "-C", repoPath, "fetch", "--all"); err != nil {
 					return nil, nil, fmt.Errorf("git fetch failed: %s", string(out))
 				}
 			} else {
 				if err := os.MkdirAll(repoBase, 0755); err != nil {
 					return nil, nil, fmt.Errorf("failed to create directory: %w", err)
 				}
-				cmd := exec.Command("git", "clone", args.URL, repoPath)
-				if out, err := cmd.CombinedOutput(); err != nil {
+				if out, err := runGitWithTransientCred(args.CredHost, args.CredUsername, args.CredToken, "clone", args.URL, repoPath); err != nil {
 					return nil, nil, fmt.Errorf("git clone failed: %s", string(out))
 				}
 			}
