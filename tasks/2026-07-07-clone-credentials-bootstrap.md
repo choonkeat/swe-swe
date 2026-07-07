@@ -116,10 +116,10 @@ credentialed remote calls in the branch step (instant `git branch -a` only).
 - A homepage-level standalone credentials manager -- optional follow-up; the
   shared store makes it additive with zero rework (Phase 4, optional).
 
-## Phase 1 -- server: shared helper + credentialed clone (no UI yet)
+## Phase 1 -- server: shared helper + credentialed clone (no UI yet) -- DONE (code+unit tests; manual container verify folded into Phase 2/3)
 
 Steps:
-1. Implement `runGitWithTransientCred` (see Design). Unit-test it in isolation:
+1. [DONE] Implement `runGitWithTransientCred` (see Design). Unit-test it in isolation:
    - token == "" -> runs bare (assert no credential.helper in the child env,
      e.g. by pointing args at `git config --show-origin` or a fake git on PATH).
    - token != "" -> assert setCredential is called with transientID+host and
@@ -138,13 +138,16 @@ Steps:
    cloning private repos work too. Add optional token arg to `prepareRepoArgs`.
 
 Verification:
-- `make test` green (new unit tests included).
-- Manual (test container, docs/dev/test-container-workflow.md): POST
+- [DONE] `make test` green (new unit tests included: TestGitCredHelperEnv,
+  TestRunGitWithTransientCredBare, TestRunGitWithTransientCredWiresAndClears,
+  TestCloneNeedsAuth 7/7).
+- [DEFERRED to Phase 2/3 container run] Manual (test container): POST
   /api/repo/prepare {mode:clone, url:<private https>, credHost, credUsername,
   credToken} clones successfully; wrong token returns `needsAuth:true`; public
-  URL still clones with no creds.
-- `make build golden-update`; review golden diff (should be nil unless a
-  template changed).
+  URL still clones with no creds. Folded into the single Phase 2/3 browser
+  session so the container spins up once.
+- [DONE] `make build golden-update`; golden diff = clone_cred.go + main.go
+  mirror across all init variants (expected, template changed).
 
 ## Phase 2 -- frontend: three-state credential UX in the dialog
 
