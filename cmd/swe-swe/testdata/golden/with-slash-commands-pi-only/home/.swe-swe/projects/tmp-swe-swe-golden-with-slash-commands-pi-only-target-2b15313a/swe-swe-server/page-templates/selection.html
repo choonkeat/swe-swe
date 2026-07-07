@@ -1288,6 +1288,26 @@
                         <datalist id="repo-history"></datalist>
                         <button class="dialog__next" id="clone-next-btn">Next</button>
                     </div>
+                    <!-- Saved-credentials line (TRANSPARENT state): shown when a PAT
+                         is already stored for the URL's host. No fields until "Change". -->
+                    <div class="dialog__env-hint dialog__field--hidden" id="clone-cred-transparent">
+                        Using saved credentials for <code id="clone-cred-transparent-host"></code>
+                        - <a href="#" id="clone-cred-change">Change</a>
+                    </div>
+                    <!-- Credential fields (FRESH / REJECTED / Change states): revealed
+                         only when the user asks or when auth fails. -->
+                    <div class="dialog__field--hidden" id="clone-cred-fields">
+                        <div class="dialog__warning" id="clone-cred-notice"></div>
+                        <label class="dialog__label">Credential host</label>
+                        <input type="text" class="dialog__input" id="clone-cred-host" placeholder="github.com">
+                        <label class="dialog__label">Username</label>
+                        <input type="text" class="dialog__input" id="clone-cred-username" placeholder="x-access-token">
+                        <label class="dialog__label">Token (PAT)</label>
+                        <div class="dialog__row">
+                            <input type="password" class="dialog__input" id="clone-cred-token" placeholder="ghp_... or glpat-...">
+                            <button class="dialog__next" id="clone-cred-submit">Clone</button>
+                        </div>
+                    </div>
                 </div>
                 <!-- Project name field (shown when mode=create) -->
                 <div class="dialog__field dialog__field--hidden" id="create-name-field">
@@ -1613,6 +1633,13 @@
         </footer>
     </div>
 
+    <!-- Expose the pure clone-host parser (unit-tested module) to the classic
+         new-session-dialog script. Deferred module runs after parse but well
+         before any clone interaction, so window.parseCloneHost is ready. -->
+    <script type="module">
+        import { parseCloneHost } from '/modules/clone-cred-host.js';
+        window.parseCloneHost = parseCloneHost;
+    </script>
     <script src="/combo-box.js"></script>
     <script src="/end-session.js"></script>
     <script src="/homepage-main.js"></script>

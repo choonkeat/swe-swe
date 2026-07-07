@@ -31,6 +31,17 @@
     var branchCombo = document.getElementById('branch-combo');
     var extraArgsInput = document.getElementById('new-session-extra-args');
 
+    // Clone-credential UI (three-state: TRANSPARENT / FRESH / REJECTED).
+    var cloneCredTransparent = document.getElementById('clone-cred-transparent');
+    var cloneCredTransparentHost = document.getElementById('clone-cred-transparent-host');
+    var cloneCredChange = document.getElementById('clone-cred-change');
+    var cloneCredFields = document.getElementById('clone-cred-fields');
+    var cloneCredNotice = document.getElementById('clone-cred-notice');
+    var cloneCredHostInput = document.getElementById('clone-cred-host');
+    var cloneCredUsernameInput = document.getElementById('clone-cred-username');
+    var cloneCredTokenInput = document.getElementById('clone-cred-token');
+    var cloneCredSubmit = document.getElementById('clone-cred-submit');
+
     // Per-agent default extra CLI flags. When the user selects an agent we
     // prefill the extra-args field with these (rule (c) -- only if the field
     // is empty or still matches a previous prefill, so user edits are kept).
@@ -122,6 +133,9 @@
     function resetDownstream() {
         // Hide post-prepare fields
         postPrepareFields.classList.add('dialog__field--hidden');
+
+        // Hide any revealed clone-credential UI
+        hideCloneCredUI();
 
         // Reset warning
         warningDiv.style.display = 'none';
@@ -381,6 +395,101 @@
         }
     }
 
+    // --- Clone credentials (three-state UX) ---
+    // Rule: apply saved credentials silently; surface fields only when the
+    // user asks (Change) or when auth fails. Same localStorage store the
+    // Settings panel uses: swe-swe-creds:<host> -> {username, token, ...}.
+
+    // Derive the credential host from the URL via the unit-tested pure module
+    // (exposed on window by a module shim in selection.html). Fallback: "".
+    function deriveCloneHost(url) {
+        if (typeof window.parseCloneHost === 'function') {
+            return window.parseCloneHost(url);
+        }
+        return '';
+    }
+
+    function credsKey(host) { return 'swe-swe-creds:' + host; }
+
+    function readCloneCreds(host) {
+        if (!host) return null;
+        try {
+            var raw = localStorage.getItem(credsKey(host));
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    }
+
+    // Persist a PAT under the host, preserving any name/email the Settings
+    // panel stored for the same host (we only own username+token here).
+    function writeCloneCreds(host, username, token) {
+        if (!host) return;
+        try {
+            var existing = readCloneCreds(host) || {};
+            existing.username = username || 'x-access-token';
+            existing.token = token || '';
+            localStorage.setItem(credsKey(host), JSON.stringify(existing));
+        } catch (e) {}
+    }
+
+    // Build the /api/repo/prepare body for a clone, attaching credentials only
+    // when a token is present. Never embeds the token in the URL.
+    function buildCloneBody(url, host, username, token) {
+        var body = { mode: 'clone', url: url };
+        if (token) {
+            body.credHost = host;
+            body.credUsername = username || 'x-access-token';
+            body.credToken = token;
+        }
+        return body;
+    }
+
+    function hideCloneCredUI() {
+        if (cloneCredTransparent) cloneCredTransparent.classList.add('dialog__field--hidden');
+        if (cloneCredFields) cloneCredFields.classList.add('dialog__field--hidden');
+        if (cloneCredNotice) cloneCredNotice.style.display = 'none';
+    }
+
+    // TRANSPARENT: saved PAT in use, no fields -- just an unobtrusive line.
+    function showCloneCredTransparent(host) {
+        if (!cloneCredTransparent) return;
+        cloneCredTransparentHost.textContent = host;
+        cloneCredTransparent.classList.remove('dialog__field--hidden');
+        cloneCredFields.classList.add('dialog__field--hidden');
+    }
+
+    // FRESH / REJECTED / Change: reveal fields, host prefilled, token in a
+    // masked (password) input; notice explains why they appeared.
+    function revealCloneCredFields(host, username, token, notice) {
+        if (!cloneCredFields) return;
+        cloneCredHostInput.value = host || '';
+        cloneCredUsernameInput.value = username || 'x-access-token';
+        cloneCredTokenInput.value = token || '';
+        if (notice) {
+            cloneCredNotice.textContent = notice;
+            cloneCredNotice.style.display = 'block';
+        } else {
+            cloneCredNotice.style.display = 'none';
+        }
+        cloneCredTransparent.classList.add('dialog__field--hidden');
+        cloneCredFields.classList.remove('dialog__field--hidden');
+        cloneCredTokenInput.focus();
+    }
+
+    // Handle a needsAuth response: REJECTED when a stored token was tried and
+    // failed, FRESH otherwise.
+    function handleCloneNeedsAuth(data) {
+        var url = urlInput.value.trim();
+        var host = (data && data.host) || deriveCloneHost(url);
+        var stored = host ? readCloneCreds(host) : null;
+        if (stored && stored.token) {
+            revealCloneCredFields(host, stored.username, stored.token,
+                'Saved ' + host + ' token was rejected - update it?');
+        } else {
+            revealCloneCredFields(host, 'x-access-token', '',
+                'This repository requires authentication. Enter a token to clone.');
+        }
+    }
+
     // Prepare repo and show post-prepare fields
     function prepareRepo(body) {
         showLoading('Preparing repository...');
@@ -401,6 +510,13 @@
             return response.json();
         })
         .then(function(data) {
+            // Auth needed: a private clone failed (or a stored token was
+            // rejected). Reveal/rescue the credential fields; do not proceed.
+            if (data && data.needsAuth) {
+                hideLoading();
+                handleCloneNeedsAuth(data);
+                return;
+            }
             dialogState.repoPath = data.path;
             dialogState.isNewProject = data.isNew || false;
             if (body.mode === 'create' && body.name) {
@@ -518,12 +634,58 @@
             showError('Please enter a repository URL');
             return;
         }
-        prepareRepo({ mode: 'clone', url: url });
+        hideCloneCredUI();
+        var host = deriveCloneHost(url);
+        var stored = host ? readCloneCreds(host) : null;
+        if (stored && stored.token) {
+            // TRANSPARENT: attach the saved PAT and clone silently.
+            showCloneCredTransparent(host);
+            prepareRepo(buildCloneBody(url, host, stored.username, stored.token));
+        } else {
+            // No stored PAT: try bare. Public repos succeed with no fields;
+            // a private repo comes back needsAuth and reveals the fields.
+            prepareRepo(buildCloneBody(url, host, '', ''));
+        }
     }
     cloneNextBtn.addEventListener('click', handleCloneNext);
     urlInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { e.preventDefault(); handleCloneNext(); }
     });
+
+    // Credential submit: store the PAT and retry the clone with it.
+    function handleCloneCredSubmit() {
+        var url = urlInput.value.trim();
+        if (!url) { showError('Please enter a repository URL'); return; }
+        var host = (cloneCredHostInput.value || '').trim() || deriveCloneHost(url);
+        var username = (cloneCredUsernameInput.value || '').trim() || 'x-access-token';
+        var token = (cloneCredTokenInput.value || '').trim();
+        if (!token) { showError('Please enter a token'); return; }
+        writeCloneCreds(host, username, token);
+        hideCloneCredUI();
+        prepareRepo(buildCloneBody(url, host, username, token));
+    }
+    if (cloneCredSubmit) {
+        cloneCredSubmit.addEventListener('click', handleCloneCredSubmit);
+    }
+    if (cloneCredTokenInput) {
+        cloneCredTokenInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); handleCloneCredSubmit(); }
+        });
+    }
+
+    // "Change" expands the prefilled (masked) fields for a one-off override.
+    if (cloneCredChange) {
+        cloneCredChange.addEventListener('click', function(e) {
+            e.preventDefault();
+            var url = urlInput.value.trim();
+            var host = deriveCloneHost(url) || (cloneCredHostInput.value || '').trim();
+            var stored = host ? readCloneCreds(host) : null;
+            revealCloneCredFields(host,
+                stored ? stored.username : 'x-access-token',
+                stored ? stored.token : '',
+                '');
+        });
+    }
 
     // Create inline Next button
     function handleCreateNext() {
