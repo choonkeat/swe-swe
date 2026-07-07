@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clone credentials -- shared path with fetch/push</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --panel:#ffffff; --ink:#1a1d21; --muted:#6b7280;
+    --line:#334155; --ret:#94a3b8;
+    --lifeline:#cbd5e1; --head:#eef2f7; --head-br:#c7d2de;
+    --note-bg:#fff7e6; --note-br:#f0c674; --note-ink:#5c4813;
+    --shared-bg:rgba(34,197,94,.12); --shared-br:#22c55e; --shared-ink:#15803d;
+    --new-bg:#e0f2fe; --new-ink:#0369a1;
+    --accent:#2563eb;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0e1116; --panel:#161b22; --ink:#e6edf3; --muted:#9aa4b2;
+      --line:#93a4bd; --ret:#5b6b82;
+      --lifeline:#30363d; --head:#1c2430; --head-br:#30506e;
+      --note-bg:#2a2410; --note-br:#8a6d1f; --note-ink:#f0d98a;
+      --shared-bg:rgba(34,197,94,.16); --shared-br:#2ea043; --shared-ink:#7ee2a8;
+      --new-bg:#0b2a3f; --new-ink:#7cc7f0;
+      --accent:#5aa2ff;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1116; --panel:#161b22; --ink:#e6edf3; --muted:#9aa4b2;
+    --line:#93a4bd; --ret:#5b6b82; --lifeline:#30363d; --head:#1c2430; --head-br:#30506e;
+    --note-bg:#2a2410; --note-br:#8a6d1f; --note-ink:#f0d98a;
+    --shared-bg:rgba(34,197,94,.16); --shared-br:#2ea043; --shared-ink:#7ee2a8;
+    --new-bg:#0b2a3f; --new-ink:#7cc7f0; --accent:#5aa2ff;
+  }
+  :root[data-theme="light"]{
+    --bg:#f7f8fa; --panel:#ffffff; --ink:#1a1d21; --muted:#6b7280;
+    --line:#334155; --ret:#94a3b8; --lifeline:#cbd5e1; --head:#eef2f7; --head-br:#c7d2de;
+    --note-bg:#fff7e6; --note-br:#f0c674; --note-ink:#5c4813;
+    --shared-bg:rgba(34,197,94,.12); --shared-br:#22c55e; --shared-ink:#15803d;
+    --new-bg:#e0f2fe; --new-ink:#0369a1; --accent:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1280px;margin:0 auto;padding:28px 20px 80px;}
+  h1{font-size:24px;margin:0 0 6px;}
+  h2{font-size:18px;margin:34px 0 4px;}
+  .sub{color:var(--muted);margin:0 0 18px;}
+  .card{background:var(--panel);border:1px solid var(--head-br);border-radius:12px;
+    padding:14px 8px;margin:14px 0;overflow-x:auto;}
+  .card svg{display:block;min-width:1180px;}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:10px 2px 0;font-size:13px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:7px;}
+  .sw{width:26px;height:0;border-top:2px solid var(--line);display:inline-block;}
+  .sw.ret{border-top:2px dashed var(--ret);}
+  .chip{display:inline-block;padding:1px 7px;border-radius:6px;font-size:12px;font-weight:600;}
+  .chip.new{background:var(--new-bg);color:var(--new-ink);}
+  .chip.shared{background:var(--shared-bg);color:var(--shared-ink);border:1px solid var(--shared-br);}
+  .callout{background:var(--panel);border:1px solid var(--head-br);border-left:4px solid var(--shared-br);
+    border-radius:10px;padding:14px 16px;margin:18px 0;}
+  .callout h3{margin:0 0 8px;font-size:15px;}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:8px;}
+  th,td{border:1px solid var(--head-br);padding:8px 10px;text-align:left;vertical-align:top;}
+  th{background:var(--head);}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;
+    background:var(--head);padding:1px 5px;border-radius:5px;}
+  .flowstrip{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0 4px;font-size:13.5px;}
+  .pillbox{background:var(--head);border:1px solid var(--head-br);border-radius:8px;padding:6px 11px;font-weight:600;}
+  .arw{color:var(--muted);font-weight:700;}
+  .states{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px;}
+  @media(max-width:840px){.states{grid-template-columns:1fr;}}
+  .state{background:var(--panel);border:1px solid var(--head-br);border-radius:10px;padding:14px;}
+  .state h4{margin:0 0 4px;font-size:13.5px;}
+  .badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.02em;}
+  .b-fresh{background:var(--new-bg);color:var(--new-ink);}
+  .b-trans{background:var(--shared-bg);color:var(--shared-ink);border:1px solid var(--shared-br);}
+  .b-rej{background:#fde4e2;color:#b42318;}
+  @media(prefers-color-scheme:dark){.b-rej{background:#3a1512;color:#f4a7a0;}}
+  :root[data-theme="dark"] .b-rej{background:#3a1512;color:#f4a7a0;}
+  :root[data-theme="light"] .b-rej{background:#fde4e2;color:#b42318;}
+  .state .u{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 2px;}
+  .state p{margin:2px 0;font-size:13px;}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:30px;}
+  /* svg text */
+  text{fill:var(--ink);}
+  .lbl{font-size:12.5px;}
+  .lbl.ret{fill:var(--muted);}
+  .newt{fill:var(--new-ink);font-weight:700;}
+  .head text{font-size:12.5px;font-weight:600;}
+  .subhead{font-size:11px;fill:var(--muted);font-weight:400;}
+  .notet{font-size:11.5px;fill:var(--note-ink);}
+  .brk{font-size:11px;fill:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Credentialed clone reuses the existing HTTPS-cred path</h1>
+  <p class="sub">How the proposed New-Session clone (bottom) resolves git credentials through the
+    <em>exact same</em> broker / helper / cred-store machinery that today serves
+    <code>git fetch</code> / <code>git push</code> from a live session (top). The green band is byte-identical between the two.</p>
+
+  <div class="legend">
+    <span><i class="sw"></i> call</span>
+    <span><i class="sw ret"></i> return</span>
+    <span><span class="chip shared">green band</span> identical credential resolution</span>
+    <span><span class="chip new">NEW</span> the only clone-specific steps</span>
+  </div>
+
+  <h2>1 &mdash; Today: <code>git fetch</code> / <code>git push</code> inside a live session</h2>
+  <div class="card">
+    <svg viewBox="0 0 1220 660" role="img" aria-label="Sequence diagram: existing session fetch/push credential flow">
+      <defs>
+        <marker id="arrow" markerWidth="11" markerHeight="11" refX="8.5" refY="3" orient="auto">
+          <path d="M0,0 L9,3 L0,6 z" fill="var(--line)"/>
+        </marker>
+        <marker id="arrowo" markerWidth="11" markerHeight="11" refX="8.5" refY="3" orient="auto">
+          <path d="M0,0 L9,3 L0,6 z" fill="var(--ret)"/>
+        </marker>
+      </defs>
+
+      <!-- shared band -->
+      <rect x="470" y="316" width="730" height="322" rx="12" fill="var(--shared-bg)" stroke="var(--shared-br)" stroke-dasharray="6 5"/>
+      <rect x="482" y="325" width="172" height="21" rx="10" fill="var(--shared-br)"/>
+      <text x="568" y="340" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">SHARED CREDENTIAL PATH</text>
+
+      <!-- lifelines + heads -->
+      <!-- BR 110, SRV 330, CRD 545, BRK 735, GIT 940, RMT 1120 -->
+      <g class="head">
+        <g><rect x="35" y="24" width="150" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="110" y="42" text-anchor="middle">Browser</text>
+           <text x="110" y="58" text-anchor="middle" class="subhead">session terminal</text></g>
+        <g><rect x="250" y="24" width="160" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="330" y="42" text-anchor="middle">swe-swe-server</text>
+           <text x="330" y="58" text-anchor="middle" class="subhead">Go</text></g>
+        <g><rect x="465" y="24" width="160" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="545" y="42" text-anchor="middle">cred store</text>
+           <text x="545" y="58" text-anchor="middle" class="subhead">in-mem: sid+host&#8594;PAT</text></g>
+        <g><rect x="655" y="24" width="160" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="735" y="42" text-anchor="middle">broker</text>
+           <text x="735" y="58" text-anchor="middle" class="subhead">@swe-swe-broker</text></g>
+        <g><rect x="855" y="24" width="170" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="940" y="42" text-anchor="middle">git  (+ helper)</text>
+           <text x="940" y="58" text-anchor="middle" class="subhead">git-credential-swe-swe</text></g>
+        <g><rect x="1045" y="24" width="150" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="1120" y="42" text-anchor="middle">Remote</text>
+           <text x="1120" y="58" text-anchor="middle" class="subhead">github / gitlab</text></g>
+      </g>
+      <g stroke="var(--lifeline)" stroke-width="1.5">
+        <line x1="110" y1="66" x2="110" y2="648"/>
+        <line x1="330" y1="66" x2="330" y2="648"/>
+        <line x1="545" y1="66" x2="545" y2="648"/>
+        <line x1="735" y1="66" x2="735" y2="648"/>
+        <line x1="940" y1="66" x2="940" y2="648"/>
+        <line x1="1120" y1="66" x2="1120" y2="648"/>
+      </g>
+
+      <!-- A0 BR->SRV -->
+      <line class="call" x1="110" y1="110" x2="330" y2="110" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="220" y="104" text-anchor="middle">Settings: set_credentials {host, PAT}</text>
+      <!-- A1 SRV->CRD -->
+      <line class="call" x1="330" y1="156" x2="545" y2="156" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="437" y="150" text-anchor="middle">setCredential(sid, host, PAT)</text>
+      <!-- A2 note SRV -->
+      <rect x="150" y="184" width="360" height="34" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="330" y="199" text-anchor="middle">PTY registered: registerSessionPid(ptyPid, sid)</text>
+      <text class="notet" x="330" y="212" text-anchor="middle">git env: credential.helper = swe-swe</text>
+      <!-- A3 note GIT -->
+      <rect x="820" y="236" width="240" height="24" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="940" y="252" text-anchor="middle">user runs  git fetch / git push</text>
+      <!-- A4 note GIT self -->
+      <rect x="800" y="282" width="280" height="24" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="940" y="298" text-anchor="middle">git needs auth &#8594; spawns helper  get</text>
+
+      <!-- A5 GIT->BRK -->
+      <line class="call" x1="940" y1="340" x2="735" y2="340" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="837" y="334" text-anchor="middle">connect @swe-swe-broker</text>
+      <!-- A6 note BRK self -->
+      <rect x="600" y="368" width="270" height="24" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="735" y="384" text-anchor="middle">SO_PEERCRED &#8594; findSessionForPID &#8594; sid</text>
+      <!-- A7 BRK->CRD -->
+      <line class="call" x1="735" y1="432" x2="545" y2="432" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="640" y="426" text-anchor="middle">getCredential(sid, host)</text>
+      <!-- A8 CRD-->BRK ret -->
+      <line class="ret" x1="545" y1="478" x2="735" y2="478" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="640" y="472" text-anchor="middle">{ username, PAT }</text>
+      <!-- A9 BRK-->GIT ret -->
+      <line class="ret" x1="735" y1="524" x2="940" y2="524" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="837" y="518" text-anchor="middle">username + PAT</text>
+      <!-- A10 GIT->RMT -->
+      <line class="call" x1="940" y1="570" x2="1120" y2="570" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="1030" y="564" text-anchor="middle">HTTPS auth &#8594; fetch / push</text>
+      <!-- A11 RMT-->GIT ret -->
+      <line class="ret" x1="1120" y1="616" x2="940" y2="616" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="1030" y="610" text-anchor="middle">200 OK</text>
+    </svg>
+  </div>
+
+  <h2>2 &mdash; Proposed: clone a new repo from the New Session dialog</h2>
+  <div class="card">
+    <svg viewBox="0 0 1220 846" role="img" aria-label="Sequence diagram: proposed credentialed clone flow">
+      <!-- shared band (rows B6..B12) -->
+      <rect x="470" y="362" width="730" height="322" rx="12" fill="var(--shared-bg)" stroke="var(--shared-br)" stroke-dasharray="6 5"/>
+      <rect x="482" y="371" width="230" height="21" rx="10" fill="var(--shared-br)"/>
+      <text x="597" y="386" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">SHARED PATH &mdash; same as above</text>
+
+      <g class="head">
+        <g><rect x="35" y="24" width="150" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="110" y="42" text-anchor="middle">Browser</text>
+           <text x="110" y="58" text-anchor="middle" class="subhead">New Session dialog</text></g>
+        <g><rect x="250" y="24" width="160" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="330" y="42" text-anchor="middle">swe-swe-server</text>
+           <text x="330" y="58" text-anchor="middle" class="subhead">/api/repo/prepare</text></g>
+        <g><rect x="465" y="24" width="160" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="545" y="42" text-anchor="middle">cred store</text>
+           <text x="545" y="58" text-anchor="middle" class="subhead">in-mem: sid+host&#8594;PAT</text></g>
+        <g><rect x="655" y="24" width="160" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="735" y="42" text-anchor="middle">broker</text>
+           <text x="735" y="58" text-anchor="middle" class="subhead">@swe-swe-broker</text></g>
+        <g><rect x="855" y="24" width="170" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="940" y="42" text-anchor="middle">git clone (+ helper)</text>
+           <text x="940" y="58" text-anchor="middle" class="subhead">git-credential-swe-swe</text></g>
+        <g><rect x="1045" y="24" width="150" height="42" rx="8" fill="var(--head)" stroke="var(--head-br)"/>
+           <text x="1120" y="42" text-anchor="middle">Remote</text>
+           <text x="1120" y="58" text-anchor="middle" class="subhead">github / gitlab</text></g>
+      </g>
+      <g stroke="var(--lifeline)" stroke-width="1.5">
+        <line x1="110" y1="66" x2="110" y2="834"/>
+        <line x1="330" y1="66" x2="330" y2="834"/>
+        <line x1="545" y1="66" x2="545" y2="834"/>
+        <line x1="735" y1="66" x2="735" y2="834"/>
+        <line x1="940" y1="66" x2="940" y2="834"/>
+        <line x1="1120" y1="66" x2="1120" y2="834"/>
+      </g>
+
+      <!-- B0 note BR self -->
+      <rect x="12" y="98" width="336" height="24" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="24" y="114" text-anchor="start">derive host &#8594; read localStorage swe-swe-creds:&lt;host&gt;</text>
+      <!-- B1 BR->SRV -->
+      <line class="call" x1="110" y1="156" x2="330" y2="156" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="220" y="150" text-anchor="middle">POST /api/repo/prepare {url, cred*}</text>
+      <!-- B2 SRV->CRD  NEW -->
+      <line class="call" x1="330" y1="202" x2="545" y2="202" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="437" y="196" text-anchor="middle">setCredential(<tspan class="newt">transientID</tspan>, host, PAT)</text>
+      <text class="newt" x="437" y="184" text-anchor="middle" font-size="10.5">NEW: transient id minted by server</text>
+      <!-- B3 SRV->GIT -->
+      <line class="call" x1="330" y1="248" x2="940" y2="248" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="635" y="242" text-anchor="middle">start  git clone &lt;url&gt;   (env credential.helper = swe-swe)</text>
+      <!-- B4 SRV->BRK  NEW -->
+      <line class="call" x1="330" y1="294" x2="735" y2="294" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="532" y="288" text-anchor="middle">registerSessionPid(clonePid, <tspan class="newt">transientID</tspan>)</text>
+      <!-- B5 note GIT self -->
+      <rect x="800" y="328" width="280" height="24" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="940" y="344" text-anchor="middle">git needs auth &#8594; spawns helper  get</text>
+
+      <!-- B6 GIT->BRK -->
+      <line class="call" x1="940" y1="386" x2="735" y2="386" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="837" y="380" text-anchor="middle">connect @swe-swe-broker</text>
+      <!-- B7 note BRK self -->
+      <rect x="588" y="414" width="294" height="24" rx="7" fill="var(--note-bg)" stroke="var(--note-br)"/>
+      <text class="notet" x="735" y="430" text-anchor="middle">SO_PEERCRED &#8594; findSessionForPID &#8594; transientID</text>
+      <!-- B8 BRK->CRD -->
+      <line class="call" x1="735" y1="478" x2="545" y2="478" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="640" y="472" text-anchor="middle">getCredential(transientID, host)</text>
+      <!-- B9 CRD-->BRK ret -->
+      <line class="ret" x1="545" y1="524" x2="735" y2="524" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="640" y="518" text-anchor="middle">{ username, PAT }</text>
+      <!-- B10 BRK-->GIT ret -->
+      <line class="ret" x1="735" y1="570" x2="940" y2="570" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="837" y="564" text-anchor="middle">username + PAT</text>
+      <!-- B11 GIT->RMT -->
+      <line class="call" x1="940" y1="616" x2="1120" y2="616" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="1030" y="610" text-anchor="middle">HTTPS auth &#8594; clone</text>
+      <!-- B12 RMT-->GIT ret -->
+      <line class="ret" x1="1120" y1="662" x2="940" y2="662" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="1030" y="656" text-anchor="middle">200 OK &#8594; repo cloned</text>
+
+      <!-- B13 SRV->CRD NEW cleanup -->
+      <line class="call" x1="330" y1="708" x2="545" y2="708" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="437" y="702" text-anchor="middle"><tspan class="newt">defer</tspan> clearCredential(transientID)</text>
+      <!-- B14 SRV->BRK NEW cleanup -->
+      <line class="call" x1="330" y1="754" x2="735" y2="754" stroke="var(--line)" stroke-width="2" marker-end="url(#arrow)"/>
+      <text class="lbl" x="532" y="748" text-anchor="middle"><tspan class="newt">defer</tspan> unregisterSessionPid(clonePid)</text>
+      <!-- B15 SRV-->BR ret -->
+      <line class="ret" x1="330" y1="800" x2="110" y2="800" stroke="var(--ret)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowo)"/>
+      <text class="lbl ret" x="220" y="794" text-anchor="middle">{ justCloned:true, path }</text>
+    </svg>
+  </div>
+
+  <h2>3 &mdash; What the user sees: credential states in the dialog</h2>
+  <p class="sub">Same rule across all three: <strong>apply silently if we have it; only surface fields when the user clicks Change or when auth fails.</strong> Public repos trigger none of this.</p>
+  <div class="flowstrip">
+    <span class="pillbox">paste clone URL &rarr; Next</span>
+    <span class="arw">&rarr;</span>
+    <span class="pillbox">parse host, read localStorage <code>swe-swe-creds:&lt;host&gt;</code></span>
+    <span class="arw">&rarr;</span>
+    <span class="pillbox">branch by what's stored &darr;</span>
+  </div>
+  <div class="states">
+    <div class="state">
+      <h4><span class="badge b-fresh">FRESH</span></h4>
+      <p><em>No PAT stored for this host (fresh install).</em></p>
+      <span class="u">User sees</span>
+      <p>Credential fields appear, empty, host prefilled from the URL, username <code>x-access-token</code>.</p>
+      <span class="u">What happens</span>
+      <p>User enters PAT &rarr; saved to <code>swe-swe-creds:&lt;host&gt;</code> &rarr; sent with prepare &rarr; clone succeeds. This is the whole bootstrap &mdash; no blank project, no <code>.git/config</code> edit, no <code>reset --hard</code>.</p>
+    </div>
+    <div class="state">
+      <h4><span class="badge b-trans">TRANSPARENT</span></h4>
+      <p><em>PAT already stored for this host, and valid.</em></p>
+      <span class="u">User sees</span>
+      <p>No fields. Just a quiet line: &ldquo;Using saved credentials for &lt;host&gt; &middot; <strong>Change</strong>&rdquo;.</p>
+      <span class="u">What happens</span>
+      <p>Stored PAT is attached to the prepare POST and the clone runs silently &mdash; zero extra clicks. <strong>Change</strong> expands the fields <em>prefilled</em> (masked) for a one-off override (e.g. a different org's token).</p>
+    </div>
+    <div class="state">
+      <h4><span class="badge b-rej">REJECTED</span></h4>
+      <p><em>PAT stored but the host refused it (expired / wrong scope).</em></p>
+      <span class="u">User sees</span>
+      <p>Fields auto-reveal, prefilled, with &ldquo;Saved &lt;host&gt; token was rejected &mdash; update it?&rdquo;.</p>
+      <span class="u">What happens</span>
+      <p>User fixes just the PAT &rarr; localStorage updated &rarr; clone retried. No dead-end raw git error.</p>
+    </div>
+  </div>
+  <div class="callout" style="border-left-color:var(--accent);">
+    <h3>Once entered, it's entered everywhere</h3>
+    <p>All three states read/write the <em>same</em> <code>swe-swe-creds:&lt;host&gt;</code> store the Session Settings UI uses. So a PAT typed at clone time is instantly available in Settings and to every future clone of that host &mdash; and the session created on the cloned repo <strong>auto-restores it</strong> (existing <code>_maybeAutoConnectSecrets</code>), with the <code>(origin, init_sha)</code> trust pre-seeded from prepare so there's no second &ldquo;trust this device?&rdquo; prompt. <code>git fetch</code>/<code>git push</code> inside the new repo then just work.</p>
+  </div>
+
+  <div class="callout">
+    <h3>What is shared vs. new</h3>
+    <p>Everything inside the green band &mdash; <code>git &#8594; helper &#8594; broker (SO_PEERCRED + ancestry walk &#8594; sid) &#8594; getCredential(sid, host) &#8594; PAT &#8594; Remote</code> &mdash; is <strong>the same code path</strong> for fetch, push, and clone. The clone flow only adds the four <span class="chip new">NEW</span> steps that put a credential + a resolvable sid in place before git starts, then tears them down after.</p>
+    <table>
+      <tr><th>Aspect</th><th>Existing session (fetch/push)</th><th>New clone (proposed)</th></tr>
+      <tr><td>Where the sid comes from</td><td>Session PTY, registered once at session start</td><td><span class="chip new">NEW</span> transient id minted per clone, registered on the clone pid</td></tr>
+      <tr><td>How the PAT gets into the store</td><td>Settings dialog &#8594; <code>set_credentials</code> (persists for session life)</td><td><span class="chip new">NEW</span> browser sends the localStorage PAT with the prepare POST</td></tr>
+      <tr><td>Credential resolution</td><td colspan="2" style="text-align:center;background:var(--shared-bg);color:var(--shared-ink);font-weight:600;">identical &mdash; broker + git-credential-swe-swe + cred store</td></tr>
+      <tr><td>Lifetime</td><td>Cleared on session end</td><td><span class="chip new">NEW</span> cleared in a <code>defer</code> the moment clone returns</td></tr>
+    </table>
+  </div>
+
+  <p class="foot">Source references &mdash; broker: <code>broker.go</code> (registerSessionPid / findSessionForPID);
+    helper env: <code>main.go:628</code> (buildSessionEnv); today's clone (bare, no creds): <code>handleRepoPrepareClone main.go:3792</code>;
+    background fetch (credential-less, soft-fail): <code>main.go:3939</code>.
+    Proposed shared helper: <code>runGitWithTransientCred(host, user, token, args...)</code>.</p>
+</div>
+</body>
+</html>

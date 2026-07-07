@@ -6,7 +6,7 @@ Log convention: `tasks/2026-07-07-clone-credentials-bootstrap.md-phase{N}.log`.
 
 Origin: agent-chat design session 2026-07-07 (session "Clone-repo credentials
 UX"). Decisions settled below -- read the whole Design before Phase 1; every
-step references it. Companion diagram: `.swe-swe/docs/clone-creds-sequence.html`.
+step references it. Companion diagram: `docs/dev/clone-creds-sequence.html`.
 
 ## Ground rules for the executing agent
 
