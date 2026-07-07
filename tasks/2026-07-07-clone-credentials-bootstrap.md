@@ -149,7 +149,14 @@ Verification:
 - [DONE] `make build golden-update`; golden diff = clone_cred.go + main.go
   mirror across all init variants (expected, template changed).
 
-## Phase 2 -- frontend: three-state credential UX in the dialog
+## Phase 2 -- frontend: three-state credential UX in the dialog -- DONE
+
+Notes: host derivation done by a unit-tested pure module
+(static/modules/clone-cred-host.js, parseCloneHost, exposed to the classic
+dialog script via a module shim in selection.html). Design reconciliation:
+per the top-line rule ("surface fields only on Change or auth failure"), FRESH
+fields appear AFTER a bare clone returns needsAuth, not up front -- this keeps
+public repos free of any credential UI.
 
 Steps (static/new-session-dialog.js + page-templates/selection.html):
 1. Add a credentials sub-section to the clone form (`#clone-url-field` area,
@@ -164,16 +171,21 @@ Steps (static/new-session-dialog.js + page-templates/selection.html):
    `swe-swe-creds:<host>` and retry prepare.
 4. "Change" toggles the prefilled (masked) fields for one-off override.
 
-Verification (test container + mcp browser):
-- Fresh (clear localStorage): private clone -> fields appear -> enter PAT ->
-  clone succeeds; localStorage now has `swe-swe-creds:<host>`.
-- Transparent: second private clone of same host -> no fields, "Using saved
-  credentials - Change" shown, clone succeeds.
-- Rejected: corrupt the stored PAT -> clone -> fields auto-reveal with
-  rejection notice -> fix -> succeeds.
-- Public repo -> no credential UI at all.
+Verification (test container + mcp browser) -- ALL GREEN:
+- [DONE] Fresh (clear localStorage): private-no-token clone -> needsAuth
+  returns INSTANTLY (see Phase 1 GIT_TERMINAL_PROMPT=0 fix), fields appear,
+  host prefilled. Enter token -> written to `swe-swe-creds:<host>`.
+- [DONE] Transparent: stored token attached to the prepare POST silently
+  (verified in request body), "Using saved credentials for <host> - Change"
+  line shown; persists on a successful (public) clone.
+- [DONE] Rejected: bad token -> retry -> fields auto-reveal with "Saved
+  <host> token was rejected - update it?" notice; token prefilled + masked.
+- [DONE] Public repo -> no credential UI at all.
+- [DONE] Change -> reveals prefilled (masked) fields for one-off override.
+- Positive path (VALID PAT clones private repo successfully): accepted as
+  covered by unit + shared-path coverage (user Option 3); not run live.
 
-## Phase 3 -- session inheritance, trust pre-seed, drop redundant fetch
+## Phase 3 -- session inheritance, trust pre-seed, drop redundant fetch -- DONE
 
 Steps:
 1. `refreshBranchesInBackground` (new-session-dialog.js ~348): skip when the
@@ -186,9 +198,12 @@ Steps:
    repo work.
 
 Verification:
-- Network panel: a fresh clone issues no `&fetch=1` branch call.
-- New session on the cloned private repo: no "trust this device?" prompt; an
-  in-session `git fetch` / `git push` authenticates via the broker.
+- [DONE] Network panel: a fresh clone issues no `&fetch=1` branch call
+  (verified live: prepare + exactly one plain `/api/repo/branches`).
+- [ACCEPTED - not run live] New session on the cloned private repo: no "trust
+  this device?" prompt; in-session `git fetch`/`git push` authenticates via
+  the broker. Needs a valid PAT; user chose Option 3. preseedCredsTrust writes
+  the same `(origin, initSha)` key format as terminal-ui `_signingTrustKey`.
 
 ## Phase 4 (optional follow-up) -- existing-repo fetch + homepage manager
 
