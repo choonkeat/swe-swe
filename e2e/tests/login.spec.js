@@ -33,4 +33,29 @@ test.describe('Login', () => {
     const url = page.url();
     expect(url).not.toContain('swe-swe-auth/login');
   });
+
+  test('log out from homepage Settings clears the session', async ({ page }) => {
+    // Log in first.
+    await page.goto('/swe-swe-auth/login');
+    await page.fill('input[type="password"]', PASSWORD);
+    await Promise.all([
+      page.waitForNavigation(),
+      page.click('button[type="submit"]'),
+    ]);
+    expect(page.url()).not.toContain('swe-swe-auth/login');
+
+    // Open the homepage Settings dialog and click Log out.
+    await page.click('#settings-btn');
+    await Promise.all([
+      page.waitForNavigation(),
+      page.click('.settings-logout-btn'),
+    ]);
+
+    // Landed on the login page: the cookie was cleared.
+    await expect(page).toHaveURL(/swe-swe-auth\/login/);
+
+    // And the session is truly gone: hitting a protected page bounces to login.
+    await page.goto('/');
+    await expect(page).toHaveURL(/swe-swe-auth\/login/);
+  });
 });

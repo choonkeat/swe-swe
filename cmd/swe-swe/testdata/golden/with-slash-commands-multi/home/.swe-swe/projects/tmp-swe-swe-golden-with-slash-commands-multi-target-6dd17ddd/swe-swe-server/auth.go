@@ -587,6 +587,28 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 	http.Redirect(w, r, safeRedirect(redirectURL), http.StatusFound)
 }
 
+// authLogoutHandler clears the session cookie and redirects to the login page.
+// Works for both a full (unscoped) user and a shared-session guest: it simply
+// expires the cookie, so the next request is unauthenticated and the auth gate
+// bounces it to /swe-swe-auth/login. The cleared cookie mirrors the Path,
+// Domain, and Secure attributes of the one authLoginPostHandler set, otherwise
+// the browser keeps the original (RFC 6265 matches on name+domain+path).
+func authLogoutHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:     authCookieName,
+			Value:    "",
+			Path:     "/",
+			Domain:   resolveCookieDomain(getLiveTunnelHostname(), r.Host),
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   resolveCookieSecure(r),
+		})
+		http.Redirect(w, r, "/swe-swe-auth/login", http.StatusFound)
+	}
+}
+
 // authVerifyHandler checks the session cookie and returns 200 (valid) or redirects to login.
 // Used by Traefik ForwardAuth middleware in compose mode.
 func authVerifyHandler(secret string) http.HandlerFunc {
@@ -689,6 +711,7 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 		// Exempt paths that don't require authentication
 		// (API key-authenticated routes handle their own auth)
 		if path == "/swe-swe-auth/login" ||
+			path == "/swe-swe-auth/logout" ||
 			path == "/swe-swe-auth/verify" ||
 			strings.HasPrefix(path, "/ssl/") ||
 			path == "/mcp" ||
@@ -838,6 +861,7 @@ func setupEmbeddedAuth(password string) http.Handler {
 
 	// Register auth handlers on the default mux
 	http.HandleFunc("/swe-swe-auth/login", authLoginHandler(password))
+	http.HandleFunc("/swe-swe-auth/logout", authLogoutHandler())
 	http.HandleFunc("/swe-swe-auth/verify", authVerifyHandler(password))
 
 	// Wrap default mux with auth middleware

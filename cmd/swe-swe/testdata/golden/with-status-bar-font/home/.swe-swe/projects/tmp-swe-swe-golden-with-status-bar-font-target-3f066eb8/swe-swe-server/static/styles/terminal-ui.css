@@ -1056,6 +1056,27 @@ terminal-ui.embedded-in-iframe .mobile-only {
     background: rgba(220, 38, 38, 0.08);
 }
 
+/* Quiet log-out link, sits beside the end-session link. Neutral (not red):
+   logging out only clears this browser's cookie; it does not end the session. */
+.settings-panel__logout-link {
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+    opacity: 0.85;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.settings-panel__logout-link:hover {
+    opacity: 1;
+    background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
 /* End-session confirm popover (anchored above the end link) */
 .settings-panel__end-confirm {
     position: absolute;

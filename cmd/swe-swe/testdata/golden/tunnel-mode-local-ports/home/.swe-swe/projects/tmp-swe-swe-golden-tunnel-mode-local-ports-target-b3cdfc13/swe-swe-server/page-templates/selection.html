@@ -364,6 +364,29 @@
             background: rgba(239, 68, 68, 0.1);
         }
 
+        /* Log out button in the settings dialog */
+        .settings-logout-btn {
+            display: block;
+            width: 100%;
+            padding: 10px 16px;
+            box-sizing: border-box;
+            text-align: center;
+            text-decoration: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .settings-logout-btn:hover {
+            color: #ef4444;
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         /* Loading state for action buttons (Join Session, End, etc.) */
         .btn-join.is-loading,
         .btn-end.is-loading {
@@ -1408,6 +1431,10 @@
                         <button class="color-picker__reset" id="color-reset">Reset</button>
                     </div>
                 </div>
+            </div>
+            <div class="dialog__field">
+                <label class="dialog__label">Account</label>
+                <a class="settings-logout-btn" href="/swe-swe-auth/logout">Log out</a>
             </div>
         </div>
     </div>

@@ -312,6 +312,69 @@ func TestAuthLoginPostHandlerSetsCookieDomain(t *testing.T) {
 	}
 }
 
+func TestAuthLogoutHandlerClearsCookieAndRedirects(t *testing.T) {
+	saved := getLiveTunnelHostname()
+	t.Cleanup(func() { setLiveTunnelHostname(saved) })
+	setLiveTunnelHostname("")
+
+	req := httptest.NewRequest("GET", "/swe-swe-auth/logout", nil)
+	req.Host = "example.com"
+	rec := httptest.NewRecorder()
+
+	authLogoutHandler()(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body=%q", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/swe-swe-auth/login" {
+		t.Errorf("Location = %q, want /swe-swe-auth/login", loc)
+	}
+
+	var auth *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == authCookieName {
+			auth = c
+			break
+		}
+	}
+	if auth == nil {
+		t.Fatalf("logout did not emit a %q cookie to clear", authCookieName)
+	}
+	if auth.Value != "" {
+		t.Errorf("cleared cookie Value = %q, want empty", auth.Value)
+	}
+	// MaxAge < 0 tells net/http to emit Max-Age=0, expiring the cookie.
+	if auth.MaxAge >= 0 {
+		t.Errorf("cleared cookie MaxAge = %d, want negative (expire now)", auth.MaxAge)
+	}
+}
+
+// A shared-session guest (scoped cookie) must be able to reach the logout
+// endpoint: it is on the exempt list, so authMiddleware never applies the
+// guest boxing to it.
+func TestAuthMiddlewareExemptsLogout(t *testing.T) {
+	secret := "test-password"
+	served := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = true
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := authMiddleware(inner, secret)
+
+	// Scoped guest cookie -- boxed to some other session.
+	req := httptest.NewRequest("GET", "/swe-swe-auth/logout", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  authCookieName,
+		Value: authSignScopedCookie(secret, "some-session-uuid"),
+	})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if !served {
+		t.Fatalf("logout path was not passed through; status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAuthMiddlewareRedirectsUnauthenticated(t *testing.T) {
 	secret := "test-password"
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

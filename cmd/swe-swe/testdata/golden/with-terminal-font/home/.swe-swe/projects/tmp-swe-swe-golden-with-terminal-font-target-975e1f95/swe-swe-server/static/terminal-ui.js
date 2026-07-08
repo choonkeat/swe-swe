@@ -698,6 +698,7 @@ class TerminalUI extends HTMLElement {
                         </div>
                         <footer class="settings-panel__footer">
                             <button class="settings-panel__end-link" id="settings-end-session" type="button">End session</button>
+                            <a class="settings-panel__logout-link" id="settings-logout" href="/swe-swe-auth/logout">Log out</a>
                             <div class="settings-panel__footer-meta" id="settings-footer-meta"></div>
                             <button class="settings-panel__btn settings-panel__btn--secondary settings-panel__footer-close" type="button">Close</button>
                         </footer>
