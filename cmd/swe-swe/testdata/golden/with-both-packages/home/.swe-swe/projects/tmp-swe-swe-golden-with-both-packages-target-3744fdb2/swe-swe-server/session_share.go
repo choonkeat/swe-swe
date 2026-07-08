@@ -99,6 +99,91 @@ func buildShareURL(r *http.Request, sess *Session) string {
 	return scheme + "://" + r.Host + login
 }
 
+// firstPathSegment returns the first "/"-delimited segment of s.
+func firstPathSegment(s string) string {
+	if i := strings.IndexByte(s, '/'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// sessionUUIDFromPath extracts the session UUID a request path targets, for the
+// route shapes that resolve to one live session. ok is false for paths that
+// carry no session UUID (static assets, /terminal-ui.js, /ssl/*, favicon, ...).
+func sessionUUIDFromPath(path string) (string, bool) {
+	switch {
+	case strings.HasPrefix(path, "/session/"):
+		return firstPathSegment(path[len("/session/"):]), true
+	case strings.HasPrefix(path, "/ws/"):
+		return firstPathSegment(path[len("/ws/"):]), true
+	case strings.HasPrefix(path, "/proxy/"):
+		return firstPathSegment(path[len("/proxy/"):]), true
+	case strings.HasPrefix(path, "/api/session/"):
+		return firstPathSegment(path[len("/api/session/"):]), true
+	}
+	return "", false
+}
+
+// scopedRequestAllowed decides whether a shared-session guest (a non-empty
+// cookie scope) may make this request. It is the single guest policy, called
+// from authMiddleware only when scope != "". The "/" homepage is handled by
+// the caller (redirect to the guest's own session) and never reaches here.
+//
+// Default DENY: anything that could reach another session, spawn/fork/list
+// sessions, browse repos/worktrees, or replay a recording is rejected. Only
+// the guest's own session paths and UUID-less assets are allowed.
+func scopedRequestAllowed(scope string, r *http.Request) bool {
+	path := r.URL.Path
+
+	// Never for a guest: recordings (any), session spawn/fork, and the
+	// repo/worktree management APIs (which enumerate or create other work).
+	switch {
+	case strings.HasPrefix(path, "/recording/"),
+		strings.HasPrefix(path, "/api/recording/"),
+		path == "/api/session/new",
+		strings.HasPrefix(path, "/api/fork/"),
+		path == "/api/worktrees",
+		path == "/api/worktree/check",
+		path == "/api/repos",
+		path == "/api/repo/prepare",
+		path == "/api/repo/branches":
+		return false
+	}
+
+	// UUID-bearing session paths (/session, /ws, /proxy, /api/session): allow
+	// only the guest's own session.
+	if uuid, ok := sessionUUIDFromPath(path); ok {
+		return scopeAllows(scope, uuid)
+	}
+
+	// Everything else is a UUID-less asset/plumbing path (embedded static
+	// files, /terminal-ui.js, /ssl/*, /favicon.ico, /swe-swe-auth/*). These
+	// expose no other session, and the guest's own session page needs them.
+	return true
+}
+
+// scopedHomeTarget builds the target the homepage sends a guest to: their own
+// live session, with its assistant so /session/{uuid} does not bounce back to
+// "/" (which would infinite-loop). ok is false when the session is gone
+// (ended) -- the caller surfaces that instead of redirecting into a loop.
+func scopedHomeTarget(scope string) (target string, ok bool) {
+	sessionsMu.RLock()
+	sess, exists := sessions[scope]
+	assistant := ""
+	if exists {
+		assistant = sess.Assistant
+	}
+	sessionsMu.RUnlock()
+	if !exists {
+		return "", false
+	}
+	target = "/session/" + scope
+	if assistant != "" {
+		target += "?assistant=" + url.QueryEscape(assistant)
+	}
+	return target, true
+}
+
 // handleSessionShareAPI handles POST /api/session/{uuid}/share. It returns the
 // guest login link and share password for the session as JSON. Owner-only: a
 // request carrying a scoped (guest) cookie is forbidden, so a guest cannot mint

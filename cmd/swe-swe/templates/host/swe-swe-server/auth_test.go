@@ -365,7 +365,7 @@ func TestRequireAuthCookieRejectsUnauthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("protected"))
 	})
-	handler := requireAuthCookie(secret, inner)
+	handler := requireAuthCookie(secret, "owner-sess", inner)
 
 	req := httptest.NewRequest("GET", "/some/page", nil)
 	rr := httptest.NewRecorder()
@@ -382,7 +382,7 @@ func TestRequireAuthCookieAllowsAuthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("protected"))
 	})
-	handler := requireAuthCookie(secret, inner)
+	handler := requireAuthCookie(secret, "owner-sess", inner)
 
 	req := httptest.NewRequest("GET", "/some/page", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: authSignCookie(secret)})
@@ -403,7 +403,7 @@ func TestRequireAuthCookieProbeBypass(t *testing.T) {
 		w.Header().Set("X-Agent-Reverse-Proxy", "1")
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := requireAuthCookie(secret, inner)
+	handler := requireAuthCookie(secret, "owner-sess", inner)
 
 	req := httptest.NewRequest("GET", "/__probe__", nil)
 	rr := httptest.NewRecorder()
@@ -422,7 +422,7 @@ func TestRequireAuthCookieEmptySecretIsNoop(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("public"))
 	})
-	handler := requireAuthCookie("", inner)
+	handler := requireAuthCookie("", "owner-sess", inner)
 
 	req := httptest.NewRequest("GET", "/some/page", nil)
 	rr := httptest.NewRecorder()

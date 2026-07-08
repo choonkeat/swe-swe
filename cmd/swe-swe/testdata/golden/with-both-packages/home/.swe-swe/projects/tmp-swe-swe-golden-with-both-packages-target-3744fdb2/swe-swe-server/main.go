@@ -5290,7 +5290,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		previewPP := previewProxyPort(previewPort)
 		previewSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", previewPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, portPreviewProxy)),
+			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, portPreviewProxy)),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sess.UUID))
@@ -5309,7 +5309,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		acPP := agentChatProxyPort(acPort)
 		acSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", acPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, agentChatProxyHandler(acTarget))),
+			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, agentChatProxyHandler(acTarget))),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("agent chat proxy for session %s", sess.UUID))
@@ -5352,7 +5352,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		vncPP := vncProxyPort(vncPort)
 		vncSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", vncPP),
-			Handler: requireAuthCookie(authPassword, vncReverseProxy),
+			Handler: requireAuthCookie(authPassword, sess.UUID, vncReverseProxy),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("vnc proxy for session %s", sess.UUID))
@@ -5379,7 +5379,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		filesPP := filesProxyPort(sess.FilesPort)
 		filesSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", filesPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, filesReverseProxy)),
+			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, filesReverseProxy)),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("files proxy for session %s", sess.UUID))

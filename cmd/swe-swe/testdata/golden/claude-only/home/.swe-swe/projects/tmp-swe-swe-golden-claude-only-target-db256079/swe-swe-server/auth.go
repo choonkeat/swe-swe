@@ -702,7 +702,15 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 
 		// Check session cookie
 		cookie, err := r.Cookie(authCookieName)
-		if err != nil || !authVerifyCookie(cookie.Value, secret) {
+		var scope string
+		if err == nil {
+			var valid bool
+			scope, valid = authVerifyCookieScoped(cookie.Value, secret)
+			if !valid {
+				err = http.ErrNoCookie
+			}
+		}
+		if err != nil {
 			// Build redirect URL
 			redirectURI := r.URL.RequestURI()
 			if redirectURI == "" {
@@ -711,6 +719,30 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 			loginURL := "/swe-swe-auth/login?redirect=" + url.QueryEscape(redirectURI)
 			http.Redirect(w, r, loginURL, http.StatusFound)
 			return
+		}
+
+		// Shared-session guest (scope != ""): this is the single gate that
+		// boxes them into one live session. Full users (scope == "") fall
+		// straight through, unaffected. The homepage redirects to their own
+		// session; every other request must resolve to that session or be a
+		// UUID-less asset. See scopedRequestAllowed.
+		if scope != "" {
+			if path == "/" {
+				target, ok := scopedHomeTarget(scope)
+				if !ok {
+					// Session ended: the share password died with it, so there
+					// is nothing left for this guest. Surface it instead of
+					// looping "/" -> /session -> "/".
+					http.Error(w, "This shared session has ended.", http.StatusGone)
+					return
+				}
+				http.Redirect(w, r, target, http.StatusFound)
+				return
+			}
+			if !scopedRequestAllowed(scope, r) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)
@@ -735,7 +767,13 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 //
 // If secret is empty (no SWE_SWE_PASSWORD), returns next unwrapped -- harmless
 // no-op for compose-mode setups where Traefik fronts everything.
-func requireAuthCookie(secret string, next http.Handler) http.Handler {
+//
+// owningUUID is the session this per-port listener belongs to. A shared-session
+// guest holds a cookie scoped to exactly one session, and each of these
+// listeners (preview/agent-chat/vnc/files) serves exactly one session, so a
+// guest may pass only through their own session's ports -- scopeAllows enforces
+// that. A full (unscoped) user passes through any of them.
+func requireAuthCookie(secret, owningUUID string, next http.Handler) http.Handler {
 	if secret == "" {
 		return next
 	}
@@ -745,7 +783,12 @@ func requireAuthCookie(secret string, next http.Handler) http.Handler {
 			return
 		}
 		cookie, err := r.Cookie(authCookieName)
-		if err != nil || !authVerifyCookie(cookie.Value, secret) {
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		scope, valid := authVerifyCookieScoped(cookie.Value, secret)
+		if !valid || !scopeAllows(scope, owningUUID) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
