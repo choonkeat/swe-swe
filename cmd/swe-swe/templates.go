@@ -660,19 +660,10 @@ func filesProxyPort(port, offset int) int {
 }
 
 // processEntrypointTemplate handles the entrypoint.sh template with DOCKER, SLASH_COMMANDS, and SKILLS conditions
-func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo, skills []SkillsRepo, mcpLess bool) string {
+func processEntrypointTemplate(content string, agents []string, withDocker bool, slashCommands []SlashCommandsRepo, skills []SkillsRepo) string {
 	// Helper to check if agent is selected
 	hasAgent := func(agent string) bool {
 		return agentInList(agent, agents)
-	}
-
-	// MCP-less mode: export SWE_MCP_LESS=1 early so the runtime shell guards
-	// around every agent's native MCP-config write skip it, and swe-swe-server
-	// (which the entrypoint exec's) sees the flag and launches the mcp-cli-proxy
-	// fleet per session. Empty in native mode -> the guards write config as usual.
-	mcpLessExport := ""
-	if mcpLess {
-		mcpLessExport = "# MCP-less mode: swe-swe-server hosts the MCP servers via mcp-cli-proxy per\n# session; skip writing every agent's native MCP config below.\nexport SWE_MCP_LESS=1"
 	}
 
 	// Check if we have slash commands for supported agents (claude, codex, opencode, or pi)
@@ -921,11 +912,6 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 		}
 		if strings.Contains(line, "{{ASK_GUARD_SCRIPT}}") {
 			line = strings.ReplaceAll(line, "{{ASK_GUARD_SCRIPT}}", strings.TrimRight(askGuardScript, "\n"))
-		}
-
-		// Handle MCP_LESS_EXPORT placeholder
-		if strings.Contains(line, "{{MCP_LESS_EXPORT}}") {
-			line = strings.ReplaceAll(line, "{{MCP_LESS_EXPORT}}", mcpLessExport)
 		}
 
 		// Handle chown placeholders (empty string when non-DOCKER)

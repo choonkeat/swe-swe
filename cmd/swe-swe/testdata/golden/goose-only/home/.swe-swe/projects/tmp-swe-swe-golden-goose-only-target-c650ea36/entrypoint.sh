@@ -18,11 +18,7 @@ NC='\033[0m' # No Color
 
 
 
-
-
 # Create Goose MCP configuration (YAML format)
-# mcp-less mode skips native MCP config (swe-swe-server runs the proxy fleet).
-if [ -z "$SWE_MCP_LESS" ]; then
 mkdir -p /home/app/.config/goose
 cat > /home/app/.config/goose/config.yaml << 'EOF'
 extensions:
@@ -59,7 +55,6 @@ extensions:
 EOF
 
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
-fi
 # Wrapper: auto-run 'goose configure' if no provider is configured
 mkdir -p /home/app/.swe-swe/bin
 cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'

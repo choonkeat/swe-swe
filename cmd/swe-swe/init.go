@@ -255,10 +255,6 @@ type InitConfig struct {
 	HostUID             int                 `json:"hostUID,omitempty"`
 	HostGID             int                 `json:"hostGID,omitempty"`
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
-	// MCPLess routes MCP servers through the mcp-cli-proxy daemon + `mcp` CLI
-	// instead of the agent's native MCP client, for environments where MCP is
-	// gated but the CLI agent is not. See tasks/2026-07-01-mcp-less-cli-proxy.md.
-	MCPLess             bool                `json:"mcpLess,omitempty"`
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && no tunnel
 	Dockerless          bool                `json:"-"` // mode flag: host-native, no Docker (marker file written separately)
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
@@ -625,7 +621,6 @@ func handleInit() {
 	aptPackages := fs.String("apt-get-install", "", "Additional packages to install via apt-get (comma-separated)")
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
-	withoutMCP := fs.Bool("without-mcp", false, "Run MCP-less: swe-swe-server hosts the MCP servers via the mcp-cli-proxy daemon and exposes them to the agent through the 'mcp' CLI, instead of letting each agent spawn MCP servers with its own native MCP client. Off by default: swe-swe uses native MCP -- pass this for environments where native MCP is gated but the CLI agent is not")
 	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux host only)")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
@@ -749,12 +744,6 @@ func handleInit() {
 			copyHomePaths = append(copyHomePaths, p)
 		}
 	}
-
-	// Native MCP is the default; --without-mcp opts into the MCP-less path
-	// (swe-swe-server hosts the servers via mcp-cli-proxy + the 'mcp' CLI). The
-	// config/JSON still tracks the positive MCPLess field, so saved configs
-	// (which predate the flag rename) stay compatible.
-	mcpLess := *withoutMCP
 
 	// Collect explicitly-set flags for reuse patching
 	explicitFlags := make(map[string]bool)
@@ -887,9 +876,6 @@ func handleInit() {
 		if !explicitFlags["with-docker"] {
 			*withDocker = savedConfig.WithDocker
 		}
-		if !explicitFlags["without-mcp"] {
-			mcpLess = savedConfig.MCPLess
-		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
 		}
@@ -958,7 +944,6 @@ func handleInit() {
 		AptPackages: aptPkgs,
 		NpmPackages: npmPkgs,
 		WithDocker:  *withDocker,
-		MCPLess:     mcpLess,
 		Dockerless:  *dockerless,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
@@ -1403,7 +1388,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process entrypoint.sh template with conditional sections
 		if hostFile == "templates/host/entrypoint.sh" {
-			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands, config.Skills, config.MCPLess))
+			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands, config.Skills))
 		}
 
 		// Inject version info and proxy port offset into swe-swe-server main.go
