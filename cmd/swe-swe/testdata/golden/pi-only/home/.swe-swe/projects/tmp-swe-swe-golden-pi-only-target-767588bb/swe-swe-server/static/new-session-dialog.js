@@ -118,6 +118,40 @@
         }
     }
 
+    // Per-device "last used" recency for the Where dropdown. A map of repo
+    // path -> last-used epoch ms, kept in localStorage (per-device, not
+    // synced). fetchAndPopulateRepos sorts the dynamic options by this so the
+    // repo you touched most recently floats to the top; never-used repos keep
+    // the server's alphabetical order.
+    var REPO_RECENCY_KEY = 'swe-swe-repo-recency';
+    var REPO_RECENCY_MAX = 50; // cap so the map can't grow unbounded
+
+    function loadRepoRecency() {
+        try {
+            return JSON.parse(localStorage.getItem(REPO_RECENCY_KEY) || '{}') || {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function recordRepoUsage(repoPath) {
+        if (!repoPath) return;
+        try {
+            var rec = loadRepoRecency();
+            rec[repoPath] = Date.now();
+            // Trim to the most-recent REPO_RECENCY_MAX entries so stale paths
+            // (repos long since deleted) don't accumulate forever.
+            var keys = Object.keys(rec);
+            if (keys.length > REPO_RECENCY_MAX) {
+                keys.sort(function(a, b) { return rec[b] - rec[a]; });
+                var trimmed = {};
+                keys.slice(0, REPO_RECENCY_MAX).forEach(function(k) { trimmed[k] = rec[k]; });
+                rec = trimmed;
+            }
+            localStorage.setItem(REPO_RECENCY_KEY, JSON.stringify(rec));
+        } catch (e) {}
+    }
+
     // Sync current <select> options to the where combo-box (excluding disabled placeholder)
     function syncWhereComboOptions() {
         if (!whereCombo) return;
@@ -319,7 +353,16 @@
                 // Insert dynamic options before "Clone external repository..."
                 var cloneOption = modeSelect.querySelector('option[value="clone"]');
 
-                data.repos.forEach(function(repo) {
+                // Order by per-device recency: most-recently-used first.
+                // Array.prototype.sort is stable, so repos with no recorded
+                // usage (recency 0) keep the server's alphabetical order.
+                var recency = loadRepoRecency();
+                var repos = data.repos.slice();
+                repos.sort(function(a, b) {
+                    return (recency[b.path] || 0) - (recency[a.path] || 0);
+                });
+
+                repos.forEach(function(repo) {
                     var option = document.createElement('option');
                     option.value = repo.path;
                     option.dataset.dynamic = 'true';
@@ -872,6 +915,10 @@
     // staged intent is what grants permission to create.
     function startSession(sessionMode) {
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        // Record this repo as most-recently-used so it sorts to the top of the
+        // Where dropdown next time (per-device recency). repoPath is the
+        // resolved local path, matching the dynamic option's value.
+        recordRepoUsage(dialogState.repoPath);
         var params = buildSessionParams(sessionMode);
         var form = document.createElement('form');
         form.method = 'POST';
