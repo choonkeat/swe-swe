@@ -133,8 +133,18 @@ func sessionUUIDFromPath(path string) (string, bool) {
 // sessions, browse repos/worktrees, or replay a recording is rejected. Only
 // the guest's own session paths and UUID-less assets are allowed.
 func scopedRequestAllowed(scope string, r *http.Request) bool {
-	path := r.URL.Path
+	return scopedPathAllowed(scope, r.URL.Path)
+}
 
+// scopedPathAllowed is the guest policy for a single path, shared by the
+// embedded gate (authMiddleware, via scopedRequestAllowed) and the Traefik
+// ForwardAuth gate (authVerifyHandler, via scopedVerifyAllowed).
+//
+// This governs paths served by swe-swe-server: every non-session path here is
+// a static asset / plumbing route, so UUID-less paths default ALLOW. (The
+// Traefik dashboard is NOT a swe-swe-server path -- scopedVerifyAllowed denies
+// it before delegating here.)
+func scopedPathAllowed(scope, path string) bool {
 	// Never for a guest: recordings (any), session spawn/fork, and the
 	// repo/worktree management APIs (which enumerate or create other work).
 	switch {
@@ -160,6 +170,36 @@ func scopedRequestAllowed(scope string, r *http.Request) bool {
 	// files, /terminal-ui.js, /ssl/*, /favicon.ico, /swe-swe-auth/*). These
 	// expose no other session, and the guest's own session page needs them.
 	return true
+}
+
+// traefikDashboardPrefixes are the path prefixes routed to Traefik's own
+// dashboard (api@internal) in compose mode -- see traefik-dynamic.yml's
+// "dashboard" router. Those routes are fronted by ForwardAuth -> /verify but
+// NOT by swe-swe-server, so authMiddleware never sees them; scopedVerifyAllowed
+// denies them for a shared-session guest.
+var traefikDashboardPrefixes = []string{
+	"/dashboard",
+	"/api/http",
+	"/api/tcp",
+	"/api/entrypoints",
+	"/api/overview",
+}
+
+// scopedVerifyAllowed is the guest policy for the Traefik ForwardAuth gate
+// (/swe-swe-auth/verify). It first denies the Traefik dashboard (a direct
+// backend that bypasses swe-swe-server), then delegates to the same policy the
+// embedded gate uses. "/" is allowed here; swe-swe-server boxes it to the
+// guest's own session downstream.
+func scopedVerifyAllowed(scope, path string) bool {
+	for _, p := range traefikDashboardPrefixes {
+		if path == p || strings.HasPrefix(path, p+"/") || strings.HasPrefix(path, p) {
+			return false
+		}
+	}
+	if path == "" || path == "/" {
+		return true
+	}
+	return scopedPathAllowed(scope, path)
 }
 
 // scopedHomeTarget builds the target the homepage sends a guest to: their own

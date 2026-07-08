@@ -592,7 +592,15 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 func authVerifyHandler(secret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(authCookieName)
-		if err != nil || !authVerifyCookie(cookie.Value, secret) {
+		var scope string
+		if err == nil {
+			var valid bool
+			scope, valid = authVerifyCookieScoped(cookie.Value, secret)
+			if !valid {
+				err = http.ErrNoCookie
+			}
+		}
+		if err != nil {
 			// Build redirect URL using forwarded headers (Traefik sends these)
 			redirectURI := r.Header.Get("X-Forwarded-Uri")
 			if redirectURI == "" {
@@ -611,6 +619,22 @@ func authVerifyHandler(secret string) http.HandlerFunc {
 			w.Header().Set("Location", loginURL)
 			w.WriteHeader(http.StatusFound)
 			return
+		}
+
+		// Shared-session guest: enforce the boxing at the ForwardAuth gate too.
+		// This is the ONLY gate for compose-mode direct backends that bypass
+		// swe-swe-server's authMiddleware -- notably the Traefik dashboard.
+		// A 403 (not a login redirect) is correct: the cookie is valid, the
+		// path is simply off-limits for this guest.
+		if scope != "" {
+			uri := r.Header.Get("X-Forwarded-Uri")
+			if i := strings.IndexByte(uri, '?'); i >= 0 {
+				uri = uri[:i]
+			}
+			if !scopedVerifyAllowed(scope, uri) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	}

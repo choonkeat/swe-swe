@@ -167,6 +167,92 @@ func TestAuthMiddlewareScopedGuestSessionEnded(t *testing.T) {
 	}
 }
 
+func TestScopedVerifyAllowed(t *testing.T) {
+	const scope = "sess-1"
+	cases := []struct {
+		path string
+		want bool
+	}{
+		// Traefik dashboard (direct backend behind ForwardAuth) -> denied.
+		{"/dashboard", false},
+		{"/dashboard/", false},
+		{"/api/http/routers", false},
+		{"/api/tcp/services", false},
+		{"/api/entrypoints", false},
+		{"/api/overview", false},
+		// Homepage + own session + assets -> allowed (swe-swe-server boxes "/"").
+		{"/", true},
+		{"/session/sess-1", true},
+		{"/ws/sess-1", true},
+		{"/static/app.js", true},
+		{"/terminal-ui.js", true},
+		{"/api/autocomplete/somekey", true}, // guest session page needs it
+		// Other session / recordings / spawn / repos -> denied.
+		{"/session/sess-2", false},
+		{"/recording/x", false},
+		{"/api/session/new", false},
+		{"/api/repos", false},
+	}
+	for _, c := range cases {
+		if got := scopedVerifyAllowed(scope, c.path); got != c.want {
+			t.Errorf("scopedVerifyAllowed(%q, %q) = %v, want %v", scope, c.path, got, c.want)
+		}
+	}
+}
+
+// The Traefik ForwardAuth gate (/verify) boxes a guest too: valid cookie but a
+// forbidden X-Forwarded-Uri -> 403; a full user is unaffected.
+func TestAuthVerifyHandlerScoped(t *testing.T) {
+	const secret = "master"
+	const scope = "vsess"
+	h := authVerifyHandler(secret)
+
+	verify := func(cookieVal, forwardedURI string) int {
+		r := httptest.NewRequest("GET", "/swe-swe-auth/verify", nil)
+		r.Header.Set("X-Forwarded-Uri", forwardedURI)
+		if cookieVal != "" {
+			r.AddCookie(&http.Cookie{Name: authCookieName, Value: cookieVal})
+		}
+		rr := httptest.NewRecorder()
+		h(rr, r)
+		return rr.Code
+	}
+
+	guest := authSignScopedCookie(secret, scope)
+	full := authSignCookie(secret)
+
+	// Guest: own session + homepage OK; dashboard + other session forbidden.
+	if c := verify(guest, "/session/vsess?assistant=x"); c != http.StatusOK {
+		t.Errorf("guest own session: %d, want 200", c)
+	}
+	if c := verify(guest, "/"); c != http.StatusOK {
+		t.Errorf("guest homepage: %d, want 200", c)
+	}
+	if c := verify(guest, "/dashboard"); c != http.StatusForbidden {
+		t.Errorf("guest dashboard: %d, want 403", c)
+	}
+	if c := verify(guest, "/api/http/routers"); c != http.StatusForbidden {
+		t.Errorf("guest traefik api: %d, want 403", c)
+	}
+	if c := verify(guest, "/session/other"); c != http.StatusForbidden {
+		t.Errorf("guest other session: %d, want 403", c)
+	}
+
+	// Full user: everything the cookie is valid for passes, including the
+	// dashboard (unaffected by the guest policy).
+	if c := verify(full, "/dashboard"); c != http.StatusOK {
+		t.Errorf("full user dashboard: %d, want 200", c)
+	}
+	if c := verify(full, "/session/anything"); c != http.StatusOK {
+		t.Errorf("full user session: %d, want 200", c)
+	}
+
+	// No cookie -> 302 redirect to login (unchanged).
+	if c := verify("", "/dashboard"); c != http.StatusFound {
+		t.Errorf("no cookie: %d, want 302", c)
+	}
+}
+
 // The per-port proxy guard lets a guest through only for their own session.
 func TestRequireAuthCookieScoped(t *testing.T) {
 	const secret = "master"
