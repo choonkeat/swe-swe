@@ -853,6 +853,25 @@ terminal-ui.embedded-in-iframe .mobile-only {
     padding-top: 0;
 }
 
+/* Share pane: link/password with an inline copy button. */
+.settings-panel__share-result {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.settings-panel__share-copyrow {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.settings-panel__share-copyrow > .settings-panel__input {
+    flex: 1;
+    min-width: 0;
+}
+
 .settings-panel__label {
     font-size: 13px;
     color: var(--text-primary);

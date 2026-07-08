@@ -532,6 +532,10 @@ class TerminalUI extends HTMLElement {
                                     <span class="settings-panel__nav-label">Environment variables</span>
                                     <span class="settings-panel__nav-badge" id="settings-nav-badge-env" hidden></span>
                                 </button>
+                                <span class="settings-panel__nav-section">Collaborate</span>
+                                <button class="settings-panel__nav-item" role="tab" data-tab="share" aria-selected="false">
+                                    <span class="settings-panel__nav-label">Share session</span>
+                                </button>
                             </nav>
                             <div class="settings-panel__pane-host">
                                 <!-- PROFILE -->
@@ -662,6 +666,33 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__btn settings-panel__btn--primary" id="settings-env-save" type="button">Save env vars</button>
                                     </div>
                                     <p class="settings-panel__hint settings-panel__hint--inline">Parsed like <code>.swe-swe/env</code>, but that checked-in file wins on collisions. Reserved keys (PATH, GH_TOKEN, GIT_CONFIG_*, ports&hellip;) are ignored so the credential broker keeps working.</p>
+                                </section>
+
+                                <!-- SHARE SESSION -->
+                                <section class="settings-panel__pane" data-pane="share" role="tabpanel" hidden>
+                                    <h3 class="settings-panel__pane-title">Share this session</h3>
+                                    <p class="settings-panel__pane-sub">Create a link and password that let one other person join <strong>this</strong> session as a full participant. They can only reach this session &mdash; not the other sessions on the homepage, not new sessions, not recordings. The link stops working the moment this session ends.</p>
+                                    <div class="settings-panel__pane-footer">
+                                        <span class="settings-panel__pane-status" id="settings-share-status"></span>
+                                        <button class="settings-panel__btn settings-panel__btn--primary" id="settings-share-create" type="button">Create share link</button>
+                                    </div>
+                                    <div class="settings-panel__share-result" id="settings-share-result" hidden>
+                                        <div class="settings-panel__field-row settings-panel__field-row--stacked">
+                                            <label class="settings-panel__label" for="settings-share-url">Link</label>
+                                            <div class="settings-panel__share-copyrow">
+                                                <input type="text" id="settings-share-url" class="settings-panel__input" readonly>
+                                                <button class="settings-panel__btn settings-panel__btn--secondary" data-copy-target="settings-share-url" type="button">Copy</button>
+                                            </div>
+                                        </div>
+                                        <div class="settings-panel__field-row settings-panel__field-row--stacked">
+                                            <label class="settings-panel__label" for="settings-share-password">Password</label>
+                                            <div class="settings-panel__share-copyrow">
+                                                <input type="text" id="settings-share-password" class="settings-panel__input" readonly>
+                                                <button class="settings-panel__btn settings-panel__btn--secondary" data-copy-target="settings-share-password" type="button">Copy</button>
+                                            </div>
+                                        </div>
+                                        <p class="settings-panel__hint settings-panel__hint--inline">Send the link and password to your guest over a trusted channel. Anyone with both can act as a full participant in this session.</p>
+                                    </div>
                                 </section>
                             </div>
                         </div>
@@ -2313,6 +2344,31 @@ class TerminalUI extends HTMLElement {
             apprRevert.addEventListener('click', () => this._revertAppearance());
         }
 
+        // Share pane: create the guest link, plus per-field copy buttons.
+        const shareCreate = panel.querySelector('#settings-share-create');
+        if (shareCreate) {
+            shareCreate.addEventListener('click', () => this._createShareLink());
+        }
+        panel.querySelectorAll('[data-copy-target]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const el = panel.querySelector('#' + btn.dataset.copyTarget);
+                if (!el) return;
+                el.select();
+                const done = () => {
+                    const orig = btn.textContent;
+                    btn.textContent = 'Copied';
+                    setTimeout(() => { btn.textContent = orig; }, 1200);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(el.value).then(done).catch(() => {});
+                } else {
+                    // Fallback for non-secure contexts where the async
+                    // clipboard API is unavailable.
+                    try { document.execCommand('copy'); done(); } catch (e) {}
+                }
+            });
+        });
+
         // End Session footer link -> show confirm popover
         const endLink = panel.querySelector('#settings-end-session');
         const endConfirm = panel.querySelector('#settings-end-confirm');
@@ -2771,6 +2827,55 @@ class TerminalUI extends HTMLElement {
             status.textContent = 'Saved.';
             status.setAttribute('data-state', 'ok');
         }
+    }
+
+    _createShareLink() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const status = panel.querySelector('#settings-share-status');
+        const result = panel.querySelector('#settings-share-result');
+        const urlInput = panel.querySelector('#settings-share-url');
+        const pwInput = panel.querySelector('#settings-share-password');
+        const btn = panel.querySelector('#settings-share-create');
+
+        const uuid = this.sessionUUID;
+        if (!uuid) {
+            if (status) {
+                status.textContent = 'Session not ready yet.';
+                status.setAttribute('data-state', 'err');
+            }
+            return;
+        }
+
+        if (status) {
+            status.textContent = 'Creating...';
+            status.removeAttribute('data-state');
+        }
+        if (btn) btn.disabled = true;
+
+        fetch('/api/session/' + encodeURIComponent(uuid) + '/share', { method: 'POST' })
+            .then(resp => {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return resp.json();
+            })
+            .then(data => {
+                if (urlInput) urlInput.value = data.url || '';
+                if (pwInput) pwInput.value = data.password || '';
+                if (result) result.removeAttribute('hidden');
+                if (status) {
+                    status.textContent = 'Link ready. Send both to your guest.';
+                    status.setAttribute('data-state', 'ok');
+                }
+            })
+            .catch(err => {
+                if (status) {
+                    status.textContent = 'Could not create link: ' + err.message;
+                    status.setAttribute('data-state', 'err');
+                }
+            })
+            .finally(() => {
+                if (btn) btn.disabled = false;
+            });
     }
 
     _revertProfile({ silent = false } = {}) {
