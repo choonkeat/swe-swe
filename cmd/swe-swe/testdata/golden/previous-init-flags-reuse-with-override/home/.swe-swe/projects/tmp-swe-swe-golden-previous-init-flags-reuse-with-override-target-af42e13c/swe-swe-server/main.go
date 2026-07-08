@@ -549,6 +549,11 @@ type Session struct {
 	pendingReplacement string // If set, replace process with this command instead of ending session
 	// UI theme at session creation (for COLORFGBG env var)
 	Theme string // "light" or "dark"
+	// SharePassword, when non-empty, is the password a shared-session guest
+	// types to log in scoped to THIS session (see session_share.go). It lives
+	// only in memory, so it dies when the session ends -- that is the whole
+	// revocation model. Guarded by mu.
+	SharePassword string
 	// Agent Chat sidecar (nil for terminal-only sessions)
 	AgentChatCmd    *exec.Cmd
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
@@ -2499,6 +2504,13 @@ func main() {
 		// Session end API endpoint
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
 			handleSessionEndAPI(w, r)
+			return
+		}
+
+		// Session share-link endpoint: POST /api/session/{uuid}/share ->
+		// {url, password} for boxing a guest into just this session.
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/share") {
+			handleSessionShareAPI(w, r)
 			return
 		}
 

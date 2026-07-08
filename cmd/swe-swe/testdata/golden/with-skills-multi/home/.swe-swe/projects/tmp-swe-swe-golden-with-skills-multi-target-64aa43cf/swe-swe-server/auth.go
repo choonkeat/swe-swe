@@ -311,11 +311,17 @@ func authComputeHMAC(data, secret string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// authRenderLoginForm generates the login HTML with optional redirect value and error message
-func authRenderLoginForm(redirectURL, errorMsg string) string {
+// authRenderLoginForm generates the login HTML with optional redirect value,
+// optional session scope (present for a shared-session guest link), and error
+// message.
+func authRenderLoginForm(redirectURL, scope, errorMsg string) string {
 	redirectField := ""
 	if redirectURL != "" {
 		redirectField = fmt.Sprintf(`<input type="hidden" name="redirect" value="%s">`, html.EscapeString(redirectURL))
+	}
+	scopeField := ""
+	if scope != "" {
+		scopeField = fmt.Sprintf(`<input type="hidden" name="scope" value="%s">`, html.EscapeString(scope))
 	}
 	errorHTML := ""
 	if errorMsg != "" {
@@ -400,6 +406,7 @@ func authRenderLoginForm(redirectURL, errorMsg string) string {
         %s
         <form method="POST" action="/swe-swe-auth/login" id="login-form">
             %s
+            %s
             <input type="text" name="username" id="username" placeholder="Your name" autocomplete="username">
             <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Password" required autofocus>
             <button type="submit">Login</button>
@@ -437,7 +444,7 @@ func authRenderLoginForm(redirectURL, errorMsg string) string {
         });
     </script>
 </body>
-</html>`, errorHTML, redirectField)
+</html>`, errorHTML, redirectField, scopeField)
 }
 
 // authLoginHandler handles GET (show form) and POST (validate password) requests.
@@ -448,9 +455,10 @@ func authLoginHandler(password string) http.HandlerFunc {
 			return
 		}
 		redirectURL := r.URL.Query().Get("redirect")
+		scope := r.URL.Query().Get("scope")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(authRenderLoginForm(redirectURL, "")))
+		w.Write([]byte(authRenderLoginForm(redirectURL, scope, "")))
 	}
 }
 
@@ -516,12 +524,16 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 	if err := r.ParseForm(); err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(authRenderLoginForm("", "Invalid request")))
+		w.Write([]byte(authRenderLoginForm("", "", "Invalid request")))
 		return
 	}
 
 	password := r.FormValue("password")
 	redirectURL := r.FormValue("redirect")
+	// scope, when present, is a shared-session guest login: the password is
+	// validated against that session's share password (not the master secret)
+	// and the issued cookie is scoped to it.
+	scope := r.FormValue("scope")
 
 	// Rate limit check. The per-key bucket throttles a single source; the
 	// global ceiling backstops an attacker who rotates the throttle key
@@ -532,25 +544,36 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		log.Printf("Rate limited: key=%s", clientKey)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusTooManyRequests)
-		w.Write([]byte(authRenderLoginForm(redirectURL, "Too many attempts. Please wait a few minutes.")))
+		w.Write([]byte(authRenderLoginForm(redirectURL, scope, "Too many attempts. Please wait a few minutes.")))
 		return
 	}
 
-	// Constant-time password comparison
-	passwordMatch := subtle.ConstantTimeCompare([]byte(password), []byte(secret)) == 1
+	// Validate the password. A scoped login checks the session's share
+	// password (constant-time inside validSessionShareLogin); an unscoped
+	// login checks the master secret. An unknown/ended session or a scope
+	// with sharing off fails exactly like a wrong password -- no existence
+	// leak.
+	var passwordMatch bool
+	if scope != "" {
+		passwordMatch = validSessionShareLogin(scope, password)
+	} else {
+		passwordMatch = subtle.ConstantTimeCompare([]byte(password), []byte(secret)) == 1
+	}
 	if password == "" || !passwordMatch {
 		authLoginLimiter.record(clientKey)
 		authGlobalLimiter.record()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(authRenderLoginForm(redirectURL, "Invalid password")))
+		w.Write([]byte(authRenderLoginForm(redirectURL, scope, "Invalid password")))
 		return
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     authCookieName,
-		Value:    authSignCookie(secret),
-		Path:     "/",
+		Name: authCookieName,
+		// scope == "" yields the legacy unscoped cookie; a non-empty scope
+		// boxes the guest into that session.
+		Value: authSignScopedCookie(secret, scope),
+		Path:  "/",
 		Domain:   resolveCookieDomain(getLiveTunnelHostname(), r.Host),
 		MaxAge:   authCookieMaxAge,
 		HttpOnly: true,
