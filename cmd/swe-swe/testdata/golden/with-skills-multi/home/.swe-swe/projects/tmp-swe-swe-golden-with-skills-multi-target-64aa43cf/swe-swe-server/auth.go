@@ -209,44 +209,99 @@ func checkWebSocketOrigin(r *http.Request) bool {
 	return false
 }
 
-// authSignCookie creates an HMAC-signed cookie value.
-// Format: "timestamp|hmac-signature"
+// scopeAllows reports whether a cookie scope may act on a given session UUID.
+// An empty scope is a full (unscoped) user and is allowed everywhere. A
+// non-empty scope is a shared-session guest and may act ONLY on its own
+// session UUID. Default DENY: a guest reaching a UUID-less-but-guarded path
+// (uuid == "") is rejected.
+func scopeAllows(scope, uuid string) bool {
+	if scope == "" {
+		return true
+	}
+	return uuid != "" && scope == uuid
+}
+
+// authSignCookie creates an HMAC-signed cookie value for a full (unscoped)
+// user. Format: "timestamp|hmac-signature". Kept for existing callers; it is
+// exactly authSignScopedCookie(secret, "").
 func authSignCookie(secret string) string {
+	return authSignScopedCookie(secret, "")
+}
+
+// authSignScopedCookie creates an HMAC-signed cookie value, optionally bound
+// to a session scope (the shared-session guest case).
+//
+//   - scope == "" : "timestamp|hmac(timestamp)"          (legacy shape, unchanged)
+//   - scope != "" : "timestamp|scope|hmac(timestamp|scope)"
+//
+// The HMAC is ALWAYS keyed by the master secret (SWE_SWE_PASSWORD), never by a
+// share password. A guest therefore cannot forge an unscoped cookie or swap
+// their scope to another session: any change to timestamp or scope fails the
+// hmac.Equal check because they do not know the master secret.
+func authSignScopedCookie(secret, scope string) string {
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
-	signature := authComputeHMAC(timestamp, secret)
-	return timestamp + authCookieDelimiter + signature
+	if scope == "" {
+		signature := authComputeHMAC(timestamp, secret)
+		return timestamp + authCookieDelimiter + signature
+	}
+	signed := timestamp + authCookieDelimiter + scope
+	signature := authComputeHMAC(signed, secret)
+	return signed + authCookieDelimiter + signature
 }
 
 // authVerifyCookie validates an HMAC-signed cookie value and checks expiry.
+// It accepts both legacy (unscoped) and scoped cookies; use
+// authVerifyCookieScoped when the scope is needed.
 func authVerifyCookie(cookie, secret string) bool {
+	_, ok := authVerifyCookieScoped(cookie, secret)
+	return ok
+}
+
+// authVerifyCookieScoped validates an HMAC-signed cookie value, checks expiry,
+// and returns the session scope it is bound to ("" for a full/unscoped user).
+// Handles both wire shapes:
+//
+//   - "timestamp|signature"        -> scope ""       (legacy full user)
+//   - "timestamp|scope|signature"  -> scope <scope>  (shared-session guest)
+func authVerifyCookieScoped(cookie, secret string) (scope string, valid bool) {
 	if cookie == "" {
-		return false
+		return "", false
 	}
 
-	parts := strings.SplitN(cookie, authCookieDelimiter, 2)
-	if len(parts) != 2 {
-		return false
+	parts := strings.Split(cookie, authCookieDelimiter)
+
+	var timestamp, signature, signed string
+	switch len(parts) {
+	case 2: // legacy: timestamp|signature
+		timestamp = parts[0]
+		signature = parts[1]
+		signed = timestamp
+		scope = ""
+	case 3: // scoped: timestamp|scope|signature
+		timestamp = parts[0]
+		scope = parts[1]
+		signature = parts[2]
+		signed = timestamp + authCookieDelimiter + scope
+	default:
+		return "", false
 	}
 
-	timestamp := parts[0]
-	signature := parts[1]
-
-	// Verify HMAC signature
-	expectedSignature := authComputeHMAC(timestamp, secret)
+	// Verify HMAC signature (keyed by the master secret in both shapes).
+	expectedSignature := authComputeHMAC(signed, secret)
 	if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
-		return false
+		return "", false
 	}
 
 	// Verify timestamp hasn't expired
 	ts, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		return false
+		return "", false
 	}
 	if time.Now().Unix()-ts > int64(authCookieMaxAge) {
-		return false
+		return "", false
 	}
 
-	return true
+	return scope, true
 }
 
 // authComputeHMAC generates an HMAC-SHA256 signature.

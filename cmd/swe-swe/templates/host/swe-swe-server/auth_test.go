@@ -50,6 +50,111 @@ func TestAuthVerifyCookieMalformed(t *testing.T) {
 	}
 }
 
+// --- Scoped cookie (share-a-session) primitive ---
+
+// A scoped cookie round-trips: signing with a scope and verifying returns
+// that same scope and validates.
+func TestAuthSignScopedCookieRoundTrip(t *testing.T) {
+	secret := "master-secret"
+	scope := "session-uuid-abc"
+	cookie := authSignScopedCookie(secret, scope)
+	gotScope, ok := authVerifyCookieScoped(cookie, secret)
+	if !ok {
+		t.Fatalf("scoped cookie should verify; got valid=false")
+	}
+	if gotScope != scope {
+		t.Errorf("scope = %q, want %q", gotScope, scope)
+	}
+}
+
+// A legacy 2-part cookie (no scope) still verifies and reports an empty
+// scope -- backward compatibility for every full-user cookie already issued.
+func TestAuthVerifyCookieScopedLegacyUnscoped(t *testing.T) {
+	secret := "master-secret"
+	legacy := authSignCookie(secret) // unchanged 2-part format
+	gotScope, ok := authVerifyCookieScoped(legacy, secret)
+	if !ok {
+		t.Fatalf("legacy unscoped cookie should verify")
+	}
+	if gotScope != "" {
+		t.Errorf("legacy cookie scope = %q, want empty", gotScope)
+	}
+	// authSignScopedCookie with empty scope must be byte-identical to the
+	// legacy signer so the wire format does not change for full users.
+	// (Cannot compare values directly -- timestamps differ -- but the shape
+	// must be 2-part.)
+	if parts := strings.Split(authSignScopedCookie(secret, ""), authCookieDelimiter); len(parts) != 2 {
+		t.Errorf("empty-scope cookie has %d parts, want 2 (legacy shape)", len(parts))
+	}
+}
+
+// Tampering with the scope segment of a signed cookie must fail verification:
+// the guest does not know the master secret, so they cannot re-sign a scope
+// they were not granted.
+func TestAuthVerifyCookieScopedTamperScope(t *testing.T) {
+	secret := "master-secret"
+	cookie := authSignScopedCookie(secret, "session-A")
+	parts := strings.Split(cookie, authCookieDelimiter)
+	if len(parts) != 3 {
+		t.Fatalf("scoped cookie should have 3 parts, got %d", len(parts))
+	}
+	// Swap the scope to another session, keep the original signature.
+	forged := parts[0] + authCookieDelimiter + "session-B" + authCookieDelimiter + parts[2]
+	if _, ok := authVerifyCookieScoped(forged, secret); ok {
+		t.Error("cookie with tampered scope must not verify")
+	}
+}
+
+// A scoped cookie signed under one secret must not verify under another.
+func TestAuthVerifyCookieScopedWrongSecret(t *testing.T) {
+	cookie := authSignScopedCookie("secret-a", "session-A")
+	if _, ok := authVerifyCookieScoped(cookie, "secret-b"); ok {
+		t.Error("scoped cookie must not verify with wrong secret")
+	}
+}
+
+// Expiry is enforced on scoped cookies exactly as on legacy ones.
+func TestAuthVerifyCookieScopedExpired(t *testing.T) {
+	secret := "master-secret"
+	scope := "session-A"
+	pastTS := fmt.Sprintf("%d", time.Now().Unix()-int64(authCookieMaxAge)-100)
+	sig := authComputeHMAC(pastTS+authCookieDelimiter+scope, secret)
+	expired := pastTS + authCookieDelimiter + scope + authCookieDelimiter + sig
+	if _, ok := authVerifyCookieScoped(expired, secret); ok {
+		t.Error("expired scoped cookie must not verify")
+	}
+}
+
+// The plain authVerifyCookie bool wrapper still works for both shapes.
+func TestAuthVerifyCookieAcceptsScopedShape(t *testing.T) {
+	secret := "master-secret"
+	if !authVerifyCookie(authSignScopedCookie(secret, "session-A"), secret) {
+		t.Error("authVerifyCookie should accept a valid scoped cookie")
+	}
+	if !authVerifyCookie(authSignCookie(secret), secret) {
+		t.Error("authVerifyCookie should accept a valid legacy cookie")
+	}
+}
+
+func TestScopeAllows(t *testing.T) {
+	cases := []struct {
+		scope string
+		uuid  string
+		want  bool
+	}{
+		{"", "any-session", true},      // unscoped full user: everything allowed
+		{"", "", true},                 // unscoped, no uuid
+		{"sess-1", "sess-1", true},     // guest reaching own session
+		{"sess-1", "sess-2", false},    // guest reaching another session
+		{"sess-1", "", false},          // guest on a uuid-less-but-guarded path
+	}
+	for _, c := range cases {
+		if got := scopeAllows(c.scope, c.uuid); got != c.want {
+			t.Errorf("scopeAllows(%q, %q) = %v, want %v", c.scope, c.uuid, got, c.want)
+		}
+	}
+}
+
 func TestResolveCookieSecure(t *testing.T) {
 	cases := []struct {
 		name          string
