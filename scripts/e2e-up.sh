@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: ./scripts/e2e-up.sh <simple|compose|docker>
 #
 # simple  - dockerfile-only mode (no Traefik), port 9780
-# compose - Traefik compose mode (--with-vscode, skip vscode/chrome), port 9770
+# compose - Traefik compose mode, port 9770
 # docker  - with Docker socket access (--with-docker), port 9760
 
 MODE="${1:-}"
@@ -53,7 +53,10 @@ else
     PUBLIC_PORTS="5100-5129"
     CDP_PORTS="6100-6129"
     VNC_PORTS="7100-7129"
-    INIT_EXTRA_FLAGS="--with-vscode"
+    # compose mode uses no extra init flags. (`--with-vscode` was never a real
+    # init flag -- passing it made `swe-swe init` abort with "flag provided but
+    # not defined", breaking `make e2e-up-compose`.)
+    INIT_EXTRA_FLAGS=""
 fi
 
 TEST_STACK_DIR="/workspace/tmp/e2e-${MODE}"
