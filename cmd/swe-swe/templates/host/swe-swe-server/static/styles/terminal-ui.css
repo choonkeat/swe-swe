@@ -861,6 +861,12 @@ terminal-ui.embedded-in-iframe .mobile-only {
     gap: 14px;
 }
 
+/* The `display: flex` above would otherwise defeat the `hidden` attribute,
+   leaving empty Link/Password fields visible before a link is created. */
+.settings-panel__share-result[hidden] {
+    display: none;
+}
+
 .settings-panel__share-copyrow {
     display: flex;
     gap: 8px;
