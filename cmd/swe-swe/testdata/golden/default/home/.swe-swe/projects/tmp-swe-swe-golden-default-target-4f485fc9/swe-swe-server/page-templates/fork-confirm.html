@@ -66,6 +66,15 @@
         .modal .src { color: var(--text-primary, #e0e0e0); font-weight: 500; }
         .modal .meta { font-size: 12px; color: var(--text-secondary, #888); margin-bottom: 18px; }
         .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        /* Error modal: recovery link bottom-left, Back button bottom-right. */
+        .actions-split { justify-content: space-between; align-items: center; }
+        /* Quiet text-link recovery action (submits a hidden POST form). */
+        .btn-link {
+            font: inherit; font-size: 13px;
+            background: transparent; border: none; padding: 0; cursor: pointer;
+            color: var(--text-secondary, #b0b0b0); text-decoration: underline;
+        }
+        .btn-link:hover { color: var(--text-primary, #e0e0e0); }
         .btn {
             font: inherit; font-size: 14px; font-weight: 500;
             padding: 9px 18px; border-radius: 6px; cursor: pointer; border: 1px solid transparent;
@@ -102,14 +111,25 @@
             {{if .Error}}
             <h1>Cannot fork this conversation</h1>
             <div class="error">{{.Error}}</div>
-            <div class="actions">
-                <a class="btn btn-cancel" href="/">Back to sessions</a>
-                {{if .OfferForkWhole}}
+            <!-- Back is the primary button, bottom-right, so the dialog still
+                 reads as an error. The recovery action (if any) is a quiet
+                 link, bottom-left. An empty placeholder keeps Back pinned
+                 right when there is no recovery action. -->
+            <div class="actions actions-split">
+                {{if .OfferForkBeforeActive}}
+                <form method="POST" action="/api/fork/{{.SourceUUID}}" style="margin:0">
+                    <input type="hidden" name="bypass_active" value="1">
+                    <button type="submit" class="btn-link">Resume from earlier</button>
+                </form>
+                {{else if .OfferForkWhole}}
                 <form method="POST" action="/api/fork/{{.SourceUUID}}" style="margin:0">
                     <input type="hidden" name="mode" value="after">
-                    <button type="submit" class="btn btn-fork">Fork the whole session instead</button>
+                    <button type="submit" class="btn-link">Fork the whole session instead</button>
                 </form>
+                {{else}}
+                <span></span>
                 {{end}}
+                <a class="btn btn-cancel" href="/">Back to sessions</a>
             </div>
             {{else}}
             <h1>Fork this conversation?</h1>

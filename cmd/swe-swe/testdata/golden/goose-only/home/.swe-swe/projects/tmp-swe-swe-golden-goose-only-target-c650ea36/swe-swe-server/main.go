@@ -100,6 +100,12 @@ type forkConfirmData struct {
 	// error modal. Set when a per-bubble fork failed but a whole-session fork
 	// (no bubble anchor -> last-persisted-reply) would still succeed.
 	OfferForkWhole bool
+	// OfferForkBeforeActive adds a "Fork before that tool use" button to the
+	// error modal. Set when the active-tail guard fired (agent mid-tool-call).
+	// The button POSTs with bypass_active=1, which skips the guard and forks
+	// at the last chat reply -- the point BEFORE the in-flight tool_use --
+	// letting the user escape a session that is actually dead/stuck.
+	OfferForkBeforeActive bool
 }
 
 var upgrader = websocket.Upgrader{
@@ -7982,14 +7988,18 @@ func handleForkConfirmPage(w http.ResponseWriter, r *http.Request) {
 // browser tab, so a plain http.Error would leave the user staring at an
 // unstyled error string (see the reported blank-page 409). When offerWhole is
 // true the modal also offers a "Fork the whole session instead" button, which
-// POSTs without a bubble anchor (last-persisted-reply semantics).
-func renderForkError(w http.ResponseWriter, status int, sourceUUID, message string, offerWhole bool) {
+// POSTs without a bubble anchor (last-persisted-reply semantics). When
+// offerBeforeActive is true it offers a "Fork before that tool use" button,
+// which POSTs bypass_active=1 to skip the active-tail guard and fork at the
+// last chat reply (used when the source may be a dead/stuck session).
+func renderForkError(w http.ResponseWriter, status int, sourceUUID, message string, offerWhole, offerBeforeActive bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	data := forkConfirmData{
-		SourceUUID:     sourceUUID,
-		Error:          message,
-		OfferForkWhole: offerWhole,
+		SourceUUID:            sourceUUID,
+		Error:                 message,
+		OfferForkWhole:        offerWhole,
+		OfferForkBeforeActive: offerBeforeActive,
 	}
 	if err := forkConfirmTemplate.Execute(w, data); err != nil {
 		log.Printf("fork error page render error: %v", err)
@@ -8047,18 +8057,30 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 	// mid-tool-call either yields an invalid resume point or silently
 	// strips in-flight work the user hasn't seen the result of, so we'd
 	// rather make the caller wait for the source to settle.
-	active, aerr := forkSourceTailActive(src.Assistant, agentJsonl)
-	if aerr != nil {
-		http.Error(w, "classify source tail state: "+aerr.Error(), http.StatusInternalServerError)
-		return
-	}
-	if active {
-		// A whole-session fork hits this same guard, so don't offer it.
-		renderForkError(w, http.StatusConflict,
-			sourceUUID,
-			"This session's agent is mid-work on a tool call. Wait for it to finish, then try forking again.",
-			false)
-		return
+	//
+	// bypass_active=1 is the deliberate escape hatch (the "Fork before that
+	// tool use" button on the guard's own error page): the source may be a
+	// dead/stuck session that will never settle, so the user opts in to
+	// forking at the last chat reply -- the point BEFORE the in-flight
+	// tool_use -- accepting that the in-flight work is dropped. That anchor
+	// (AnchorLastChatReply) never truncates mid-tool-call, so it's safe; we
+	// also drop any bubble anchor below since the tail is unreliable.
+	bypassActive := r.FormValue("bypass_active") == "1"
+	if !bypassActive {
+		active, aerr := forkSourceTailActive(src.Assistant, agentJsonl)
+		if aerr != nil {
+			http.Error(w, "classify source tail state: "+aerr.Error(), http.StatusInternalServerError)
+			return
+		}
+		if active {
+			// A whole-session fork hits this same guard, so don't offer it;
+			// offer the guard-bypassing "before that tool use" fork instead.
+			renderForkError(w, http.StatusConflict,
+				sourceUUID,
+				"This session's agent is mid-work on a tool call. If it finishes, try forking again. If the session is dead or stuck, resume from earlier (before that tool use) instead.",
+				false, true)
+			return
+		}
 	}
 
 	// Resolve the anchor. Default = last chat reply (existing semantics).
@@ -8076,7 +8098,7 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 	if mode == "" {
 		mode = "after"
 	}
-	if bubbleRaw := r.FormValue("bubble"); bubbleRaw != "" {
+	if bubbleRaw := r.FormValue("bubble"); bubbleRaw != "" && !bypassActive {
 		bubbleSeq, perr := strconv.ParseInt(bubbleRaw, 10, 64)
 		if perr != nil || bubbleSeq <= 0 {
 			http.Error(w, "bubble param must be a positive integer", http.StatusBadRequest)
@@ -8100,7 +8122,7 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 			// The active-tail guard already passed, so a whole-session fork works.
 			renderForkError(w, http.StatusConflict, sourceUUID,
 				"That was a progress update, not a reply, so it can't be used as a fork point. You can fork the whole session instead.",
-				true)
+				true, false)
 			return
 		default:
 			// Any other anchor failure. The active-tail guard passed above, so a
@@ -8109,7 +8131,7 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 			log.Printf("WARN: /api/fork %s: bubble seq=%d anchor unresolved: %v", sourceUUID, bubbleSeq, rerr)
 			renderForkError(w, http.StatusConflict, sourceUUID,
 				"Couldn't pin this fork to that specific message. You can fork the whole session instead.",
-				true)
+				true, false)
 			return
 		}
 	}
