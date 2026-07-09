@@ -5602,11 +5602,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		// with [Resume]/[New] instead of a blank or ghost terminal.
 		_, _, _, ferr := validateForkSourceCheap(sessionUUID)
 		canResume := ferr == nil
-		log.Printf("Session %s gone (no live session, no creation intent); canResume=%v (remote=%s)", sessionUUID, canResume, remoteAddr)
+		hasChat, hasTerminal := sessionGoneRecordings(sessionUUID)
+		log.Printf("Session %s gone (no live session, no creation intent); canResume=%v hasChat=%v hasTerminal=%v (remote=%s)", sessionUUID, canResume, hasChat, hasTerminal, remoteAddr)
 		if data, jerr := json.Marshal(map[string]interface{}{
-			"type":      "session_gone",
-			"uuid":      sessionUUID,
-			"canResume": canResume,
+			"type":        "session_gone",
+			"uuid":        sessionUUID,
+			"canResume":   canResume,
+			"hasChat":     hasChat,
+			"hasTerminal": hasTerminal,
 		}); jerr == nil {
 			conn.WriteMessage(websocket.TextMessage, data)
 		}
@@ -6334,6 +6337,21 @@ func scriptWrapperCommand(goos, logPath, timingPath, inputPath, fullCmd string) 
 // resolveLogPath returns the path to a recording's log file, checking for both
 // compressed (.log.gz) and uncompressed (.log) variants. Prefers .log.gz.
 // Returns empty string if neither exists.
+// sessionGoneRecordings reports which playback artifacts exist on disk for an
+// ended session, so the "session has ended" screen can offer "View recorded
+// Chat / Terminal" links. Both viewers are keyed by the session UUID (the same
+// key fork uses -- see loadEndedForkSource / handleChatPlaybackPage), so the
+// frontend builds the /recording/<uuid> and /recording/<uuid>/chat URLs from
+// the uuid it already has; no extra identifier needs to cross the wire.
+func sessionGoneRecordings(sourceUUID string) (hasChat, hasTerminal bool) {
+	if _, err := uuid.Parse(sourceUUID); err != nil {
+		return false, false
+	}
+	hasChat = findChatEventsFile(sourceUUID) != ""
+	hasTerminal = resolveLogPath("session-"+sourceUUID) != ""
+	return hasChat, hasTerminal
+}
+
 func resolveLogPath(prefix string) string {
 	gzPath := fmt.Sprintf("%s/%s.log.gz", recordingsDir, prefix)
 	if _, err := os.Stat(gzPath); err == nil {
@@ -8164,7 +8182,25 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 	// the NEW session id. If the user never connects, the sweeper deletes it.
 	// (Best-effort: an unresolvable path just means no cleanup, never an error.)
 	orphanPath, _ := agentSessionFilePath(src.Assistant, src.WorkDir, forkRes.NewSessionID)
-	stageSession(newUUID, SessionParams{
+	stageSession(newUUID, buildForkSessionParams(newUUID, src, extraArgs, forkName, r.FormValue("env")), "fork", orphanPath)
+
+	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)
+}
+
+// buildForkSessionParams assembles the staged SessionParams for a fork.
+//
+// InheritCredsFrom = src.UUID is the fix for forks silently dropping the source
+// session's git auth: it drives the same spawn-time inheritance MCP
+// create_session and the terminal-child path use, so the fork picks up the
+// source's HTTPS credentials, git author, SSH signing key, and repo env vars
+// (inheritSessionEnv runs before buildSessionEnv, inheritSessionCredentials
+// after -- see getOrCreateSession). For an ended source whose in-memory stores
+// are already cleared this is a no-op; env then falls back to the browser
+// localStorage blob in EnvRaw. Credentials/signing have no such fallback, so
+// forking a fully ended session still can't recover them -- matching prior
+// behavior -- but the common active-source fork now carries everything.
+func buildForkSessionParams(newUUID string, src *hydratedForkSource, extraArgs, forkName, envRaw string) SessionParams {
+	return SessionParams{
 		UUID:               newUUID,
 		Assistant:          src.Assistant,
 		Name:               forkName,
@@ -8173,14 +8209,14 @@ func handleForkExecute(w http.ResponseWriter, r *http.Request) {
 		ExtraArgs:          extraArgs,
 		Theme:              src.Theme,
 		PrepopulateChatLog: src.ChatLogPath,
+		InheritCredsFrom:   src.UUID,
 		// Repo env vars the fork inherits, sent by the confirm page from the
 		// browser's localStorage blob (the source session's own env store may
 		// already be cleared -- forks routinely resume ended sessions). Applied
-		// to the store before the forked session spawns. Memory-only.
-		EnvRaw: r.FormValue("env"),
-	}, "fork", orphanPath)
-
-	http.Redirect(w, r, fmt.Sprintf("/session/%s?assistant=%s&session=chat", newUUID, src.Assistant), http.StatusFound)
+		// to the store before the forked session spawns, layered over the
+		// inherited blob above. Memory-only.
+		EnvRaw: envRaw,
+	}
 }
 
 // buildForkResumeArgs constructs the ExtraArgs string for a forked session.

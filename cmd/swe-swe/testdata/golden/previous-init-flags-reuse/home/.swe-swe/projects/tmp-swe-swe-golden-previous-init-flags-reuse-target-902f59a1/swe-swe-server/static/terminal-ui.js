@@ -1551,6 +1551,10 @@ class TerminalUI extends HTMLElement {
                 // the ended screen. The server closes with 4003 right after.
                 this._sessionGone = true;
                 this._sessionGoneCanResume = msg.canResume === true;
+                // Whether a recorded chat / terminal playback exists on disk for
+                // this ended session, so the ended screen can offer to view them.
+                this._sessionGoneHasChat = msg.hasChat === true;
+                this._sessionGoneHasTerminal = msg.hasTerminal === true;
                 break;
             case 'credentials_stored':
                 // Server acked set_credentials. Hosts list reflects what the
@@ -1956,18 +1960,43 @@ class TerminalUI extends HTMLElement {
         const resumeBtn = canResume
             ? `<a class="session-gone__btn session-gone__btn--primary" href="/api/fork/${encodeURIComponent(this.uuid)}">Resume conversation</a>`
             : '';
+
+        // Bottom-left: links to the recorded chat / terminal playback, shown
+        // only for the artifacts that actually exist on disk (server reports
+        // hasChat / hasTerminal in session_gone). Both viewers are keyed by the
+        // session UUID we already hold. Open in a new tab so the ended screen
+        // (and its Resume action) stays put.
+        const recBtnStyle = "font-size:13px;font-weight:500;padding:7px 14px;border-radius:6px;text-decoration:none;border:1px solid var(--border-color,#3a3a3a);color:var(--text-secondary,#b0b0b0);";
+        const uuidEnc = encodeURIComponent(this.uuid);
+        const recBtns = [];
+        if (this._sessionGoneHasChat) {
+            recBtns.push(`<a class="session-gone__rec" href="/recording/${uuidEnc}/chat" target="_blank" rel="noopener" style="${recBtnStyle}">Chat</a>`);
+        }
+        if (this._sessionGoneHasTerminal) {
+            recBtns.push(`<a class="session-gone__rec" href="/recording/${uuidEnc}" target="_blank" rel="noopener" style="${recBtnStyle}">Terminal</a>`);
+        }
+        const recorded = recBtns.length
+            ? `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span style="font-size:13px;color:var(--text-secondary,#b0b0b0);">View recorded</span>
+                        ${recBtns.join('')}
+                    </div>`
+            : '<div></div>';
+
         this.innerHTML = `
             <div class="session-gone" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg-terminal,#1e1e1e);font-family:'Inter',system-ui,sans-serif;color:var(--text-primary,#e0e0e0);">
-                <div style="width:440px;max-width:calc(100vw - 32px);background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3a3a3a);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.5);padding:24px;">
+                <div style="width:520px;max-width:calc(100vw - 32px);background:var(--bg-secondary,#252526);border:1px solid var(--border-color,#3a3a3a);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.5);padding:24px;">
                     <h1 style="font-size:18px;font-weight:600;margin:0 0 10px;">This session has ended</h1>
                     <p style="font-size:14px;line-height:1.5;color:var(--text-secondary,#b0b0b0);margin:0 0 18px;">
                         ${canResume
                             ? 'The session is no longer running. You can resume it (fork: restores the chat history and reattaches the agent) or start a new one.'
                             : 'The session is no longer running. Start a new session to continue.'}
                     </p>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;">
-                        <a class="session-gone__btn" href="/" style="font-size:14px;font-weight:500;padding:9px 18px;border-radius:6px;text-decoration:none;border:1px solid var(--border-color,#3a3a3a);color:var(--text-secondary,#b0b0b0);">New session</a>
-                        ${resumeBtn}
+                    <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                        ${recorded}
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <a class="session-gone__btn" href="/" style="font-size:14px;font-weight:500;padding:9px 18px;border-radius:6px;text-decoration:none;border:1px solid var(--border-color,#3a3a3a);color:var(--text-secondary,#b0b0b0);">Back to sessions</a>
+                            ${resumeBtn}
+                        </div>
                     </div>
                 </div>
             </div>`;
