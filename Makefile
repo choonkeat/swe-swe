@@ -1,4 +1,4 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-e2e test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
@@ -315,6 +315,18 @@ test-e2e-agent-view-remote:
 
 test-e2e-agent-view-remote-image:
 	E2E_AV_BACKEND=image ./scripts/e2e-agent-view-remote.sh
+
+# --- Full pre-release suite ---
+# One umbrella that runs everything sequentially, fail-fast, in cheapest-first
+# order: fast unit gate -> containerized e2e (simple + compose Traefik) ->
+# host-native dockerless e2e -> Agent View remote browser (binary tier).
+# HEAVY and SLOW -- boots real containers and drives real browsers, and the
+# agent-view step needs a display stack. Deliberately NOT part of `make test`
+# (the fast unit gate). Mirrors the /swe-swe:test-full-e2e slash command.
+# Run before releases. Prerequisites run left-to-right and stop at the first
+# failure, so a late agent-view failure still means the earlier tiers passed.
+test-full-e2e: test test-e2e test-e2e-dockerless test-e2e-agent-view-remote
+	@echo "✓ full e2e suite passed (unit + container e2e + dockerless + agent-view-remote)"
 
 # --- Manual tunnel-mode test ---
 # Spins up a real swe-swe container in tunnel mode against
