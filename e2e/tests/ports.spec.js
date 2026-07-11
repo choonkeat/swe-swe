@@ -107,7 +107,17 @@ test.describe('Port Connectivity', () => {
     expect(ports.filesProxyPort).toBeGreaterThanOrEqual(29200);
     expect(ports.filesProxyPort).toBeLessThanOrEqual(29229);
     console.log(`Testing files proxy port: ${ports.filesProxyPort}`);
-    const filesResp = await fetchPortWithRetry(page, ports.filesProxyPort, '/', 5);
+    // Unlike the preview/agent-chat proxies (in-process Go, ready almost
+    // immediately), the Files proxy fronts a per-session md-serve that
+    // swe-swe-server launches at runtime via `npx -y @choonkeat/md-serve@latest`
+    // (see swe-swe-server/main.go). In a fresh dockerfile-only container there
+    // is no npm cache, so the very first session cold-fetches md-serve from the
+    // registry before the proxy port answers -- easily tens of seconds under
+    // load. Each retry here fast-fails (~2s) while the port is still down, so 45
+    // retries buys roughly a 90s readiness window; the other proxies keep the
+    // tight 5-retry budget because they have no such cold-start.
+    const FILES_PROXY_MAX_RETRIES = 45;
+    const filesResp = await fetchPortWithRetry(page, ports.filesProxyPort, '/', FILES_PROXY_MAX_RETRIES);
     console.log(`Files proxy port ${filesResp.port}: ok=${filesResp.ok}, status=${filesResp.status}, type=${filesResp.type}`);
     expect(filesResp.ok).toBe(true);
   });
