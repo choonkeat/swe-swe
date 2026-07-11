@@ -41,3 +41,6 @@ deploy/digitalocean/manifest.json
 .playwright-mcp
 .test-repos
 tools/
+
+# local tooling
+.pi/
