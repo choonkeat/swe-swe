@@ -266,17 +266,17 @@ browser-backend chromium is the REMOTE-browser stand-in: it must NOT get
 lvh.me loopback-remapped to itself for these tests -- use the sslip.io/real
 hostname path).
 
-- [ ] 4.1 Wildcard mode: navigate `app1-3000.<reach>:<proxyPort>` and
+- [~] 4.1 Wildcard mode: navigate `app1-3000.<reach>:<proxyPort>` and
   `app1-5000.<reach>:<proxyPort>`; assert bodies show
   `app1.lvh.me:3000` / `app1.lvh.me:5000` respectively (distinct origins,
   same listener port).
-- [ ] 4.2 Cookie rewrite: hit `/set-cookie` on the 5000 origin; assert the
+- [~] 4.2 Cookie rewrite: hit `/set-cookie` on the 5000 origin; assert the
   browser stores it scoped to `.<reach>` and sends it to the 3000 origin.
-- [ ] 4.3 Pinned mode: force reach candidates unresolvable (env override to
+- [~] 4.3 Pinned mode: force reach candidates unresolvable (env override to
   a garbage domain); assert probe falls back, `app1.lvh.me:5000` renders
   via pin on the bare origin, switching to `app1.lvh.me:3000` swaps the
   target, and the mode indicator says pinned.
-- [ ] 4.4 Regression: plain `localhost:{port}` preview flow unchanged
+- [~] 4.4 Regression: plain `localhost:{port}` preview flow unchanged
   (existing e2e stays green); `make test` fully green.
 - [ ] 4.5 Browser-MCP manual verification list (use swe-swe-playwright /
   swe-swe-preview MCP tools; log expected/got for each):
