@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: SPEC - not started
+- Status: IN PROGRESS - Phase 1 complete (parse + ports + env model, unit-tested)
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
@@ -238,16 +238,19 @@ Each phase: write test first (RED), implement (GREEN), `make test`. For any
 template/docs change touching `cmd/swe-swe/templates` run
 `make build golden-update` and stage `cmd/swe-swe/testdata/golden`.
 
-### Phase 1 - Procfile parse + port/env model (pure, unit-tested)
-- 1.1 New package under `cmd/swe-swe/templates/host/swe-run/`.
-- 1.2 `parseProcfile(io.Reader) ([]Service, error)` - names, commands, comments,
-      blanks, validation. Table tests.
-- 1.3 `assignPorts(base int, services []Service, primary string) map[string]int`
-      - primary=base, others via 4.3 formula. Test the invariants (uniqueness
-      across bases 3000-3019, avoids reserved offsets, range bounds).
-- 1.4 `buildServiceEnv(...)` - precedence from 4.5, `PORT` + `PORT_<NAME>`
-      injection, name->envvar normalization. Table tests including `.env` +
-      `.swe-swe/env` merge and PORT-always-wins.
+### Phase 1 - Procfile parse + port/env model (pure, unit-tested) -- DONE
+- [x] 1.1 New package. Layout decision: canonical tested source in `cmd/swe-run/`
+      (root module, `_test.go`), mirroring mcp/prctx; bundled stdlib copy into
+      `cmd/swe-swe/templates/host/swe-run/` comes in Phase 3.
+- [x] 1.2 `parseProcfile(io.Reader) ([]Service, error)` - names, commands,
+      comments, blanks, validation, duplicate/empty detection. Table tests.
+- [x] 1.3 `assignPorts(base int, services []Service, primary string) (map[string]int, error)`
+      - primary=base, others via 4.3 formula `base+5000+i*20`. Invariants tested
+      (uniqueness across bases 3000-3019, avoids reserved bands, range bounds,
+      overflow error).
+- [x] 1.4 `buildServiceEnv(...)` + `parseEnvFile` + `normalizeEnvName` -
+      precedence from 4.5, `PORT` + `PORT_<NAME>` injection, runner-ports-win.
+      Table tests including `.env`/`.swe-swe/env` merge and PORT-always-wins.
 
 ### Phase 2 - Supervisor runtime
 - 2.1 Launch services via `sh -c`, `Setpgid`, captured pipes.
