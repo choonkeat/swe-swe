@@ -106,7 +106,7 @@
         <td class="opt">Bare-port demux<span class="form"><code>{port}.{reach}:{proxyPort}</code></span></td>
         <td>Leftmost label is a raw port &rarr; <code>127.0.0.1:{port}</code>, upstream <code>Host: localhost:{port}</code>.</td>
         <td>Wildcard DNS for <code>{reach}</code> (rows&nbsp;5&ndash;7).</td>
-        <td><span class="chip part">partial</span> wildcard cross-host cookie gap (see note)</td>
+        <td><span class="chip part">partial</span> works on a configured reach (see note)</td>
         <td><ul class="tight"><li class="pro">Reach <em>any</em> loopback port</li><li class="pro">No Host router needed</li></ul></td>
         <td><ul class="tight"><li class="con">Needs wildcard DNS</li><li class="con">No Host rewrite (plain apps only)</li></ul></td>
       </tr>
@@ -114,7 +114,7 @@
         <td class="opt">Named vhost demux<span class="form"><code>{name}-{port}.{reach}</code><br><code>{name}.{reach}</code></span></td>
         <td>Leftmost label &rarr; <code>127.0.0.1:{port}</code>, upstream <code>Host: {name}.{suffix}:{port}</code> (<code>SWE_PREVIEW_VHOST_SUFFIX</code>, default <code>lvh.me</code>).</td>
         <td>Wildcard DNS for <code>{reach}</code>.</td>
-        <td><span class="chip part">partial</span> same wildcard cookie gap</td>
+        <td><span class="chip part">partial</span> works on a configured reach (see note)</td>
         <td><ul class="tight"><li class="pro">Your traefik/nginx <code>Host</code> router matches as on a laptop</li><li class="pro">Many vhosts on one listener</li></ul></td>
         <td><ul class="tight"><li class="con">Needs wildcard DNS</li><li class="con">Only useful with a Host-based router in your stack</li></ul></td>
       </tr>
@@ -136,7 +136,7 @@
         <td class="opt">Reach: <code>lvh.me</code></td>
         <td>Public wildcard DNS: <code>*.lvh.me &rarr; 127.0.0.1</code>. The frontend's default reach candidate.</td>
         <td>Browser on the <strong>same machine</strong> as swe-swe (else <code>lvh.me</code> is the user's own loopback).</td>
-        <td><span class="chip no">no</span> wildcard cross-host cookie gap</td>
+        <td><span class="chip ok">works</span> configured reach: <code>Domain=lvh.me</code></td>
         <td><ul class="tight"><li class="pro">Zero setup for local dev</li><li class="pro">Real vhost names</li></ul></td>
         <td><ul class="tight"><li class="con">Same-machine only</li><li class="con">Depends on the public <code>lvh.me</code> zone</li></ul></td>
       </tr>
@@ -144,7 +144,7 @@
         <td class="opt">Reach: <code>&lt;ip&gt;.sslip.io</code> / <code>nip.io</code></td>
         <td>Public wildcard DNS that encodes an IP in the name: <code>app1-5000.203-0-113-7.sslip.io &rarr; 203.0.113.7</code>.</td>
         <td>swe-swe reachable at a routable IP; browser has working public DNS.</td>
-        <td><span class="chip no">no</span> reach host &ne; login host</td>
+        <td><span class="chip no">no</span> unless set as <code>SWE_PREVIEW_REACH_DOMAIN</code></td>
         <td><ul class="tight"><li class="pro">Works from anywhere, no DNS admin</li><li class="pro">Good for bare-IP deployments</li></ul></td>
         <td><ul class="tight"><li class="con">Needs a routable IP</li><li class="con">Public-DNS dependency; wildcard TLS is awkward</li></ul></td>
       </tr>
@@ -152,7 +152,7 @@
         <td class="opt">Reach: admin wildcard<span class="form"><code>SWE_PREVIEW_REACH_DOMAIN</code></span></td>
         <td>Org-owned wildcard (<code>*.preview.corp &rarr; swe-swe</code>) pinned via env; becomes the sole probe candidate.</td>
         <td>DNS admin sets a wildcard A/AAAA (and optionally a wildcard cert).</td>
-        <td><span class="chip no">no</span> unless cookie scoped to the reach (option&nbsp;A)</td>
+        <td><span class="chip ok">works</span> configured reach (option&nbsp;A, shipped)</td>
         <td><ul class="tight"><li class="pro">Clean, stable names</li><li class="pro">Real TLS certs feasible</li></ul></td>
         <td><ul class="tight"><li class="con">Needs DNS control</li><li class="con">Per-deployment config</li></ul></td>
       </tr>
@@ -188,12 +188,14 @@
     <span class="chip no">no</span> host-only cookie not sent cross-host (password deployments)</p>
 
   <div class="note">
-    <strong>Wildcard&nbsp;+&nbsp;password cookie gap.</strong> The login cookie is host-only in non-tunnel mode, and
-    cookies ignore ports. So <em>pinned</em> mode and the <em>localhost/port</em> forms work under a password (same host),
-    but <em>wildcard</em> forms load a different host (<code>app1-5000.&lt;reach&gt;</code>) that never receives the cookie
-    &rarr; 401 (same class as the tunnel bounce in <a href="adr/0043-tunnel-mode-not-a-sidecar.md">ADR-0043&nbsp;&sect;1</a>).
-    The clean follow-up (&ldquo;option&nbsp;A&rdquo;) is to emit <code>Domain=&lt;reach&gt;</code> on the auth cookie once
-    the reach is known, mirroring the tunnel fix.
+    <strong>Wildcard&nbsp;+&nbsp;password cookie: option&nbsp;A shipped (2026-07-13).</strong> Previously the login cookie
+    was host-only in non-tunnel mode, so <em>wildcard</em> forms loaded a different host (<code>app1-5000.&lt;reach&gt;</code>)
+    that never received it &rarr; 401. Now the auth cookie is pinned <code>Domain=&lt;reach&gt;</code> when the browser lands on
+    a <strong>server-configured</strong> reach (<code>SWE_PREVIEW_VHOST_SUFFIX</code> / <code>SWE_PREVIEW_REACH_DOMAIN</code>,
+    default <code>lvh.me</code>), so one login covers every <code>{name}-{port}.&lt;reach&gt;</code> sibling. Only an
+    auto-derived reach the server is not configured for (e.g. <code>&lt;ip&gt;.sslip.io</code>) stays host-only &mdash; set
+    <code>SWE_PREVIEW_REACH_DOMAIN</code> to that domain, or use pinned mode. Mirrors the tunnel fix
+    (<a href="adr/0043-tunnel-mode-not-a-sidecar.md">ADR-0043&nbsp;&sect;1</a>).
   </div>
 
   <h2>Quick decision guide</h2>
@@ -202,7 +204,7 @@
     <thead><tr><th>Situation</th><th>Recommended</th></tr></thead>
     <tbody>
       <tr><td>Local dev, browser on the swe-swe machine</td><td>Wildcard via <code>lvh.me</code> + named/bare-port demux</td></tr>
-      <tr><td>Remote box with a routable IP, no DNS admin</td><td>Wildcard via <code>&lt;ip&gt;.sslip.io</code> (password: prefer pinned until option&nbsp;A)</td></tr>
+      <tr><td>Remote box with a routable IP, no DNS admin</td><td>Wildcard via <code>&lt;ip&gt;.sslip.io</code> (password: set <code>SWE_PREVIEW_REACH_DOMAIN</code> to it, or use pinned)</td></tr>
       <tr><td>Corporate / air-gapped, no wildcard DNS</td><td>Pinned mode (works with a password, one vhost at a time)</td></tr>
       <tr><td>Public exposure without opening ports</td><td>Tunnel mode (pinned for named vhosts today)</td></tr>
       <tr><td>Single app, simplest possible</td><td>Localhost path proxy (default; no config)</td></tr>
