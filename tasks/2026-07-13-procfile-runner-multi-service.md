@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: IN PROGRESS - Phases 1-4 complete (model + runtime + packaging + docs); Phase 5 live e2e pending
+- Status: COMPLETE - all 5 phases done; live in-image e2e passed (one vhost-dependent browser check deferred per spec 4.9)
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
@@ -292,14 +292,18 @@ template/docs change touching `cmd/swe-swe/templates` run
 - [x] init.go: multi-service.md added to both container-doc allowlists; golden
       regenerated; container_templates_test asserts it.
 
-### Phase 5 - Verification
-- 5.1 `make test` green (unit).
-- 5.2 Live e2e in a test container (docs/dev/test-container-workflow.md):
-      write a 3-line Procfile (`web` static server + a `db`/echo + a `worker`),
-      run `swe-run`, assert: primary reachable on session PORT via Preview,
-      a second service reachable on its bare-port subdomain, `$PORT_<NAME>`
-      visible to siblings, and -- the headline -- end the session and confirm
-      NO leftover processes (the leak fix). Tear the container down.
+### Phase 5 - Verification -- DONE
+- [x] 5.1 `make test` green (unit + golden + all bundles in sync).
+- [x] 5.2 Live e2e in the REAL image (`make e2e-up-simple`): swe-run on PATH
+      (/usr/local/bin/swe-run); 3-service Procfile assigned web->3100(primary,
+      PORT) worker->8100 db->8120; primary reachable on session PORT (HTTP 200);
+      `$PORT_<NAME>` visible to siblings; SIGTERM -> runner + ALL children gone,
+      ZERO leaked processes (the headline leak-fix, proven in-image); container
+      torn down clean.
+      DEFERRED: "second service reachable on its bare-port subdomain" depends on
+      the unmerged `preview-hostname-vhost` branch (spec 4.9) -- bare-port
+      subdomains do not exist on this branch, so that browser check is a
+      post-vhost-merge item, not a swe-run defect.
 
 ### Phase 6 - Procfile helper slash command (added 2026-07-13)
 
