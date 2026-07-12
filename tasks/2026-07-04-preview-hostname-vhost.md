@@ -6,8 +6,11 @@ Log convention: `tasks/2026-07-04-preview-hostname-vhost.md-phase{N}.log`.
 
 Origin: recording `14605713-38f6-48b8-9621-f131051276a6` ("Preview hostname",
 2026-06-13); decisions pinned 2026-07-04; reworked 2026-07-05 (remote-browser
-correction + no-wildcard-assumption correction). See "Design" below -- read it
-fully before Phase 1; every step references it.
+correction + no-wildcard-assumption correction); amended 2026-07-12 (tunnel
+degraded-mode note + Follow-up A tunneld grammar, docker-not-required design
+note, 5.3 docker-free guide, 6.4 services.yml registration source,
+Follow-up B socket alternatives). See "Design" below -- read it fully before
+Phase 1; every step references it.
 
 ## Ground rules for the executing agent
 
@@ -113,11 +116,32 @@ visibly.
 - Active mode + reach shown in the UI next to the URL bar. Degradation must
   be visible, never silent.
 
+### Tunnel mode behavior (degrades by design; wildcard is Follow-up A)
+tunneld already serves wildcard subdomains under `{unique}-tunnel.<suffix>`
+and demuxes the LEFTMOST label as a RAW PORT NUMBER
+(`{port}.{publicHostname}`, proxyPortOffset does not apply -- see
+docs/tunnel-explained.md and url-builder.js buildSubdomainPreviewUrl).
+Named labels (`app1-5000`) and probe labels (`probe-<rand>`) are not
+numeric, so over the tunnel hostname the reach probe fails and the session
+lands in PINNED mode. That is correct, designed behavior for THIS task --
+do not special-case tunnel here. Wildcard-over-tunnel is Follow-up A.
+
+### Docker not required (multi-service != compose)
+The demux targets `127.0.0.1:{port}` and does not care how services are
+run: docker compose, Procfile/foreman, process-compose, or
+agent-backgrounded processes are all equivalent. The vhost Host rewrite
+only matters when the user's stack contains its own Host-based router
+(traefik/nginx inside their compose). The documented docker-free path is:
+run services with process-compose (or plain processes), reach them via
+bare `{port}` labels or Phase 6 named routes. swe-swe does NOT supervise
+user processes (see Follow-up B).
+
 ### Out of scope (do not implement)
-Tunnel-mode named labels (tunneld dispatches leftmost label as a port;
-separate repo work), TLS wildcard certs, path-based-fallback vhosts,
-port-less :80/:443 ingress, nip.io/sslip.io in Agent View's loopback remap
-list (they must keep resolving to real IPs).
+Tunnel-mode named labels (Follow-up A below, swe-swe-tunnel repo), a
+process supervisor / "mini compose" runtime (Follow-up B keeps this
+declarative-registration-only), TLS wildcard certs, path-based-fallback
+vhosts, port-less :80/:443 ingress, nip.io/sslip.io in Agent View's
+loopback remap list (they must keep resolving to real IPs).
 
 ---
 
@@ -268,6 +292,15 @@ hostname path).
   and d5266dfb4; why pass-through and Domain-strip/preserve are wrong.
 - [ ] 5.2 `docs/configuration.md`: `SWE_PREVIEW_VHOST_SUFFIX`,
   `SWE_PREVIEW_REACH_DOMAIN`. `CHANGELOG.md` entry. ASCII check.
+- [ ] 5.3 Docker-free multi-service guide (new `docs/multi-service.md` or a
+  section in the preview docs + container-facing
+  `templates/container/.swe-swe/docs/app-preview.md`): running several
+  services as plain processes (process-compose / foreman / backgrounded),
+  reaching them via bare `{port}` labels and named routes, when vhost
+  Host-rewrite matters (own traefik/nginx), and the tunnel degraded-mode
+  note (pinned until Follow-up A). Make explicit that none of this needs
+  `--with-docker`, and cross-link ADR-0013's socket-is-root warning for
+  users who do choose compose.
 
 ## Phase 6 (may defer to follow-up task) -- registration + MCP tools
 
@@ -279,6 +312,38 @@ hostname path).
   swe-swe-preview server (agent reads user's compose and registers
   aliases -- this is the "auto" in auto-register).
 - [ ] 6.3 Frontend: datalist/dropdown of registered routes by the URL bar.
+- [ ] 6.4 Declarative registration source: read `.swe-swe/services.yml`
+  (schema: `{name: {port: 5000, host: "auth.lvh.me"}}`) at session start
+  and register its entries through the same 6.1 routes store (file entries
+  are seeds; runtime API wins on conflict; re-read on session restart).
+  This is a registration SOURCE only -- swe-swe never starts, stops, or
+  supervises the listed services (that is process-compose / the user's
+  compose / the agent). Validation identical to 6.1. Document the schema
+  in the 5.3 guide.
+
+## Follow-ups (separate deliverables -- do NOT implement in this worktree)
+
+### Follow-up A -- tunneld named-label grammar (swe-swe-tunnel repo)
+Goal: tunnel sessions get wildcard mode instead of pinned. Division of
+labor keeps tunneld dumb: numeric leftmost label keeps today's raw-port
+dispatch (back-compat); any NON-numeric leftmost label (named `app1-5000`,
+probe `probe-<rand>`, alias `app1`) forwards the request UNCHANGED
+(Host preserved) to the session's preview proxy listener port, where this
+task's ResolveTarget hook already implements the grammar. tunneld learns
+no grammar beyond "numeric or not". Reach probing then succeeds over
+`*.{unique}-tunnel.<suffix>` with zero swe-swe-side changes (the
+window-hostname candidate covers it). File as a tasks/ doc in the
+swe-swe-tunnel repo once Phase 4 here is green; verify with the e2e
+fixture from Phase 4 pointed at a local tunneld.
+
+### Follow-up B -- docker-socket alternatives for compose users
+Users whose stacks genuinely need compose currently need `--with-docker`
+= host-root-equivalent socket (ADR-0013). Evaluate, in order of least
+new-machinery: (1) docker-socket-proxy allowlist in front of the mounted
+socket (block privileged, host binds, host network); (2) rootless
+Docker/Podman socket instead of the rootful one; (3) sysbox-runc for a
+real in-container daemon with no host socket. Outcome: an ADR picking one
+(or documenting why status quo + 5.3's docker-free guidance is enough).
 
 ## Progress log
 (execute-step-by-step updates checkboxes above and phase .log files;
