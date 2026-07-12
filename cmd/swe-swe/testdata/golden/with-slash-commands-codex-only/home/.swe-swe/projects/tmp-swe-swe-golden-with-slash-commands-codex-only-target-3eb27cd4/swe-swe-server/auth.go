@@ -519,6 +519,20 @@ func resolveCookieDomain(publicHostname, requestHost string) string {
 	return ""
 }
 
+// sessionCookieDomain decides the Domain attribute for the session auth cookie,
+// combining the two cross-subdomain modes. Tunnel mode wins: if the browser
+// reached us via the live tunnel apex (or a per-port subdomain of it), pin to
+// that apex. Otherwise, in non-tunnel wildcard preview, pin to the reach suffix
+// when the request landed on a configured preview reach origin, so the cookie is
+// sent to all "{name}-{port}.{reach}" sub-app origins. Anything else (localhost,
+// a LAN IP, an unknown host) stays host-only.
+func sessionCookieDomain(requestHost string) string {
+	if d := resolveCookieDomain(getLiveTunnelHostname(), requestHost); d != "" {
+		return d
+	}
+	return previewCookieReach(requestHost)
+}
+
 // authLoginPostHandler validates password, sets cookie, and redirects.
 func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string) {
 	if err := r.ParseForm(); err != nil {
@@ -574,7 +588,7 @@ func authLoginPostHandler(w http.ResponseWriter, r *http.Request, secret string)
 		// boxes the guest into that session.
 		Value: authSignScopedCookie(secret, scope),
 		Path:  "/",
-		Domain:   resolveCookieDomain(getLiveTunnelHostname(), r.Host),
+		Domain:   sessionCookieDomain(r.Host),
 		MaxAge:   authCookieMaxAge,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -599,7 +613,7 @@ func authLogoutHandler() http.HandlerFunc {
 			Name:     authCookieName,
 			Value:    "",
 			Path:     "/",
-			Domain:   resolveCookieDomain(getLiveTunnelHostname(), r.Host),
+			Domain:   sessionCookieDomain(r.Host),
 			MaxAge:   -1,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,

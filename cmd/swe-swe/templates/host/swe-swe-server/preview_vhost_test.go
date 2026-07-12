@@ -152,3 +152,57 @@ func TestBuildStatusPayloadPreviewVhost(t *testing.T) {
 		}
 	})
 }
+
+func TestPreviewCookieReachFrom(t *testing.T) {
+	reaches := []string{"lvh.me", "preview.example.com"}
+	cases := []struct {
+		name string
+		host string
+		want string
+	}{
+		// Wildcard preview sub-app origins pin to their reach so a single
+		// login covers every sibling {name}-{port}.{reach}.
+		{"named vhost subdomain", "app1-5000.lvh.me:23000", "lvh.me"},
+		{"bare-port subdomain", "3001.lvh.me", "lvh.me"},
+		{"reach apex itself", "lvh.me:8080", "lvh.me"},
+		{"second configured reach", "auth-3000.preview.example.com", "preview.example.com"},
+		// Not a configured reach -> host-only (no widening).
+		{"localhost -> host-only", "localhost:8080", ""},
+		{"loopback IP -> host-only", "127.0.0.1:8080", ""},
+		{"LAN IP -> host-only", "192.168.1.50:8080", ""},
+		{"unknown reach (e.g. sslip.io) -> host-only", "app1-5000.1-2-3-4.sslip.io:23000", ""},
+		// Guard against a host that merely ends with the reach string but
+		// is not a subdomain of it.
+		{"suffix lookalike -> host-only", "evillvh.me", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := previewCookieReachFrom(tc.host, reaches); got != tc.want {
+				t.Errorf("previewCookieReachFrom(%q, %v) = %q, want %q", tc.host, reaches, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAllowedPreviewReachesDefaultAndOverride(t *testing.T) {
+	t.Run("default is lvh.me only", func(t *testing.T) {
+		got := allowedPreviewReaches()
+		if len(got) != 1 || got[0] != "lvh.me" {
+			t.Errorf("allowedPreviewReaches() = %v, want [lvh.me]", got)
+		}
+	})
+	t.Run("reach-domain override adds it, de-duped", func(t *testing.T) {
+		t.Setenv("SWE_PREVIEW_REACH_DOMAIN", "preview.example.com")
+		got := allowedPreviewReaches()
+		// vhost suffix (lvh.me) + reach candidate (preview.example.com).
+		want := map[string]bool{"lvh.me": true, "preview.example.com": true}
+		if len(got) != len(want) {
+			t.Fatalf("allowedPreviewReaches() = %v, want the two distinct suffixes", got)
+		}
+		for _, g := range got {
+			if !want[g] {
+				t.Errorf("unexpected reach %q in %v", g, got)
+			}
+		}
+	})
+}

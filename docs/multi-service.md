@@ -69,8 +69,13 @@ the swe-swe machine from the user's browser (e.g. `<ip>.sslip.io`) to force a
 specific reach.
 
 **Password note**: pinned mode works under `SWE_SWE_PASSWORD`. Wildcard mode
-under a password currently requires a same-host reach (the login cookie is
-host-only); see the limitation in ADR-0045.
+under a password also works when the browser reaches swe-swe over a *configured*
+reach (`SWE_PREVIEW_VHOST_SUFFIX` / `SWE_PREVIEW_REACH_DOMAIN`, default
+`lvh.me`): the login cookie is pinned to that reach domain so it is sent to every
+`{name}-{port}.<reach>` sub-app origin. A browser-probed reach the server is not
+configured for (e.g. an auto-derived `<ip>.sslip.io`) still gets a host-only
+cookie, so set `SWE_PREVIEW_REACH_DOMAIN` to that domain to share auth across its
+sub-apps. See ADR-0045.
 
 ## Named routes (optional)
 

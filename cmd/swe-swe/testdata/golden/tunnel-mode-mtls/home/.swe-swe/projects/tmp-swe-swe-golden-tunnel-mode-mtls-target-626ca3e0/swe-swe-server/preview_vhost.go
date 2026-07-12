@@ -129,6 +129,59 @@ func previewReachCandidates() []string {
 	return []string{"lvh.me"}
 }
 
+// allowedPreviewReaches returns the reach suffixes the server is configured to
+// trust for wildcard preview: the logical vhost suffix (SWE_PREVIEW_VHOST_SUFFIX,
+// default "lvh.me") plus the reach candidates (SWE_PREVIEW_REACH_DOMAIN, else
+// "lvh.me"), de-duplicated in order. Only these are ever used to widen a cookie
+// Domain, so an arbitrary inbound Host cannot scope a cookie to a domain the
+// server does not expect.
+func allowedPreviewReaches() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	add(previewVhostSuffix())
+	for _, c := range previewReachCandidates() {
+		add(c)
+	}
+	return out
+}
+
+// previewCookieReach returns the reach suffix the session auth cookie should be
+// pinned to when the request lands on a wildcard-preview origin, or "" when it
+// does not. It is the non-tunnel analogue of resolveCookieDomain's apex pinning:
+// in wildcard mode the browser reaches sub-apps at "{name}-{port}.{reach}", so a
+// host-only auth cookie set on one origin is never sent to the siblings. Pinning
+// Domain={reach} lets the single login cover them all.
+func previewCookieReach(requestHost string) string {
+	return previewCookieReachFrom(requestHost, allowedPreviewReaches())
+}
+
+// previewCookieReachFrom is the pure core of previewCookieReach: it returns the
+// first reach in `reaches` that `requestHost` equals or is a subdomain of (port
+// stripped), else "". Matching only a configured reach (never an arbitrary Host
+// suffix) is what keeps this from scoping the cookie too broadly.
+func previewCookieReachFrom(requestHost string, reaches []string) string {
+	host := requestHost
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	for _, reach := range reaches {
+		if reach == "" {
+			continue
+		}
+		if host == reach || strings.HasSuffix(host, "."+reach) {
+			return reach
+		}
+	}
+	return ""
+}
+
 // parsePreviewLabel parses a preview vhost label per the grammar (see Design):
 //
 //	{name}-{port}  port 1024-65535 -> (name, port)   e.g. app1-5000, my-app-5000

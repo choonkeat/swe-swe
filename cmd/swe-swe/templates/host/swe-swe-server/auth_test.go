@@ -274,6 +274,11 @@ func TestAuthLoginPostHandlerSetsCookieDomain(t *testing.T) {
 		// over localhost. The cookie must be host-only or the browser
 		// rejects it (the regression this guards against).
 		{"tunnel live but localhost login -> host-only", "fake-tunnel.example.com", "localhost:8080", ""},
+		// Non-tunnel wildcard preview: login lands on a reach sub-app
+		// origin, so the cookie is pinned to the reach (lvh.me) and thus
+		// reaches every {name}-{port}.lvh.me sibling. This is the
+		// wildcard-under-password fix.
+		{"wildcard preview login -> Domain=reach", "", "app1-3000.lvh.me:23000", "lvh.me"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -344,6 +349,43 @@ func TestAuthLogoutHandlerClearsCookieAndRedirects(t *testing.T) {
 		t.Errorf("cleared cookie Value = %q, want empty", auth.Value)
 	}
 	// MaxAge < 0 tells net/http to emit Max-Age=0, expiring the cookie.
+	if auth.MaxAge >= 0 {
+		t.Errorf("cleared cookie MaxAge = %d, want negative (expire now)", auth.MaxAge)
+	}
+	// Non-reach host -> host-only clear (Domain must match the login cookie).
+	if auth.Domain != "" {
+		t.Errorf("cleared cookie Domain = %q, want empty for a non-reach host", auth.Domain)
+	}
+}
+
+// TestAuthLogoutHandlerClearsPreviewReachDomain locks in that logout mirrors the
+// login cookie's Domain in wildcard preview: the clearing Set-Cookie must carry
+// Domain=reach, else (RFC 6265 matches on name+domain+path) the browser keeps the
+// Domain=lvh.me login cookie and the guest is never actually logged out.
+func TestAuthLogoutHandlerClearsPreviewReachDomain(t *testing.T) {
+	saved := getLiveTunnelHostname()
+	t.Cleanup(func() { setLiveTunnelHostname(saved) })
+	setLiveTunnelHostname("")
+
+	req := httptest.NewRequest("GET", "/swe-swe-auth/logout", nil)
+	req.Host = "app1-3000.lvh.me:23000"
+	rec := httptest.NewRecorder()
+
+	authLogoutHandler()(rec, req)
+
+	var auth *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == authCookieName {
+			auth = c
+			break
+		}
+	}
+	if auth == nil {
+		t.Fatalf("logout did not emit a %q cookie to clear", authCookieName)
+	}
+	if auth.Domain != "lvh.me" {
+		t.Errorf("cleared cookie Domain = %q, want lvh.me", auth.Domain)
+	}
 	if auth.MaxAge >= 0 {
 		t.Errorf("cleared cookie MaxAge = %d, want negative (expire now)", auth.MaxAge)
 	}
