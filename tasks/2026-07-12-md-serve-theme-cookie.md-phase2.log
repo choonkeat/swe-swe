@@ -17,3 +17,5 @@
     THEME cookie: theme-mode.js setThemeCookie sets `swe-swe-theme=..;path=/;max-age;SameSite=Lax` with NO Domain => host-only.
     => In tunnel/subdomain mode the theme cookie is NOT sent to the Files subdomain, so md-serve there falls back to prefers-color-scheme. Per design, theme cookie needs widening (Domain=publicHostname) in tunnel mode, host-only in local mode.
     BLOCKER: tunnel mode is NOT reachable in the dockerless test env, so a theme-mode.js change cannot be live-verified end-to-end here. Also non-trivial: theme-mode.js (homepage+session modules) does not natively hold publicHostname at cookie-set time (session page gets it async via WS msg.publicHostname; homepage has none). Stopping to ask the user per task ground rules (no silent compromise).
+121156 -- TDD RED: added themeCookieDomain unit tests importing a function not yet defined. Running node --test; expect FAIL (undefined import).
+121225 -- GREEN: implemented themeCookieDomain in url-builder.js (reuses accessedViaTunnel). node --test url-builder.test.js: 81 pass / 0 fail (was 75; +6 new). Now wiring into theme-mode.js setThemeCookie + terminal-ui.js re-apply.
