@@ -1,1 +1,7 @@
 123515 Phase 2 START: wire IframeLoadSupervisor into shared setIframeUrl (files/shell/browser) + visibility/focus/pane-activate kicks + cleanup. Expect: make build golden-update succeeds, rendered terminal-ui.js passes node --check, make test PASS. Then live browser verify.
+123919 Code wired. make build golden-update OK; rendered terminal-ui.js node --check OK; make test PASS; supervisor units 14/14.
+123919 NOTE on repro: the pre-existing /files-ready probe runs BEFORE setIframeUrl, so a *down* backend keeps the probe looping and the supervisor never starts. The supervisor targets the reported bug precisely: backend UP (probe succeeds, HTTP 200 ~6ms) but the iframe's cross-tunnel GET dropped -> load never fires -> stuck. So natural full-down repro won't exercise the supervisor; instead verify:
+  (A) Happy path (criterion 4): Files loads once, _iframeSupervisors.files.loaded=true, NO periodic reloads over ~20s.
+  (B) In-browser unit-drive of the SHIPPED module (fake clock+iframe) -> backoff 1,2,4,8,cap15 + kick reset + watchdog/error retry (criteria 1,3 logic in the real browser engine).
+  (C) Live DOM wiring: force files supervisor loaded=false, call _kickVisibleSupervisors(), assert files iframe src cache-busted + overlay 'reconnecting'->hidden on reload (criterion 2 wiring).
+123919 Bringing up make e2e-up-simple (port 9780) from the worktree.
