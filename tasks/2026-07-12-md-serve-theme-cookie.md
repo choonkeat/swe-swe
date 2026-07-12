@@ -78,7 +78,7 @@ sees whatever `swe-swe-theme` the browser sends to the filesProxyPort origin.
   not, widen the theme cookie's Domain in `theme-mode.js` to match. Do NOT
   broaden it in local mode (host-only is correct there).
 
-## Phase 1 -- Wire the flag
+## Phase 1 -- Wire the flag [DONE 2026-07-12]
 
 Step 1.1. In `cmd/swe-swe/templates/host/swe-swe-server/main.go`,
 `startSessionMdServe`, add `"-theme-cookie", "swe-swe-theme"` to the
@@ -92,7 +92,15 @@ file that snapshots the launch args). Nothing else should move.
 
 Verification 1: `make test` green.
 
-## Phase 2 -- Prove it end to end
+## Phase 2 -- Prove it end to end [DONE 2026-07-12]
+
+Result: local mode proven live (dockerless e2e 4/4, new assertion "swe-swe-theme
+cookie pins md-serve stylesheet"). Tunnel mode (2.3): auth cookie IS
+parent-domained, theme cookie WAS host-only -> implemented themeCookieDomain +
+theme-mode.js Domain scoping + terminal-ui.js re-apply; unit-tested (node
+--test 81/81). Live-tunnel round-trip not reachable in this env; verified by
+unit tests + code parity with the auth cookie.
+
 
 Step 2.1. Bring up a session (dockerless is fine). Toggle swe-swe to **dark**,
 open the Files tab, confirm md-serve renders dark (github dark canvas, not the
@@ -115,7 +123,7 @@ Verification 2: existing Files-tab e2e still green
 add an assertion that a themed request to the files proxy yields the pinned
 stylesheet (`github-markdown-dark.css` for `swe-swe-theme=dark`).
 
-## Phase 3 -- Land it
+## Phase 3 -- Land it [DONE 2026-07-12]
 
 Step 3.1. `git add` the specific changed paths by name (template main.go, the
 golden dir, and `theme-mode.js` only if Step 2.3 required it). NEVER
