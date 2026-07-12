@@ -1,3 +1,8 @@
 023305 Phase 1.1 RED: adding proxy_hooks_test.go in /repos/agent-reverse-proxy/workspace on branch resolve-target-hooks.
   Tests: TestResolveTargetPerRequest, TestResolveTargetFallback, TestNoHookUnchanged, TestCookieDomainRewrite.
   Expectation: build/test FAILS -- Config has no ResolveTarget/CookieDomainRewrite fields yet (undefined field / red).
+023351 RED_OBSERVED build failed as expected:
+  ./proxy_hooks_test.go:44 unknown field ResolveTarget in struct literal of type Config
+  ./proxy_hooks_test.go:82 unknown field ResolveTarget
+  ./proxy_hooks_test.go:150 unknown field CookieDomainRewrite
+  -> RED confirmed (Config lacks the hook fields). Proceeding to 1.2 GREEN.
