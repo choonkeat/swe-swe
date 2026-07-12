@@ -1,0 +1,3 @@
+020536 PHASE 1 - Procfile parse + port/env model (TDD)
+020536 Decisions (spec-recommended defaults, user away past 2x1800s idle timeouts): swe-run name; one-exits-all; port formula PORT+5000+i*20; build on this branch; canonical cmd/swe-run + bundled template copy.
+020536 STEP 1.2 parseProcfile: writing table test FIRST. EXPECT: RED (parseProcfile undefined / package has no impl) => build/test failure.
