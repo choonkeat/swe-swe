@@ -1,1 +1,4 @@
 111212 -- Phase 1 start: add "-theme-cookie","swe-swe-theme" to startSessionMdServe exec.Command args. Expect: golden diff shows only the added flag inside embedded swe-swe-server/main.go; make test green.
+111224 -- running: make build golden-update
+111310 -- golden diff reviewed: 46 files, +322 lines, all identical 7-line addition (doc comment + "-theme-cookie","swe-swe-theme"). No other movement. Running make test.
+111443 -- observed: make test GREEN (no FAIL lines; cmd/swe-swe ok). Expected green, got green. Phase 1 done.

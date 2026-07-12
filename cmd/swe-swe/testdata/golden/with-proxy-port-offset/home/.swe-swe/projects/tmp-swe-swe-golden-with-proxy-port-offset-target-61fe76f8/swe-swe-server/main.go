@@ -4652,10 +4652,17 @@ func stopSessionBrowser(sess *Session) {
 // Invoked via `npx -y @choonkeat/md-serve@latest` so the Files tab always gets
 // the published latest at session start, rather than whatever version was baked
 // into the image at build time.
+//
+// The `-theme-cookie swe-swe-theme` flag makes the Files tab follow swe-swe's
+// own light/dark toggle: when the request carries cookie swe-swe-theme=light or
+// =dark, md-serve pins that theme server-side instead of following the browser's
+// prefers-color-scheme. This mirrors how agent-chat is launched. Requires
+// md-serve >= 0.6.0, satisfied at runtime via the @latest pin.
 func startSessionMdServe(sess *Session) error {
 	cmd := exec.Command("npx", "-y", "@choonkeat/md-serve@latest",
 		"-dir", sess.WorkDir,
 		"-addr", fmt.Sprintf(":%d", sess.FilesPort),
+		"-theme-cookie", "swe-swe-theme",
 	)
 	// Put npx + the md-serve child it spawns into their own process group so
 	// stopSessionMdServe can kill both with a single kill(-pgid). Without this,
