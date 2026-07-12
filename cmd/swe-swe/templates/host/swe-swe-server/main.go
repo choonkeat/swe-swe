@@ -5262,6 +5262,9 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// Two instances share a DebugHub: path-based (with basePath prefix for URL
 	// rewriting) and port-based (empty basePath, no rewriting needed).
 	previewTarget := &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", previewPort)}
+	// Reach label guard source: if an admin configured SWE_PREVIEW_REACH_DOMAIN,
+	// its first label must not be treated as a vhost prefix (see preview_vhost.go).
+	sess.PreviewReachLabel = previewReachLabel()
 	sharedHub := agentproxy.NewDebugHub()
 	previewProxy, err := agentproxy.New(agentproxy.Config{
 		BasePath:    "/proxy/" + sess.UUID + "/preview",
@@ -5295,11 +5298,19 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		// Start per-port listeners for port-based proxy mode.
 		// Port-based proxy uses empty BasePath (no URL rewriting) and shares
 		// the same DebugHub so MCP tools and debug WebSockets work in both modes.
+		// Preview host-demux: the port-based listener is what browsers hit at
+		// <reach>:proxyPort, so it carries the vhost ResolveTarget +
+		// CookieDomainRewrite hooks (see preview_vhost.go / ADR-0045). The
+		// path-based previewProxy above stays same-origin and unhooked.
 		portPreviewProxy, _ := agentproxy.New(agentproxy.Config{
 			Target:      previewTarget,
 			ToolPrefix:  "preview",
 			ThemeCookie: "swe-swe-theme",
 			Hub:         sharedHub,
+			ResolveTarget: func(inboundHost string) (*url.URL, string, bool) {
+				return previewResolveTarget(inboundHost, sess)
+			},
+			CookieDomainRewrite: previewCookieDomainRewrite,
 		})
 		// Tunnel mode safety: tunneld dials the per-port listeners directly
 		// without Traefik's ForwardAuth in front. Wrap each per-port handler

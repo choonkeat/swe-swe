@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -64,6 +66,74 @@ func parsePreviewLabel(label string) (name string, port int, ok bool) {
 	}
 	// bare {name}
 	return label, 0, true
+}
+
+// splitLeftmostLabel splits an inbound "host[:port]" into its leftmost DNS
+// label and the remaining reach suffix (port removed). Returns ok=false for a
+// single-label host (e.g. "localhost:23000"), which has no vhost prefix and
+// must keep today's behavior.
+//
+//	"app1-5000.x.sslip.io:23000" -> ("app1-5000", "x.sslip.io", true)
+//	"localhost:23000"            -> ("", "", false)
+//	"127.0.0.1:23000"            -> ("127", "0.0.1", true) [label rejected later]
+func splitLeftmostLabel(hostport string) (label, reachSuffix string, ok bool) {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	i := strings.Index(host, ".")
+	if i < 0 {
+		return "", "", false
+	}
+	return host[:i], host[i+1:], true
+}
+
+// previewReachLabel returns the first DNS label of SWE_PREVIEW_REACH_DOMAIN, if
+// configured, so browsing the bare reach is not mistaken for a vhost prefix.
+// Empty when the env is unset (the pin mechanism still guards pinned mode).
+func previewReachLabel() string {
+	d := strings.TrimSpace(os.Getenv("SWE_PREVIEW_REACH_DOMAIN"))
+	if d == "" {
+		return ""
+	}
+	if i := strings.Index(d, "."); i > 0 {
+		return d[:i]
+	}
+	return d
+}
+
+// previewResolveTarget is the ResolveTarget hook body: it extracts the leftmost
+// label of the inbound Host and resolves it against the session's vhost grammar,
+// returning a loopback target and the upstream Host to send. Returns ok=false to
+// fall back to the fixed target with today's clobbered Host.
+func previewResolveTarget(inboundHost string, s *Session) (*url.URL, string, bool) {
+	label, _, ok := splitLeftmostLabel(inboundHost)
+	if !ok {
+		return nil, "", false
+	}
+	port, upstreamHost, ok := resolvePreviewVhost(label, s)
+	if !ok {
+		return nil, "", false
+	}
+	return &url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", port)}, upstreamHost, true
+}
+
+// previewCookieDomainRewrite is the CookieDomainRewrite hook body: it maps an
+// upstream Set-Cookie Domain under the logical suffix (.lvh.me) to the reach
+// domain of THIS request (.x.sslip.io), so shared-auth cookies keep working
+// across the reach origins. Non-logical domains and single-label hosts are
+// stripped (return ""), matching legacy behavior.
+func previewCookieDomainRewrite(inboundHost, domain string) string {
+	_, reach, ok := splitLeftmostLabel(inboundHost)
+	if !ok {
+		return ""
+	}
+	suffix := previewVhostSuffix()
+	d := strings.TrimPrefix(domain, ".")
+	if d == suffix || strings.HasSuffix(d, "."+suffix) {
+		return "." + reach
+	}
+	return ""
 }
 
 // resolvePreviewVhost resolves a leftmost preview label to a loopback target
