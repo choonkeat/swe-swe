@@ -182,10 +182,10 @@ codebase's idiom.
 
 All in `cmd/swe-swe/templates/host/swe-swe-server/` unless stated.
 
-- [ ] 2.1 Bump dependency BOTH places: root `/workspace/go.mod` (if it lists
+- [x] 2.1 Bump dependency BOTH places: root `/workspace/go.mod` (if it lists
   agent-reverse-proxy) and template `go.mod.txt` + `go.sum.txt` to v0.2.10.
   `make test` must pass `check-gomod-sync`. Commit.
-- [ ] 2.2 RED: new `preview_vhost_test.go`, table-driven:
+- [x] 2.2 RED: new `preview_vhost_test.go`, table-driven:
   - `TestParsePreviewLabel`: `app1-5000` -> (app1, 5000); `my-app-5000` ->
     (my-app, 5000); `3001` -> ("", 3001); `app1` -> (app1, 0); `probe-x` ->
     (probe-x, 0); invalid (`-foo`, `foo-`, uppercase, 70 chars, port 80,
@@ -194,7 +194,7 @@ All in `cmd/swe-swe/templates/host/swe-swe-server/` unless stated.
     including pin fallback (rule 4 + pin set -> pinned target and Host) and
     "label equals reach first label" guard.
   Log RED.
-- [ ] 2.3 GREEN: new `preview_vhost.go`: `parsePreviewLabel`,
+- [x] 2.3 GREEN: new `preview_vhost.go`: `parsePreviewLabel`,
   `resolvePreviewVhost(label string, s *Session) (port int, upstreamHost string, ok bool)`,
   suffix from `SWE_PREVIEW_VHOST_SUFFIX` default `lvh.me`. Wire into the
   per-session listener construction (where the preview proxy handler is
@@ -205,20 +205,20 @@ All in `cmd/swe-swe/templates/host/swe-swe-server/` unless stated.
   `.{suffix}`/`{suffix}` -> `.{reachSuffixOfInboundHost}` (derive from the
   inbound Host minus its leftmost label); anything else -> "" (strip).
   `make test` green.
-- [ ] 2.4 RED then GREEN: pin endpoint. Test: POST
+- [x] 2.4 RED then GREEN: pin endpoint. Test: POST
   `/__agent-reverse-proxy-debug__/vhost-pin` `{"name":"app1","port":5000}`
   on the session listener -> subsequent label-less request proxies to :5000
   with `Host: app1.lvh.me:5000`; GET returns current pin; DELETE clears;
   invalid port/name -> 400; pin cleared on session end. Reuse the auth
   gating pattern of existing per-port proxy debug routes (see ADR-0043 /
   per-port proxy auth wrap tests in `proxy_listener_test.go`).
-- [ ] 2.5 RED then GREEN: status payload. `buildStatusPayload` gains
+- [x] 2.5 RED then GREEN: status payload. `buildStatusPayload` gains
   `previewVhostSuffix` and ordered `previewReachCandidates` per Design
   (explicit env first; derive lvh.me/sslip.io/window-host variants server
   side from the request's Host where derivable, else send the building
   blocks: `["lvh.me"?, "<ip>.sslip.io"?, "<request-host>"]`). Extend the
   existing buildStatusPayload test.
-- [ ] 2.6 `make build golden-update`; review golden diff (expect init.json /
+- [x] 2.6 `make build golden-update`; review golden diff (expect init.json /
   compose only if envs surfaced there -- otherwise none); commit phase.
 
 ## Phase 3 -- frontend: logical<->reachable translation + probe + modes
