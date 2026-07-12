@@ -20,8 +20,10 @@ FROM debian:bookworm-slim
 # Display stack only -- no agent CLIs, no Go toolchain, no web assets beyond
 # the noVNC viewer. Mirrors the browser layer of the main image.
 #
-# Chromium is PINNED to 147 from bookworm/main; the bookworm-security pocket
-# shipped 150.0.7871.46 whose zygote SIGTRAPs on launch. Keep this in sync with
+# Chromium is PINNED to an exact version and held. History: 150.0.7871.46
+# (bookworm-security) zygote-SIGTRAPped on launch, so this was pinned to 147
+# from bookworm/main; bookworm/main has since purged 147 and 149, leaving
+# 150.0.7871.100 as the only available build. Keep this in sync with
 # cmd/swe-swe/templates/host/Dockerfile. See
 # tasks/2026-07-05-e2e-system-chromium-sigtrap.md.
 #
@@ -29,8 +31,8 @@ FROM debian:bookworm-slim
 # fonts-dejavu-core (chromium's only font dep) lacks -- without them Chromium
 # renders those codepoints as .notdef "tofu" boxes. Mirror the main image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium=147.0.7727.137-1~deb12u1 \
-    chromium-common=147.0.7727.137-1~deb12u1 \
+    chromium=150.0.7871.100-1~deb12u1 \
+    chromium-common=150.0.7871.100-1~deb12u1 \
     xvfb \
     x11vnc \
     novnc \

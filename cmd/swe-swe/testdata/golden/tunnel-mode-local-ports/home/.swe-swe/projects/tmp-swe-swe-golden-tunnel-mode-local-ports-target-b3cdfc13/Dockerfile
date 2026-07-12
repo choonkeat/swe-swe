@@ -105,14 +105,15 @@ RUN apt-get update && apt-get install -y \
 # Install browser automation dependencies (Chromium, Xvfb, x11vnc, noVNC)
 # Each session gets its own Xvfb display, Chromium instance, and VNC server
 #
-# Chromium is PINNED to 147 from bookworm/main instead of tracking the
-# bookworm-security pocket. Security shipped chromium 150.0.7871.46, whose
-# zygote SIGTRAPs on launch (every browser feature dead); 149 worked but the
-# security pocket purges old versions, so it is not a stable pin. 147 lives in
-# bookworm/main -- permanently available and known-good (verified to launch).
-# chromium-common must match the pinned version, and both are held so a later
-# apt run cannot bump them back to a broken build. When bookworm/main's
-# chromium eventually rolls, bump this version.
+# Chromium is PINNED to an exact version and held so an apt run cannot silently
+# swap in a broken build. History: 150.0.7871.46 (bookworm-security) zygote-
+# SIGTRAPped on launch (every browser feature dead), so the image was pinned to
+# 147 from bookworm/main. bookworm/main has since purged 147 (and 149), leaving
+# 150.0.7871.100 as the only available build -- a later point release than the
+# broken .46 that launches cleanly in a headless render on this kernel.
+# chromium-common must match the pinned version, and both are held. When this
+# version is purged, bump the pinned string (an exact pin fails the build loudly
+# rather than pulling an unknown build).
 # See tasks/2026-07-05-e2e-system-chromium-sigtrap.md.
 #
 # fonts-noto-color-emoji + fonts-noto-cjk: chromium only pulls in
@@ -120,8 +121,8 @@ RUN apt-get update && apt-get install -y \
 # codepoints as .notdef "tofu" boxes in screenshots and the noVNC Agent View.
 # These packages provide the missing coverage; keep them here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium=147.0.7727.137-1~deb12u1 \
-    chromium-common=147.0.7727.137-1~deb12u1 \
+    chromium=150.0.7871.100-1~deb12u1 \
+    chromium-common=150.0.7871.100-1~deb12u1 \
     xvfb \
     x11vnc \
     novnc \
