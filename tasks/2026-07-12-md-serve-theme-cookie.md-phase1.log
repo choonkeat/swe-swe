@@ -1,0 +1,1 @@
+111212 -- Phase 1 start: add "-theme-cookie","swe-swe-theme" to startSessionMdServe exec.Command args. Expect: golden diff shows only the added flag inside embedded swe-swe-server/main.go; make test green.
