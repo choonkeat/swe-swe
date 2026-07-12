@@ -102,6 +102,41 @@ test.describe('dockerless live tabs', () => {
     expect(reachable.ok).toBe(true);
   });
 
+  // Files tab follows the swe-swe theme: md-serve is launched with
+  // -theme-cookie swe-swe-theme, and the files reverse proxy forwards the
+  // inbound Cookie header verbatim. So a request carrying swe-swe-theme=dark
+  // must pin the dark stylesheet server-side, and =light the light one --
+  // overriding the browser's prefers-color-scheme. Without the flag md-serve
+  // would ignore the cookie and emit its auto page (no single pinned sheet).
+  test('Files tab: swe-swe-theme cookie pins md-serve stylesheet', async ({ page }) => {
+    await openNewSession(page, { assistant: 'opencode', session: 'chat' });
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+
+    await page.waitForFunction(() => {
+      const ui = window.terminalUI;
+      return ui && ui.filesProxyPort && ui.sessionUUID;
+    }, null, { timeout: 60_000 });
+    const filesProxyPort = await page.evaluate(() => window.terminalUI.filesProxyPort);
+    expect(filesProxyPort).toBeTruthy();
+
+    const url = new URL(BASE_URL);
+    const filesUrl = `${url.protocol}//${url.hostname}:${filesProxyPort}/`;
+
+    // dark cookie -> dark stylesheet pinned, light absent.
+    const dark = await page.request.get(filesUrl, { headers: { Cookie: 'swe-swe-theme=dark' } });
+    expect(dark.ok()).toBeTruthy();
+    const darkBody = await dark.text();
+    expect(darkBody).toContain('github-markdown-dark.css');
+    expect(darkBody).not.toContain('github-markdown-light.css');
+
+    // light cookie -> light stylesheet pinned, dark absent.
+    const light = await page.request.get(filesUrl, { headers: { Cookie: 'swe-swe-theme=light' } });
+    expect(light.ok()).toBeTruthy();
+    const lightBody = await light.text();
+    expect(lightBody).toContain('github-markdown-light.css');
+    expect(lightBody).not.toContain('github-markdown-dark.css');
+  });
+
   // Preview tab wiring: the iframe src resolves to the previewProxyPort once
   // the WS delivers it (the proxy answers even before a dev server runs).
   test('Preview tab: iframe src is wired to the preview proxy', async ({ page }) => {
