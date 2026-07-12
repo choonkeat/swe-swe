@@ -227,16 +227,16 @@ Files: `static/modules/url-builder.js` (+ its `.test.js`, run the same way
 existing url-builder tests run -- check `Makefile`/`package.json` for the
 node test invocation), `static/terminal-ui.js`.
 
-- [ ] 3.1 RED: url-builder tests for pure functions:
+- [x] 3.1 RED: url-builder tests for pure functions:
   - `logicalToVhostLabel('app1.lvh.me:5000', 'lvh.me')` -> `app1-5000`;
     no port -> `app1`; nested `a.b.lvh.me` -> reject (flat labels only,
     v1); non-suffix host -> null.
   - `buildVhostPreviewUrl(label, reach, proxyPort, protocol)` ->
     `http://app1-5000.reach:23000`.
   - `parseLogicalInput(raw, suffix)` handling `app1.lvh.me:5000/path?q#h`.
-- [ ] 3.2 GREEN: implement in url-builder.js (exported, same module style
+- [x] 3.2 GREEN: implement in url-builder.js (exported, same module style
   as `buildSubdomainPreviewUrl`).
-- [ ] 3.3 terminal-ui.js wiring (behavior-test what the harness allows;
+- [x] 3.3 terminal-ui.js wiring (behavior-test what the harness allows;
   otherwise cover via Phase 4 e2e and say so in the log):
   - `setPreviewURL()`: hosts matching `*.{previewVhostSuffix}` (and bare
     suffix) are IN-IFRAME targets, localhost/127.0.0.1 unchanged, all else
@@ -253,7 +253,7 @@ node test invocation), `static/terminal-ui.js`.
     element next to `.terminal-ui__iframe-url-bar`.
   - `updateUrlBarPrefix()`: show active logical host:port (falls back to
     `localhost:{previewPort}`).
-- [ ] 3.4 `make build golden-update`; golden diff review; commit phase.
+- [x] 3.4 `make build golden-update`; golden diff review; commit phase.
 
 ## Phase 4 -- e2e (acceptance) + browser-MCP verification
 
