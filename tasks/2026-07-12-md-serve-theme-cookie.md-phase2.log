@@ -1,1 +1,6 @@
 111549 -- Phase 2 start. Direct md-serve proof: run `npx -y @choonkeat/md-serve@latest -dir mdroot -addr :19099 -theme-cookie swe-swe-theme`; expect version >=0.6.0 and flag accepted (no error exit).
+111626 -- observed: md-serve 0.6.0 (fe1f911) started, flag accepted. curl README.md:
+    no cookie  -> color-scheme: light dark (auto, prefers-color-scheme)
+    dark cookie-> github-markdown-dark.css + color-scheme: dark (PINNED)
+    light cookie-> github-markdown-light.css + color-scheme: light (PINNED)
+    RESULT: override works exactly as designed. Expected pin, got pin.
