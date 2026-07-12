@@ -68,6 +68,8 @@ test.describe('terminal-ui tab switching', () => {
       return {
         slotA_active: ui.activeBySlot?.a?.active,
         slotA_tabs: ui.activeBySlot?.a?.tabs,
+        slotB_active: ui.activeBySlot?.b?.active,
+        slotB_tabs: ui.activeBySlot?.b?.tabs,
         probing: ui._agentChatProbing,
         pending: ui._agentChatPending,
         available: ui._agentChatAvailable,
@@ -75,12 +77,66 @@ test.describe('terminal-ui tab switching', () => {
       };
     });
 
-    expect(post.slotA_tabs).toEqual(['agent-terminal', 'agent-chat']);
+    // Fresh classic defaults: Agent Chat + Files left, Agent Terminal +
+    // Preview right; the probe-success flip landed on Agent Chat while the
+    // right slot keeps Agent Terminal active (mount-time force-active).
+    expect(post.slotA_tabs).toEqual(['agent-chat', 'files']);
     expect(post.slotA_active).toBe('agent-chat');
+    expect(post.slotB_tabs).toEqual(['agent-terminal', 'preview']);
+    expect(post.slotB_active).toBe('agent-terminal');
     expect(post.probing).toBe(false);
     expect(post.pending).toBe(false);
     expect(post.available).toBe(true);
     expect(post.chatTabLabel).toBe('Agent Chat');
+  });
+
+  test('fresh default layout: Files first active on the left, param-less revisit still hands focus to Agent Chat', async ({ page }) => {
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
+    testSessions.push(uuid);
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+    await waitForUi(page, () => window.terminalUI && window.terminalUI.activeBySlot);
+
+    // Fresh classic defaults: chat+files left with Files initially active
+    // (first paint is never a chat spinner), terminal+preview right with
+    // Agent Terminal forced active. Race-guarded: on a warm container the
+    // probe may already have handed the left slot to agent-chat.
+    const atBoot = await page.evaluate(() => {
+      const ui = window.terminalUI;
+      return {
+        preset: ui.preset,
+        slotA_tabs: ui.activeBySlot?.a?.tabs,
+        slotA_active: ui.activeBySlot?.a?.active,
+        slotB_tabs: ui.activeBySlot?.b?.tabs,
+        slotB_active: ui.activeBySlot?.b?.active,
+        available: ui._agentChatAvailable,
+      };
+    });
+    expect(atBoot.preset).toBe('classic');
+    expect(atBoot.slotA_tabs).toEqual(['agent-chat', 'files']);
+    expect(atBoot.slotB_tabs).toEqual(['agent-terminal', 'preview']);
+    expect(atBoot.slotB_active).toBe('agent-terminal');
+    if (atBoot.available !== true) {
+      expect(atBoot.slotA_active).toBe('files');
+    }
+
+    // Revisit WITHOUT ?session=chat (bookmark / session-list style; the
+    // assistant param stays -- the server redirects to "/" without it).
+    // agentChatPort is a server-side session property (SessionMode ==
+    // "chat"), so the probe still runs -- and it's the fresh-default
+    // handoff (not the session=chat branch) that flips focus to Agent
+    // Chat once the iframe is usable.
+    await page.goto(`/session/${uuid}?assistant=opencode`);
+    await waitForUi(page, () => window.terminalUI?._agentChatAvailable === true
+      && window.terminalUI?.activeBySlot?.a?.active === 'agent-chat');
+
+    // The handoff is ephemeral -- nothing persisted agent-chat as active.
+    const saved = await page.evaluate(() => {
+      const raw = localStorage.getItem('swe-swe-layout-v1');
+      return raw ? JSON.parse(raw) : null;
+    });
+    if (saved) {
+      expect(saved.activeBySlot?.a?.active).not.toBe('agent-chat');
+    }
   });
 
   test('?session=chat: probe-success flip does NOT persist to localStorage (next visit finds Agent Terminal active)', async ({ page }) => {
@@ -102,25 +158,26 @@ test.describe('terminal-ui tab switching', () => {
     // addition from autoAddPaneToHome and the probe-success active flip) are
     // now persist:false -- session-driven state shouldn't prime future
     // visits. localStorage should either be absent entirely (fresh user with
-    // no manual layout actions) or have active:'agent-terminal' with
-    // agent-chat absent from the tabs list.
+    // no manual layout actions) or, if some other action persisted, must not
+    // have baked in the ephemeral active:'agent-chat' flip. (agent-chat in
+    // the tabs LIST is legitimate now -- it ships in the classic defaults.)
     const saved = await page.evaluate(() => {
       const raw = localStorage.getItem('swe-swe-layout-v1');
       return raw ? JSON.parse(raw) : null;
     });
 
     if (saved) {
-      expect(saved.activeBySlot?.a?.tabs || []).not.toContain('agent-chat');
-      expect(saved.activeBySlot?.a?.active).toBe('agent-terminal');
+      expect(saved.activeBySlot?.a?.active).not.toBe('agent-chat');
     }
 
     // Now reload with session=chat and verify that during the probe window,
-    // Agent Terminal is the active tab (not agent-chat from a stale save).
+    // the slot default (Files) is the active tab -- not agent-chat from a
+    // stale save.
     await page.reload();
 
     // As soon as the custom element boots, before the probe completes, the
-    // slot active should be agent-terminal. Assert before _agentChatAvailable
-    // flips true.
+    // slot active should be the Files default. Assert before
+    // _agentChatAvailable flips true.
     await waitForUi(page, () => {
       const ui = window.terminalUI;
       return ui && ui.activeBySlot?.a?.tabs?.includes('agent-chat');
@@ -133,11 +190,11 @@ test.describe('terminal-ui tab switching', () => {
       };
     });
     // The probe MAY complete before we observe; that's fine. What we care
-    // about is that pre-probe it was agent-terminal, not agent-chat. If
+    // about is that pre-probe it was the Files default, not agent-chat. If
     // available is already true, we've raced past the probe window -- the
     // prior assertion on saved.active already covered the persistence bug.
     if (duringProbe.available === false || duringProbe.available === undefined) {
-      expect(duringProbe.slotA_active).toBe('agent-terminal');
+      expect(duringProbe.slotA_active).toBe('files');
     }
 
     // After probe, agent-chat is active in memory -- still not persisted.
@@ -148,8 +205,7 @@ test.describe('terminal-ui tab switching', () => {
       return raw ? JSON.parse(raw) : null;
     });
     if (savedAfterReload) {
-      expect(savedAfterReload.activeBySlot?.a?.active).toBe('agent-terminal');
-      expect(savedAfterReload.activeBySlot?.a?.tabs || []).not.toContain('agent-chat');
+      expect(savedAfterReload.activeBySlot?.a?.active).not.toBe('agent-chat');
     }
   });
 
@@ -293,42 +349,44 @@ test.describe('terminal-ui tab switching', () => {
     // Wait for chat probe to complete
     await waitForUi(page, () => window.terminalUI?._agentChatAvailable === true);
 
+    // Agent Terminal and Agent Chat live in different slots under the new
+    // classic defaults (chat+files left, terminal+preview right), so resolve
+    // each pane's slot dynamically instead of assuming slot a. The blanking
+    // regression this guards against was applyPreset show/hide churn -- the
+    // repeated activations below still exercise that path.
+    const activeOf = (page, pane) => page.evaluate((p) => {
+      const ui = window.terminalUI;
+      return ui.activeBySlot?.[ui._slotForPane(p)]?.active;
+    }, pane);
+
     // Click Agent Terminal slot-tab, check xterm is rendered
     await page.locator('.terminal-ui__slot-tab[data-pane="agent-terminal"]').click();
     let state = await page.evaluate(() => {
-      const ui = window.terminalUI;
-      const term = ui.querySelector('.terminal-ui__terminal');
+      const term = window.terminalUI.querySelector('.terminal-ui__terminal');
       return {
-        slotA_active: ui.activeBySlot?.a?.active,
         term_inline_style: term?.getAttribute('style') || '',
         term_computed_visibility: getComputedStyle(term).visibility,
       };
     });
-    expect(state.slotA_active).toBe('agent-terminal');
+    expect(await activeOf(page, 'agent-terminal')).toBe('agent-terminal');
     expect(state.term_inline_style).not.toContain('visibility: hidden');
     expect(state.term_computed_visibility).toBe('visible');
 
     // Click Agent Chat
     await page.locator('.terminal-ui__slot-tab[data-pane="agent-chat"]').click();
-    state = await page.evaluate(() => {
-      const ui = window.terminalUI;
-      return { slotA_active: ui.activeBySlot?.a?.active };
-    });
-    expect(state.slotA_active).toBe('agent-chat');
+    expect(await activeOf(page, 'agent-chat')).toBe('agent-chat');
 
     // Click Agent Terminal again -- must still be visible
     await page.locator('.terminal-ui__slot-tab[data-pane="agent-terminal"]').click();
     state = await page.evaluate(() => {
-      const ui = window.terminalUI;
-      const term = ui.querySelector('.terminal-ui__terminal');
+      const term = window.terminalUI.querySelector('.terminal-ui__terminal');
       return {
-        slotA_active: ui.activeBySlot?.a?.active,
         term_inline_style: term?.getAttribute('style') || '',
         term_computed_visibility: getComputedStyle(term).visibility,
         term_computed_position: getComputedStyle(term).position,
       };
     });
-    expect(state.slotA_active).toBe('agent-terminal');
+    expect(await activeOf(page, 'agent-terminal')).toBe('agent-terminal');
     expect(state.term_inline_style).not.toContain('visibility: hidden');
     expect(state.term_inline_style).not.toContain('position: absolute');
     expect(state.term_computed_visibility).toBe('visible');
@@ -602,11 +660,11 @@ test.describe('terminal-ui tab switching', () => {
     }
   });
 
-  test('Files tab: slot "+" menu adds Files pane, tab appears, iframe loads md-serve at filesProxyPort', async ({ page }) => {
-    // The Files pane (per-session md-serve) is reached via a slot's "+"
-    // popover -- the same affordance the font-stack test above exercises.
-    // It only becomes "known" (and thus offered in the menu) once the WS
-    // Status payload delivers filesProxyPort, so wait for that first.
+  test('Files tab: present by default, activating it loads md-serve at filesProxyPort', async ({ page }) => {
+    // The Files pane (per-session md-serve) ships in the classic preset
+    // defaults (left slot, alongside Agent Chat). Its tab only renders once
+    // the WS Status payload delivers filesProxyPort (unknown panes are
+    // hidden from tab bars), so wait for that first.
     await openChatSession(page);
 
     await waitForUi(page, () => {
@@ -617,46 +675,28 @@ test.describe('terminal-ui tab switching', () => {
     const filesProxyPort = await page.evaluate(() => window.terminalUI.filesProxyPort);
     expect(filesProxyPort).toBeTruthy();
 
-    // Open the "+" popover on whichever slot offers Files, then click the
-    // "Files" item. Menu items are .terminal-ui__slot-replace-item buttons
-    // whose textContent is the pane label (PANE_LABELS['files'] === 'Files').
-    // We may need to try more than one slot's "+" button before we find the
-    // one whose unassigned list includes Files.
-    const addBtns = page.locator('.terminal-ui__slot-add');
-    const addCount = await addBtns.count();
-    expect(addCount).toBeGreaterThan(0);
+    // The Files tab is a default -- no "+" menu needed. It starts active
+    // (fresh-default), but the chat probe-success handoff may have flipped
+    // the slot to Agent Chat by now; click it to (re)activate.
+    const filesTab = page.locator('.terminal-ui__slot-tab[data-pane="files"]');
+    await filesTab.waitFor({ timeout: 10_000 });
+    await filesTab.click();
 
-    let clickedFiles = false;
-    for (let i = 0; i < addCount; i++) {
-      await addBtns.nth(i).click();
-      const menu = page.locator('.terminal-ui__slot-replace-menu');
-      await menu.waitFor({ state: 'visible' });
-      const filesItem = menu.locator('.terminal-ui__slot-replace-item', { hasText: 'Files' });
-      if (await filesItem.count() > 0) {
-        await filesItem.first().click();
-        clickedFiles = true;
-        break;
-      }
-      // Not in this slot's menu; dismiss and try the next "+".
-      await page.mouse.click(2, 2);
-      await menu.waitFor({ state: 'detached' }).catch(() => {});
-    }
-    expect(clickedFiles).toBe(true);
-
-    // The slot now carries a Files tab button (data-pane="files") labelled
-    // "Files", and files is the active pane in some slot.
     const tabState = await page.evaluate(() => {
       const ui = window.terminalUI;
       const tab = ui.querySelector('.terminal-ui__slot-tab[data-pane="files"]');
+      const slot = ui._slotForPane('files');
       return {
         hasTab: !!tab,
         tabLabel: tab?.querySelector('.terminal-ui__slot-tab-label')?.textContent,
-        slotForFiles: ui._slotForPane('files'),
+        slotForFiles: slot,
+        activeInSlot: ui.activeBySlot?.[slot]?.active,
       };
     });
     expect(tabState.hasTab).toBe(true);
     expect(tabState.tabLabel).toBe('Files');
     expect(tabState.slotForFiles).toBeTruthy();
+    expect(tabState.activeInSlot).toBe('files');
 
     // The files iframe src must point at the filesProxyPort (cross-origin
     // port form in non-tunnel mode: http://<host>:<filesProxyPort>/). Give

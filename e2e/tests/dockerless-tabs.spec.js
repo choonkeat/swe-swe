@@ -74,25 +74,12 @@ test.describe('dockerless live tabs', () => {
     const filesProxyPort = await page.evaluate(() => window.terminalUI.filesProxyPort);
     expect(filesProxyPort).toBeTruthy();
 
-    // Add the Files pane via whichever slot's "+" popover offers it.
-    const addBtns = page.locator('.terminal-ui__slot-add');
-    const addCount = await addBtns.count();
-    expect(addCount).toBeGreaterThan(0);
-    let clickedFiles = false;
-    for (let i = 0; i < addCount; i++) {
-      await addBtns.nth(i).click();
-      const menu = page.locator('.terminal-ui__slot-replace-menu');
-      await menu.waitFor({ state: 'visible' });
-      const filesItem = menu.locator('.terminal-ui__slot-replace-item', { hasText: 'Files' });
-      if (await filesItem.count() > 0) {
-        await filesItem.first().click();
-        clickedFiles = true;
-        break;
-      }
-      await page.mouse.click(2, 2);
-      await menu.waitFor({ state: 'detached' }).catch(() => {});
-    }
-    expect(clickedFiles).toBe(true);
+    // Files ships in the classic preset defaults; its tab renders once
+    // filesProxyPort makes the pane "known". Click to (re)activate -- the
+    // chat probe-success handoff may have focused Agent Chat by now.
+    const filesTab = page.locator('.terminal-ui__slot-tab[data-pane="files"]');
+    await filesTab.waitFor({ timeout: 10_000 });
+    await filesTab.click();
 
     // The files iframe must point at the cross-origin filesProxyPort.
     const src = await page.waitForFunction(() => {
