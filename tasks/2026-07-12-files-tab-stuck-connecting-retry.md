@@ -136,3 +136,25 @@ the existing modules use for cache-busting.
   the network panel when the backend is truly down).
 - Happy path unchanged: when md-serve is up, the tab loads once and the
   watchdog is cleared (no periodic reloads).
+
+## Resolution (2026-07-12)
+
+Implemented in two phases (scope: files/shell/browser — the shared
+`setIframeUrl` path; preview deferred per its own `setPreviewURL` path +
+manual ↻).
+
+- **Phase 1** — new pure module
+  `static/modules/iframe-load-supervisor.js`: `IframeLoadSupervisor` with a
+  4s load watchdog, capped exponential backoff (1s→2s→4s→8s→15s, reusing
+  `reconnect.js`), monotonic cache-bust tokens (no `Date.now`/`Math.random`),
+  `error`-event retry, and `kick()` (immediate retry + backoff reset for
+  focus/visibility/pane-activate). 15 unit tests (`node --test`).
+- **Phase 2** — wired into the shared `setIframeUrl` so files/shell/browser
+  panes are supervised; added `visibilitychange`/`window focus` +
+  pane-activate kicks and `cleanup()`. Overlay shows `Reconnecting...` while
+  retrying. Fixed a browser-only `Illegal invocation` in the default timer
+  wiring (found via live e2e; injected-clock unit tests couldn't surface it).
+
+All four acceptance criteria verified live (`make e2e-up-simple`, real
+browser): auto-recover, reload-on-visible, rate-limited backoff (no tight
+loop), and unchanged happy path. Logs: `*-phase1.log`, `*-phase2.log`.
