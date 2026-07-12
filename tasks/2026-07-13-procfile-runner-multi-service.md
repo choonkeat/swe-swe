@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: IN PROGRESS - Phases 1 & 2 complete (model + supervisor runtime; live teardown/leak-fix proven)
+- Status: IN PROGRESS - Phases 1-3 complete (model + runtime + packaging; make test green)
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
@@ -267,11 +267,16 @@ template/docs change touching `cmd/swe-swe/templates` run
 - [x] LIVE: 3-svc discovery verified; SIGINT teardown leaves ZERO leaked
       descendants (the headline leak-fix).
 
-### Phase 3 - Packaging + install
-- 3.1 Build `swe-run` into the image; install to `~/.swe-swe/bin/swe-run`
-      (Dockerfile + dockerless install path). Confirm it lands on the session
-      PATH.
-- 3.2 Golden: if any template/init surface changes, `make build golden-update`.
+### Phase 3 - Packaging + install -- DONE
+- [x] 3.1 Bundled stdlib copy in `cmd/swe-swe/templates/host/swe-run/` (+go.mod.txt).
+      Docker: build stage + COPY to `/usr/local/bin/swe-run` (DEVIATION: spec
+      said ~/.swe-swe/bin; used /usr/local/bin to match every sibling helper,
+      which is unconditionally on session PATH). Dockerless: added to
+      `dockerlessBinaries` + `_payload-helper-multi` build step; verified ELF in
+      payload + embed test. Makefile: test-swe-run / check-swe-run-sync /
+      sync-swe-run, wired into `make test`.
+- [x] 3.2 `make build golden-update`: golden diff = only swe-run/* + Dockerfile
+      (+7 lines). Full `make test` green.
 
 ### Phase 4 - Docs
 - 4.1 Rewrite container `.swe-swe/docs/docker.md`: lead users to Procfile;
