@@ -1757,6 +1757,7 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewProxyPort = this.previewProxyPort;
                 const prevVncProxyPort = this.vncProxyPort;
                 const prevFilesProxyPort = this.filesProxyPort;
+                const prevPublicHostname = this.publicHostname;
                 this.previewPort = msg.previewPort || null;
                 this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
@@ -1769,6 +1770,16 @@ class TerminalUI extends HTMLElement {
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
                 this.publicHostname = msg.publicHostname || '';
+                // The theme cookie is written at page load (session-theme.js)
+                // before this websocket delivers publicHostname, so in tunnel
+                // mode it starts host-only and would not reach the Files
+                // "{port}.{publicHostname}" subdomain. Once publicHostname is
+                // known, re-apply the current theme so the cookie is rewritten
+                // with Domain=publicHostname before the Files tab loads
+                // md-serve. No-op in local mode (publicHostname stays "").
+                if (this.publicHostname !== prevPublicHostname && window.sweSweTheme?.applyMode) {
+                    window.sweSweTheme.applyMode(window.sweSweTheme.getStoredMode());
+                }
                 // Tab popout-able state depends on URLs that arrive via
                 // BroadcastStatus. Rerender when those URLs flip from null
                 // to set (or vice-versa) so the dotted-underline affordance

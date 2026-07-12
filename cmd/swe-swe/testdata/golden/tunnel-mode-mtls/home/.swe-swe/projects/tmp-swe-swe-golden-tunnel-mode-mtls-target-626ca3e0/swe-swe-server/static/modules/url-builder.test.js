@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -556,4 +556,39 @@ test('accessedViaTunnel true when loaded via the apex publicHostname', () => {
 test('accessedViaTunnel does not match a lookalike suffix without a dot boundary', () => {
     // "evil-abc-tunnel.example.com" must NOT be treated as the tunnel host.
     assert.strictEqual(accessedViaTunnel({ hostname: 'evilabc-tunnel.example.com' }, 'abc-tunnel.example.com'), false);
+});
+
+
+// themeCookieDomain tests
+// The theme cookie is host-scoped by default. In tunnel mode the Files/Preview
+// tabs live at {port}.{publicHostname} subdomains, so a host-only cookie set on
+// the apex would not reach them -- md-serve there would fall back to the OS
+// theme. themeCookieDomain returns the Domain to stamp so the cookie follows,
+// exactly as the server scopes the auth cookie (resolveCookieDomain). Local
+// mode stays host-only (empty string).
+test('themeCookieDomain empty when not in tunnel mode (publicHostname empty)', () => {
+    assert.strictEqual(themeCookieDomain({ hostname: 'localhost' }, ''), '');
+});
+
+test('themeCookieDomain empty on localhost even when server is in tunnel mode', () => {
+    assert.strictEqual(themeCookieDomain({ hostname: 'localhost' }, 'abc-tunnel.example.com'), '');
+});
+
+test('themeCookieDomain empty on LAN IP / Tailscale name in tunnel mode', () => {
+    assert.strictEqual(themeCookieDomain({ hostname: '192.168.1.5' }, 'abc-tunnel.example.com'), '');
+    assert.strictEqual(themeCookieDomain({ hostname: 'mybox.tail-scale.ts.net' }, 'abc-tunnel.example.com'), '');
+});
+
+test('themeCookieDomain returns publicHostname when loaded via the apex tunnel host', () => {
+    // Cookie set on the apex must be scoped to the parent domain so the
+    // {port}.{publicHostname} Files subdomain receives it.
+    assert.strictEqual(themeCookieDomain({ hostname: 'abc-tunnel.example.com' }, 'abc-tunnel.example.com'), 'abc-tunnel.example.com');
+});
+
+test('themeCookieDomain returns publicHostname when loaded via a {port}.{publicHostname} subdomain', () => {
+    assert.strictEqual(themeCookieDomain({ hostname: '1977.abc-tunnel.example.com' }, 'abc-tunnel.example.com'), 'abc-tunnel.example.com');
+});
+
+test('themeCookieDomain empty for a lookalike suffix without a dot boundary', () => {
+    assert.strictEqual(themeCookieDomain({ hostname: 'evilabc-tunnel.example.com' }, 'abc-tunnel.example.com'), '');
 });

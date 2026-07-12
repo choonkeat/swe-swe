@@ -1,6 +1,8 @@
 // Theme mode management: light / dark / system
 // Shared module used by both homepage and session page.
 
+import { themeCookieDomain } from './modules/url-builder.js';
+
 export const THEME_MODES = { LIGHT: 'light', DARK: 'dark', SYSTEM: 'system' };
 export const THEME_STORAGE_KEY = 'swe-swe-theme-mode';
 
@@ -45,9 +47,20 @@ export function getResolvedMode(mode) {
     return mode;
 }
 
-/** Set the theme cookie so inline scripts on other pages can avoid FOUC. */
+/**
+ * Set the theme cookie so inline scripts on other pages can avoid FOUC and so
+ * md-serve (Files tab, launched with -theme-cookie swe-swe-theme) follows the
+ * swe-swe theme. In tunnel mode the Files tab lives at a
+ * "{port}.{publicHostname}" subdomain, so the cookie is scoped to the parent
+ * domain (Domain=publicHostname) to reach it; in local mode it stays
+ * host-only. publicHostname is read from the session page's terminal-ui, which
+ * receives it over the websocket -- absent (homepage / local mode) it is "".
+ */
 function setThemeCookie(resolved) {
-    document.cookie = `swe-swe-theme=${resolved};path=/;max-age=31536000;SameSite=Lax`;
+    const publicHostname = (window.terminalUI && window.terminalUI.publicHostname) || '';
+    const domain = themeCookieDomain(window.location, publicHostname);
+    const domainAttr = domain ? `;domain=${domain}` : '';
+    document.cookie = `swe-swe-theme=${resolved};path=/${domainAttr};max-age=31536000;SameSite=Lax`;
 }
 
 /** Apply resolved mode: set data-theme attribute (CSS handles variable overrides). */

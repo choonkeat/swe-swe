@@ -140,6 +140,25 @@ export function accessedViaTunnel(location, publicHostname) {
 }
 
 /**
+ * Decide the Domain attribute for the swe-swe-theme cookie. The cookie is
+ * host-scoped by default (empty Domain). In tunnel mode the per-port tabs
+ * (Files, Preview, Agent Chat) live at "{port}.{publicHostname}" subdomains,
+ * so a host-only cookie set on the apex is NOT sent to them -- md-serve on the
+ * Files subdomain would then ignore the swe-swe theme and follow the OS
+ * prefers-color-scheme. Returning publicHostname scopes the cookie to the
+ * parent domain so every subdomain receives it, mirroring how the server
+ * scopes the auth cookie (resolveCookieDomain in auth.go). Local mode
+ * (localhost, LAN IP, Tailscale name, or any host that is not the tunnel host)
+ * stays host-only -- a Domain there would be invalid or pointless.
+ * @param {{hostname: string}} location - Location-like object
+ * @param {string} publicHostname - Tunnel public hostname, or "" when not in tunnel mode
+ * @returns {string} the Domain to stamp, or "" for a host-only cookie
+ */
+export function themeCookieDomain(location, publicHostname) {
+    return accessedViaTunnel(location, publicHostname) ? publicHostname : '';
+}
+
+/**
  * Build the subdomain-based preview URL for tunnel mode. When swe-swe runs
  * behind a reverse tunnel (SWE_PUBLIC_HOSTNAME / --public-hostname), browser
  * requests to "{port}.{publicHostname}" are demuxed by the tunnel server
