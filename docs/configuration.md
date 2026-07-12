@@ -44,6 +44,8 @@ Init Options:
 | `OPENAI_API_KEY` | OpenAI API key for Codex (uncomment in docker-compose.yml) | — |
 | `GEMINI_API_KEY` | Google Gemini API key (uncomment in docker-compose.yml) | — |
 | `SWE_PUBLIC_PORTS` | Public port range override (default: `5000-5019`, must be within 5000-5999) | `5000-5019` |
+| `SWE_PREVIEW_VHOST_SUFFIX` | Logical vhost suffix rewritten onto the upstream `Host` for App Preview host-demux (see [ADR-0045](adr/0045-preview-host-demux.md)). A preview label `app1-5000` proxies to `127.0.0.1:5000` with `Host: app1.<suffix>:5000`, so your compose traefik/nginx matches it as on a laptop. | `lvh.me` |
+| `SWE_PREVIEW_REACH_DOMAIN` | Explicit browser-reachable wildcard domain for App Preview. When set it is the sole reach candidate the frontend probes (else it derives `lvh.me` plus the page's own hostname). Use a wildcard domain that resolves to the swe-swe machine *from the user's browser* (e.g. `<ip>.sslip.io`, or an admin-owned wildcard). Its first label is treated as the reach itself, not a vhost. | derived |
 | `NODE_EXTRA_CA_CERTS` | Enterprise CA certificate path (auto-copied during init) | — |
 | `SSL_CERT_FILE` | SSL certificate file path (auto-copied during init) | — |
 | `NODE_EXTRA_CA_CERTS_BUNDLE` | Bundle of CA certificates (auto-copied during init) | — |

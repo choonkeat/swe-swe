@@ -42,6 +42,38 @@ Each session gets its own `PORT` (default range 3000-3019). The preview port is 
 - PORT=3007 → Preview port 23007
 - PORT=3019 → Preview port 23019
 
+## Multiple Services / vhost Apps
+
+The preview listener can reach more than the single `$PORT` app. It demuxes the
+leftmost label of the browser-facing hostname (see ADR-0045):
+
+- `app1-5000.<reach>:<previewPort>` -> `127.0.0.1:5000`, upstream
+  `Host: app1.lvh.me:5000` (so a compose traefik/nginx matches `app1.lvh.me`).
+- `5000.<reach>:<previewPort>` -> `127.0.0.1:5000`, upstream
+  `Host: localhost:5000` (no Host-based router needed).
+
+You do NOT need Docker or compose for this. Run several services as plain
+processes and reach each by its port label:
+
+```bash
+# each on its own loopback port
+python3 -m http.server 5000 &
+PORT=5001 npm start &
+# or a Procfile-style runner
+npx -y foreman start        # foreman / node-foreman
+process-compose up          # process-compose (declarative)
+```
+
+Then type `app1.lvh.me:5000` (or `5000` for the bare-port form) in the preview
+URL bar. The `Host` rewrite only matters when your own stack has a Host-based
+router (traefik/nginx); plain apps ignore it. swe-swe does not start, stop, or
+supervise these processes -- that is your runner's job.
+
+When wildcard DNS for the reach is unavailable, the preview degrades to
+**pinned mode** (one vhost at a time) and shows a "pinned" indicator by the URL
+bar. Over the tunnel it is always pinned. See
+[docs/multi-service.md](../../../docs/multi-service.md) for the full guide.
+
 ## Debug Channel
 
 The preview proxy injects a debug script into HTML responses, allowing you to receive console logs, errors, and network requests from the user's browser in real-time.
