@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -884,6 +884,7 @@ class TerminalUI extends HTMLElement {
                                     <span class="terminal-ui__iframe-url-prefix"></span>
                                     <input type="text" class="terminal-ui__iframe-url-input" placeholder="/" />
                                 </div>
+                                <span class="terminal-ui__iframe-vhost-mode" hidden title="Preview reach mode"></span>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
                             </div>
                             <div class="terminal-ui__iframe-slot" data-pane="preview">
@@ -1780,6 +1781,14 @@ class TerminalUI extends HTMLElement {
                 if (this.publicHostname !== prevPublicHostname && window.sweSweTheme?.applyMode) {
                     window.sweSweTheme.applyMode(window.sweSweTheme.getStoredMode());
                 }
+                // Preview host-demux (ADR-0045): the logical vhost suffix and
+                // the ordered reach-domain candidates. The frontend appends its
+                // own window.location.hostname as a last candidate and probes
+                // each to pick wildcard vs pinned mode.
+                this.previewVhostSuffix = msg.previewVhostSuffix || '';
+                this.previewReachCandidates = Array.isArray(msg.previewReachCandidates)
+                    ? msg.previewReachCandidates.slice()
+                    : [];
                 // Tab popout-able state depends on URLs that arrive via
                 // BroadcastStatus. Rerender when those URLs flip from null
                 // to set (or vice-versa) so the dotted-underline affordance
@@ -6354,6 +6363,17 @@ class TerminalUI extends HTMLElement {
             const targetUrl = urlInput.value.trim();
             if (!targetUrl) return;
 
+            // Preview host-demux: a logical vhost target (e.g.
+            // "app1.lvh.me:5000/path") reloads the iframe on the demux origin
+            // rather than navigating within the current shell.
+            if (this.previewVhostSuffix && this.previewProxyPort) {
+                const logical = parseLogicalInput(targetUrl, this.previewVhostSuffix);
+                if (logical) {
+                    this.setPreviewURL(targetUrl);
+                    return;
+                }
+            }
+
             // Check if this is an external URL
             let navUrl;
             try {
@@ -6687,6 +6707,19 @@ class TerminalUI extends HTMLElement {
         const iframe = this._iframeFor('preview');
         const placeholder = this._placeholderFor('preview');
 
+        // Preview host-demux (ADR-0045): a target under the logical vhost
+        // suffix (e.g. "app1.lvh.me:5000") is served IN-IFRAME via the
+        // per-session demux listener rather than bounced to a new tab. localhost
+        // and 127.0.0.1 keep their existing same-origin proxy path; everything
+        // else still bounces.
+        if (targetURL && this.previewVhostSuffix && this.previewProxyPort) {
+            const logical = parseLogicalInput(targetURL, this.previewVhostSuffix);
+            if (logical) {
+                this._setPreviewVhostURL(logical, iframePath);
+                return;
+            }
+        }
+
         // Determine if targetURL is external (non-localhost)
         let isExternal = false;
         if (targetURL) {
@@ -6715,6 +6748,10 @@ class TerminalUI extends HTMLElement {
         // this is the subdomain URL so the shell's inner iframe is in the
         // right origin and the cookie (Cookie.Domain=publicHostname) reaches
         // the auth-proxy port.
+        // Leaving any vhost target: revert the URL-bar prefix and hide the mode
+        // indicator so localhost previews look exactly as before.
+        this._activeVhostHost = null;
+        this.updateVhostModeIndicator();
         const probeBase = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
         if (!probeBase) return;
         const subdomainBase = (this.effectivePublicHostname && this.previewProxyPort)
@@ -6820,6 +6857,130 @@ class TerminalUI extends HTMLElement {
         }
     }
 
+    /**
+     * Ordered reach-domain candidates: the server-advertised list plus this
+     * browser's own window.location.hostname appended last (it might have
+     * wildcard DNS -- only a probe can tell). Deduplicated, order preserved.
+     */
+    _reachCandidateList() {
+        const list = Array.isArray(this.previewReachCandidates)
+            ? this.previewReachCandidates.slice()
+            : [];
+        const winHost = window.location.hostname;
+        if (winHost && !list.includes(winHost)) list.push(winHost);
+        return list;
+    }
+
+    /**
+     * Resolve the preview reach mode for this session, probing each candidate
+     * for a wildcard subdomain that reaches swe-swe. First candidate whose
+     * "probe-<rand>.<candidate>:<proxyPort>/" answers with the
+     * X-Agent-Reverse-Proxy header wins (wildcard mode). If none answer, we
+     * degrade to pinned mode against the bare page origin. Cached per session
+     * in this._vhostMode; pass force=true to re-probe. Returns {mode, reach}.
+     */
+    async _resolveVhostReach(force = false) {
+        if (!force && this._vhostMode) return this._vhostMode;
+        const proxyPort = this.previewProxyPort;
+        const protocol = window.location.protocol;
+        for (const candidate of this._reachCandidateList()) {
+            const rand = Math.random().toString(36).slice(2, 8);
+            const probeUrl = `${protocol}//probe-${rand}.${candidate}:${proxyPort}/`;
+            try {
+                const resp = await fetch(probeUrl, { method: 'GET', mode: 'cors' });
+                if (resp.headers.has('X-Agent-Reverse-Proxy')) {
+                    this._vhostMode = { mode: 'wildcard', reach: candidate };
+                    this.updateVhostModeIndicator();
+                    return this._vhostMode;
+                }
+            } catch {
+                // DNS/connect failure -- this candidate has no wildcard here.
+            }
+        }
+        // All candidates failed: degrade visibly to pinned mode.
+        this._vhostMode = { mode: 'pinned', reach: window.location.hostname };
+        this.updateVhostModeIndicator();
+        return this._vhostMode;
+    }
+
+    /**
+     * Load a logical vhost target (parseLogicalInput result) into the preview
+     * iframe using the resolved reach mode. Wildcard mode loads
+     * "{label}.{reach}:{proxyPort}"; pinned mode POSTs the pin then loads the
+     * bare origin. iframePath overrides the path when navigating within the
+     * shell (e.g. link clicks).
+     */
+    async _setPreviewVhostURL(logical, iframePath = null) {
+        const iframe = this._iframeFor('preview');
+        const urlInput = this.querySelector('.terminal-ui__iframe-url-input');
+        const proxyPort = this.previewProxyPort;
+        const protocol = window.location.protocol;
+        const path = iframePath !== null ? iframePath : (logical.pathSuffix || '/');
+        const name = logical.logicalHost.split('.')[0];
+        const port = logical.port || this.previewPort;
+
+        const { mode, reach } = await this._resolveVhostReach();
+        let base;
+        if (mode === 'wildcard') {
+            base = buildVhostPreviewUrl(logical.label, reach, proxyPort, protocol);
+        } else {
+            // Pinned mode: one vhost at a time. Register the pin on the bare
+            // origin's listener, then load that bare origin.
+            base = `${protocol}//${reach}:${proxyPort}`;
+            try {
+                await fetch(base + '/__agent-reverse-proxy-debug__/vhost-pin', {
+                    method: 'POST',
+                    mode: 'cors',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, port }),
+                });
+            } catch {
+                // Pin POST failed -- the load below will surface the error.
+            }
+        }
+        if (!base) return;
+
+        // Track the active logical host for the URL bar prefix.
+        this._activeVhostHost = logical.port
+            ? `${name}.${this.previewVhostSuffix}:${logical.port}`
+            : `${name}.${this.previewVhostSuffix}`;
+        this.updateUrlBarPrefix();
+        this.updateVhostModeIndicator();
+
+        const iframeSrc = base + '/__agent-reverse-proxy-debug__/shell?path=' + encodeURIComponent(path);
+        this._lastUrlChangeUrl = base + path;
+        if (urlInput) urlInput.value = path;
+        if (iframe) {
+            if (this.activeTab === 'preview') {
+                iframe.src = iframeSrc;
+            } else {
+                this._pendingPreviewIframeSrc = iframeSrc;
+            }
+        }
+    }
+
+    /**
+     * Reflect the active reach mode next to the URL bar. Degradation to pinned
+     * mode must be visible, never silent.
+     */
+    updateVhostModeIndicator() {
+        const el = this.querySelector('.terminal-ui__iframe-vhost-mode');
+        if (!el) return;
+        if (!this._activeVhostHost || !this._vhostMode) {
+            el.hidden = true;
+            el.textContent = '';
+            return;
+        }
+        const { mode, reach } = this._vhostMode;
+        el.hidden = false;
+        el.textContent = mode === 'wildcard' ? `wildcard: ${reach}` : `pinned: ${reach}`;
+        el.dataset.mode = mode;
+        el.title = mode === 'wildcard'
+            ? `Reachable via wildcard DNS on ${reach}`
+            : `No wildcard DNS reachable; pinned to one vhost at a time on ${reach}`;
+    }
+
     refreshIframe() {
         if (this._debugWs?.readyState === WebSocket.OPEN) {
             this._debugWs.send(JSON.stringify({ t: 'reload' }));
@@ -6879,7 +7040,11 @@ class TerminalUI extends HTMLElement {
     updateUrlBarPrefix() {
         const prefix = this.querySelector('.terminal-ui__iframe-url-prefix');
         if (prefix) {
-            prefix.textContent = this.previewPort ? `localhost:${this.previewPort}` : '';
+            if (this._activeVhostHost) {
+                prefix.textContent = this._activeVhostHost;
+            } else {
+                prefix.textContent = this.previewPort ? `localhost:${this.previewPort}` : '';
+            }
         }
     }
 
