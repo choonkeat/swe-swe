@@ -287,12 +287,12 @@ hostname path).
 
 ## Phase 5 -- docs
 
-- [ ] 5.1 `docs/adr/0045-preview-host-demux.md`: two-hostname model, label
+- [x] 5.1 `docs/adr/0045-preview-host-demux.md`: two-hostname model, label
   grammar, reach probe + pinned mode, relationship to ADR-025/028/032/033
   and d5266dfb4; why pass-through and Domain-strip/preserve are wrong.
-- [ ] 5.2 `docs/configuration.md`: `SWE_PREVIEW_VHOST_SUFFIX`,
+- [x] 5.2 `docs/configuration.md`: `SWE_PREVIEW_VHOST_SUFFIX`,
   `SWE_PREVIEW_REACH_DOMAIN`. `CHANGELOG.md` entry. ASCII check.
-- [ ] 5.3 Docker-free multi-service guide (new `docs/multi-service.md` or a
+- [x] 5.3 Docker-free multi-service guide (new `docs/multi-service.md` or a
   section in the preview docs + container-facing
   `templates/container/.swe-swe/docs/app-preview.md`): running several
   services as plain processes (process-compose / foreman / backgrounded),
@@ -348,3 +348,33 @@ real in-container daemon with no host socket. Outcome: an ADR picking one
 ## Progress log
 (execute-step-by-step updates checkboxes above and phase .log files;
 summarize per-phase commits here as they land)
+
+- **Phase 1 DONE** (agent-reverse-proxy, cross-repo): `ResolveTarget` +
+  `CookieDomainRewrite` per-request hooks. Released v0.2.10, then amended
+  `CookieDomainRewrite(inboundHost, domain)` and released **v0.2.11** (reach is
+  per-request; user approved). Full `go test ./...` green.
+- **Phase 2 DONE**: dep bump to v0.2.11; `preview_vhost.go` grammar
+  (`parsePreviewLabel` + `resolvePreviewVhost`, rules 1-4 + pin precedence +
+  reach-label guard); hooks wired into the port-based listener; `vhost-pin`
+  endpoint (auth-gated, sess.mu-guarded, cleared on session end); status payload
+  `previewVhostSuffix` + `previewReachCandidates`. Go tests + `make test` green;
+  golden regenerated.
+- **Phase 3 DONE (impl)**: `url-builder.js` `logicalToVhostLabel` /
+  `buildVhostPreviewUrl` / `parseLogicalInput` (12 unit tests); `terminal-ui.js`
+  reach probe (`/__probe__`) + wildcard/pinned routing + mode indicator + URL
+  bar; CSS. Behavior verified at server level (Phase 4) + pending live browser.
+- **Phase 4 backend DONE (deterministic)**: `preview_vhost_integration_test.go`
+  drives the full listener chain (corsWrapper -> requireAuthCookie ->
+  vhost-pin -> proxy hooks) -- wildcard demux + Host rewrite, cookie
+  reach-rewrite, pinned routing, `/__probe__` auth-exemption, 401 for unauth.
+  Playwright `e2e/tests/preview-vhost.spec.js` written (guarded on
+  `E2E_VHOST_REACH`). REMAINING: live browser e2e (needs image rebuild + fixture
+  wiring in e2e-up.sh) and 4.5 browser-MCP -- deferred pending user; plus the
+  **wildcard+password auth-cookie** decision (option B documented; option A =
+  reach-scoped cookie is the follow-up fix).
+- **Phase 5 DONE**: ADR-0045, configuration.md envs, docs/multi-service.md,
+  container app-preview.md section, CHANGELOG. ascii-check + make test green.
+- **Phase 6 DEFERRED** to a follow-up task (named routes endpoint, MCP
+  `preview_register_route`/`preview_list_routes`, URL-bar datalist,
+  `.swe-swe/services.yml`) -- self-contained; docs already flag it as follow-up.
+  The grammar reserves rule 3's route-lookup slot for it.
