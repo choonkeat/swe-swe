@@ -1,0 +1,74 @@
+description = "List and edit Procfile services for docker-free multi-service dev (swe-run)"
+
+prompt = """
+Help the user run a multi-service app without Docker by managing their
+`Procfile` (used by `swe-run`, swe-swe's bundled process runner). You edit the
+`Procfile` and `.env` only -- you never start, stop, or supervise services (that
+is `swe-run`'s job). Always show the proposed change and confirm before writing.
+
+Full background: `.swe-swe/docs/multi-service.md`.
+
+## Steps
+
+### 1. Read current state
+
+Look for `./Procfile` in the working directory (or the path in `$ARGUMENTS` if
+given). Also note whether `.env` and `.swe-swe/env` exist.
+
+- If a `Procfile` exists, parse its `name: command` lines (ignore `#` comments
+  and blank lines) and list the services. For each, show how siblings reach it:
+  the **primary** service (the one named `web`, else the first line) is reached
+  on the session's base `PORT` and shows in the **Preview** tab; every other
+  service `foo` is reached at `localhost:$PORT_FOO`. Do not invent exact port
+  numbers -- `swe-run` assigns them at runtime; just name the variables.
+- If there is no `Procfile`, offer to scaffold one. Detect the project first:
+  read `package.json` scripts, common framework entrypoints, and -- importantly
+  -- any `docker-compose.yml`/`compose.yaml` to **translate from** (each compose
+  service with a start command becomes a `name: command` line; a compose
+  `postgres`/`redis`/etc. image becomes the matching daemon line below).
+
+### 2. Ask what they want to do
+
+Offer: **add** a service, **edit** one, **remove** one, or **scaffold** from
+scratch / from compose. Ask which (one question at a time).
+
+### 3. Apply the change
+
+When adding or editing a line:
+
+- Validate the service name against `[A-Za-z0-9_-]+`. Warn if they rename the
+  primary (`web` or the first line), since that moves which service the Preview
+  tab shows (they can also pass `swe-run -primary <name>`).
+- **Never hardcode a port.** A service that listens should bind the port
+  swe-swe hands it: its own `$PORT` (foreman parity) for the primary, or the
+  runner-exported value. A dependent connects to a sibling at
+  `localhost:$PORT_<NAME>` (`<NAME>` = the sibling's line name uppercased,
+  non-alphanumeric -> `_`; e.g. `db:` -> `$PORT_DB`).
+- For a known off-the-shelf daemon, autofill the port-flag form:
+
+  | Service  | Procfile line                                        |
+  |----------|------------------------------------------------------|
+  | Postgres | `db: postgres -D ./pgdata -p $PORT_DB -k /tmp`       |
+  | Redis    | `cache: redis-server --port $PORT_CACHE`             |
+  | MySQL    | `db: mysqld --port=$PORT_DB --datadir=./mysql-data`  |
+  | Mongo    | `db: mongod --port $PORT_DB --dbpath ./mongo-data`   |
+
+  Then offer to set a convenience URL in `.env` (or `.swe-swe/env`) referencing
+  the variable, e.g. `DATABASE_URL=postgres://localhost:${PORT_DB}/mydb` --
+  `swe-run` does not synthesize this because it cannot know your user/password/db
+  name.
+
+Show the resulting `Procfile` (and any `.env` line) as a diff and confirm before
+writing.
+
+### 4. Wrap up
+
+Remind the user:
+
+- Start everything with `swe-run` in the Agent Terminal (`swe-run -f
+  Procfile.dev` for an alternate file). It prints the assigned port table.
+- Services run as ordinary session children: **they die with the session**, so
+  nothing leaks -- no Docker socket, no `--with-docker`, no host root.
+- To view a non-primary service in the browser, use its bare-port subdomain in
+  the Preview tab (`<port>.<reach>`); the primary shows by default.
+"""
