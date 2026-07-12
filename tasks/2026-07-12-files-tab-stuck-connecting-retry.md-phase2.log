@@ -8,3 +8,4 @@
 124619 LIVE BROWSER RED (e2e-up-simple, session c515062b): files supervisor created+attached but everAttempted=false, iframe src empty. Forced sup.start() -> TypeError: Illegal invocation at _attempt line 131 'this.timers.clearTimeout(this._timer)'.
 124619 ROOT CAUSE: default timers = { setTimeout, clearTimeout } are bare global refs; called as this.timers.setTimeout(...) the receiver is the timers object, not window -> browser WebIDL rejects with Illegal invocation. Node has no receiver check so the 14 injected-clock unit tests could not catch it; the live browser did. (The 502s on :23200 were the unrelated preview probe.)
 124619 FIX: default timers wrap the globals in arrows: setTimeout:(fn,ms)=>setTimeout(fn,ms), clearTimeout:(id)=>clearTimeout(id). Add a default-timers node test as a regression guard. Then rebuild image + re-verify live.
+124703 Fix applied; node --test 15/15 (added default-timers regression test). Rebuilding e2e container to re-verify live.
