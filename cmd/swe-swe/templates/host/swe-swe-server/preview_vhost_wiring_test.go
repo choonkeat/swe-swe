@@ -31,6 +31,21 @@ func newPreviewProxyForTest(t *testing.T, sess *Session) *agentproxy.Proxy {
 	return p
 }
 
+// newPreviewProxyForTestTarget is like newPreviewProxyForTest but with an
+// explicit fixed target (used to observe the legacy clobber fallback).
+func newPreviewProxyForTestTarget(t *testing.T, sess *Session, target *url.URL) (*agentproxy.Proxy, error) {
+	t.Helper()
+	return agentproxy.New(agentproxy.Config{
+		Target:     target,
+		ToolPrefix: "preview",
+		NoInject:   true,
+		ResolveTarget: func(inboundHost string) (*url.URL, string, bool) {
+			return previewResolveTarget(inboundHost, sess)
+		},
+		CookieDomainRewrite: previewCookieDomainRewrite,
+	})
+}
+
 // TestPreviewProxyResolveTargetWiring proves the wired ResolveTarget hook makes
 // a browser-facing "app1-{port}.<reach>" request reach the loopback backend on
 // {port} with the upstream Host rewritten to the logical vhost.

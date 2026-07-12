@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
@@ -18,6 +20,87 @@ import (
 type vhostPin struct {
 	Name string // logical vhost name, e.g. "app1"
 	Port int    // loopback target port, e.g. 5000
+}
+
+// setVhostPin/getVhostPin/clearVhostPin guard Session.VhostPin with s.mu, since
+// the pin endpoint mutates it while concurrent proxy requests read it.
+func (s *Session) setVhostPin(name string, port int) {
+	s.mu.Lock()
+	s.VhostPin = &vhostPin{Name: name, Port: port}
+	s.mu.Unlock()
+}
+
+func (s *Session) getVhostPin() *vhostPin {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.VhostPin
+}
+
+func (s *Session) clearVhostPin() {
+	s.mu.Lock()
+	s.VhostPin = nil
+	s.mu.Unlock()
+}
+
+// previewVhostPinHandler intercepts the per-session pin endpoint on the preview
+// listener and otherwise delegates to next. Pinned mode uses this to route
+// label-less requests to a single vhost target (see ADR-0045). The caller wraps
+// it in requireAuthCookie, exactly like the other per-port proxy debug routes.
+func previewVhostPinHandler(sess *Session, next http.Handler) http.Handler {
+	const pinPath = "/__agent-reverse-proxy-debug__/vhost-pin"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != pinPath {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodPost:
+			var body struct {
+				Name string `json:"name"`
+				Port int    `json:"port"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid JSON body", http.StatusBadRequest)
+				return
+			}
+			if !validPinName(body.Name) || body.Port < 1024 || body.Port > 65535 {
+				http.Error(w, "invalid name or port", http.StatusBadRequest)
+				return
+			}
+			sess.setVhostPin(body.Name, body.Port)
+			writePinJSON(w, http.StatusOK, sess.getVhostPin())
+		case http.MethodGet:
+			writePinJSON(w, http.StatusOK, sess.getVhostPin())
+		case http.MethodDelete:
+			sess.clearVhostPin()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+}
+
+// validPinName accepts a DNS label that is not purely numeric (a numeric label
+// is a port, not a vhost name).
+func validPinName(name string) bool {
+	if !previewLabelRe.MatchString(name) {
+		return false
+	}
+	if _, err := strconv.Atoi(name); err == nil {
+		return false
+	}
+	return true
+}
+
+// writePinJSON renders the current pin state. A nil pin reports pinned=false.
+func writePinJSON(w http.ResponseWriter, status int, pin *vhostPin) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if pin == nil {
+		json.NewEncoder(w).Encode(map[string]any{"pinned": false})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"pinned": true, "name": pin.Name, "port": pin.Port})
 }
 
 // previewLabelRe validates a single DNS label used as a preview vhost prefix:
@@ -107,10 +190,10 @@ func previewReachLabel() string {
 // returning a loopback target and the upstream Host to send. Returns ok=false to
 // fall back to the fixed target with today's clobbered Host.
 func previewResolveTarget(inboundHost string, s *Session) (*url.URL, string, bool) {
-	label, _, ok := splitLeftmostLabel(inboundHost)
-	if !ok {
-		return nil, "", false
-	}
+	// A single-label host (e.g. the pinned-mode bare origin "myhost:23000") has
+	// no vhost prefix; pass an empty label so resolvePreviewVhost still consults
+	// the session pin before falling back to legacy behavior.
+	label, _, _ := splitLeftmostLabel(inboundHost)
 	port, upstreamHost, ok := resolvePreviewVhost(label, s)
 	if !ok {
 		return nil, "", false
@@ -166,9 +249,10 @@ func resolvePreviewVhost(label string, s *Session) (port int, upstreamHost strin
 	// including bare names and unrecognized labels. This keeps pinned-mode
 	// bare-origin browsing (custom hostname whose first label looks like a
 	// vhost name) routed to the pin rather than mis-resolved as a vhost.
-	if s != nil && s.VhostPin != nil {
-		pin := s.VhostPin
-		return pin.Port, fmt.Sprintf("%s.%s:%d", pin.Name, suffix, pin.Port), true
+	if s != nil {
+		if pin := s.getVhostPin(); pin != nil {
+			return pin.Port, fmt.Sprintf("%s.%s:%d", pin.Name, suffix, pin.Port), true
+		}
 	}
 
 	// Rule 3: bare {name} -> primary PreviewPort vhost, unless the label is the

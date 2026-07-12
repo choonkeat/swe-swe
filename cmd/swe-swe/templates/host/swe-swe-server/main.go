@@ -1198,6 +1198,8 @@ func (s *Session) Close() {
 	if s.PreviewProxyServer != nil {
 		s.PreviewProxyServer.Shutdown(shutdownCtx)
 	}
+	// Clear any preview vhost pin so a restart/resume starts unpinned.
+	s.clearVhostPin()
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
 	}
@@ -5322,7 +5324,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		previewPP := previewProxyPort(previewPort)
 		previewSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", previewPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, portPreviewProxy)),
+			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, previewVhostPinHandler(sess, portPreviewProxy))),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sess.UUID))
