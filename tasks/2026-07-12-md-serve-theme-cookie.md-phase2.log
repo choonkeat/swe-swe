@@ -4,3 +4,4 @@
     dark cookie-> github-markdown-dark.css + color-scheme: dark (PINNED)
     light cookie-> github-markdown-light.css + color-scheme: light (PINNED)
     RESULT: override works exactly as designed. Expected pin, got pin.
+111710 -- code inspection: files proxy = httputil.NewSingleHostReverseProxy (forwards inbound Cookie header unchanged) wrapped by corsWrapper (adds only response headers) + requireAuthCookie (reads auth cookie via r.Cookie, passes r to next unchanged, does NOT strip Cookie). => swe-swe-theme reaches md-serve through the proxy. Confirmed structurally.
