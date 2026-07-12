@@ -141,6 +141,11 @@ RUN apt-get update && apt-get install -y \
 # apt run cannot bump them back to a broken build. When bookworm/main's
 # chromium eventually rolls, bump this version.
 # See tasks/2026-07-05-e2e-system-chromium-sigtrap.md.
+#
+# fonts-noto-color-emoji + fonts-noto-cjk: chromium only pulls in
+# fonts-dejavu-core, which has no emoji or CJK glyphs, so pages render those
+# codepoints as .notdef "tofu" boxes in screenshots and the noVNC Agent View.
+# These packages provide the missing coverage; keep them here.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium=147.0.7727.137-1~deb12u1 \
     chromium-common=147.0.7727.137-1~deb12u1 \
@@ -148,6 +153,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11vnc \
     novnc \
     websockify \
+    fonts-noto-color-emoji \
+    fonts-noto-cjk \
     && apt-mark hold chromium chromium-common \
     && rm -rf /var/lib/apt/lists/*
 

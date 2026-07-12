@@ -24,6 +24,10 @@ FROM debian:bookworm-slim
 # shipped 150.0.7871.46 whose zygote SIGTRAPs on launch. Keep this in sync with
 # cmd/swe-swe/templates/host/Dockerfile. See
 # tasks/2026-07-05-e2e-system-chromium-sigtrap.md.
+#
+# fonts-noto-color-emoji + fonts-noto-cjk cover emoji and CJK glyphs that
+# fonts-dejavu-core (chromium's only font dep) lacks -- without them Chromium
+# renders those codepoints as .notdef "tofu" boxes. Mirror the main image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium=147.0.7727.137-1~deb12u1 \
     chromium-common=147.0.7727.137-1~deb12u1 \
@@ -32,6 +36,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     novnc \
     websockify \
     ca-certificates \
+    fonts-noto-color-emoji \
+    fonts-noto-cjk \
     && apt-mark hold chromium chromium-common \
     && rm -rf /var/lib/apt/lists/*
 
