@@ -49,6 +49,12 @@ RUN cd /build-git-sign-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s
 COPY prctx/*.go prctx/go.mod /build-prctx/
 RUN cd /build-prctx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-prctx/prctx .
 
+# Build swe-run (foreman-compatible Procfile runner, stdlib only). Multi-file
+# package; copy the whole dir. Available on $PATH in every session so multi-
+# service apps run without Docker -- children die with the session, no leaks.
+COPY swe-run/*.go swe-run/go.mod /build-swe-run/
+RUN cd /build-swe-run && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-run/swe-run .
+
 # Build swe-swe-tunnel client from the upstream public repo. swe-swe-server
 # spawns this binary as a child process when SWE_TUNNEL_SERVER_URL is set.
 # Pin to a specific commit so the build is reproducible. Bump the ARG when
@@ -207,6 +213,7 @@ COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr
 COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
 COPY --from=server-builder /build-git-sign-swe-swe/git-sign-swe-swe /usr/local/bin/git-sign-swe-swe
 COPY --from=server-builder /build-prctx/prctx /usr/local/bin/prctx
+COPY --from=server-builder /build-swe-run/swe-run /usr/local/bin/swe-run
 # swe-swe-tunnel client (only present when init was run with --tunnel-server-url).
 # swe-swe-server's tunnel supervisor will exec this when SWE_TUNNEL_SERVER_URL
 # is set; binary lives on $PATH so SWE_TUNNEL_BIN's default ("swe-swe-tunnel")

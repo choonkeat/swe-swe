@@ -1,0 +1,8 @@
+022342 PHASE 3 - Packaging + install
+022342 STEP 3.1: bundled stdlib copy cmd/swe-swe/templates/host/swe-run/ (6 .go + go.mod.txt). Verified standalone CGO_ENABLED=0 build OK (stdlib only, no go.sum).
+022342 DEVIATION FROM SPEC 4.1: install to /usr/local/bin/swe-run (not ~/.swe-swe/bin). Rationale: every sibling helper (prctx/mcp/git-*) installs to /usr/local/bin, which is unconditionally on session PATH; keeps swe-run consistent + reliable. Noted for user review.
+022342 Makefile: added test-swe-run, check-swe-run-sync, sync-swe-run (mirror prctx); registered check-swe-run-sync + test-swe-run in 'test:'; added _payload-helper-multi and swe-run to dockerless-payload; payload.go dockerlessBinaries += swe-run.
+022342 Dockerfile: build stage (COPY swe-run/*.go swe-run/go.mod; go build) + COPY --from server-builder to /usr/local/bin/swe-run.
+022342 VERIFY EXPECTED: sync clean, test-swe-run pass, dockerless payload builds swe-run ELF, embed test pass, golden only swe-run/* + Dockerfile +7 lines, make test green.
+022342 VERIFY GOT: 'swe-run bundle in sync.'; test-swe-run PASS; payload swe-run = ELF x86-64 statically linked; embed test ok; golden diff = 368 files all swe-run/* + Dockerfile (7 lines, exactly my additions); make test exit 0 ALL PASS.
+022342 PHASE 3 COMPLETE.

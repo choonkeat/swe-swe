@@ -1,10 +1,10 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-e2e test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 
-test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync check-mcp-sync test-cli test-mcp-lazy-init test-mcp-cli-proxy test-mcp test-server test-git-sign-swe-swe test-prctx
+test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync check-mcp-sync check-swe-run-sync test-cli test-mcp-lazy-init test-mcp-cli-proxy test-mcp test-server test-git-sign-swe-swe test-prctx test-swe-run
 
 # ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
 # See scripts/ascii-allowlist.txt for the per-file character allowlist
@@ -107,6 +107,35 @@ sync-prctx:
 	done
 	@echo "prctx bundle synced from cmd/prctx."
 
+# swe-run canonical source lives in cmd/swe-run (with tests); a non-test copy is
+# bundled into the container image via cmd/swe-swe/templates/host/swe-run. It is
+# the foreman-compatible Procfile runner installed on every session's PATH.
+test-swe-run:
+	go test -v ./cmd/swe-run
+
+# Guard against the bundled swe-run copy drifting from the tested canonical one.
+check-swe-run-sync:
+	@for f in cmd/swe-run/*.go; do \
+		case "$$f" in *_test.go) continue;; esac; \
+		t="cmd/swe-swe/templates/host/swe-run/$$(basename $$f)"; \
+		if ! diff -q "$$f" "$$t" >/dev/null 2>&1; then \
+			echo "swe-run bundle out of sync: $$f != $$t"; \
+			echo "run: make sync-swe-run"; \
+			diff "$$f" "$$t" || true; \
+			exit 1; \
+		fi; \
+	done
+	@echo "swe-run bundle in sync."
+
+# Regenerate the bundled swe-run copy from the canonical cmd/swe-run source.
+sync-swe-run:
+	@rm -f cmd/swe-swe/templates/host/swe-run/*.go
+	@for f in cmd/swe-run/*.go; do \
+		case "$$f" in *_test.go) continue;; esac; \
+		cp "$$f" cmd/swe-swe/templates/host/swe-run/; \
+	done
+	@echo "swe-run bundle synced from cmd/swe-run."
+
 # Test the swe-swe-server template code
 # Copies template to temp dir, sets up go.mod, runs tests, syncs go.sum back
 SERVER_TEMPLATE := cmd/swe-swe/templates/host/swe-swe-server
@@ -156,7 +185,7 @@ DOCKERLESS_BIN := $(DOCKERLESS_PAYLOAD_DIR)/bin/$(DOCKERLESS_OS)-$(DOCKERLESS_AR
 # tunnel mode works with no Docker. KEEP IN SYNC with the Dockerfile's
 # SWE_SWE_TUNNEL_REF ARG (templates/host/Dockerfile).
 SWE_SWE_TUNNEL_REF := 0d5d65a879d4b68379f24b41e1ce8aa3a812010e
-.PHONY: dockerless-payload _payload-helper
+.PHONY: dockerless-payload _payload-helper _payload-helper-multi
 dockerless-payload:
 	@rm -rf $(DOCKERLESS_BIN)
 	@mkdir -p $(DOCKERLESS_BIN)
@@ -181,6 +210,9 @@ dockerless-payload:
 	@$(MAKE) _payload-helper NAME=swe-swe-broker-probe
 	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
 	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
+	@# swe-run is a multi-file stdlib-only package (Procfile runner); build the
+	@# whole dir, mirroring how the Dockerfile builds it.
+	@$(MAKE) _payload-helper-multi NAME=swe-run
 	@# swe-swe-tunnel client (external repo, pinned ref) -- enables tunnel mode
 	@# in dockerless. Built in a throwaway module via `go build -o` rather than
 	@# `go install` so it cross-compiles (go install refuses cross-builds when
@@ -210,6 +242,17 @@ _payload-helper:
 	@rm -rf /tmp/swe-swe-payload-$(NAME)
 	@mkdir -p /tmp/swe-swe-payload-$(NAME)
 	@cp cmd/swe-swe/templates/host/$(NAME)/main.go /tmp/swe-swe-payload-$(NAME)/main.go
+	@cp cmd/swe-swe/templates/host/$(NAME)/go.mod.txt /tmp/swe-swe-payload-$(NAME)/go.mod
+	cd /tmp/swe-swe-payload-$(NAME) && \
+		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
+	@rm -rf /tmp/swe-swe-payload-$(NAME)
+
+# Like _payload-helper but for multi-file stdlib-only packages: copies every
+# *.go plus go.mod.txt from the bundled template dir.
+_payload-helper-multi:
+	@rm -rf /tmp/swe-swe-payload-$(NAME)
+	@mkdir -p /tmp/swe-swe-payload-$(NAME)
+	@cp cmd/swe-swe/templates/host/$(NAME)/*.go /tmp/swe-swe-payload-$(NAME)/
 	@cp cmd/swe-swe/templates/host/$(NAME)/go.mod.txt /tmp/swe-swe-payload-$(NAME)/go.mod
 	cd /tmp/swe-swe-payload-$(NAME) && \
 		CGO_ENABLED=0 GOOS=$(DOCKERLESS_OS) GOARCH=$(DOCKERLESS_ARCH) go build -ldflags="-s -w" -o $(CURDIR)/$(DOCKERLESS_BIN)/$(NAME) .
