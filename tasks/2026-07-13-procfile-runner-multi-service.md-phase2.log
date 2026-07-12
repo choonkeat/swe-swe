@@ -3,3 +3,6 @@
 021057 STEP 2.2 RED observed: undefined colorFor/servicePrefix/streamLines [build failed].
 021057 STEP 2.2 GREEN observed: logmux.go (nameWidth, colorFor+NO_COLOR, servicePrefix aligned, streamLines mutex-guarded no-torn-lines). Tests pass incl concurrency torn-line check.
 021057 STEP 2.1+2.3 supervisor run(): writing integration test FIRST (real sh -c children). EXPECT RED (undefined: newSupervisor/run).
+021342 STEP 2.1+2.3 RED observed: 'undefined: supervisor' [build failed].
+021342 STEP 2.1+2.3 GREEN observed: supervisor.go (run+teardown). Tests: OneExitsAll returns code 3 fast; ContextCancel clean code 0 (0.30s); SigkillEscalation returns after grace despite TERM-ignoring proc (0.80s); StartFailure non-zero. go test -race clean (2.1s).
+021342 NOTE: each service Setpgid=true; teardown kills -pgid TERM, grace, then KILL. Per-process goroutine drains pipes to EOF before cmd.Wait (StdoutPipe contract). Child exit status always logged (name/pid/code) per CLAUDE.md rule.
