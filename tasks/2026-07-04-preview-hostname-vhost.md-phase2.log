@@ -3,3 +3,4 @@
 031616 Phase 2.2 RED: adding preview_vhost_test.go (TestParsePreviewLabel + TestResolvePreviewVhost table-driven). Expect build FAIL: parsePreviewLabel/resolvePreviewVhost/vhostPin undefined. (Cookie-hook API decision still pending user; grammar work is independent.)
 031659 RED_OBS build failed as expected: undefined parsePreviewLabel/resolvePreviewVhost/vhostPin; unknown Session fields VhostPin/PreviewReachLabel. RED confirmed. -> 2.3 GREEN.
 031802 Phase 2.3 GREEN (grammar): preview_vhost.go with parsePreviewLabel + resolvePreviewVhost + vhostPin; Session gains VhostPin, PreviewReachLabel. All grammar tests PASS (rules 1-4, pin fallback, pin-over-rule3, port-over-pin, reach-first-label guard, suffix override). Hook WIRING into portPreviewProxy still pending cookie-hook API decision.
+035242 Phase 2.1 RE-BUMP: agent-reverse-proxy v0.2.10 -> v0.2.11 in swe-swe-server go.mod.txt + go.sum.txt (for the widened CookieDomainRewrite).
