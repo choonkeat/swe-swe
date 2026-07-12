@@ -21,6 +21,27 @@ npm start  # assuming it runs on $PORT
 
 The preview panel will show your app automatically. If no server is running on `$PORT`, a "Waiting for App" page will display with auto-retry.
 
+## Multiple services (Procfile)
+
+If your app has more than one process (web + worker + database, etc.), run them
+with a `Procfile` via `swe-run` instead of starting each by hand:
+
+```
+web: node server.js
+db: postgres -D ./pgdata -p $PORT_DB -k /tmp
+```
+
+```bash
+swe-run
+```
+
+`swe-run` gives the **primary** service (`web`, or the first line) your session
+`PORT`, so it shows in this Preview panel automatically; every other service
+gets its own collision-free port published as `$PORT_<NAME>` for siblings to
+reach on `localhost`. Services are ordinary children of the session, so they are
+torn down cleanly when the session ends -- no Docker, no leaks. See
+`.swe-swe/docs/multi-service.md` for the full guide.
+
 ## Navigation
 
 The preview has a toolbar with these controls:

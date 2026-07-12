@@ -30,6 +30,7 @@ func TestDumpContainerTemplatesNoRootWrapper(t *testing.T) {
 		".swe-swe/docs/app-preview.md",
 		".swe-swe/docs/browser-automation.md",
 		".swe-swe/docs/docker.md",
+		".swe-swe/docs/multi-service.md",
 	} {
 		if _, err := os.Stat(filepath.Join(destDir, want)); err != nil {
 			t.Errorf("expected %s at destDir root: %v", want, err)

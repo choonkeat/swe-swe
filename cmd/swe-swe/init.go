@@ -1233,6 +1233,10 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	// Always include app-preview.md since split-pane UI is always available
 	containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/app-preview.md")
 
+	// Always include multi-service.md: the Procfile runner (swe-run) is the
+	// docker-free multi-service path and is available in every session.
+	containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/multi-service.md")
+
 	// Print selected agents
 	if len(config.Agents) > 0 {
 		fmt.Printf("Selected agents: %s\n", strings.Join(config.Agents, ", "))
@@ -1488,6 +1492,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		"templates/container/.swe-swe/docs/AGENTS.md",
 		"templates/container/.swe-swe/docs/browser-automation.md",
 		"templates/container/.swe-swe/docs/app-preview.md",
+		"templates/container/.swe-swe/docs/multi-service.md",
 	}
 	if config.WithDocker {
 		allContainerTemplates = append(allContainerTemplates, "templates/container/.swe-swe/docs/docker.md")
