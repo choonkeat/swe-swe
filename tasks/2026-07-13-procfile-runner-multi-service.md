@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: IN PROGRESS - Phase 1 complete (parse + ports + env model, unit-tested)
+- Status: IN PROGRESS - Phases 1 & 2 complete (model + supervisor runtime; live teardown/leak-fix proven)
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
@@ -252,17 +252,20 @@ template/docs change touching `cmd/swe-swe/templates` run
       precedence from 4.5, `PORT` + `PORT_<NAME>` injection, runner-ports-win.
       Table tests including `.env`/`.swe-swe/env` merge and PORT-always-wins.
 
-### Phase 2 - Supervisor runtime
-- 2.1 Launch services via `sh -c`, `Setpgid`, captured pipes.
-- 2.2 Log multiplexer with aligned `name |` prefixes (+ NO_COLOR honoring).
-      Test with fake fast-exiting commands asserting prefixed, interleaved-safe
-      output (line-buffered, no torn lines).
-- 2.3 Signal handling + teardown: SIGTERM-grace-SIGKILL to all groups; any exit
-      triggers shutdown-all; correct aggregate exit code. Test with a script
-      harness (spawn sleepers, send SIGTERM, assert all reaped within grace;
-      spawn one that exits, assert the rest are torn down).
-- 2.4 CLI: `swe-run [-f Procfile] [-primary NAME]`, reads base `PORT` from env,
-      prints the assigned port table on startup.
+### Phase 2 - Supervisor runtime -- DONE
+- [x] 2.1 Launch via `sh -c`, `Setpgid`, captured pipes (supervisor.go). Each
+      proc goroutine drains both pipes to EOF before `cmd.Wait` (StdoutPipe
+      contract); child exit status always logged (name/pid/code).
+- [x] 2.2 Log multiplexer: aligned `name | ` prefixes, per-service ANSI color,
+      NO_COLOR honored, mutex-guarded no-torn-lines (concurrency test).
+- [x] 2.3 Signal->ctx teardown: SIGTERM to every group, grace, SIGKILL
+      survivors; one-exits-all with correct aggregate exit code. Tests:
+      OneExitsAll, ContextCancel, SigkillEscalation (TERM-ignoring proc),
+      StartFailure. `go test -race` clean.
+- [x] 2.4 CLI `swe-run [-f Procfile] [-primary NAME]`: reads base PORT (fallback
+      5000), prints port table, wires SIGINT/SIGTERM to ctx cancel.
+- [x] LIVE: 3-svc discovery verified; SIGINT teardown leaves ZERO leaked
+      descendants (the headline leak-fix).
 
 ### Phase 3 - Packaging + install
 - 3.1 Build `swe-run` into the image; install to `~/.swe-swe/bin/swe-run`
