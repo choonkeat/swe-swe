@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: IN PROGRESS - Phases 1-3 complete (model + runtime + packaging; make test green)
+- Status: IN PROGRESS - Phases 1-4 complete (model + runtime + packaging + docs); Phase 5 live e2e pending
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
@@ -278,17 +278,19 @@ template/docs change touching `cmd/swe-swe/templates` run
 - [x] 3.2 `make build golden-update`: golden diff = only swe-run/* + Dockerfile
       (+7 lines). Full `make test` green.
 
-### Phase 4 - Docs
-- 4.1 Rewrite container `.swe-swe/docs/docker.md`: lead users to Procfile;
-      keep docker section but add the host-root callout + "prefer Procfile".
-- 4.2 New/updated `docs/multi-service.md` (reconcile with the vhost-branch copy
-      when merged): Procfile quickstart, discovery contract (localhost +
-      `PORT_<NAME>`), `.env`/`.swe-swe/env`, daemon cheat sheet, teardown
-      guarantee, and the vhost preview / cookie cross-link.
-- 4.3 Container `.swe-swe/docs/app-preview.md`: add "run services with a
-      Procfile via `swe-run`" pointer.
-- 4.4 CHANGELOG entry.
-- 4.5 Reverse the "no mini compose runtime" line wherever it appears.
+### Phase 4 - Docs -- DONE
+- [x] 4.1 docker.md rewritten: leads with Procfile/swe-run; host-root-equivalent
+      socket callout (ADR-0013) + leak warning; docker CLI section gated.
+- [x] 4.2 `docs/multi-service.md` (new) + container copy: quickstart, port
+      assignment, discovery (localhost + `PORT_<NAME>`), `.env`/`.swe-swe/env`
+      precedence, daemon cheat sheet, teardown guarantee, preview/cookie link.
+- [x] 4.3 app-preview.md: added "Multiple services (Procfile)" pointer.
+- [x] 4.4 CHANGELOG: `## Unreleased` swe-run bullet (version bump deferred to user).
+- [x] 4.5 "no mini compose runtime" line appears ONLY in task files on this
+      branch (live line is on the unmerged vhost branch); new docs assert
+      swe-swe DOES ship a supervisor, superseding it. Merge-time reconcile noted.
+- [x] init.go: multi-service.md added to both container-doc allowlists; golden
+      regenerated; container_templates_test asserts it.
 
 ### Phase 5 - Verification
 - 5.1 `make test` green (unit).
