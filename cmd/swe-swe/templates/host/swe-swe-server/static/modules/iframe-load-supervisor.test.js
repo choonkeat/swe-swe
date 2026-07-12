@@ -163,17 +163,19 @@ test('error event triggers an immediate retry (scheduled by backoff)', () => {
 test('successful load after retries resets backoff to the floor', () => {
     const { sup, iframe, clock } = makeSup();
     sup.start();
-    // Two failed rounds -> backoff would be at 4s next.
+    // Two failed rounds -> backoff would otherwise be at 4s next.
     clock.tick(WATCHDOG_TIMEOUT + 1000);  // retry 1 (1s)
     clock.tick(WATCHDOG_TIMEOUT + 2000);  // retry 2 (2s)
     assert.strictEqual(iframe.srcHistory.length, 3);
-    iframe.fire('load');                  // success -> reset
+    iframe.fire('load');                  // success -> backoff reset to floor
     assert.strictEqual(sup.loaded, true);
-    // A later kick (see below) or fresh failure should start again at 1s.
-    sup.loaded = false;                   // simulate a subsequent drop
-    clock.tick(WATCHDOG_TIMEOUT);
-    clock.tick(1000);                     // floor delay, not 4s
-    assert.strictEqual(iframe.srcHistory.length, 4);
+    // A subsequent drop is re-detected via the error event; the retry must use
+    // the 1s floor again, not the grown 4s delay.
+    iframe.fire('error');
+    clock.tick(999);
+    assert.strictEqual(iframe.srcHistory.length, 3, 'no reload before the 1s floor');
+    clock.tick(1);
+    assert.strictEqual(iframe.srcHistory.length, 4, 'reload at the 1s floor');
 });
 
 // --- kick (focus / visibility) ----------------------------------------------
@@ -218,6 +220,32 @@ test('stop() clears the watchdog and detaches listeners', () => {
     assert.strictEqual(iframe.listenerCount('error'), 0);
     clock.tick(60000);
     assert.strictEqual(iframe.srcHistory.length, 1); // no retry after stop
+});
+
+test('default timers (no injection) drive a real attempt without throwing', async () => {
+    // Regression guard: with no injected `timers`, start() must run _attempt()
+    // using the module's default timers. (In the browser the bare-global form
+    // threw "Illegal invocation"; here we assert the default path actually
+    // schedules and assigns src.) Uses real timers, so keep it tiny.
+    const iframe = makeIframe();
+    let overlay = null;
+    const sup = new IframeLoadSupervisor({
+        iframe,
+        url: 'https://files.example/',
+        onOverlay: (s) => { overlay = s; },
+        watchdog: 20,
+        baseDelay: 10,
+        maxDelay: 20,
+    });
+    assert.doesNotThrow(() => sup.start());
+    assert.strictEqual(sup._everAttempted, true);
+    assert.strictEqual(iframe.srcHistory[0], 'https://files.example/');
+    assert.strictEqual(overlay, 'connecting');
+    // Let the real watchdog fire once -> a cache-busted retry is scheduled.
+    await new Promise((r) => setTimeout(r, 60));
+    sup.stop();
+    assert.ok(iframe.srcHistory.length >= 2, 'watchdog produced a retry');
+    assert.match(iframe.srcHistory[1], /_r=\d+/);
 });
 
 test('start() is idempotent for listeners (no double-attach on re-start)', () => {

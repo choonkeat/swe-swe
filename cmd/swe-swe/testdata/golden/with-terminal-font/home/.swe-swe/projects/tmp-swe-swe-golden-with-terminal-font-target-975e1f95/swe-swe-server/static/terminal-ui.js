@@ -8,6 +8,7 @@ import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCount
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
+import { IframeLoadSupervisor } from './modules/iframe-load-supervisor.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
 // Strip CSI 3J (\x1b[3J = clear scrollback buffer) from a Uint8Array.
@@ -246,6 +247,11 @@ class TerminalUI extends HTMLElement {
         this.connectedAt = null;
         this.reconnectState = createReconnectState();
         this.reconnectTimeout = null;
+        // Per-pane iframe load supervisors (files/shell/browser). Each watches
+        // its iframe's initial navigation and retries a dropped load -- an
+        // <iframe> never auto-retries, so a lost first GET otherwise leaves the
+        // pane stuck on "Connecting..." until a manual page reload.
+        this._iframeSupervisors = {};
         this.countdownInterval = null;
         this.uptimeInterval = null;
         this.heartbeatInterval = null;
@@ -525,6 +531,15 @@ class TerminalUI extends HTMLElement {
             window.visualViewport.removeEventListener('resize', this._viewportHandler);
             window.visualViewport.removeEventListener('scroll', this._viewportHandler);
         }
+        // Stop iframe load supervisors + their focus/visibility kick listeners.
+        if (this._visibilityHandler) {
+            document.removeEventListener('visibilitychange', this._visibilityHandler);
+        }
+        if (this._windowFocusHandler) {
+            window.removeEventListener('focus', this._windowFocusHandler);
+        }
+        Object.values(this._iframeSupervisors || {}).forEach((sup) => sup.stop());
+        this._iframeSupervisors = {};
         if (this.term) {
             this.term.dispose();
         }
@@ -4681,6 +4696,17 @@ class TerminalUI extends HTMLElement {
         // Header and navigation event handlers
         this.setupHeaderEventListeners();
 
+        // Re-load a dropped iframe pane when the user returns to the tab/window.
+        // A backgrounded mobile tab often has its iframe connection reaped; on
+        // becoming visible again we kick the active supervisors (no-op if already
+        // loaded) so the pane recovers near-instantly instead of staying stuck.
+        this._visibilityHandler = () => {
+            if (document.visibilityState === 'visible') this._kickVisibleSupervisors();
+        };
+        document.addEventListener('visibilitychange', this._visibilityHandler);
+        this._windowFocusHandler = () => this._kickVisibleSupervisors();
+        window.addEventListener('focus', this._windowFocusHandler);
+
         // Listen for messages from iframes
         window.addEventListener('message', (e) => {
             // When shell in right panel exits, show Preview instead of closing the panel
@@ -5267,6 +5293,9 @@ class TerminalUI extends HTMLElement {
         }
         this.applyPreset();
         this._loadPaneIfNeeded(paneId);
+        // If the pane was loaded before but its iframe is stuck, re-selecting it
+        // is an explicit "show me this now" -- kick an instant retry.
+        this._kickPaneSupervisor(paneId);
     }
 
     // Add a pane as a new tab in a slot. If the pane already lives in another
@@ -5298,7 +5327,10 @@ class TerminalUI extends HTMLElement {
             saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot, sizesByPreset: this.sizesByPreset });
         }
         this.applyPreset();
-        if (target.active === paneId) this._loadPaneIfNeeded(paneId);
+        if (target.active === paneId) {
+            this._loadPaneIfNeeded(paneId);
+            this._kickPaneSupervisor(paneId);
+        }
     }
 
     // Remove a tab from a slot (x button on the tab). Pane becomes unassigned
@@ -6575,21 +6607,63 @@ class TerminalUI extends HTMLElement {
         }
 
         const iframe = this._iframeFor(pane);
-        const placeholder = this._placeholderFor(pane);
         if (!iframe) return;
 
-        // State-preservation: skip reload if iframe already at this exact URL.
-        if (iframe.getAttribute('src') === url) return;
+        // State-preservation: skip if a supervisor is already driving this exact
+        // URL (a tab switch re-entering here must not reload / reset state). The
+        // supervisor cache-busts on retry, so compare the logical url we were
+        // asked to load, not the iframe's (possibly ?_r=-suffixed) src.
+        const existing = this._iframeSupervisors[pane];
+        if (existing && existing.url === url) return;
+        if (existing) existing.stop();
 
-        if (placeholder) {
-            placeholder.classList.remove('hidden');
+        // Hand the iframe to a load supervisor: it assigns the src, arms a load
+        // watchdog, and retries a dropped navigation with capped backoff (and
+        // on focus/visibility via kick()). Overlay text mirrors its state.
+        const sup = new IframeLoadSupervisor({
+            iframe,
+            url,
+            onOverlay: (state) => this._setPaneOverlay(pane, state),
+        });
+        this._iframeSupervisors[pane] = sup;
+        sup.start();
+    }
+
+    // Reflect an IframeLoadSupervisor state onto a pane's placeholder overlay.
+    // 'loaded' hides it; 'connecting'/'reconnecting' show it, swapping in
+    // "Reconnecting..." during retries and restoring the pane's default text
+    // (captured once) on the first/normal connecting state.
+    _setPaneOverlay(pane, state) {
+        const placeholder = this._placeholderFor(pane);
+        if (!placeholder) return;
+        if (state === 'loaded') {
+            placeholder.classList.add('hidden');
+            return;
         }
+        placeholder.classList.remove('hidden');
+        const textEl = placeholder.querySelector('.terminal-ui__iframe-placeholder-text');
+        if (!textEl) return;
+        if (textEl.dataset.defaultText === undefined) {
+            textEl.dataset.defaultText = textEl.textContent;
+        }
+        textEl.textContent = state === 'reconnecting' ? 'Reconnecting...' : textEl.dataset.defaultText;
+    }
 
-        iframe.onload = () => {
-            if (placeholder) placeholder.classList.add('hidden');
-        };
+    // Kick the supervisor for a pane (immediate retry, backoff reset) if one
+    // exists and its iframe isn't loaded. Called on pane-activate.
+    _kickPaneSupervisor(pane) {
+        const sup = this._iframeSupervisors[pane];
+        if (sup) sup.kick();
+    }
 
-        iframe.src = url;
+    // Kick the currently-visible (active) pane in every slot. Wired to window
+    // focus / document visibilitychange so a returning user whose Files/Terminal
+    // /Agent-View iframe was dropped while backgrounded re-loads near-instantly
+    // instead of waiting out the backoff. kick() is a no-op once the pane loaded.
+    _kickVisibleSupervisors() {
+        for (const state of Object.values(this.activeBySlot || {})) {
+            if (state && state.active) this._kickPaneSupervisor(state.active);
+        }
     }
 
     /**

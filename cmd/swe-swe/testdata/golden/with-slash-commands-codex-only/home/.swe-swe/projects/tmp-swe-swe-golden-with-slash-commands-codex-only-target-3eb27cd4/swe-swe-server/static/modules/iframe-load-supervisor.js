@@ -66,7 +66,17 @@ export class IframeLoadSupervisor {
         this.iframe = iframe;
         this.url = url;
         this.onOverlay = onOverlay || (() => {});
-        this.timers = timers || { setTimeout, clearTimeout };
+        // Wrap the global timers in arrows rather than passing bare references:
+        // in the browser, window.setTimeout/clearTimeout are WebIDL methods that
+        // throw "Illegal invocation" if invoked with a receiver other than
+        // window -- and `this.timers.setTimeout(...)` sets the receiver to the
+        // timers object. Calling the globals directly inside the arrow keeps the
+        // correct binding. (Node has no such check, so injected-clock tests can't
+        // surface this -- it only shows up in a real browser.)
+        this.timers = timers || {
+            setTimeout: (fn, ms) => setTimeout(fn, ms),
+            clearTimeout: (id) => clearTimeout(id),
+        };
         this.watchdog = watchdog ?? WATCHDOG_TIMEOUT;
         this.backoff = createReconnectState({
             baseDelay: baseDelay ?? SUPERVISOR_BASE_DELAY,

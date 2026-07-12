@@ -222,6 +222,32 @@ test('stop() clears the watchdog and detaches listeners', () => {
     assert.strictEqual(iframe.srcHistory.length, 1); // no retry after stop
 });
 
+test('default timers (no injection) drive a real attempt without throwing', async () => {
+    // Regression guard: with no injected `timers`, start() must run _attempt()
+    // using the module's default timers. (In the browser the bare-global form
+    // threw "Illegal invocation"; here we assert the default path actually
+    // schedules and assigns src.) Uses real timers, so keep it tiny.
+    const iframe = makeIframe();
+    let overlay = null;
+    const sup = new IframeLoadSupervisor({
+        iframe,
+        url: 'https://files.example/',
+        onOverlay: (s) => { overlay = s; },
+        watchdog: 20,
+        baseDelay: 10,
+        maxDelay: 20,
+    });
+    assert.doesNotThrow(() => sup.start());
+    assert.strictEqual(sup._everAttempted, true);
+    assert.strictEqual(iframe.srcHistory[0], 'https://files.example/');
+    assert.strictEqual(overlay, 'connecting');
+    // Let the real watchdog fire once -> a cache-busted retry is scheduled.
+    await new Promise((r) => setTimeout(r, 60));
+    sup.stop();
+    assert.ok(iframe.srcHistory.length >= 2, 'watchdog produced a retry');
+    assert.match(iframe.srcHistory[1], /_r=\d+/);
+});
+
 test('start() is idempotent for listeners (no double-attach on re-start)', () => {
     const { sup, iframe } = makeSup();
     sup.start();
