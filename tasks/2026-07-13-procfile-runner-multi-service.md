@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: COMPLETE - all 5 phases done; live in-image e2e passed (one vhost-dependent browser check deferred per spec 4.9)
+- Status: COMPLETE - phases 1-5 done + merged to main (no-ff); live in-image e2e passed (one vhost-dependent browser check deferred per spec 4.9). Phase 6 (/swe-swe:procfile command) also shipped (commit 8c5faa8fc).
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
