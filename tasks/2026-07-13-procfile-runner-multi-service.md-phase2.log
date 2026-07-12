@@ -1,0 +1,2 @@
+021003 PHASE 2 - Supervisor runtime (TDD)
+021003 STEP 2.2 log multiplexer (servicePrefix, colorFor, streamLines): writing tests FIRST. EXPECT RED (undefined symbols).
