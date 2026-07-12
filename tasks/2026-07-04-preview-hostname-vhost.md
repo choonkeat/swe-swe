@@ -153,7 +153,7 @@ surface first (how `noInject`, `pathPrefix`, `scriptTag` reach the handler)
 and follow that pattern; names below are contracts, adapt placement to the
 codebase's idiom.
 
-- [ ] 1.1 RED: add `proxy_hooks_test.go` with failing tests:
+- [x] 1.1 RED: add `proxy_hooks_test.go` with failing tests:
   - `TestResolveTargetPerRequest`: proxy configured with
     `ResolveTarget func(inboundHost string) (target *url.URL, upstreamHost string, ok bool)`;
     request with `Host: app1-5000.x.sslip.io:23000` reaches a second backend
@@ -168,13 +168,13 @@ codebase's idiom.
     `Domain=.x.sslip.io`; empty-Domain cookies untouched except today's
     behavior; nil hook -> today's strip.
   Log RED (expected failures observed) before proceeding.
-- [ ] 1.2 GREEN: implement both hooks. `ResolveTarget` consulted where the
+- [x] 1.2 GREEN: implement both hooks. `ResolveTarget` consulted where the
   outbound request is built (the `outReq.Host = target.Host` site);
   `CookieDomainRewrite` in `processProxyResponse`'s Set-Cookie loop
   (replace the unconditional `cookie.Domain = ""` with: rewrite if hook
   returns non-empty, else strip). Secure-flag and pathPrefix cookie handling
   unchanged. `go test ./...` green.
-- [ ] 1.3 Release: merge branch to main, `git tag v0.2.10`, push main +
+- [x] 1.3 Release: merge branch to main, `git tag v0.2.10`, push main +
   tags. Verify `go list -m github.com/choonkeat/agent-reverse-proxy@v0.2.10`
   resolves (from any module dir). Log expected/got.
 
