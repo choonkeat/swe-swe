@@ -122,6 +122,14 @@ test.describe('dockerless live tabs', () => {
     const url = new URL(BASE_URL);
     const filesUrl = `${url.protocol}//${url.hostname}:${filesProxyPort}/`;
 
+    // md-serve is launched lazily via npx, so the filesProxyPort can be known
+    // (the proxy is listening) before md-serve itself answers. Poll until the
+    // proxy yields a 200 from md-serve before asserting theme behavior.
+    await expect.poll(async () => {
+      const r = await page.request.get(filesUrl, { headers: { Cookie: 'swe-swe-theme=dark' } });
+      return r.status();
+    }, { timeout: 30_000, intervals: [500, 1000, 2000] }).toBe(200);
+
     // dark cookie -> dark stylesheet pinned, light absent.
     const dark = await page.request.get(filesUrl, { headers: { Cookie: 'swe-swe-theme=dark' } });
     expect(dark.ok()).toBeTruthy();
