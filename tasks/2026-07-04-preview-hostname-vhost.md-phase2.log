@@ -1,3 +1,4 @@
 024058 Phase 2.1: bumped agent-reverse-proxy v0.2.9 -> v0.2.10 in swe-swe-server template go.mod.txt + go.sum.txt. Root go.mod does NOT reference arp (nothing to bump there).
   Verified: 'make check-gomod-sync' -> "go.mod.txt in sync with go.mod". 'make test-server' -> PASS (server builds+tests against v0.2.10).
 031616 Phase 2.2 RED: adding preview_vhost_test.go (TestParsePreviewLabel + TestResolvePreviewVhost table-driven). Expect build FAIL: parsePreviewLabel/resolvePreviewVhost/vhostPin undefined. (Cookie-hook API decision still pending user; grammar work is independent.)
+031659 RED_OBS build failed as expected: undefined parsePreviewLabel/resolvePreviewVhost/vhostPin; unknown Session fields VhostPin/PreviewReachLabel. RED confirmed. -> 2.3 GREEN.
