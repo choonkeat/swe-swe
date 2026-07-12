@@ -153,7 +153,7 @@ surface first (how `noInject`, `pathPrefix`, `scriptTag` reach the handler)
 and follow that pattern; names below are contracts, adapt placement to the
 codebase's idiom.
 
-- [ ] 1.1 RED: add `proxy_hooks_test.go` with failing tests:
+- [x] 1.1 RED: add `proxy_hooks_test.go` with failing tests:
   - `TestResolveTargetPerRequest`: proxy configured with
     `ResolveTarget func(inboundHost string) (target *url.URL, upstreamHost string, ok bool)`;
     request with `Host: app1-5000.x.sslip.io:23000` reaches a second backend
@@ -168,13 +168,13 @@ codebase's idiom.
     `Domain=.x.sslip.io`; empty-Domain cookies untouched except today's
     behavior; nil hook -> today's strip.
   Log RED (expected failures observed) before proceeding.
-- [ ] 1.2 GREEN: implement both hooks. `ResolveTarget` consulted where the
+- [x] 1.2 GREEN: implement both hooks. `ResolveTarget` consulted where the
   outbound request is built (the `outReq.Host = target.Host` site);
   `CookieDomainRewrite` in `processProxyResponse`'s Set-Cookie loop
   (replace the unconditional `cookie.Domain = ""` with: rewrite if hook
   returns non-empty, else strip). Secure-flag and pathPrefix cookie handling
   unchanged. `go test ./...` green.
-- [ ] 1.3 Release: merge branch to main, `git tag v0.2.10`, push main +
+- [x] 1.3 Release: merge branch to main, `git tag v0.2.10`, push main +
   tags. Verify `go list -m github.com/choonkeat/agent-reverse-proxy@v0.2.10`
   resolves (from any module dir). Log expected/got.
 
@@ -182,10 +182,10 @@ codebase's idiom.
 
 All in `cmd/swe-swe/templates/host/swe-swe-server/` unless stated.
 
-- [ ] 2.1 Bump dependency BOTH places: root `/workspace/go.mod` (if it lists
+- [x] 2.1 Bump dependency BOTH places: root `/workspace/go.mod` (if it lists
   agent-reverse-proxy) and template `go.mod.txt` + `go.sum.txt` to v0.2.10.
   `make test` must pass `check-gomod-sync`. Commit.
-- [ ] 2.2 RED: new `preview_vhost_test.go`, table-driven:
+- [x] 2.2 RED: new `preview_vhost_test.go`, table-driven:
   - `TestParsePreviewLabel`: `app1-5000` -> (app1, 5000); `my-app-5000` ->
     (my-app, 5000); `3001` -> ("", 3001); `app1` -> (app1, 0); `probe-x` ->
     (probe-x, 0); invalid (`-foo`, `foo-`, uppercase, 70 chars, port 80,
@@ -194,7 +194,7 @@ All in `cmd/swe-swe/templates/host/swe-swe-server/` unless stated.
     including pin fallback (rule 4 + pin set -> pinned target and Host) and
     "label equals reach first label" guard.
   Log RED.
-- [ ] 2.3 GREEN: new `preview_vhost.go`: `parsePreviewLabel`,
+- [x] 2.3 GREEN: new `preview_vhost.go`: `parsePreviewLabel`,
   `resolvePreviewVhost(label string, s *Session) (port int, upstreamHost string, ok bool)`,
   suffix from `SWE_PREVIEW_VHOST_SUFFIX` default `lvh.me`. Wire into the
   per-session listener construction (where the preview proxy handler is
@@ -205,20 +205,20 @@ All in `cmd/swe-swe/templates/host/swe-swe-server/` unless stated.
   `.{suffix}`/`{suffix}` -> `.{reachSuffixOfInboundHost}` (derive from the
   inbound Host minus its leftmost label); anything else -> "" (strip).
   `make test` green.
-- [ ] 2.4 RED then GREEN: pin endpoint. Test: POST
+- [x] 2.4 RED then GREEN: pin endpoint. Test: POST
   `/__agent-reverse-proxy-debug__/vhost-pin` `{"name":"app1","port":5000}`
   on the session listener -> subsequent label-less request proxies to :5000
   with `Host: app1.lvh.me:5000`; GET returns current pin; DELETE clears;
   invalid port/name -> 400; pin cleared on session end. Reuse the auth
   gating pattern of existing per-port proxy debug routes (see ADR-0043 /
   per-port proxy auth wrap tests in `proxy_listener_test.go`).
-- [ ] 2.5 RED then GREEN: status payload. `buildStatusPayload` gains
+- [x] 2.5 RED then GREEN: status payload. `buildStatusPayload` gains
   `previewVhostSuffix` and ordered `previewReachCandidates` per Design
   (explicit env first; derive lvh.me/sslip.io/window-host variants server
   side from the request's Host where derivable, else send the building
   blocks: `["lvh.me"?, "<ip>.sslip.io"?, "<request-host>"]`). Extend the
   existing buildStatusPayload test.
-- [ ] 2.6 `make build golden-update`; review golden diff (expect init.json /
+- [x] 2.6 `make build golden-update`; review golden diff (expect init.json /
   compose only if envs surfaced there -- otherwise none); commit phase.
 
 ## Phase 3 -- frontend: logical<->reachable translation + probe + modes
@@ -227,16 +227,16 @@ Files: `static/modules/url-builder.js` (+ its `.test.js`, run the same way
 existing url-builder tests run -- check `Makefile`/`package.json` for the
 node test invocation), `static/terminal-ui.js`.
 
-- [ ] 3.1 RED: url-builder tests for pure functions:
+- [x] 3.1 RED: url-builder tests for pure functions:
   - `logicalToVhostLabel('app1.lvh.me:5000', 'lvh.me')` -> `app1-5000`;
     no port -> `app1`; nested `a.b.lvh.me` -> reject (flat labels only,
     v1); non-suffix host -> null.
   - `buildVhostPreviewUrl(label, reach, proxyPort, protocol)` ->
     `http://app1-5000.reach:23000`.
   - `parseLogicalInput(raw, suffix)` handling `app1.lvh.me:5000/path?q#h`.
-- [ ] 3.2 GREEN: implement in url-builder.js (exported, same module style
+- [x] 3.2 GREEN: implement in url-builder.js (exported, same module style
   as `buildSubdomainPreviewUrl`).
-- [ ] 3.3 terminal-ui.js wiring (behavior-test what the harness allows;
+- [x] 3.3 terminal-ui.js wiring (behavior-test what the harness allows;
   otherwise cover via Phase 4 e2e and say so in the log):
   - `setPreviewURL()`: hosts matching `*.{previewVhostSuffix}` (and bare
     suffix) are IN-IFRAME targets, localhost/127.0.0.1 unchanged, all else
@@ -253,7 +253,7 @@ node test invocation), `static/terminal-ui.js`.
     element next to `.terminal-ui__iframe-url-bar`.
   - `updateUrlBarPrefix()`: show active logical host:port (falls back to
     `localhost:{previewPort}`).
-- [ ] 3.4 `make build golden-update`; golden diff review; commit phase.
+- [x] 3.4 `make build golden-update`; golden diff review; commit phase.
 
 ## Phase 4 -- e2e (acceptance) + browser-MCP verification
 
@@ -266,17 +266,17 @@ browser-backend chromium is the REMOTE-browser stand-in: it must NOT get
 lvh.me loopback-remapped to itself for these tests -- use the sslip.io/real
 hostname path).
 
-- [ ] 4.1 Wildcard mode: navigate `app1-3000.<reach>:<proxyPort>` and
+- [~] 4.1 Wildcard mode: navigate `app1-3000.<reach>:<proxyPort>` and
   `app1-5000.<reach>:<proxyPort>`; assert bodies show
   `app1.lvh.me:3000` / `app1.lvh.me:5000` respectively (distinct origins,
   same listener port).
-- [ ] 4.2 Cookie rewrite: hit `/set-cookie` on the 5000 origin; assert the
+- [~] 4.2 Cookie rewrite: hit `/set-cookie` on the 5000 origin; assert the
   browser stores it scoped to `.<reach>` and sends it to the 3000 origin.
-- [ ] 4.3 Pinned mode: force reach candidates unresolvable (env override to
+- [~] 4.3 Pinned mode: force reach candidates unresolvable (env override to
   a garbage domain); assert probe falls back, `app1.lvh.me:5000` renders
   via pin on the bare origin, switching to `app1.lvh.me:3000` swaps the
   target, and the mode indicator says pinned.
-- [ ] 4.4 Regression: plain `localhost:{port}` preview flow unchanged
+- [~] 4.4 Regression: plain `localhost:{port}` preview flow unchanged
   (existing e2e stays green); `make test` fully green.
 - [ ] 4.5 Browser-MCP manual verification list (use swe-swe-playwright /
   swe-swe-preview MCP tools; log expected/got for each):
@@ -287,12 +287,12 @@ hostname path).
 
 ## Phase 5 -- docs
 
-- [ ] 5.1 `docs/adr/0045-preview-host-demux.md`: two-hostname model, label
+- [x] 5.1 `docs/adr/0045-preview-host-demux.md`: two-hostname model, label
   grammar, reach probe + pinned mode, relationship to ADR-025/028/032/033
   and d5266dfb4; why pass-through and Domain-strip/preserve are wrong.
-- [ ] 5.2 `docs/configuration.md`: `SWE_PREVIEW_VHOST_SUFFIX`,
+- [x] 5.2 `docs/configuration.md`: `SWE_PREVIEW_VHOST_SUFFIX`,
   `SWE_PREVIEW_REACH_DOMAIN`. `CHANGELOG.md` entry. ASCII check.
-- [ ] 5.3 Docker-free multi-service guide (new `docs/multi-service.md` or a
+- [x] 5.3 Docker-free multi-service guide (new `docs/multi-service.md` or a
   section in the preview docs + container-facing
   `templates/container/.swe-swe/docs/app-preview.md`): running several
   services as plain processes (process-compose / foreman / backgrounded),
@@ -348,3 +348,33 @@ real in-container daemon with no host socket. Outcome: an ADR picking one
 ## Progress log
 (execute-step-by-step updates checkboxes above and phase .log files;
 summarize per-phase commits here as they land)
+
+- **Phase 1 DONE** (agent-reverse-proxy, cross-repo): `ResolveTarget` +
+  `CookieDomainRewrite` per-request hooks. Released v0.2.10, then amended
+  `CookieDomainRewrite(inboundHost, domain)` and released **v0.2.11** (reach is
+  per-request; user approved). Full `go test ./...` green.
+- **Phase 2 DONE**: dep bump to v0.2.11; `preview_vhost.go` grammar
+  (`parsePreviewLabel` + `resolvePreviewVhost`, rules 1-4 + pin precedence +
+  reach-label guard); hooks wired into the port-based listener; `vhost-pin`
+  endpoint (auth-gated, sess.mu-guarded, cleared on session end); status payload
+  `previewVhostSuffix` + `previewReachCandidates`. Go tests + `make test` green;
+  golden regenerated.
+- **Phase 3 DONE (impl)**: `url-builder.js` `logicalToVhostLabel` /
+  `buildVhostPreviewUrl` / `parseLogicalInput` (12 unit tests); `terminal-ui.js`
+  reach probe (`/__probe__`) + wildcard/pinned routing + mode indicator + URL
+  bar; CSS. Behavior verified at server level (Phase 4) + pending live browser.
+- **Phase 4 backend DONE (deterministic)**: `preview_vhost_integration_test.go`
+  drives the full listener chain (corsWrapper -> requireAuthCookie ->
+  vhost-pin -> proxy hooks) -- wildcard demux + Host rewrite, cookie
+  reach-rewrite, pinned routing, `/__probe__` auth-exemption, 401 for unauth.
+  Playwright `e2e/tests/preview-vhost.spec.js` written (guarded on
+  `E2E_VHOST_REACH`). REMAINING: live browser e2e (needs image rebuild + fixture
+  wiring in e2e-up.sh) and 4.5 browser-MCP -- deferred pending user; plus the
+  **wildcard+password auth-cookie** decision (option B documented; option A =
+  reach-scoped cookie is the follow-up fix).
+- **Phase 5 DONE**: ADR-0045, configuration.md envs, docs/multi-service.md,
+  container app-preview.md section, CHANGELOG. ascii-check + make test green.
+- **Phase 6 DEFERRED** to a follow-up task (named routes endpoint, MCP
+  `preview_register_route`/`preview_list_routes`, URL-bar datalist,
+  `.swe-swe/services.yml`) -- self-contained; docs already flag it as follow-up.
+  The grammar reserves rule 3's route-lookup slot for it.

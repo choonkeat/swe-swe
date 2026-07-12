@@ -1,0 +1,1 @@
+053155 Phase 5 docs COMPLETE: ADR-0045 (docs/adr/0045-preview-host-demux.md); configuration.md +SWE_PREVIEW_VHOST_SUFFIX/+SWE_PREVIEW_REACH_DOMAIN; docs/multi-service.md (docker-free guide) + container app-preview.md multi-service section; CHANGELOG Unreleased entry. make ascii-check PASS; make test GREEN; golden = only app-preview.md variants.

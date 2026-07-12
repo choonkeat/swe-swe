@@ -569,6 +569,14 @@ type Session struct {
 	SessionMode     string             // "terminal" or "chat"
 	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
 	AgentSessionID  string             // agent-side conversation id (e.g. Claude .jsonl stem); captured at spawn for /api/fork
+	// Preview vhost host-demux state (see preview_vhost.go / ADR-0045).
+	// VhostPin is the degraded (pinned) mode target: when the browser cannot
+	// reach wildcard subdomains, label-less requests route here. Guarded by mu.
+	VhostPin *vhostPin
+	// PreviewReachLabel is the first DNS label of the reach domain this session
+	// is served under (e.g. the machine's own hostname first label). A leftmost
+	// label equal to it is treated as the reach itself, not a vhost prefix.
+	PreviewReachLabel string
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
 	PreviewProxy         *agentproxy.Proxy // Per-session preview proxy instance
 	SessionMux           http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
@@ -979,6 +987,11 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"browserStarted":     s.BrowserStarted,
 		"agentViewAvailable": agentViewAvailable(),
 		"publicHostname":     getLiveTunnelHostname(),
+		// Preview host-demux (ADR-0045): the logical vhost suffix rewritten onto
+		// upstream Hosts, and the ordered reach-domain candidates the frontend
+		// probes to pick wildcard vs pinned mode.
+		"previewVhostSuffix":     previewVhostSuffix(),
+		"previewReachCandidates": previewReachCandidates(),
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
@@ -1190,6 +1203,8 @@ func (s *Session) Close() {
 	if s.PreviewProxyServer != nil {
 		s.PreviewProxyServer.Shutdown(shutdownCtx)
 	}
+	// Clear any preview vhost pin so a restart/resume starts unpinned.
+	s.clearVhostPin()
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
 	}
@@ -5254,6 +5269,9 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// Two instances share a DebugHub: path-based (with basePath prefix for URL
 	// rewriting) and port-based (empty basePath, no rewriting needed).
 	previewTarget := &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", previewPort)}
+	// Reach label guard source: if an admin configured SWE_PREVIEW_REACH_DOMAIN,
+	// its first label must not be treated as a vhost prefix (see preview_vhost.go).
+	sess.PreviewReachLabel = previewReachLabel()
 	sharedHub := agentproxy.NewDebugHub()
 	previewProxy, err := agentproxy.New(agentproxy.Config{
 		BasePath:    "/proxy/" + sess.UUID + "/preview",
@@ -5287,11 +5305,19 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		// Start per-port listeners for port-based proxy mode.
 		// Port-based proxy uses empty BasePath (no URL rewriting) and shares
 		// the same DebugHub so MCP tools and debug WebSockets work in both modes.
+		// Preview host-demux: the port-based listener is what browsers hit at
+		// <reach>:proxyPort, so it carries the vhost ResolveTarget +
+		// CookieDomainRewrite hooks (see preview_vhost.go / ADR-0045). The
+		// path-based previewProxy above stays same-origin and unhooked.
 		portPreviewProxy, _ := agentproxy.New(agentproxy.Config{
 			Target:      previewTarget,
 			ToolPrefix:  "preview",
 			ThemeCookie: "swe-swe-theme",
 			Hub:         sharedHub,
+			ResolveTarget: func(inboundHost string) (*url.URL, string, bool) {
+				return previewResolveTarget(inboundHost, sess)
+			},
+			CookieDomainRewrite: previewCookieDomainRewrite,
 		})
 		// Tunnel mode safety: tunneld dials the per-port listeners directly
 		// without Traefik's ForwardAuth in front. Wrap each per-port handler
@@ -5303,7 +5329,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		previewPP := previewProxyPort(previewPort)
 		previewSrv := &http.Server{
 			Addr:    fmt.Sprintf(":%d", previewPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, portPreviewProxy)),
+			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, previewVhostPinHandler(sess, portPreviewProxy))),
 		}
 		go func() {
 			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sess.UUID))

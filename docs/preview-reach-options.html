@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Preview reach options</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e2e2e2;
+    --head: #f4f6f8; --zebra: #fafbfc; --accent: #0057ff;
+    --good: #1a7f37; --bad: #b42318; --warn: #b25e00;
+    --chip-bg: #eef2f7; --chip-fg: #334;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa0a6; --line: #262a30;
+      --head: #171a1f; --zebra: #13161b; --accent: #6ea8ff;
+      --good: #4ac26b; --bad: #ff6b5e; --warn: #e0a54a;
+      --chip-bg: #1c2027; --chip-fg: #c7ccd3;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #e2e2e2;
+    --head: #f4f6f8; --zebra: #fafbfc; --accent: #0057ff;
+    --good: #1a7f37; --bad: #b42318; --warn: #b25e00;
+    --chip-bg: #eef2f7; --chip-fg: #334;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1115; --fg: #e6e6e6; --muted: #9aa0a6; --line: #262a30;
+    --head: #171a1f; --zebra: #13161b; --accent: #6ea8ff;
+    --good: #4ac26b; --bad: #ff6b5e; --warn: #e0a54a;
+    --chip-bg: #1c2027; --chip-fg: #c7ccd3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1.25rem 4rem; background: var(--bg); color: var(--fg);
+    font: 15px/1.55 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 .35rem; }
+  h2 { font-size: 1.15rem; margin: 2.2rem 0 .6rem; }
+  p.lead { color: var(--muted); margin: 0 0 1.4rem; max-width: 70ch; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; }
+  code { background: var(--chip-bg); color: var(--chip-fg); padding: .1em .35em; border-radius: 4px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 900px; }
+  th, td { text-align: left; vertical-align: top; padding: .6rem .75rem; border-bottom: 1px solid var(--line); }
+  thead th { background: var(--head); position: sticky; top: 0; font-size: .82rem; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
+  tbody tr:nth-child(even) { background: var(--zebra); }
+  td.opt { font-weight: 600; white-space: nowrap; }
+  td .form { display: block; color: var(--muted); font-size: .82em; margin-top: .2rem; }
+  ul.tight { margin: 0; padding-left: 1.05rem; }
+  ul.tight li { margin: .12rem 0; }
+  .pro::before { content: "+ "; color: var(--good); font-weight: 700; }
+  .con::before { content: "\2212 "; color: var(--bad); font-weight: 700; }
+  .chip { display: inline-block; font-size: .72rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; background: var(--chip-bg); color: var(--chip-fg); }
+  .chip.ok { color: var(--good); } .chip.no { color: var(--bad); } .chip.part { color: var(--warn); }
+  .legend { font-size: .82rem; color: var(--muted); margin: .5rem 0 0; }
+  .note { border-left: 3px solid var(--accent); padding: .5rem .9rem; background: var(--chip-bg); border-radius: 0 6px 6px 0; margin: 1rem 0; font-size: .92rem; }
+  a { color: var(--accent); }
+  .foot { color: var(--muted); font-size: .82rem; margin-top: 2.5rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>App Preview: reach options</h1>
+  <p class="lead">Ways to make a session's app(s) reachable in the App Preview tab, and how they trade off.
+  The core problem: the Preview iframe runs in the <em>user's</em> browser, which is usually on a different
+  machine than swe-swe, so <code>localhost</code> / <code>*.lvh.me</code> there point at the user's own loopback,
+  not swe-swe. See <a href="adr/0045-preview-host-demux.md">ADR-0045</a> and
+  <a href="multi-service.md">multi-service.md</a>.</p>
+
+  <div class="note">
+    <strong>Two axes.</strong> Rows 1&ndash;4 are <em>addressing forms</em> (how you name a target); rows 5&ndash;10 are
+    <em>reach mechanisms</em> (how the browser's DNS gets to swe-swe). You combine one addressing form with one reach:
+    e.g. &ldquo;named vhost&rdquo; (form) over &ldquo;<code>&lt;ip&gt;.sslip.io</code>&rdquo; (reach).
+  </div>
+
+  <h2>Addressing forms (how you name the target)</h2>
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Option</th><th>Mechanism</th><th>Platform / DNS requirement</th>
+        <th>Password&nbsp;(auth&nbsp;cookie)</th><th>Pros</th><th>Cons</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="opt">Localhost path proxy<span class="form"><code>/proxy/{uuid}/preview/</code></span></td>
+        <td>Same-origin reverse proxy to the session's <code>PreviewPort</code>; absolute paths rewritten with a path prefix.</td>
+        <td>None &mdash; same origin as the UI.</td>
+        <td><span class="chip ok">works</span> same origin</td>
+        <td><ul class="tight"><li class="pro">Always works, no DNS/CORS</li><li class="pro">No extra ports exposed</li></ul></td>
+        <td><ul class="tight"><li class="con">Only the one <code>PreviewPort</code> target</li><li class="con">SPAs need hash routing if it can't upgrade to a port/subdomain</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Port-based proxy<span class="form"><code>&lt;host&gt;:&lt;proxyPort&gt;</code></span></td>
+        <td>Dedicated per-session listener on <code>proxyPort = PreviewPort + 20000</code>; clean origin, no path rewrite.</td>
+        <td><code>proxyPort</code> published / reachable on the host.</td>
+        <td><span class="chip ok">works</span> cookies ignore port (same host)</td>
+        <td><ul class="tight"><li class="pro">Clean origin, no path munging</li><li class="pro">Foundation for the demux</li></ul></td>
+        <td><ul class="tight"><li class="con">Port must be exposed</li><li class="con">Single fixed target until demux is used</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Bare-port demux<span class="form"><code>{port}.{reach}:{proxyPort}</code></span></td>
+        <td>Leftmost label is a raw port &rarr; <code>127.0.0.1:{port}</code>, upstream <code>Host: localhost:{port}</code>.</td>
+        <td>Wildcard DNS for <code>{reach}</code> (rows&nbsp;5&ndash;7).</td>
+        <td><span class="chip part">partial</span> wildcard cross-host cookie gap (see note)</td>
+        <td><ul class="tight"><li class="pro">Reach <em>any</em> loopback port</li><li class="pro">No Host router needed</li></ul></td>
+        <td><ul class="tight"><li class="con">Needs wildcard DNS</li><li class="con">No Host rewrite (plain apps only)</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Named vhost demux<span class="form"><code>{name}-{port}.{reach}</code><br><code>{name}.{reach}</code></span></td>
+        <td>Leftmost label &rarr; <code>127.0.0.1:{port}</code>, upstream <code>Host: {name}.{suffix}:{port}</code> (<code>SWE_PREVIEW_VHOST_SUFFIX</code>, default <code>lvh.me</code>).</td>
+        <td>Wildcard DNS for <code>{reach}</code>.</td>
+        <td><span class="chip part">partial</span> same wildcard cookie gap</td>
+        <td><ul class="tight"><li class="pro">Your traefik/nginx <code>Host</code> router matches as on a laptop</li><li class="pro">Many vhosts on one listener</li></ul></td>
+        <td><ul class="tight"><li class="con">Needs wildcard DNS</li><li class="con">Only useful with a Host-based router in your stack</li></ul></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Reach mechanisms (how the browser's DNS gets to swe-swe)</h2>
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Option</th><th>Mechanism</th><th>Platform / DNS requirement</th>
+        <th>Password&nbsp;(auth&nbsp;cookie)</th><th>Pros</th><th>Cons</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="opt">Reach: <code>lvh.me</code></td>
+        <td>Public wildcard DNS: <code>*.lvh.me &rarr; 127.0.0.1</code>. The frontend's default reach candidate.</td>
+        <td>Browser on the <strong>same machine</strong> as swe-swe (else <code>lvh.me</code> is the user's own loopback).</td>
+        <td><span class="chip no">no</span> wildcard cross-host cookie gap</td>
+        <td><ul class="tight"><li class="pro">Zero setup for local dev</li><li class="pro">Real vhost names</li></ul></td>
+        <td><ul class="tight"><li class="con">Same-machine only</li><li class="con">Depends on the public <code>lvh.me</code> zone</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Reach: <code>&lt;ip&gt;.sslip.io</code> / <code>nip.io</code></td>
+        <td>Public wildcard DNS that encodes an IP in the name: <code>app1-5000.203-0-113-7.sslip.io &rarr; 203.0.113.7</code>.</td>
+        <td>swe-swe reachable at a routable IP; browser has working public DNS.</td>
+        <td><span class="chip no">no</span> reach host &ne; login host</td>
+        <td><ul class="tight"><li class="pro">Works from anywhere, no DNS admin</li><li class="pro">Good for bare-IP deployments</li></ul></td>
+        <td><ul class="tight"><li class="con">Needs a routable IP</li><li class="con">Public-DNS dependency; wildcard TLS is awkward</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Reach: admin wildcard<span class="form"><code>SWE_PREVIEW_REACH_DOMAIN</code></span></td>
+        <td>Org-owned wildcard (<code>*.preview.corp &rarr; swe-swe</code>) pinned via env; becomes the sole probe candidate.</td>
+        <td>DNS admin sets a wildcard A/AAAA (and optionally a wildcard cert).</td>
+        <td><span class="chip no">no</span> unless cookie scoped to the reach (option&nbsp;A)</td>
+        <td><ul class="tight"><li class="pro">Clean, stable names</li><li class="pro">Real TLS certs feasible</li></ul></td>
+        <td><ul class="tight"><li class="con">Needs DNS control</li><li class="con">Per-deployment config</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Pinned mode<span class="form"><code>vhost-pin</code> endpoint</span></td>
+        <td>No wildcard: single bare origin <code>&lt;host&gt;:&lt;proxyPort&gt;</code>; <code>POST /__agent-reverse-proxy-debug__/vhost-pin {name,port}</code>; label-less requests route to the pinned target with the Host rewrite.</td>
+        <td>None beyond the exposed <code>proxyPort</code>.</td>
+        <td><span class="chip ok">works</span> bare origin = same host as login</td>
+        <td><ul class="tight"><li class="pro">Works with <strong>no wildcard DNS</strong></li><li class="pro">Works under a password</li></ul></td>
+        <td><ul class="tight"><li class="con">One vhost at a time</li><li class="con">Shared cookie jar; re-pin on switch</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Tunnel mode<span class="form"><code>{port}.{unique}-tunnel.{apex}</code></span></td>
+        <td><code>swe-swe-tunnel</code> dispatches the leftmost label as a raw port to the session; wildcard provided by tunneld.</td>
+        <td><code>swe-swe init --tunnel-server-url=&hellip;</code> (baked into the image).</td>
+        <td><span class="chip ok">works</span> apex-scoped cookie (ADR-0043)</td>
+        <td><ul class="tight"><li class="pro">Public reach without exposing ports</li><li class="pro">Wildcard handled by the tunnel</li></ul></td>
+        <td><ul class="tight"><li class="con">Named vhost labels not supported yet &rarr; falls to pinned</li><li class="con">Build-time flag</li></ul></td>
+      </tr>
+      <tr>
+        <td class="opt">Agent View resolver remap<span class="form"><code>--host-resolver-rules</code></span></td>
+        <td>Off-host chromium remaps <code>lvh.me</code>/<code>localhost</code>/loopback dev domains back to the swe-swe host (<code>d5266dfb4</code>).</td>
+        <td>The chromium runs next to swe-swe (Agent View backend, <code>-agent-view</code>).</td>
+        <td>n/a &mdash; not the Preview iframe</td>
+        <td><ul class="tight"><li class="pro">Real vhost names work in the <em>agent's</em> browser</li></ul></td>
+        <td><ul class="tight"><li class="con">Only for Agent View's chromium, <strong>not</strong> the user's Preview iframe</li></ul></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="legend"><span class="chip ok">works</span> auth cookie reaches the target &middot;
+    <span class="chip part">partial</span> depends on the reach &middot;
+    <span class="chip no">no</span> host-only cookie not sent cross-host (password deployments)</p>
+
+  <div class="note">
+    <strong>Wildcard&nbsp;+&nbsp;password cookie gap.</strong> The login cookie is host-only in non-tunnel mode, and
+    cookies ignore ports. So <em>pinned</em> mode and the <em>localhost/port</em> forms work under a password (same host),
+    but <em>wildcard</em> forms load a different host (<code>app1-5000.&lt;reach&gt;</code>) that never receives the cookie
+    &rarr; 401 (same class as the tunnel bounce in <a href="adr/0043-tunnel-mode-not-a-sidecar.md">ADR-0043&nbsp;&sect;1</a>).
+    The clean follow-up (&ldquo;option&nbsp;A&rdquo;) is to emit <code>Domain=&lt;reach&gt;</code> on the auth cookie once
+    the reach is known, mirroring the tunnel fix.
+  </div>
+
+  <h2>Quick decision guide</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Situation</th><th>Recommended</th></tr></thead>
+    <tbody>
+      <tr><td>Local dev, browser on the swe-swe machine</td><td>Wildcard via <code>lvh.me</code> + named/bare-port demux</td></tr>
+      <tr><td>Remote box with a routable IP, no DNS admin</td><td>Wildcard via <code>&lt;ip&gt;.sslip.io</code> (password: prefer pinned until option&nbsp;A)</td></tr>
+      <tr><td>Corporate / air-gapped, no wildcard DNS</td><td>Pinned mode (works with a password, one vhost at a time)</td></tr>
+      <tr><td>Public exposure without opening ports</td><td>Tunnel mode (pinned for named vhosts today)</td></tr>
+      <tr><td>Single app, simplest possible</td><td>Localhost path proxy (default; no config)</td></tr>
+      <tr><td>Watching the agent browse a vhost app</td><td>Agent View resolver remap (agent's browser, not the Preview iframe)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="foot">Generated for <code>tasks/2026-07-04-preview-hostname-vhost.md</code>. Cross-refs:
+    <a href="adr/0045-preview-host-demux.md">ADR-0045</a>,
+    <a href="adr/0043-tunnel-mode-not-a-sidecar.md">ADR-0043</a>,
+    <a href="multi-service.md">multi-service.md</a>,
+    <a href="configuration.md">configuration.md</a>.</p>
+</div>
+</body>
+</html>

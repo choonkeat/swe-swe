@@ -251,3 +251,82 @@ export function buildSessionPageUrl(baseUrl, sessionUUID, params) {
 export function getDebugQueryString(debugMode) {
     return debugMode ? '?debug=1' : '';
 }
+
+/**
+ * Preview host-demux: translate a logical vhost host (as the user's compose
+ * serves it) into a flat reachable DNS label. "app1.lvh.me:5000" under suffix
+ * "lvh.me" becomes "app1-5000"; without a port it is just "app1". Only a single
+ * label in front of the suffix is supported in v1 (nested "a.b.lvh.me" is
+ * rejected). Returns null when the host is not under the given suffix.
+ * @param {string} logicalHost - e.g. "app1.lvh.me" or "app1.lvh.me:5000"
+ * @param {string} suffix - the logical vhost suffix, e.g. "lvh.me"
+ * @returns {string|null} the reachable label, or null
+ */
+export function logicalToVhostLabel(logicalHost, suffix) {
+    if (!logicalHost || !suffix) return null;
+    let host = logicalHost;
+    let port = '';
+    const colon = host.lastIndexOf(':');
+    if (colon >= 0) {
+        port = host.slice(colon + 1);
+        host = host.slice(0, colon);
+    }
+    const dotSuffix = '.' + suffix;
+    if (!host.endsWith(dotSuffix)) return null;
+    const name = host.slice(0, host.length - dotSuffix.length);
+    // Flat labels only: the name must be a single DNS label (no dots).
+    if (name === '' || name.includes('.')) return null;
+    return port ? `${name}-${port}` : name;
+}
+
+/**
+ * Build the browser-facing reachable origin for a vhost label. The per-session
+ * listener at "{label}.{reach}:{proxyPort}" demuxes the leftmost label.
+ * @param {string} label - reachable label, e.g. "app1-5000"
+ * @param {string} reach - reach domain, e.g. "x.sslip.io" or "lvh.me"
+ * @param {number} proxyPort - the preview proxy port, e.g. 23000
+ * @param {string} protocol - location protocol, e.g. "http:" or "https:"
+ * @returns {string|null} the origin, or null on missing input
+ */
+export function buildVhostPreviewUrl(label, reach, proxyPort, protocol) {
+    if (!label || !reach || !proxyPort) return null;
+    return `${protocol}//${label}.${reach}:${proxyPort}`;
+}
+
+/**
+ * Parse a user-typed logical URL bar value into structured parts. Accepts an
+ * optional scheme, a "{name}.{suffix}[:{port}]" host, and a trailing
+ * path?query#hash. Returns null when the host is not under the suffix or is not
+ * a single label in front of it.
+ * @param {string} raw - e.g. "app1.lvh.me:5000/path?q#h"
+ * @param {string} suffix - the logical vhost suffix, e.g. "lvh.me"
+ * @returns {{logicalHost: string, port: number|null, label: string, pathSuffix: string}|null}
+ */
+export function parseLogicalInput(raw, suffix) {
+    if (!raw || !suffix) return null;
+    let rest = raw.trim();
+    // Strip an optional scheme.
+    const schemeIdx = rest.indexOf('://');
+    if (schemeIdx >= 0) rest = rest.slice(schemeIdx + 3);
+    // Split host[:port] from the path suffix at the first slash.
+    let hostPort = rest;
+    let pathSuffix = '/';
+    const slash = rest.indexOf('/');
+    if (slash >= 0) {
+        hostPort = rest.slice(0, slash);
+        pathSuffix = rest.slice(slash);
+    }
+    let host = hostPort;
+    let port = null;
+    const colon = hostPort.lastIndexOf(':');
+    if (colon >= 0) {
+        const portStr = hostPort.slice(colon + 1);
+        host = hostPort.slice(0, colon);
+        const n = parseInt(portStr, 10);
+        if (Number.isNaN(n)) return null;
+        port = n;
+    }
+    const label = logicalToVhostLabel(hostPort, suffix);
+    if (label === null) return null;
+    return { logicalHost: host, port, label, pathSuffix };
+}
