@@ -238,6 +238,85 @@ func TestE2E_NoGrandchildLeakOnTeardown(t *testing.T) {
 	assertAllGone(t, pids, 6*time.Second)
 }
 
+// TestE2E_EnvFileCannotOverridePorts proves the discovery contract's precedence
+// end-to-end: a .env / .swe-swe/env that tries to set PORT or PORT_<NAME> must
+// NOT override the runner's assignments -- the child process still sees the
+// runner-assigned ports. Non-port vars from the env files still pass through
+// (proving the files were actually loaded, so this is precedence, not skipping).
+func TestE2E_EnvFileCannotOverridePorts(t *testing.T) {
+	dir := t.TempDir()
+	base := 3000
+
+	// Both env files try to hijack the port vars with bogus values; .env also
+	// carries a normal var that MUST pass through.
+	if err := os.MkdirAll(filepath.Join(dir, ".swe-swe"), 0o755); err != nil {
+		t.Fatalf("mkdir .swe-swe: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".swe-swe", "env"),
+		[]byte("PORT=11111\nPORT_WEB=22222\nPORT_WORKER=33333\n"), 0o644); err != nil {
+		t.Fatalf("write .swe-swe/env: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"),
+		[]byte("PORT=59999\nPORT_WEB=58888\nPORT_WORKER=57777\nGREETING=passthrough\n"), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	record := func(name string) string {
+		f := filepath.Join(dir, name+".env")
+		return fmt.Sprintf(`printf 'PORT=%%s\nPORT_WEB=%%s\nPORT_WORKER=%%s\nGREETING=%%s\n' "$PORT" "$PORT_WEB" "$PORT_WORKER" "$GREETING" > %s; sleep 300 & wait`, f)
+	}
+	procfile := fmt.Sprintf("web: %s\nworker: %s\n", record("web"), record("worker"))
+
+	cancel, done, out := startRunMain(t, dir, procfile, base)
+	defer cancel()
+
+	waitForFiles(t, out, []string{filepath.Join(dir, "web.env"), filepath.Join(dir, "worker.env")}, 8*time.Second)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(8 * time.Second):
+		t.Fatalf("runMain did not return after cancel; log:\n%s", out.String())
+	}
+
+	ports, err := assignPorts(base, []Service{{Name: "web"}, {Name: "worker"}}, "")
+	if err != nil {
+		t.Fatalf("assignPorts: %v", err)
+	}
+	web := parseEnvSnapshot(t, filepath.Join(dir, "web.env"))
+	worker := parseEnvSnapshot(t, filepath.Join(dir, "worker.env"))
+
+	// The runner-assigned ports win over BOTH env files.
+	if web["PORT"] != strconv.Itoa(ports["web"]) {
+		t.Errorf("web PORT = %q, want runner-assigned %d (env files must not override)", web["PORT"], ports["web"])
+	}
+	if worker["PORT"] != strconv.Itoa(ports["worker"]) {
+		t.Errorf("worker PORT = %q, want runner-assigned %d (env files must not override)", worker["PORT"], ports["worker"])
+	}
+	if worker["PORT_WEB"] != strconv.Itoa(ports["web"]) {
+		t.Errorf("worker PORT_WEB = %q, want %d (env files must not override)", worker["PORT_WEB"], ports["web"])
+	}
+	if worker["PORT_WORKER"] != strconv.Itoa(ports["worker"]) {
+		t.Errorf("worker PORT_WORKER = %q, want %d (env files must not override)", worker["PORT_WORKER"], ports["worker"])
+	}
+	// Guard against a false pass where the env files were simply not loaded.
+	if web["GREETING"] != "passthrough" {
+		t.Errorf("web GREETING = %q, want passthrough -- the .env must still load its non-port vars", web["GREETING"])
+	}
+	// And make sure none of the bogus hijack values leaked through anywhere.
+	for _, bogus := range []string{"11111", "22222", "33333", "59999", "58888", "57777"} {
+		for k, v := range web {
+			if v == bogus {
+				t.Errorf("web %s=%s is a bogus env-file value that should have been overridden", k, v)
+			}
+		}
+		for k, v := range worker {
+			if v == bogus {
+				t.Errorf("worker %s=%s is a bogus env-file value that should have been overridden", k, v)
+			}
+		}
+	}
+}
+
 // parseEnvSnapshot reads a KEY=value file (one per line) into a map.
 func parseEnvSnapshot(t *testing.T, path string) map[string]string {
 	t.Helper()
