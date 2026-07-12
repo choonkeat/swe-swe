@@ -569,6 +569,14 @@ type Session struct {
 	SessionMode     string             // "terminal" or "chat"
 	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
 	AgentSessionID  string             // agent-side conversation id (e.g. Claude .jsonl stem); captured at spawn for /api/fork
+	// Preview vhost host-demux state (see preview_vhost.go / ADR-0045).
+	// VhostPin is the degraded (pinned) mode target: when the browser cannot
+	// reach wildcard subdomains, label-less requests route here. Guarded by mu.
+	VhostPin *vhostPin
+	// PreviewReachLabel is the first DNS label of the reach domain this session
+	// is served under (e.g. the machine's own hostname first label). A leftmost
+	// label equal to it is treated as the reach itself, not a vhost prefix.
+	PreviewReachLabel string
 	// Per-session preview proxy (hosted in swe-swe-server, not a separate process)
 	PreviewProxy         *agentproxy.Proxy // Per-session preview proxy instance
 	SessionMux           http.Handler      // Handles /proxy/{uuid}/preview/ AND /proxy/{uuid}/agentchat/
