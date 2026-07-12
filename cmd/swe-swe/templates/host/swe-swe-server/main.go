@@ -987,6 +987,11 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"browserStarted":     s.BrowserStarted,
 		"agentViewAvailable": agentViewAvailable(),
 		"publicHostname":     getLiveTunnelHostname(),
+		// Preview host-demux (ADR-0045): the logical vhost suffix rewritten onto
+		// upstream Hosts, and the ordered reach-domain candidates the frontend
+		// probes to pick wildcard vs pinned mode.
+		"previewVhostSuffix":     previewVhostSuffix(),
+		"previewReachCandidates": previewReachCandidates(),
 	}
 	if agentChatPort != 0 {
 		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)

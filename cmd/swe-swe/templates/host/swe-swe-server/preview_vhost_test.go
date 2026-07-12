@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -101,4 +102,53 @@ func TestResolvePreviewVhostSuffixOverride(t *testing.T) {
 	if !ok || port != 5000 || host != "app1.internal.test:5000" {
 		t.Errorf("with suffix override = (%d, %q, %v), want (5000, app1.internal.test:5000, true)", port, host, ok)
 	}
+}
+
+func TestBuildStatusPayloadPreviewVhost(t *testing.T) {
+	s := &Session{
+		UUID:            "11111111-2222-3333-4444-555555555555",
+		WorkDir:         "/workspace",
+		AssistantConfig: AssistantConfig{Name: "claude"},
+		SessionMode:     "terminal",
+		PreviewPort:     23100,
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		payload := s.buildStatusPayload(0, 24, 80)
+		if got := payload["previewVhostSuffix"]; got != "lvh.me" {
+			t.Errorf("previewVhostSuffix = %v, want lvh.me", got)
+		}
+		cands, ok := payload["previewReachCandidates"].([]string)
+		if !ok || len(cands) != 1 || cands[0] != "lvh.me" {
+			t.Errorf("previewReachCandidates = %v, want [lvh.me]", payload["previewReachCandidates"])
+		}
+		// JSON round-trip: fields must reach the wire.
+		data, _ := json.Marshal(payload)
+		var rt map[string]interface{}
+		json.Unmarshal(data, &rt)
+		if rt["previewVhostSuffix"] != "lvh.me" {
+			t.Errorf("after round-trip previewVhostSuffix = %v", rt["previewVhostSuffix"])
+		}
+		arr, _ := rt["previewReachCandidates"].([]interface{})
+		if len(arr) != 1 || arr[0] != "lvh.me" {
+			t.Errorf("after round-trip previewReachCandidates = %v", rt["previewReachCandidates"])
+		}
+	})
+
+	t.Run("reach-domain-override", func(t *testing.T) {
+		t.Setenv("SWE_PREVIEW_REACH_DOMAIN", "preview.example.com")
+		payload := s.buildStatusPayload(0, 24, 80)
+		cands, _ := payload["previewReachCandidates"].([]string)
+		if len(cands) != 1 || cands[0] != "preview.example.com" {
+			t.Errorf("previewReachCandidates = %v, want [preview.example.com]", payload["previewReachCandidates"])
+		}
+	})
+
+	t.Run("vhost-suffix-override", func(t *testing.T) {
+		t.Setenv("SWE_PREVIEW_VHOST_SUFFIX", "internal.test")
+		payload := s.buildStatusPayload(0, 24, 80)
+		if got := payload["previewVhostSuffix"]; got != "internal.test" {
+			t.Errorf("previewVhostSuffix = %v, want internal.test", got)
+		}
+	})
 }
