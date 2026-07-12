@@ -1,2 +1,5 @@
 021003 PHASE 2 - Supervisor runtime (TDD)
 021003 STEP 2.2 log multiplexer (servicePrefix, colorFor, streamLines): writing tests FIRST. EXPECT RED (undefined symbols).
+021057 STEP 2.2 RED observed: undefined colorFor/servicePrefix/streamLines [build failed].
+021057 STEP 2.2 GREEN observed: logmux.go (nameWidth, colorFor+NO_COLOR, servicePrefix aligned, streamLines mutex-guarded no-torn-lines). Tests pass incl concurrency torn-line check.
+021057 STEP 2.1+2.3 supervisor run(): writing integration test FIRST (real sh -c children). EXPECT RED (undefined: newSupervisor/run).
