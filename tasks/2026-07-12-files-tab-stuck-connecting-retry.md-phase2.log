@@ -1,0 +1,1 @@
+123515 Phase 2 START: wire IframeLoadSupervisor into shared setIframeUrl (files/shell/browser) + visibility/focus/pane-activate kicks + cleanup. Expect: make build golden-update succeeds, rendered terminal-ui.js passes node --check, make test PASS. Then live browser verify.
