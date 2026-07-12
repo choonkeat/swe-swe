@@ -1,0 +1,3 @@
+023305 Phase 1.1 RED: adding proxy_hooks_test.go in /repos/agent-reverse-proxy/workspace on branch resolve-target-hooks.
+  Tests: TestResolveTargetPerRequest, TestResolveTargetFallback, TestNoHookUnchanged, TestCookieDomainRewrite.
+  Expectation: build/test FAILS -- Config has no ResolveTarget/CookieDomainRewrite fields yet (undefined field / red).
