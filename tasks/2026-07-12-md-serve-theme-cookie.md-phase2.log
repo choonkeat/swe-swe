@@ -12,3 +12,8 @@
 112122 -- redo: added expect.poll md-serve readiness gate; re-running make test-e2e-dockerless. Expect all 4 tests green incl theme assertion.
 112241 -- observed GREEN: DOCKERLESS E2E PASS (exit 0). Playwright 4/4 passed incl "Files tab: swe-swe-theme cookie pins md-serve stylesheet" (4.8s). Harness cleanup trap ran -> server process tree killed, no orphaned md-serve (Step 2.2 covered by clean teardown; startSessionMdServe Setpgid + stopSessionMdServe negative-PID kill unchanged by this flag).
 112241 -- Step 2.3 (tunnel mode) NOT reachable in dockerless env. Investigating auth-cookie vs theme-cookie Domain scoping by code inspection to decide if theme-mode.js needs widening.
+112447 -- Step 2.3 code-inspection finding:
+    AUTH cookie: auth.go resolveCookieDomain(getLiveTunnelHostname(), r.Host) -> returns publicHostname in tunnel mode => Domain=publicHostname, reaches ALL {port}.{publicHostname} subdomains (incl Files).
+    THEME cookie: theme-mode.js setThemeCookie sets `swe-swe-theme=..;path=/;max-age;SameSite=Lax` with NO Domain => host-only.
+    => In tunnel/subdomain mode the theme cookie is NOT sent to the Files subdomain, so md-serve there falls back to prefers-color-scheme. Per design, theme cookie needs widening (Domain=publicHostname) in tunnel mode, host-only in local mode.
+    BLOCKER: tunnel mode is NOT reachable in the dockerless test env, so a theme-mode.js change cannot be live-verified end-to-end here. Also non-trivial: theme-mode.js (homepage+session modules) does not natively hold publicHostname at cookie-set time (session page gets it async via WS msg.publicHostname; homepage has none). Stopping to ask the user per task ground rules (no silent compromise).
