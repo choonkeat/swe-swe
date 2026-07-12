@@ -9,3 +9,10 @@
 124619 ROOT CAUSE: default timers = { setTimeout, clearTimeout } are bare global refs; called as this.timers.setTimeout(...) the receiver is the timers object, not window -> browser WebIDL rejects with Illegal invocation. Node has no receiver check so the 14 injected-clock unit tests could not catch it; the live browser did. (The 502s on :23200 were the unrelated preview probe.)
 124619 FIX: default timers wrap the globals in arrows: setTimeout:(fn,ms)=>setTimeout(fn,ms), clearTimeout:(id)=>clearTimeout(id). Add a default-timers node test as a regression guard. Then rebuild image + re-verify live.
 124703 Fix applied; node --test 15/15 (added default-timers regression test). Rebuilding e2e container to re-verify live.
+125206 LIVE GREEN (rebuilt container, session 1f222310):
+  - Files supervisor created for the files pane; happy path: loaded=true, everAttempted=true, src=http://host.docker.internal:29200/, overlay hidden, backoff attempts=0.
+  - Criterion 4: watched 12s -> src stable (token unchanged 0), no watchdog armed, NO periodic reloads.
+  - Criterion 2: _kickVisibleSupervisors() while loaded=no-op (token unchanged); forced loaded=false + kick -> instant cache-busted reload (?_r=1), overlay 'Reconnecting...' then hidden on load; real pane recovered to loaded=true.
+  - Criteria 1&3 (shipped module, REAL default browser timers, fake iframe, watchdog200/base100/max400): 5 attempts over 2s (NOT a tight loop); first src clean, all retries cache-busted; gaps 301,401,600,601 non-decreasing and capped; fire load -> loaded=true, backoff reset 0, NO retries after load. lastOverlay='loaded'.
+  - Default arrow-wrapped timers confirmed working end-to-end in the browser (the Illegal-invocation fix).
+125206 ALL 4 acceptance criteria PASS live. Screenshots: files-loaded-ok.png, files-recovered-ok.png.
