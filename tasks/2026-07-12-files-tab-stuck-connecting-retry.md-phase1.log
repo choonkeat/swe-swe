@@ -1,0 +1,2 @@
+122603 Phase 1 START: create modules/iframe-load-supervisor.js (pure load-watchdog+retry+kick logic).
+122603 TDD: write iframe-load-supervisor.test.js FIRST. Expect: RED -- module file does not exist yet, so 'node --test' fails to import (ERR_MODULE_NOT_FOUND).
