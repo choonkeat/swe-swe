@@ -288,6 +288,33 @@ template/docs change touching `cmd/swe-swe/templates` run
       visible to siblings, and -- the headline -- end the session and confirm
       NO leftover processes (the leak fix). Tear the container down.
 
+### Phase 6 - Procfile helper slash command (added 2026-07-13)
+
+A bundled slash command that makes the Procfile approachable for non-experts:
+list the current services and conversationally CRUD entries, so users do not
+hand-edit the file or memorize the port/discovery conventions.
+
+- 6.1 Source: `cmd/swe-swe/slash-commands/swe-swe/procfile.md` + `.toml`
+      (single umbrella command recommended over one-command-per-verb; the
+      user's working name was `procfile-setup-service`). Bundled + seeded like
+      every other `swe-swe` command; `make build golden-update` after.
+- 6.2 Behavior (the command is a prompt driving the agent, not code):
+  - If no `Procfile` exists, offer to scaffold one -- detect the project
+    (package.json scripts, framework, a docker-compose.yml to translate FROM)
+    and propose starter `name: command` lines.
+  - List existing entries with their resolved ports (primary = `$PORT`, others
+    = `$PORT_<NAME>`) so the user sees the discovery wiring.
+  - Add / edit / remove a service, validating the name grammar and warning on
+    the primary/`web` special case.
+  - When adding a known daemon (postgres/redis/mysql/mongo), auto-fill the
+    port-flag form from the cheat sheet (4.8) and remind the user to reference
+    `localhost:$PORT_<NAME>` from dependents (offer to set `DATABASE_URL` etc.
+    in `.env`).
+  - Explain, inline, that none of this needs `--with-docker` and that services
+    die with the session.
+- 6.3 It only edits the `Procfile` / `.env`; it never launches or supervises
+      (that is `swe-run`). Keep it read-then-confirm before writing.
+
 ## 7. Out of scope / follow-ups
 
 - Server auto-detect of `Procfile` + one-click "Start services" button/MCP tool,
