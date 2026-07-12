@@ -1,0 +1,5 @@
+023440 PHASE 5 - Verification
+023440 5.1 make test already GREEN (run at end of phases 3 & 4). Will re-confirm at wrap.
+023440 5.2 Live e2e: booting real image via 'make e2e-up-simple' (dockerfile-only, port 9780) so swe-run is baked into the shipped image. Will exec in, verify swe-run on PATH, run a 3-svc Procfile, assert discovery (<NAME> to siblings), primary=PORT, and NO leaked processes after teardown.
+023440 SCOPE NOTE: the 'second service reachable on its bare-port subdomain' assertion (spec 5.2) depends on the UNMERGED preview-hostname-vhost branch (spec 4.9). On THIS branch bare-port subdomains do not exist, so that specific browser check is deferred to post-vhost-merge, per spec. All swe-run-owned behavior IS verifiable here.
+023440 EXPECT: image builds with /usr/local/bin/swe-run present; swe-run runs in-container with real session PORT; discovery + teardown behave as on host smoke.
