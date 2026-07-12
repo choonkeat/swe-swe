@@ -4,3 +4,4 @@
 122916 GREEN: iframe-load-supervisor.test.js 14/14 pass (after fixing test 10 to exercise backoff-reset via the error path, since 'load' clears the watchdog).
 122916 Regression: node --test *.test.js (all modules) -> tests 349, pass 349, fail 0.
 122916 Next: make build golden-update (new module file lands in golden testdata), then make test.
+123129 make build golden-update: 92 new golden files (46 variants x .js+.test.js), only iframe-load-supervisor.*. make test: PASS (exit 0). Phase 1 COMPLETE.
