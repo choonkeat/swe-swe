@@ -49,6 +49,12 @@ RUN cd /build-git-sign-swe-swe && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s
 COPY prctx/*.go prctx/go.mod /build-prctx/
 RUN cd /build-prctx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-prctx/prctx .
 
+# Build swe-run (foreman-compatible Procfile runner, stdlib only). Multi-file
+# package; copy the whole dir. Available on $PATH in every session so multi-
+# service apps run without Docker -- children die with the session, no leaks.
+COPY swe-run/*.go swe-run/go.mod /build-swe-run/
+RUN cd /build-swe-run && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-run/swe-run .
+
 
 # Stage 2: Main development environment
 FROM golang:1.24-bookworm
@@ -198,6 +204,7 @@ COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr
 COPY --from=server-builder /build-git-credential-swe-swe/git-credential-swe-swe /usr/local/bin/git-credential-swe-swe
 COPY --from=server-builder /build-git-sign-swe-swe/git-sign-swe-swe /usr/local/bin/git-sign-swe-swe
 COPY --from=server-builder /build-prctx/prctx /usr/local/bin/prctx
+COPY --from=server-builder /build-swe-run/swe-run /usr/local/bin/swe-run
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

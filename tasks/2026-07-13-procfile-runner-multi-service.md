@@ -1,7 +1,7 @@
 # Procfile runner for multi-service apps (docker-free)
 
 - Date: 2026-07-13
-- Status: SPEC - not started
+- Status: COMPLETE - all 5 phases done; live in-image e2e passed (one vhost-dependent browser check deferred per spec 4.9)
 - Owner: choonkeat
 - Motivation session: agent-chat "Procfile vs docker direction" (2026-07-13)
 - Related prior work: `tasks/2026-07-04-preview-hostname-vhost.md`,
@@ -238,55 +238,72 @@ Each phase: write test first (RED), implement (GREEN), `make test`. For any
 template/docs change touching `cmd/swe-swe/templates` run
 `make build golden-update` and stage `cmd/swe-swe/testdata/golden`.
 
-### Phase 1 - Procfile parse + port/env model (pure, unit-tested)
-- 1.1 New package under `cmd/swe-swe/templates/host/swe-run/`.
-- 1.2 `parseProcfile(io.Reader) ([]Service, error)` - names, commands, comments,
-      blanks, validation. Table tests.
-- 1.3 `assignPorts(base int, services []Service, primary string) map[string]int`
-      - primary=base, others via 4.3 formula. Test the invariants (uniqueness
-      across bases 3000-3019, avoids reserved offsets, range bounds).
-- 1.4 `buildServiceEnv(...)` - precedence from 4.5, `PORT` + `PORT_<NAME>`
-      injection, name->envvar normalization. Table tests including `.env` +
-      `.swe-swe/env` merge and PORT-always-wins.
+### Phase 1 - Procfile parse + port/env model (pure, unit-tested) -- DONE
+- [x] 1.1 New package. Layout decision: canonical tested source in `cmd/swe-run/`
+      (root module, `_test.go`), mirroring mcp/prctx; bundled stdlib copy into
+      `cmd/swe-swe/templates/host/swe-run/` comes in Phase 3.
+- [x] 1.2 `parseProcfile(io.Reader) ([]Service, error)` - names, commands,
+      comments, blanks, validation, duplicate/empty detection. Table tests.
+- [x] 1.3 `assignPorts(base int, services []Service, primary string) (map[string]int, error)`
+      - primary=base, others via 4.3 formula `base+5000+i*20`. Invariants tested
+      (uniqueness across bases 3000-3019, avoids reserved bands, range bounds,
+      overflow error).
+- [x] 1.4 `buildServiceEnv(...)` + `parseEnvFile` + `normalizeEnvName` -
+      precedence from 4.5, `PORT` + `PORT_<NAME>` injection, runner-ports-win.
+      Table tests including `.env`/`.swe-swe/env` merge and PORT-always-wins.
 
-### Phase 2 - Supervisor runtime
-- 2.1 Launch services via `sh -c`, `Setpgid`, captured pipes.
-- 2.2 Log multiplexer with aligned `name |` prefixes (+ NO_COLOR honoring).
-      Test with fake fast-exiting commands asserting prefixed, interleaved-safe
-      output (line-buffered, no torn lines).
-- 2.3 Signal handling + teardown: SIGTERM-grace-SIGKILL to all groups; any exit
-      triggers shutdown-all; correct aggregate exit code. Test with a script
-      harness (spawn sleepers, send SIGTERM, assert all reaped within grace;
-      spawn one that exits, assert the rest are torn down).
-- 2.4 CLI: `swe-run [-f Procfile] [-primary NAME]`, reads base `PORT` from env,
-      prints the assigned port table on startup.
+### Phase 2 - Supervisor runtime -- DONE
+- [x] 2.1 Launch via `sh -c`, `Setpgid`, captured pipes (supervisor.go). Each
+      proc goroutine drains both pipes to EOF before `cmd.Wait` (StdoutPipe
+      contract); child exit status always logged (name/pid/code).
+- [x] 2.2 Log multiplexer: aligned `name | ` prefixes, per-service ANSI color,
+      NO_COLOR honored, mutex-guarded no-torn-lines (concurrency test).
+- [x] 2.3 Signal->ctx teardown: SIGTERM to every group, grace, SIGKILL
+      survivors; one-exits-all with correct aggregate exit code. Tests:
+      OneExitsAll, ContextCancel, SigkillEscalation (TERM-ignoring proc),
+      StartFailure. `go test -race` clean.
+- [x] 2.4 CLI `swe-run [-f Procfile] [-primary NAME]`: reads base PORT (fallback
+      5000), prints port table, wires SIGINT/SIGTERM to ctx cancel.
+- [x] LIVE: 3-svc discovery verified; SIGINT teardown leaves ZERO leaked
+      descendants (the headline leak-fix).
 
-### Phase 3 - Packaging + install
-- 3.1 Build `swe-run` into the image; install to `~/.swe-swe/bin/swe-run`
-      (Dockerfile + dockerless install path). Confirm it lands on the session
-      PATH.
-- 3.2 Golden: if any template/init surface changes, `make build golden-update`.
+### Phase 3 - Packaging + install -- DONE
+- [x] 3.1 Bundled stdlib copy in `cmd/swe-swe/templates/host/swe-run/` (+go.mod.txt).
+      Docker: build stage + COPY to `/usr/local/bin/swe-run` (DEVIATION: spec
+      said ~/.swe-swe/bin; used /usr/local/bin to match every sibling helper,
+      which is unconditionally on session PATH). Dockerless: added to
+      `dockerlessBinaries` + `_payload-helper-multi` build step; verified ELF in
+      payload + embed test. Makefile: test-swe-run / check-swe-run-sync /
+      sync-swe-run, wired into `make test`.
+- [x] 3.2 `make build golden-update`: golden diff = only swe-run/* + Dockerfile
+      (+7 lines). Full `make test` green.
 
-### Phase 4 - Docs
-- 4.1 Rewrite container `.swe-swe/docs/docker.md`: lead users to Procfile;
-      keep docker section but add the host-root callout + "prefer Procfile".
-- 4.2 New/updated `docs/multi-service.md` (reconcile with the vhost-branch copy
-      when merged): Procfile quickstart, discovery contract (localhost +
-      `PORT_<NAME>`), `.env`/`.swe-swe/env`, daemon cheat sheet, teardown
-      guarantee, and the vhost preview / cookie cross-link.
-- 4.3 Container `.swe-swe/docs/app-preview.md`: add "run services with a
-      Procfile via `swe-run`" pointer.
-- 4.4 CHANGELOG entry.
-- 4.5 Reverse the "no mini compose runtime" line wherever it appears.
+### Phase 4 - Docs -- DONE
+- [x] 4.1 docker.md rewritten: leads with Procfile/swe-run; host-root-equivalent
+      socket callout (ADR-0013) + leak warning; docker CLI section gated.
+- [x] 4.2 `docs/multi-service.md` (new) + container copy: quickstart, port
+      assignment, discovery (localhost + `PORT_<NAME>`), `.env`/`.swe-swe/env`
+      precedence, daemon cheat sheet, teardown guarantee, preview/cookie link.
+- [x] 4.3 app-preview.md: added "Multiple services (Procfile)" pointer.
+- [x] 4.4 CHANGELOG: `## Unreleased` swe-run bullet (version bump deferred to user).
+- [x] 4.5 "no mini compose runtime" line appears ONLY in task files on this
+      branch (live line is on the unmerged vhost branch); new docs assert
+      swe-swe DOES ship a supervisor, superseding it. Merge-time reconcile noted.
+- [x] init.go: multi-service.md added to both container-doc allowlists; golden
+      regenerated; container_templates_test asserts it.
 
-### Phase 5 - Verification
-- 5.1 `make test` green (unit).
-- 5.2 Live e2e in a test container (docs/dev/test-container-workflow.md):
-      write a 3-line Procfile (`web` static server + a `db`/echo + a `worker`),
-      run `swe-run`, assert: primary reachable on session PORT via Preview,
-      a second service reachable on its bare-port subdomain, `$PORT_<NAME>`
-      visible to siblings, and -- the headline -- end the session and confirm
-      NO leftover processes (the leak fix). Tear the container down.
+### Phase 5 - Verification -- DONE
+- [x] 5.1 `make test` green (unit + golden + all bundles in sync).
+- [x] 5.2 Live e2e in the REAL image (`make e2e-up-simple`): swe-run on PATH
+      (/usr/local/bin/swe-run); 3-service Procfile assigned web->3100(primary,
+      PORT) worker->8100 db->8120; primary reachable on session PORT (HTTP 200);
+      `$PORT_<NAME>` visible to siblings; SIGTERM -> runner + ALL children gone,
+      ZERO leaked processes (the headline leak-fix, proven in-image); container
+      torn down clean.
+      DEFERRED: "second service reachable on its bare-port subdomain" depends on
+      the unmerged `preview-hostname-vhost` branch (spec 4.9) -- bare-port
+      subdomains do not exist on this branch, so that browser check is a
+      post-vhost-merge item, not a swe-run defect.
 
 ### Phase 6 - Procfile helper slash command (added 2026-07-13)
 

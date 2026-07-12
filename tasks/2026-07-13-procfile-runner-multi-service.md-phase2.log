@@ -1,0 +1,13 @@
+021003 PHASE 2 - Supervisor runtime (TDD)
+021003 STEP 2.2 log multiplexer (servicePrefix, colorFor, streamLines): writing tests FIRST. EXPECT RED (undefined symbols).
+021057 STEP 2.2 RED observed: undefined colorFor/servicePrefix/streamLines [build failed].
+021057 STEP 2.2 GREEN observed: logmux.go (nameWidth, colorFor+NO_COLOR, servicePrefix aligned, streamLines mutex-guarded no-torn-lines). Tests pass incl concurrency torn-line check.
+021057 STEP 2.1+2.3 supervisor run(): writing integration test FIRST (real sh -c children). EXPECT RED (undefined: newSupervisor/run).
+021342 STEP 2.1+2.3 RED observed: 'undefined: supervisor' [build failed].
+021342 STEP 2.1+2.3 GREEN observed: supervisor.go (run+teardown). Tests: OneExitsAll returns code 3 fast; ContextCancel clean code 0 (0.30s); SigkillEscalation returns after grace despite TERM-ignoring proc (0.80s); StartFailure non-zero. go test -race clean (2.1s).
+021342 NOTE: each service Setpgid=true; teardown kills -pgid TERM, grace, then KILL. Per-process goroutine drains pipes to EOF before cmd.Wait (StdoutPipe contract). Child exit status always logged (name/pid/code) per CLAUDE.md rule.
+021606 STEP 2.4 RED observed: undefined fallbackBasePort/basePortFromEnv/printPortTable/runMain [build failed].
+021606 STEP 2.4 GREEN observed: main.go (runMain, basePortFromEnv, printPortTable, loadEnvFileIfExists, signal->ctx). All CLI tests pass; go vet clean; binary builds.
+021606 LIVE SMOKE (built binary, PORT=3000, 3 svc): web primary=3000, worker=8000(PORT_WORKER), db=8020(PORT_DB). Discovery verified: worker saw PORT_WEB=3000; db saw own PORT=8020. web exit code0 -> one-exits-all tore down worker+db, exit 0. EXPECTED and GOT.
+021606 LIVE TEARDOWN (PORT=3005, 2 svc sleep 300): before SIGINT -> 2 sh + 2 'sleep 300' descendants alive. After kill -INT runner: runner gone, ZERO leftover 'sleep 300'. HEADLINE LEAK-FIX PROVEN. EXPECTED clean teardown and GOT it.
+021606 PHASE 2 COMPLETE.

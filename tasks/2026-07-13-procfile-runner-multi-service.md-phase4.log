@@ -1,0 +1,10 @@
+023228 PHASE 4 - Docs
+023228 4.1 docker.md: rewrote to LEAD with Procfile/swe-run; added host-root-equivalent socket callout (ADR-0013) + leak warning; kept docker CLI section gated on --with-docker.
+023228 4.2 docs/multi-service.md: NEW user-facing guide (quickstart, port assignment, discovery localhost+PORT_<NAME>, .env/.swe-swe/env precedence, daemon cheat sheet, teardown guarantee, preview/cookie cross-link, when-you-still-need-docker). Also copied to container .swe-swe/docs/multi-service.md.
+023228 4.3 app-preview.md: added 'Multiple services (Procfile)' pointer to swe-run + multi-service.md.
+023228 4.4 CHANGELOG.md: added ## Unreleased with swe-run feature bullet (package.json=2.27.2, CHANGELOG top was v2.26.0; used Unreleased heading - version bump left to user).
+023228 4.5 'no mini compose runtime' line: on THIS branch it appears ONLY in task files (vhost task + this task quoting it), NOT in any shipping doc. The live line is on the unmerged vhost branch's docs/multi-service.md; reconciliation is a merge-time task per spec sec 1. New docs explicitly state swe-swe DOES ship a supervisor, superseding the old stance.
+023228 init.go: added multi-service.md to BOTH container-doc allowlists (containerFiles + allContainerTemplates), always-included. container_templates_test.go asserts it. golden regenerated (multi-service.md 138x, app-preview 138x, docker 9x).
+023228 VERIFY EXPECTED: ascii-check pass, golden shows only docs changes, make test green.
+023228 VERIFY GOT: 'ASCII check passed'; golden diff = multi-service/app-preview/docker only; make test exit 0 ALL PASS (cmd/swe-swe 48s incl golden; TestDumpContainerTemplates PASS).
+023228 PHASE 4 COMPLETE.

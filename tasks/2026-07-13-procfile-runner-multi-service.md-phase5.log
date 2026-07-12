@@ -1,0 +1,15 @@
+023440 PHASE 5 - Verification
+023440 5.1 make test already GREEN (run at end of phases 3 & 4). Will re-confirm at wrap.
+023440 5.2 Live e2e: booting real image via 'make e2e-up-simple' (dockerfile-only, port 9780) so swe-run is baked into the shipped image. Will exec in, verify swe-run on PATH, run a 3-svc Procfile, assert discovery (<NAME> to siblings), primary=PORT, and NO leaked processes after teardown.
+023440 SCOPE NOTE: the 'second service reachable on its bare-port subdomain' assertion (spec 5.2) depends on the UNMERGED preview-hostname-vhost branch (spec 4.9). On THIS branch bare-port subdomains do not exist, so that specific browser check is deferred to post-vhost-merge, per spec. All swe-run-owned behavior IS verifiable here.
+023440 EXPECT: image builds with /usr/local/bin/swe-run present; swe-run runs in-container with real session PORT; discovery + teardown behave as on host smoke.
+023726 5.2 LIVE E2E in real image (make e2e-up-simple, container workspace-tmp-e2e-simple-3fc2a0b8-swe-swe-1):
+023726   [PATH]     EXPECTED swe-run on session PATH; GOT /usr/local/bin/swe-run (1921208 bytes, root:root 0755). PASS.
+023726   [ports]    EXPECTED primary=PORT, others from free band; GOT web->3100(primary) worker->8100(PORT_WORKER) db->8120(PORT_DB) with session PORT=3100. PASS.
+023726   [primary]  EXPECTED primary app reachable on session PORT (what Preview shows); GOT curl http://127.0.0.1:3100/ -> HTTP 200. PASS.
+023726   [discovery] EXPECTED siblings see PORT_<NAME>; GOT worker saw PORT_WEB=3100; db saw own PORT=8120; web saw db=8120 worker=8100. PASS.
+023726   [teardown] EXPECTED SIGTERM -> runner+ALL children gone, no leaks; GOT before: 3 sh + python http.server + 2 sleep; after SIGTERM: runner gone, ZERO leaked processes. PASS (headline leak-fix, in real image).
+023726   [docs]     EXPECTED multi-service.md in session docs; GOT /workspace/.swe-swe/docs/multi-service.md (5726 bytes). docker.md correctly gated behind --with-docker (absent in simple mode). PASS.
+023726   [DEFERRED] 'second service reachable on bare-port subdomain' NOT tested: depends on unmerged preview-hostname-vhost branch (spec 4.9). Bare-port subdomains do not exist on this branch. Documented, not a failure of swe-run.
+023726 5.2 teardown: make e2e-down exit 0, no containers remaining.
+023726 PHASE 5 COMPLETE (all swe-run-owned assertions PASS in real image; one vhost-dependent browser check deferred per spec).
