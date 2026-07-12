@@ -6885,7 +6885,10 @@ class TerminalUI extends HTMLElement {
         const protocol = window.location.protocol;
         for (const candidate of this._reachCandidateList()) {
             const rand = Math.random().toString(36).slice(2, 8);
-            const probeUrl = `${protocol}//probe-${rand}.${candidate}:${proxyPort}/`;
+            // Probe the auth-exempt /__probe__ path (see requireAuthCookie) so a
+            // password-protected session still resolves wildcard mode; the proxy
+            // sets X-Agent-Reverse-Proxy before any upstream dial.
+            const probeUrl = `${protocol}//probe-${rand}.${candidate}:${proxyPort}/__probe__`;
             try {
                 const resp = await fetch(probeUrl, { method: 'GET', mode: 'cors' });
                 if (resp.headers.has('X-Agent-Reverse-Proxy')) {

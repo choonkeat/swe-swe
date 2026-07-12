@@ -8,6 +8,7 @@ import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCount
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
+import { IframeLoadSupervisor } from './modules/iframe-load-supervisor.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
 // Strip CSI 3J (\x1b[3J = clear scrollback buffer) from a Uint8Array.
@@ -37,8 +38,13 @@ function stripCSI3J(data) {
 // CSS (terminal-ui.css) owns the grid-template-areas for each preset id via
 // `.terminal-ui__workspace[data-preset="..."]` selectors.
 // Order matters -- it's the display order in the preset picker.
+// A slot default is either a single pane id or a {tabs, active} multi-tab
+// spec. classic (the fresh-user default) ships Agent Chat + Files on the
+// left and Agent Terminal + Preview on the right: Files starts active so
+// first paint isn't a chat spinner, and the chat-iframe onload handler
+// hands focus to Agent Chat once it's actually usable.
 const LAYOUT_PRESETS = {
-    classic:      { label: 'Classic',       slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' },                                         icon: [[0,0,1,2], [1,0,1,2]] },
+    classic:      { label: 'Classic',       slots: ['a', 'b'],           defaults: { a: { tabs: ['agent-chat', 'files'], active: 'files' }, b: { tabs: ['agent-terminal', 'preview'], active: 'agent-terminal' } }, icon: [[0,0,1,2], [1,0,1,2]] },
     single:       { label: 'Single',        slots: ['a'],                defaults: { a: 'preview' },                                                              icon: [[0,0,2,2]] },
     'two-row':    { label: '2-row',         slots: ['a', 'b'],           defaults: { a: 'preview',        b: 'agent-terminal' },                                  icon: [[0,0,2,1], [0,1,2,1]] },
     'l-bigR':     { label: 'L + big R',     slots: ['a', 'b'],           defaults: { a: 'agent-terminal', b: 'preview' },                                         icon: [[0,0,1,2], [1,0,2,2]] },
@@ -130,25 +136,39 @@ function slotStateForPane(paneId) {
     return { tabs: [paneId], active: paneId };
 }
 
+// Build a fresh slot-state object from a preset default, which is either
+// a single pane id string or a {tabs, active} multi-tab spec.
+function slotStateForDefault(d) {
+    if (typeof d === 'string') return slotStateForPane(d);
+    return { tabs: [...d.tabs], active: d.active };
+}
+
+// Whether a preset default (string or {tabs, active}) includes a pane id.
+function defaultIncludesPane(d, paneId) {
+    return typeof d === 'string' ? d === paneId : d.tabs.includes(paneId);
+}
+
 // Build the activeBySlot map for a preset using its defaults.
 function defaultActiveBySlot(preset) {
     const result = {};
     preset.slots.forEach(slotId => {
-        result[slotId] = slotStateForPane(preset.defaults[slotId]);
+        result[slotId] = slotStateForDefault(preset.defaults[slotId]);
     });
     return result;
 }
 
 // Normalize a slot value from localStorage into {tabs, active} shape.
 // Accepts the legacy string shape and either field being missing.
-function normalizeSlotState(value, fallbackPaneId) {
+// `fallbackDefault` is the preset default for the slot (pane id string or
+// {tabs, active} spec), used when the saved value is unusable.
+function normalizeSlotState(value, fallbackDefault) {
     if (typeof value === 'string') return slotStateForPane(value);
     if (value && Array.isArray(value.tabs) && value.tabs.length > 0) {
         const active = value.active && value.tabs.includes(value.active)
             ? value.active : value.tabs[0];
         return { tabs: [...value.tabs], active };
     }
-    return slotStateForPane(fallbackPaneId);
+    return slotStateForDefault(fallbackDefault);
 }
 
 // Normalize a sizesByPreset map from localStorage. Drops entries for
@@ -182,6 +202,8 @@ function normalizeSizesByPreset(value) {
 // sizesByPreset was added later -- absence is normal and means "use the
 // preset's default fr ratios from CSS".
 // On parse failure or missing preset, fall back to the classic defaults.
+// The returned `fresh` flag is true only on that fallback path (no usable
+// saved layout) -- it gates the fresh-default chat focus handoff.
 function loadLayoutState() {
     try {
         const s = JSON.parse(localStorage.getItem(LAYOUT_STATE_KEY));
@@ -199,6 +221,7 @@ function loadLayoutState() {
                 preset: s.preset,
                 activeBySlot,
                 sizesByPreset: normalizeSizesByPreset(s.sizesByPreset),
+                fresh: false,
             };
         }
     } catch (e) { /* fall through */ }
@@ -206,6 +229,7 @@ function loadLayoutState() {
         preset: 'classic',
         activeBySlot: defaultActiveBySlot(LAYOUT_PRESETS.classic),
         sizesByPreset: {},
+        fresh: true,
     };
 }
 
@@ -223,6 +247,11 @@ class TerminalUI extends HTMLElement {
         this.connectedAt = null;
         this.reconnectState = createReconnectState();
         this.reconnectTimeout = null;
+        // Per-pane iframe load supervisors (files/shell/browser). Each watches
+        // its iframe's initial navigation and retries a dropped load -- an
+        // <iframe> never auto-retries, so a lost first GET otherwise leaves the
+        // pane stuck on "Connecting..." until a manual page reload.
+        this._iframeSupervisors = {};
         this.countdownInterval = null;
         this.uptimeInterval = null;
         this.heartbeatInterval = null;
@@ -293,6 +322,14 @@ class TerminalUI extends HTMLElement {
         // fr ratios -- e.g. cols: [45, 55] means `45fr 55fr`. Empty by
         // default; entries are added/removed as the user drags/dblclicks.
         this.sizesByPreset = _layoutState.sizesByPreset || {};
+        // True when no saved layout existed (fresh browser) and the preset
+        // defaults are in effect. A persisted layout means the user has a
+        // real preference; the chat focus handoff below must not fire then.
+        this._layoutFromDefaults = !!_layoutState.fresh;
+        // Set on the first user tab click this visit; blocks auto-focus
+        // handoffs (chat-iframe onload) from stealing a tab the user
+        // explicitly chose.
+        this._userPickedTab = false;
         // Whenever a slot contains agent-terminal, force it active on mount
         // regardless of what was last persisted. The agent terminal is the
         // primary surface where blocking prompts appear (e.g. the
@@ -494,6 +531,15 @@ class TerminalUI extends HTMLElement {
             window.visualViewport.removeEventListener('resize', this._viewportHandler);
             window.visualViewport.removeEventListener('scroll', this._viewportHandler);
         }
+        // Stop iframe load supervisors + their focus/visibility kick listeners.
+        if (this._visibilityHandler) {
+            document.removeEventListener('visibilitychange', this._visibilityHandler);
+        }
+        if (this._windowFocusHandler) {
+            window.removeEventListener('focus', this._windowFocusHandler);
+        }
+        Object.values(this._iframeSupervisors || {}).forEach((sup) => sup.stop());
+        this._iframeSupervisors = {};
         if (this.term) {
             this.term.dispose();
         }
@@ -1712,6 +1758,7 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewProxyPort = this.previewProxyPort;
                 const prevVncProxyPort = this.vncProxyPort;
                 const prevFilesProxyPort = this.filesProxyPort;
+                const prevPublicHostname = this.publicHostname;
                 this.previewPort = msg.previewPort || null;
                 this.updateUrlBarPrefix();
                 this.agentChatPort = msg.agentChatPort || null;
@@ -1724,6 +1771,16 @@ class TerminalUI extends HTMLElement {
                 this.vncPort = msg.vncPort || null;
                 this.vncProxyPort = msg.vncProxyPort || null;
                 this.publicHostname = msg.publicHostname || '';
+                // The theme cookie is written at page load (session-theme.js)
+                // before this websocket delivers publicHostname, so in tunnel
+                // mode it starts host-only and would not reach the Files
+                // "{port}.{publicHostname}" subdomain. Once publicHostname is
+                // known, re-apply the current theme so the cookie is rewritten
+                // with Domain=publicHostname before the Files tab loads
+                // md-serve. No-op in local mode (publicHostname stays "").
+                if (this.publicHostname !== prevPublicHostname && window.sweSweTheme?.applyMode) {
+                    window.sweSweTheme.applyMode(window.sweSweTheme.getStoredMode());
+                }
                 // Preview host-demux (ADR-0045): the logical vhost suffix and
                 // the ordered reach-domain candidates. The frontend appends its
                 // own window.location.hostname as a last candidate and probes
@@ -1871,6 +1928,23 @@ class TerminalUI extends HTMLElement {
                                         if (chatSlot) this.setActiveInSlot(chatSlot, 'agent-chat', { persist: false });
                                         this.switchLeftPanelTab('chat');
                                         this.switchMobileNav('agent-chat');
+                                    } else if (this._layoutFromDefaults && !this._userPickedTab) {
+                                        // Fresh-default focus handoff: classic ships the
+                                        // chat slot with Files active so first paint isn't
+                                        // a chat spinner; now that the chat iframe is
+                                        // usable, hand focus to Agent Chat. Only on the
+                                        // untouched default layout (no saved layout, no
+                                        // tab click this visit), and never in a slot
+                                        // holding agent-terminal (its mount-time
+                                        // force-active exists for blocking prompts).
+                                        // persist:false -- same ephemeral-intent rule as
+                                        // the session=chat flip above.
+                                        const chatSlot = this._slotForPane('agent-chat');
+                                        const slotState = chatSlot ? this.activeBySlot[chatSlot] : null;
+                                        if (slotState && slotState.active !== 'agent-chat'
+                                            && !slotState.tabs.includes('agent-terminal')) {
+                                            this.setActiveInSlot(chatSlot, 'agent-chat', { persist: false });
+                                        }
                                     }
                                 };
                             }
@@ -4642,6 +4716,17 @@ class TerminalUI extends HTMLElement {
         // Header and navigation event handlers
         this.setupHeaderEventListeners();
 
+        // Re-load a dropped iframe pane when the user returns to the tab/window.
+        // A backgrounded mobile tab often has its iframe connection reaped; on
+        // becoming visible again we kick the active supervisors (no-op if already
+        // loaded) so the pane recovers near-instantly instead of staying stuck.
+        this._visibilityHandler = () => {
+            if (document.visibilityState === 'visible') this._kickVisibleSupervisors();
+        };
+        document.addEventListener('visibilitychange', this._visibilityHandler);
+        this._windowFocusHandler = () => this._kickVisibleSupervisors();
+        window.addEventListener('focus', this._windowFocusHandler);
+
         // Listen for messages from iframes
         window.addEventListener('message', (e) => {
             // When shell in right panel exits, show Preview instead of closing the panel
@@ -5228,6 +5313,9 @@ class TerminalUI extends HTMLElement {
         }
         this.applyPreset();
         this._loadPaneIfNeeded(paneId);
+        // If the pane was loaded before but its iframe is stuck, re-selecting it
+        // is an explicit "show me this now" -- kick an instant retry.
+        this._kickPaneSupervisor(paneId);
     }
 
     // Add a pane as a new tab in a slot. If the pane already lives in another
@@ -5259,7 +5347,10 @@ class TerminalUI extends HTMLElement {
             saveLayoutState({ preset: this.preset, activeBySlot: this.activeBySlot, sizesByPreset: this.sizesByPreset });
         }
         this.applyPreset();
-        if (target.active === paneId) this._loadPaneIfNeeded(paneId);
+        if (target.active === paneId) {
+            this._loadPaneIfNeeded(paneId);
+            this._kickPaneSupervisor(paneId);
+        }
     }
 
     // Remove a tab from a slot (x button on the tab). Pane becomes unassigned
@@ -5314,13 +5405,13 @@ class TerminalUI extends HTMLElement {
     //   4. Fall back to the preset's first slot.
     _paneHome(paneId) {
         const preset = LAYOUT_PRESETS[this.preset] || LAYOUT_PRESETS.classic;
-        for (const [slotId, defaultPane] of Object.entries(preset.defaults)) {
-            if (defaultPane === paneId) return slotId;
+        for (const [slotId, slotDefault] of Object.entries(preset.defaults)) {
+            if (defaultIncludesPane(slotDefault, paneId)) return slotId;
         }
         const isChatLike = (paneId === 'agent-terminal' || paneId === 'agent-chat');
         const companion = isChatLike ? 'agent-terminal' : 'preview';
-        for (const [slotId, defaultPane] of Object.entries(preset.defaults)) {
-            if (defaultPane === companion) return slotId;
+        for (const [slotId, slotDefault] of Object.entries(preset.defaults)) {
+            if (defaultIncludesPane(slotDefault, companion)) return slotId;
         }
         return preset.slots[0];
     }
@@ -5464,7 +5555,7 @@ class TerminalUI extends HTMLElement {
         const newActiveBySlot = {};
         newPreset.slots.forEach(slotId => {
             newActiveBySlot[slotId] = this.activeBySlot[slotId]
-                || slotStateForPane(newPreset.defaults[slotId]);
+                || slotStateForDefault(newPreset.defaults[slotId]);
         });
         saveLayoutState({ preset: newPresetId, activeBySlot: newActiveBySlot, sizesByPreset: this.sizesByPreset });
         window.location.reload();
@@ -5909,6 +6000,16 @@ class TerminalUI extends HTMLElement {
         const state = this.activeBySlot[slotId] || { tabs: [], active: null };
 
         (state.tabs || []).forEach(paneId => {
+            // Panes that aren't known yet (agent-chat before/without its
+            // probe, files before filesProxyPort arrives, Agent View before
+            // VNC) don't get a tab -- they stay in state.tabs and appear
+            // when availability flips; the WS status / probe handlers call
+            // _rerenderSlotTabs on those transitions. This matters since
+            // agent-chat and files ship in the classic preset defaults: a
+            // session with no chat channel must not show a dead Agent Chat
+            // tab. Exception: the slot's ACTIVE pane always renders (dimmed
+            // via .unavailable) so the tab bar reflects what the slot shows.
+            if (!this._isPaneKnown(paneId) && paneId !== state.active) return;
             const btn = document.createElement('button');
             btn.className = 'terminal-ui__slot-tab';
             btn.dataset.pane = paneId;
@@ -5951,6 +6052,7 @@ class TerminalUI extends HTMLElement {
                 if (e.metaKey || e.ctrlKey) {
                     if (tryPopout(e)) return;
                 }
+                this._userPickedTab = true;
                 this.setActiveInSlot(slotId, paneId);
             });
             btn.addEventListener('auxclick', (e) => {
@@ -6536,21 +6638,63 @@ class TerminalUI extends HTMLElement {
         }
 
         const iframe = this._iframeFor(pane);
-        const placeholder = this._placeholderFor(pane);
         if (!iframe) return;
 
-        // State-preservation: skip reload if iframe already at this exact URL.
-        if (iframe.getAttribute('src') === url) return;
+        // State-preservation: skip if a supervisor is already driving this exact
+        // URL (a tab switch re-entering here must not reload / reset state). The
+        // supervisor cache-busts on retry, so compare the logical url we were
+        // asked to load, not the iframe's (possibly ?_r=-suffixed) src.
+        const existing = this._iframeSupervisors[pane];
+        if (existing && existing.url === url) return;
+        if (existing) existing.stop();
 
-        if (placeholder) {
-            placeholder.classList.remove('hidden');
+        // Hand the iframe to a load supervisor: it assigns the src, arms a load
+        // watchdog, and retries a dropped navigation with capped backoff (and
+        // on focus/visibility via kick()). Overlay text mirrors its state.
+        const sup = new IframeLoadSupervisor({
+            iframe,
+            url,
+            onOverlay: (state) => this._setPaneOverlay(pane, state),
+        });
+        this._iframeSupervisors[pane] = sup;
+        sup.start();
+    }
+
+    // Reflect an IframeLoadSupervisor state onto a pane's placeholder overlay.
+    // 'loaded' hides it; 'connecting'/'reconnecting' show it, swapping in
+    // "Reconnecting..." during retries and restoring the pane's default text
+    // (captured once) on the first/normal connecting state.
+    _setPaneOverlay(pane, state) {
+        const placeholder = this._placeholderFor(pane);
+        if (!placeholder) return;
+        if (state === 'loaded') {
+            placeholder.classList.add('hidden');
+            return;
         }
+        placeholder.classList.remove('hidden');
+        const textEl = placeholder.querySelector('.terminal-ui__iframe-placeholder-text');
+        if (!textEl) return;
+        if (textEl.dataset.defaultText === undefined) {
+            textEl.dataset.defaultText = textEl.textContent;
+        }
+        textEl.textContent = state === 'reconnecting' ? 'Reconnecting...' : textEl.dataset.defaultText;
+    }
 
-        iframe.onload = () => {
-            if (placeholder) placeholder.classList.add('hidden');
-        };
+    // Kick the supervisor for a pane (immediate retry, backoff reset) if one
+    // exists and its iframe isn't loaded. Called on pane-activate.
+    _kickPaneSupervisor(pane) {
+        const sup = this._iframeSupervisors[pane];
+        if (sup) sup.kick();
+    }
 
-        iframe.src = url;
+    // Kick the currently-visible (active) pane in every slot. Wired to window
+    // focus / document visibilitychange so a returning user whose Files/Terminal
+    // /Agent-View iframe was dropped while backgrounded re-loads near-instantly
+    // instead of waiting out the backoff. kick() is a no-op once the pane loaded.
+    _kickVisibleSupervisors() {
+        for (const state of Object.values(this.activeBySlot || {})) {
+            if (state && state.active) this._kickPaneSupervisor(state.active);
+        }
     }
 
     /**
@@ -6741,7 +6885,10 @@ class TerminalUI extends HTMLElement {
         const protocol = window.location.protocol;
         for (const candidate of this._reachCandidateList()) {
             const rand = Math.random().toString(36).slice(2, 8);
-            const probeUrl = `${protocol}//probe-${rand}.${candidate}:${proxyPort}/`;
+            // Probe the auth-exempt /__probe__ path (see requireAuthCookie) so a
+            // password-protected session still resolves wildcard mode; the proxy
+            // sets X-Agent-Reverse-Proxy before any upstream dial.
+            const probeUrl = `${protocol}//probe-${rand}.${candidate}:${proxyPort}/__probe__`;
             try {
                 const resp = await fetch(probeUrl, { method: 'GET', mode: 'cors' });
                 if (resp.headers.has('X-Agent-Reverse-Proxy')) {
