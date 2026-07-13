@@ -2417,6 +2417,61 @@ terminal-ui.embedded-in-iframe .mobile-only {
     text-underline-offset: 3px;
 }
 
+/* Persistent popout glyph on popout-able tabs: an always-visible affordance
+   that the pane can open in a new browser tab. Subtle by default so it doesn't
+   crowd the tab; brightens on tab hover, and inverts to the accent color when
+   hovered directly (its own plain-click opens the new tab). */
+.terminal-ui__slot-tab-popout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    margin-left: 3px;
+    font-size: 11px;
+    line-height: 1;
+    border-radius: 3px;
+    opacity: 0.45;
+    cursor: alias;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.terminal-ui__slot-tab:hover .terminal-ui__slot-tab-popout,
+.terminal-ui__slot-tab.active .terminal-ui__slot-tab-popout {
+    opacity: 0.85;
+}
+
+.terminal-ui__slot-tab-popout:hover {
+    opacity: 1;
+    background: var(--accent-primary);
+    color: var(--bg-primary);
+}
+
+/* Prominent hover tooltip advertising the popout gesture. Positioned via JS
+   (fixed, appended to <body>) so the tab bar's overflow clipping never hides
+   it. Accent-filled with a drop shadow so it reads as a real callout rather
+   than the sluggish, unstyled native title tooltip it replaces. */
+.terminal-ui__popout-tooltip {
+    position: fixed;
+    z-index: 10000;
+    /* Shrink-to-fit the text (one line on desktop), but never exceed the
+       viewport -- on narrow screens it wraps instead of overflowing. Capping
+       with nowrap would under-measure offsetWidth and break the JS clamp. */
+    max-width: calc(100vw - 16px);
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--bg-primary);
+    background: var(--accent-primary);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+
+.terminal-ui__popout-tooltip[hidden] { display: none; }
+
 /* "+" add/replace button: opens a popover listing panes not in any slot. */
 .terminal-ui__slot-add {
     padding: 6px 10px;
