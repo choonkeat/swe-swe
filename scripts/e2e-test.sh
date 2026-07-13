@@ -81,12 +81,16 @@ test_mode() {
     fi
 
     # Read state
-    local port password host_ip
+    local port password host_ip scheme
     port=$(grep "^PORT=" "$state_file" | cut -d= -f2-)
     password=$(grep "^PASSWORD=" "$state_file" | cut -d= -f2-)
     host_ip=$(grep "^HOST_IP=" "$state_file" | cut -d= -f2-)
+    # SCHEME is written by e2e-up.sh (compose = https via selfsign Traefik,
+    # simple/docker = http). Default http for older state files.
+    scheme=$(grep "^SCHEME=" "$state_file" | cut -d= -f2-)
+    scheme=${scheme:-http}
 
-    echo "=== Testing e2e-${mode} at http://${host_ip}:${port}/ ==="
+    echo "=== Testing e2e-${mode} at ${scheme}://${host_ip}:${port}/ ==="
 
     cd "$E2E_DIR"
     npm install --silent 2>/dev/null
@@ -94,7 +98,7 @@ test_mode() {
     local rc=0
     PORT="$port" \
     SWE_SWE_PASSWORD="$password" \
-    E2E_BASE_URL="http://${host_ip}:${port}" \
+    E2E_BASE_URL="${scheme}://${host_ip}:${port}" \
     SWE_PUBLIC_HOSTNAME="${SWE_PUBLIC_HOSTNAME:-}" \
     CHROMIUM_BIN="${CHROMIUM_BIN:-}" \
         npx playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}" || rc=$?

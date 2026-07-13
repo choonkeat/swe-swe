@@ -24,6 +24,11 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL,
+    // compose mode terminates TLS at Traefik with a self-signed cert
+    // (selfsign@host.docker.internal). simple/docker mode is plain http, where
+    // this is a no-op. Without it, every navigation in compose mode fails with
+    // net::ERR_CERT_AUTHORITY_INVALID.
+    ignoreHTTPSErrors: true,
     // Default: every spec starts already logged in via the cookie that
     // global-setup.js captured. login.spec.js opts out per-file via
     // test.use({ storageState: { cookies: [], origins: [] } }) because

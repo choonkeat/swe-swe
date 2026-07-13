@@ -53,10 +53,17 @@ else
     PUBLIC_PORTS="5100-5129"
     CDP_PORTS="6100-6129"
     VNC_PORTS="7100-7129"
-    # compose mode uses no extra init flags. (`--with-vscode` was never a real
-    # init flag -- passing it made `swe-swe init` abort with "flag provided but
-    # not defined", breaking `make e2e-up-compose`.)
-    INIT_EXTRA_FLAGS=""
+    # compose mode MUST init with an SSL mode so the Traefik service is
+    # emitted. Since 2026-05-21 default init is Dockerfile-only
+    # (DockerfileOnly = ssl=="no" && no tunnel), which strips the traefik:
+    # service from docker-compose.yml -- leaving `up -d swe-swe traefik` with
+    # "service traefik has neither an image nor a build context". selfsign
+    # flips DockerfileOnly off so {{IF NO_TUNNEL}} emits traefik. host is
+    # host.docker.internal (the address the e2e runner hits); cert validity
+    # does not matter because the runner curls with -k and Playwright sets
+    # ignoreHTTPSErrors. selfsign moves the web entrypoint to :7443, so the
+    # compose readiness probe + test base URL use https (see SCHEME below).
+    INIT_EXTRA_FLAGS="--ssl selfsign@host.docker.internal"
 fi
 
 TEST_STACK_DIR="/workspace/tmp/e2e-${MODE}"
@@ -119,6 +126,11 @@ echo "--- Configuring ---"
 ENV_FILE="${PROJECT_PATH}.env"
 HOST_TEST_STACK_DIR="${TEST_STACK_DIR/#\/workspace\//${HOST_WORKSPACE}/}"
 HOST_PROJECT_PATH="${PROJECT_PATH/#\/workspace\//${HOST_WORKSPACE}/}"
+# Host-translated EFFECTIVE_HOME, for mounting the selfsign TLS certs into
+# traefik (compose mode). `swe-swe init --ssl selfsign` runs with
+# HOME=$EFFECTIVE_HOME, so it writes certs to $EFFECTIVE_HOME/.swe-swe/tls;
+# the traefik service must mount that HOST path, not the dev shell's ${HOME}.
+HOST_EFFECTIVE_HOME="${EFFECTIVE_HOME/#\/workspace\//${HOST_WORKSPACE}/}"
 
 # Update .env
 cat >> "$ENV_FILE" <<EOF
@@ -205,6 +217,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${HOST_PROJECT_PATH}traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
+      # selfsign certs written by init (HOME=$EFFECTIVE_HOME). The base
+      # template mounts \${HOME}/.swe-swe/tls, but \${HOME} at compose-run
+      # time is the dev shell's home, not the e2e home -- override with the
+      # host-translated e2e path so traefik finds the cert/key.
+      - ${HOST_EFFECTIVE_HOME}/.swe-swe/tls:/etc/traefik/tls:ro
 
   swe-swe:
     environment:
@@ -219,6 +236,19 @@ services:
       - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
       - ${HOST_PROJECT_PATH}home:/home/app
 EOF
+
+    # Relax Traefik's rateLimit middleware for e2e. The generated
+    # traefik-dynamic.yml ships average:5 burst:10 per source IP -- sane for
+    # production, but the whole e2e suite (readiness probe once/sec, then dozens
+    # of Playwright navigations + session opens) comes from ONE source IP, so it
+    # blows past the burst and Traefik answers 429 "Too Many Requests" (the
+    # login page then has no password field and global-setup fails). Bump the
+    # limits far above any test burst. Only touches the e2e-generated config.
+    TRAEFIK_DYN="${PROJECT_PATH}traefik-dynamic.yml"
+    if [[ -f "$TRAEFIK_DYN" ]]; then
+        sed -i -E 's/^([[:space:]]*average:)[[:space:]]*[0-9]+/\1 100000/; s/^([[:space:]]*burst:)[[:space:]]*[0-9]+/\1 100000/' "$TRAEFIK_DYN"
+        echo "  Relaxed Traefik rateLimit for e2e (average/burst -> 100000)"
+    fi
 fi
 
 echo "  Port: $E2E_PORT"
@@ -277,12 +307,21 @@ fi
 # is the actual precondition for our test setup.
 echo "Waiting for server..."
 HOST_IP="${HOST_IP:-host.docker.internal}"
+# compose mode terminates TLS at Traefik (selfsign, websecure :7443), so the
+# runner talks https with -k (self-signed cert). simple/docker are plain http.
+if [[ "$MODE" == "compose" ]]; then
+    SCHEME="https"
+    CURL_INSECURE="-k"
+else
+    SCHEME="http"
+    CURL_INSECURE=""
+fi
 SERVER_READY=false
 LAST_ROOT=""
 LAST_LOGIN=""
 for i in $(seq 1 60); do
-    LAST_ROOT=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$HOST_IP:$E2E_PORT/" 2>/dev/null) || LAST_ROOT="000"
-    LAST_LOGIN=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$HOST_IP:$E2E_PORT/swe-swe-auth/login" 2>/dev/null) || LAST_LOGIN="000"
+    LAST_ROOT=$(curl -s $CURL_INSECURE -o /dev/null -w "%{http_code}" --max-time 2 "$SCHEME://$HOST_IP:$E2E_PORT/" 2>/dev/null) || LAST_ROOT="000"
+    LAST_LOGIN=$(curl -s $CURL_INSECURE -o /dev/null -w "%{http_code}" --max-time 2 "$SCHEME://$HOST_IP:$E2E_PORT/swe-swe-auth/login" 2>/dev/null) || LAST_LOGIN="000"
     if [[ "$LAST_LOGIN" == "200" ]]; then
         echo "Server ready (/=$LAST_ROOT, /swe-swe-auth/login=$LAST_LOGIN) after ${i}s"
         SERVER_READY=true
@@ -298,13 +337,15 @@ if [[ "$SERVER_READY" != "true" ]]; then
 fi
 
 # --- Write state file ---
+# SCHEME lets e2e-test.sh build the right base URL per mode (compose = https).
 cat > "$STATE_FILE" <<EOF
 MODE=$MODE
 PORT=$E2E_PORT
 PASSWORD=$E2E_PASSWORD
 PROJECT_PATH=$PROJECT_PATH
 HOST_IP=$HOST_IP
+SCHEME=$SCHEME
 EOF
 
-echo "=== e2e-up complete: ${MODE} mode running at http://${HOST_IP}:${E2E_PORT}/ ==="
+echo "=== e2e-up complete: ${MODE} mode running at ${SCHEME}://${HOST_IP}:${E2E_PORT}/ ==="
 echo "State file: $STATE_FILE"

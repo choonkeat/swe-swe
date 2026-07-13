@@ -46,7 +46,10 @@ export default async function globalSetup(config) {
     args: ['--no-sandbox', '--disable-gpu'],
   });
   const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-  const context = await browser.newContext({ baseURL });
+  // compose mode serves https behind Traefik with a self-signed cert; this
+  // context is created directly (not via config `use`), so it must opt into
+  // ignoring cert errors itself. No-op for http (simple/docker) modes.
+  const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true });
   const page = await context.newPage();
   try {
     await login(page);
