@@ -34,6 +34,38 @@ var btnVoice = document.getElementById('btn-voice');
 var voiceControls = document.getElementById('voice-controls');
 var voiceSelect = document.getElementById('voice-select');
 
+// A link's host counts as "local" (and so should load in the parent session
+// UI's App Preview pane rather than a new browser tab) when it's localhost,
+// the loopback IP, or a *.lvh.me vhost. Anything else is a real external site
+// the Preview iframe can't frame, so those keep the default new-tab behavior.
+function isLocalPreviewHost(host) {
+  if (!host) return false;
+  host = host.toLowerCase();
+  return host === 'localhost'
+    || host === '127.0.0.1'
+    || host === '[::1]'
+    || host === 'lvh.me'
+    || host.slice(-8) === '.lvh.me';
+}
+
+// Intercept clicks on local links inside chat bubbles: instead of opening a
+// new browser tab, ask the parent session UI to load them in App Preview.
+// Modified clicks (cmd/ctrl/shift/alt or non-left button) keep the native
+// new-tab/save behavior, and when the chat runs standalone (no parent frame,
+// so no Preview pane exists) we fall through to the default link behavior.
+messages.addEventListener('click', function (e) {
+  if (window.parent === window) return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+  var a = e.target.closest ? e.target.closest('a[href]') : null;
+  if (!a) return;
+  var url;
+  try { url = new URL(a.href, window.location.href); } catch (_) { return; }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+  if (!isLocalPreviewHost(url.hostname)) return;
+  e.preventDefault();
+  window.parent.postMessage({ type: 'agent-chat-open-preview', url: a.href }, '*');
+});
+
 var activeWs = null;
 var isUserScrolledUp = false;
 var pendingAckId = null;

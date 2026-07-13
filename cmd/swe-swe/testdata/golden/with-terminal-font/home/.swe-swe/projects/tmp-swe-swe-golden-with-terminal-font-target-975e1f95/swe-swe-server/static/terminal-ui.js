@@ -4766,6 +4766,23 @@ class TerminalUI extends HTMLElement {
                 this.sendKey('/clear');
                 setTimeout(() => this.sendKey('\r'), 300);
             }
+            // When user clicks a localhost / vhost link in Agent Chat, load it
+            // in the App Preview pane instead of a new browser tab. Reveal
+            // Preview in-place if it's already in the layout, else add it to its
+            // home slot (mirrors the agent-chat reveal idiom). Force the legacy
+            // activeTab shim to 'preview' last so setPreviewURL applies the
+            // iframe src directly rather than stashing it as pending.
+            if (e.data && e.data.type === 'agent-chat-open-preview' && e.data.url) {
+                const slot = this._slotForPane('preview');
+                if (slot) {
+                    this.setActiveInSlot(slot, 'preview');
+                } else {
+                    this.autoAddPaneToHome('preview', { activate: true });
+                }
+                this.switchMobileNav('preview');
+                this.activeTab = 'preview';
+                this.setPreviewURL(e.data.url);
+            }
         });
 
         // Status bar click: reconnect when disconnected, open settings when connected
@@ -6032,22 +6049,38 @@ class TerminalUI extends HTMLElement {
             });
             btn.appendChild(close);
 
-            // Popout gesture: tabs whose pane resolves to a URL get the
-            // popout-able marker (drives the dotted hover underline) and a
-            // tooltip explaining middle-click / cmd-click. URL is resolved
-            // at click time so navigation/probe state changes are reflected.
-            if (this.panePopoutUrl(paneId) != null) {
-                btn.classList.add('popout-able');
-                btn.title = this._popoutHintText();
-            }
             const tryPopout = (e) => {
                 const url = this.panePopoutUrl(paneId);
                 if (!url) return false;
                 e.preventDefault();
                 e.stopPropagation();
+                this._hidePopoutTooltip();
                 window.open(url, '_blank');
                 return true;
             };
+
+            // Popout affordance: tabs whose pane resolves to a shareable URL
+            // get a persistent up-right glyph plus a prominent hover tooltip
+            // advertising that clicking the glyph (or middle-click / cmd-click
+            // the tab) opens the pane in a new browser tab. URL is resolved at
+            // click time so navigation/probe state changes are reflected. The
+            // glyph is prepended (leading edge of the tab, opposite the close
+            // "x") so the two affordances don't crowd each other.
+            if (this.panePopoutUrl(paneId) != null) {
+                btn.classList.add('popout-able');
+                const hint = this._popoutHintText();
+                const glyph = document.createElement('span');
+                glyph.className = 'terminal-ui__slot-tab-popout';
+                glyph.textContent = '↗'; // up-right arrow
+                glyph.setAttribute('aria-label', hint);
+                // Plain click on the glyph pops out directly (no modifier).
+                glyph.addEventListener('click', (e) => tryPopout(e));
+                btn.insertBefore(glyph, btn.firstChild);
+                // Prominent styled tooltip, positioned out-of-flow (fixed) so
+                // the tab bar's overflow clipping never hides it.
+                btn.addEventListener('mouseenter', () => this._showPopoutTooltip(btn, hint));
+                btn.addEventListener('mouseleave', () => this._hidePopoutTooltip());
+            }
             btn.addEventListener('click', (e) => {
                 if (e.metaKey || e.ctrlKey) {
                     if (tryPopout(e)) return;
@@ -6266,7 +6299,38 @@ class TerminalUI extends HTMLElement {
     _popoutHintText() {
         const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
         const mod = isMac ? '⌘' : 'Ctrl';
-        return `Middle-click or ${mod}+click to open in new browser tab`;
+        return `Open in a new browser tab: click ↗, ${mod}+click, or middle-click`;
+    }
+
+    // Lazily create the single shared popout tooltip element. Appended to
+    // document.body so `position: fixed` is viewport-relative and immune to
+    // the tab bar's overflow clipping (and any transformed ancestor).
+    _popoutTooltipEl() {
+        if (!this._popoutTip || !this._popoutTip.isConnected) {
+            const tip = document.createElement('div');
+            tip.className = 'terminal-ui__popout-tooltip';
+            tip.hidden = true;
+            document.body.appendChild(tip);
+            this._popoutTip = tip;
+        }
+        return this._popoutTip;
+    }
+
+    // Show the popout tooltip just below the anchoring tab, clamped so it
+    // never spills off the right edge of the viewport.
+    _showPopoutTooltip(anchorEl, text) {
+        const tip = this._popoutTooltipEl();
+        tip.textContent = text;
+        tip.hidden = false;
+        const r = anchorEl.getBoundingClientRect();
+        const maxLeft = window.innerWidth - tip.offsetWidth - 8;
+        const left = Math.max(8, Math.min(r.left, maxLeft));
+        tip.style.top = (r.bottom + 6) + 'px';
+        tip.style.left = left + 'px';
+    }
+
+    _hidePopoutTooltip() {
+        if (this._popoutTip) this._popoutTip.hidden = true;
     }
 
     initSplitPaneUi() {
