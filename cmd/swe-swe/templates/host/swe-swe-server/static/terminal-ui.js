@@ -6063,7 +6063,9 @@ class TerminalUI extends HTMLElement {
             // get a persistent up-right glyph plus a prominent hover tooltip
             // advertising that clicking the glyph (or middle-click / cmd-click
             // the tab) opens the pane in a new browser tab. URL is resolved at
-            // click time so navigation/probe state changes are reflected.
+            // click time so navigation/probe state changes are reflected. The
+            // glyph is prepended (leading edge of the tab, opposite the close
+            // "x") so the two affordances don't crowd each other.
             if (this.panePopoutUrl(paneId) != null) {
                 btn.classList.add('popout-able');
                 const hint = this._popoutHintText();
@@ -6073,7 +6075,7 @@ class TerminalUI extends HTMLElement {
                 glyph.setAttribute('aria-label', hint);
                 // Plain click on the glyph pops out directly (no modifier).
                 glyph.addEventListener('click', (e) => tryPopout(e));
-                btn.appendChild(glyph);
+                btn.insertBefore(glyph, btn.firstChild);
                 // Prominent styled tooltip, positioned out-of-flow (fixed) so
                 // the tab bar's overflow clipping never hides it.
                 btn.addEventListener('mouseenter', () => this._showPopoutTooltip(btn, hint));

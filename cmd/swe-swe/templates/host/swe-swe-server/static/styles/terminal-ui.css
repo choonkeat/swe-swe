@@ -2427,7 +2427,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
     justify-content: center;
     width: 15px;
     height: 15px;
-    margin-left: 3px;
+    /* Leads the label -- gap sits on its right. */
+    margin-right: 3px;
     font-size: 11px;
     line-height: 1;
     border-radius: 3px;
