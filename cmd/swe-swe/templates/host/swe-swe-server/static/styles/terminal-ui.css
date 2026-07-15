@@ -2461,7 +2461,9 @@ terminal-ui.embedded-in-iframe .mobile-only {
     max-width: calc(100vw - 16px);
     padding: 6px 10px;
     font-size: 11px;
-    font-family: inherit;
+    /* Appended to <body>, outside `.terminal-ui`, so `inherit` would pick up
+       the browser default serif. Pin the UI font stack explicitly. */
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-weight: 600;
     line-height: 1.3;
     color: var(--bg-primary);
