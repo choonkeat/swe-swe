@@ -76,6 +76,70 @@
     e.g. &ldquo;named vhost&rdquo; (form) over &ldquo;<code>&lt;ip&gt;.sslip.io</code>&rdquo; (reach).
   </div>
 
+  <h2>Recommended spine: ports first</h2>
+  <p class="lead">The ten rows below are the full design space, but for the common case
+  &mdash; swe-swe on a <strong>fixed hostname you don't control DNS for</strong> (<code>my-swe-swe.example.com</code>,
+  or <code>localhost</code>) &mdash; the whole thing collapses to one idea: <strong>a unique port per
+  service is the only identity the proxy needs.</strong> The browser varies the port against the fixed
+  hostname; the proxy routes on the port and forwards to the service's loopback address. No wildcard
+  DNS, no fake subdomains, no <code>Host</code> rewriting.</p>
+
+  <div class="note">
+    <strong>Why port-only is the most robust default (not a compromise).</strong> If you <em>don't</em>
+    rewrite <code>Host</code>, the service sees <code>Host: my-swe-swe.example.com:&lt;port&gt;</code> &mdash;
+    the same origin the browser is on. So any absolute URL, <code>Location:</code> redirect, or
+    <code>Set-Cookie</code> the app emits references a host:port the browser can <em>actually reach</em>.
+    The proxy is fully transparent and every &ldquo;fabricated-Host leak&rdquo; failure mode disappears.
+    Bonus: the browser never leaves the login host (only the port changes, and cookies are port-agnostic
+    on the same host), so <strong>password deployments just work</strong> &mdash; none of the cross-host
+    auth-cookie pain in the note further down applies.
+  </div>
+
+  <h3 style="margin:1.4rem 0 .5rem;font-size:1rem;">Three decoupled layers</h3>
+  <p class="lead" style="margin-bottom:.8rem;">These do <em>not</em> have to agree with each other, which is what makes the model coherent:</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Layer</th><th>Value</th><th>Consumed by</th><th>Must be unique per</th></tr></thead>
+    <tbody>
+      <tr><td class="opt">UI label</td><td><code>app123</code> (Procfile service name)</td><td>the human, in the Preview tab</td><td>nothing &mdash; purely cosmetic</td></tr>
+      <tr><td class="opt">Browser URL</td><td><code>my-swe-swe.example.com:&lt;port&gt;</code></td><td>the browser's DNS + the proxy's demux</td><td><code>(session, service)</code> &rarr; allocate the <strong>port</strong> per pair</td></tr>
+      <tr><td class="opt">Upstream Host</td><td>passed through untouched (or fabricated only if forced)</td><td>the service / its in-container router</td><td>n/a &mdash; free string when you must fabricate</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="legend">Consequence: <strong>service names are display-only labels scoped to their session</strong>;
+  the (globally-unique) port is the sole identity the proxy routes on. The same name (<code>web</code>,
+  <code>app123</code>) may repeat freely <em>across</em> sessions &mdash; different sessions, different ports,
+  no collision. Within <em>one</em> session, duplicate names are rejected at parse time
+  (<code>swe-run</code> refuses to boot: &ldquo;duplicate service name&rdquo;), so intra-session identity is
+  guaranteed too.</p>
+
+  <h3 style="margin:1.4rem 0 .5rem;font-size:1rem;">Three tiers &mdash; escalate only when forced</h3>
+  <ul class="tight" style="max-width:80ch;">
+    <li><span class="chip ok">default</span> <strong>Port per service, Host passthrough.</strong>
+      Whenever you control the port surface (VPS, <code>localhost</code>). Cleanest, transparent, no leaks.</li>
+    <li><span class="chip part">fallback A</span> <strong>Fabricate an upstream <code>Host</code></strong>
+      (e.g. <code>app123.{session}.lvh.me</code>) only for apps whose <em>own</em> router demands a specific
+      vhost name and 404s otherwise. This re-introduces the leak checklist below &mdash; but only for those apps.</li>
+    <li><span class="chip no">fallback B</span> <strong>Single-port path/label demux</strong>
+      (<code>/proxy/{uuid}/preview/</code>) when the platform gives you <em>one</em> port only
+      (443-only PaaS like Fly/Railway) so you physically can't open a port per service.</li>
+  </ul>
+
+  <div class="note">
+    <strong>Leak checklist &mdash; applies only when you fabricate a <code>Host</code> (fallback A).</strong>
+    A fake upstream Host must never escape back into anything the browser acts on, or it resolves to the
+    user's own loopback and dies:
+    <ul class="tight" style="margin-top:.4rem;">
+      <li><code>Location:</code> redirect headers pointing at the fake host &rarr; rewrite back to <code>host:port</code>.</li>
+      <li><code>Set-Cookie; Domain=&lt;fake host&gt;</code> &rarr; browser silently drops it; app sessions/CSRF break.</li>
+      <li>Absolute asset/link URLs baked into HTML using the fake host &rarr; fail to resolve.</li>
+    </ul>
+    If the app emits relative URLs and host-agnostic cookies, none of this fires. The moment it hard-codes
+    its Host into responses you're into response-body rewriting &mdash; the hacky tier. Port-only (the default)
+    has no fake host, so this checklist is empty for it.
+  </div>
+
   <h2>Addressing forms (how you name the target)</h2>
   <div class="scroll">
   <table>
