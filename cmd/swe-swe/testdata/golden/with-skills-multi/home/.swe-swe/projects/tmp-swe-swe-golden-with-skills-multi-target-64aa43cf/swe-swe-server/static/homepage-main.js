@@ -164,6 +164,7 @@ function newSessionFromRecording(btn) {
         {
             repoPath: btn.dataset.pwd || '',
             branch: btn.dataset.branch || '',
+            branchHint: btn.dataset.branchHint || '',
             name: btn.dataset.name || '',
             extraArgs: btn.dataset.extraArgs || ''
         }

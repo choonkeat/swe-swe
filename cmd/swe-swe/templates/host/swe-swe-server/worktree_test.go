@@ -2083,10 +2083,12 @@ func TestSessionPageQueryRepoRoot(t *testing.T) {
 	}
 }
 
-// PrefillBranch prefers an explicit worktree branch, else falls back to the
-// branch the session's checkout was on -- so a recording's "+ New" can recover
-// the branch of a default-workspace/dogfood session that passed no worktree
-// branch (its branch_name is empty; the branch lives only in the checkout).
+// PrefillBranch carries ONLY an explicit worktree branch as the dialog's
+// submitted value. A plain shared-checkout session (empty branch_name) prefills
+// blank, reproducing the shared checkout -- it must NOT fall back to the
+// checkout branch, which would force a worktree on a branch the session never
+// asked to worktree. The checkout branch is surfaced separately as a hint (see
+// TestSessionPageQueryPrefillBranchHint).
 func TestSessionPageQueryPrefillBranch(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -2095,7 +2097,7 @@ func TestSessionPageQueryPrefillBranch(t *testing.T) {
 		expected       string
 	}{
 		{"worktree branch wins", "feature-x", "main", "feature-x"},
-		{"falls back to checkout branch", "", "mcp-less", "mcp-less"},
+		{"plain checkout stays blank (no fallback)", "", "mcp-less", ""},
 		{"nothing to prefill", "", "", ""},
 		{"worktree branch, no checkout", "feature-x", "", "feature-x"},
 	}
@@ -2105,6 +2107,33 @@ func TestSessionPageQueryPrefillBranch(t *testing.T) {
 			q := SessionPageQuery{BranchName: tt.branchName, CheckoutBranch: tt.checkoutBranch}
 			if got := q.PrefillBranch(); got != tt.expected {
 				t.Errorf("PrefillBranch(BranchName=%q, CheckoutBranch=%q) = %q, want %q",
+					tt.branchName, tt.checkoutBranch, got, tt.expected)
+			}
+		})
+	}
+}
+
+// PrefillBranchHint surfaces the checkout branch as a non-submitting placeholder
+// ONLY for a plain shared-checkout session (empty branch_name). When a worktree
+// branch was used, PrefillBranch already carries it as the value, so the hint is
+// empty.
+func TestSessionPageQueryPrefillBranchHint(t *testing.T) {
+	tests := []struct {
+		name           string
+		branchName     string
+		checkoutBranch string
+		expected       string
+	}{
+		{"plain checkout hints its branch", "", "mcp-less", "mcp-less"},
+		{"worktree branch suppresses hint", "feature-x", "main", ""},
+		{"nothing to hint", "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := SessionPageQuery{BranchName: tt.branchName, CheckoutBranch: tt.checkoutBranch}
+			if got := q.PrefillBranchHint(); got != tt.expected {
+				t.Errorf("PrefillBranchHint(BranchName=%q, CheckoutBranch=%q) = %q, want %q",
 					tt.branchName, tt.checkoutBranch, got, tt.expected)
 			}
 		})

@@ -299,14 +299,30 @@ func (q SessionPageQuery) RepoRoot() string {
 	return workDir
 }
 
-// PrefillBranch is the branch a recording's "+ New" button should pre-fill into
-// the New Session dialog: the explicit worktree branch when one was used, else
-// the branch the session's checkout was actually on. Kept separate from
-// BranchName/Encode() so only the prefill -- not restart URLs -- gains the
-// checkout fallback.
+// PrefillBranch is the branch a recording's "+ New" button pre-fills into the
+// New Session dialog as the actual submitted value: only the explicit worktree
+// branch, when one was used. For a plain shared-checkout session (BranchName
+// empty, no worktree requested) it returns "" so the field stays BLANK -- which
+// reproduces the shared checkout, rather than driving a worktree on the branch
+// the checkout merely happened to be on. Falling back to CheckoutBranch here was
+// a bug: it turned "use the shared checkout" into "worktree on main", diverging
+// the moment /workspace's HEAD moved off that branch. The checkout branch is
+// still surfaced, but only as a non-submitting placeholder -- see
+// PrefillBranchHint.
 func (q SessionPageQuery) PrefillBranch() string {
+	return q.BranchName
+}
+
+// PrefillBranchHint is the branch the recording's checkout was on, surfaced as a
+// non-submitting placeholder in the New Session dialog when the recording used
+// no explicit worktree branch (a plain shared-checkout session). Purely
+// informational: it tells the user which branch the original ran on without
+// forcing a worktree -- leaving the field blank reproduces the shared checkout.
+// Empty when a worktree branch was used, since PrefillBranch carries that as the
+// actual value instead.
+func (q SessionPageQuery) PrefillBranchHint() string {
 	if q.BranchName != "" {
-		return q.BranchName
+		return ""
 	}
 	return q.CheckoutBranch
 }

@@ -31,6 +31,18 @@
     var branchCombo = document.getElementById('branch-combo');
     var extraArgsInput = document.getElementById('new-session-extra-args');
 
+    // The static "Leave blank for default branch" placeholder, captured before
+    // any prefill overrides it so reset can restore it. A recording's "+ New"
+    // swaps in a branch-specific hint (see applyPendingPrefill).
+    var DEFAULT_BRANCH_PLACEHOLDER = branchInput ? branchInput.placeholder : '';
+    function setBranchPlaceholder(text) {
+        if (branchInput) branchInput.placeholder = text;
+        // The combo-box mirrors its placeholder attribute onto the visible
+        // input at runtime, so set it there too (the raw input is hidden once
+        // the combo upgrades it).
+        if (branchCombo) branchCombo.setAttribute('placeholder', text);
+    }
+
     // Clone-credential UI (three-state: TRANSPARENT / FRESH / REJECTED).
     var cloneCredTransparent = document.getElementById('clone-cred-transparent');
     var cloneCredTransparentHost = document.getElementById('clone-cred-transparent-host');
@@ -180,6 +192,7 @@
         branchInput.value = '';
         branchInput.disabled = true;
         branchList.innerHTML = '';
+        setBranchPlaceholder(DEFAULT_BRANCH_PLACEHOLDER);
         if (branchCombo) {
             branchCombo.value = '';
             branchCombo.setOptions([]);
@@ -425,6 +438,12 @@
             branchInput.value = prefill.branch;
             if (branchCombo) branchCombo.value = prefill.branch;
             dialogState.selectedBranch = prefill.branch;
+        } else if (prefill.branchHint) {
+            // Plain shared-checkout recording: no worktree branch, so the field
+            // stays blank (reproducing the shared checkout). Surface the branch
+            // the checkout was on as a non-submitting placeholder so the user
+            // sees it without it forcing a worktree on that branch.
+            setBranchPlaceholder('Leave blank to reuse ' + prefill.branchHint);
         }
         if (prefill.extraArgs) {
             extraArgsInput.value = prefill.extraArgs;
