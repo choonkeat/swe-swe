@@ -31,6 +31,22 @@
     var branchCombo = document.getElementById('branch-combo');
     var extraArgsInput = document.getElementById('new-session-extra-args');
 
+    // Derive a short "org/repo" label from a git remote URL for the Where
+    // dropdown's primary line (the full URL rides along as the detail line).
+    // Handles scp-style (git@host:org/repo.git) and URL-style
+    // (https://host/org/repo.git) remotes; falls back to `fallback` (dirName).
+    function shortRepoName(url, fallback) {
+        if (!url) return fallback || url;
+        var s = url.trim().replace(/\.git$/, '');
+        s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ''); // drop scheme://
+        s = s.replace(/^[^@\/]+@/, '');                 // drop user@
+        var path = s.replace(/^[^\/:]+[:\/]/, '');       // drop host and first separator
+        var parts = path.split('/').filter(Boolean);
+        if (parts.length >= 2) return parts.slice(-2).join('/');
+        if (parts.length === 1) return parts[0];
+        return fallback || url;
+    }
+
     // The static "Leave blank for default branch" placeholder, captured before
     // any prefill overrides it so reset can restore it. A recording's "+ New"
     // swaps in a branch-specific hint (see applyPendingPrefill).
@@ -171,7 +187,7 @@
         for (var i = 0; i < modeSelect.options.length; i++) {
             var opt = modeSelect.options[i];
             if (opt.disabled || opt.value === '') continue;
-            opts.push({ value: opt.value, label: opt.textContent });
+            opts.push({ value: opt.value, label: opt.textContent, detail: opt.dataset.detail || '' });
         }
         whereCombo.setOptions(opts);
     }
@@ -379,7 +395,13 @@
                     var option = document.createElement('option');
                     option.value = repo.path;
                     option.dataset.dynamic = 'true';
-                    option.textContent = repo.remoteURL || repo.dirName;
+                    if (repo.remoteURL) {
+                        // Primary line = short org/repo; detail line = full URL.
+                        option.textContent = shortRepoName(repo.remoteURL, repo.dirName);
+                        option.dataset.detail = repo.remoteURL;
+                    } else {
+                        option.textContent = repo.dirName;
+                    }
                     modeSelect.insertBefore(option, cloneOption);
                 });
 

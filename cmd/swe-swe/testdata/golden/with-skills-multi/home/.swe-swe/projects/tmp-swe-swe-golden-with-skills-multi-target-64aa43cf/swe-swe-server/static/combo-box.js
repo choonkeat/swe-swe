@@ -100,15 +100,39 @@ const STYLES = /* css */ `
   .option {
     padding: 6px 10px;
     cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* Wrap long values (e.g. git URLs) instead of clipping to an ellipsis. */
+    white-space: normal;
+    overflow-wrap: anywhere;
     color: var(--combo-text, inherit);
+  }
+
+  /* Divider between rows so wrapped multi-line options stay tellable apart.
+     Off by default (transparent); consumers opt in via --combo-divider. */
+  .option + .option {
+    border-top: 1px solid var(--combo-divider, transparent);
+  }
+
+  /* Two-line option: bold primary label over a dimmed secondary line. */
+  .opt-name {
+    display: block;
+  }
+
+  .opt-detail {
+    display: block;
+    margin-top: 1px;
+    font-size: 0.85em;
+    color: var(--combo-detail, #888);
+    overflow-wrap: anywhere;
   }
 
   .option[aria-selected="true"] {
     background: var(--combo-selected-bg, #4a90d9);
     color: var(--combo-selected-text, #fff);
+  }
+
+  .option[aria-selected="true"] .opt-detail {
+    color: inherit;
+    opacity: 0.85;
   }
 
   .option:not([aria-selected="true"]):hover {
@@ -249,7 +273,9 @@ class ComboBox extends HTMLElement {
 
   setOptions(opts) {
     this.#options = opts.map((o) =>
-      typeof o === "string" ? { value: o, label: o } : { value: o.value, label: o.label }
+      typeof o === "string"
+        ? { value: o, label: o }
+        : { value: o.value, label: o.label, detail: o.detail || "" }
     );
     this._renderOptions();
   }
@@ -276,7 +302,7 @@ class ComboBox extends HTMLElement {
     const opts = [];
     for (const opt of select.options) {
       if (opt.disabled) continue;
-      opts.push({ value: opt.value, label: opt.textContent });
+      opts.push({ value: opt.value, label: opt.textContent, detail: opt.dataset.detail || "" });
     }
     this.#options = opts;
     this._renderOptions();
@@ -349,7 +375,7 @@ class ComboBox extends HTMLElement {
   _readChildOptions() {
     const opts = [];
     for (const el of this.querySelectorAll("option")) {
-      opts.push({ value: el.value || el.textContent, label: el.textContent });
+      opts.push({ value: el.value || el.textContent, label: el.textContent, detail: el.dataset.detail || "" });
     }
     if (opts.length) {
       this.#options = opts;
@@ -407,14 +433,22 @@ class ComboBox extends HTMLElement {
 
     const lc = filter.toLowerCase();
 
-    // Build scored list
+    // Build scored list. Match against the label AND the detail line (e.g. the
+    // full git URL) so typing any part of either still surfaces the option.
     const scored = [];
     this.#options.forEach((opt, i) => {
       if (!lc) {
-        scored.push({ opt, i, match: null, score: 0 });
+        scored.push({ opt, i, mLabel: null, mDetail: null, score: 0 });
       } else {
-        const m = this._fuzzyMatch(opt.label, lc);
-        if (m) scored.push({ opt, i, match: m, score: m.score });
+        const mLabel = this._fuzzyMatch(opt.label, lc);
+        const mDetail = opt.detail ? this._fuzzyMatch(opt.detail, lc) : null;
+        if (mLabel || mDetail) {
+          const score = Math.min(
+            mLabel ? mLabel.score : Infinity,
+            mDetail ? mDetail.score : Infinity
+          );
+          scored.push({ opt, i, mLabel, mDetail, score });
+        }
       }
     });
 
@@ -423,15 +457,28 @@ class ComboBox extends HTMLElement {
 
     const frag = document.createDocumentFragment();
 
-    for (const { opt, i, match } of scored) {
+    for (const { opt, i, mLabel, mDetail } of scored) {
       const div = document.createElement("div");
       div.className = "option";
       div.setAttribute("role", "option");
       div.dataset.index = i;
       div.dataset.value = opt.value;
 
-      if (match) {
-        div.innerHTML = this._highlightPositions(opt.label, match.positions);
+      if (opt.detail) {
+        // Two-line: primary label over dimmed detail, each highlighted on its own.
+        const name = document.createElement("span");
+        name.className = "opt-name";
+        if (mLabel) name.innerHTML = this._highlightPositions(opt.label, mLabel.positions);
+        else name.textContent = opt.label;
+
+        const detail = document.createElement("span");
+        detail.className = "opt-detail";
+        if (mDetail) detail.innerHTML = this._highlightPositions(opt.detail, mDetail.positions);
+        else detail.textContent = opt.detail;
+
+        div.append(name, detail);
+      } else if (mLabel) {
+        div.innerHTML = this._highlightPositions(opt.label, mLabel.positions);
       } else {
         div.textContent = opt.label;
       }

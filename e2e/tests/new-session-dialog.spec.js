@@ -32,6 +32,16 @@ const EXTERNAL_REPO = '/repos/e2e-dialog-repo/workspace';
 const DOGFOOD_REPO = '/repos/e2e-dogfood-repo/workspace';
 const DOGFOOD_BRANCH = 'dogfood-branch';
 
+// A repo whose remote is a long git URL. The Where dropdown renders each such
+// repo as two lines -- a short "org/repo" primary label over the full URL on a
+// dimmed detail line -- so long URLs wrap in full instead of clipping to an
+// ellipsis, and the full URL stays matchable when filtering. The remote host
+// ("gitlab.example.com") is deliberately absent from the short label so a
+// filter on it can only match the detail line.
+const LONGURL_REPO = '/repos/e2e-longurl-repo/workspace';
+const LONGURL_REMOTE = 'git@gitlab.example.com:acme/payments-backend-service.git';
+const LONGURL_SHORT = 'acme/payments-backend-service';
+
 // Helper: get the e2e swe-swe container name (works for both simple and
 // compose modes). Same lookup mcp-create-session.spec.js uses.
 function getContainerName() {
@@ -80,6 +90,26 @@ function setupDogfoodRepo(containerName) {
 
 function removeDogfoodRepo(containerName) {
   execSync(`docker exec ${containerName} sh -c 'rm -rf /repos/e2e-dogfood-repo'`);
+}
+
+// Create a repo carrying a long git URL as its origin remote. Only the remote
+// URL matters here (the Where dropdown reads it via /api/repos); the URL points
+// nowhere, but listing the repo never fetches it, so it never hangs.
+function setupLongUrlRepo(containerName) {
+  execSync(`docker exec ${containerName} sh -c '
+    rm -rf /repos/e2e-longurl-repo &&
+    mkdir -p ${LONGURL_REPO} &&
+    cd ${LONGURL_REPO} &&
+    git init -q -b main &&
+    git config user.email e2e@test.invalid &&
+    git config user.name e2e &&
+    git commit -q --allow-empty -m init &&
+    git remote add origin ${LONGURL_REMOTE}
+  '`);
+}
+
+function removeLongUrlRepo(containerName) {
+  execSync(`docker exec ${containerName} sh -c 'rm -rf /repos/e2e-longurl-repo'`);
 }
 
 async function openDialog(page) {
@@ -148,12 +178,14 @@ test.describe('new-session dialog', () => {
     const c = getContainerName();
     setupExternalRepo(c);
     setupDogfoodRepo(c);
+    setupLongUrlRepo(c);
   });
 
   test.afterAll(() => {
     const c = getContainerName();
     removeExternalRepo(c);
     removeDogfoodRepo(c);
+    removeLongUrlRepo(c);
   });
 
   test.beforeEach(() => {
@@ -322,5 +354,63 @@ test.describe('new-session dialog', () => {
     expect(url.searchParams.get('branch')).toBe(DOGFOOD_BRANCH);
     expect(url.searchParams.get('pwd')).toBe(DOGFOOD_REPO);
     expect(url.searchParams.get('name')).toBe(name);
+  });
+
+  // A repo with a long remote URL renders in the Where dropdown as two lines:
+  // a short "org/repo" primary label over the FULL URL on a dimmed detail line.
+  // This is what lets long git URLs show in full (wrapping) instead of clipping
+  // to an ellipsis, keeps the full URL matchable while filtering, and draws a
+  // divider between rows so wrapped multi-line options stay tellable apart.
+  test('long git URLs render two-line (short name + full URL) and stay matchable', async ({ page }) => {
+    await openDialog(page);
+
+    // Wait for the dynamic /repos option AND its rendered combo-box row.
+    await page.waitForFunction((repo) => {
+      const sel = document.getElementById('new-session-mode');
+      const combo = document.getElementById('where-combo');
+      const opt = combo && combo.shadowRoot &&
+        combo.shadowRoot.querySelector(`.option[data-value="${repo}"]`);
+      return !!sel && Array.from(sel.options).some((o) => o.value === repo) && !!opt;
+    }, LONGURL_REPO, { timeout: 15_000 });
+
+    // The row is two-line: bold short name + dimmed full URL, with the WHOLE URL
+    // present in the DOM (never truncated).
+    const row = await page.evaluate((repo) => {
+      const combo = document.getElementById('where-combo');
+      const opt = combo.shadowRoot.querySelector(`.option[data-value="${repo}"]`);
+      const name = opt.querySelector('.opt-name');
+      const detail = opt.querySelector('.opt-detail');
+      const cs = getComputedStyle(opt);
+      return {
+        name: name && name.textContent,
+        detail: detail && detail.textContent,
+        // A divider is drawn above non-first rows (workspace is first).
+        borderTopWidth: cs.borderTopWidth,
+      };
+    }, LONGURL_REPO);
+
+    expect(row.name).toBe(LONGURL_SHORT);
+    expect(row.detail).toBe(LONGURL_REMOTE);
+    expect(row.borderTopWidth).toBe('1px');
+
+    // Filtering by a token that appears ONLY in the URL ("gitlab", absent from
+    // the short label) still surfaces the repo -- the full URL is searchable.
+    const filtered = await page.evaluate((repo) => {
+      const combo = document.getElementById('where-combo');
+      const input = combo.shadowRoot.querySelector('input');
+      input.value = 'gitlab';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const rows = [...combo.shadowRoot.querySelectorAll('.option')];
+      return {
+        values: rows.map((o) => o.dataset.value),
+        // The matched substring is highlighted inside the detail line.
+        highlighted: !!rows
+          .find((o) => o.dataset.value === repo)
+          ?.querySelector('.opt-detail mark'),
+      };
+    }, LONGURL_REPO);
+
+    expect(filtered.values).toEqual([LONGURL_REPO]);
+    expect(filtered.highlighted).toBe(true);
   });
 });

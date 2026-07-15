@@ -1003,6 +1003,12 @@
             --combo-selected-bg: var(--accent-primary);
             --combo-selected-text: #fff;
             --combo-highlight: rgba(255,255,255,0.15);
+            --combo-detail: var(--text-muted);
+        }
+        /* Where dropdown lists full git URLs: draw a divider between rows so
+           wrapped multi-line options stay tellable apart. */
+        .dialog combo-box#where-combo {
+            --combo-divider: var(--border-primary);
         }
         .dialog combo-box.combo--in-row {
             flex: 1;
