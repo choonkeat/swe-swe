@@ -2,7 +2,8 @@
 set -euox pipefail
 
 # Run the test container stack using docker-compose
-# The stack includes: traefik, auth, chrome, swe-swe, vscode-proxy, code-server
+# The single-container stack now includes just the swe-swe service (embedded
+# auth, browser, preview, agent-chat -- no separate traefik/vscode-proxy/etc.)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
@@ -59,19 +60,31 @@ docker compose ps
 echo "Recent logs:"
 docker compose logs --tail=20
 
-# Test endpoint
-HOST_IP="${HOST_IP:-host.docker.internal}"
-echo "Testing server response at http://$HOST_IP:$SWE_PORT/ ..."
+# Test endpoint. Probe from INSIDE the container: this script may run inside the
+# dev container, whose shell cannot reach the host-published port over
+# host.docker.internal (only the MCP browser's context can), so a host-side curl
+# gives a false negative. An in-container check is the authoritative readiness
+# signal regardless of where this script runs.
+echo "Waiting for server readiness (probing inside the container) ..."
+READY=0
+for i in $(seq 1 20); do
+    HTTP_CODE=$(docker compose exec -T swe-swe sh -c \
+        "curl -s -o /dev/null -w '%{http_code}' http://localhost:${SWE_PORT}/ 2>/dev/null || wget -qO- --server-response http://localhost:${SWE_PORT}/ 2>&1 | awk '/HTTP\//{print \$2; exit}'" \
+        2>/dev/null || echo "000")
+    if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" || "$HTTP_CODE" == "401" ]]; then
+        READY=1
+        break
+    fi
+    sleep 2
+done
 
-# The auth endpoint returns 401 without credentials, which is expected
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://$HOST_IP:$SWE_PORT/" 2>/dev/null || echo "000")
-if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "302" || "$HTTP_CODE" == "401" ]]; then
-    echo "Phase 3 complete: Test stack running at http://$HOST_IP:$SWE_PORT/"
+if [[ "$READY" == "1" ]]; then
+    echo "Phase 3 complete: server responding inside container (HTTP $HTTP_CODE)"
     echo ""
     echo "For MCP browser testing, use:"
     echo "  http://host.docker.internal:$SWE_PORT/"
 else
-    echo "Warning: Server may not be responding correctly (HTTP $HTTP_CODE)"
+    echo "Warning: Server did not become ready (last HTTP $HTTP_CODE)"
     echo "Check logs with: cd $PROJECT_PATH && docker compose logs"
     exit 1
 fi

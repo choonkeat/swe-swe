@@ -161,36 +161,35 @@ HOST_PROJECT_PATH="${PROJECT_PATH/#\/workspace\//${HOST_WORKSPACE}/}"
 echo "HOST_PROJECT_PATH=$HOST_PROJECT_PATH" >> "$ENV_FILE"
 echo "  Host path: $HOST_PROJECT_PATH"
 
-# Create docker-compose.override.yml with host paths for volume mounts
-# This fixes Docker-in-Docker path translation issues
+# Create docker-compose.override.yml with host paths for volume mounts.
+# This fixes Docker-in-Docker path translation: the docker daemon runs on the
+# HOST, so the base compose's relative `./home:/home/app` mount would resolve
+# against a container path the daemon cannot see. Re-declare it with the
+# absolute host path instead. The single-container templates define only the
+# `swe-swe` service now -- listing the old multi-container services (traefik,
+# vscode-proxy, code-server, chrome) here made compose fail with
+# "service ... has neither an image nor a build context".
 cat > "$PROJECT_PATH/docker-compose.override.yml" << EOF
 # Auto-generated for Docker-in-Docker compatibility
 # Translates container paths to host paths for volume mounts
 services:
-  traefik:
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${HOST_PROJECT_PATH}traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro
-
-  vscode-proxy:
-    volumes:
-      - ${HOST_PROJECT_PATH}nginx-vscode.conf:/etc/nginx/conf.d/default.conf:ro
-
   swe-swe:
     volumes:
-      - ${HOST_PROJECT_PATH}certs:/swe-swe/certs:ro
       - ${HOST_PROJECT_PATH}home:/home/app
-
-  code-server:
-    volumes:
-      - ${HOST_PROJECT_PATH}certs:/swe-swe/certs:ro
-      - ${HOST_PROJECT_PATH}home:/home/coder
-
-  chrome:
-    volumes:
-      - ${HOST_PROJECT_PATH}certs:/swe-swe/certs:ro
 EOF
 echo "Created docker-compose.override.yml with host paths"
+
+# Offset the "public ports" host publish so it does not collide with the dev
+# stack sharing this host. swe-swe init offsets the preview/agent-chat/vnc/cdp
+# host ranges (into 2xxxx) but publishes the public ports (5000-5019) verbatim,
+# which the surrounding dev stack already binds -- causing "port is already
+# allocated" on `up`. Shift the HOST side by +20000 (container side unchanged),
+# matching the offset the other side ports already use.
+COMPOSE_FILE="$PROJECT_PATH/docker-compose.yml"
+if grep -q '"5000-5019:5000-5019"' "$COMPOSE_FILE"; then
+    sed -i 's/"5000-5019:5000-5019"/"25000-25019:5000-5019"/' "$COMPOSE_FILE"
+    echo "Offset public ports host publish to 25000-25019 (was 5000-5019) to avoid dev-stack collision"
+fi
 
 # Write slot info for subsequent scripts
 echo "$SWE_TEST_SLOT" > "$TEST_STACK_DIR/.swe-test-slot"
