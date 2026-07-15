@@ -85,6 +85,7 @@ RUN apt-get update && apt-get install -y \
     less \
     lsof \
     poppler-utils \
+    rsync \
     unzip \
     vim \
     && rm -rf /var/lib/apt/lists/*
