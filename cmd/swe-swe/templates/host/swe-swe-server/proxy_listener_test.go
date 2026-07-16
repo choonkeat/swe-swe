@@ -78,7 +78,7 @@ func TestRequireAuthCookieWithAgentChatProxy(t *testing.T) {
 	target, _ := url.Parse(upstream.URL)
 
 	secret := "proxy-test-secret"
-	handler := corsWrapper(requireAuthCookie(secret, "test-session", agentChatProxyHandler(target)))
+	handler := corsWrapper(requireAuthCookie(secret, scopeIs("test-session"), agentChatProxyHandler(target)))
 
 	// 1. No cookie -> 401, upstream not touched.
 	req := httptest.NewRequest("GET", "/", nil)
@@ -173,7 +173,7 @@ func TestVNCAuthWrapBlocksWebSocketUpgradeWithoutCookie(t *testing.T) {
 	target, _ := url.Parse(upstream.URL)
 
 	rp := httputil.NewSingleHostReverseProxy(target)
-	handler := requireAuthCookie("vnc-secret", "test-session", rp)
+	handler := requireAuthCookie("vnc-secret", scopeIs("test-session"), rp)
 
 	req := httptest.NewRequest("GET", "/websockify", nil)
 	req.Header.Set("Connection", "Upgrade")
@@ -206,7 +206,7 @@ func TestVNCAuthWrapAllowsWebSocketUpgradeWithCookie(t *testing.T) {
 
 	rp := httputil.NewSingleHostReverseProxy(target)
 	secret := "vnc-secret"
-	handler := requireAuthCookie(secret, "test-session", rp)
+	handler := requireAuthCookie(secret, scopeIs("test-session"), rp)
 
 	req := httptest.NewRequest("GET", "/websockify", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: authSignCookie(secret)})

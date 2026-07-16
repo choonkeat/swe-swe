@@ -829,12 +829,16 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 // If secret is empty (no SWE_SWE_PASSWORD), returns next unwrapped -- harmless
 // no-op for compose-mode setups where Traefik fronts everything.
 //
-// owningUUID is the session this per-port listener belongs to. A shared-session
-// guest holds a cookie scoped to exactly one session, and each of these
-// listeners (preview/agent-chat/vnc/files) serves exactly one session, so a
-// guest may pass only through their own session's ports -- scopeAllows enforces
-// that. A full (unscoped) user passes through any of them.
-func requireAuthCookie(secret, owningUUID string, next http.Handler) http.Handler {
+// authorized decides whether a validated cookie scope may pass this per-port
+// listener. A full (unscoped) user has scope "" and passes everywhere; a
+// shared-session guest has a scope and is authorized per the caller's policy
+// (see scopeOwnsProxyPort). It is deliberately NOT a fixed owning-UUID match:
+// these listeners are registered in the sessions map before they are torn down,
+// and a listener can be left behind by an ended session and later serve a port
+// a new session reuses. Pinning to the creating session's UUID then 401s the new
+// session's legitimate guests, so we authorize by CURRENT port ownership at
+// request time instead.
+func requireAuthCookie(secret string, authorized func(scope string) bool, next http.Handler) http.Handler {
 	if secret == "" {
 		return next
 	}
@@ -849,12 +853,35 @@ func requireAuthCookie(secret, owningUUID string, next http.Handler) http.Handle
 			return
 		}
 		scope, valid := authVerifyCookieScoped(cookie.Value, secret)
-		if !valid || !scopeAllows(scope, owningUUID) {
+		if !valid || !authorized(scope) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// scopeOwnsProxyPort is the per-port authorizer policy: it reports whether a
+// request cookie scope may use the per-port proxy currently listening on
+// proxyPort. An empty scope (full/unscoped user) always may. A shared-session
+// guest may iff their still-live session maps to exactly this proxy port
+// (portOf returns the proxy port for that pane kind, e.g. agentChatProxyPort of
+// the session's AgentChatPort). Resolving against the guest's LIVE session --
+// rather than the UUID captured when the listener was created -- means an
+// orphaned listener from an ended session can no longer wrongly reject the guest
+// of whatever session now legitimately owns the port, and still rejects a guest
+// whose session maps to some other port.
+func scopeOwnsProxyPort(scope string, proxyPort int, portOf func(*Session) int) bool {
+	if scope == "" {
+		return true
+	}
+	sessionsMu.RLock()
+	sess, ok := sessions[scope]
+	sessionsMu.RUnlock()
+	if !ok {
+		return false
+	}
+	return portOf(sess) == proxyPort
 }
 
 // setupEmbeddedAuth registers the login handler and wraps the default mux with auth middleware.

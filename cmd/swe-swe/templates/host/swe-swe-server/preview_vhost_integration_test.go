@@ -30,7 +30,7 @@ func buildPreviewListenerHandler(t *testing.T, sess *Session, secret string, fix
 	if err != nil {
 		t.Fatalf("New preview proxy: %v", err)
 	}
-	return corsWrapper(requireAuthCookie(secret, sess.UUID, previewVhostPinHandler(sess, proxy)))
+	return corsWrapper(requireAuthCookie(secret, scopeIs(sess.UUID), previewVhostPinHandler(sess, proxy)))
 }
 
 func authedCookie(secret string) *http.Cookie {

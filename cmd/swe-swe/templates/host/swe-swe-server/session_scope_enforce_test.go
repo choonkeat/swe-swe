@@ -253,14 +253,21 @@ func TestAuthVerifyHandlerScoped(t *testing.T) {
 	}
 }
 
-// The per-port proxy guard lets a guest through only for their own session.
+// The per-port proxy guard's plumbing: it exempts /__probe__, 401s a
+// missing/invalid cookie, and defers the scope decision to the supplied
+// authorizer. (Port-ownership semantics are covered by
+// TestRequireAuthCookiePortOwnership.)
 func TestRequireAuthCookieScoped(t *testing.T) {
 	const secret = "master"
 	const owning = "owning-session"
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := requireAuthCookie(secret, owning, inner)
+	// Authorizer standing in for "this port belongs to `owning`": a full user
+	// (empty scope) or a guest scoped to `owning` passes; any other scope fails.
+	handler := requireAuthCookie(secret, func(scope string) bool {
+		return scope == "" || scope == owning
+	}, inner)
 
 	// Scoped cookie for THIS port's session -> allowed.
 	r := httptest.NewRequest("GET", "/foo", nil)

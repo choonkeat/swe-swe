@@ -464,13 +464,20 @@ func TestAuthMiddlewarePassesAuthenticated(t *testing.T) {
 	}
 }
 
+// scopeIs builds a requireAuthCookie authorizer that admits full/unscoped users
+// (scope "") and a guest scoped to owningUUID -- the pre-predicate behavior, for
+// tests that only exercise requireAuthCookie's generic auth plumbing.
+func scopeIs(owningUUID string) func(string) bool {
+	return func(scope string) bool { return scope == "" || scope == owningUUID }
+}
+
 func TestRequireAuthCookieRejectsUnauthenticated(t *testing.T) {
 	secret := "test-password"
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("protected"))
 	})
-	handler := requireAuthCookie(secret, "owner-sess", inner)
+	handler := requireAuthCookie(secret, scopeIs("owner-sess"), inner)
 
 	req := httptest.NewRequest("GET", "/some/page", nil)
 	rr := httptest.NewRecorder()
@@ -487,7 +494,7 @@ func TestRequireAuthCookieAllowsAuthenticated(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("protected"))
 	})
-	handler := requireAuthCookie(secret, "owner-sess", inner)
+	handler := requireAuthCookie(secret, scopeIs("owner-sess"), inner)
 
 	req := httptest.NewRequest("GET", "/some/page", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: authSignCookie(secret)})
@@ -508,7 +515,7 @@ func TestRequireAuthCookieProbeBypass(t *testing.T) {
 		w.Header().Set("X-Agent-Reverse-Proxy", "1")
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := requireAuthCookie(secret, "owner-sess", inner)
+	handler := requireAuthCookie(secret, scopeIs("owner-sess"), inner)
 
 	req := httptest.NewRequest("GET", "/__probe__", nil)
 	rr := httptest.NewRecorder()
@@ -527,7 +534,7 @@ func TestRequireAuthCookieEmptySecretIsNoop(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("public"))
 	})
-	handler := requireAuthCookie("", "owner-sess", inner)
+	handler := requireAuthCookie("", scopeIs("owner-sess"), inner)
 
 	req := httptest.NewRequest("GET", "/some/page", nil)
 	rr := httptest.NewRecorder()

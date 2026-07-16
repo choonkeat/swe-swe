@@ -600,6 +600,56 @@ type Session struct {
 	AgentChatProxyServer *http.Server      // Per-port listener for agent chat proxy (port-based mode)
 	VNCProxyServer       *http.Server      // Per-port listener for vnc proxy (auth-checked websockify reverse proxy)
 	FilesProxyServer     *http.Server      // Per-port listener for files proxy (auth-checked md-serve reverse proxy)
+	// closed is set true by Close() (under mu). trackProxyServer consults it so a
+	// per-port listener started while/after the session is torn down is shut down
+	// immediately instead of being stored to outlive the session and squat its
+	// port. Guarded by mu.
+	closed bool
+}
+
+// startProxyListener binds addr synchronously and, on success, serves handler on
+// it in a background goroutine, returning the *http.Server (nil if the port is
+// unavailable). Binding synchronously -- rather than inside the serve goroutine
+// as the original code did -- means the caller gets a real server handle to
+// store BEFORE anything can race, closing the window where a fast teardown saw a
+// nil field, skipped Shutdown, and left the goroutine to bind and Serve forever.
+func startProxyListener(kind, sessionUUID, addr string, handler http.Handler) *http.Server {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Printf("Session %s: %s proxy %s unavailable: %v", sessionUUID, kind, addr, err)
+		return nil
+	}
+	srv := &http.Server{Addr: addr, Handler: handler}
+	log.Printf("Session %s: %s proxy listening on %s", sessionUUID, kind, addr)
+	go func() {
+		defer recoverGoroutine(fmt.Sprintf("%s proxy for session %s", kind, sessionUUID))
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			log.Printf("Session %s: %s proxy server error: %v", sessionUUID, kind, err)
+		}
+	}()
+	return srv
+}
+
+// trackProxyServer records a freshly started per-port proxy server on the session
+// (via store) so Close() can shut it down later. If the session was already
+// closed while the listener was being set up -- the session is registered in the
+// sessions map before its listeners are wired, so Close() can run first -- the
+// listener would outlive the session and squat its port; shut it down here
+// instead of storing it. srv may be nil (bind-failure path): a no-op.
+func (s *Session) trackProxyServer(srv *http.Server, store func(*Session, *http.Server)) {
+	if srv == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+		return
+	}
+	store(s, srv)
+	s.mu.Unlock()
 }
 
 // computeRestartCommand returns the appropriate restart command based on YOLO mode.
@@ -1202,6 +1252,11 @@ func (s *Session) Close() {
 	}
 
 	s.mu.Lock()
+
+	// Mark closed before tearing down the per-port proxy servers so any listener
+	// still being wired (the session is in the sessions map before its listeners
+	// are set up) is shut down by trackProxyServer instead of stored and leaked.
+	s.closed = true
 
 	// Cancel session context (used for coordinating shutdown of chat sessions)
 	if s.agentChatCancel != nil {
@@ -5332,42 +5387,20 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		authPassword := os.Getenv("SWE_SWE_PASSWORD")
 
 		previewPP := previewProxyPort(previewPort)
-		previewSrv := &http.Server{
-			Addr:    fmt.Sprintf(":%d", previewPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, previewVhostPinHandler(sess, portPreviewProxy))),
-		}
-		go func() {
-			defer recoverGoroutine(fmt.Sprintf("preview proxy for session %s", sess.UUID))
-			ln, err := net.Listen("tcp", previewSrv.Addr)
-			if err != nil {
-				log.Printf("Session %s: preview proxy port %d unavailable: %v", sess.UUID, previewPP, err)
-				return
-			}
-			log.Printf("Session %s: preview proxy listening on :%d", sess.UUID, previewPP)
-			if err := previewSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: preview proxy server error: %v", sess.UUID, err)
-			}
-		}()
-		sess.PreviewProxyServer = previewSrv
+		previewHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+			return scopeOwnsProxyPort(scope, previewPP, func(s *Session) int { return previewProxyPort(s.PreviewPort) })
+		}, previewVhostPinHandler(sess, portPreviewProxy)))
+		sess.trackProxyServer(
+			startProxyListener("preview", sess.UUID, fmt.Sprintf(":%d", previewPP), previewHandler),
+			func(s *Session, srv *http.Server) { s.PreviewProxyServer = srv })
 
 		acPP := agentChatProxyPort(acPort)
-		acSrv := &http.Server{
-			Addr:    fmt.Sprintf(":%d", acPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, agentChatProxyHandler(acTarget))),
-		}
-		go func() {
-			defer recoverGoroutine(fmt.Sprintf("agent chat proxy for session %s", sess.UUID))
-			ln, err := net.Listen("tcp", acSrv.Addr)
-			if err != nil {
-				log.Printf("Session %s: agent chat proxy port %d unavailable: %v", sess.UUID, acPP, err)
-				return
-			}
-			log.Printf("Session %s: agent chat proxy listening on :%d", sess.UUID, acPP)
-			if err := acSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: agent chat proxy server error: %v", sess.UUID, err)
-			}
-		}()
-		sess.AgentChatProxyServer = acSrv
+		acHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+			return scopeOwnsProxyPort(scope, acPP, func(s *Session) int { return agentChatProxyPort(s.AgentChatPort) })
+		}, agentChatProxyHandler(acTarget)))
+		sess.trackProxyServer(
+			startProxyListener("agent chat", sess.UUID, fmt.Sprintf(":%d", acPP), acHandler),
+			func(s *Session, srv *http.Server) { s.AgentChatProxyServer = srv })
 
 		// VNC proxy at vncProxyPort (default 27000-27019). Reverse-proxies
 		// HTTP + WebSocket upgrade to localhost:vncPort (websockify on
@@ -5394,23 +5427,12 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 			req.Host = host
 		}
 		vncPP := vncProxyPort(vncPort)
-		vncSrv := &http.Server{
-			Addr:    fmt.Sprintf(":%d", vncPP),
-			Handler: requireAuthCookie(authPassword, sess.UUID, vncReverseProxy),
-		}
-		go func() {
-			defer recoverGoroutine(fmt.Sprintf("vnc proxy for session %s", sess.UUID))
-			ln, err := net.Listen("tcp", vncSrv.Addr)
-			if err != nil {
-				log.Printf("Session %s: vnc proxy port %d unavailable: %v", sess.UUID, vncPP, err)
-				return
-			}
-			log.Printf("Session %s: vnc proxy listening on :%d", sess.UUID, vncPP)
-			if err := vncSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: vnc proxy server error: %v", sess.UUID, err)
-			}
-		}()
-		sess.VNCProxyServer = vncSrv
+		vncHandler := requireAuthCookie(authPassword, func(scope string) bool {
+			return scopeOwnsProxyPort(scope, vncPP, func(s *Session) int { return vncProxyPort(s.VNCPort) })
+		}, vncReverseProxy)
+		sess.trackProxyServer(
+			startProxyListener("vnc", sess.UUID, fmt.Sprintf(":%d", vncPP), vncHandler),
+			func(s *Session, srv *http.Server) { s.VNCProxyServer = srv })
 
 		// Files proxy at filesProxyPort (default 29000-29019). Plain
 		// reverse-proxy to the per-session md-serve on localhost:FilesPort
@@ -5421,23 +5443,12 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		filesTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", sess.FilesPort))
 		filesReverseProxy := httputil.NewSingleHostReverseProxy(filesTarget)
 		filesPP := filesProxyPort(sess.FilesPort)
-		filesSrv := &http.Server{
-			Addr:    fmt.Sprintf(":%d", filesPP),
-			Handler: corsWrapper(requireAuthCookie(authPassword, sess.UUID, filesReverseProxy)),
-		}
-		go func() {
-			defer recoverGoroutine(fmt.Sprintf("files proxy for session %s", sess.UUID))
-			ln, err := net.Listen("tcp", filesSrv.Addr)
-			if err != nil {
-				log.Printf("Session %s: files proxy port %d unavailable: %v", sess.UUID, filesPP, err)
-				return
-			}
-			log.Printf("Session %s: files proxy listening on :%d", sess.UUID, filesPP)
-			if err := filesSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Printf("Session %s: files proxy server error: %v", sess.UUID, err)
-			}
-		}()
-		sess.FilesProxyServer = filesSrv
+		filesHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+			return scopeOwnsProxyPort(scope, filesPP, func(s *Session) int { return filesProxyPort(s.FilesPort) })
+		}, filesReverseProxy))
+		sess.trackProxyServer(
+			startProxyListener("files", sess.UUID, fmt.Sprintf(":%d", filesPP), filesHandler),
+			func(s *Session, srv *http.Server) { s.FilesProxyServer = srv })
 
 		// Public port: Traefik routes directly to the app (no swe-swe-server proxy needed)
 	}
