@@ -85,6 +85,29 @@ pair**: re-deploys with the same pair keep the same public hostname;
 a mismatched pair gets `Deny{key_mismatch, kind=fatal}` and the
 supervisor stops with no retry. Save them somewhere safe.
 
+### Setting the unique label: prefer `--tunnel-unique`
+
+You do not have to manage `SWE_TUNNEL_UNIQUE` as a raw runtime env var.
+Pass the label at build time and it is baked into the generated
+compose:
+
+```sh
+swe-swe init \
+  --tunnel-server-url=https://tunnel.example.com \
+  --tunnel-unique=myproject123
+```
+
+The generated compose emits
+
+```
+SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-myproject123}
+```
+
+so the init-time value is the default **and** a runtime
+`SWE_TUNNEL_UNIQUE` env var still overrides it if present -- existing
+env-based deployments keep working unchanged. If you set neither, the
+tunnel refuses to start (see "`SWE_TUNNEL_UNIQUE` is required" below).
+
 ### Why `SWE_BIND=127.0.0.1:1977`
 
 Internally, swe-swe-server binds `127.0.0.1:1977` (the `SWE_PORT`
@@ -165,11 +188,14 @@ exact `openssl` + `base64 -w0` commands. See
 ### `SWE_TUNNEL_UNIQUE` is required
 
 Tunnel mode will not start without a unique label. If
-`SWE_TUNNEL_SERVER_URL` is set but `SWE_TUNNEL_UNIQUE` is empty,
+`SWE_TUNNEL_SERVER_URL` is set but the label resolves to empty (no
+`--tunnel-unique` baked in and no runtime `SWE_TUNNEL_UNIQUE`),
 swe-swe-server refuses to launch the tunnel and logs a
 `unique_required` fatal tunnel status (the rest of swe-swe still
 runs). This replaces the older failure mode where an empty unique made
-the tunnel child exit and the supervisor restart-loop forever.
+the tunnel child exit and the supervisor restart-loop forever. Set it
+with `--tunnel-unique` at init (recommended) or `SWE_TUNNEL_UNIQUE` at
+runtime.
 
 ## mTLS (when the tunnel server requires client certificates)
 
