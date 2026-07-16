@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_helpers/reaper.js';
 import { openSessionViaPost } from './_helpers/sessions.js';
 
 // Preview host-demux (ADR-0045) browser-level acceptance.

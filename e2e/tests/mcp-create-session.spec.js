@@ -1,4 +1,4 @@
-import { test, expect, request as apiRequest } from '@playwright/test';
+import { test, expect, request as apiRequest } from './_helpers/reaper.js';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
 import { openSessionViaPost } from './_helpers/sessions.js';

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './_helpers/reaper.js';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
 import { endSessions, openSessionViaPost } from './_helpers/sessions.js';

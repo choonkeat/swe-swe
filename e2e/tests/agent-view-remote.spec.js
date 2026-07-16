@@ -1,4 +1,4 @@
-import { test, expect, chromium } from '@playwright/test';
+import { test, expect, chromium } from './_helpers/reaper.js';
 
 // Stage a session via POST /api/session/new (the no-ghost-session gate: the
 // WS handler only materializes sessions with a staged creation intent), then
