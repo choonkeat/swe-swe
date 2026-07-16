@@ -605,6 +605,43 @@ type Session struct {
 	// immediately instead of being stored to outlive the session and squat its
 	// port. Guarded by mu.
 	closed bool
+	// restarting marks the window in which startPTYReader has Waited the old Cmd
+	// but has not yet installed the replacement. That Wait happens OUTSIDE mu, so
+	// without this flag the reaper could observe the finished old Cmd and reap a
+	// session that is mid-restart. Guarded by mu. (A direct RestartProcess call
+	// needs no flag: it holds mu across the whole Wait-and-reassign.)
+	restarting bool
+}
+
+// setRestarting marks (or clears) the PTY reader's process-transition window so
+// the session reaper will not reap a session that is about to be restarted.
+func (s *Session) setRestarting(v bool) {
+	s.mu.Lock()
+	s.restarting = v
+	s.mu.Unlock()
+}
+
+// reapable reports whether the session's agent process has finished and the
+// session is therefore safe to clean up.
+//
+// ProcessState is non-nil only once cmd.Wait() has returned, which means the
+// process is finished HOWEVER it ended. This deliberately does NOT test
+// ProcessState.Exited(): that is WIFEXITED, true only for a normal exit and
+// false for a signal-killed process. Requiring it meant an OOM-killed (SIGKILL,
+// exit 137) or crashed agent was never reaped -- the session lingered in the
+// sessions map forever, hidden from list_sessions (which skips ProcessState !=
+// nil) while still holding its four per-port proxy listeners, so a later session
+// that reused those port numbers could not bind its own.
+//
+// Reads under mu: RestartProcess holds mu across its Wait-and-reassign, so a
+// locked read can never catch that transition half-done.
+func (s *Session) reapable() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.restarting {
+		return false
+	}
+	return s.Cmd != nil && s.Cmd.ProcessState != nil
 }
 
 // startProxyListener binds addr synchronously and, on success, serves handler on
@@ -1543,6 +1580,13 @@ func (s *Session) startPTYReader() {
 					}
 				}
 
+				// Claim the process transition before Waiting. The Wait below
+				// runs outside s.mu, so between it returning and RestartProcess
+				// installing the replacement, the session would otherwise look
+				// finished to the reaper and be reaped mid-restart. Cleared on
+				// every path out of the replacement block below.
+				s.setRestarting(true)
+
 				// Wait on the process to reap the zombie and get exit status
 				exitCode := 0
 				if cmd != nil {
@@ -1568,7 +1612,14 @@ func (s *Session) startPTYReader() {
 
 				if replacementCmd != "" {
 					log.Printf("Session %s: replacing process with command: %s", s.UUID, replacementCmd)
-					if err := s.RestartProcess(replacementCmd); err != nil {
+					err := s.RestartProcess(replacementCmd)
+					// The transition is over either way -- a replacement is
+					// installed, or the session is about to end. Release the
+					// guard before both paths: holding it past a failed restart
+					// would make the session permanently unreapable, which is
+					// the very leak this guards against.
+					s.setRestarting(false)
+					if err != nil {
 						log.Printf("Session %s: failed to replace process: %v", s.UUID, err)
 						errMsg := []byte("\r\n[Failed to replace process: " + err.Error() + "]\r\n")
 						s.vtMu.Lock()
@@ -1580,6 +1631,10 @@ func (s *Session) startPTYReader() {
 					} else {
 						continue // Process replaced successfully, continue reading
 					}
+				} else {
+					// No replacement: the process is genuinely done, so let the
+					// reaper see it.
+					s.setRestarting(false)
 				}
 
 				if clientCount == 0 {
@@ -4279,9 +4334,12 @@ func sessionReaper() {
 		sessionsMu.Lock()
 		var toReap []*Session
 		for uuid, sess := range sessions {
-			// Only clean up sessions where the process has exited
-			if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
-				log.Printf("Session cleaned up (process exited): %s", uuid)
+			// Only clean up sessions whose process has finished -- however it
+			// ended. See Session.reapable: testing ProcessState.Exited() here
+			// silently skipped signal-killed (OOM/crashed) agents and leaked
+			// their sessions and per-port proxy listeners forever.
+			if sess.reapable() {
+				log.Printf("Session cleaned up (process finished): %s", uuid)
 				toReap = append(toReap, sess)
 				delete(sessions, uuid)
 			}
@@ -4965,8 +5023,10 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	defer sessionsMu.Unlock()
 
 	if sess, ok := sessions[p.UUID]; ok {
-		// Check if the session's process has exited - clean up and create fresh session
-		if sess.Cmd != nil && sess.Cmd.ProcessState != nil && sess.Cmd.ProcessState.Exited() {
+		// Clean up and recreate if the session's process has finished -- however
+		// it ended (see Session.reapable; the old ProcessState.Exited() test
+		// missed signal-killed agents and stranded the session here too).
+		if sess.reapable() {
 			log.Printf("Cleaning up dead session on reconnect: %s (exit code=%d)", p.UUID, sess.Cmd.ProcessState.ExitCode())
 			sess.Close()
 			delete(sessions, p.UUID)
