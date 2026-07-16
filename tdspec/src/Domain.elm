@@ -188,7 +188,7 @@ type Timestamp
 Configured in:
 
   - main.go: `-addr` flag (default `""`, deferred to `resolveListenAddr` -> `:1977`)
-  - tailscale.go: `resolveListenAddr` 6-step precedence rule
+  - listen.go: `resolveListenAddr` 6-step precedence rule
     (`--bind`, `--addr`, `SWE_BIND`, `SWE_PORT`, `$PORT`, default `:1977`)
   - entrypoint.sh: `SWE_SERVER_PORT="${SWE_PORT:-1977}"` (env override)
   - docker-compose.yml: `loadbalancer.server.port=${SWE_PORT:-1977}`

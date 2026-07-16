@@ -1954,10 +1954,6 @@ func main() {
 	flag.StringVar(&shellCmd, "shell", "claude", "Command to execute")
 	flag.StringVar(&shellRestartCmd, "shell-restart", "claude --continue", "Command to restart on process death")
 	flag.StringVar(&workingDir, "working-directory", "", "Working directory for shell (defaults to current directory)")
-	tsAuthKey := flag.String("tailscale-authkey", "", "Tailscale auth key (env: TS_AUTHKEY); when set, tailscaled is spawned and joined to the tailnet")
-	tsHostname := flag.String("tailscale-hostname", "", "Tailscale hostname to advertise (env: TS_HOSTNAME)")
-	tsStateDir := flag.String("tailscale-state-dir", "", "Tailscale state directory (env: TS_STATE_DIR; default /var/lib/tailscale)")
-	tsDisable := flag.Bool("tailscale-disable", false, "Disable Tailscale bootstrap even if TS_AUTHKEY is set (env: TS_DISABLE=1)")
 	tunnelServerURL := flag.String("tunnel-server-url", "",
 		"Tunnel server URL (e.g. https://tunnel.example.com). When set, "+
 			"swe-swe-server spawns the swe-swe-tunnel client as a child "+
@@ -2737,9 +2733,7 @@ func main() {
 	})
 
 	// listenAddr/landingAddr were resolved earlier so the tunnel supervisor
-	// can log the correct OPEN AT URL; see tailscale.go for the decision rule.
-	tsCfg := resolveTailscaleConfig(*tsAuthKey, *tsHostname, *tsStateDir, *tsDisable)
-
+	// can log the correct OPEN AT URL; see listen.go for the decision rule.
 	log.Printf("swe-swe-server v%s", Version)
 	log.Printf("Starting server on %s", listenAddr)
 	log.Printf("  shell: %s", shellCmd)
@@ -2769,11 +2763,8 @@ func main() {
 	shutdownSig := make(chan os.Signal, 1)
 	signal.Notify(shutdownSig, syscall.SIGINT, syscall.SIGTERM)
 
-	// Tailscale bootstrap -- dormant unless TS_AUTHKEY is set.
-	startTailscale(serverCtx, tsCfg)
-
 	// Landing/health server on $PORT, if separate from the swe-swe listener.
-	startLandingServer(serverCtx, landingAddr, listenAddr, tsCfg)
+	startLandingServer(serverCtx, landingAddr, listenAddr)
 
 	// Set up embedded auth if SWE_SWE_PASSWORD is set (dockerfile-only mode).
 	// In compose mode, Traefik + auth service handle authentication externally.
@@ -2790,7 +2781,7 @@ func main() {
 		// Restore default disposition so a second SIGINT/SIGTERM force-
 		// terminates instead of hanging on a wedged graceful shutdown.
 		signal.Stop(shutdownSig)
-		// Propagate cancellation to tailscale, the landing server, and all
+		// Propagate cancellation to the landing server and all
 		// session child contexts derived from serverCtx.
 		serverCancel()
 		// Reaching here means SIGINT/SIGTERM was delivered from outside this
@@ -2923,7 +2914,7 @@ var workspaceDir = "/workspace"
 // dirs (credential/signing helpers + the swe-swe-open shim). Defaults to the
 // container path /home/app/.swe-swe; overridable via -swe-home (env
 // SWE_HOME_DIR) so a dockerless run can point at the dumped project bin/.
-// (firstNonEmpty, used to resolve flag -> env -> default, lives in tailscale.go.)
+// (firstNonEmpty, used to resolve flag -> env -> default, lives in listen.go.)
 var sweHomeDir = "/home/app/.swe-swe"
 
 // excludeFromSymlink lists entries that should never be symlinked to worktrees

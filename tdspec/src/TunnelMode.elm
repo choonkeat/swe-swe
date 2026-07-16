@@ -449,7 +449,7 @@ Variants:
     listener handles `$PORT` requests directly (which the tunnel
     client never reaches in tunnel mode, since it dials loopback).
 
-Source: `tailscale.go:205-249` (`startLandingServer`).
+Source: `listen.go` (`startLandingServer`).
 
 -}
 type LandingServerMode

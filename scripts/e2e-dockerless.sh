@@ -64,10 +64,10 @@ grep -q '"mcpServers"' "$PROJ/.mcp.json" && grep -q 'swe-swe-agent-chat' "$PROJ/
     && pass "project .mcp.json has MCP servers" || fail ".mcp.json missing/incomplete"
 
 echo "=== Phase 4: boot the dumped server (no Docker) ==="
-# Clean env: drop any ambient tailscale/tunnel/auth from the host; pick high,
+# Clean env: drop any ambient tunnel/auth from the host; pick high,
 # unlikely-to-collide port ranges so a stray neighbour does not clash.
 # `swe-swe up` locates the project by CWD, so launch from inside it.
-( cd "$PROJ" && exec env -u TS_AUTHKEY -u TS_HOSTNAME -u TS_STATE_DIR \
+( cd "$PROJ" && exec env \
     -u SWE_TUNNEL_SERVER_URL -u SWE_TUNNEL_UNIQUE -u SWE_TUNNEL_BIN -u SWE_TUNNEL_CLIENT_CERT \
     -u SWE_SWE_PASSWORD \
     HOME="$HOME_DIR" SWE_PORT="$E2E_PORT" \

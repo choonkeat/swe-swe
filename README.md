@@ -14,7 +14,7 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [L
 - **Parallel sessions on git worktrees**: run several agents at once, each isolated on its own worktree.
 - **Live pairing and recordings**: pair on a live terminal, or share session recordings with teammates.
 - **Remote access via tunnel mode**: reach a container over the public internet with no open ports and no TLS to manage -- the container dials out. See [Tunnel mode explained](docs/tunnel-explained.md), plus the runbooks for [laptop](docs/tunnel-laptop.md), [Fly.io](docs/tunnel-fly.md), and [PaaS](docs/tunnel-paas.md).
-- **One-container deploy**: ship to Fly.io / Railway / Render / Cloud Run, or join a Tailscale tailnet.
+- **One-container deploy**: ship to Fly.io / Railway / Render / Cloud Run.
 - **SSH commit signing**: sign commits with a per-session key that never touches disk.
 - **Skills from any git repo**: `swe-swe init --with-skills <alias>@<url>` clones external skill repos and surfaces them to the agent.
 - **Built-in panes**: live preview, a read-only Files browser, VS Code (code-server), and agent chat.

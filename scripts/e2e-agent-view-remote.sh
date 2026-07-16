@@ -123,7 +123,7 @@ done
     || { fail "backend never became healthy"; [ -f "$TEST_DIR/backend.log" ] && tail -10 "$TEST_DIR/backend.log"; exit 1; }
 
 echo "=== Phase 4: boot the dockerless instance pointed at the backend ==="
-( cd "$PROJ" && exec env -u TS_AUTHKEY -u TS_HOSTNAME -u TS_STATE_DIR \
+( cd "$PROJ" && exec env \
     -u SWE_TUNNEL_SERVER_URL -u SWE_TUNNEL_UNIQUE -u SWE_TUNNEL_BIN -u SWE_TUNNEL_CLIENT_CERT \
     -u SWE_SWE_PASSWORD \
     HOME="$HOME_DIR" SWE_PORT="$E2E_PORT" \
