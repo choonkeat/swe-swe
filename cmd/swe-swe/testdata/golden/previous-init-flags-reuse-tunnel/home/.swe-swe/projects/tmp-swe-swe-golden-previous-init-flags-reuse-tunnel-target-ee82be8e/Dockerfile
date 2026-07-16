@@ -137,9 +137,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Override default noVNC viewer with custom version (adds View only / Interactive toggle)
 COPY swe-swe-server/static/vnc_lite.html /usr/share/novnc/vnc_lite.html
 
-# Install Tailscale (static binaries, no apt repo).  Dormant unless
-# TS_AUTHKEY is set at runtime; see www/swe-swe-tailscale.md.
-RUN curl -fsSL https://tailscale.com/install.sh | sh
+# Install Tailscale from the apt package mirror.  Dormant unless TS_AUTHKEY is
+# set at runtime; see www/swe-swe-tailscale.md.  We deliberately do NOT use
+# `curl https://tailscale.com/install.sh | sh`: that pipe takes sh's exit code,
+# so a 5xx from the installer CDN is swallowed and the layer "succeeds" while
+# the image silently lacks tailscale.  Installing from pkgs.tailscale.com via
+# apt fails the build loudly if the package can't be fetched.
+RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg && \
+    curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list && \
+    apt-get update && \
+    apt-get install -y tailscale && \
+    rm -rf /var/lib/apt/lists/*
 
 # Pre-create the default tailscale state directory and hand ownership to the
 # app user.  Without this, tailscaled bootstrapping fails with "permission
