@@ -1211,6 +1211,20 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		fmt.Printf("ACME storage: %s\n", acmeDir)
 	}
 
+	// The dumped swe-swe-server/ tree is a pure, regenerated Docker build
+	// context: every file comes from templates/host/swe-swe-server/, and the
+	// build compiles it in-container (COPY swe-swe-server/*.go ./; go build)
+	// without ever writing back. `init` otherwise only *writes* templates and
+	// never reconciles deletions, so a renamed/removed template (e.g.
+	// tailscale.go -> listen.go) would orphan a stale file that the `*.go` glob
+	// then compiles -- a redeclaration build break. Wipe the tree first so it is
+	// always an exact mirror of the templates, immune to any future rename or
+	// delete. Same principle already applied to container-templates below.
+	serverBuildDir := filepath.Join(sweDir, "swe-swe-server")
+	if err := os.RemoveAll(serverBuildDir); err != nil {
+		log.Fatalf("Failed to clean swe-swe-server directory: %v", err)
+	}
+
 	// Extract embedded files
 	// Files that go to metadata directory (~/.swe-swe/projects/<path>/)
 	// Walk embedded templates/host/ to discover all files automatically.
