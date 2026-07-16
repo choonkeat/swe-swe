@@ -560,7 +560,7 @@ _golden-previous-init-flags-reuse-tunnel:
 	@rm -rf $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/target
 	@mkdir -p $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/home $(GOLDEN_TESTDATA)/previous-init-flags-reuse-tunnel/target
 	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
-	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/home $(SWE_SWE_CLI) init --agents=claude --tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/target \
+	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/home $(SWE_SWE_CLI) init --agents=claude --tunnel-server-url https://tunnel.example.com --tunnel-unique myproject123 --tunnel-client-cert /etc/swe-swe-tunnel/client.crt --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/target \
 		2> /dev/null || true
 	@unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE NODE_EXTRA_CA_CERTS_BUNDLE && \
 	HOME=/tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/home $(SWE_SWE_CLI) init --previous-init-flags=reuse --project-directory /tmp/swe-swe-golden/previous-init-flags-reuse-tunnel/target \

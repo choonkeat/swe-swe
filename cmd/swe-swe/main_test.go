@@ -1285,7 +1285,7 @@ func TestProcessSimpleTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := processSimpleTemplate(tt.input, tt.withDocker, "no", 1000, 1000, "", "", "", nil, nil, 20000, "", "", false)
+			result := processSimpleTemplate(tt.input, tt.withDocker, "no", 1000, 1000, "", "", "", nil, nil, 20000, "", "", "", false)
 			if result != tt.expected {
 				t.Errorf("processSimpleTemplate mismatch.\nExpected:\n%s\n\nGot:\n%s", tt.expected, result)
 			}
@@ -1549,6 +1549,9 @@ func TestGoldenReuseTunnel(t *testing.T) {
 	if config.TunnelServerURL != "https://tunnel.example.com" {
 		t.Errorf("Expected TunnelServerURL preserved on reuse, got %q", config.TunnelServerURL)
 	}
+	if config.TunnelUnique != "myproject123" {
+		t.Errorf("Expected TunnelUnique preserved on reuse, got %q", config.TunnelUnique)
+	}
 	if config.TunnelClientCert != "/etc/swe-swe-tunnel/client.crt" {
 		t.Errorf("Expected TunnelClientCert preserved on reuse, got %q", config.TunnelClientCert)
 	}
@@ -1597,6 +1600,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"StatusBarFontFamily": true,
 		"ProxyPortOffset":     true,
 		"TunnelServerURL":     true,
+		"TunnelUnique":        true,
 		"TunnelClientCert":    true,
 		"TunnelLocalPorts":    true,
 	}

@@ -168,7 +168,7 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 
 // processSimpleTemplate handles simple conditional templates with {{IF DOCKER}}...{{ENDIF}} blocks
 // This is used for docker-compose.yml and traefik-dynamic.yml
-func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string, tunnelClientCert string, tunnelLocalPorts bool) string {
+func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID int, hostGID int, email string, domain string, reposDir string, previewPorts []int, publicPorts []int, proxyPortOffset int, tunnelServerURL string, tunnelUnique string, tunnelClientCert string, tunnelLocalPorts bool) string {
 	lines := strings.Split(content, "\n")
 	var result []string
 
@@ -609,6 +609,9 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 			}
 			if strings.Contains(line, "{{TUNNEL_SERVER_URL}}") {
 				line = strings.ReplaceAll(line, "{{TUNNEL_SERVER_URL}}", tunnelServerURL)
+			}
+			if strings.Contains(line, "{{TUNNEL_UNIQUE}}") {
+				line = strings.ReplaceAll(line, "{{TUNNEL_UNIQUE}}", tunnelUnique)
 			}
 			if strings.Contains(line, "{{TUNNEL_CLIENT_CERT}}") {
 				line = strings.ReplaceAll(line, "{{TUNNEL_CLIENT_CERT}}", tunnelClientCert)

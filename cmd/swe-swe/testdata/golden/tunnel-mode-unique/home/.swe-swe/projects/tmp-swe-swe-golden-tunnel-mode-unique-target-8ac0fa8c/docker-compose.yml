@@ -85,7 +85,7 @@ services:
       # See tasks/2026-04-29-tunnel-subprocess-pivot.md.
       - SWE_BIND=127.0.0.1:${SWE_PORT:-1977}
       - SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
-      - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-}
+      - SWE_TUNNEL_UNIQUE=${SWE_TUNNEL_UNIQUE:-myproject123}
       - SWE_TUNNEL_IDENTITY_KEY=${SWE_TUNNEL_IDENTITY_KEY:-}
       - SWE_TUNNEL_BIN=${SWE_TUNNEL_BIN:-swe-swe-tunnel}
     restart: unless-stopped
