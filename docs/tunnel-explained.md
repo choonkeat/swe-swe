@@ -73,8 +73,8 @@ the most common "why isn't it working" cause; check the logs first
 
 ```
 SWE_TUNNEL_SERVER_URL=https://tunnel.example.com           # required to enter tunnel mode
-SWE_TUNNEL_IDENTITY_KEY=<base64-PEM>                       # SECRET -- do not log
-SWE_TUNNEL_UNIQUE=<short label, e.g. myproject123>         # public hostname: <unique>-tunnel.<server-suffix>
+SWE_TUNNEL_UNIQUE=<short label, e.g. myproject123>         # REQUIRED -- public hostname: <unique>-tunnel.<server-suffix>
+SWE_TUNNEL_IDENTITY_KEY=<base64-PEM>                       # OPTIONAL, SECRET -- omit to auto-generate on first boot; do not log
 SWE_BIND=127.0.0.1:1977                                    # tunnel mode: keep swe-swe-server off public interfaces
 PORT=<8080 or PaaS-assigned>                               # landing/health server binds this
 SWE_SWE_PASSWORD=<strong password>                         # SECRET -- swe-swe auth (still required behind the tunnel)
@@ -110,23 +110,66 @@ succeeded.
 ## The identity model
 
 Tunnel mode authenticates your container to the tunnel server with an
-Ed25519 keypair. The pubkey half must be authorized by the
-`swe-swe-tunnel` admin before your first connection will be accepted
--- this is a wait-on-human step, do it early.
+Ed25519 keypair. The pubkey half must be authorized (allowlisted) by
+the `swe-swe-tunnel` admin before your first connection will be
+accepted -- this is a wait-on-human step, do it early.
 
-The private key is delivered as `SWE_TUNNEL_IDENTITY_KEY` (PaaS
-secret or shell env var), base64-encoded PKCS8 PEM (i.e.
-`base64 -w0 < identity.key`). On a PaaS you do **not** want this on a
-persistent volume -- that's why env-var delivery exists. The runbooks
-have the exact `openssl` + `base64 -w0` commands.
+### Default: let the container generate the key (zero setup)
 
-Precedence inside the container: `SWE_TUNNEL_IDENTITY_KEY` env var
+Set `SWE_TUNNEL_SERVER_URL` and `SWE_TUNNEL_UNIQUE`, leave
+`SWE_TUNNEL_IDENTITY_KEY` unset, and start swe-swe. On the **first
+boot** with no key on disk, the tunnel client:
+
+1. generates an Ed25519 key at `~/.swe-swe-tunnel/identity.key`,
+2. prints the public key and that path to the logs, and
+3. **stops the tunnel** (it does not try to connect) so it never
+   burns a rate-limited registration attempt with a pubkey the server
+   has never seen. The rest of swe-swe keeps running.
+
+The log line to look for:
+
+```
+Generated a new tunnel identity key.
+  path:   /home/app/.swe-swe-tunnel/identity.key
+  pubkey: uLClVZEOZsI8F+SSU8TZUxZL4tUtne+Ow9Ofv4BXRrI
+```
+
+Send that pubkey to the admin to allowlist, then **restart**. The
+second boot finds the key on disk and connects normally.
+
+Because the key lives at `~/.swe-swe-tunnel/identity.key`, this path
+assumes that directory **persists across restarts** (a persistent
+volume). On ephemeral-disk PaaS, either mount a volume or switch to
+the bring-your-own path below so you are not regenerating (and
+re-allowlisting) on every boot.
+
+### Optional: bring your own key
+
+Already have a key (or want it off any disk)? Supply it and the
+first-boot generate/stop step never fires -- the client uses yours:
+
+- `SWE_TUNNEL_IDENTITY_KEY=<base64 PKCS8 PEM>` -- inline, never touches
+  disk (`base64 -w0 < identity.key`). Best for ephemeral-disk PaaS.
+- or `--identity-key <path>` (env `SWE_TUNNEL_KEY`) to point at an
+  existing key file / mount.
+
+Precedence inside the container: `SWE_TUNNEL_IDENTITY_KEY` (inline)
 beats the on-disk file at `~/.swe-swe-tunnel/identity.key`. If the
-env var is set but malformed, the client errors out instead of
+inline env var is set but malformed, the client errors out instead of
 silently falling back to the file (which would burn a fresh `unique`
-on the tunnel server and confuse the operator). See
+on the tunnel server and confuse the operator). The runbooks have the
+exact `openssl` + `base64 -w0` commands. See
 `internal/tunnelclient/identity.go:LoadIdentity` in the
 `swe-swe-tunnel` repo.
+
+### `SWE_TUNNEL_UNIQUE` is required
+
+Tunnel mode will not start without a unique label. If
+`SWE_TUNNEL_SERVER_URL` is set but `SWE_TUNNEL_UNIQUE` is empty,
+swe-swe-server refuses to launch the tunnel and logs a
+`unique_required` fatal tunnel status (the rest of swe-swe still
+runs). This replaces the older failure mode where an empty unique made
+the tunnel child exit and the supervisor restart-loop forever.
 
 ## mTLS (when the tunnel server requires client certificates)
 

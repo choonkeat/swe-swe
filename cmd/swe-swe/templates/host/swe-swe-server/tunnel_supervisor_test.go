@@ -517,6 +517,83 @@ func TestRunTunnelSupervisor_ClearsHostnameAfterChildExit(t *testing.T) {
 	}
 }
 
+// TestMaybeStartTunnel_NoServerURLDoesNothing: with no server URL the
+// tunnel is not configured, so nothing starts and no status is recorded.
+func TestMaybeStartTunnel_NoServerURLDoesNothing(t *testing.T) {
+	prevStatus := liveTunnelStatus.Load()
+	t.Cleanup(func() { liveTunnelStatus.Store(prevStatus) })
+	count, mu := stubBroadcast(t)
+
+	liveTunnelStatus.Store(nil)
+	if started := maybeStartTunnel(context.Background(), tunnelSupervisorOpts{}); started {
+		t.Error("maybeStartTunnel started with no server URL; want no start")
+	}
+	if s := liveTunnelStatus.Load(); s != nil {
+		t.Errorf("status should be untouched, got %+v", *s)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if *count != 0 {
+		t.Errorf("no-op path must not broadcast; got %d", *count)
+	}
+}
+
+// TestMaybeStartTunnel_EmptyUniqueFailsFast: server URL set but empty
+// unique must NOT spawn (the child would exit 2 and restart-loop). It
+// records a fatal "unique_required" status and broadcasts the change.
+func TestMaybeStartTunnel_EmptyUniqueFailsFast(t *testing.T) {
+	prevStatus := liveTunnelStatus.Load()
+	t.Cleanup(func() { liveTunnelStatus.Store(prevStatus) })
+	count, mu := stubBroadcast(t)
+
+	liveTunnelStatus.Store(nil)
+	started := maybeStartTunnel(context.Background(), tunnelSupervisorOpts{
+		ServerURL: "https://tunnel.example.com",
+		// Unique intentionally empty.
+	})
+	if started {
+		t.Error("maybeStartTunnel started with empty unique; want fail-fast (no start)")
+	}
+	s := liveTunnelStatus.Load()
+	if s == nil {
+		t.Fatal("expected a fatal tunnel status, got nil")
+	}
+	if s.State != "fatal" || s.Reason != "unique_required" {
+		t.Errorf("status = %+v, want {State:fatal Reason:unique_required}", *s)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if *count != 1 {
+		t.Errorf("expected 1 broadcast on fail-fast, got %d", *count)
+	}
+}
+
+// TestMaybeStartTunnel_BothSetStarts: with both server URL and unique
+// set, the supervisor launches. A pre-cancelled context makes the
+// supervisor goroutine return at the top of its loop without spawning a
+// real child, so the test only asserts the start decision.
+func TestMaybeStartTunnel_BothSetStarts(t *testing.T) {
+	prevStatus := liveTunnelStatus.Load()
+	prevHost := getLiveTunnelHostname()
+	t.Cleanup(func() {
+		liveTunnelStatus.Store(prevStatus)
+		setLiveTunnelHostname(prevHost)
+	})
+	stubBroadcast(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // supervisor returns immediately at its ctx.Err() check.
+
+	started := maybeStartTunnel(ctx, tunnelSupervisorOpts{
+		ServerURL: "https://tunnel.example.com",
+		Unique:    "alpha",
+		BinPath:   "/does-not-run",
+	})
+	if !started {
+		t.Error("maybeStartTunnel did not start with both server URL and unique set")
+	}
+}
+
 // TestTunnelChildArgs covers the four optional-flag combinations the
 // supervisor builds. Args are positional pairs so order matters: a
 // future drift (e.g. someone adds a flag in the middle of the slice)

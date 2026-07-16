@@ -2082,15 +2082,13 @@ func main() {
 	if envCert, ok := os.LookupEnv("SWE_TUNNEL_CLIENT_CERT"); ok && !flagPassed("tunnel-client-cert") {
 		resolvedTunnelClientCert = envCert
 	}
-	if resolvedTunnelServerURL != "" {
-		go runTunnelSupervisor(context.Background(), tunnelSupervisorOpts{
-			ServerURL:      resolvedTunnelServerURL,
-			Unique:         resolvedTunnelUnique,
-			BinPath:        resolvedTunnelBin,
-			LocalAddr:      listenAddr,
-			ClientCertPath: resolvedTunnelClientCert,
-		})
-	}
+	maybeStartTunnel(context.Background(), tunnelSupervisorOpts{
+		ServerURL:      resolvedTunnelServerURL,
+		Unique:         resolvedTunnelUnique,
+		BinPath:        resolvedTunnelBin,
+		LocalAddr:      listenAddr,
+		ClientCertPath: resolvedTunnelClientCert,
+	})
 
 	// Override preview port range from environment (set by docker-compose)
 	if portRange := os.Getenv("SWE_PREVIEW_PORTS"); portRange != "" {

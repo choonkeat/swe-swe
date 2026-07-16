@@ -213,6 +213,32 @@ var broadcastPublicHostnameChange = func() {
 // runTunnelSupervisor is the long-running supervisor goroutine. It
 // loops on (start child, drain events, wait for exit, backoff). Exits
 // only when ctx is cancelled; never on its own.
+// maybeStartTunnel decides whether to launch the tunnel supervisor from
+// the resolved config, and returns true if it did.
+//
+//   - No server URL: tunnel mode not requested; do nothing.
+//   - Server URL set but empty unique: the tunnel client requires
+//     --unique and exits 2 on every spawn, so the supervisor would
+//     restart-loop forever. Fail fast -- skip the supervisor and record a
+//     fatal "unique_required" status so the frontend can show why, while
+//     the rest of swe-swe keeps running.
+//   - Both set: launch the supervisor in a goroutine.
+func maybeStartTunnel(ctx context.Context, opts tunnelSupervisorOpts) bool {
+	switch {
+	case opts.ServerURL == "":
+		return false
+	case opts.Unique == "":
+		log.Printf("[tunnel] tunnel server URL is set but the unique name is empty; refusing to start the tunnel (set --tunnel-unique / SWE_TUNNEL_UNIQUE). The rest of swe-swe continues.")
+		if setLiveTunnelStatus(tunnelStatusInfo{State: "fatal", Reason: "unique_required"}) {
+			broadcastPublicHostnameChange()
+		}
+		return false
+	default:
+		go runTunnelSupervisor(ctx, opts)
+		return true
+	}
+}
+
 func runTunnelSupervisor(ctx context.Context, opts tunnelSupervisorOpts) {
 	defer recoverGoroutine("tunnelSupervisor")
 
