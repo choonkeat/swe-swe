@@ -1,4 +1,4 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
@@ -334,6 +334,15 @@ test-e2e:
 	./scripts/e2e-up.sh compose
 	./scripts/e2e-test.sh compose $(E2E_ARGS) || (./scripts/e2e-down.sh compose; exit 1)
 	./scripts/e2e-down.sh compose
+
+# Opt-in LLM capstone: the ONE journey that needs a live model provider --
+# agent-browser drives Playwright MCP end-to-end (agent -> CDP -> screenshot).
+# Excluded from `test-e2e` (slow + provider-flaky); run on demand / nightly.
+# E2E_LLM=1 makes playwright.config.js run ONLY agent-browser.spec.js.
+test-e2e-llm:
+	./scripts/e2e-up.sh simple
+	E2E_LLM=1 ./scripts/e2e-test.sh simple $(E2E_ARGS) || (./scripts/e2e-down.sh simple; exit 1)
+	./scripts/e2e-down.sh simple
 
 # Host-native (dockerless) umbrella -- mirrors `test-e2e` for the no-Docker
 # path. The harness self-contains init + up + assert + teardown (trap), so

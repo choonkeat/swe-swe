@@ -24,7 +24,10 @@ test.describe('Preview host-demux', () => {
   test.skip(!REACH, 'set E2E_VHOST_REACH (+ fixtures) to run browser-level vhost e2e');
 
   async function sessionPorts(page) {
-    await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
+    // assistant:'shell' -- this suite asserts on the preview proxy (host-demux /
+    // cookie domain), which only needs previewProxyPort allocated, not the
+    // agent. A plain bash PTY boots instantly; opencode was pure latency here.
+    await openSessionViaPost(page, { assistant: 'shell', session: 'terminal' });
     const ports = await page.waitForFunction(() => {
       const ui = window.terminalUI;
       if (!ui || !ui.previewProxyPort || !ui.previewVhostSuffix) return null;

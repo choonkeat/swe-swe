@@ -9,7 +9,10 @@ async function waitForUi(page, predicate) {
 }
 
 async function openSession(page) {
-  const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'terminal' });
+  // assistant:'shell' -- this suite tests the env-var store round-trip, not the
+  // agent. A plain bash PTY boots instantly and deterministically; opencode
+  // boot here was pure latency.
+  const uuid = await openSessionViaPost(page, { assistant: 'shell', session: 'terminal' });
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   // set_env is silently dropped if the socket isn't OPEN yet; wait until the
   // sessionUUID has been delivered (proxy for "WS init round-trip completed").

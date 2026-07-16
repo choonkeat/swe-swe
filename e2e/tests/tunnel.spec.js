@@ -28,7 +28,11 @@ const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
 //     make e2e-down                                                        # state-file mode
 
 async function createSessionAndWaitForStatus(page) {
-    const uuid = await openSessionViaPost(page, { assistant: 'opencode' });
+    // assistant:'shell' -- this suite asserts on the WS status frame (preview
+    // port / publicHostname / previewBaseUrl templating), which is session-level
+    // and agent-agnostic. A plain bash PTY boots instantly; opencode was pure
+    // latency here.
+    const uuid = await openSessionViaPost(page, { assistant: 'shell' });
 
     return page.waitForFunction(() => {
         const ui = window.terminalUI;

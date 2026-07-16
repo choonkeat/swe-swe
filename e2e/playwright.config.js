@@ -6,20 +6,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 const storageStatePath = path.join(__dirname, '.auth', 'state.json');
 
+// The everyday suite is deterministic: it opens `shell` sessions or waits only
+// on the agent-chat sidecar becoming available (~15s, no model call). The one
+// test that needs a live model to actually DO something -- agent-browser
+// (agent -> Playwright MCP -> CDP -> screenshot) -- is the "capstone" and is
+// slow + provider-flaky, so it is excluded by default and opted into with
+// E2E_LLM=1 (`make test-e2e-llm`), which runs ONLY the capstone.
+const runLLM = !!process.env.E2E_LLM;
+
 export default defineConfig({
   testDir: './tests',
   globalSetup: './global-setup.js',
+  // Default suite excludes the LLM capstone; E2E_LLM=1 runs only it.
+  testMatch: runLLM ? ['**/agent-browser.spec.js'] : undefined,
+  testIgnore: runLLM ? undefined : ['**/agent-browser.spec.js'],
   timeout: 180_000, // 3 minutes per test (AI agent needs time)
   expect: {
     timeout: 120_000, // 2 minutes for assertions (waiting for AI response)
   },
-  // One retry per test: most flakes here are LLM-driven (the agent-chat
-  // probe and the agent-browser tool-use assertion both depend on an
-  // OpenCode response within a window). 0 retries means a single slow
-  // response kills the whole run; 2+ retries can mask real regressions.
-  // 1 is the standard tradeoff: a clean retry hides genuine flakes, a
-  // 2/2 failure still fails the suite.
-  retries: 1,
+  // Default suite is deterministic, so a retry is cheap insurance (it only runs
+  // on failure) and avoids a whole-suite re-run over one transient flake. The
+  // LLM capstone is provider-flaky, so give it an extra retry.
+  retries: runLLM ? 2 : 1,
   workers: 1, // sequential -- tests share the server
   reporter: 'list',
   use: {

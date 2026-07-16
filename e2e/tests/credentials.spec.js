@@ -10,7 +10,10 @@ async function waitForUi(page, predicate) {
 }
 
 async function openSession(page) {
-  const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'terminal' });
+  // assistant:'shell' -- this suite tests the git-credentials WS round-trip, not
+  // the agent. A plain bash PTY boots instantly and deterministically; booting
+  // opencode here was pure latency (and a source of flakes).
+  const uuid = await openSessionViaPost(page, { assistant: 'shell', session: 'terminal' });
   await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
   // The set_credentials WS message is silently dropped if the socket is not
   // OPEN yet; wait until the sessionUUID has been delivered (proxy for "WS
