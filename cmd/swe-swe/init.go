@@ -258,6 +258,7 @@ type InitConfig struct {
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && no tunnel
 	Dockerless          bool                `json:"-"` // mode flag: host-native, no Docker (marker file written separately)
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
+	TunnelUnique        string              `json:"tunnelUnique,omitempty"`
 	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
 	TunnelLocalPorts    bool                `json:"tunnelLocalPorts,omitempty"`
 	CLIVersion          string              `json:"cliVersion,omitempty"`
@@ -642,6 +643,14 @@ func handleInit() {
 			"entrypoints; swe-swe-server binds 127.0.0.1 only and supervises "+
 			"the swe-swe-tunnel client subprocess for inbound traffic. Empty "+
 			"keeps the legacy Traefik-fronted compose.")
+	tunnelUnique := fs.String("tunnel-unique", "",
+		"Bare unique label for the tunnel registration (public hostname: "+
+			"<unique>-tunnel.<server-suffix>). Only meaningful with "+
+			"--tunnel-server-url. Baked into the generated compose as the "+
+			"default for SWE_TUNNEL_UNIQUE; a runtime SWE_TUNNEL_UNIQUE env "+
+			"var still overrides it, so existing env-based setups keep "+
+			"working. Empty leaves the compose relying on the runtime env "+
+			"var alone (the tunnel refuses to start if it ends up empty).")
 	tunnelClientCert := fs.String("tunnel-client-cert", "",
 		"Path to a PEM-encoded mTLS client certificate to present to the "+
 			"tunnel server. Only meaningful with --tunnel-server-url. The "+
@@ -925,6 +934,9 @@ func handleInit() {
 		if !explicitFlags["tunnel-server-url"] {
 			*tunnelServerURL = savedConfig.TunnelServerURL
 		}
+		if !explicitFlags["tunnel-unique"] {
+			*tunnelUnique = savedConfig.TunnelUnique
+		}
 		if !explicitFlags["tunnel-client-cert"] {
 			*tunnelClientCert = savedConfig.TunnelClientCert
 		}
@@ -964,6 +976,7 @@ func handleInit() {
 		StatusBarFontFamily: *statusBarFontFamily,
 		ProxyPortOffset:     *proxyPortOffset,
 		TunnelServerURL:     *tunnelServerURL,
+		TunnelUnique:        *tunnelUnique,
 		TunnelClientCert:    *tunnelClientCert,
 		TunnelLocalPorts:    *tunnelLocalPorts,
 	}

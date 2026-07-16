@@ -771,6 +771,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
 		{"tunnel-mode", []string{"--tunnel-server-url", "https://tunnel.example.com"}},
+		{"tunnel-mode-unique", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-unique", "myproject123"}},
 		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
 		{"tunnel-mode-local-ports", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-local-ports"}},
 	}
