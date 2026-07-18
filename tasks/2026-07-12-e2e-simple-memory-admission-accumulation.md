@@ -45,6 +45,42 @@ Running only `terminal-ui-tabs` + `tunnel` against a fresh simple container
 passed 15/15 (2.5m). Dockerless e2e (4/4) and Agent View remote (1/1) also pass.
 Only the long accumulating full run trips the gate.
 
+## Deeper diagnosis (2026-07-13)
+
+Two mechanisms, both in play:
+
+1. RSS over-counting in the gate (primary suspect for FALSE refusals).
+   `getProcessTreeRSS` sums `/proc/<pid>/statm` RSS across every process in the
+   session tree. A chromium session is ~8 processes (browser, N renderers, gpu,
+   utility/network) that SHARE most of their mapped pages (libs, v8 snapshot).
+   RSS counts those shared pages once PER process, so the sum wildly
+   over-estimates the session's true unique footprint. Live sample on this box:
+   chromium procs summed to ~2.8 GB RSS while real unique usage is a fraction of
+   that. Result: the gate believes a session "uses 1.6 GB" and refuses new ones
+   even when the host has plenty free -> the cascade. Using PSS
+   (`/proc/<pid>/smaps_rollup` -> `Pss:`) instead of RSS counts each shared page
+   once across the tree and reflects true footprint. This is the cleanest fix
+   but it CHANGES production admission behavior, so it needs an explicit
+   decision + a full simple-mode e2e re-run to confirm.
+
+2. Failed-test cleanup skip amplifies it. `terminal-ui-tabs` afterEach ends
+   sessions only on PASS (failed tests keep their session for inspection). Once
+   the gate starts refusing mid-file, subsequent tests fail, skip cleanup, and
+   leave sessions resident -> positive feedback loop that drives MemAvailable
+   down further (287 MB by the end).
+
+Note: the gate reads host `/proc/meminfo` MemAvailable (NOT cgroup-aware), so a
+container memory limit is not the lever in simple mode; the host genuinely
+tightens as sidecars accumulate.
+
+Compose-mode variant: the endSessions POST to `/api/session/{uuid}/end` runs the
+FULL synchronous teardown in the request path (handleSessionEndAPI ->
+endSessionByUUID -> Close: stopSessionAgentView + stopSessionMdServe +
+killSessionProcessGroup + killProcessesOnPorts). Ending a browser session (test 9
+starts one) can block the response long enough that the afterEach fetch hits
+Playwright's 180s hook timeout, then later page.goto's abort. Needs its own
+look (bound the browser teardown; or end sessions async and 202 immediately).
+
 ## Options (pick one; not mutually exclusive)
 
 1. Raise the e2e-simple (and compose) container memory ceiling so the heaviest
