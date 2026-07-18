@@ -21,7 +21,8 @@ latency from MCP spawn.
 
 - [x] Phase 1 -- `swe-npx` helper binary (TDD against a fake registry)
       (done 2026-07-18: 13 tests green, static build verified)
-- [ ] Phase 2 -- payload + Dockerfile wiring (8 -> 9 embedded binaries)
+- [x] Phase 2 -- payload + Dockerfile wiring (8 -> 9 embedded binaries)
+      (done 2026-07-18: embed test green, goldens updated)
 - [ ] Phase 3 -- swap call sites (goldens WILL change)
 - [ ] Phase 4 -- e2e verification (node-free dockerless, docker mode, collision repro)
 - [ ] Phase 5 -- docs + changelog

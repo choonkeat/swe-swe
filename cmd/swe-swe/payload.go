@@ -29,6 +29,10 @@ var dockerlessBinaries = []string{
 	"swe-swe-fork-convo",
 	// Foreman-compatible Procfile runner for docker-free multi-service dev.
 	"swe-run",
+	// Registry-resolving exec helper for our distribute-go-bin npm tools
+	// (md-serve, agent-chat, whiteboard-mcp, reverse-proxy); replaces
+	// `npx -y @choonkeat/...` so those spawns need no node.
+	"swe-npx",
 	// External tunnel client (pinned ref), embedded so `swe-swe up` can run
 	// tunnel mode with no Docker. Only spawned when -tunnel-server-url is set.
 	"swe-swe-tunnel",

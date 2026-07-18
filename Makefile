@@ -210,6 +210,7 @@ dockerless-payload:
 	@$(MAKE) _payload-helper NAME=swe-swe-broker-probe
 	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
 	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
+	@$(MAKE) _payload-helper NAME=swe-npx
 	@# swe-run is a multi-file stdlib-only package (Procfile runner); build the
 	@# whole dir, mirroring how the Dockerfile builds it.
 	@$(MAKE) _payload-helper-multi NAME=swe-run

@@ -24,6 +24,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o swe-swe-server . && \
 COPY mcp-lazy-init/main.go mcp-lazy-init/go.mod /build-mcp-lazy-init/
 RUN cd /build-mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
 
+# Build swe-npx (registry-resolving exec helper for our distribute-go-bin npm
+# tools; replaces `npx -y @choonkeat/...` spawns so they need no node)
+COPY swe-npx/main.go swe-npx/go.mod /build-swe-npx/
+RUN cd /build-swe-npx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-npx/swe-npx .
+
 # Build mcp-cli-proxy (per-server stdio MCP adapter for MCP-less mode, stdlib only)
 COPY mcp-cli-proxy/main.go mcp-cli-proxy/go.mod /build-mcp-cli-proxy/
 RUN cd /build-mcp-cli-proxy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-cli-proxy/mcp-cli-proxy .
@@ -179,10 +184,11 @@ RUN npm install -g typescript
 # swe-swe init detects NODE_EXTRA_CA_CERTS/SSL_CERT_FILE env vars and copies certs
 # to .swe-swe/certs/. The entrypoint.sh installs them into the system trust store.
 
-# Copy swe-swe-server, mcp-lazy-init, swe-swe-broker-probe, git-credential-swe-swe, and git-sign-swe-swe binaries from builder stage
+# Copy swe-swe-server, mcp-lazy-init, swe-npx, swe-swe-broker-probe, git-credential-swe-swe, and git-sign-swe-swe binaries from builder stage
 COPY --from=server-builder /build/swe-swe-server /usr/local/bin/swe-swe-server
 COPY --from=server-builder /build/swe-swe-fork-convo /usr/local/bin/swe-swe-fork-convo
 COPY --from=server-builder /build-mcp-lazy-init/mcp-lazy-init /usr/local/bin/mcp-lazy-init
+COPY --from=server-builder /build-swe-npx/swe-npx /usr/local/bin/swe-npx
 COPY --from=server-builder /build-mcp-cli-proxy/mcp-cli-proxy /usr/local/bin/mcp-cli-proxy
 COPY --from=server-builder /build-mcp/mcp /usr/local/bin/mcp
 COPY --from=server-builder /build-swe-swe-broker-probe/swe-swe-broker-probe /usr/local/bin/swe-swe-broker-probe
