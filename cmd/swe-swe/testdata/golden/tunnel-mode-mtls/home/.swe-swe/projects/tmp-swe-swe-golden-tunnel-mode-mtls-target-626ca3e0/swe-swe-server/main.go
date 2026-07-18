@@ -4785,9 +4785,10 @@ func stopSessionBrowser(sess *Session) {
 // as a read-only, live-reloading repo browser for the Files tab. The process is
 // non-critical: a failure to start is logged but does not abort session creation.
 //
-// Invoked via `npx -y @choonkeat/md-serve@latest` so the Files tab always gets
-// the published latest at session start, rather than whatever version was baked
-// into the image at build time.
+// Invoked via `swe-npx -y @choonkeat/md-serve@latest` so the Files tab always
+// gets the published latest at session start (swe-npx re-checks the registry
+// after a TTL), rather than whatever version was baked into the image at build
+// time -- with no dependency on node/npx.
 //
 // The `-theme-cookie swe-swe-theme` flag makes the Files tab follow swe-swe's
 // own light/dark toggle: when the request carries cookie swe-swe-theme=light or
@@ -4795,15 +4796,15 @@ func stopSessionBrowser(sess *Session) {
 // prefers-color-scheme. This mirrors how agent-chat is launched. Requires
 // md-serve >= 0.6.0, satisfied at runtime via the @latest pin.
 func startSessionMdServe(sess *Session) error {
-	cmd := exec.Command("npx", "-y", "@choonkeat/md-serve@latest",
+	cmd := exec.Command("swe-npx", "-y", "@choonkeat/md-serve@latest",
 		"-dir", sess.WorkDir,
 		"-addr", fmt.Sprintf(":%d", sess.FilesPort),
 		"-theme-cookie", "swe-swe-theme",
 	)
-	// Put npx + the md-serve child it spawns into their own process group so
-	// stopSessionMdServe can kill both with a single kill(-pgid). Without this,
-	// SIGKILL on the captured npx PID would orphan md-serve (which then survives
-	// as a re-parented child of swe-swe-server, still holding sess.FilesPort).
+	// swe-npx execs md-serve, so the captured PID IS md-serve (unlike the old
+	// npx wrapper, which kept md-serve as a child). Keep the process group
+	// anyway: it is harmless and protects stopSessionMdServe's kill(-pgid)
+	// against any future children md-serve itself might spawn.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Use a clean PORT-free environment so md-serve cannot accidentally pick up
 	// the server's own PORT and ignore -addr. We still inherit the rest of the
@@ -4839,10 +4840,10 @@ func startSessionMdServe(sess *Session) error {
 }
 
 // stopSessionMdServe kills the per-session md-serve process group, if one was
-// started. We must kill the whole process group (kill(-pgid)) rather than the
-// captured PID alone: the captured PID is the npx wrapper, and md-serve runs as
-// its child. Killing only the wrapper would leave md-serve orphaned and still
-// bound to sess.FilesPort. startSessionMdServe sets Setpgid so pgid == filesPID.
+// started. The captured PID is md-serve itself (swe-npx execs it), but we
+// still kill the whole process group (kill(-pgid)) so any children md-serve
+// spawns die with it and nothing survives holding sess.FilesPort.
+// startSessionMdServe sets Setpgid so pgid == filesPID.
 func stopSessionMdServe(sess *Session) {
 	if sess.FilesPID == 0 {
 		return

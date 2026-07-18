@@ -25,7 +25,7 @@ COPY mcp-lazy-init/main.go mcp-lazy-init/go.mod /build-mcp-lazy-init/
 RUN cd /build-mcp-lazy-init && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-mcp-lazy-init/mcp-lazy-init .
 
 # Build swe-npx (registry-resolving exec helper for our distribute-go-bin npm
-# tools; replaces `npx -y @choonkeat/...` spawns so they need no node)
+# tools; replaces the plain-npx spawns of @choonkeat tools so they need no node)
 COPY swe-npx/main.go swe-npx/go.mod /build-swe-npx/
 RUN cd /build-swe-npx && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build-swe-npx/swe-npx .
 
@@ -149,7 +149,7 @@ COPY swe-swe-server/static/vnc_lite.html /usr/share/novnc/vnc_lite.html
 
 
 # md-serve (per-session Files tab) is invoked at runtime via
-# `npx -y @choonkeat/md-serve@latest` by swe-swe-server, so the published
+# `swe-npx -y @choonkeat/md-serve@latest` by swe-swe-server, so the published
 # latest is fetched at session start rather than baked into the image.
 
 # Install Claude Code CLI

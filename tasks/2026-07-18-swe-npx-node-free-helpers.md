@@ -23,7 +23,8 @@ latency from MCP spawn.
       (done 2026-07-18: 13 tests green, static build verified)
 - [x] Phase 2 -- payload + Dockerfile wiring (8 -> 9 embedded binaries)
       (done 2026-07-18: embed test green, goldens updated)
-- [ ] Phase 3 -- swap call sites (goldens WILL change)
+- [x] Phase 3 -- swap call sites (goldens WILL change)
+      (done 2026-07-18: all @choonkeat spawns on swe-npx, playwright untouched)
 - [ ] Phase 4 -- e2e verification (node-free dockerless, docker mode, collision repro)
 - [ ] Phase 5 -- docs + changelog
 

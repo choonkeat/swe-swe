@@ -5480,7 +5480,7 @@ class TerminalUI extends HTMLElement {
                     break;
                 }
                 // md-serve readiness probe: the per-session md-serve is
-                // launched via `npx -y @choonkeat/md-serve@latest`, whose cold
+                // launched via `swe-npx -y @choonkeat/md-serve@latest`, whose cold
                 // start lags several seconds behind the (instant) Go files-proxy
                 // bind. Setting the iframe src before md-serve answers leaves the
                 // pane blank until a manual reload. Probe the same-origin

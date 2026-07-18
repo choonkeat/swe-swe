@@ -25,7 +25,7 @@
 //
 //	mcp-cli-proxy --name swe-swe-agent-chat \
 //	  --socket /workspace/.swe-swe/run/mcp/swe-swe-agent-chat.sock \
-//	  -- sh -c 'exec npx -y @choonkeat/agent-chat ...'
+//	  -- sh -c 'exec swe-npx -y @choonkeat/agent-chat ...'
 package main
 
 import (

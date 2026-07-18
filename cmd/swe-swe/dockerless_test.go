@@ -186,9 +186,9 @@ func TestWriteDockerlessMCPConfig(t *testing.T) {
 	if ac.Command != "sh" || len(ac.Args) != 2 || !strings.Contains(ac.Args[1], "$SWE_SERVER_PORT") {
 		t.Errorf("agent-chat spec not preserved: %+v", ac)
 	}
-	// whiteboard is a plain npx command (no shell).
-	if wb := doc.MCPServers["swe-swe-whiteboard"]; wb.Command != "npx" {
-		t.Errorf("whiteboard command = %q, want npx", wb.Command)
+	// whiteboard is a plain swe-npx command (no shell, no env vars needed).
+	if wb := doc.MCPServers["swe-swe-whiteboard"]; wb.Command != "swe-npx" {
+		t.Errorf("whiteboard command = %q, want swe-npx", wb.Command)
 	}
 }
 

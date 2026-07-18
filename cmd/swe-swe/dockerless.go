@@ -329,11 +329,11 @@ type mcpServerSpec struct {
 func dockerlessMCPServers() map[string]mcpServerSpec {
 	sh := func(script string) mcpServerSpec { return mcpServerSpec{Command: "sh", Args: []string{"-c", script}} }
 	return map[string]mcpServerSpec{
-		"swe-swe-agent-chat": sh("exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
+		"swe-swe-agent-chat": sh("exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
 		"swe-swe-playwright": sh("exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"),
-		"swe-swe-preview":    sh("exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"),
-		"swe-swe-whiteboard": {Command: "npx", Args: []string{"-y", "@choonkeat/agent-whiteboard"}},
-		"swe-swe":            sh("exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"),
+		"swe-swe-preview":    sh("exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"),
+		"swe-swe-whiteboard": {Command: "swe-npx", Args: []string{"-y", "@choonkeat/agent-whiteboard"}},
+		"swe-swe":            sh("exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"),
 	}
 }
 

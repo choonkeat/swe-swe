@@ -462,7 +462,7 @@ class McpBridge {
     const agentChatPort = session?.agentChatPort ?? session?.AgentChatPort ?? envNumber("AGENT_CHAT_PORT") ?? 4000;
     const agentChatService = new SpawnedHttpService({
       name: "agent-chat",
-      command: "npx",
+      command: "swe-npx",
       args: [
         "-y",
         "@choonkeat/agent-chat",
@@ -484,7 +484,7 @@ class McpBridge {
     // falls back to its own default.
     const whiteboardService = new SpawnedHttpService({
       name: "whiteboard",
-      command: "npx",
+      command: "swe-npx",
       args: ["-y", "@choonkeat/agent-whiteboard", "--no-stdio-mcp"],
       env: { PORT: "" },
       portRegex: /Agent Whiteboard UI:\s+(http:\/\/localhost:(\d+))/,

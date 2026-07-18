@@ -23,7 +23,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   "mcp": {
     "swe-swe-agent-chat": {
       "type": "local",
-      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
+      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
     },
     "swe-swe-playwright": {
       "type": "local",
@@ -31,15 +31,15 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
     },
     "swe-swe-preview": {
       "type": "local",
-      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
+      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
     },
     "swe-swe-whiteboard": {
       "type": "local",
-      "command": ["npx", "-y", "@choonkeat/agent-whiteboard"]
+      "command": ["swe-npx", "-y", "@choonkeat/agent-whiteboard"]
     },
     "swe-swe": {
       "type": "local",
-      "command": ["sh", "-c", "exec npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
+      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
     }
   }
 }
