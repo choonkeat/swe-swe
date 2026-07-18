@@ -54,6 +54,30 @@ limactl shell swe
 (Multipass/UTM work too; you then manage port-forwards for 1977 and any
 preview ports yourself.)
 
+### 2a. Corporate TLS interception (only if the Mac sets NODE_EXTRA_CA_CERTS)
+
+Skip this section unless `echo $NODE_EXTRA_CA_CERTS` on the Mac prints a
+path. Machines behind a TLS-inspecting proxy (Netskope, Zscaler, ...)
+usually have it set to the proxy's root CA; the fresh VM does not trust
+that CA yet, so every HTTPS fetch inside it fails with
+`curl: (60) SSL certificate problem: self-signed certificate`.
+
+On the Mac:
+
+```sh
+limactl copy "$NODE_EXTRA_CA_CERTS" swe:/tmp/corp-ca.crt
+```
+
+In the VM (`limactl shell swe`):
+
+```sh
+sudo cp /tmp/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
+sudo update-ca-certificates    # curl and apt now trust the proxy
+# node/npm keep their own CA bundle, so point them at the system one:
+echo 'export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt' >> ~/.bashrc
+. ~/.bashrc
+```
+
 ## 3. Install swe-swe in the VM (works today)
 
 ```sh
