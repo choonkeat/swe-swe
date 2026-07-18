@@ -21,7 +21,7 @@ browser backend is reached by dialing out.
 **In progress.**
 
 - [x] Phase 1 -- stream mux over one WebSocket (TDD, net.Pipe) -- DONE 2026-07-18
-- [ ] Phase 2 -- backend side: tunnel endpoint + declarative bind manager + peercred guard
+- [x] Phase 2 -- backend side: tunnel endpoint + declarative bind manager + peercred guard -- DONE 2026-07-18 (live-verified with real chromium; note: task's "curl -> open frame" positive check replaced by chromium-driven load since the fail-closed peer guard correctly rejects curl; curl is the negative check)
 - [ ] Phase 3 -- client side: dial-out, local dial-back, port sources incl. /proc/net/tcp mirror
 - [ ] Phase 4 -- chromium wiring + e2e proving no-inbound-route operation
 - [ ] Phase 5 -- docs + changelog + netns follow-up note
