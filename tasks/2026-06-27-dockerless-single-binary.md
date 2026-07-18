@@ -4,6 +4,12 @@
 
 **In progress.**
 
+> Follow-up 2026-07-18: node/npx demoted from required to
+> Agent-View/node-agent-only. The four `@choonkeat/*` npm tools now spawn
+> via the bundled `swe-npx` helper (registry-resolving exec, user-level
+> `~/.swe-swe/npx-cache`), so 5 of 6 tabs run with NO node installed.
+> See tasks/2026-07-18-swe-npx-node-free-helpers.md.
+
 - [x] **Phase 0** -- Remove vscode entirely. Done 2026-06-27. Removed `--with-vscode` flag + `WithVSCode` config/reuse, `VSCODE_SERVICES` compose block + `code-server/Dockerfile` + `nginx-vscode.conf`, `withVSCode` template params, the vscode pane/option/iframe + `buildVSCodeUrl`/`_vscodeEnabled`/`getVSCodeUrl` from the JS, and the `with-vscode` golden variant. `make test` green; 327 node tests green; golden has 0 vscode/code-server refs. See -phase0.log.
 - [x] **Phase 1** -- Build static-linux binaries + `go:embed` the payload into the `swe-swe` CLI. Done 2026-06-28 (commit 36d04ee3c). `make dockerless-payload` builds the six host-arch static-linux binaries; CLI `go:embed`s them; `TestDockerlessPayloadEmbedsBinaries` asserts each is a correct-arch ELF (TDD RED->GREEN). Payload 29MB; CLI delta 9.2MB->38.9MB when referenced. NB: linker DCE strips the embed from `make build` until Phase 2 references it (verified via go-test binary). Deferred: multi-arch matrix in build-platforms; script/config staging moves to Phase 2 init. See -phase1.log.
 - [x] **Phase 2** -- `swe-swe init --dockerless` dumps the payload + wires it; `swe-swe up`/`--open`/`down` dispatch; `--dockerless` errors on non-Linux CLI. Done 2026-06-28. 2a flag+non-Linux GOOS guard; 2b binary extraction (0755); 2c dump+mode marker; 2d up/down dispatch (loopback bind, --open polls+xdg-open); 2e server path-agnostic (-workspace/-worktrees/-repos/-swe-home + env, defaults reproduce container, golden unchanged); 2c-ii swe-swe-open shim+symlinks + SWE_SERVER_PORT wiring + project-scoped .mcp.json (option ii, 5 servers). E2E smoke: init dumps 6 bins+shim+5 symlinks+.mcp.json+marker; `swe-swe up` boots server, binds loopback, HTTP 302. `make test` green. CAVEAT: project-scope .mcp.json may prompt Claude approval on first use. Tab-level e2e deferred to dockerless-e2e task. See -phase2.log.

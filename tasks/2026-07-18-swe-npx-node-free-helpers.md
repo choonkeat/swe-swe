@@ -17,7 +17,7 @@ latency from MCP spawn.
 
 ## Status
 
-**In progress.**
+**DONE 2026-07-18.** All five phases complete; see per-phase logs.
 
 - [x] Phase 1 -- `swe-npx` helper binary (TDD against a fake registry)
       (done 2026-07-18: 13 tests green, static build verified)
@@ -29,7 +29,10 @@ latency from MCP spawn.
       (done 2026-07-18: poisoned dockerless e2e PASS; docker-mode container
       verified via browser, all spawns exec from npx-cache; collision repro
       fixed live; warm spawn 11ms vs npx 1.15s)
-- [ ] Phase 5 -- docs + changelog
+- [x] Phase 5 -- docs + changelog
+      (done 2026-07-18: dockerless.md deps, single-binary follow-up note,
+      CHANGELOG entry; tasks/2026-07-11-mcp-npx-cwd-collision.md does not
+      exist in this repo, so no superseded-note was needed)
 
 ## Ground rules for the executing agent
 

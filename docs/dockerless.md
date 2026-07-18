@@ -31,11 +31,25 @@ swe-swe detects what is on your PATH at startup and uses it -- there is
 nothing to declare at init. Provide:
 
 - **git**
-- **npx**
 - **at least one coding-agent CLI** -- one or more of `claude`,
   `gemini`, `codex`, `goose`, `aider`, `opencode`, `pi`. Install the one
   you want; swe-swe offers whatever it finds.
+- **node/npx** (optional) -- only for the Agent View tab
+  (`@playwright/mcp` is real JS) and for agent CLIs that are themselves
+  node programs (`claude`, `gemini`). A non-node agent CLI on a box with
+  no node at all still gets Agent Terminal, Terminal, Preview, Files,
+  and Agent Chat.
 - **browser stack** (optional) -- only for the Agent View tab; see below.
+
+swe-swe's own npm-published tools (`@choonkeat/md-serve`,
+`@choonkeat/agent-chat`, `@choonkeat/agent-whiteboard`,
+`@choonkeat/agent-reverse-proxy`) are static Go binaries; the bundled
+`swe-npx` helper resolves each one straight from the npm registry
+(honoring `dist-tags.latest` with a 15m memo) and caches the platform
+binary under the user-level `~/.swe-swe/npx-cache/`, shared across
+sessions and projects. First use downloads once; after that spawns are
+instant and never consult the project cwd -- so a session working inside
+a checkout of one of those very repos cannot shadow the tool.
 
 ## Browser stack (Agent View)
 
