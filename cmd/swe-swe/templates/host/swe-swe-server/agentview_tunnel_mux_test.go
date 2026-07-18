@@ -247,7 +247,8 @@ func TestTunnelMuxClosePropagation(t *testing.T) {
 
 func TestTunnelMuxDataAfterCloseDropped(t *testing.T) {
 	ca, cb := newPipeMsgConnPair()
-	b := newTunnelMux(cb, func(s *tunnelStream, port int) {}, nil)
+	got := make(chan tunnelControl, 1)
+	b := newTunnelMux(cb, func(s *tunnelStream, port int) {}, func(c tunnelControl) { got <- c })
 	go b.run()
 	t.Cleanup(func() { b.close() })
 
@@ -268,8 +269,6 @@ func TestTunnelMuxDataAfterCloseDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 	// B must still respond to control traffic afterwards.
-	got := make(chan tunnelControl, 1)
-	b.onControl = func(c tunnelControl) { got <- c }
 	syncMsg, _ := json.Marshal(tunnelControl{Op: "sync", Ports: []int{8080}})
 	if err := ca.WriteMessage(tunnelTextMessage, syncMsg); err != nil {
 		t.Fatal(err)

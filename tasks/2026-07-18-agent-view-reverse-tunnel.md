@@ -18,9 +18,9 @@ browser backend is reached by dialing out.
 
 ## Status
 
-**Not started.**
+**In progress.**
 
-- [ ] Phase 1 -- stream mux over one WebSocket (TDD, net.Pipe)
+- [x] Phase 1 -- stream mux over one WebSocket (TDD, net.Pipe) -- DONE 2026-07-18
 - [ ] Phase 2 -- backend side: tunnel endpoint + declarative bind manager + peercred guard
 - [ ] Phase 3 -- client side: dial-out, local dial-back, port sources incl. /proc/net/tcp mirror
 - [ ] Phase 4 -- chromium wiring + e2e proving no-inbound-route operation
