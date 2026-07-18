@@ -11,7 +11,7 @@ import (
 // TestHandleFilesReadyAPI covers the same-origin readiness probe the Files pane
 // polls before loading its iframe. Without it, the iframe src was set the moment
 // the files proxy port arrived, so a slow md-serve cold start (launched via
-// `npx -y @choonkeat/md-serve@latest`) left the pane blank until a manual
+// `swe-npx -y @choonkeat/md-serve@latest`) left the pane blank until a manual
 // reload. Mirrors handleVNCReadyAPI: 200 when md-serve is listening on the
 // session's FilesPort, 503 otherwise.
 func TestHandleFilesReadyAPI(t *testing.T) {

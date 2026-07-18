@@ -37,14 +37,14 @@ fi
 
 # Create Codex MCP configuration (TOML format)
 # Codex sandboxes MCP child processes and only forwards env vars listed in
-# `env_vars` -- so we cannot use the `sh -c "exec npx ... $VAR"` wrapper that
-# the other agents use, since $VAR would expand to empty inside the sandbox.
-# Instead we run npx (or mcp-lazy-init) directly and let Codex substitute
-# $VAR references in args from the declared env_vars whitelist.
+# `env_vars` -- so we cannot use the `sh -c "exec swe-npx ... $VAR"` wrapper
+# that the other agents use, since $VAR would expand to empty inside the
+# sandbox. Instead we run swe-npx (or mcp-lazy-init) directly and let Codex
+# substitute $VAR references in args from the declared env_vars whitelist.
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme", "--welcome-replies", "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned", "--autocomplete-triggers", "/=slash-command", "--autocomplete-url", "http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
 env_vars = ["AGENT_CHAT_PORT", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
@@ -54,16 +54,16 @@ args = ["--init-method", "POST", "--init-url", "http://localhost:$SWE_SERVER_POR
 env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY", "BROWSER_CDP_PORT"]
 
 [mcp_servers.swe-swe-preview]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
 [mcp_servers.swe-swe-whiteboard]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-whiteboard"]
 
 [mcp_servers.swe-swe]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
 EOF

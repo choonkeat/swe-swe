@@ -18,14 +18,14 @@ NC='\033[0m' # No Color
 
 # Create Codex MCP configuration (TOML format)
 # Codex sandboxes MCP child processes and only forwards env vars listed in
-# `env_vars` -- so we cannot use the `sh -c "exec npx ... $VAR"` wrapper that
-# the other agents use, since $VAR would expand to empty inside the sandbox.
-# Instead we run npx (or mcp-lazy-init) directly and let Codex substitute
-# $VAR references in args from the declared env_vars whitelist.
+# `env_vars` -- so we cannot use the `sh -c "exec swe-npx ... $VAR"` wrapper
+# that the other agents use, since $VAR would expand to empty inside the
+# sandbox. Instead we run swe-npx (or mcp-lazy-init) directly and let Codex
+# substitute $VAR references in args from the declared env_vars whitelist.
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
 [mcp_servers.swe-swe-agent-chat]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme", "--welcome-replies", "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned", "--autocomplete-triggers", "/=slash-command", "--autocomplete-url", "http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
 env_vars = ["AGENT_CHAT_PORT", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
@@ -35,16 +35,16 @@ args = ["--init-method", "POST", "--init-url", "http://localhost:$SWE_SERVER_POR
 env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY", "BROWSER_CDP_PORT"]
 
 [mcp_servers.swe-swe-preview]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
 [mcp_servers.swe-swe-whiteboard]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-whiteboard"]
 
 [mcp_servers.swe-swe]
-command = "npx"
+command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
 EOF
@@ -63,11 +63,11 @@ claude_mcp_setup() {
   claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
   claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
   claude mcp remove --scope user swe-swe 2>/dev/null || true
-  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
   claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
-  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY'
-  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- npx -y @choonkeat/agent-whiteboard
-  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- swe-npx -y @choonkeat/agent-whiteboard
+  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
 }
 claude_mcp_setup
 echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"

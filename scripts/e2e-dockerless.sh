@@ -12,6 +12,13 @@
 # (warns, does not fail) since it needs a clean host.
 #
 # Usage: ./scripts/e2e-dockerless.sh
+#
+# E2E_POISON_NODE=1 additionally masks node/npx from the SERVER process's
+# PATH (exit-127 shims) and hard-asserts the node-free contract: md-serve
+# (Files tab backend) must start and serve via swe-npx, and the .mcp.json
+# agent-chat spawn command must resolve without node. Playwright (Agent
+# View) is expected to degrade under poison; combine with
+# E2E_SKIP_PLAYWRIGHT=1.
 set -uo pipefail
 
 WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -51,7 +58,7 @@ SWEDIR="$(ls -d "$HOME_DIR"/.swe-swe/projects/*/ | head -1)"
 echo "  metadata dir: $SWEDIR"
 
 echo "=== Phase 3: assert generated artifacts ==="
-for b in swe-swe-server git-credential-swe-swe git-sign-swe-swe mcp-lazy-init swe-swe-broker-probe swe-swe-fork-convo swe-swe-tunnel; do
+for b in swe-swe-server git-credential-swe-swe git-sign-swe-swe mcp-lazy-init swe-swe-broker-probe swe-swe-fork-convo swe-swe-tunnel swe-npx swe-run; do
     [ -x "$SWEDIR/bin/$b" ] && pass "binary $b dumped + executable" || fail "binary $b missing/not executable"
 done
 [ -x "$SWEDIR/bin/swe-swe-open" ] && pass "swe-swe-open shim present" || fail "swe-swe-open shim missing"
@@ -64,12 +71,27 @@ grep -q '"mcpServers"' "$PROJ/.mcp.json" && grep -q 'swe-swe-agent-chat' "$PROJ/
     && pass "project .mcp.json has MCP servers" || fail ".mcp.json missing/incomplete"
 
 echo "=== Phase 4: boot the dumped server (no Docker) ==="
+# E2E_POISON_NODE=1: mask node/npx from the server's PATH with exit-127
+# shims, proving the node-free contract (md-serve + MCP servers spawn via
+# swe-npx from the dumped bin dir, which `swe-swe up` prepends to PATH).
+SERVER_PATH="$PATH"
+if [ "${E2E_POISON_NODE:-}" = "1" ]; then
+    POISON="$TEST_DIR/poison-bin"
+    mkdir -p "$POISON"
+    for shim in node npx npm; do
+        printf '#!/bin/sh\necho "%s: masked by E2E_POISON_NODE" >&2\nexit 127\n' "$shim" > "$POISON/$shim"
+        chmod +x "$POISON/$shim"
+    done
+    SERVER_PATH="$POISON:$PATH"
+    echo "  node/npx/npm masked for the server process"
+fi
 # Clean env: drop any ambient tunnel/auth from the host; pick high,
 # unlikely-to-collide port ranges so a stray neighbour does not clash.
 # `swe-swe up` locates the project by CWD, so launch from inside it.
 ( cd "$PROJ" && exec env \
     -u SWE_TUNNEL_SERVER_URL -u SWE_TUNNEL_UNIQUE -u SWE_TUNNEL_BIN -u SWE_TUNNEL_CLIENT_CERT \
     -u SWE_SWE_PASSWORD \
+    PATH="$SERVER_PATH" \
     HOME="$HOME_DIR" SWE_PORT="$E2E_PORT" \
     SWE_PREVIEW_PORTS=41000-41019 SWE_AGENT_CHAT_PORTS=41100-41119 \
     SWE_PUBLIC_PORTS=41200-41219 SWE_CDP_PORTS=41300-41319 SWE_VNC_PORTS=41400-41419 \
@@ -103,8 +125,10 @@ echo "$SESS" | grep -q '<terminal-ui' && pass "session page renders terminal-ui"
 echo "$SESS" | grep -qF "data-where-key=\"$PROJ\"" && pass "session rooted at project dir (path-agnostic)" || fail "session not rooted at project dir"
 echo "$SESS" | grep -q '/terminal-ui.js' && pass "session loads terminal-ui.js bundle" || fail "terminal-ui.js not referenced"
 
-# Files tab backend (md-serve via npx) is best-effort: needs npm/network and a
-# free files port. Warn (not fail) so the harness stays green on shared hosts.
+# Files tab backend (md-serve via swe-npx) only spawns when a REAL session is
+# created (WS connect), which happens in the Playwright phase below -- a bare
+# page GET stages nothing (no-ghost-session invariant). Warn-only here; the
+# poison mode hard-asserts it after Playwright has driven a session.
 sleep 3
 if grep -q 'Started md-serve' "$TEST_DIR/up.log"; then
     if grep -q 'md-serve exited with error' "$TEST_DIR/up.log"; then
@@ -113,7 +137,26 @@ if grep -q 'Started md-serve' "$TEST_DIR/up.log"; then
         pass "Files md-serve launched"
     fi
 else
-    warn "md-serve not observed yet (lazy/clean-host dependent)"
+    warn "md-serve not observed yet (spawns on first real session; see Playwright phase)"
+fi
+
+if [ "${E2E_POISON_NODE:-}" = "1" ]; then
+    echo "=== Phase 5b: node-free spawn assertions (E2E_POISON_NODE=1) ==="
+    # The project .mcp.json agent-chat command must resolve without node:
+    # run the exact spawn shape (sh -c 'exec swe-npx ...') with --help,
+    # on the PATH the server gives its children (dumped bin dir first).
+    if ( PATH="$SWEDIR/bin:$SERVER_PATH" SWE_NPX_CACHE_DIR="$HOME_DIR/.swe-swe/npx-cache" \
+            sh -c 'exec swe-npx -y @choonkeat/agent-chat --help' >/dev/null 2>&1 ); then
+        pass "agent-chat MCP spawn command runs node-free (swe-npx exec)"
+    else
+        fail "agent-chat via swe-npx failed with node masked"
+    fi
+    # And the poison actually poisons: plain npx must fail.
+    if ( PATH="$SERVER_PATH" npx --version >/dev/null 2>&1 ); then
+        fail "poison ineffective: npx still runs on the server PATH"
+    else
+        pass "poison control: npx exits non-zero on the server PATH"
+    fi
 fi
 
 echo "=== Phase 6: Playwright live-tab coverage ==="
@@ -130,6 +173,22 @@ else
         pass "Playwright live-tab suite passed"
     else
         fail "Playwright live-tab suite failed"
+    fi
+fi
+
+if [ "${E2E_POISON_NODE:-}" = "1" ] && [ "${E2E_SKIP_PLAYWRIGHT:-}" != "1" ]; then
+    echo "=== Phase 6b: node-free md-serve hard assertions (post-session) ==="
+    # Playwright drove a real session above, so md-serve must have spawned via
+    # swe-npx despite node being masked -- this is the headline claim. Session
+    # teardown SIGKILLs md-serve ("signal: killed"), which is expected; only a
+    # failure to start, or an exit that is NOT the teardown kill, is a defect.
+    if grep -q 'Started md-serve' "$TEST_DIR/up.log" \
+        && ! grep -q 'Failed to start md-serve' "$TEST_DIR/up.log" \
+        && ! grep 'md-serve exited with error' "$TEST_DIR/up.log" | grep -qv 'signal: killed'; then
+        pass "md-serve spawned via swe-npx with node masked"
+    else
+        fail "md-serve did not run cleanly under node poison"
+        grep 'md-serve' "$TEST_DIR/up.log" | tail -5
     fi
 fi
 
