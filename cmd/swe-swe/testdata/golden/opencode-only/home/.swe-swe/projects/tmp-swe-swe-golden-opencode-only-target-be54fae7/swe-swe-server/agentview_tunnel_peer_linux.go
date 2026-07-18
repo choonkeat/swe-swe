@@ -10,7 +10,6 @@ package main
 // walk: broker.go findSessionForPID.
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net"
 	"os"
@@ -103,30 +102,8 @@ func findSocketInode(addr *net.TCPAddr) (uint64, error) {
 	return 0, fmt.Errorf("no /proc/net/tcp entry for %s", addr)
 }
 
-// parseProcNetHexAddr decodes /proc/net/tcp's "HEXIP:HEXPORT" local_address
-// column. IPv4 is one little-endian u32; IPv6 is four little-endian u32
-// groups.
-func parseProcNetHexAddr(s string) (net.IP, int, bool) {
-	ipHex, portHex, found := strings.Cut(s, ":")
-	if !found {
-		return nil, 0, false
-	}
-	port64, err := strconv.ParseUint(portHex, 16, 16)
-	if err != nil {
-		return nil, 0, false
-	}
-	raw, err := hex.DecodeString(ipHex)
-	if err != nil || (len(raw) != 4 && len(raw) != 16) {
-		return nil, 0, false
-	}
-	ip := make(net.IP, len(raw))
-	for group := 0; group < len(raw); group += 4 {
-		for i := 0; i < 4; i++ {
-			ip[group+i] = raw[group+3-i]
-		}
-	}
-	return ip, int(port64), true
-}
+// parseProcNetHexAddr (shared, agentview_tunnel_client.go) decodes the
+// "HEXIP:HEXPORT" address column used by findSocketInode above.
 
 // findPIDForSocketInode scans /proc/<pid>/fd for a "socket:[inode]" link.
 func findPIDForSocketInode(inode uint64) (int, error) {

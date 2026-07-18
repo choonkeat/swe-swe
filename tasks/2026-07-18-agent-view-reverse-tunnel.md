@@ -22,7 +22,7 @@ browser backend is reached by dialing out.
 
 - [x] Phase 1 -- stream mux over one WebSocket (TDD, net.Pipe) -- DONE 2026-07-18
 - [x] Phase 2 -- backend side: tunnel endpoint + declarative bind manager + peercred guard -- DONE 2026-07-18 (live-verified with real chromium; note: task's "curl -> open frame" positive check replaced by chromium-driven load since the fail-closed peer guard correctly rejects curl; curl is the negative check)
-- [ ] Phase 3 -- client side: dial-out, local dial-back, port sources incl. /proc/net/tcp mirror
+- [x] Phase 3 -- client side: dial-out, local dial-back, port sources incl. /proc/net/tcp mirror -- DONE 2026-07-18 (one-machine e2e: app on 127.0.0.2 so backend can bind 127.0.0.1:same-port; app-kill removal proven via static-clear+exclude since the mirror would re-see the backend's own listener on one machine)
 - [ ] Phase 4 -- chromium wiring + e2e proving no-inbound-route operation
 - [ ] Phase 5 -- docs + changelog + netns follow-up note
 

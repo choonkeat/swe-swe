@@ -35,9 +35,33 @@ var browserBackendClient = &http.Client{Timeout: 30 * time.Second}
 // remoteAllocate is indirected so wiring can be tested without a live backend.
 var remoteAllocate = allocateRemoteBrowser
 
-// allocateRemoteBrowser POSTs to <backend>/sessions and returns the allocation.
-func allocateRemoteBrowser(backendURL, token, sessionID string) (*allocResponse, error) {
+// agentViewTunnelMode is the resolved -agent-view-tunnel /
+// SWE_AGENT_VIEW_TUNNEL setting: reverse-tunnel the backend's loopback
+// traffic instead of relying on network reachability + resolver rules. Only
+// meaningful with a remote -agent-view URL.
+var agentViewTunnelMode bool
+
+// resolveAgentViewTunnelMode applies flag -> env. Called from main().
+func resolveAgentViewTunnelMode(flagVal, flagWasSet bool) {
+	v := flagVal
+	if env, ok := os.LookupEnv("SWE_AGENT_VIEW_TUNNEL"); ok && !flagWasSet {
+		v = env == "1" || strings.EqualFold(env, "true")
+	}
+	agentViewTunnelMode = v
+}
+
+// buildAllocPayload assembles the /sessions allocation body. In tunnel mode
+// the resolver-rule overrides are meaningless (loopback hostnames resolve on
+// the backend itself) and are ignored with a note.
+func buildAllocPayload(sessionID string, tunnel bool) map[string]any {
 	payload := map[string]any{"sessionId": sessionID}
+	if tunnel {
+		payload["tunnel"] = true
+		if os.Getenv("SWE_AGENT_VIEW_LOCALHOST") != "" || os.Getenv("SWE_AGENT_VIEW_LOOPBACK_DOMAINS") != "" {
+			log.Printf("agent-view tunnel: note -- SWE_AGENT_VIEW_LOCALHOST / SWE_AGENT_VIEW_LOOPBACK_DOMAINS are ignored in tunnel mode (loopback hostnames resolve on the backend itself)")
+		}
+		return payload
+	}
 	// Where chromium-on-the-backend should resolve loopback-style dev
 	// hostnames (localhost, *.lvh.me, ...). The backend defaults to this
 	// request's source address, which is right unless NAT hides us -- then
@@ -56,7 +80,12 @@ func allocateRemoteBrowser(backendURL, token, sessionID string) (*allocResponse,
 		}
 		payload["loopbackDomains"] = domains
 	}
-	body, _ := json.Marshal(payload)
+	return payload
+}
+
+// allocateRemoteBrowser POSTs to <backend>/sessions and returns the allocation.
+func allocateRemoteBrowser(backendURL, token, sessionID string) (*allocResponse, error) {
+	body, _ := json.Marshal(buildAllocPayload(sessionID, agentViewTunnelMode))
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(backendURL, "/")+"/sessions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -124,7 +153,21 @@ func startRemoteAgentView(sess *Session) (string, error) {
 		freeRemoteBrowser(agentViewBackend, browserBackendToken, alloc.SessionID)
 		return "", err
 	}
-	log.Printf("Agent View remote: session %s -> %s (cdp %d, vnc %d)", sess.UUID, host, alloc.CDPPort, alloc.VNCPort)
+	if agentViewTunnelMode && alloc.Tunnel {
+		// Static ports: this server + the session preview port + Procfile
+		// services (pre-bound so declared services never race the mirror).
+		workDir := sess.WorkDir
+		if workDir == "" {
+			workDir, _ = os.Getwd()
+		}
+		static := []int{tunnelServerPort, sess.PreviewPort}
+		static = append(static, procfileServicePorts(workDir, sess.PreviewPort)...)
+		sess.AgentViewTunnel = startAgentViewTunnelClient(
+			agentViewBackend, browserBackendToken, alloc.SessionID,
+			static, tunnelExcludePortsFromEnv())
+		log.Printf("Agent View remote: session %s tunnel client started (static ports %v)", sess.UUID, static)
+	}
+	log.Printf("Agent View remote: session %s -> %s (cdp %d, vnc %d, tunnel %v)", sess.UUID, host, alloc.CDPPort, alloc.VNCPort, alloc.Tunnel)
 	return "started", nil
 }
 
@@ -196,6 +239,10 @@ func rewriteCDPHosts(body []byte, remoteHostPort, localHostPort string) []byte {
 
 // stopRemoteAgentView shuts the local CDP proxy and frees the remote allocation.
 func stopRemoteAgentView(sess *Session) {
+	if sess.AgentViewTunnel != nil {
+		sess.AgentViewTunnel.Stop()
+		sess.AgentViewTunnel = nil
+	}
 	if sess.RemoteCDPProxyServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		sess.RemoteCDPProxyServer.Shutdown(ctx)

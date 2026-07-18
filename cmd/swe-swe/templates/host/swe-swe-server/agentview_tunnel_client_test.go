@@ -175,11 +175,12 @@ func TestTunnelClientEndToEnd(t *testing.T) {
 		tunnelMirrorInterval = oldInterval
 	})
 
-	client := startAgentViewTunnelClient(srv.URL, "sekret", "s1", []int{port}, nil)
+	// --- Part 1: MIRROR-driven discovery. No static ports at all: the
+	// /proc/net/tcp mirror must find the app listening on loopback and sync
+	// it; the backend then binds 127.0.0.1:<port> and serves it end-to-end.
+	client := startAgentViewTunnelClient(srv.URL, "sekret", "s1", nil, nil)
 	t.Cleanup(client.Stop)
 
-	// The backend must come to bind 127.0.0.1:<port>; a request against THAT
-	// loopback endpoint must be answered by the app via the tunnel.
 	get := func() (string, error) {
 		c := http.Client{Timeout: 2 * time.Second}
 		resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/hello", port))
@@ -197,12 +198,21 @@ func TestTunnelClientEndToEnd(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("backend port never served through tunnel: %v", err)
+			t.Fatalf("backend port never served through tunnel (mirror discovery): %v", err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	if body != "app-ok /hello" {
 		t.Fatalf("tunneled response = %q, want app-ok /hello", body)
+	}
+	found := false
+	for _, p := range client.currentSyncPorts() {
+		if p == port {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("mirror never put port %d into the sync set: %v", port, client.currentSyncPorts())
 	}
 
 	// Force-close the tunnel server-side: the client must reconnect,
@@ -224,30 +234,46 @@ func TestTunnelClientEndToEnd(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	client.Stop()
+	deadline = time.Now().Add(5 * time.Second)
+	for dialOK(port) {
+		if time.Now().After(deadline) {
+			t.Fatal("backend listener still up after client stop")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
-	// Kill the app: the mirror must notice the vanished listener, the next
-	// sync must drop the port, and the backend listener must close. The port
-	// remains in `static` for the client only if the caller put it there --
-	// this client passed it as static, so ALSO clear static to simulate a
-	// mirrored-only port disappearing.
-	client.setStaticPortsForTest(nil)
-	app.Close()
-	appLn.Close()
+	// --- Part 2: declarative REMOVAL. One-machine caveat: with the backend
+	// bound on 127.0.0.1:<port>, the mirror would re-discover the backend's
+	// OWN listener (impossible in production where the two loopbacks are
+	// different machines), so this client excludes the port from the mirror
+	// and drives it via static -- clearing static must drop it from the next
+	// sync and close the backend listener.
+	client2 := startAgentViewTunnelClient(srv.URL, "sekret", "s1",
+		[]int{port}, []tunnelPortRange{{port, port}})
+	t.Cleanup(client2.Stop)
 	deadline = time.Now().Add(10 * time.Second)
 	for {
-		if !dialOK(port) {
+		if body, err = get(); err == nil && body == "app-ok /hello" {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("backend listener still up after app died and static cleared")
+			t.Fatalf("static-driven bind never served: body=%q err=%v", body, err)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// currentSyncPorts must no longer contain the port.
-	for _, p := range client.currentSyncPorts() {
+	client2.setStaticPortsForTest(nil)
+	deadline = time.Now().Add(10 * time.Second)
+	for dialOK(port) {
+		if time.Now().After(deadline) {
+			t.Fatal("backend listener still up after static port removed from sync")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	for _, p := range client2.currentSyncPorts() {
 		if p == port {
-			t.Errorf("port %d still in sync set after app death", port)
+			t.Errorf("port %d still in sync set after removal", port)
 		}
 	}
 }
