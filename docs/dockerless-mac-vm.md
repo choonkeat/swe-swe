@@ -86,10 +86,13 @@ sudo apt-get update && sudo apt-get install -y git
 # static binaries); it is only needed for a node-based agent CLI (claude) or
 # Agent View's @playwright/mcp driver. npm is also how swe-swe itself installs.
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt-get install -y nodejs
-# user-level npm prefix: no sudo for -g installs, and claude can self-update
+# user-level npm prefix: no sudo for -g installs
 mkdir -p ~/.npm-global && npm config set prefix ~/.npm-global
 echo 'export PATH=$HOME/.npm-global/bin:$PATH' >> ~/.bashrc && . ~/.bashrc
-npm i -g swe-swe @anthropic-ai/claude-code
+npm i -g swe-swe
+# claude-code: native installer (recommended; self-updates without sudo).
+# npm works too (npm i -g @anthropic-ai/claude-code) with the prefix above.
+curl -fsSL https://claude.ai/install.sh | bash
 ```
 
 ## 4. Start the backend on the Mac (works today)
