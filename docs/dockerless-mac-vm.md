@@ -58,8 +58,18 @@ Lima is the smoothest because it auto-forwards every listener the VM opens
 what a loopback-binding dockerless server wants:
 
 ```sh
-limactl start --name swe template:ubuntu-lts
+limactl start --name swe --mount-writable template:ubuntu-lts
 limactl shell swe
+```
+
+`--mount-writable` matters: Lima mounts your Mac home into the VM read-only
+by default, and `swe-swe init` must write into your project directory
+(`.mcp.json`, `swe-swe/`, ...). For an already-created VM:
+
+```sh
+limactl stop swe
+limactl edit --mount-writable swe
+limactl start swe
 ```
 
 (Multipass/UTM work too; you then manage port-forwards for 1977 and any
