@@ -979,6 +979,19 @@
         // the set_env WS message. Silently skipped when init_sha is unknown
         // (non-git repo) or no blob is saved for this repo.
         var envBlob = readRepoEnvBlob(dialogState.initSha);
+        // Chat-log archive opt-out: unchecking the dialog checkbox stages an
+        // explicit empty AGENT_CHAT_EXPORT_DIR= into the env blob. The server's
+        // presence-checked default (defaultChatExportEnv) then skips its
+        // {workDir}/agent-chats append, so the streaming export stays off for
+        // this session. Chat sessions only -- terminal sessions never launch
+        // agent-chat, so the override would be inert noise there. No new param:
+        // this is sugar over the same 'env' field the settings panel uses.
+        if (sessionMode === 'chat') {
+            var archiveBox = document.getElementById('new-session-chatlog-archive');
+            if (archiveBox && !archiveBox.checked) {
+                envBlob = (envBlob ? envBlob + '\n' : '') + 'AGENT_CHAT_EXPORT_DIR=';
+            }
+        }
         if (envBlob) {
             var envInput = document.createElement('input');
             envInput.type = 'hidden';

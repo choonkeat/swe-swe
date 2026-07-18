@@ -1384,6 +1384,14 @@
                         <label class="dialog__label">Extra CLI flags (optional)</label>
                         <input type="text" class="dialog__input" id="new-session-extra-args" placeholder="e.g. --channels server:agent-chat">
                     </div>
+                    <!-- Chat-log archive opt-out (chat sessions only; staged as an
+                         AGENT_CHAT_EXPORT_DIR= env override, see startSession) -->
+                    <div class="dialog__field">
+                        <label class="dialog__label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="new-session-chatlog-archive" checked>
+                            <span>Archive chat log into repo (<code>agent-chats/</code>)</span>
+                        </label>
+                    </div>
                     <!-- Env file hint -->
                     <div class="dialog__env-hint" id="new-session-env-hint" style="display: none;"></div>
                 </div>
