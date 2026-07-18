@@ -61,6 +61,11 @@ func TestResolveAgentViewBackend(t *testing.T) {
 	origBackend := agentViewBackend
 	defer func() { agentViewBackend = origBackend }()
 
+	// Isolate from the ambient environment: dev containers now export
+	// SWE_AGENT_VIEW (compose passthrough), which would leak into the
+	// empty-flag cases below. Empty string == unset for Getenv checks.
+	t.Setenv("SWE_AGENT_VIEW", "")
+
 	// empty -> defaults to local
 	resolveAgentViewBackend("", false)
 	if agentViewBackend != "local" {
