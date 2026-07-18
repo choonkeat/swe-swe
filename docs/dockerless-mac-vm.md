@@ -1,10 +1,9 @@
 # swe-swe on a Mac: Linux VM + browser-backend container
 
-> Press-release-driven doc, companion to `dockerless.md`. Both tasks it
-> waited on (`tasks/2026-07-18-swe-npx-node-free-helpers.md` and
-> `tasks/2026-07-18-agent-view-reverse-tunnel.md`) have landed on main;
-> everything below works from a current build. Only mac-native (no VM) is
-> still pending, as dockerless Phase 6.
+> Companion to `dockerless.md`. Verified end-to-end 2026-07-18 on Apple
+> Silicon (Lima + Docker Desktop, behind a corporate TLS-intercepting
+> proxy): all six tabs including Agent View driven through the reverse
+> tunnel. Only mac-native (no VM) is still pending, as dockerless Phase 6.
 
 ## Topology
 
@@ -153,7 +152,7 @@ the default home mount is read-only.)
 cd ~/your-project
 swe-swe init --dockerless
 SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
-    swe-swe up --agent-view=http://host.lima.internal:9333
+    swe-swe up --agent-view=http://host.lima.internal:9333 --agent-view-tunnel
 ```
 
 `host.lima.internal` is Lima's name for the Mac; the VM dials out to the
@@ -166,12 +165,7 @@ the VM's loopback listener. Preview ports your sessions open (3000, 8080,
 your Mac browser resolves to Mac-loopback and lands in the VM. That's the
 user-facing half done -- all six tabs.
 
-### 5a. Agent View, tunnel mode (recommended)
-
-```sh
-SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
-    swe-swe up --agent-view=http://host.lima.internal:9333 --agent-view-tunnel
-```
+### 5a. Agent View, tunnel mode (the flag above; recommended)
 
 The VM dials out; the backend binds VM ports on its own loopback and
 shuffles traffic back over that connection. No inbound path to the VM is
@@ -197,16 +191,17 @@ limactl shell swe -- swe-swe up      # morning
 limactl shell swe -- swe-swe down    # evening; docker stop swe-browser too
 ```
 
-Upgrades: `npm update -g swe-swe` in the VM, re-run `swe-swe init
---dockerless`; rebuild the backend image from a fresh repo checkout when it
-changes.
+Upgrades: `npm update -g swe-swe` in the VM (or from source: `git pull`,
+`make dockerless-payload`, `go build` per section 4), then re-run
+`swe-swe init --dockerless`; rebuild the backend image from a fresh repo
+checkout when it changes.
 
 ## Status
 
 | Piece | Status |
 |---|---|
-| VM + dockerless server, 5 tabs, previews on lvh.me | works |
-| Agent View with zero VM-inbound (`--agent-view-tunnel`) | works |
+| VM + dockerless server, 5 tabs, previews on lvh.me | verified 2026-07-18 |
+| Agent View with zero VM-inbound (`--agent-view-tunnel`) | verified 2026-07-18 |
 | Agent View direct mode + `SWE_AGENT_VIEW_LOCALHOST` | works (fallback) |
 | node-free VM (non-node agent, no Agent View) | works |
 | swe-swe natively on macOS, no VM | dockerless Phase 6 (code-complete, unverified) |
