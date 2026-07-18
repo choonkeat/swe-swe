@@ -40,7 +40,18 @@ make browser-backend-image
 Apple Silicon note: the payload arch follows your host (`arm64`); the image
 runs as linux/arm64, which is what Docker Desktop prefers anyway.
 
-## 2. Create the Linux VM (works today)
+## 2. Start the backend on the Mac (works today)
+
+Same track as step 1 -- this is the whole browser side done:
+
+```sh
+docker run --rm --name swe-browser \
+    -p 9333:9333 -p 6000-6019:6000-6019 -p 7000-7039:7000-7039 \
+    -e SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
+    swe-swe/browser-backend
+```
+
+## 3. Create the Linux VM (works today)
 
 Lima is the smoothest because it auto-forwards every listener the VM opens
 (including loopback-bound ones) to the Mac's 127.0.0.1 -- which is exactly
@@ -54,7 +65,7 @@ limactl shell swe
 (Multipass/UTM work too; you then manage port-forwards for 1977 and any
 preview ports yourself.)
 
-### 2a. Corporate TLS interception (only if the Mac sets NODE_EXTRA_CA_CERTS)
+### 3a. Corporate TLS interception (only if the Mac sets NODE_EXTRA_CA_CERTS)
 
 Skip this section unless `echo $NODE_EXTRA_CA_CERTS` on the Mac prints a
 path. Machines behind a TLS-inspecting proxy (Netskope, Zscaler, ...)
@@ -78,7 +89,7 @@ echo 'export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt' >> ~/.bashr
 . ~/.bashrc
 ```
 
-## 3. Install swe-swe in the VM (works today)
+## 4. Install swe-swe in the VM (works today)
 
 ```sh
 sudo apt-get update && sudo apt-get install -y git
@@ -95,14 +106,22 @@ npm i -g swe-swe
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-## 4. Start the backend on the Mac (works today)
+`npm i -g swe-swe` needs a published version that (a) carries the embedded
+dockerless payload for your platform and (b) is >= the release containing
+`--agent-view-tunnel` and swe-npx. Until then (or any time you want current
+main), build from source in the VM instead -- the payload is compiled for
+the machine that runs `make`, which is exactly what dockerless needs:
 
 ```sh
-docker run --rm --name swe-browser \
-    -p 9333:9333 -p 6000-6019:6000-6019 -p 7000-7039:7000-7039 \
-    -e SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
-    swe-swe/browser-backend
+sudo snap install go --classic     # or Go >= 1.24 from go.dev/dl
+git clone https://github.com/choonkeat/swe-swe.git ~/swe-swe-src
+cd ~/swe-swe-src
+make dockerless-payload
+go build -o ~/.npm-global/bin/swe-swe ./cmd/swe-swe
 ```
+
+(Clone inside the VM rather than building in a Lima-mounted `/Users` path;
+the default home mount is read-only.)
 
 ## 5. Init + up in the VM
 
