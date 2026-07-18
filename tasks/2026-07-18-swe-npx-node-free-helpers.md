@@ -25,7 +25,10 @@ latency from MCP spawn.
       (done 2026-07-18: embed test green, goldens updated)
 - [x] Phase 3 -- swap call sites (goldens WILL change)
       (done 2026-07-18: all @choonkeat spawns on swe-npx, playwright untouched)
-- [ ] Phase 4 -- e2e verification (node-free dockerless, docker mode, collision repro)
+- [x] Phase 4 -- e2e verification (node-free dockerless, docker mode, collision repro)
+      (done 2026-07-18: poisoned dockerless e2e PASS; docker-mode container
+      verified via browser, all spawns exec from npx-cache; collision repro
+      fixed live; warm spawn 11ms vs npx 1.15s)
 - [ ] Phase 5 -- docs + changelog
 
 ## Ground rules for the executing agent
