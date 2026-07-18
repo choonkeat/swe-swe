@@ -114,3 +114,48 @@ func atoiOrZero(s string) int {
 	}
 	return n
 }
+
+// A remote backend publishes its CDP ports on the same 6000-6019 numbers a
+// session's local CDP proxy would otherwise bind. VM managers like Lima
+// reflect guest loopback listeners onto the host loopback and route
+// guest->host dials through it, so a shared number turns the proxy into a
+// dial-to-self loop. Remote mode must therefore allocate session CDP ports
+// outside the published range.
+func TestFindAvailablePortQuintupleRemoteCDPOffset(t *testing.T) {
+	oldBackend := agentViewBackend
+	defer func() { agentViewBackend = oldBackend }()
+
+	agentViewBackend = "local"
+	_, _, _, cdpLocal, _, err := findAvailablePortQuintuple()
+	if err != nil {
+		t.Fatalf("local quintuple: %v", err)
+	}
+	if cdpLocal < cdpPortStart || cdpLocal > cdpPortEnd {
+		t.Errorf("local mode CDP port %d outside %d-%d", cdpLocal, cdpPortStart, cdpPortEnd)
+	}
+
+	agentViewBackend = "http://backend.example:9333"
+	_, _, _, cdpRemote, _, err := findAvailablePortQuintuple()
+	if err != nil {
+		t.Fatalf("remote quintuple: %v", err)
+	}
+	if cdpRemote != cdpLocal+remoteCDPProxyOffset {
+		t.Errorf("remote mode CDP port = %d, want %d (local %d + offset %d)",
+			cdpRemote, cdpLocal+remoteCDPProxyOffset, cdpLocal, remoteCDPProxyOffset)
+	}
+	if cdpRemote >= cdpPortStart && cdpRemote <= cdpPortEnd+cdpPortEnd-cdpPortStart+1 {
+		t.Errorf("remote mode CDP port %d still inside the published/internal range", cdpRemote)
+	}
+
+	// The tunnel mirror must never re-export the offset proxy listener.
+	excluded := false
+	for _, r := range defaultTunnelExcludePorts() {
+		if cdpRemote >= r.Lo && cdpRemote <= r.Hi {
+			excluded = true
+			break
+		}
+	}
+	if !excluded {
+		t.Errorf("remote CDP proxy port %d not covered by defaultTunnelExcludePorts", cdpRemote)
+	}
+}

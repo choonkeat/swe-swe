@@ -94,7 +94,9 @@ func defaultTunnelExcludePorts() []tunnelPortRange {
 	r := []tunnelPortRange{
 		{agentChatPortStart, agentChatPortEnd},
 		{publicPortStart, publicPortEnd},
-		{cdpPortStart, cdpPortEnd + cdpSize},
+		// Through cdpPortEnd + 2*cdpSize: covers the local-chromium internal
+		// range AND the remote-mode CDP proxy listeners (remoteCDPProxyOffset).
+		{cdpPortStart, cdpPortEnd + 2*cdpSize},
 		{vncPortStart, vncPortEnd + vncSize},
 		{filesPortStart, filesPortEnd},
 	}

@@ -144,6 +144,16 @@ var (
 	filesPortStart     = 9000
 	filesPortEnd       = 9019
 	proxyPortOffset    = 20000
+	// remoteCDPProxyOffset shifts a session's local CDP-proxy listen port out
+	// of the cdpPortStart-cdpPortEnd range when Agent View is remote. The
+	// backend publishes ITS CDP ports on those same numbers, and VM managers
+	// like Lima reflect every guest loopback listener onto the host loopback
+	// while routing guest->host dials via that same loopback -- so a local
+	// listener on the SAME number as the remote CDP port turns the proxy's
+	// upstream dial into a connection to itself (an infinite loop, observed
+	// as Playwright's "retrieving websocket url" timeout). Two range-sizes
+	// clears both the published range and the local-chromium internal range.
+	remoteCDPProxyOffset = 2 * (cdpPortEnd - cdpPortStart + 1)
 )
 
 func previewProxyPort(port int) int   { return proxyPortOffset + port }
@@ -4896,6 +4906,11 @@ func findAvailablePortQuintuple() (int, int, int, int, int, error) {
 		acPort := agentChatPortFromPreview(port)
 		pubPort := publicPortFromPreview(port)
 		cdpPort := cdpPortFromPreview(port)
+		if agentViewRemote() {
+			// See remoteCDPProxyOffset: never share a number with the
+			// backend's published CDP range.
+			cdpPort += remoteCDPProxyOffset
+		}
 		vncPort := vncPortFromPreview(port)
 		return port, acPort, pubPort, cdpPort, vncPort, nil
 	}
