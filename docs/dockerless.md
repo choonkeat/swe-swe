@@ -22,6 +22,9 @@ swe-swe up --open         # ...and opens your browser
 directly -- same command you would use for a Docker setup, it just does
 the right thing. Stop it with `swe-swe down`.
 
+On a Mac? See `dockerless-mac-vm.md` for the Linux-VM + browser-backend
+-container recipe.
+
 ## Dependencies
 
 swe-swe detects what is on your PATH at startup and uses it -- there is
