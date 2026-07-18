@@ -15,13 +15,13 @@ working tree; committing stays with the agent/user.
 
 ## Background (current behavior — read before changing)
 
-- `materializeSession` (templates/host/swe-swe-server/main.go:5260-5275): for
+- `materializeSession` (templates/host/swe-swe-server/main.go:5275-5291): for
   `SessionMode == "chat"`, appends `AGENT_CHAT_EVENT_LOG={recordingsDir}/....events.jsonl`
-  to the session env. This is the exact pattern to extend.
-- Env layering in `buildSessionEnv` (main.go:737-811): base env → per-session
-  Settings-textarea vars (`sessionEnvVars`, main.go:793-799) → `.swe-swe/env`
-  file **last, wins** (main.go:807-809). The `AGENT_CHAT_EVENT_LOG` append at
-  :5273 happens *after* all of that, so a plain append there would override
+  to the session env (append at :5288). This is the exact pattern to extend.
+- Env layering in `buildSessionEnv` (main.go:747): base env → per-session
+  Settings-textarea vars (`sessionEnvVars`) → `.swe-swe/env` file
+  **last, wins**. The `AGENT_CHAT_EVENT_LOG` append at :5288 happens *after*
+  all of that, so a plain append there would override
   user values — the default must be presence-checked instead (see decisions).
 - `reservedEnvKeys` (env_store.go:25): `AGENT_CHAT_PORT`/`AGENT_CHAT_DISABLE`
   are reserved; `AGENT_CHAT_EXPORT_DIR` is **not** — so both the Settings
@@ -64,11 +64,20 @@ working tree; committing stays with the agent/user.
   AGENTS.md template — when committing, include `agent-chats/` changes
   (in the same commit or a trailing `docs(agent-chats):` commit). No hooks,
   no server-side git.
-- **Rollout is order-independent**: current agent-chat ignores the unknown
-  env var, so this can ship before or after the agent-chat feature. The
-  fleet resolves `@choonkeat/agent-chat` latest via swe-npx at spawn, so the
-  feature activates as soon as the new agent-chat version is published — no
-  swe-swe rebuild needed at that point.
+- **Rollout: the agent-chat side is already live.** agent-chat **0.8.14**
+  (published 2026-07-18) ships the streaming export. The fleet resolves
+  `@choonkeat/agent-chat` latest via swe-npx at spawn, so the moment this
+  swe-swe change ships, every new chat session starts archiving (that is the
+  confirmed default-ON). Step 3's live e2e is unblocked now.
+- **Fork semantics (verified against agent-chat 0.8.14 — do not "fix"):**
+  the `session:` identity is sha256 of the `AGENT_CHAT_EVENT_LOG` path
+  (first 16 hex). `/api/fork` copies the JSONL to a *new* path
+  (main.go:5283), so a forked session gets a new identity and mints a **new
+  NN file with the full copied history backfilled** (attachments
+  best-effort — upload sources may be gone by then). This is the correct
+  behavior: the source session may still be live, and two processes
+  appending to one .md would interleave. Only a restart/resume of the *same*
+  session (same JSONL path) continues its existing file.
 
 ## Non-goals
 
@@ -111,7 +120,11 @@ need `make build golden-update` and a staged-golden-diff review.
 ### Step 3 — Docs + guidance + verification
 - AGENTS.md template: one line of commit guidance (include `agent-chats/`).
 - Docs: note the env var + opt-out surfaces where `.swe-swe/env` is
-  documented; CHANGELOG entry.
+  documented; CHANGELOG entry. Include one sentence on the failure mode: a
+  user-relocated path that escapes the session workDir disables the export
+  **silently** (agent-chat logs a warning to its stderr, nothing appears in
+  the chat) — document it so a "why is nothing archived" report has an
+  answer.
 - Verify dockerless path inherits the behavior (same template server) — code
   inspection + note; live dockerless smoke optional.
 - Live e2e (after the agent-chat feature is published): boot the test
@@ -123,9 +136,13 @@ need `make build golden-update` and a staged-golden-diff review.
 
 ## Follow-ups
 
-- Integration test for fork/resume: forked session (same workDir,
-  prepopulated JSONL) should continue its file, not mint a duplicate —
-  driven by agent-chat's `session:` header identity; revisit once that
-  ships to pin down the identity key across forks.
+- Integration test for fork/resume, pinning the **verified 0.8.14 semantics**
+  (see the fork-semantics decision above): a forked session (new JSONL path)
+  mints a new NN file with backfilled history; a restarted session (same
+  JSONL path) continues its existing file. New-file-per-fork is correct —
+  do not "fix" it toward continuation, which would let a live source session
+  and its fork interleave appends into one .md. If opt-in fork-continuation
+  is ever wanted, that is an agent-chat feature (an explicit
+  `AGENT_CHAT_SESSION_ID` override env), not a swe-swe change.
 - Consider surfacing the effective export state (on/off/path) read-only in
   Session Settings once real usage shows whether people look for it there.
