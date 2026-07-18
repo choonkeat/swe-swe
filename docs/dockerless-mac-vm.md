@@ -61,7 +61,7 @@ sudo apt-get update && sudo apt-get install -y git
 # node: swe-swe's own helpers no longer need it (swe-npx launches them as
 # static binaries); it is only needed for a node-based agent CLI (claude) or
 # Agent View's @playwright/mcp driver. npm is also how swe-swe itself installs.
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash - && sudo apt-get install -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash - && sudo apt-get install -y nodejs
 npm i -g swe-swe @anthropic-ai/claude-code
 ```
 
