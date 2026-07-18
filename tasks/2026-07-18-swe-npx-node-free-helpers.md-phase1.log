@@ -1,0 +1,1 @@
+040406 phase1 RED: will create cmd/swe-swe/templates/host/swe-npx/ (main_test.go with fake-registry tests covering the 10 cases in the task, stub main.go, go.mod.txt) + Makefile test-swe-npx target wired into 'test'. Expect: make test-swe-npx FAILS with assertion failures (stubs unimplemented), not compile errors.
