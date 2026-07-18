@@ -47,7 +47,7 @@ Lima is the smoothest because it auto-forwards every listener the VM opens
 what a loopback-binding dockerless server wants:
 
 ```sh
-limactl start --name swe template://ubuntu-lts
+limactl start --name swe template:ubuntu-lts
 limactl shell swe
 ```
 
