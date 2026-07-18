@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     novnc \
     websockify \
     ca-certificates \
+    libnss3-tools \
     fonts-noto-color-emoji \
     fonts-noto-cjk \
     && apt-mark hold chromium chromium-common \
@@ -61,4 +62,8 @@ EXPOSE 6000-6019
 EXPOSE 7000-7039
 
 # chromium needs a writable home for its per-session --user-data-dir under /tmp.
-ENTRYPOINT ["/usr/local/bin/swe-swe-server", "-mode", "browser-backend"]
+# The entrypoint imports an optional corporate root CA mounted at /corp-ca.crt
+# (system bundle + chromium's NSS store) before starting the server.
+COPY docker/browser-backend/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]

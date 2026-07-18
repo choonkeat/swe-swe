@@ -51,6 +51,15 @@ docker run --rm --name swe-browser \
     swe-swe/browser-backend
 ```
 
+If your Mac sets `NODE_EXTRA_CA_CERTS` (corporate TLS interception -- see
+3a), add this line to the `docker run` so chromium inside the container
+trusts the proxy too (the entrypoint imports it into the system bundle and
+chromium's NSS store):
+
+```sh
+    -v "$NODE_EXTRA_CA_CERTS:/corp-ca.crt:ro" \
+```
+
 ## 3. Create the Linux VM (works today)
 
 Lima is the smoothest because it auto-forwards every listener the VM opens
