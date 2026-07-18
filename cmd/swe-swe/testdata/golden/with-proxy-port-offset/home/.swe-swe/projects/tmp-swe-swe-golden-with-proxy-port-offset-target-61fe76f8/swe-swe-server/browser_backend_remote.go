@@ -154,21 +154,95 @@ func startRemoteAgentView(sess *Session) (string, error) {
 		return "", err
 	}
 	if agentViewTunnelMode && alloc.Tunnel {
-		// Static ports: this server + the session preview port + Procfile
-		// services (pre-bound so declared services never race the mirror).
-		workDir := sess.WorkDir
-		if workDir == "" {
-			workDir, _ = os.Getwd()
-		}
-		static := []int{tunnelServerPort, sess.PreviewPort}
-		static = append(static, procfileServicePorts(workDir, sess.PreviewPort)...)
-		sess.AgentViewTunnel = startAgentViewTunnelClient(
-			agentViewBackend, browserBackendToken, alloc.SessionID,
-			static, tunnelExcludePortsFromEnv())
-		log.Printf("Agent View remote: session %s tunnel client started (static ports %v)", sess.UUID, static)
+		sess.AgentViewTunnel = startSessionTunnelClient(sess, alloc.SessionID)
 	}
 	log.Printf("Agent View remote: session %s -> %s (cdp %d, vnc %d, tunnel %v)", sess.UUID, host, alloc.CDPPort, alloc.VNCPort, alloc.Tunnel)
 	return "started", nil
+}
+
+// startSessionTunnelClient launches the session's reverse-tunnel client and
+// wires its allocation-lost recovery. Shared by the initial wiring and by
+// re-allocation after a backend restart.
+func startSessionTunnelClient(sess *Session, remoteID string) *agentViewTunnelClient {
+	// Static ports: this server + the session preview port + Procfile
+	// services (pre-bound so declared services never race the mirror).
+	workDir := sess.WorkDir
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
+	static := []int{tunnelServerPort, sess.PreviewPort}
+	static = append(static, procfileServicePorts(workDir, sess.PreviewPort)...)
+	c := newAgentViewTunnelClient(
+		agentViewBackend, browserBackendToken, remoteID,
+		static, tunnelExcludePortsFromEnv())
+	c.onAllocationLost = func() { reallocateRemoteAgentView(sess, c) }
+	c.start()
+	log.Printf("Agent View remote: session %s tunnel client started (static ports %v)", sess.UUID, static)
+	return c
+}
+
+// reallocateRemoteAgentView re-runs the allocation half of startRemoteAgentView
+// after the backend reported our allocation gone (it restarted and lost its
+// in-memory table). Runs on the dead tunnel client's goroutine. lost doubles as
+// the cancellation handle (session teardown Stop()s it, which aborts the
+// backoff wait) and the supersession guard (sess.AgentViewTunnel moving off it
+// means teardown or another recovery already re-wired the session).
+//
+// Locking: only sess.mu, never sessionsMu, and no teardown paths are entered
+// while holding it (see the Close/clearVhostPin self-deadlock, 3f3fb88f9).
+func reallocateRemoteAgentView(sess *Session, lost *agentViewTunnelClient) {
+	backoff := time.Second
+	for {
+		select {
+		case <-lost.stop:
+			return
+		default:
+		}
+		sess.mu.RLock()
+		stale := sess.closed || sess.AgentViewTunnel != lost
+		sess.mu.RUnlock()
+		if stale {
+			return
+		}
+		alloc, err := remoteAllocate(agentViewBackend, browserBackendToken, sess.UUID)
+		if err == nil {
+			host := remoteHostFor(agentViewBackend, alloc.Host)
+			sess.mu.Lock()
+			if sess.closed || sess.AgentViewTunnel != lost {
+				sess.mu.Unlock()
+				// Session ended (or was re-wired) while we allocated: the
+				// fresh allocation has no owner, free it.
+				freeRemoteBrowser(agentViewBackend, browserBackendToken, alloc.SessionID)
+				return
+			}
+			sess.RemoteBrowserID = alloc.SessionID
+			sess.RemoteVNCTarget = fmt.Sprintf("%s:%d", host, alloc.VNCPort)
+			// New allocation may land on a different slot: retarget the
+			// running CDP proxy (per-request atomic read, no listener churn).
+			cdp := fmt.Sprintf("%s:%d", host, alloc.CDPPort)
+			sess.remoteCDPTarget.Store(&cdp)
+			if agentViewTunnelMode && alloc.Tunnel {
+				sess.AgentViewTunnel = startSessionTunnelClient(sess, alloc.SessionID)
+			} else {
+				sess.AgentViewTunnel = nil
+			}
+			sess.mu.Unlock()
+			sess.BroadcastStatus()
+			log.Printf("Agent View remote: session %s re-allocated after backend restart -> %s (cdp %d, vnc %d, tunnel %v)",
+				sess.UUID, host, alloc.CDPPort, alloc.VNCPort, alloc.Tunnel)
+			return
+		}
+		log.Printf("Agent View remote: session %s re-allocation failed (%v); retrying in %s", sess.UUID, err, backoff)
+		select {
+		case <-lost.stop:
+			return
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+		if backoff > tunnelReconnectMax {
+			backoff = tunnelReconnectMax
+		}
+	}
 }
 
 // wireRemoteSession records the remote VNC target and starts the local CDP
@@ -179,15 +253,19 @@ func wireRemoteSession(sess *Session, host string, cdpPort, vncPort int, remoteI
 	sess.RemoteVNCTarget = fmt.Sprintf("%s:%d", host, vncPort)
 
 	remoteCDP := fmt.Sprintf("%s:%d", host, cdpPort)
+	// The target lives in sess.remoteCDPTarget (not a closure capture) so a
+	// backend re-allocation can retarget the running proxy atomically.
+	sess.remoteCDPTarget.Store(&remoteCDP)
 	localCDP := fmt.Sprintf("localhost:%d", sess.CDPPort)
 	target := &url.URL{Scheme: "http", Host: remoteCDP}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.Director = func(req *http.Request) {
+		cur := *sess.remoteCDPTarget.Load()
 		req.URL.Scheme = "http"
-		req.URL.Host = remoteCDP
+		req.URL.Host = cur
 		// Chromium fills webSocketDebuggerUrl from the request Host, so send
 		// the remote host; we rewrite it back to localhost in ModifyResponse.
-		req.Host = remoteCDP
+		req.Host = cur
 	}
 	// Rewrite the CDP discovery JSON (/json, /json/version, /json/list) so the
 	// debugger URLs point back through this local proxy.
@@ -201,7 +279,9 @@ func wireRemoteSession(sess *Session, host string, cdpPort, vncPort int, remoteI
 		if err != nil {
 			return err
 		}
-		b = rewriteCDPHosts(b, remoteCDP, localCDP)
+		// resp.Request.URL.Host is the target the Director used for THIS
+		// request -- immune to a re-allocation swapping the pointer mid-flight.
+		b = rewriteCDPHosts(b, resp.Request.URL.Host, localCDP)
 		resp.Body = io.NopCloser(bytes.NewReader(b))
 		resp.ContentLength = int64(len(b))
 		resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(b)))

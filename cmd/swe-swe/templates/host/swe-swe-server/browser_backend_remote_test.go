@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestAllocateRemoteBrowser(t *testing.T) {
@@ -157,5 +159,241 @@ func TestFindAvailablePortQuintupleRemoteCDPOffset(t *testing.T) {
 	}
 	if !excluded {
 		t.Errorf("remote CDP proxy port %d not covered by defaultTunnelExcludePorts", cdpRemote)
+	}
+}
+
+// withRemoteAgentViewGlobals points the remote Agent View globals at a test
+// backend URL and restores them on cleanup.
+func withRemoteAgentViewGlobals(t *testing.T, backendURL, token string, tunnel bool) {
+	t.Helper()
+	oldBackend, oldToken, oldTunnel := agentViewBackend, browserBackendToken, agentViewTunnelMode
+	agentViewBackend, browserBackendToken, agentViewTunnelMode = backendURL, token, tunnel
+	t.Cleanup(func() {
+		agentViewBackend, browserBackendToken, agentViewTunnelMode = oldBackend, oldToken, oldTunnel
+	})
+}
+
+// The headline re-allocation flow: a backend "container restart" (fresh
+// browserBackend behind the same URL, in-memory allocation table gone) must
+// not orphan a live session -- the tunnel client's 404 triggers a re-POST of
+// /sessions, the CDP proxy retargets the new slot's ports, and a fresh tunnel
+// client connects to the new backend, all without session teardown.
+func TestRemoteAgentViewReallocateAfterBackendRestart(t *testing.T) {
+	withStubStarter(t)
+
+	mkBackend := func() *browserBackend {
+		bb := newBrowserBackend(2, "sekret", "")
+		bb.tunnelGuard = func(sess *backendSession, c net.Conn) error { return nil }
+		return bb
+	}
+	var cur atomic.Pointer[browserBackend]
+	bb1 := mkBackend()
+	cur.Store(bb1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cur.Load().ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	withRemoteAgentViewGlobals(t, srv.URL, "sekret", true)
+
+	sess := &Session{UUID: "u1", CDPPort: freeLoopbackPort(t)}
+	status, err := startRemoteAgentView(sess)
+	if err != nil || status != "started" {
+		t.Fatalf("startRemoteAgentView: status=%q err=%v", status, err)
+	}
+	t.Cleanup(func() { stopRemoteAgentView(sess) })
+
+	sess.mu.RLock()
+	oldClient := sess.AgentViewTunnel
+	sess.mu.RUnlock()
+	if oldClient == nil {
+		t.Fatal("no tunnel client after tunnel-mode allocation")
+	}
+	if got := *sess.remoteCDPTarget.Load(); got != fmt.Sprintf("127.0.0.1:%d", cdpPortStart) {
+		t.Fatalf("initial CDP target = %q, want slot-0 port %d", got, cdpPortStart)
+	}
+
+	// Wait for the tunnel to actually connect to bb1.
+	waitTunnelActive := func(bb *browserBackend, id string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			bb.mu.Lock()
+			s, ok := bb.sessions[id]
+			active := ok && s.tunnelActive
+			bb.mu.Unlock()
+			if active {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("tunnel for %s never became active", id)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	waitTunnelActive(bb1, "u1")
+
+	// "Restart" the backend: a fresh instance with an empty allocation table
+	// takes over the URL. A dummy session occupies slot 0 so the re-allocation
+	// must land on slot 1 -- different ports prove the CDP/VNC retarget.
+	bb2 := mkBackend()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"sessionId":"dummy"}`))
+	req.Header.Set("Authorization", "Bearer sekret")
+	bb2.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("dummy alloc on bb2: %d", rr.Code)
+	}
+	cur.Store(bb2)
+	// Kill the old backend's live tunnel WS, as its process death would.
+	bb1.mu.Lock()
+	stop := bb1.sessions["u1"].tunnelStop
+	bb1.mu.Unlock()
+	if stop == nil {
+		t.Fatal("no tunnelStop on bb1 session")
+	}
+	stop()
+
+	// The session must recover: new tunnel client, slot-1 targets, same id.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		sess.mu.RLock()
+		newClient := sess.AgentViewTunnel
+		vnc := sess.RemoteVNCTarget
+		sess.mu.RUnlock()
+		if newClient != nil && newClient != oldClient {
+			if want := fmt.Sprintf("127.0.0.1:%d", vncPortStart+1); vnc != want {
+				t.Errorf("RemoteVNCTarget = %q, want %q", vnc, want)
+			}
+			if got, want := *sess.remoteCDPTarget.Load(), fmt.Sprintf("127.0.0.1:%d", cdpPortStart+1); got != want {
+				t.Errorf("CDP target after re-allocation = %q, want %q", got, want)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session never re-allocated after backend restart")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !sess.BrowserStarted {
+		t.Error("BrowserStarted flipped false across re-allocation")
+	}
+	waitTunnelActive(bb2, "u1")
+}
+
+// A session already closed (or superseded) must abort re-allocation without
+// touching the backend.
+func TestReallocateAbortsWhenSessionClosed(t *testing.T) {
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts.Add(1)
+		}
+		http.Error(w, "should not be reached", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	withRemoteAgentViewGlobals(t, srv.URL, "", true)
+
+	lost := newAgentViewTunnelClient(srv.URL, "", "u1", nil, nil)
+	sess := &Session{UUID: "u1"}
+	sess.closed = true
+	sess.AgentViewTunnel = lost
+	reallocateRemoteAgentView(sess, lost)
+	if n := posts.Load(); n != 0 {
+		t.Errorf("closed session still POSTed /sessions %d times", n)
+	}
+
+	// Superseded: AgentViewTunnel no longer points at the lost client.
+	sess2 := &Session{UUID: "u2"}
+	sess2.AgentViewTunnel = nil
+	reallocateRemoteAgentView(sess2, lost)
+	if n := posts.Load(); n != 0 {
+		t.Errorf("superseded client still POSTed /sessions %d times", n)
+	}
+}
+
+// Teardown racing a successful re-allocation: the fresh (now ownerless)
+// allocation must be freed on the backend, and the session left untouched.
+func TestReallocateFreesAllocationWhenClosedMidFlight(t *testing.T) {
+	posted := make(chan struct{})
+	release := make(chan struct{})
+	deleted := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			close(posted)
+			<-release
+			json.NewEncoder(w).Encode(allocResponse{SessionID: "u1", CDPPort: 6001, VNCPort: 6101, Tunnel: true})
+		case http.MethodDelete:
+			deleted <- strings.TrimPrefix(r.URL.Path, "/sessions/")
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer srv.Close()
+	withRemoteAgentViewGlobals(t, srv.URL, "", true)
+
+	lost := newAgentViewTunnelClient(srv.URL, "", "u1", nil, nil)
+	sess := &Session{UUID: "u1"}
+	sess.AgentViewTunnel = lost
+
+	done := make(chan struct{})
+	go func() {
+		reallocateRemoteAgentView(sess, lost)
+		close(done)
+	}()
+	<-posted
+	// Session teardown wins the race while the allocation POST is in flight.
+	sess.mu.Lock()
+	sess.closed = true
+	sess.mu.Unlock()
+	close(release)
+
+	select {
+	case id := <-deleted:
+		if id != "u1" {
+			t.Errorf("freed allocation %q, want u1", id)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ownerless fresh allocation never freed")
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reallocate goroutine never returned")
+	}
+	if sess.RemoteVNCTarget != "" || sess.AgentViewTunnel != lost {
+		t.Errorf("closed session was re-wired: vnc=%q tunnel-changed=%v",
+			sess.RemoteVNCTarget, sess.AgentViewTunnel != lost)
+	}
+}
+
+// Stop() on the lost client (session teardown) must cancel a re-allocation
+// stuck retrying against a still-down backend.
+func TestReallocateCanceledByStopDuringBackoff(t *testing.T) {
+	var posts atomic.Int32
+	firstPost := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && posts.Add(1) == 1 {
+			close(firstPost)
+		}
+		http.Error(w, "still restarting", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	withRemoteAgentViewGlobals(t, srv.URL, "", true)
+
+	lost := newAgentViewTunnelClient(srv.URL, "", "u1", nil, nil)
+	sess := &Session{UUID: "u1"}
+	sess.AgentViewTunnel = lost
+
+	done := make(chan struct{})
+	go func() {
+		reallocateRemoteAgentView(sess, lost)
+		close(done)
+	}()
+	<-firstPost
+	lost.Stop()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reallocate not canceled by Stop during backoff")
 	}
 }

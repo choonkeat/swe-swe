@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Agent View survives a browser-backend restart (tunnel mode)**: A `swe-swe-browser-backend` restart (chromium bump, config change, crash) used to orphan every live session's Agent View forever -- the backend's allocation table is in-memory, so the session's tunnel client reconnect-looped on `bad handshake` and the Playwright MCP got `Target page, context or browser has been closed` until the session ended. The tunnel client now classifies the failed WebSocket upgrade: a 404 from `/sessions/<id>/tunnel` means "backend up, allocation gone" (401/403/409 and network errors keep the plain retry loop) and hands off to re-allocation, which re-POSTs `/sessions` with capped backoff, retargets the running CDP reverse proxy atomically (the new allocation may land on a different slot; no listener churn, the agent's `--cdp-endpoint` keeps working), updates the VNC target, starts a fresh tunnel client, and broadcasts session status so the Browser tab recovers. Session teardown racing a re-allocation is guarded: the fresh allocation is freed if the session closed mid-flight, and `Stop()` cancels a re-allocation stuck waiting out a still-restarting backend. Direct (non-tunnel) remote mode has no reconnect loop to hook and is unchanged (see `tasks/2026-07-18-agent-view-remote-reallocation.md`).
+
 ### Features
 
 - **Re-tapping the active Files tab returns to the workspace root**: Clicking the Files tab while it is already the active tab in its slot now navigates the pane back to the base directory (the session cwd). The md-serve iframe is cross-origin, so after browsing into subdirectories there was previously no way home short of reloading the whole page.

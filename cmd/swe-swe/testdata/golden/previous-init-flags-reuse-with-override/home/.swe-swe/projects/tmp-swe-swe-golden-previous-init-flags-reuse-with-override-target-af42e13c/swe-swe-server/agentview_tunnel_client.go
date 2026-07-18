@@ -21,6 +21,7 @@ package main
 // reconnect loop (1s..30s capped backoff) restores the tunnel and re-syncs.
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -35,6 +36,13 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+// errTunnelAllocationLost marks a tunnel dial refused with 404: the backend is
+// UP but does not know our allocation (it restarted and lost its in-memory
+// table). Blind retry can never succeed -- the session must re-allocate.
+// Deliberately 404-only: 401/403 are auth failures re-allocating with the same
+// token cannot fix, and 409 (duplicate tunnel) resolves itself on retry.
+var errTunnelAllocationLost = errors.New("backend does not know this allocation")
 
 var (
 	// tunnelDialAddr is where open frames dial back. Production: this box's
@@ -257,14 +265,23 @@ type agentViewTunnelClient struct {
 	stop     chan struct{}
 	stopOnce sync.Once
 
+	// onAllocationLost, when set (before start()), is invoked ON the run
+	// goroutine -- which then exits -- after a dial fails with
+	// errTunnelAllocationLost. The callback owns recovery (re-allocate and
+	// start a REPLACEMENT client); this client is dead but its stop channel
+	// stays open so session teardown can still cancel the recovery via Stop().
+	onAllocationLost func()
+
 	mu       sync.Mutex
 	static   []int
 	lastSync []int
 	warned   map[int]string
 }
 
-func startAgentViewTunnelClient(backendURL, token, sessionID string, staticPorts []int, excludes []tunnelPortRange) *agentViewTunnelClient {
-	c := &agentViewTunnelClient{
+// newAgentViewTunnelClient builds a client without starting it, so callers can
+// set onAllocationLost before the run goroutine exists.
+func newAgentViewTunnelClient(backendURL, token, sessionID string, staticPorts []int, excludes []tunnelPortRange) *agentViewTunnelClient {
+	return &agentViewTunnelClient{
 		backendURL: backendURL,
 		token:      token,
 		sessionID:  sessionID,
@@ -273,10 +290,18 @@ func startAgentViewTunnelClient(backendURL, token, sessionID string, staticPorts
 		static:     append([]int(nil), staticPorts...),
 		warned:     map[int]string{},
 	}
+}
+
+func (c *agentViewTunnelClient) start() {
 	go func() {
-		defer recoverGoroutine(fmt.Sprintf("agent-view tunnel client %s", sessionID))
+		defer recoverGoroutine(fmt.Sprintf("agent-view tunnel client %s", c.sessionID))
 		c.run()
 	}()
+}
+
+func startAgentViewTunnelClient(backendURL, token, sessionID string, staticPorts []int, excludes []tunnelPortRange) *agentViewTunnelClient {
+	c := newAgentViewTunnelClient(backendURL, token, sessionID, staticPorts, excludes)
+	c.start()
 	return c
 }
 
@@ -347,6 +372,11 @@ func (c *agentViewTunnelClient) run() {
 			return
 		default:
 		}
+		if errors.Is(err, errTunnelAllocationLost) && c.onAllocationLost != nil {
+			log.Printf("agent-view tunnel %s: %v -- handing off to re-allocation", c.sessionID, err)
+			c.onAllocationLost()
+			return
+		}
 		if connected {
 			backoff = time.Second
 		}
@@ -375,8 +405,11 @@ func (c *agentViewTunnelClient) runOnce() (bool, error) {
 		hdr.Set("Authorization", "Bearer "+c.token)
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.Dial(wsURL, hdr)
+	conn, resp, err := dialer.Dial(wsURL, hdr)
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return false, fmt.Errorf("dial: %s: %w", resp.Status, errTunnelAllocationLost)
+		}
 		return false, fmt.Errorf("dial: %w", err)
 	}
 

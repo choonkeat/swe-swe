@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
@@ -575,6 +576,10 @@ type Session struct {
 	// to the remote chromium's CDP endpoint, so the agent's Playwright MCP
 	// (--cdp-endpoint http://localhost:CDPPort) works unchanged in remote mode.
 	RemoteCDPProxyServer *http.Server
+	// remoteCDPTarget is the remote chromium "host:port" the CDP proxy above
+	// forwards to. Atomic (not closure-captured) so a backend re-allocation
+	// can retarget the running proxy without listener churn.
+	remoteCDPTarget atomic.Pointer[string]
 	// AgentViewTunnel is the reverse-tunnel client when -agent-view-tunnel is
 	// on: it dials OUT to the backend and shuttles loopback page traffic, so
 	// this box needs no inbound reachability. Nil in direct/local modes.

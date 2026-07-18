@@ -11,9 +11,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -275,6 +277,64 @@ func TestTunnelClientEndToEnd(t *testing.T) {
 		if p == port {
 			t.Errorf("port %d still in sync set after removal", port)
 		}
+	}
+}
+
+// A 404 on the tunnel dial means the backend is up but lost our allocation
+// (container restart): the client must hand off to onAllocationLost and stop
+// dialing instead of retrying blind forever.
+func TestTunnelClientAllocationLost404(t *testing.T) {
+	var dials atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dials.Add(1)
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	lost := make(chan struct{})
+	c := newAgentViewTunnelClient(srv.URL, "", "s1", nil, nil)
+	c.onAllocationLost = func() { close(lost) }
+	c.start()
+	defer c.Stop()
+
+	select {
+	case <-lost:
+	case <-time.After(3 * time.Second):
+		t.Fatal("onAllocationLost never invoked on 404 dial")
+	}
+	// The run loop exits after the handoff: no further dials.
+	n := dials.Load()
+	time.Sleep(150 * time.Millisecond)
+	if got := dials.Load(); got != n {
+		t.Errorf("client kept dialing after allocation-lost handoff: %d -> %d", n, got)
+	}
+}
+
+// Non-404 failures (backend briefly down, 5xx) keep the plain retry loop --
+// re-allocation must NOT trigger.
+func TestTunnelClientNon404KeepsRetrying(t *testing.T) {
+	var dials atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dials.Add(1)
+		http.Error(w, "restarting", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	var lostCalled atomic.Bool
+	c := newAgentViewTunnelClient(srv.URL, "", "s1", nil, nil)
+	c.onAllocationLost = func() { lostCalled.Store(true) }
+	c.start()
+	defer c.Stop()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for dials.Load() < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("client stopped retrying after %d dials on 503", dials.Load())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if lostCalled.Load() {
+		t.Error("onAllocationLost invoked on 503, want plain retry")
 	}
 }
 
