@@ -70,7 +70,7 @@ function endSession(uuid, button) {
     var btn = document.getElementById('server-shutdown-btn');
     if (!btn) return;
     btn.onclick = function() {
-        if (!confirm('Shut down swe-swe-server? All active sessions will end.')) {
+        if (!confirm('Shut down swe-swe? All active sessions will end.')) {
             return;
         }
         btn.disabled = true;
@@ -83,7 +83,7 @@ function endSession(uuid, button) {
                 document.body.innerHTML =
                     '<div style="display:flex; align-items:center; justify-content:center; height:100vh; ' +
                     'font-family:inherit; color:var(--text-secondary); font-size:16px;">' +
-                    'swe-swe-server is shutting down.</div>';
+                    'swe-swe is shutting down.</div>';
             })
             .catch(function(err) {
                 btn.disabled = false;

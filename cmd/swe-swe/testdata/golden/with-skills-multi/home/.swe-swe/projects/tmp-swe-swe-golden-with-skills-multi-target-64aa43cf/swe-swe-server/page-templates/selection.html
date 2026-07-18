@@ -364,7 +364,8 @@
             background: rgba(239, 68, 68, 0.1);
         }
 
-        /* Log out button in the settings dialog */
+        /* Log out button in the settings dialog: accent-colored so the red
+           danger styling stays reserved for the shutdown button below it. */
         .settings-logout-btn {
             display: block;
             width: 100%;
@@ -373,18 +374,17 @@
             text-align: center;
             text-decoration: none;
             background: transparent;
-            color: var(--text-secondary);
+            color: var(--accent-primary);
             font-size: 14px;
             font-weight: 500;
-            border: 1px solid var(--border-primary);
+            border: 1px solid var(--accent-primary);
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s ease;
         }
         .settings-logout-btn:hover {
-            color: #ef4444;
-            border-color: #ef4444;
-            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-text);
+            background: var(--accent-primary);
         }
 
         /* Shut down server button in the settings dialog */
@@ -1480,7 +1480,7 @@
                 <label class="dialog__label">Server</label>
                 <button class="settings-shutdown-btn" id="server-shutdown-btn" type="button">Shut down server</button>
                 <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px; margin-bottom: 0;">
-                    Ends all active sessions and stops swe-swe-server. Under a container
+                    Ends all active sessions and stops swe-swe. Under a container
                     restart policy the server comes back up fresh instead.
                 </p>
             </div>
