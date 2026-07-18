@@ -1,10 +1,10 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 
-test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync check-mcp-sync check-swe-run-sync test-cli test-mcp-lazy-init test-mcp-cli-proxy test-mcp test-server test-git-sign-swe-swe test-prctx test-swe-run
+test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync check-mcp-sync check-swe-run-sync test-cli test-mcp-lazy-init test-mcp-cli-proxy test-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx test-swe-run
 
 # ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
 # See scripts/ascii-allowlist.txt for the per-file character allowlist
@@ -270,6 +270,19 @@ test-git-sign-swe-swe:
 	@cp $(GIT_SIGN_TEMPLATE)/go.mod.txt /tmp/git-sign-swe-swe-test/go.mod
 	@cd /tmp/git-sign-swe-swe-test && go test -v ./...
 	@rm -rf /tmp/git-sign-swe-swe-test
+
+# Test the swe-npx helper template (stdlib only). Like git-sign-swe-swe, the
+# helper ships as a standalone binary built inside Dockerfile / the dockerless
+# payload; copy sources plus go.mod.txt into a tmp module so the test runs
+# against the same module shape the real builds produce.
+SWE_NPX_TEMPLATE := cmd/swe-swe/templates/host/swe-npx
+test-swe-npx:
+	@rm -rf /tmp/swe-npx-test
+	@mkdir -p /tmp/swe-npx-test
+	@cp $(SWE_NPX_TEMPLATE)/*.go /tmp/swe-npx-test/
+	@cp $(SWE_NPX_TEMPLATE)/go.mod.txt /tmp/swe-npx-test/go.mod
+	@cd /tmp/swe-npx-test && go test -v ./...
+	@rm -rf /tmp/swe-npx-test
 
 # Check that common dependencies between go.mod and template go.mod.txt have matching versions
 TEMPLATE_GOMOD := cmd/swe-swe/templates/host/swe-swe-server/go.mod.txt
