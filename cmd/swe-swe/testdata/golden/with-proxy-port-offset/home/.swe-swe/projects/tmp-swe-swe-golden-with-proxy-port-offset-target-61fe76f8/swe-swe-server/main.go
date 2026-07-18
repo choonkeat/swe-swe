@@ -8694,20 +8694,36 @@ func handleVNCReadyAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TCP connect to websockify to check if it's listening
-	conn, err := net.DialTimeout("tcp", target, 500*time.Millisecond)
-	if err != nil {
+	// An accepted TCP connection is not proof websockify is serving: port
+	// forwarders in the path (docker-proxy for a published backend port on
+	// Docker for Mac, Lima's forwards) accept connects before -- or
+	// regardless of whether -- the real listener is up, so a dial-based
+	// probe reports ready while the VNC proxy still 502s. The Agent View
+	// iframe then commits an empty error document, fires `load`, satisfies
+	// its supervisor, and stays blank with no retry. Require websockify to
+	// actually serve its page.
+	resp, err := vncReadyClient.Get(fmt.Sprintf("http://%s/vnc_lite.html", target))
+	ready := err == nil && resp.StatusCode == http.StatusOK
+	if resp != nil {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+	if !ready {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte(`{"ready":false}`))
 		return
 	}
-	conn.Close()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ready":true}`))
 }
+
+// vncReadyClient probes websockify's HTTP side for handleVNCReadyAPI. Shared
+// client with a short timeout -- never construct per-request http.Transport
+// instances (see CLAUDE.md memory-leak rule).
+var vncReadyClient = &http.Client{Timeout: 1500 * time.Millisecond}
 
 // handleFilesReadyAPI handles GET /api/session/{uuid}/files-ready
 // Returns 200 if the per-session md-serve is listening on the session's
