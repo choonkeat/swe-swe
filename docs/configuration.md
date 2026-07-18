@@ -133,6 +133,19 @@ The file is read at session start. To pick up changes, end and restart the sessi
 
 **Migration note:** Earlier swe-swe versions used `swe-swe/env`. swe-swe-server now auto-renames `swe-swe/env` to `.swe-swe/env` on the next session prepare, so existing workspaces self-heal without user action.
 
+### Chat-log archiving (AGENT_CHAT_EXPORT_DIR)
+
+Chat sessions default `AGENT_CHAT_EXPORT_DIR` to `{workDir}/agent-chats`, which makes agent-chat (>= 0.8.14) stream a markdown archive of the conversation — with screenshots and other attachments copied into `agent-chats/assets/` — into the repo as the chat progresses. Nothing is ever committed automatically; the export sits in the working tree.
+
+The default is presence-checked, so any user-set value wins:
+
+- **Opt out per workspace**: an `AGENT_CHAT_EXPORT_DIR=` line (empty value) in `.swe-swe/env`. Check it in to make it team policy.
+- **Opt out per session**: untick "Archive chat log into repo" in the new-session dialog, or add the empty line to the Settings panel env textarea.
+- **Opt out mid-session**: ask the agent to call agent-chat's `chatlog_optout` tool (stops the export and deletes this session's file).
+- **Relocate**: set the var to a different path. It must stay inside the session's working directory — a path that escapes it disables the export **silently** (agent-chat logs a warning to its own stderr; nothing appears in the chat). If "nothing is being archived", check this first.
+
+Merge conflicts in `agent-chats/index.html` need no manual resolution: accept either side; the next export regenerates it from the `*.md` files.
+
 ## Runtime
 
 ### YOLO Mode

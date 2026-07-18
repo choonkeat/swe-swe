@@ -17,3 +17,4 @@ Agents without slash-command support (Goose, Aider) do not see these commands.
 - `PUBLIC_PORT` - a webpage served on this port is accessible to anyone (not protected behind auth).
 - Chrome CDP is lazy-loaded on demand: it starts the first time an MCP playwright tool is invoked. No browser process is running before that.
 - Tests/e2e that connect to `$BROWSER_CDP_PORT` directly must run after a Playwright MCP call (e.g. `browser_navigate`) to warm CDP. The suite won't trigger the lazy launch itself, so it will fail until then.
+- Chat sessions auto-archive their conversation into `agent-chats/` (markdown + assets, updated as the chat progresses). When committing, include `agent-chats/` changes -- in the same commit or a trailing `docs(agent-chats):` commit. Never delete or rewrite entries for other sessions.
