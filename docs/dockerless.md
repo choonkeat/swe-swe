@@ -99,3 +99,48 @@ swe-swe up --agent-view=https://browser-box.internal:9333
 The choice is remembered, so later `swe-swe up` reuses it. If the backend
 is unreachable, Agent View shows "unavailable" and the other tabs are
 unaffected.
+
+#### Tunnel variant -- your box can stay fully firewalled
+
+Direct mode (above) needs the browser box to reach your host's ports:
+chromium there is told, via `--host-resolver-rules`, to resolve
+`localhost` / `*.lvh.me` / `*.localtest.me` back to your host's IP. If
+your box sits behind NAT or a strict firewall, add `--agent-view-tunnel`
+(env `SWE_AGENT_VIEW_TUNNEL=1`):
+
+```sh
+swe-swe up --agent-view=https://browser-box.internal:9333 --agent-view-tunnel
+```
+
+Now **swe-swe connects out** -- the same trust direction as swe-swe-tunnel
+-- and the browser box needs zero inbound route to you. Per session,
+swe-swe dials a WebSocket to the backend and keeps a declarative set of
+ports synced; the backend binds real listeners for them on ITS OWN
+loopback, so chromium there needs no resolver rules at all: `localhost`
+and `*.lvh.me` resolve natively, the Host header arrives intact (vhost
+previews route normally), and every accepted connection is shuttled down
+the tunnel and replayed against your host's `127.0.0.1:<same port>`.
+
+Which ports follow the session automatically:
+
+- **Static**: the swe-swe server port and the session's preview port --
+  always bound.
+- **Procfile**: ports of services declared in your `Procfile` (the
+  `swe-run` assignments) -- pre-bound at tunnel start, so a declared
+  service is reachable before it even starts listening.
+- **Auto-mirror**: any ad-hoc listener on your host's loopback (an
+  `npm run dev` you just started) is discovered from `/proc/net/tcp`
+  within ~2s and appears on the backend automatically; when it exits, the
+  port is dropped. `SWE_AGENT_VIEW_TUNNEL_EXCLUDE_PORTS` (CSV of ports /
+  `lo-hi` ranges) overrides the default exclusion of swe-swe's own
+  internal per-session pools.
+
+Collisions are refused loudly, never silently: the backend's own service
+and CDP/VNC ports are reserved, and across sessions the first bind wins
+(losers get a warning in the server log). On the backend, accepted
+connections are peer-checked (Linux `/proc` ancestry) so only that
+session's chromium can use the tunnel's listeners. If the tunnel drops,
+the session keeps running -- Agent View pages fail until the automatic
+reconnect (capped backoff) restores it. `SWE_AGENT_VIEW_LOCALHOST` /
+`SWE_AGENT_VIEW_LOOPBACK_DOMAINS` are resolver-rule knobs and are ignored
+in tunnel mode.

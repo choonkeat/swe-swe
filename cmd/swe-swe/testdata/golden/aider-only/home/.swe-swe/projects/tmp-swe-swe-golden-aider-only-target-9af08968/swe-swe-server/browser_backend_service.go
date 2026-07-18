@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -66,6 +67,13 @@ type backendSession struct {
 	cdpPort int
 	vncPort int
 	procs   *browserProcs
+	// tunnel: the session was allocated in reverse-tunnel mode -- chromium
+	// runs without resolver rules and the swe-swe box dials /tunnel.
+	tunnel bool
+	// tunnelActive guards the one-concurrent-tunnel rule; tunnelStop closes
+	// the live tunnel (WS + listeners) on session teardown.
+	tunnelActive bool
+	tunnelStop   func()
 }
 
 // browserBackend is the allocator state for the service.
@@ -75,6 +83,12 @@ type browserBackend struct {
 	maxSessions   int
 	token         string // bearer token; empty = no auth (not for public boxes)
 	advertiseHost string // host clients should dial for CDP/VNC ports
+	// servicePort is this service's own listen port (reserved from tunnel
+	// binds); 0 when unknown.
+	servicePort int
+	// tunnelGuard vets connections accepted on tunnel-bound loopback ports.
+	// Defaults to the platform tunnelPeerGuard; injectable for tests.
+	tunnelGuard func(*backendSession, net.Conn) error
 }
 
 func newBrowserBackend(maxSessions int, token, advertiseHost string) *browserBackend {
@@ -86,6 +100,7 @@ func newBrowserBackend(maxSessions int, token, advertiseHost string) *browserBac
 		maxSessions:   maxSessions,
 		token:         token,
 		advertiseHost: advertiseHost,
+		tunnelGuard:   tunnelPeerGuard,
 	}
 }
 
@@ -118,6 +133,9 @@ type allocResponse struct {
 	Host      string `json:"host"`
 	CDPPort   int    `json:"cdpPort"`
 	VNCPort   int    `json:"vncPort"`
+	// Tunnel echoes tunnel-mode allocation: the backend expects the client
+	// to dial /sessions/{id}/tunnel and skipped chromium resolver rules.
+	Tunnel bool `json:"tunnel,omitempty"`
 }
 
 func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +148,10 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 		// LoopbackDomains overrides defaultLoopbackDomains (each maps bare +
 		// wildcard) for projects using other loopback DNS schemes.
 		LoopbackDomains []string `json:"loopbackDomains"`
+		// Tunnel requests reverse-tunnel mode: loopback hostnames resolve
+		// to THIS box (where the tunnel binds real listeners), so chromium
+		// gets no resolver rules at all.
+		Tunnel bool `json:"tunnel"`
 	}
 	// Body is optional; ignore decode errors on an empty body.
 	_ = json.NewDecoder(r.Body).Decode(&req)
@@ -144,6 +166,9 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 		loopbackDomains = defaultLoopbackDomains
 	}
 	hostResolverRules := buildLoopbackResolverRules(loopbackDomains, resolveLocalhostTo)
+	if req.Tunnel {
+		hostResolverRules = ""
+	}
 
 	bb.mu.Lock()
 	// Idempotency first: a re-POST for a live id must return that instance
@@ -174,7 +199,7 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	display := slot + 10 // avoid :0 (the host's own display)
 	// Reserve the slot before the slow start so concurrent creates don't race
 	// onto the same ports.
-	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort}
+	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort, tunnel: req.Tunnel}
 	bb.mu.Unlock()
 
 	procs, err := browserProcsStarter(id, display, cdpPort, cdpInternal, vncPort, vncInternal, hostResolverRules)
@@ -201,6 +226,7 @@ func (bb *browserBackend) writeAlloc(w http.ResponseWriter, s *backendSession) {
 		Host:      bb.advertiseHost,
 		CDPPort:   s.cdpPort,
 		VNCPort:   s.vncPort,
+		Tunnel:    s.tunnel,
 	})
 }
 
@@ -214,6 +240,11 @@ func (bb *browserBackend) handleDelete(w http.ResponseWriter, id string) {
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
+	}
+	if sess.tunnelStop != nil {
+		// Closes the tunnel WS; its handler then tears down the loopback
+		// listeners and streams (no orphans on session end).
+		sess.tunnelStop()
 	}
 	if sess.procs != nil {
 		sess.procs.stop()
@@ -271,6 +302,14 @@ func (bb *browserBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			bb.handleReady(w, id)
 			return
 		}
+		if id := strings.TrimSuffix(rest, "/tunnel"); id != rest {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			bb.handleTunnel(w, r, id)
+			return
+		}
 		if r.Method != http.MethodDelete {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -288,6 +327,11 @@ func runBrowserBackend(addr string, maxSessions int, token, advertiseHost string
 		return fmt.Errorf("browser-backend mode requires the display stack (Xvfb/chromium/x11vnc/websockify) -- none found on PATH")
 	}
 	bb := newBrowserBackend(maxSessions, token, advertiseHost)
+	if _, portStr, err := net.SplitHostPort(addr); err == nil {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			bb.servicePort = p
+		}
+	}
 	log.Printf("browser-backend: listening on %s (max %d sessions, auth=%v, advertise=%q)",
 		addr, bb.maxSessions, token != "", advertiseHost)
 	return http.ListenAndServe(addr, bb)

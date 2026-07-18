@@ -140,6 +140,31 @@ type browserProcs struct {
 	cdpSrv  *http.Server
 }
 
+// buildChromiumArgs assembles the chromium launch argv. hostResolverRules ==
+// "" (local mode, or a TUNNEL-mode remote allocation) means NO
+// --host-resolver-rules flag at all: loopback hostnames then resolve to
+// chromium's own loopback, which is exactly where the reverse tunnel binds.
+func buildChromiumArgs(cdpInternalPort int, userDataDir, hostResolverRules string) []string {
+	args := []string{
+		"--no-sandbox",
+		"--test-type",
+		"--disable-gpu",
+		"--disable-software-rasterizer",
+		"--disable-dev-shm-usage",
+		// Loopback-only regardless of flags (headful chromium); the CDP
+		// forwarder exposes it on cdpPort.
+		fmt.Sprintf("--remote-debugging-port=%d", cdpInternalPort),
+		fmt.Sprintf("--user-data-dir=%s", userDataDir),
+		"--remote-allow-origins=*",
+		"--window-size=1024,768",
+		"--start-maximized",
+	}
+	if hostResolverRules != "" {
+		args = append(args, "--host-resolver-rules="+hostResolverRules)
+	}
+	return args
+}
+
 // startBrowserProcs launches the Agent View stack for an isolated instance
 // identified by id, on the given X display and ports (cdpPort = chromium remote
 // debugging as consumed by clients; cdpInternalPort = where chromium actually
@@ -193,24 +218,7 @@ func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vn
 	}
 	userDataDir := fmt.Sprintf("/tmp/chromium-session-%s", id)
 	b.dataDir = userDataDir
-	chromeArgs := []string{
-		"--no-sandbox",
-		"--test-type",
-		"--disable-gpu",
-		"--disable-software-rasterizer",
-		"--disable-dev-shm-usage",
-		// Loopback-only regardless of flags (headful chromium); the CDP
-		// forwarder below exposes it on cdpPort.
-		fmt.Sprintf("--remote-debugging-port=%d", cdpInternalPort),
-		fmt.Sprintf("--user-data-dir=%s", userDataDir),
-		"--remote-allow-origins=*",
-		"--window-size=1024,768",
-		"--start-maximized",
-	}
-	if hostResolverRules != "" {
-		chromeArgs = append(chromeArgs, "--host-resolver-rules="+hostResolverRules)
-	}
-	chromeCmd := exec.Command(chromiumBinary, chromeArgs...)
+	chromeCmd := exec.Command(chromiumBinary, buildChromiumArgs(cdpInternalPort, userDataDir, hostResolverRules)...)
 	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
 	if err := chromeCmd.Start(); err != nil {
 		b.stop()

@@ -565,6 +565,10 @@ type Session struct {
 	// to the remote chromium's CDP endpoint, so the agent's Playwright MCP
 	// (--cdp-endpoint http://localhost:CDPPort) works unchanged in remote mode.
 	RemoteCDPProxyServer *http.Server
+	// AgentViewTunnel is the reverse-tunnel client when -agent-view-tunnel is
+	// on: it dials OUT to the backend and shuttles loopback page traffic, so
+	// this box needs no inbound reachability. Nil in direct/local modes.
+	AgentViewTunnel *agentViewTunnelClient
 	FilesPID             int // PID of the per-session md-serve process (0 if not started)
 	// YOLO mode state
 	yoloMode           bool   // Whether YOLO mode is active
@@ -2103,6 +2107,11 @@ func main() {
 		"Agent View backend: local (in-process display stack) | off (hide the "+
 			"tab) | <backend-url> (offload to a swe-swe/browser-backend). "+
 			"Env: SWE_AGENT_VIEW.")
+	agentViewTunnel := flag.Bool("agent-view-tunnel", false,
+		"With -agent-view=<url>: reverse-tunnel loopback page traffic over an "+
+			"outbound WebSocket so this box needs NO inbound reachability from "+
+			"the backend (chromium there hits its own loopback; no resolver "+
+			"rules). Env: SWE_AGENT_VIEW_TUNNEL=1.")
 	mode := flag.String("mode", "server",
 		"server (default) | browser-backend (run the standalone Agent View "+
 			"allocation service instead of the swe-swe UI server).")
@@ -2118,6 +2127,7 @@ func main() {
 	// lean host with no display stack, local mode reports the tab unavailable
 	// rather than 500ing on browser/start.
 	resolveAgentViewBackend(*agentView, flagPassed("agent-view"))
+	resolveAgentViewTunnelMode(*agentViewTunnel, flagPassed("agent-view-tunnel"))
 
 	// Resolve host paths: flag -> env -> default. Defaults reproduce the
 	// container layout, so compose mode is unchanged; dockerless `swe-swe up`
@@ -2132,6 +2142,13 @@ func main() {
 	// log the correct OPEN AT URL ({port}.{hostname}) when it learns the
 	// tunnel hostname; tunneld demuxes by the same port.
 	listenAddr, landingAddr := resolveListenAddr(*bind, *addr, os.Getenv("SWE_BIND"), os.Getenv("SWE_PORT"), os.Getenv("PORT"))
+	// The Agent View reverse tunnel statically syncs this server's own port
+	// (so chromium on the backend can load the swe-swe UI + vhost previews).
+	if _, portStr, err := net.SplitHostPort(listenAddr); err == nil {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			tunnelServerPort = p
+		}
+	}
 
 	// Override CDP port range from environment (set by docker-compose).
 	// Parsed BEFORE the browser-backend dispatch: the allocation service
