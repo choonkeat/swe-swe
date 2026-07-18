@@ -69,6 +69,49 @@ func TestBuildSessionEnv_AgentChatDisableGate(t *testing.T) {
 	})
 }
 
+// TestDefaultChatExportEnv locks in the presence-checked default for the
+// streaming chat-log export (agent-chat >= 0.8.14). The default is appended
+// AFTER buildSessionEnv's user layers (Settings textarea, .swe-swe/env), where
+// last-wins semantics would let a blind append clobber user overrides -- so
+// the helper must skip the append whenever the key is already PRESENT, even
+// with an empty value: AGENT_CHAT_EXPORT_DIR= (empty) is the user's explicit
+// opt-out (agent-chat treats empty as disabled), and a custom path is a
+// relocation. Terminal sessions never reach the helper (the call site sits
+// inside materializeSession's SessionMode=="chat" block, next to the
+// AGENT_CHAT_EVENT_LOG append).
+func TestDefaultChatExportEnv(t *testing.T) {
+	base := []string{"PATH=/usr/bin", "AGENT_CHAT_EVENT_LOG=/rec/session-x.events.jsonl"}
+
+	t.Run("absent key gains the workDir default", func(t *testing.T) {
+		got := defaultChatExportEnv(base, "/repos/foo")
+		if v, ok := envValue(got, "AGENT_CHAT_EXPORT_DIR"); !ok || v != "/repos/foo/agent-chats" {
+			t.Fatalf("want AGENT_CHAT_EXPORT_DIR=/repos/foo/agent-chats, got %q (present=%v)", v, ok)
+		}
+	})
+
+	t.Run("custom path is preserved", func(t *testing.T) {
+		env := append(append([]string{}, base...), "AGENT_CHAT_EXPORT_DIR=/repos/foo/docs/chats")
+		got := defaultChatExportEnv(env, "/repos/foo")
+		if len(got) != len(env) {
+			t.Fatalf("env must be unchanged, len %d -> %d", len(env), len(got))
+		}
+		if v, _ := envValue(got, "AGENT_CHAT_EXPORT_DIR"); v != "/repos/foo/docs/chats" {
+			t.Fatalf("custom path clobbered: got %q", v)
+		}
+	})
+
+	t.Run("explicit empty value is an opt-out, not a missing key", func(t *testing.T) {
+		env := append(append([]string{}, base...), "AGENT_CHAT_EXPORT_DIR=")
+		got := defaultChatExportEnv(env, "/repos/foo")
+		if len(got) != len(env) {
+			t.Fatalf("opt-out env must be unchanged, len %d -> %d", len(env), len(got))
+		}
+		if v, ok := envValue(got, "AGENT_CHAT_EXPORT_DIR"); !ok || v != "" {
+			t.Fatalf("opt-out must survive as empty-present, got %q (present=%v)", v, ok)
+		}
+	})
+}
+
 // TestResolveStagedMode guards the "new"-session staging fix. Regression:
 // POST /api/session/new stages the creation intent with assistant only and
 // echoes the requested mode onto the redirect query; the WS handler that

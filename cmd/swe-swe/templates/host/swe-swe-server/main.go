@@ -820,6 +820,33 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	return env
 }
 
+// envHas reports whether key is present in a KEY=VALUE slice, regardless of
+// value. Distinct from envLookup, which returns "" for both a missing key and
+// an explicitly empty one -- callers that treat empty-present as meaningful
+// (e.g. AGENT_CHAT_EXPORT_DIR= as an opt-out) need presence, not value.
+func envHas(env []string, key string) bool {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultChatExportEnv appends the default AGENT_CHAT_EXPORT_DIR (the
+// streaming chat-log archive dir read by agent-chat >= 0.8.14) for a chat
+// session, unless the env already carries the key. Presence-checked because
+// this runs after buildSessionEnv's user layers (Settings textarea,
+// .swe-swe/env) whose overrides must win: a custom path relocates the
+// archive, an explicit empty value opts out.
+func defaultChatExportEnv(env []string, workDir string) []string {
+	if envHas(env, "AGENT_CHAT_EXPORT_DIR") {
+		return env
+	}
+	return append(env, "AGENT_CHAT_EXPORT_DIR="+filepath.Join(workDir, "agent-chats"))
+}
+
 // envLookup returns a function that looks up a key in the given KEY=VALUE
 // slice, falling back to os.Getenv if not found. Used to expand $VAR
 // references in .swe-swe/env against the session env being built, not the
@@ -5287,6 +5314,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		}
 		env = append(env, fmt.Sprintf("AGENT_CHAT_EVENT_LOG=%s", chatLogPath))
 		log.Printf("Chat event log: %s", chatLogPath)
+		env = defaultChatExportEnv(env, workDir)
 	}
 
 	// Agent-chat sidecar context for chat sessions.
