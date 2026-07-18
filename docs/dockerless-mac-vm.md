@@ -1,9 +1,10 @@
 # swe-swe on a Mac: Linux VM + browser-backend container
 
-> Press-release-driven doc, companion to `dockerless.md`. It describes the
-> end state after `tasks/2026-07-18-swe-npx-node-free-helpers.md` and
-> `tasks/2026-07-18-agent-view-reverse-tunnel.md` land. Sections marked
-> **works today** need neither task; the rest says which task it waits on.
+> Press-release-driven doc, companion to `dockerless.md`. Both tasks it
+> waited on (`tasks/2026-07-18-swe-npx-node-free-helpers.md` and
+> `tasks/2026-07-18-agent-view-reverse-tunnel.md`) have landed on main;
+> everything below works from a current build. Only mac-native (no VM) is
+> still pending, as dockerless Phase 6.
 
 ## Topology
 
@@ -57,9 +58,9 @@ preview ports yourself.)
 
 ```sh
 sudo apt-get update && sudo apt-get install -y git
-# node: needed today for npx-launched helpers; after the swe-npx task it is
-# only needed if you use a node-based agent CLI (claude) or Agent View's
-# @playwright/mcp driver. npm is also how swe-swe itself installs.
+# node: swe-swe's own helpers no longer need it (swe-npx launches them as
+# static binaries); it is only needed for a node-based agent CLI (claude) or
+# Agent View's @playwright/mcp driver. npm is also how swe-swe itself installs.
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash - && sudo apt-get install -y nodejs
 npm i -g swe-swe @anthropic-ai/claude-code
 ```
@@ -92,27 +93,7 @@ the VM's loopback listener. Preview ports your sessions open (3000, 8080,
 your Mac browser resolves to Mac-loopback and lands in the VM. That's the
 user-facing half done -- all six tabs.
 
-### 5a. Agent View page traffic, direct mode (works today, one override)
-
-In direct mode, chromium *in the backend container* must reach dev servers
-*in the VM*. The default guess (allocation source address) is a Docker NAT
-IP that does not route back, so override it with Docker's name for the Mac,
-and let the Mac's Lima forwards complete the chain
-(container -> host.docker.internal -> Mac loopback -> VM):
-
-```sh
-SWE_AGENT_VIEW_LOCALHOST=host.docker.internal \
-SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
-    swe-swe up --agent-view=http://host.lima.internal:9333
-```
-
-Sanity check if a page won't load in Agent View:
-`docker exec swe-browser curl -sI http://host.docker.internal:1977` should
-return an HTTP status. If it does, the chain is intact.
-
-### 5b. Agent View, tunnel mode (after the reverse-tunnel task)
-
-The override dance above disappears:
+### 5a. Agent View, tunnel mode (recommended)
 
 ```sh
 SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
@@ -121,10 +102,20 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
 
 The VM dials out; the backend binds VM ports on its own loopback and
 shuffles traffic back over that connection. No inbound path to the VM is
-needed at all, no `SWE_AGENT_VIEW_LOCALHOST`, no NAT reasoning. This is the
-recommended mode once available, and the only workable one if the VM ever
-moves somewhere the backend cannot reach (another machine, a firewalled
-cloud box reached via swe-swe-tunnel).
+needed at all, no `SWE_AGENT_VIEW_LOCALHOST`, no NAT reasoning. It is also
+the only workable mode if the VM ever moves somewhere the backend cannot
+reach (another machine, a firewalled cloud box reached via swe-swe-tunnel).
+
+### 5b. Agent View, direct mode (fallback, one override)
+
+Without `--agent-view-tunnel`, chromium *in the backend container* must
+reach dev servers *in the VM*, and the default guess (allocation source
+address) is a Docker NAT IP that does not route back. Override it with
+Docker's name for the Mac (`SWE_AGENT_VIEW_LOCALHOST=host.docker.internal`
+on the `swe-swe up` line) and Lima's forwards complete the chain
+(container -> host.docker.internal -> Mac loopback -> VM). Sanity check:
+`docker exec swe-browser curl -sI http://host.docker.internal:1977` should
+return an HTTP status.
 
 ## 6. Daily use
 
@@ -137,12 +128,12 @@ Upgrades: `npm update -g swe-swe` in the VM, re-run `swe-swe init
 --dockerless`; rebuild the backend image from a fresh repo checkout when it
 changes.
 
-## What waits on what
+## Status
 
 | Piece | Status |
 |---|---|
-| VM + dockerless server, 5 tabs, previews on lvh.me | works today |
-| Agent View via backend container, direct mode + `SWE_AGENT_VIEW_LOCALHOST` | works today |
-| Agent View with zero VM-inbound (`--agent-view-tunnel`) | reverse-tunnel task |
-| node-free VM (non-node agent, no Agent View) | swe-npx task |
+| VM + dockerless server, 5 tabs, previews on lvh.me | works |
+| Agent View with zero VM-inbound (`--agent-view-tunnel`) | works |
+| Agent View direct mode + `SWE_AGENT_VIEW_LOCALHOST` | works (fallback) |
+| node-free VM (non-node agent, no Agent View) | works |
 | swe-swe natively on macOS, no VM | dockerless Phase 6 (code-complete, unverified) |
