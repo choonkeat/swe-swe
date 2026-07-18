@@ -1,0 +1,1 @@
+041023 phase2 RED: will add swe-npx to dockerlessBinaries (payload.go) WITHOUT the Makefile payload stanza; expect make test-cli to FAIL TestDockerlessPayloadEmbedsBinaries/swe-npx (embedded payload missing).
