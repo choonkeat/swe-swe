@@ -1,4 +1,5 @@
 import { test, expect, chromium } from './_helpers/reaper.js';
+import http from 'node:http';
 
 // Stage a session via POST /api/session/new (the no-ghost-session gate: the
 // WS handler only materializes sessions with a staged creation intent), then
@@ -29,6 +30,11 @@ async function openNewSession(page, params) {
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 const BACKEND_URL = process.env.E2E_BACKEND_URL || '';
 const SHOT_DIR = process.env.E2E_SCREENSHOT_DIR || 'test-results/agent-view';
+// Reverse-tunnel tier (scripts/e2e-agent-view-remote.sh E2E_AV_TUNNEL=1):
+// chromium has NO resolver rules; localhost pages arrive via the backend's
+// tunnel-bound loopback listeners instead of a network route back.
+const TUNNEL = !!process.env.E2E_AV_TUNNEL;
+const PROCFILE_API_PORT = process.env.E2E_PROCFILE_API_PORT || '';
 
 // Dockerless runs open (no password): empty cookie jar.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -113,19 +119,94 @@ test.describe('agent view via remote backend', () => {
       const ctx = cdpBrowser.contexts()[0];
       const remotePage = ctx.pages()[0] || await ctx.newPage();
       const navPort = process.env.E2E_LOCALHOST_NAV_PORT || new URL(BASE_URL).port;
-      await remotePage.goto(`http://localhost:${navPort}/`, { timeout: 30_000 });
-      await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
-      // The navigation is visible through the VNC pane too -- capture it.
-      await page.waitForTimeout(1500);
-      await page.screenshot({ path: `${SHOT_DIR}/04-remote-localhost-nav.png` });
 
-      // Wildcard loopback domains: *.lvh.me (subdomain dev DNS) must resolve
-      // to the swe-swe host too. The MAP rule bypasses real DNS entirely, so
-      // this asserts the wildcard mapping itself -- works even offline.
-      await remotePage.goto(`http://app.lvh.me:${navPort}/`, { timeout: 30_000 });
-      await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
-      await page.waitForTimeout(1500);
-      await page.screenshot({ path: `${SHOT_DIR}/05-remote-lvh-me-nav.png` });
+      if (TUNNEL) {
+        // Tunnel headline: the marker binds the INSTANCE side's loopback
+        // only, and SWE_AGENT_VIEW_LOCALHOST points at a blackhole -- this
+        // page can only render if chromium's OWN loopback (no resolver
+        // rules) is tunnel-bound and dial-back reaches the instance. The
+        // marker port is mirror-discovered (~2s sync), so poll.
+        await expect.poll(async () => {
+          try {
+            await remotePage.goto(`http://localhost:${navPort}/`, { timeout: 10_000 });
+            return await remotePage.title();
+          } catch {
+            return '';
+          }
+        }, { timeout: 30_000, intervals: [1000] }).toMatch(/swe-swe-marker/);
+        await page.waitForTimeout(1500);
+        await page.screenshot({ path: `${SHOT_DIR}/04-remote-localhost-nav.png` });
+
+        // Host-header preservation: *.lvh.me resolves to chromium's loopback
+        // naturally (no rules), the tunnel carries it to the instance, and
+        // the vhost demux on the server port answers.
+        const instancePort = new URL(BASE_URL).port;
+        await expect.poll(async () => {
+          try {
+            await remotePage.goto(`http://app.lvh.me:${instancePort}/`, { timeout: 10_000 });
+            return await remotePage.title();
+          } catch {
+            return '';
+          }
+        }, { timeout: 30_000, intervals: [1000] }).toMatch(/swe-swe/);
+        await page.waitForTimeout(1500);
+        await page.screenshot({ path: `${SHOT_DIR}/05-remote-lvh-me-nav.png` });
+
+        // Procfile pre-bind: the declared api port must be bound on the
+        // backend BEFORE anything listens instance-side (static sync, no
+        // mirror race). Bound-but-dead dial-back closes the connection --
+        // any error but CONNECTION_REFUSED proves the listener exists.
+        if (PROCFILE_API_PORT) {
+          let navErr = '';
+          try {
+            await remotePage.goto(`http://localhost:${PROCFILE_API_PORT}/`, { timeout: 15_000 });
+          } catch (e) {
+            navErr = String(e);
+          }
+          expect(navErr).not.toContain('ERR_CONNECTION_REFUSED');
+
+          // Then serve it for real from the instance side and reload: the
+          // content must flow through the tunnel. On the shared-loopback
+          // binary tier the backend itself holds this port, so skip the
+          // content half there (EADDRINUSE) -- the image tier runs it.
+          const srv = http.createServer((req, res) => res.end('procfile-api-ok'));
+          const bound = await new Promise((resolve) => {
+            srv.once('error', () => resolve(false));
+            srv.listen(Number(PROCFILE_API_PORT), '127.0.0.1', () => resolve(true));
+          });
+          if (bound) {
+            try {
+              await expect.poll(async () => {
+                try {
+                  await remotePage.goto(`http://localhost:${PROCFILE_API_PORT}/`, { timeout: 5_000 });
+                  return await remotePage.evaluate(() => document.body.innerText);
+                } catch {
+                  return '';
+                }
+              }, { timeout: 20_000, intervals: [1000] }).toContain('procfile-api-ok');
+              await page.screenshot({ path: `${SHOT_DIR}/06-procfile-port-through-tunnel.png` });
+            } finally {
+              await new Promise((r) => srv.close(r));
+            }
+          } else {
+            console.log('procfile content check skipped: port held by backend (shared-loopback binary tier)');
+          }
+        }
+      } else {
+        await remotePage.goto(`http://localhost:${navPort}/`, { timeout: 30_000 });
+        await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
+        // The navigation is visible through the VNC pane too -- capture it.
+        await page.waitForTimeout(1500);
+        await page.screenshot({ path: `${SHOT_DIR}/04-remote-localhost-nav.png` });
+
+        // Wildcard loopback domains: *.lvh.me (subdomain dev DNS) must resolve
+        // to the swe-swe host too. The MAP rule bypasses real DNS entirely, so
+        // this asserts the wildcard mapping itself -- works even offline.
+        await remotePage.goto(`http://app.lvh.me:${navPort}/`, { timeout: 30_000 });
+        await expect(remotePage).toHaveTitle(/swe-swe/, { timeout: 15_000 });
+        await page.waitForTimeout(1500);
+        await page.screenshot({ path: `${SHOT_DIR}/05-remote-lvh-me-nav.png` });
+      }
     } finally {
       await cdpBrowser.close();
     }
