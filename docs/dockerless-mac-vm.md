@@ -139,6 +139,11 @@ make dockerless-payload
 go build -o ~/.npm-global/bin/swe-swe ./cmd/swe-swe
 ```
 
+After every rebuild (including `git pull` updates), re-run `swe-swe init
+--dockerless` in your project: the server and helper binaries are embedded
+in the CLI and only re-extracted by init, so `swe-swe up` alone would keep
+running the previously extracted ones.
+
 (Clone inside the VM rather than building in a Lima-mounted `/Users` path;
 the default home mount is read-only.)
 
