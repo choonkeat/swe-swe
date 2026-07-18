@@ -5335,6 +5335,26 @@ class TerminalUI extends HTMLElement {
         this._kickPaneSupervisor(paneId);
     }
 
+    // Re-tapping the already-active Files tab navigates the pane back to its
+    // base directory (the session cwd). md-serve is cross-origin so in-pane
+    // navigation is invisible here; the only reliable "go home" is to restart
+    // the load supervisor at the root URL. Dropping the old supervisor first
+    // bypasses setIframeUrl's same-URL state-preservation guard, which would
+    // otherwise turn this into a no-op when the user never left the root.
+    _resetFilesToRoot() {
+        if (!this._paneLoaded.has('files')) return;
+        const filesUrl = this.effectivePublicHostname
+            ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
+            : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+        if (!filesUrl) return;
+        const existing = this._iframeSupervisors['files'];
+        if (existing) {
+            existing.stop();
+            delete this._iframeSupervisors['files'];
+        }
+        this.setIframeUrl(filesUrl + '/', 'files');
+    }
+
     // Add a pane as a new tab in a slot. If the pane already lives in another
     // slot, it's removed from there first (a pane lives in exactly one slot's
     // tab list). `activate` (default true) controls whether the newly-added
@@ -6086,6 +6106,13 @@ class TerminalUI extends HTMLElement {
                     if (tryPopout(e)) return;
                 }
                 this._userPickedTab = true;
+                const slotState = this.activeBySlot[slotId];
+                if (slotState && slotState.active === paneId && paneId === 'files') {
+                    // Re-tapping the already-active Files tab returns the
+                    // pane to the base directory (session cwd).
+                    this._resetFilesToRoot();
+                    return;
+                }
                 this.setActiveInSlot(slotId, paneId);
             });
             btn.addEventListener('auxclick', (e) => {
