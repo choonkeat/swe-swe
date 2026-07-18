@@ -83,3 +83,34 @@ first cut; tunnel mode is what the dev box runs.
 - Live: `docker rm -f swe-swe-browser-backend && docker run ...` mid-session,
   then drive the session's playwright MCP -- browser comes back without
   ending the session.
+
+## Status: IMPLEMENTED + LIVE-VERIFIED (2026-07-18, commit 0e8b34e77)
+
+Tunnel-mode fix shipped exactly as sketched: `errTunnelAllocationLost` (404
+only -- 401/403/409 keep the blind-retry loop), `onAllocationLost` handoff on
+the tunnel run goroutine, `reallocateRemoteAgentView` (capped backoff, only
+`sess.mu`, `sess.closed` + supersession guard, frees an allocation won by a
+closing session, `Stop()` cancels the backoff wait), CDP proxy retarget via
+`sess.remoteCDPTarget` (`atomic.Pointer`; `ModifyResponse` rewrites with
+`resp.Request.URL.Host` so a mid-flight swap cannot mismatch). Non-tunnel
+mode still deferred as planned.
+
+Unit tests: dial classification (404 vs 503), full restart flow against the
+real `browserBackend` (slot moves 0->1, targets retarget, tunnel reconnects
+on the new instance), closed/superseded abort, mid-flight teardown frees the
+ownerless allocation, Stop cancels a stuck retry.
+
+Live drill (process-level equivalent of the container repro; the deployed
+server on the dev box predates the fix, so the docker repro waits for the
+next reboot): dockerless instance + binary-tier backend per
+`scripts/e2e-agent-view-remote.sh` tunnel tier, real session + real chromium,
+then SIGKILL the backend's whole process group mid-session and relaunch it.
+Observed: `dial: 404 Not Found ... handing off to re-allocation` 2s after
+the kill, `re-allocated after backend restart` 2s later, vnc-ready back to
+200, and the marker page rendered through the SAME local CDP proxy port over
+the NEW tunnel -- session never ended. One-machine caveat: kill the process
+GROUP (a server-only SIGKILL leaves chromium/websockify children squatting
+the slot ports, which a real container death cannot do).
+
+Remaining: the real `docker rm -f swe-swe-browser-backend` repro against the
+dogfood box after the next reboot deploys this build.
