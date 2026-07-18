@@ -1786,6 +1786,11 @@ var (
 	// serverCtx is cancelled on SIGINT/SIGTERM for graceful shutdown.
 	// Session contexts derive from this so all processes are cleaned up.
 	serverCtx context.Context
+
+	// serverShutdownRequests feeds the graceful-shutdown goroutine from
+	// non-signal triggers (the homepage Settings shutdown button). Buffered
+	// so the HTTP handler never blocks; the value is the logged reason.
+	serverShutdownRequests = make(chan string, 1)
 )
 
 // detectAvailableAssistants checks which AI assistants are installed and populates availableAssistants.
@@ -2704,6 +2709,14 @@ func main() {
 			return
 		}
 
+		// Server shutdown API endpoint (homepage Settings button). Behind
+		// the auth cookie (not in authMiddleware's exemption list) and
+		// denied to shared-session guests (scopedPathAllowed).
+		if r.URL.Path == "/api/server/shutdown" {
+			handleServerShutdownAPI(w, r)
+			return
+		}
+
 		// Session end API endpoint
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
 			handleSessionEndAPI(w, r)
@@ -2949,18 +2962,24 @@ func main() {
 	srv := &http.Server{Addr: listenAddr, Handler: handler}
 	go func() {
 		defer recoverGoroutine("shutdown handler")
-		sig := <-shutdownSig
+		// Two graceful-exit triggers: an external SIGINT/SIGTERM, or an
+		// authenticated request to the shutdown API (homepage Settings
+		// button). Name the trigger -- and for signals the parent -- so an
+		// unexplained exit can be attributed (su -> docker stop forwarded;
+		// init/orchestrator -> platform).
+		var reason string
+		select {
+		case sig := <-shutdownSig:
+			reason = fmt.Sprintf("received signal %v -- parent %s", sig, describeParentProcess())
+		case reason = <-serverShutdownRequests:
+		}
 		// Restore default disposition so a second SIGINT/SIGTERM force-
 		// terminates instead of hanging on a wedged graceful shutdown.
 		signal.Stop(shutdownSig)
 		// Propagate cancellation to the landing server and all
 		// session child contexts derived from serverCtx.
 		serverCancel()
-		// Reaching here means SIGINT/SIGTERM was delivered from outside this
-		// process (the only path to a graceful exit 0). Name the signal and
-		// log the parent so an unexplained exit can be attributed (su ->
-		// docker stop forwarded; init/orchestrator -> platform).
-		log.Printf("Shutting down server (received signal %v) -- parent %s", sig, describeParentProcess())
+		log.Printf("Shutting down server (%s)", reason)
 		// Close all sessions in parallel.  Each Session.Close routes through
 		// killSessionProcessGroup which has a SIGTERM grace period of up to
 		// 3 seconds; closing serially under sessionsMu would gate every
@@ -8583,6 +8602,27 @@ func copyFile(src, dst string) error {
 //  1. First call: if something is listening on the session's public port,
 //     returns 409 Conflict with JSON {"publicPort": 5007, "message": "..."}
 //  2. Second call with header X-Confirm-Public-Port: 5007 proceeds with ending.
+// handleServerShutdownAPI handles POST /api/server/shutdown (the homepage
+// Settings button): acknowledge, then hand the graceful-shutdown goroutine
+// the same flow a SIGTERM takes (close every session, drain HTTP, exit 0).
+// The response is written before the trigger, and srv.Shutdown waits for
+// in-flight requests, so the caller always sees the acknowledgment. Under a
+// container restart policy (compose uses unless-stopped) the exit becomes a
+// fresh restart rather than a stop.
+func handleServerShutdownAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"shutting_down"}`))
+	select {
+	case serverShutdownRequests <- fmt.Sprintf("shutdown requested via web UI from %s", r.RemoteAddr):
+	default: // a shutdown is already in flight
+	}
+}
+
 func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)

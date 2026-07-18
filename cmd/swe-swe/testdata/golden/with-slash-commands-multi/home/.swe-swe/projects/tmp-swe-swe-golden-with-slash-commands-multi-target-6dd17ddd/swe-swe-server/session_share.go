@@ -145,8 +145,9 @@ func scopedRequestAllowed(scope string, r *http.Request) bool {
 // Traefik dashboard is NOT a swe-swe-server path -- scopedVerifyAllowed denies
 // it before delegating here.)
 func scopedPathAllowed(scope, path string) bool {
-	// Never for a guest: recordings (any), session spawn/fork, and the
-	// repo/worktree management APIs (which enumerate or create other work).
+	// Never for a guest: recordings (any), session spawn/fork, the
+	// repo/worktree management APIs (which enumerate or create other work),
+	// and server shutdown.
 	switch {
 	case strings.HasPrefix(path, "/recording/"),
 		strings.HasPrefix(path, "/api/recording/"),
@@ -156,7 +157,8 @@ func scopedPathAllowed(scope, path string) bool {
 		path == "/api/worktree/check",
 		path == "/api/repos",
 		path == "/api/repo/prepare",
-		path == "/api/repo/branches":
+		path == "/api/repo/branches",
+		path == "/api/server/shutdown":
 		return false
 	}
 

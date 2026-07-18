@@ -63,6 +63,36 @@ function endSession(uuid, button) {
     });
 }
 
+// Shut down the whole server from the settings dialog. The server ends every
+// session then exits; the page goes unreachable, so on success we replace the
+// UI with a terminal notice instead of pretending anything is still live.
+(function() {
+    var btn = document.getElementById('server-shutdown-btn');
+    if (!btn) return;
+    btn.onclick = function() {
+        if (!confirm('Shut down swe-swe-server? All active sessions will end.')) {
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Shutting down...';
+        fetch('/api/server/shutdown', { method: 'POST' })
+            .then(function(resp) {
+                if (!resp.ok) {
+                    return resp.text().then(function(t) { throw new Error(t || resp.status); });
+                }
+                document.body.innerHTML =
+                    '<div style="display:flex; align-items:center; justify-content:center; height:100vh; ' +
+                    'font-family:inherit; color:var(--text-secondary); font-size:16px;">' +
+                    'swe-swe-server is shutting down.</div>';
+            })
+            .catch(function(err) {
+                btn.disabled = false;
+                btn.textContent = 'Shut down server';
+                alert('Shutdown failed: ' + err.message);
+            });
+    };
+})();
+
 function deleteRecording(uuid, button) {
     if (!confirm('Delete this recording?')) {
         return;

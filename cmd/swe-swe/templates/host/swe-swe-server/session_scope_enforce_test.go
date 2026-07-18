@@ -35,6 +35,8 @@ func TestScopedRequestAllowed(t *testing.T) {
 		{"/api/repos", false},
 		{"/api/repo/prepare", false},
 		{"/api/repo/branches", false},
+		// Server shutdown: never.
+		{"/api/server/shutdown", false},
 		// Recordings: never.
 		{"/recording/anything", false},
 		{"/recording/sess-1", false}, // even a same-name recording UUID is out

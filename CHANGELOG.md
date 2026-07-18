@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- **Shut down the server from the homepage Settings dialog**: A new Server section in the homepage Settings dialog carries a "Shut down server" button (confirm-gated) that POSTs `/api/server/shutdown` and takes the exact graceful path a SIGTERM does -- every session closed in parallel, HTTP drained, exit 0 -- with the trigger named in the shutdown log (`shutdown requested via web UI from <addr>`). Especially useful in dockerless mode, where `swe-swe up` foregrounds the server and stopping it otherwise means finding the right terminal. The endpoint sits behind the auth cookie and is denied to shared-session guests; under a container restart policy (compose uses `unless-stopped`) the exit comes back as a fresh restart instead of a stop, and the dialog says so.
+
 ### Fixes
 
 - **Agent View survives a browser-backend restart (tunnel mode)**: A `swe-swe-browser-backend` restart (chromium bump, config change, crash) used to orphan every live session's Agent View forever -- the backend's allocation table is in-memory, so the session's tunnel client reconnect-looped on `bad handshake` and the Playwright MCP got `Target page, context or browser has been closed` until the session ended. The tunnel client now classifies the failed WebSocket upgrade: a 404 from `/sessions/<id>/tunnel` means "backend up, allocation gone" (401/403/409 and network errors keep the plain retry loop) and hands off to re-allocation, which re-POSTs `/sessions` with capped backoff, retargets the running CDP reverse proxy atomically (the new allocation may land on a different slot; no listener churn, the agent's `--cdp-endpoint` keeps working), updates the VNC target, starts a fresh tunnel client, and broadcasts session status so the Browser tab recovers. Session teardown racing a re-allocation is guarded: the fresh allocation is freed if the session closed mid-flight, and `Stop()` cancels a re-allocation stuck waiting out a still-restarting backend. Direct (non-tunnel) remote mode has no reconnect loop to hook and is unchanged (see `tasks/2026-07-18-agent-view-remote-reallocation.md`).

@@ -387,6 +387,32 @@
             background: rgba(239, 68, 68, 0.1);
         }
 
+        /* Shut down server button in the settings dialog */
+        .settings-shutdown-btn {
+            display: block;
+            width: 100%;
+            padding: 10px 16px;
+            box-sizing: border-box;
+            text-align: center;
+            background: transparent;
+            color: #ef4444;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .settings-shutdown-btn:hover {
+            color: #fff;
+            background: #ef4444;
+        }
+        .settings-shutdown-btn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
         /* Loading state for action buttons (Join Session, End, etc.) */
         .btn-join.is-loading,
         .btn-end.is-loading {
@@ -1449,6 +1475,14 @@
             <div class="dialog__field">
                 <label class="dialog__label">Account</label>
                 <a class="settings-logout-btn" href="/swe-swe-auth/logout">Log out</a>
+            </div>
+            <div class="dialog__field">
+                <label class="dialog__label">Server</label>
+                <button class="settings-shutdown-btn" id="server-shutdown-btn" type="button">Shut down server</button>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px; margin-bottom: 0;">
+                    Ends all active sessions and stops swe-swe-server. Under a container
+                    restart policy the server comes back up fresh instead.
+                </p>
             </div>
         </div>
     </div>
