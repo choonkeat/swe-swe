@@ -1312,7 +1312,10 @@ func (s *Session) Close() {
 		s.PreviewProxyServer.Shutdown(shutdownCtx)
 	}
 	// Clear any preview vhost pin so a restart/resume starts unpinned.
-	s.clearVhostPin()
+	// Inline, NOT s.clearVhostPin(): we already hold s.mu here, and
+	// clearVhostPin takes it again -- a self-deadlock that parked every
+	// session end forever (see TestCloseWithVhostPinReturns).
+	s.VhostPin = nil
 	if s.AgentChatProxyServer != nil {
 		s.AgentChatProxyServer.Shutdown(shutdownCtx)
 	}
