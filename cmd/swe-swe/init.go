@@ -79,6 +79,15 @@ func writeBundledSlashCommands(destDir string, ext string) error {
 func installBundledSlashCommands(homeDir string) error {
 	mdDir := filepath.Join(homeDir, ".swe-swe", "commands", "md")
 	tomlDir := filepath.Join(homeDir, ".swe-swe", "commands", "toml")
+	// Prune before seeding: the swe-swe/ subdirs are the swe-swe-owned bundle
+	// (runtime edits are already clobbered by the overwrite below). Overwrite
+	// alone strands commands a newer bundle renamed or removed, leaving stale
+	// entries in every agent's autocomplete forever.
+	for _, ownedDir := range []string{filepath.Join(mdDir, "swe-swe"), filepath.Join(tomlDir, "swe-swe")} {
+		if err := os.RemoveAll(ownedDir); err != nil {
+			return fmt.Errorf("pruning stale bundled commands in %s: %w", ownedDir, err)
+		}
+	}
 	if err := writeBundledSlashCommands(mdDir, ".md"); err != nil {
 		return err
 	}

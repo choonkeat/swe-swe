@@ -924,6 +924,35 @@ func TestInstallBundledSlashCommandsUsesCanonicalStoreAndSymlinks(t *testing.T) 
 		filepath.Join(homeDir, ".swe-swe", "commands", "toml", "swe-swe"))
 }
 
+// The canonical store's swe-swe/ subdirs are pruned before re-seeding, so a
+// command that a newer bundle renamed or removed does not stay behind in
+// every agent's autocomplete forever.
+func TestInstallBundledSlashCommandsPrunesRemovedCommands(t *testing.T) {
+	homeDir := t.TempDir()
+	staleMd := filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe", "old-removed-command.md")
+	staleToml := filepath.Join(homeDir, ".swe-swe", "commands", "toml", "swe-swe", "old-removed-command.toml")
+	for _, p := range []string{staleMd, staleToml} {
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatalf("mkdir for stale file: %v", err)
+		}
+		if err := os.WriteFile(p, []byte("stale"), 0644); err != nil {
+			t.Fatalf("write stale file: %v", err)
+		}
+	}
+
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands: %v", err)
+	}
+
+	for _, p := range []string{staleMd, staleToml} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("stale bundled command survived re-seed: %s", p)
+		}
+	}
+	// The fresh bundle is still seeded alongside the prune.
+	assertFileExists(t, filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe", "setup.md"))
+}
+
 // A real dir holding a file that is NOT a bundled command (a user's own
 // addition) must be preserved untouched -- migrating it would clobber user
 // content.
