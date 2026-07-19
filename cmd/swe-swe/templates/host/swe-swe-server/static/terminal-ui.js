@@ -7294,24 +7294,25 @@ class TerminalUI extends HTMLElement {
         title.textContent = opts.title || 'Agent sent text';
         banner.appendChild(title);
 
-        const body = document.createElement('div');
+        // The URL text itself is the link (not a separate small Open
+        // button): the whole text block is the tap target, which matters on
+        // mobile where a button-sized target reads as "nothing happened".
+        let body;
+        if (opts.copyOnly) {
+            body = document.createElement('div');
+        } else {
+            body = document.createElement('a');
+            body.href = text;
+            body.target = '_blank';
+            body.rel = 'noopener noreferrer';
+            body.addEventListener('click', () => this._dismissLinkBanner());
+        }
         body.className = 'terminal-ui__link-banner-text';
         body.textContent = text;
         banner.appendChild(body);
 
         const actions = document.createElement('div');
         actions.className = 'terminal-ui__link-banner-actions';
-
-        if (!opts.copyOnly) {
-            const open = document.createElement('a');
-            open.className = 'terminal-ui__link-banner-open';
-            open.href = text;
-            open.target = '_blank';
-            open.rel = 'noopener noreferrer';
-            open.textContent = 'Open';
-            open.addEventListener('click', () => this._dismissLinkBanner());
-            actions.appendChild(open);
-        }
 
         const copy = document.createElement('button');
         copy.className = 'terminal-ui__link-banner-copy';

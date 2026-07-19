@@ -2666,12 +2666,21 @@ terminal-ui.embedded-in-iframe .mobile-only {
 }
 
 .terminal-ui__link-banner-text {
+    display: block;
     font-size: 12px;
     color: var(--text-primary);
     word-break: break-all;
-    max-height: 5.5em;
+    max-height: 8em;
     overflow-y: auto;
     margin-bottom: 10px;
+}
+
+/* When the text is a link (open events), the WHOLE text block is the tap
+   target -- a full-width multi-line touch area, not a small button. */
+a.terminal-ui__link-banner-text {
+    color: var(--accent-primary);
+    text-decoration: underline;
+    padding: 6px 0;
 }
 
 .terminal-ui__link-banner-actions {
@@ -2680,7 +2689,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     align-items: center;
 }
 
-.terminal-ui__link-banner-open,
 .terminal-ui__link-banner-copy {
     padding: 6px 14px;
     font-size: 13px;
@@ -2690,15 +2698,6 @@ terminal-ui.embedded-in-iframe .mobile-only {
     cursor: pointer;
     text-decoration: none;
     line-height: 1.2;
-}
-
-.terminal-ui__link-banner-open {
-    background: var(--accent-primary);
-    color: var(--bg-primary);
-    border: 1px solid var(--accent-primary);
-}
-
-.terminal-ui__link-banner-copy {
     background: transparent;
     color: var(--text-primary);
     border: 1px solid var(--border-primary);
