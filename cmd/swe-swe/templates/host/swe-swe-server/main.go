@@ -3112,7 +3112,7 @@ var sweHomeDir = "/home/app/.swe-swe"
 var excludeFromSymlink = []string{".git"}
 
 // dumpContainerTemplates writes all embedded container templates to destDir,
-// always overwriting existing files. Used by the update-swe-swe slash command
+// always overwriting existing files. Used by the update slash command
 // to extract latest templates for three-way merge.
 func dumpContainerTemplates(destDir string) error {
 	return fs.WalkDir(containerTemplatesFS, "container-templates", func(path string, d fs.DirEntry, err error) error {

@@ -149,6 +149,6 @@ If the user adds or changes vars, mention that **already-running sessions need a
 ## Notes
 
 - The pointer `## swe-swe -- See .swe-swe/docs/AGENTS.md` is upserted automatically by `swe-swe init` into CLAUDE.md / AGENTS.md; this skill no longer touches that.
-- For updating `.swe-swe/docs/AGENTS.md` itself, use `swe-swe:update-swe-swe`.
+- For updating `.swe-swe/docs/AGENTS.md` itself, use `swe-swe:update`.
 
 Note: If your agent doesn't support slash commands, use `@swe-swe/setup` instead.

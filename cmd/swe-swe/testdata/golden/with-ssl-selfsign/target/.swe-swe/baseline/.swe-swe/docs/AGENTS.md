@@ -7,7 +7,7 @@ Slash-command agents (Claude, Codex, Gemini, OpenCode, Pi) get these as `/swe-sw
 | Command | Description |
 |---------|-------------|
 | `debug-preview-page` | Debug web apps using the App Preview debug channel |
-| `update-swe-swe` | Update workspace swe-swe files after a version upgrade |
+| `update` | Update workspace swe-swe files after a version upgrade |
 
 Agents without slash-command support (Goose, Aider) do not see these commands.
 

@@ -14,7 +14,7 @@ A naive replacement would destroy user customizations. Asking users to manually 
 
 ## Decision
 
-The `/swe-swe:update-swe-swe` slash command uses three-way merge with baseline tracking:
+The `/swe-swe:update` slash command uses three-way merge with baseline tracking:
 
 ### Three Versions
 
