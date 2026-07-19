@@ -21,15 +21,27 @@ All other commands are passed directly to `docker compose` with the project's co
 - `swe-swe exec <service> <cmd>` — Execute command in container
 - Any other docker compose command...
 
+**Dockerless projects are the exception.** If the project was initialized with
+`swe-swe init --dockerless` there is no compose file, so nothing is passed to
+`docker compose`. Instead:
+- `swe-swe up [--open] [server flags...]` -- runs `.swe-swe/bin/swe-swe-server`
+  directly on the host, in the **foreground**. Ctrl-C stops it. `--open` opens a
+  browser once the server accepts connections; every other argument is forwarded
+  verbatim to `swe-swe-server`.
+- `swe-swe down` -- prints a reminder that the server is a foreground process.
+- Everything else (`build`, `ps`, `logs`, `exec`, ...) exits with an error: there
+  are no containers to act on.
+
+See [dockerless.md](dockerless.md) for the full dockerless setup.
+
 ## Service Targeting
 
 Pass-through commands `up`, `down`, and `build` support targeting specific services:
 
 ```bash
 # Target specific services
-swe-swe up chrome                    # Start only chrome (and dependencies)
-swe-swe down chrome vscode           # Stop chrome and vscode
-swe-swe build chrome                 # Rebuild only chrome image
+swe-swe up swe-swe                   # Start only the swe-swe container
+swe-swe build traefik                # Rebuild only the traefik image (SSL modes)
 
 # No service specified = all services (default behavior)
 swe-swe up                           # Start all services
@@ -38,16 +50,16 @@ swe-swe down                         # Stop all services
 
 ### Available Services
 
-Services are defined in docker-compose.yml:
+Services are defined in docker-compose.yml. The generated stack is deliberately
+small -- the browser, VS Code (code-server), authentication, and path routing all
+live **inside** the `swe-swe` container rather than as separate services:
 
-| Service | Description |
-|---------|-------------|
-| `swe-swe` | AI terminal container (runs swe-swe-server) |
-| `chrome` | Chrome browser with CDP screencast for browser automation |
-| `code-server` | VSCode IDE (code-server) |
-| `vscode-proxy` | Nginx proxy for VSCode path routing |
-| `traefik` | Reverse proxy (path-based routing) |
-| `auth` | ForwardAuth service for authentication |
+| Service | Description | When present |
+|---------|-------------|--------------|
+| `swe-swe` | The whole environment: swe-swe-server, agents, per-session Chromium, code-server, embedded auth | always |
+| `traefik` | TLS-terminating reverse proxy | only with `--ssl=selfsign*` / `--ssl=letsencrypt*` |
+
+Neither is present in a `--dockerless` project, which has no compose file at all.
 
 ### Pass-through Arguments
 
@@ -56,7 +68,7 @@ Use `--` to pass additional arguments directly to docker-compose:
 ```bash
 swe-swe down -- --remove-orphans     # Remove orphaned containers
 swe-swe up -- -d                     # Run in detached mode
-swe-swe up chrome -- --build         # Build before starting
+swe-swe up swe-swe -- --build        # Build before starting
 ```
 
 ## Project Directory Structure
@@ -69,9 +81,7 @@ $HOME/.swe-swe/projects/{sanitized-path}/  # All swe-swe metadata and config
 │   ├── go.mod, go.sum
 │   ├── main.go
 │   └── static/
-├── auth/                        # ForwardAuth service source code
-│   ├── go.mod, go.sum
-│   └── main.go
+├── bin/                         # Prebuilt helper binaries staged for the image
 ├── home/                        # Persistent home directory for apps
 ├── certs/                       # Enterprise certificates (if configured)
 ├── Dockerfile                   # Docker image definition (multi-stage build)
@@ -98,16 +108,16 @@ $HOME/.swe-swe/tls/              # Shared TLS certificates (if --ssl=selfsign)
 **Purpose:** Initialize a new swe-swe project at PATH (defaults to current directory).
 
 **What it does:**
-1. Creates metadata directory structure in `$HOME/.swe-swe/projects/{sanitized-path}/` (swe-swe-server/, auth/, home/, certs/)
+1. Creates metadata directory structure in `$HOME/.swe-swe/projects/{sanitized-path}/` (swe-swe-server/, home/, certs/, bin/)
 2. Writes `.path` file with original project path
 3. Processes Dockerfile template based on selected agents (conditional sections)
 4. Extracts Docker templates (Dockerfile, docker-compose.yml, entrypoint.sh, traefik-dynamic.yml)
-5. Extracts swe-swe-server and auth service source code from embedded assets
+5. Extracts swe-swe-server source code from embedded assets (authentication is compiled into swe-swe-server; there is no standalone auth service)
 6. Handles enterprise certificates if `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, or `NODE_EXTRA_CA_CERTS_BUNDLE` environment variables are set
 
 **Options:** See [configuration.md](configuration.md) for the full list of `--flags` and environment variables.
 
-**Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`
+**Available Agents:** `claude`, `gemini`, `codex`, `aider`, `goose`, `opencode`, `pi`
 
 **Examples:**
 ```bash
@@ -128,6 +138,9 @@ swe-swe init --apt-get-install="vim htop tmux"
 
 # Initialize current directory with Docker access
 swe-swe init --with-docker
+
+# Initialize a host-native project with no Docker at all (Linux host)
+swe-swe init --dockerless
 
 # Initialize current directory with custom slash commands
 swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
@@ -268,8 +281,7 @@ All commands other than `init`, `list`, and `proxy` are passed directly to `dock
 ```bash
 cd ~/my-project
 swe-swe up                           # Start all services
-swe-swe up chrome                    # Start only chrome (and dependencies)
-swe-swe up chrome vscode             # Start chrome and vscode
+swe-swe up swe-swe                   # Start only the swe-swe container
 swe-swe up -- -d                     # Start detached (background)
 
 # Ctrl+C to stop (signals sent directly to docker-compose)
@@ -289,8 +301,7 @@ swe-swe up -- -d                     # Start detached (background)
 **Examples:**
 ```bash
 swe-swe down                         # Stop all containers
-swe-swe down chrome                  # Stop only chrome
-swe-swe down chrome vscode           # Stop chrome and vscode
+swe-swe down swe-swe                 # Stop only the swe-swe container
 swe-swe down -- --remove-orphans     # Remove orphaned containers
 
 # Running again later with 'swe-swe up' restarts with the same environment
@@ -303,7 +314,7 @@ swe-swe down -- --remove-orphans     # Remove orphaned containers
 **What it does:**
 1. Validates metadata directory exists in `$HOME/.swe-swe/projects/{sanitized-path}/`
 2. Runs `docker-compose build --no-cache` to rebuild images from scratch (or specific services if specified)
-3. Recompiles swe-swe-server and auth service from source (they are built at docker-compose time)
+3. Recompiles swe-swe-server from source (it is built at docker-compose time)
 
 **When to use:**
 - When Dockerfile changes
@@ -314,8 +325,7 @@ swe-swe down -- --remove-orphans     # Remove orphaned containers
 **Examples:**
 ```bash
 swe-swe build                        # Rebuild all images
-swe-swe build chrome                 # Rebuild only chrome image
-swe-swe build chrome swe-swe         # Rebuild chrome and swe-swe images
+swe-swe build swe-swe                # Rebuild only the swe-swe image
 swe-swe up                           # Start with fresh images
 ```
 
@@ -348,7 +358,7 @@ This means:
 - The server source lives at `$HOME/.swe-swe/projects/{sanitized-path}/swe-swe-server/`
 - The server is compiled fresh when you run `swe-swe build` or first `docker-compose up`
 - The binary is baked into the Docker image, not volume-mounted
-- Same approach is used for the auth service
+- The same source-built-at-compose-time approach applies to everything in the image
 
 ### Why This Design?
 
@@ -367,12 +377,11 @@ This means:
 ```
 swe-swe CLI
     │
-    ├─ Embedded assets: swe-swe-server/*.go, auth/*.go (source code)
+    ├─ Embedded assets: swe-swe-server/*.go (source code) + prebuilt helper binaries
     │
     └─ `swe-swe init`
          │
          ├─ Extract source code → .swe-swe/swe-swe-server/
-         ├─ Extract source code → .swe-swe/auth/
          └─ Extract templates (Dockerfile, docker-compose.yml)
 
 docker-compose build / up
@@ -401,7 +410,6 @@ docker-compose build / up
 1. Create .swe-swe/ directories
 2. Extract templates (Dockerfile, docker-compose.yml)
 3. Extract swe-swe-server source → .swe-swe/swe-swe-server/
-4. Extract auth source → .swe-swe/auth/
 ```
 
 ### First Run: `swe-swe up`
@@ -409,7 +417,7 @@ docker-compose build / up
 1. Run docker-compose up
 2. Docker builds image (multi-stage):
    a. Stage 1: Compile swe-swe-server from source
-   b. Stage 2: Build auth service from source
+   b. Stage 2: Build the remaining in-image helpers from source
    c. Final: Copy binaries into runtime image
 3. Container starts with compiled binaries
 ```
@@ -462,8 +470,8 @@ If set, certificates are copied to `.swe-swe/certs/` and mounted in the containe
 ### Q: I modified the Dockerfile but `swe-swe up` didn't rebuild it
 **A:** Use `swe-swe build` to force a fresh rebuild, then `swe-swe up`.
 
-### Q: I want to rebuild only the chrome container
-**A:** Use `swe-swe build chrome` then `swe-swe up chrome`.
+### Q: I want to rebuild only one container
+**A:** Use `swe-swe build <service>` then `swe-swe up <service>` (e.g. `swe-swe build swe-swe`).
 
 ### Q: What if containers don't start?
 **A:** Check Docker logs:
@@ -475,7 +483,7 @@ docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml lo
 **A:** Run `swe-swe list` to see all projects and their metadata locations. Metadata is stored in `$HOME/.swe-swe/projects/` with a sanitized directory name based on your project path.
 
 ### Q: What if I specify an invalid service name?
-**A:** docker-compose will return an error like "no such service: foo". Service names must match those defined in docker-compose.yml (swe-swe, vscode, chrome, traefik, auth).
+**A:** docker-compose will return an error like "no such service: foo". Service names must match those defined in docker-compose.yml (`swe-swe`, plus `traefik` in SSL modes).
 
 ## Related Files
 
@@ -483,4 +491,4 @@ docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml lo
 - `cmd/swe-swe/templates/host/docker-compose.yml` — Docker Compose configuration
 - `cmd/swe-swe/templates/host/Dockerfile` — Docker image definition (multi-stage build)
 - `cmd/swe-swe/templates/host/swe-swe-server/` — Server source code (embedded)
-- `cmd/swe-swe/templates/host/auth/` — Auth service source code (embedded)
+- `cmd/swe-swe/dockerless.go` -- Host-native (`--dockerless`) init and `up`/`down` handling

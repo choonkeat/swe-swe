@@ -9,12 +9,20 @@ Init Options:
   --project-directory PATH               Project directory (defaults to current directory)
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
-  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose,opencode (default: all)
+  --ask [DIR]                            Interactive init; optional value overrides the metadata directory
+  --metadata-dir DIR                     Override metadata directory
+                                         (default: auto-derived in ~/.swe-swe/projects/)
+  --dockerless                           Initialize a host-native setup with no Docker: dumps the embedded
+                                         binaries and wiring into .swe-swe (Linux, or macOS experimentally)
+  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose,opencode,pi
+                                         (default: all)
   --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
   --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands for Claude/Codex/OpenCode
+                                         Format: [alias@]<git-url> (space-separated)
+  --with-skills REPOS                    Git repos to clone as agent skills
                                          Format: [alias@]<git-url> (space-separated)
   --ssl MODE                             SSL mode: 'no' (default), 'selfsign', 'selfsign@<host>',
                                          'letsencrypt@<domain>', or 'letsencrypt-staging@<domain>'
@@ -23,6 +31,8 @@ Init Options:
                                          (e.g., .gitconfig,.ssh/config)
   --preview-ports RANGE                  App preview port range (default: 3000-3019)
   --public-ports RANGE                   Public (no-auth) port range (default: 5000-5019)
+  --proxy-port-offset OFFSET             Offset added to app ports for per-session proxy ports
+                                         (e.g., 3000 -> 23000) (default: 20000)
   --repos-dir DIR                        Host directory to mount at /repos for external repo clones
                                          (default: .swe-swe/repos in project)
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
@@ -30,6 +40,38 @@ Init Options:
   --status-bar-font-size SIZE            Status bar font size in pixels (default: 12)
   --status-bar-font-family FONT          Status bar font family (default: system sans-serif)
 ```
+
+### Tunnel flags
+
+Only meaningful together with `--tunnel-server-url`. See [Tunnel mode explained](tunnel-explained.md).
+
+```
+  --tunnel-server-url URL                Tunnel server URL (e.g. https://tunnel.example.com). The generated
+                                         compose drops Traefik / Let's Encrypt / per-port entrypoints;
+                                         swe-swe-server binds 127.0.0.1 only and supervises the
+                                         swe-swe-tunnel client subprocess for inbound traffic
+  --tunnel-unique LABEL                  Bare unique label for the tunnel registration; public hostname
+                                         becomes <label>-tunnel.<server-suffix>. Baked into the compose as
+                                         the default for SWE_TUNNEL_UNIQUE, which still overrides at runtime
+  --tunnel-client-cert PATH              PEM-encoded mTLS client certificate to present to the tunnel server
+  --tunnel-local-ports                   Also publish SWE_PORT and the preview / agent-chat / vnc / public
+                                         port ranges on the host's 127.0.0.1, so the machine running
+                                         `swe-swe up` can reach the containers directly. Host-loopback only
+```
+
+### Dockerless
+
+`swe-swe init --dockerless` initializes a host-native project: no containers, no
+compose. The embedded `swe-swe-server` and helper binaries are written into
+`.swe-swe/bin`, and `swe-swe up` then runs the server in the foreground on the
+host (Ctrl-C stops it). Linux is the supported host; a macOS init works but is
+experimental (the per-session credential broker and PTY recording are not yet
+ported), so the proven Mac path is a Linux VM. Windows is refused. See
+[dockerless.md](dockerless.md) and [dockerless-mac-vm.md](dockerless-mac-vm.md).
+
+Flags that only describe the container image or the compose topology
+(`--with-docker`, `--apt-get-install`, `--npm-install`, `--ssl`) do not apply in
+dockerless mode; the tunnel flags do.
 
 ## Environment Variables
 

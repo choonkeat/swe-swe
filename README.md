@@ -18,6 +18,8 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [L
 - **SSH commit signing**: sign commits with a per-session key that never touches disk.
 - **Skills from any git repo**: `swe-swe init --with-skills <alias>@<url>` clones external skill repos and surfaces them to the agent.
 - **Built-in panes**: live preview, a read-only Files browser, VS Code (code-server), and agent chat.
+- **Multi-service apps without Docker**: declare your services in a `Procfile` and `swe-run` supervises them, each reachable in App Preview. See [Multi-service apps](docs/multi-service.md).
+- **Dockerless mode**: `swe-swe init --dockerless` runs everything host-native from prebuilt binaries -- no Docker required. See [dockerless](docs/dockerless.md).
 
 ## Quick Start
 
@@ -47,8 +49,15 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [L
 
 ### Requirements
 
-- Docker & Docker Compose installed
+- Docker & Docker Compose installed -- or none at all, if you use [dockerless mode](docs/dockerless.md)
 - Terminal access (works on macOS, Linux, Windows with WSL)
+
+### Without Docker
+
+On a Linux host you can skip containers entirely: `swe-swe init --dockerless`
+writes the embedded server and helper binaries into `.swe-swe/`, and `swe-swe up`
+runs them directly on the host in the foreground. On macOS, run it inside a Linux
+VM -- see [dockerless on a Mac](docs/dockerless-mac-vm.md).
 
 ## Commands
 
@@ -71,10 +80,14 @@ swe-swe ps / logs / exec ...    # Any docker compose command
 
 Use `--project-directory` to specify which project (defaults to current directory). The port defaults to `1977` and can be customized via `SWE_PORT`.
 
+In a project initialized with `--dockerless` there is no compose file: `swe-swe up` runs the server on the host in the foreground (Ctrl-C to stop), and the compose-only commands do not apply.
+
 ## Documentation
 
 - [Configuration Reference](docs/configuration.md) - all init flags, environment variables, and config files
 - [CLI Commands and Build Architecture](docs/cli-commands-and-binary-management.md) - full command reference, troubleshooting, build system
+- [Dockerless](docs/dockerless.md) - run host-native with no Docker, plus the [Mac + Linux VM runbook](docs/dockerless-mac-vm.md)
+- [Multi-service apps](docs/multi-service.md) - Procfile + `swe-run` + App Preview
 - [Browser Automation](docs/browser-automation.md) - Chrome CDP and MCP Playwright
 - [WebSocket Protocol](docs/websocket-protocol.md) - terminal communication protocol
 - **Tunnel mode** - reach a container from the public internet: [explained](docs/tunnel-explained.md), [laptop](docs/tunnel-laptop.md), [Fly.io](docs/tunnel-fly.md), [PaaS](docs/tunnel-paas.md)

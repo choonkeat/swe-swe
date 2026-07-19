@@ -1,26 +1,31 @@
 # swe-swe, dockerless
 
-> Press-release-driven doc. This describes the **end developer
-> experience** of the dockerless distribution proposed in
-> `tasks/2026-06-27-dockerless-single-binary.md`. It is written as if
-> shipped. Not all of it works yet.
+> Shipped. Design notes and the remaining phases live in
+> `tasks/2026-06-27-dockerless-single-binary.md`; the Mac-VM path is
+> verified end-to-end (see `dockerless-mac-vm.md`). swe-swe running
+> natively on macOS with no VM is still pending (Phase 6).
 
 ## TL;DR
 
-swe-swe now runs on any Linux host with no Docker daemon, no compose
+swe-swe runs on any Linux host with no Docker daemon, no compose
 stack, no Go toolchain. If you already run the `claude` CLI on your
 machine, you already have almost everything swe-swe needs.
 
 ```sh
 npm i -g swe-swe          # or run ad hoc: npx -y swe-swe <cmd>
-swe-swe init --dockerless # writes config into ./.swe-swe, nothing else
+swe-swe init --dockerless # writes config + binaries into ./.swe-swe, nothing else
 swe-swe up                # starts swe-swe on http://localhost:1977
 swe-swe up --open         # ...and opens your browser
 ```
 
 `swe-swe up` notices this is a dockerless init and runs everything
 directly -- same command you would use for a Docker setup, it just does
-the right thing. Stop it with `swe-swe down`.
+the right thing. It runs in the **foreground**: stop it with Ctrl-C.
+(`swe-swe down` only prints that reminder, and the other compose
+pass-through commands -- `build`, `ps`, `logs`, `exec` -- are rejected.)
+
+Any extra arguments to `swe-swe up` are passed straight through to
+`swe-swe-server`, which is how the `--agent-view` options below reach it.
 
 On a Mac? See `dockerless-mac-vm.md` for the Linux-VM + browser-backend
 -container recipe.
@@ -76,7 +81,8 @@ If your host has no display stack (a slim VM, a laptop you would rather
 keep clean), run the browser backend somewhere else and point swe-swe at
 it. The other tabs stay fully local; only the browser is offloaded.
 
-On the browser box:
+On the browser box (build the image first with `make browser-backend-image`;
+see `dockerless-mac-vm.md` for the full invocation):
 
 ```sh
 docker run -p 9333:9333 swe-swe/browser-backend
@@ -96,9 +102,9 @@ swe-swe up --agent-view=https://browser-box.internal:9333
 | `<url>`              | offload to a remote browser backend at `<url>` |
 | `off`               | disable the Agent View pane                     |
 
-The choice is remembered, so later `swe-swe up` reuses it. If the backend
-is unreachable, Agent View shows "unavailable" and the other tabs are
-unaffected.
+`SWE_AGENT_VIEW` sets the same thing via the environment, so you can export
+it once instead of repeating the flag. If the backend is unreachable, Agent
+View shows "unavailable" and the other tabs are unaffected.
 
 #### Tunnel variant -- your box can stay fully firewalled
 

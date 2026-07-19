@@ -46,10 +46,14 @@ Native Commands:
   list                                   List all initialized swe-swe projects (auto-prunes stale ones)
   proxy <command>                        Proxy host commands to containers with real-time streaming
 
-Docker Compose Pass-through:
+Pass-through Commands:
   All other commands (up, down, build, ps, logs, exec, etc.) are passed directly
   to docker compose with the project's docker-compose.yml. Use --project-directory
   to specify which project, or run from the project directory.
+
+  In a project initialized with --dockerless there is no docker compose: 'up'
+  runs swe-swe-server directly on the host in the foreground (Ctrl-C to stop),
+  and compose-only commands (build, ps, logs, exec, ...) do not apply.
 
 Global Option (for pass-through commands):
   --project-directory PATH               Project directory (defaults to current directory)
@@ -58,30 +62,53 @@ Init Options:
   --project-directory PATH               Project directory (defaults to current directory)
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
-  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose,opencode (default: all)
+  --ask [DIR]                            Interactive init; optional value overrides the metadata directory
+  --metadata-dir DIR                     Override metadata directory (default: ~/.swe-swe/projects/<derived>)
+  --dockerless                           Host-native setup with no Docker: dumps the embedded binaries
+                                         and wiring into .swe-swe. Linux, or macOS experimentally.
+                                         See docs/dockerless.md
+  --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose,opencode,pi
+                                         (default: all)
   --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
   --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands for Claude/Codex/OpenCode
                                          Format: [alias@]<git-url> (space-separated)
-  --ssl MODE                             SSL mode: 'no' (default), 'selfsign', or 'selfsign@<host>'
+  --with-skills REPOS                    Git repos to clone as agent skills
+                                         Format: [alias@]<git-url> (space-separated)
+  --ssl MODE                             SSL mode: 'no' (default), 'selfsign', 'selfsign@<host>',
+                                         'letsencrypt@<domain>', or 'letsencrypt-staging@<domain>'
                                          Use selfsign@<ip-or-hostname> for remote access
+  --email EMAIL                          Contact email for Let's Encrypt expiry notices (required with letsencrypt)
   --copy-home-paths PATHS                Comma-separated paths relative to $HOME to copy into container
                                          (e.g., .gitconfig,.ssh/config)
   --preview-ports RANGE                  App preview port range (default: 3000-3019)
+  --public-ports RANGE                   Public (no-auth) port range (default: 5000-5019)
   --proxy-port-offset OFFSET             Offset for per-session proxy ports (default: 20000)
                                          e.g., app port 3000 -> proxy port 23000
+  --repos-dir DIR                        Host directory mounted at /repos for external repo clones
+                                         (default: .swe-swe/repos in the project)
   --terminal-font-size SIZE              Terminal font size in pixels (default: 14)
   --terminal-font-family FONT            Terminal font family (default: Menlo, Monaco, "Courier New", monospace)
   --status-bar-font-size SIZE            Status bar font size in pixels (default: 12)
   --status-bar-font-family FONT          Status bar font family (default: system sans-serif)
 
+Tunnel Options (see docs/tunnel-explained.md):
+  --tunnel-server-url URL                Tunnel server to dial out to (e.g. https://tunnel.example.com).
+                                         Drops Traefik / Let's Encrypt; the server binds 127.0.0.1 only
+  --tunnel-unique LABEL                  Bare unique label for the registration; public hostname becomes
+                                         <label>-tunnel.<server-suffix>. Overridable at runtime via
+                                         SWE_TUNNEL_UNIQUE
+  --tunnel-client-cert PATH              PEM mTLS client certificate to present to the tunnel server
+  --tunnel-local-ports                   Also publish SWE_PORT and the port ranges on the host's 127.0.0.1,
+                                         so the 'swe-swe up' machine can reach the containers directly
+
 Available Agents:
-  claude, gemini, codex, aider, goose, opencode
+  claude, gemini, codex, aider, goose, opencode, pi
 
 Services (defined in docker-compose.yml after init):
-  swe-swe, traefik
+  swe-swe (always), traefik (only in --ssl modes)
 
 Examples:
   swe-swe init                                   Initialize current directory with all agents
@@ -91,6 +118,9 @@ Examples:
   swe-swe init --apt-get-install="vim htop"      Initialize current directory with custom apt packages
   swe-swe init --npm-install="typescript tsx"    Initialize current directory with custom npm packages
   swe-swe init --with-docker                     Initialize current directory with Docker socket access
+  swe-swe init --dockerless                      Initialize a host-native setup with no Docker
+  swe-swe init --with-skills=ck@https://github.com/choonkeat/skills.git
+                                                 Initialize current directory with external skills
   swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
                                                  Initialize current directory with slash commands
   swe-swe init --ssl=selfsign                    Initialize with self-signed HTTPS certificate
@@ -114,7 +144,8 @@ Environment Variables:
   SSL_CERT_FILE                          SSL certificate file path (auto-copied during init)
   NODE_EXTRA_CA_CERTS_BUNDLE             CA certificate bundle path (auto-copied during init)
 
-Requires: Docker with Compose plugin (docker compose) or standalone docker-compose
+Requires: Docker with Compose plugin (docker compose) or standalone docker-compose.
+          Not needed for projects initialized with --dockerless.
 `)
 }
 
