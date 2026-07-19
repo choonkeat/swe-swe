@@ -280,6 +280,7 @@ type InitConfig struct {
 // saveInitConfig writes the init configuration to init.json
 func saveInitConfig(sweDir string, config InitConfig) error {
 	config.CLIVersion = Version
+	normalizeRuntimeForSave(&config)
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal init config: %w", err)
@@ -302,7 +303,37 @@ func loadInitConfig(sweDir string) (InitConfig, error) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return InitConfig{}, fmt.Errorf("failed to parse init config: %w", err)
 	}
+	normalizeRuntimeForLoad(&config, isDockerlessProject(sweDir))
 	return config, nil
+}
+
+// normalizeRuntimeForSave makes `runtime` the single input to what gets
+// written: the legacy `withDocker` key is derived from it, never an
+// independent value, so the two cannot drift apart in a file. Configs built
+// before Runtime existed (or by a caller that only set the booleans) get a
+// Runtime derived from them first.
+//
+// Dockerless stays json:"-" -- `runtime: "host"` is its representation in the
+// file, and the .swe-swe mode marker remains the single thing `swe-swe up`
+// dispatches on.
+func normalizeRuntimeForSave(config *InitConfig) {
+	if config.Runtime == "" {
+		config.Runtime = runtimeFromLegacy(config.WithDocker, config.Dockerless)
+	}
+	config.WithDocker = runtimeWithDocker(config.Runtime)
+}
+
+// normalizeRuntimeForLoad backfills Runtime for an init.json written before the
+// field existed, so no caller has to special-case the empty string. Host mode
+// is not recoverable from the json alone (Dockerless was never persisted), so
+// the on-disk mode marker supplies it; that path only ever runs for pre-runtime
+// files and disappears on the next init.
+func normalizeRuntimeForLoad(config *InitConfig, dockerlessMarker bool) {
+	if config.Runtime == "" {
+		config.Runtime = runtimeFromLegacy(config.WithDocker, dockerlessMarker)
+	}
+	config.WithDocker = runtimeWithDocker(config.Runtime)
+	config.Dockerless = runtimeDockerless(config.Runtime)
 }
 
 // deriveAliasFromURL extracts owner/repo from a git URL
@@ -904,17 +935,12 @@ func handleInit() {
 		}
 		// Restore the runtime mode as a unit. Deriving both legacy booleans
 		// from it is what makes reuse round-trip a dockerless project: the
-		// Dockerless field was never persisted to init.json, so before
-		// --runtime existed a reuse silently re-inited it as a container.
+		// Dockerless field is not persisted to init.json, so before --runtime
+		// existed a reuse silently re-inited it as a container. loadInitConfig
+		// guarantees savedConfig.Runtime is populated even for older files.
 		if !explicitFlags["runtime"] && !explicitFlags["with-docker"] && !explicitFlags["dockerless"] {
-			savedRuntime := savedConfig.Runtime
-			if savedRuntime == "" {
-				// init.json predates --runtime: fall back to the legacy
-				// field plus the on-disk mode marker.
-				savedRuntime = runtimeFromLegacy(savedConfig.WithDocker, isDockerlessProject(sweDir))
-			}
-			*withDocker = runtimeWithDocker(savedRuntime)
-			*dockerless = runtimeDockerless(savedRuntime)
+			*withDocker = runtimeWithDocker(savedConfig.Runtime)
+			*dockerless = runtimeDockerless(savedConfig.Runtime)
 		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
