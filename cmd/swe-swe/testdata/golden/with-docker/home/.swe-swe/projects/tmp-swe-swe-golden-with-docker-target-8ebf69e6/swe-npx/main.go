@@ -15,9 +15,15 @@
 // sites it replaces. Everything after the package token is passed verbatim
 // to the resolved binary via exec (no wrapper process left behind).
 //
+// Cache entries are self-verifying: the sha256 of the extracted binary is
+// recorded alongside it at download time and re-checked before every exec,
+// so a cache entry tampered with after the fact is discarded rather than
+// run.
+//
 // Environment:
 //
-//	SWE_NPX_REGISTRY    registry base URL (default https://registry.npmjs.org)
+//	SWE_NPX_REGISTRY    registry base URL (default https://registry.npmjs.org);
+//	                    must be https, except for loopback hosts
 //	SWE_NPX_CACHE_DIR   cache dir (default ~/.swe-swe/npx-cache)
 //	SWE_NPX_LATEST_TTL  how long a dist-tags "latest" answer is trusted
 //	                    before re-checking the registry (default 15m)
@@ -28,13 +34,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,14 +55,55 @@ import (
 	"time"
 )
 
+// Resource caps. A hostile or broken registry must not be able to exhaust
+// memory or disk: metadata and the compressed tarball are read through a
+// LimitReader, and extraction stops once the unpacked total is reached.
+const (
+	maxMetadataBytes = 8 << 20   // packument / version doc
+	maxTarballBytes  = 128 << 20 // compressed tarball
+	maxUnpackedBytes = 512 << 20 // total bytes written during extraction
+)
+
+// digestFileName holds "sha256-<hex>" of bin/<name> inside a cache entry.
+const digestFileName = ".swe-npx-digest"
+
+// errNotCached means the cache has no entry at all (cold miss), as opposed
+// to an entry that exists but failed verification.
+var errNotCached = errors.New("not cached")
+
+// securityError marks failures that must never be papered over by falling
+// back to a cached copy: integrity mismatches, tarball shape violations,
+// and blown size caps.
+type securityError struct{ err error }
+
+func (e *securityError) Error() string { return e.err.Error() }
+func (e *securityError) Unwrap() error { return e.err }
+
+func secErrf(format string, args ...any) error {
+	return &securityError{err: fmt.Errorf(format, args...)}
+}
+
 type options struct {
 	registry string
 	cacheDir string
 	ttl      time.Duration
 	goos     string
 	goarch   string
-	client   *http.Client
+	// client fetches registry metadata (short timeout).
+	client *http.Client
+	// dlClient fetches tarballs (long timeout); falls back to client.
+	dlClient *http.Client
 	stderr   io.Writer
+}
+
+// downloadClient is the long-timeout client for tarball bodies. Metadata and
+// payload deliberately do not share a deadline: a 5s budget that is right for
+// a packument will abort a multi-megabyte binary on a slow link.
+func (o options) downloadClient() *http.Client {
+	if o.dlClient != nil {
+		return o.dlClient
+	}
+	return o.client
 }
 
 // execFn is syscall.Exec behind a var so tests can stub it.
@@ -183,6 +234,19 @@ func cachedVersions(cacheDir, platformPkg string) []string {
 	return versions
 }
 
+// newestTrustedCached returns the newest cached version whose recorded digest
+// still matches the binary on disk. Untrusted entries are skipped silently --
+// they are never a candidate for offline fallback.
+func newestTrustedCached(opts options, platformPkg, binName string) (string, bool) {
+	for _, v := range cachedVersions(opts.cacheDir, platformPkg) {
+		dir := cacheVersionDir(opts.cacheDir, platformPkg, v)
+		if err := verifyCacheEntry(dir, binName); err == nil {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 // versionLess reports a < b, comparing dot-separated numeric segments.
 func versionLess(a, b string) bool {
 	as := strings.Split(a, ".")
@@ -203,11 +267,77 @@ func versionLess(a, b string) bool {
 	return len(as) < len(bs)
 }
 
+// fileSHA256 hashes a file, streaming (the binary can be large).
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// writeCacheDigest records the sha256 of the extracted binary inside the
+// (still temporary) cache entry, so a later exec can prove the bytes are the
+// ones whose tarball integrity we verified.
+func writeCacheDigest(dir, binName string) error {
+	sum, err := fileSHA256(filepath.Join(dir, "bin", binName))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, digestFileName), []byte("sha256-"+sum+"\n"), 0644)
+}
+
+// verifyCacheEntry re-checks a cache entry before it is trusted for exec:
+// the binary must exist, be a plain non-group/world-writable file, and hash
+// to the digest recorded at download time. Returns errNotCached when there is
+// nothing there at all.
+func verifyCacheEntry(dir, binName string) error {
+	binPath := filepath.Join(dir, "bin", binName)
+	info, err := os.Stat(binPath)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errNotCached, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("cached %s is not a regular file", binPath)
+	}
+	if info.Mode().Perm()&0022 != 0 {
+		return fmt.Errorf("cached %s is group/world-writable (%v)", binPath, info.Mode().Perm())
+	}
+	recorded, err := os.ReadFile(filepath.Join(dir, digestFileName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no recorded digest for %s", binPath)
+		}
+		return err
+	}
+	want, ok := strings.CutPrefix(strings.TrimSpace(string(recorded)), "sha256-")
+	if !ok || want == "" {
+		return fmt.Errorf("unreadable digest record for %s", binPath)
+	}
+	got, err := fileSHA256(binPath)
+	if err != nil {
+		return err
+	}
+	if !constantTimeEqualHex(got, want) {
+		return fmt.Errorf("cached %s does not match its recorded digest", binPath)
+	}
+	return nil
+}
+
+func constantTimeEqualHex(a, b string) bool {
+	return hashEqual([]byte(a), []byte(b))
+}
+
 // lookupLatest returns the dist-tags.latest version for platformPkg,
 // memoized in the cache dir for opts.ttl. Within the TTL no network request
-// is made. On registry failure it falls back to the newest cached version
-// with a stderr note; with no cache either, it returns an error.
-func lookupLatest(opts options, platformPkg string) (string, error) {
+// is made. On registry failure it falls back to the newest verified cached
+// version with a stderr note; with no such cache, it returns an error.
+func lookupLatest(opts options, platformPkg, binName string) (string, error) {
 	memo := memoPath(opts.cacheDir, platformPkg)
 	if info, err := os.Stat(memo); err == nil && opts.ttl > 0 && time.Since(info.ModTime()) < opts.ttl {
 		if data, err := os.ReadFile(memo); err == nil {
@@ -220,25 +350,25 @@ func lookupLatest(opts options, platformPkg string) (string, error) {
 	url := opts.registry + "/" + escapePackage(platformPkg)
 	resp, err := opts.client.Get(url)
 	if err != nil {
-		if fallback := cachedVersions(opts.cacheDir, platformPkg); len(fallback) > 0 {
-			fmt.Fprintf(opts.stderr, "swe-npx: registry unreachable (%v); using cached %s@%s\n", err, platformPkg, fallback[0])
-			return fallback[0], nil
+		if v, ok := newestTrustedCached(opts, platformPkg, binName); ok {
+			fmt.Fprintf(opts.stderr, "swe-npx: registry unreachable (%v); using cached %s@%s\n", err, platformPkg, v)
+			return v, nil
 		}
-		return "", fmt.Errorf("registry unreachable (%v) and no cached copy of %s exists; check network or SWE_NPX_REGISTRY", err, platformPkg)
+		return "", fmt.Errorf("registry unreachable (%v) and no verified cached copy of %s exists; check network or SWE_NPX_REGISTRY", err, platformPkg)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return "", fmt.Errorf("registry has no package %s; swe-npx only supports distribute-go-bin platform packages -- use real npx for anything else", platformPkg)
 	}
 	if resp.StatusCode != http.StatusOK {
-		if fallback := cachedVersions(opts.cacheDir, platformPkg); len(fallback) > 0 {
-			fmt.Fprintf(opts.stderr, "swe-npx: registry returned %d; using cached %s@%s\n", resp.StatusCode, platformPkg, fallback[0])
-			return fallback[0], nil
+		if v, ok := newestTrustedCached(opts, platformPkg, binName); ok {
+			fmt.Fprintf(opts.stderr, "swe-npx: registry returned %d; using cached %s@%s\n", resp.StatusCode, platformPkg, v)
+			return v, nil
 		}
-		return "", fmt.Errorf("registry returned %d for %s and no cached copy exists", resp.StatusCode, platformPkg)
+		return "", fmt.Errorf("registry returned %d for %s and no verified cached copy exists", resp.StatusCode, platformPkg)
 	}
 	var doc packument
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&doc); err != nil {
 		return "", fmt.Errorf("decoding packument for %s: %w", platformPkg, err)
 	}
 	latest := doc.DistTags["latest"]
@@ -267,7 +397,7 @@ func fetchVersionDoc(opts options, platformPkg, version string) (*versionDoc, er
 		return nil, fmt.Errorf("registry returned %d for %s@%s", resp.StatusCode, platformPkg, version)
 	}
 	var doc versionDoc
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxMetadataBytes)).Decode(&doc); err != nil {
 		return nil, fmt.Errorf("decoding version doc for %s@%s: %w", platformPkg, version, err)
 	}
 	return &doc, nil
@@ -275,7 +405,8 @@ func fetchVersionDoc(opts options, platformPkg, version string) (*versionDoc, er
 
 // verifyIntegrity checks data against an npm integrity string
 // ("sha512-<base64>"), falling back to a hex sha1 shasum when integrity is
-// absent. Empty both -> accepted (registry did not advertise a checksum).
+// absent. A version doc advertising neither is rejected: an unchecksummed
+// tarball is indistinguishable from a substituted one.
 func verifyIntegrity(data []byte, d dist) error {
 	if d.Integrity != "" {
 		parts := strings.SplitN(d.Integrity, "-", 2)
@@ -287,21 +418,22 @@ func verifyIntegrity(data []byte, d dist) error {
 			return fmt.Errorf("bad integrity encoding: %w", err)
 		}
 		sum := sha512.Sum512(data)
-		if !hmacEqual(sum[:], want) {
+		if !hashEqual(sum[:], want) {
 			return fmt.Errorf("tarball integrity mismatch (sha512)")
 		}
 		return nil
 	}
 	if d.Shasum != "" {
 		sum := sha1.Sum(data)
-		if hex.EncodeToString(sum[:]) != strings.ToLower(d.Shasum) {
+		if !hashEqual([]byte(hex.EncodeToString(sum[:])), []byte(strings.ToLower(d.Shasum))) {
 			return fmt.Errorf("tarball integrity mismatch (sha1 shasum)")
 		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("version doc advertises no integrity or shasum; refusing to run an unchecksummed tarball")
 }
 
-func hmacEqual(a, b []byte) bool {
+func hashEqual(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -312,16 +444,56 @@ func hmacEqual(a, b []byte) bool {
 	return v == 0
 }
 
+// checkTarballURL rejects a tarball location that would downgrade transport
+// security. The registry doc is not a trust anchor, so a doc that points the
+// download at a different host is worth surfacing even when allowed.
+func checkTarballURL(opts options, tarball string) error {
+	u, err := url.Parse(tarball)
+	if err != nil {
+		return secErrf("unparseable tarball URL %q: %v", tarball, err)
+	}
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if !isLoopbackHost(u.Hostname()) {
+			return secErrf("refusing plain-http tarball URL %q", tarball)
+		}
+	default:
+		return secErrf("refusing tarball URL with scheme %q", u.Scheme)
+	}
+	if reg, err := url.Parse(opts.registry); err == nil && reg.Host != "" && u.Host != reg.Host {
+		fmt.Fprintf(opts.stderr, "swe-npx: note: tarball host %s differs from registry host %s\n", u.Host, reg.Host)
+	}
+	return nil
+}
+
+// readCapped reads at most max bytes, treating an over-long body as hostile
+// rather than truncating it.
+func readCapped(r io.Reader, max int64, what string) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > max {
+		return nil, secErrf("%s exceeds %d byte cap", what, max)
+	}
+	return data, nil
+}
+
 // downloadAndCache downloads platformPkg@version, verifies integrity,
 // extracts the tarball's package/ tree into a temp dir under the cache root,
-// and atomically renames it into place. Losing a concurrent race is fine:
-// if the final dir already exists, ours is discarded and the winner used.
+// records the binary's digest, and atomically renames it into place. Losing a
+// concurrent race is fine: if the final dir already exists and verifies, ours
+// is discarded and the winner used.
 func downloadAndCache(opts options, platformPkg, version, binName string) (string, error) {
 	doc, err := fetchVersionDoc(opts, platformPkg, version)
 	if err != nil {
 		return "", err
 	}
-	resp, err := opts.client.Get(doc.Dist.Tarball)
+	if err := checkTarballURL(opts, doc.Dist.Tarball); err != nil {
+		return "", err
+	}
+	resp, err := opts.downloadClient().Get(doc.Dist.Tarball)
 	if err != nil {
 		return "", fmt.Errorf("downloading %s: %w", doc.Dist.Tarball, err)
 	}
@@ -329,12 +501,12 @@ func downloadAndCache(opts options, platformPkg, version, binName string) (strin
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("tarball download returned %d for %s", resp.StatusCode, doc.Dist.Tarball)
 	}
-	data, err := io.ReadAll(resp.Body)
+	data, err := readCapped(resp.Body, maxTarballBytes, "tarball "+doc.Dist.Tarball)
 	if err != nil {
 		return "", fmt.Errorf("reading tarball: %w", err)
 	}
 	if err := verifyIntegrity(data, doc.Dist); err != nil {
-		return "", fmt.Errorf("%s@%s: %w", platformPkg, version, err)
+		return "", secErrf("%s@%s: %v", platformPkg, version, err)
 	}
 
 	finalDir := cacheVersionDir(opts.cacheDir, platformPkg, version)
@@ -352,15 +524,19 @@ func downloadAndCache(opts options, platformPkg, version, binName string) (strin
 	}
 	binInTmp := filepath.Join(tmpDir, "bin", binName)
 	if _, err := os.Stat(binInTmp); err != nil {
-		return "", fmt.Errorf("%s@%s tarball has no package/bin/%s; not a distribute-go-bin package -- use real npx", platformPkg, version, binName)
+		return "", secErrf("%s@%s tarball has no package/bin/%s; not a distribute-go-bin package -- use real npx", platformPkg, version, binName)
 	}
 	if err := os.Chmod(binInTmp, 0755); err != nil {
 		return "", fmt.Errorf("chmod binary: %w", err)
 	}
+	if err := writeCacheDigest(tmpDir, binName); err != nil {
+		return "", fmt.Errorf("recording cache digest: %w", err)
+	}
 
 	if err := os.Rename(tmpDir, finalDir); err != nil {
-		// a concurrent swe-npx won the race; use its copy
-		if _, statErr := os.Stat(finalDir); statErr == nil {
+		// a concurrent swe-npx may have won the race; use its copy only if
+		// it verifies
+		if verr := verifyCacheEntry(finalDir, binName); verr == nil {
 			return cachedBinaryPath(opts.cacheDir, platformPkg, version, binName), nil
 		}
 		return "", fmt.Errorf("caching %s@%s: %w", platformPkg, version, err)
@@ -369,7 +545,8 @@ func downloadAndCache(opts options, platformPkg, version, binName string) (strin
 }
 
 // extractPackageTree extracts the "package/" subtree of an npm tar.gz into
-// destDir (entries outside package/ are ignored; path traversal rejected).
+// destDir (entries outside package/ are ignored; path traversal rejected;
+// total unpacked bytes capped so a decompression bomb cannot fill the disk).
 func extractPackageTree(tgz []byte, destDir string) error {
 	gz, err := gzip.NewReader(bytes.NewReader(tgz))
 	if err != nil {
@@ -377,6 +554,7 @@ func extractPackageTree(tgz []byte, destDir string) error {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
+	remaining := int64(maxUnpackedBytes)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -391,7 +569,7 @@ func extractPackageTree(tgz []byte, destDir string) error {
 		}
 		clean := filepath.Clean(filepath.FromSlash(rel))
 		if strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
-			return fmt.Errorf("tar entry escapes package tree: %q", hdr.Name)
+			return secErrf("tar entry escapes package tree: %q", hdr.Name)
 		}
 		target := filepath.Join(destDir, clean)
 		switch hdr.Typeflag {
@@ -403,17 +581,24 @@ func extractPackageTree(tgz []byte, destDir string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode)&0777|0644)
+			// never group/world-writable, never setuid, always readable
+			mode := os.FileMode(hdr.Mode)&0755 | 0644
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
+			n, err := io.Copy(f, io.LimitReader(tr, remaining+1))
+			if err != nil {
 				f.Close()
 				return err
 			}
 			if err := f.Close(); err != nil {
 				return err
 			}
+			if n > remaining {
+				return secErrf("unpacked size exceeds %d byte cap", maxUnpackedBytes)
+			}
+			remaining -= n
 		default:
 			// symlinks etc. have no place in a distribute-go-bin tarball
 			continue
@@ -421,27 +606,51 @@ func extractPackageTree(tgz []byte, destDir string) error {
 	}
 }
 
-// resolve maps pkg@version to a cached executable path, downloading on miss.
+// resolve maps pkg@version to a verified cached executable path, downloading
+// on miss. When the requested version cannot be downloaded and the caller did
+// not pin a version, it falls back to the newest verified cached copy so an
+// offline box can still start.
 func resolve(opts options, pkg, version string) (string, error) {
 	platformPkg, err := platformPackage(pkg, opts.goos, opts.goarch)
 	if err != nil {
 		return "", err
 	}
 	binName := binaryName(pkg)
+	pinned := version != "" && version != "latest"
 
-	if version == "" || version == "latest" {
-		v, err := lookupLatest(opts, platformPkg)
+	if !pinned {
+		v, err := lookupLatest(opts, platformPkg, binName)
 		if err != nil {
 			return "", err
 		}
 		version = v
 	}
 
-	binPath := cachedBinaryPath(opts.cacheDir, platformPkg, version, binName)
-	if _, err := os.Stat(binPath); err == nil {
+	verDir := cacheVersionDir(opts.cacheDir, platformPkg, version)
+	switch err := verifyCacheEntry(verDir, binName); {
+	case err == nil:
+		return cachedBinaryPath(opts.cacheDir, platformPkg, version, binName), nil
+	case errors.Is(err, errNotCached):
+		// cold miss: download below
+	default:
+		// entry exists but cannot be trusted -- discard it rather than exec it
+		fmt.Fprintf(opts.stderr, "swe-npx: discarding untrusted cache entry (%v)\n", err)
+		os.RemoveAll(verDir)
+	}
+
+	binPath, dlErr := downloadAndCache(opts, platformPkg, version, binName)
+	if dlErr == nil {
 		return binPath, nil
 	}
-	return downloadAndCache(opts, platformPkg, version, binName)
+	var secErr *securityError
+	if pinned || errors.As(dlErr, &secErr) {
+		return "", dlErr
+	}
+	if v, ok := newestTrustedCached(opts, platformPkg, binName); ok {
+		fmt.Fprintf(opts.stderr, "swe-npx: cannot fetch %s@%s (%v); using cached %s@%s\n", platformPkg, version, dlErr, platformPkg, v)
+		return cachedBinaryPath(opts.cacheDir, platformPkg, v, binName), nil
+	}
+	return "", dlErr
 }
 
 // run parses argv, resolves the package, and execs the binary.
@@ -457,10 +666,46 @@ func run(opts options, args []string) error {
 	return execFn(binPath, append([]string{binPath}, rest...), os.Environ())
 }
 
-func defaultOptions() options {
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// validateRegistry refuses a registry URL that would let an attacker with env
+// access, or a passive network attacker, substitute the binaries we exec.
+func validateRegistry(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("SWE_NPX_REGISTRY is not a valid URL (%q): %w", raw, err)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("SWE_NPX_REGISTRY has no host: %q", raw)
+	}
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if !isLoopbackHost(u.Hostname()) {
+			return "", fmt.Errorf("SWE_NPX_REGISTRY must use https (got %q); plain http is allowed for loopback hosts only", raw)
+		}
+	default:
+		return "", fmt.Errorf("SWE_NPX_REGISTRY must be an http(s) URL, got %q", raw)
+	}
+	return strings.TrimSuffix(raw, "/"), nil
+}
+
+func defaultOptions() (options, error) {
 	registry := os.Getenv("SWE_NPX_REGISTRY")
 	if registry == "" {
 		registry = "https://registry.npmjs.org"
+	}
+	registry, err := validateRegistry(registry)
+	if err != nil {
+		return options{}, err
 	}
 	cacheDir := os.Getenv("SWE_NPX_CACHE_DIR")
 	if cacheDir == "" {
@@ -477,18 +722,23 @@ func defaultOptions() options {
 		}
 	}
 	return options{
-		registry: strings.TrimSuffix(registry, "/"),
+		registry: registry,
 		cacheDir: cacheDir,
 		ttl:      ttl,
 		goos:     runtime.GOOS,
 		goarch:   runtime.GOARCH,
-		client:   &http.Client{Timeout: 5 * time.Second},
+		client:   &http.Client{Timeout: 15 * time.Second},
+		dlClient: &http.Client{Timeout: 5 * time.Minute},
 		stderr:   os.Stderr,
-	}
+	}, nil
 }
 
 func main() {
-	if err := run(defaultOptions(), os.Args[1:]); err != nil {
+	opts, err := defaultOptions()
+	if err == nil {
+		err = run(opts, os.Args[1:])
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "swe-npx: %v\n", err)
 		os.Exit(1)
 	}

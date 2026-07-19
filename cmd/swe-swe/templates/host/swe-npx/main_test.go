@@ -7,7 +7,9 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +50,17 @@ func tarGz(t *testing.T, files map[string][]byte) []byte {
 	return buf.Bytes()
 }
 
+// zeroReader is an endless source of zero bytes, for building a compression
+// bomb without materialising it.
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0
+	}
+	return len(p), nil
+}
+
 func sha512Integrity(data []byte) string {
 	sum := sha512.Sum512(data)
 	return "sha512-" + base64.StdEncoding.EncodeToString(sum[:])
@@ -66,6 +79,8 @@ type fakeRegistry struct {
 	tarballs map[string][]byte
 	// if set, integrity advertised for this version is deliberately wrong
 	corruptIntegrity map[string]bool
+	// if set, the version doc advertises no integrity and no shasum
+	noIntegrity map[string]bool
 	// if true, respond 404 to every metadata request
 	notFound bool
 }
@@ -78,6 +93,7 @@ func newFakeRegistry(t *testing.T, escapedPkg, latest string, tarballs map[strin
 		latest:           latest,
 		tarballs:         tarballs,
 		corruptIntegrity: map[string]bool{},
+		noIntegrity:      map[string]bool{},
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
@@ -90,10 +106,11 @@ func (f *fakeRegistry) distFor(version string) map[string]any {
 	if f.corruptIntegrity[version] {
 		integrity = sha512Integrity(append([]byte("corrupt"), data...))
 	}
-	return map[string]any{
-		"tarball":   f.srv.URL + "/tarballs/" + version + ".tgz",
-		"integrity": integrity,
+	d := map[string]any{"tarball": f.srv.URL + "/tarballs/" + version + ".tgz"}
+	if !f.noIntegrity[version] {
+		d["integrity"] = integrity
 	}
+	return d
 }
 
 func (f *fakeRegistry) handle(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +167,24 @@ func testOpts(t *testing.T, registryURL string) options {
 		client:   &http.Client{Timeout: 5 * time.Second},
 		stderr:   &bytes.Buffer{},
 	}
+}
+
+// seedCache writes a cache entry the way downloadAndCache would: the binary
+// plus the digest record that makes it trusted for exec.
+func seedCache(t *testing.T, cacheDir, platformPkg, version, binName string, content []byte) string {
+	t.Helper()
+	dir := cacheVersionDir(cacheDir, platformPkg, version)
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	binPath := filepath.Join(dir, "bin", binName)
+	if err := os.WriteFile(binPath, content, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCacheDigest(dir, binName); err != nil {
+		t.Fatal(err)
+	}
+	return binPath
 }
 
 func readFileT(t *testing.T, path string) []byte {
@@ -361,13 +396,7 @@ func TestCacheHitZeroRequests(t *testing.T) {
 	opts := testOpts(t, reg.srv.URL)
 
 	binContent := []byte("#!cached md-serve")
-	cached := filepath.Join(opts.cacheDir, "@choonkeat", "md-serve-linux-x64@1.0.0", "bin")
-	if err := os.MkdirAll(cached, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(cached, "md-serve"), binContent, 0755); err != nil {
-		t.Fatal(err)
-	}
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.0.0", "md-serve", binContent)
 
 	binPath, err := resolve(opts, "@choonkeat/md-serve", "1.0.0")
 	if err != nil {
@@ -390,13 +419,7 @@ func TestRegistryDownFallsBackToNewestCached(t *testing.T) {
 	opts.stderr = stderr
 
 	for _, v := range []string{"1.0.0", "1.10.0", "1.9.0"} {
-		dir := filepath.Join(opts.cacheDir, "@choonkeat", "md-serve-linux-x64@"+v, "bin")
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "md-serve"), []byte("v"+v), 0755); err != nil {
-			t.Fatal(err)
-		}
+		seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", v, "md-serve", []byte("v"+v))
 	}
 
 	binPath, err := resolve(opts, "@choonkeat/md-serve", "latest")
@@ -451,13 +474,7 @@ func TestRenameRaceUsesExistingWinner(t *testing.T) {
 
 	// pre-create the final cache dir as if a concurrent process won the race
 	winnerContent := []byte("#!winner md-serve")
-	winnerDir := filepath.Join(opts.cacheDir, "@choonkeat", "md-serve-linux-x64@1.0.0", "bin")
-	if err := os.MkdirAll(winnerDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(winnerDir, "md-serve"), winnerContent, 0755); err != nil {
-		t.Fatal(err)
-	}
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.0.0", "md-serve", winnerContent)
 
 	// force the download path despite the cache hit
 	binPath, err := downloadAndCache(opts, "@choonkeat/md-serve-linux-x64", "1.0.0", "md-serve")
@@ -477,6 +494,234 @@ func TestRenameRaceUsesExistingWinner(t *testing.T) {
 	})
 	if len(leftovers) != 0 {
 		t.Errorf("temp dirs left behind: %v", leftovers)
+	}
+}
+
+// --- 11. (a) download failure for an unpinned request falls back to cache ---
+
+func TestUnpinnedFallsBackWhenVersionUnavailable(t *testing.T) {
+	// registry knows latest=1.2.0 but cannot serve it; cache holds 1.1.0
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.2.0", map[string][]byte{})
+	opts := testOpts(t, reg.srv.URL)
+	stderr := &bytes.Buffer{}
+	opts.stderr = stderr
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.1.0", "md-serve", []byte("v1.1.0"))
+
+	binPath, err := resolve(opts, "@choonkeat/md-serve", "latest")
+	if err != nil {
+		t.Fatalf("resolve should fall back to cached 1.1.0: %v", err)
+	}
+	if got := readFileT(t, binPath); string(got) != "v1.1.0" {
+		t.Errorf("fallback binary = %q, want v1.1.0", got)
+	}
+	if !strings.Contains(stderr.String(), "1.1.0") {
+		t.Errorf("expected a stderr note naming the fallback version: %q", stderr.String())
+	}
+}
+
+func TestPinnedVersionNeverFallsBack(t *testing.T) {
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.2.0", map[string][]byte{})
+	opts := testOpts(t, reg.srv.URL)
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.1.0", "md-serve", []byte("v1.1.0"))
+
+	if _, err := resolve(opts, "@choonkeat/md-serve", "1.2.0"); err == nil {
+		t.Fatalf("pinned 1.2.0 must not silently resolve to cached 1.1.0")
+	}
+}
+
+func TestIntegrityFailureNeverFallsBack(t *testing.T) {
+	binContent := []byte("#!fake md-serve 1.2.0")
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.2.0", map[string][]byte{
+		"1.2.0": tarGz(t, map[string][]byte{"package/bin/md-serve": binContent}),
+	})
+	reg.corruptIntegrity["1.2.0"] = true
+	opts := testOpts(t, reg.srv.URL)
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.1.0", "md-serve", []byte("v1.1.0"))
+
+	_, err := resolve(opts, "@choonkeat/md-serve", "latest")
+	if err == nil {
+		t.Fatalf("integrity mismatch must be fatal, not a fallback trigger")
+	}
+	if !strings.Contains(err.Error(), "integrity") {
+		t.Errorf("error should mention integrity: %v", err)
+	}
+}
+
+// --- 12. (b) cache entries are re-verified before exec ---
+
+func TestTamperedCacheEntryIsDiscarded(t *testing.T) {
+	genuine := []byte("#!genuine md-serve")
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.0.0", map[string][]byte{
+		"1.0.0": tarGz(t, map[string][]byte{"package/bin/md-serve": genuine}),
+	})
+	opts := testOpts(t, reg.srv.URL)
+	stderr := &bytes.Buffer{}
+	opts.stderr = stderr
+
+	binPath := seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.0.0", "md-serve", genuine)
+	// poison the cached binary after its digest was recorded
+	if err := os.WriteFile(binPath, []byte("#!poisoned"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolve(opts, "@choonkeat/md-serve", "1.0.0")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if content := readFileT(t, got); !bytes.Equal(content, genuine) {
+		t.Errorf("poisoned cache entry was exec'd: %q", content)
+	}
+	if !strings.Contains(stderr.String(), "untrusted") {
+		t.Errorf("expected a stderr note about the discarded entry: %q", stderr.String())
+	}
+}
+
+func TestUndigestedCacheEntryIsNotTrusted(t *testing.T) {
+	// a cache dir with no digest record (e.g. hand-placed) must not be used
+	// offline: no registry, no digest -> error rather than exec
+	opts := testOpts(t, "http://127.0.0.1:1")
+	opts.client = &http.Client{Timeout: 200 * time.Millisecond}
+	dir := filepath.Join(opts.cacheDir, "@choonkeat", "md-serve-linux-x64@1.0.0", "bin")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "md-serve"), []byte("#!unverified"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := resolve(opts, "@choonkeat/md-serve", "latest"); err == nil {
+		t.Fatalf("undigested cache entry must not satisfy an offline resolve")
+	}
+}
+
+func TestWorldWritableCacheEntryIsNotTrusted(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	binPath := filepath.Join(binDir, "md-serve")
+	if err := os.WriteFile(binPath, []byte("#!x"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCacheDigest(dir, "md-serve"); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyCacheEntry(dir, "md-serve"); err != nil {
+		t.Fatalf("baseline entry should verify: %v", err)
+	}
+	if err := os.Chmod(binPath, 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyCacheEntry(dir, "md-serve"); err == nil {
+		t.Errorf("world-writable cached binary must not verify")
+	}
+}
+
+// --- 13. missing checksum is rejected ---
+
+func TestMissingIntegrityRejected(t *testing.T) {
+	binContent := []byte("#!fake md-serve")
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.0.0", map[string][]byte{
+		"1.0.0": tarGz(t, map[string][]byte{"package/bin/md-serve": binContent}),
+	})
+	reg.noIntegrity["1.0.0"] = true
+	opts := testOpts(t, reg.srv.URL)
+
+	if _, err := resolve(opts, "@choonkeat/md-serve", "1.0.0"); err == nil {
+		t.Fatalf("a version doc with no integrity and no shasum must be rejected")
+	}
+}
+
+// --- 14. (c) registry URL validation ---
+
+func TestValidateRegistry(t *testing.T) {
+	ok := []string{
+		"https://registry.npmjs.org",
+		"https://registry.npmjs.org/",
+		"http://localhost:4873",
+		"http://127.0.0.1:4873",
+	}
+	for _, raw := range ok {
+		if _, err := validateRegistry(raw); err != nil {
+			t.Errorf("validateRegistry(%q) = %v, want ok", raw, err)
+		}
+	}
+	bad := []string{
+		"http://registry.example.com",
+		"ftp://registry.example.com",
+		"file:///tmp/registry",
+		"registry.npmjs.org",
+		"",
+	}
+	for _, raw := range bad {
+		if _, err := validateRegistry(raw); err == nil {
+			t.Errorf("validateRegistry(%q): want error, got nil", raw)
+		}
+	}
+	got, err := validateRegistry("https://registry.npmjs.org/")
+	if err != nil || got != "https://registry.npmjs.org" {
+		t.Errorf("trailing slash not trimmed: %q, %v", got, err)
+	}
+}
+
+func TestPlainHttpTarballRejected(t *testing.T) {
+	opts := testOpts(t, "https://registry.npmjs.org")
+	if err := checkTarballURL(opts, "http://evil.example.com/pkg.tgz"); err == nil {
+		t.Errorf("plain-http non-loopback tarball URL must be rejected")
+	}
+	if err := checkTarballURL(opts, "https://registry.npmjs.org/pkg.tgz"); err != nil {
+		t.Errorf("https tarball URL should be accepted: %v", err)
+	}
+	// different host is allowed (CDN) but must be surfaced
+	stderr := &bytes.Buffer{}
+	opts.stderr = stderr
+	if err := checkTarballURL(opts, "https://cdn.example.com/pkg.tgz"); err != nil {
+		t.Errorf("https CDN tarball URL should be accepted: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "cdn.example.com") {
+		t.Errorf("expected a note about the differing tarball host: %q", stderr.String())
+	}
+}
+
+// --- 15. (d) size caps ---
+
+func TestUnpackedSizeCapEnforced(t *testing.T) {
+	// a highly compressible entry larger than the unpacked budget, streamed
+	// so the test itself does not hold half a gigabyte in memory
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	size := int64(maxUnpackedBytes) + 1
+	if err := tw.WriteHeader(&tar.Header{Name: "package/bin/md-serve", Mode: 0644, Size: size}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(tw, zeroReader{}, size); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err := extractPackageTree(buf.Bytes(), t.TempDir())
+	if err == nil {
+		t.Fatalf("extraction past the unpacked cap must fail")
+	}
+	var secErr *securityError
+	if !errors.As(err, &secErr) {
+		t.Errorf("cap violation should be a securityError, got %T: %v", err, err)
+	}
+}
+
+func TestReadCappedRejectsOverlongBody(t *testing.T) {
+	if _, err := readCapped(bytes.NewReader(bytes.Repeat([]byte("x"), 11)), 10, "body"); err == nil {
+		t.Errorf("readCapped must reject a body over the cap")
+	}
+	data, err := readCapped(bytes.NewReader([]byte("hello")), 10, "body")
+	if err != nil || string(data) != "hello" {
+		t.Errorf("readCapped under the cap: %q, %v", data, err)
 	}
 }
 
