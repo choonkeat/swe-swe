@@ -1009,6 +1009,34 @@ class TerminalUI extends HTMLElement {
 
         this.fitAddon = new FitAddon.FitAddon();
         this.term.loadAddon(this.fitAddon);
+
+        // OSC 52: terminal apps set the system clipboard by emitting
+        // ESC ] 52 ; c ; <base64> BEL. On a headless host there is no
+        // clipboard, so this is the only copy path that can reach the
+        // user's device. Try the async clipboard API directly (works when
+        // the page still has the user activation from a recent keypress);
+        // when the browser refuses -- Safari without a fresh gesture -- fall
+        // back to the link banner, whose Copy button tap IS a gesture.
+        this.term.parser.registerOscHandler(52, (data) => {
+            const semi = data.indexOf(';');
+            if (semi === -1) return true;
+            const b64 = data.slice(semi + 1);
+            // "?" is a clipboard READ request; never expose the user's
+            // clipboard to the remote session.
+            if (b64 === '?' || b64 === '') return true;
+            let text;
+            try {
+                text = new TextDecoder().decode(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)));
+            } catch {
+                return true;
+            }
+            if (!text) return true;
+            navigator.clipboard.writeText(text).catch(() => {
+                this._showLinkBanner(text, { title: 'Agent copied to clipboard', copyOnly: true });
+            });
+            return true;
+        });
+
         this.term.open(terminalEl);
         this.fitAddon.fit();
 
@@ -7201,14 +7229,15 @@ class TerminalUI extends HTMLElement {
                     // xdg-open shim. External URLs (e.g. an OAuth login link)
                     // cannot render inside the proxied preview iframe -- OAuth
                     // pages send frame-ancestors deny -- so offer a real new
-                    // tab instead (same UX as typing an external URL into the
-                    // preview URL bar). Localhost URLs go to the preview pane.
+                    // tab instead. A confirm()+window.open pair does NOT work
+                    // here: on iOS Safari the confirm's OK tap is not user
+                    // activation for window.open, so the popup is silently
+                    // blocked. The banner's Open control is a real <a> the
+                    // user taps directly. Localhost URLs go to the preview pane.
                     let openHost = null;
                     try { openHost = new URL(msg.url).hostname; } catch { /* bare path */ }
                     if (openHost && openHost !== 'localhost' && openHost !== '127.0.0.1') {
-                        if (confirm('Open in new tab?\n\n' + msg.url)) {
-                            window.open(msg.url, '_blank');
-                        }
+                        this._showLinkBanner(msg.url, { title: 'Agent wants to open a link' });
                     } else {
                         this.openIframePane('preview', msg.url);
                     }
@@ -7245,6 +7274,96 @@ class TerminalUI extends HTMLElement {
             this._debugWsReconnectTimer = null;
             this.connectDebugWebSocket();
         }, delay);
+    }
+
+    // Floating action banner for agent-initiated links and clipboard text.
+    // Appended to <body> so it escapes the terminal's stacking context. The
+    // Open control is a REAL anchor: window.open from a confirm() callback is
+    // popup-blocked on iOS Safari (no user activation), but a direct tap on
+    // an <a target=_blank> always works. Copy runs inside the tap handler,
+    // which satisfies the browser's user-gesture requirement for clipboard
+    // writes. opts.copyOnly hides the Open control (OSC 52 text is not
+    // necessarily a URL).
+    _showLinkBanner(text, opts = {}) {
+        if (this._linkBanner) this._linkBanner.remove();
+        const banner = document.createElement('div');
+        banner.className = 'terminal-ui__link-banner';
+
+        const title = document.createElement('div');
+        title.className = 'terminal-ui__link-banner-title';
+        title.textContent = opts.title || 'Agent sent text';
+        banner.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'terminal-ui__link-banner-text';
+        body.textContent = text;
+        banner.appendChild(body);
+
+        const actions = document.createElement('div');
+        actions.className = 'terminal-ui__link-banner-actions';
+
+        if (!opts.copyOnly) {
+            const open = document.createElement('a');
+            open.className = 'terminal-ui__link-banner-open';
+            open.href = text;
+            open.target = '_blank';
+            open.rel = 'noopener noreferrer';
+            open.textContent = 'Open';
+            open.addEventListener('click', () => this._dismissLinkBanner());
+            actions.appendChild(open);
+        }
+
+        const copy = document.createElement('button');
+        copy.className = 'terminal-ui__link-banner-copy';
+        copy.textContent = 'Copy';
+        copy.addEventListener('click', async () => {
+            const ok = await this._writeClipboard(text);
+            copy.textContent = ok ? 'Copied \u2713' : 'Copy failed';
+            if (ok) setTimeout(() => this._dismissLinkBanner(), 1200);
+        });
+        actions.appendChild(copy);
+
+        const dismiss = document.createElement('button');
+        dismiss.className = 'terminal-ui__link-banner-dismiss';
+        dismiss.setAttribute('aria-label', 'Dismiss');
+        dismiss.textContent = '\u2715';
+        dismiss.addEventListener('click', () => this._dismissLinkBanner());
+        actions.appendChild(dismiss);
+
+        banner.appendChild(actions);
+        document.body.appendChild(banner);
+        this._linkBanner = banner;
+    }
+
+    _dismissLinkBanner() {
+        if (this._linkBanner) {
+            this._linkBanner.remove();
+            this._linkBanner = null;
+        }
+    }
+
+    // Write text to the user's clipboard. navigator.clipboard needs a secure
+    // context (https / localhost -- both of ours qualify); fall back to the
+    // legacy execCommand path for anything it rejects.
+    async _writeClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand('copy');
+                ta.remove();
+                return ok;
+            } catch {
+                return false;
+            }
+        }
     }
 }
 
