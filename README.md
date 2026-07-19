@@ -19,7 +19,7 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [L
 - **Skills from any git repo**: `swe-swe init --with-skills <alias>@<url>` clones external skill repos and surfaces them to the agent.
 - **Built-in panes**: live preview, a read-only Files browser, VS Code (code-server), and agent chat.
 - **Multi-service apps without Docker**: declare your services in a `Procfile` and `swe-run` supervises them, each reachable in App Preview. See [Multi-service apps](docs/multi-service.md).
-- **Dockerless mode**: `swe-swe init --dockerless` runs everything host-native from prebuilt binaries -- no Docker required. See [dockerless](docs/dockerless.md).
+- **Dockerless mode**: `swe-swe init --runtime=host` runs everything host-native from prebuilt binaries -- no Docker required. See [dockerless](docs/dockerless.md).
 
 ## Quick Start
 
@@ -54,7 +54,7 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [L
 
 ### Without Docker
 
-On a Linux host you can skip containers entirely: `swe-swe init --dockerless`
+On a Linux host you can skip containers entirely: `swe-swe init --runtime=host`
 writes the embedded server and helper binaries into `.swe-swe/`, and `swe-swe up`
 runs them directly on the host in the foreground. On macOS, run it inside a Linux
 VM -- see [dockerless on a Mac](docs/dockerless-mac-vm.md).
@@ -80,7 +80,7 @@ swe-swe ps / logs / exec ...    # Any docker compose command
 
 Use `--project-directory` to specify which project (defaults to current directory). The port defaults to `1977` and can be customized via `SWE_PORT`.
 
-In a project initialized with `--dockerless` there is no compose file: `swe-swe up` runs the server on the host in the foreground (Ctrl-C to stop), and the compose-only commands do not apply.
+In a project initialized with `--runtime=host` there is no compose file: `swe-swe up` runs the server on the host in the foreground (Ctrl-C to stop), and the compose-only commands do not apply.
 
 ## Documentation
 

@@ -12,10 +12,10 @@ stack, no Go toolchain. If you already run the `claude` CLI on your
 machine, you already have almost everything swe-swe needs.
 
 ```sh
-npm i -g swe-swe          # or run ad hoc: npx -y swe-swe <cmd>
-swe-swe init --dockerless # writes config + binaries into ./.swe-swe, nothing else
-swe-swe up                # starts swe-swe on http://localhost:1977
-swe-swe up --open         # ...and opens your browser
+npm i -g swe-swe             # or run ad hoc: npx -y swe-swe <cmd>
+swe-swe init --runtime=host  # writes config + binaries into ./.swe-swe
+swe-swe up                   # starts swe-swe on http://localhost:1977
+swe-swe up --open            # ...and opens your browser
 ```
 
 `swe-swe up` notices this is a dockerless init and runs everything

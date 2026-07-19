@@ -51,7 +51,7 @@ Pass-through Commands:
   to docker compose with the project's docker-compose.yml. Use --project-directory
   to specify which project, or run from the project directory.
 
-  In a project initialized with --dockerless there is no docker compose: 'up'
+  In a project initialized with --runtime=host there is no docker compose: 'up'
   runs swe-swe-server directly on the host in the foreground (Ctrl-C to stop),
   and compose-only commands (build, ps, logs, exec, ...) do not apply.
 
@@ -62,17 +62,19 @@ Init Options:
   --project-directory PATH               Project directory (defaults to current directory)
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
+  --runtime MODE                         Where the environment runs (default: container)
+                                           container                     docker compose
+                                           container-with-docker-socket  ...plus the host docker socket
+                                           host                          no containers at all; runs on the
+                                                                         host. Linux, or macOS experimentally.
+                                                                         See docs/dockerless.md
   --ask [DIR]                            Interactive init; optional value overrides the metadata directory
   --metadata-dir DIR                     Override metadata directory (default: ~/.swe-swe/projects/<derived>)
-  --dockerless                           Host-native setup with no Docker: dumps the embedded binaries
-                                         and wiring into .swe-swe. Linux, or macOS experimentally.
-                                         See docs/dockerless.md
   --agents AGENTS                        Comma-separated agents: claude,gemini,codex,aider,goose,opencode,pi
                                          (default: all)
   --exclude-agents AGENTS                Comma-separated agents to exclude
   --apt-get-install PACKAGES             Additional apt packages to install (comma or space separated)
   --npm-install PACKAGES                 Additional npm packages to install globally (comma or space separated)
-  --with-docker                          Mount Docker socket to allow container to run Docker commands
   --with-slash-commands REPOS            Git repos to clone as slash commands for Claude/Codex/OpenCode
                                          Format: [alias@]<git-url> (space-separated)
   --with-skills REPOS                    Git repos to clone as agent skills
@@ -117,8 +119,9 @@ Examples:
   swe-swe init --exclude-agents=aider,goose      Initialize current directory without Aider and Goose
   swe-swe init --apt-get-install="vim htop"      Initialize current directory with custom apt packages
   swe-swe init --npm-install="typescript tsx"    Initialize current directory with custom npm packages
-  swe-swe init --with-docker                     Initialize current directory with Docker socket access
-  swe-swe init --dockerless                      Initialize a host-native setup with no Docker
+  swe-swe init --runtime=container-with-docker-socket
+                                                 Initialize with host Docker socket access
+  swe-swe init --runtime=host                    Initialize a host-native setup with no Docker
   swe-swe init --with-skills=ck@https://github.com/choonkeat/skills.git
                                                  Initialize current directory with external skills
   swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
@@ -145,7 +148,7 @@ Environment Variables:
   NODE_EXTRA_CA_CERTS_BUNDLE             CA certificate bundle path (auto-copied during init)
 
 Requires: Docker with Compose plugin (docker compose) or standalone docker-compose.
-          Not needed for projects initialized with --dockerless.
+          Not needed for projects initialized with --runtime=host.
 `)
 }
 

@@ -1,6 +1,57 @@
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"io"
+	"strings"
+)
+
+// deprecatedInitFlags still work but are no longer advertised: --runtime says
+// the same things in one place. Hidden from `swe-swe init -h` and from the
+// top-level usage, never removed -- existing scripts and saved configs keep
+// working.
+var deprecatedInitFlags = map[string]bool{
+	"with-docker": true,
+	"dockerless":  true,
+}
+
+// printInitFlagUsage is the FlagSet usage func for `init`: the stock
+// PrintDefaults output minus the deprecated flags.
+func printInitFlagUsage(fs *flag.FlagSet, w io.Writer) {
+	fmt.Fprintf(w, "Usage of init:\n")
+	fs.VisitAll(func(f *flag.Flag) {
+		if deprecatedInitFlags[f.Name] {
+			return
+		}
+		fmt.Fprintf(w, "  -%s", f.Name)
+		name, usage := flag.UnquoteUsage(f)
+		if name != "" {
+			fmt.Fprintf(w, " %s", name)
+		}
+		fmt.Fprintf(w, "\n    \t%s", strings.ReplaceAll(usage, "\n", "\n    \t"))
+		if !isZeroFlagValue(f) {
+			// Match the stock flag package: string defaults are quoted,
+			// everything else is printed bare.
+			if name == "string" {
+				fmt.Fprintf(w, " (default %q)", f.DefValue)
+			} else {
+				fmt.Fprintf(w, " (default %v)", f.DefValue)
+			}
+		}
+		fmt.Fprintf(w, "\n")
+	})
+}
+
+// isZeroFlagValue reports whether f's default is the zero value for its type,
+// which is when the stock flag package omits the "(default ...)" suffix.
+func isZeroFlagValue(f *flag.Flag) bool {
+	switch f.DefValue {
+	case "", "0", "false":
+		return true
+	}
+	return false
+}
 
 // Runtime modes for `swe-swe init --runtime`. They unify two flags that used to
 // sound like a boolean pair but control different axes: --with-docker is a

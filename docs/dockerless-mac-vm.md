@@ -139,7 +139,7 @@ go build -o ~/.npm-global/bin/swe-swe ./cmd/swe-swe
 ```
 
 After every rebuild (including `git pull` updates), re-run `swe-swe init
---dockerless` in your project: the server and helper binaries are embedded
+--runtime=host` in your project: the server and helper binaries are embedded
 in the CLI and only re-extracted by init, so `swe-swe up` alone would keep
 running the previously extracted ones.
 
@@ -150,7 +150,7 @@ the default home mount is read-only.)
 
 ```sh
 cd ~/your-project
-swe-swe init --dockerless
+swe-swe init --runtime=host
 SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret \
     swe-swe up --agent-view=http://host.lima.internal:9333 --agent-view-tunnel
 ```
@@ -193,7 +193,7 @@ limactl shell swe -- swe-swe down    # evening; docker stop swe-browser too
 
 Upgrades: `npm update -g swe-swe` in the VM (or from source: `git pull`,
 `make dockerless-payload`, `go build` per section 4), then re-run
-`swe-swe init --dockerless`; rebuild the backend image from a fresh repo
+`swe-swe init --runtime=host`; rebuild the backend image from a fresh repo
 checkout when it changes.
 
 ## Status

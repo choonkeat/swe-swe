@@ -62,25 +62,33 @@ func TestPromptAgentsInvalid(t *testing.T) {
 	}
 }
 
-func TestPromptDockerYes(t *testing.T) {
+func TestPromptRuntime(t *testing.T) {
 	tests := []struct {
-		input string
-		want  bool
+		input         string
+		hostAvailable bool
+		want          string
 	}{
-		{"y\n", true},
-		{"yes\n", true},
-		{"Y\n", true},
-		{"n\n", false},
-		{"\n", false},
-		{"no\n", false},
+		{"\n", true, RuntimeContainer},
+		{"d\n", true, RuntimeContainerWithDockerSocket},
+		{"D\n", true, RuntimeContainerWithDockerSocket},
+		{"h\n", true, RuntimeHost},
+		// Host is not offered on a platform that cannot init it, so picking
+		// it anyway falls back rather than producing a broken project.
+		{"h\n", false, RuntimeContainer},
+		{"nonsense\n", true, RuntimeContainer},
+		// EOF (no answer at all)
+		{"", true, RuntimeContainer},
 	}
 
 	for _, tt := range tests {
 		scanner := bufio.NewScanner(strings.NewReader(tt.input))
 		var out bytes.Buffer
-		got := promptDocker(scanner, &out)
+		got := promptRuntime(scanner, &out, tt.hostAvailable)
 		if got != tt.want {
-			t.Errorf("promptDocker(%q) = %v, want %v", tt.input, got, tt.want)
+			t.Errorf("promptRuntime(%q, hostAvailable=%v) = %q, want %q", tt.input, tt.hostAvailable, got, tt.want)
+		}
+		if tt.hostAvailable != strings.Contains(out.String(), "h=host") {
+			t.Errorf("hostAvailable=%v but prompt was %q", tt.hostAvailable, out.String())
 		}
 	}
 }

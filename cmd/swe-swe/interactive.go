@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -74,15 +75,30 @@ func promptAgents(scanner *bufio.Scanner, w io.Writer, detected []string) ([]str
 	return agents, nil
 }
 
-// promptDocker asks whether to enable Docker socket access.
-func promptDocker(scanner *bufio.Scanner, w io.Writer) bool {
-	fmt.Fprintf(w, "Enable Docker socket access? (lets agents run Docker commands on host) [y/N] ")
+// promptRuntime asks where the environment should run. hostAvailable gates the
+// host option: on a platform dockerlessGOOSGuard refuses there is no point
+// offering a mode that cannot be initialized.
+func promptRuntime(scanner *bufio.Scanner, w io.Writer, hostAvailable bool) string {
+	if hostAvailable {
+		fmt.Fprintf(w, "Where should it run? [Enter=container, d=container + host Docker socket, h=host, no containers] ")
+	} else {
+		fmt.Fprintf(w, "Where should it run? [Enter=container, d=container + host Docker socket] ")
+	}
 
 	if !scanner.Scan() {
-		return false
+		return DefaultRuntime
 	}
-	line := strings.TrimSpace(strings.ToLower(scanner.Text()))
-	return line == "y" || line == "yes"
+	switch strings.TrimSpace(strings.ToLower(scanner.Text())) {
+	case "d":
+		return RuntimeContainerWithDockerSocket
+	case "h":
+		if hostAvailable {
+			return RuntimeHost
+		}
+		return DefaultRuntime
+	default:
+		return DefaultRuntime
+	}
 }
 
 // promptAccess asks about remote access / SSL configuration.
@@ -152,8 +168,8 @@ func runInteractiveInit(absPath string, metadataDir string, stdin io.Reader, std
 		return fmt.Errorf("agent selection: %w", err)
 	}
 
-	// 2. Docker
-	withDocker := promptDocker(scanner, stdout)
+	// 2. Runtime
+	runtimeMode := promptRuntime(scanner, stdout, dockerlessGOOSGuard(runtime.GOOS) == nil)
 
 	// 3. Access / SSL
 	sslFlag, email := promptAccess(scanner, stdout)
@@ -161,7 +177,7 @@ func runInteractiveInit(absPath string, metadataDir string, stdin io.Reader, std
 	// Build config with sensible defaults
 	config := InitConfig{
 		Agents:              agents,
-		WithDocker:          withDocker,
+		Runtime:             runtimeMode,
 		DockerfileOnly:      sslFlag == "no", // no VS Code in interactive mode; auto-detect: no SSL = dockerfile-only
 		SSL:                 sslFlag,
 		Email:               email,
@@ -190,6 +206,10 @@ func runInteractiveInit(absPath string, metadataDir string, stdin io.Reader, std
 	}
 
 	fmt.Fprintf(stdout, "\n")
+	if config.isHostRuntime() {
+		executeDockerlessInit(absPath, metadataDir, config)
+		return nil
+	}
 	executeInit(absPath, metadataDir, config, sslMode, sslHost, sslDomain)
 	return nil
 }

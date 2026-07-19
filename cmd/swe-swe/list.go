@@ -101,7 +101,7 @@ func handleList() {
 				if info.config.NpmPackages != "" {
 					extras = append(extras, "npm:"+info.config.NpmPackages)
 				}
-				if info.config.WithDocker {
+				if info.config.withDockerSocket() {
 					extras = append(extras, "docker")
 				}
 				if len(info.config.SlashCommands) > 0 {

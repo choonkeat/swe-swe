@@ -69,6 +69,6 @@ Remind the user:
 - Start everything with `swe-run` in the Agent Terminal (`swe-run -f
   Procfile.dev` for an alternate file). It prints the assigned port table.
 - Services run as ordinary session children: **they die with the session**, so
-  nothing leaks -- no Docker socket, no `--with-docker`, no host root.
+  nothing leaks -- no Docker socket, no docker-socket runtime, no host root.
 - To view a non-primary service in the browser, use its bare-port subdomain in
   the Preview tab (`<port>.<reach>`); the primary shows by default.

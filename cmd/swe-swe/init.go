@@ -269,12 +269,12 @@ type InitConfig struct {
 	// Runtime is the unified deployment mode (container /
 	// container-with-docker-socket / host). WithDocker above is still written
 	// for one release cycle so an older CLI can read a newer init.json.
-	Runtime string `json:"runtime,omitempty"`
-	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
-	TunnelUnique        string              `json:"tunnelUnique,omitempty"`
-	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
-	TunnelLocalPorts    bool                `json:"tunnelLocalPorts,omitempty"`
-	CLIVersion          string              `json:"cliVersion,omitempty"`
+	Runtime          string `json:"runtime,omitempty"`
+	TunnelServerURL  string `json:"tunnelServerURL,omitempty"`
+	TunnelUnique     string `json:"tunnelUnique,omitempty"`
+	TunnelClientCert string `json:"tunnelClientCert,omitempty"`
+	TunnelLocalPorts bool   `json:"tunnelLocalPorts,omitempty"`
+	CLIVersion       string `json:"cliVersion,omitempty"`
 }
 
 // saveInitConfig writes the init configuration to init.json
@@ -334,6 +334,29 @@ func normalizeRuntimeForLoad(config *InitConfig, dockerlessMarker bool) {
 	}
 	config.WithDocker = runtimeWithDocker(config.Runtime)
 	config.Dockerless = runtimeDockerless(config.Runtime)
+}
+
+// runtimeOrDefault is the runtime this config describes, tolerating a config
+// built in code that never went through save/load normalization (the
+// interactive path, and tests). The legacy booleans are inputs here and
+// nowhere else -- read them through the accessors below, never directly.
+func (c InitConfig) runtimeOrDefault() string {
+	if c.Runtime == "" {
+		return runtimeFromLegacy(c.WithDocker, c.Dockerless)
+	}
+	return c.Runtime
+}
+
+// withDockerSocket reports whether the workspace container gets the host
+// docker socket mounted into it.
+func (c InitConfig) withDockerSocket() bool {
+	return runtimeWithDocker(c.runtimeOrDefault())
+}
+
+// isHostRuntime reports whether this project runs host-native, with no
+// containers at all.
+func (c InitConfig) isHostRuntime() bool {
+	return runtimeDockerless(c.runtimeOrDefault())
 }
 
 // deriveAliasFromURL extracts owner/repo from a git URL
@@ -716,6 +739,7 @@ func handleInit() {
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
+	fs.Usage = func() { printInitFlagUsage(fs, os.Stderr) }
 	fs.Parse(os.Args[2:])
 
 	runtimeSet := false
@@ -1067,7 +1091,7 @@ func handleInit() {
 		}
 	}
 
-	if config.Dockerless {
+	if config.isHostRuntime() {
 		executeDockerlessInit(absPath, sweDir, config)
 		return
 	}
@@ -1338,7 +1362,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		"templates/container/.swe-swe/docs/browser-automation.md",
 	}
 
-	if config.WithDocker {
+	if config.withDockerSocket() {
 		containerFiles = append(containerFiles, "templates/container/.swe-swe/docs/docker.md")
 	}
 
@@ -1361,7 +1385,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 	if config.NpmPackages != "" {
 		fmt.Printf("Additional npm packages: %s\n", config.NpmPackages)
 	}
-	if config.WithDocker {
+	if config.withDockerSocket() {
 		fmt.Println("Docker access: enabled (container can run Docker commands on host)")
 	}
 
@@ -1399,7 +1423,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 
 		// Process Dockerfile template with conditional sections
 		if hostFile == "templates/host/Dockerfile" {
-			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.WithDocker, hasCerts, config.SlashCommands, config.Skills, hostUID, hostGID, config.TunnelServerURL))
+			content = []byte(processDockerfileTemplate(string(content), config.Agents, config.AptPackages, config.NpmPackages, config.withDockerSocket(), hasCerts, config.SlashCommands, config.Skills, hostUID, hostGID, config.TunnelServerURL))
 			// In dockerfile-only mode, add EXPOSE and ENV defaults so the
 			// platform sees the port without needing a separate .env file.
 			// (The CMD itself already uses ${SWE_PORT:-1977} from the template.)
@@ -1429,7 +1453,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 					reposDirValue = "${WORKSPACE_DIR:-.}/.swe-swe/repos"
 				}
 				dockerVolume := ""
-				if config.WithDocker {
+				if config.withDockerSocket() {
 					dockerVolume = "\n      - /var/run/docker.sock:/var/run/docker.sock"
 				}
 				// Build port mappings for browser-accessible proxy ports
@@ -1489,18 +1513,18 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
     restart: unless-stopped
 `, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
 			} else {
-				content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
+				content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
 			}
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.WithDocker, config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
+			content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
 		}
 
 		// Process entrypoint.sh template with conditional sections
 		if hostFile == "templates/host/entrypoint.sh" {
-			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.WithDocker, config.SlashCommands, config.Skills))
+			content = []byte(processEntrypointTemplate(string(content), config.Agents, config.withDockerSocket(), config.SlashCommands, config.Skills))
 		}
 
 		// Inject version info and proxy port offset into swe-swe-server main.go
@@ -1602,7 +1626,7 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		"templates/container/.swe-swe/docs/app-preview.md",
 		"templates/container/.swe-swe/docs/multi-service.md",
 	}
-	if config.WithDocker {
+	if config.withDockerSocket() {
 		allContainerTemplates = append(allContainerTemplates, "templates/container/.swe-swe/docs/docker.md")
 	}
 	for _, tmplFile := range allContainerTemplates {

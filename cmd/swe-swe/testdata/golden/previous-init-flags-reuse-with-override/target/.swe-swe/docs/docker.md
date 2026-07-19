@@ -25,8 +25,9 @@ services are plain children, **they die with the session -- nothing leaks**. See
 **Why prefer this over `docker compose`:**
 
 - The Docker socket is **host-root-equivalent** (ADR-0013). It is only present
-  when the project was initialized with `--with-docker`, and handing it to an
-  agent session is the single biggest hole in the trust model.
+  when the project was initialized with
+  `--runtime=container-with-docker-socket`, and handing it to an agent session
+  is the single biggest hole in the trust model.
 - Compose-started containers are **not tied to the session lifecycle**, so they
   leak: the session ends, the containers keep running, and the host accumulates
   remnants nobody cleans up.
@@ -34,11 +35,11 @@ services are plain children, **they die with the session -- nothing leaks**. See
 Reach for Docker only when you genuinely need container networking, image
 builds, or an existing compose stack.
 
-## Docker CLI (only with `--with-docker`)
+## Docker CLI (only with `--runtime=container-with-docker-socket`)
 
-When the project was initialized with `--with-docker`, the Docker CLI and Docker
-Compose are available, connected to the host's Docker daemon via
-`/var/run/docker.sock`.
+When the project was initialized with `--runtime=container-with-docker-socket`,
+the Docker CLI and Docker Compose are available, connected to the host's Docker
+daemon via `/var/run/docker.sock`.
 
 You can `docker ps` to see the exact name of this `swe-swe` container we're in.
 
@@ -62,7 +63,7 @@ docker compose down
 ### Notes
 
 - The Docker socket is only available if the project was initialized with
-  `--with-docker`. Mounting it grants host-root-equivalent access (ADR-0013).
+  that mode. Mounting it grants host-root-equivalent access (ADR-0013).
 - Commands run against the **host's** Docker daemon, not a nested one.
 - Network access between containers uses Docker's internal DNS (service names
   from docker-compose.yml).

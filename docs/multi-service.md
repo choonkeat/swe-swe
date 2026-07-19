@@ -173,8 +173,8 @@ npx -y foreman start
 process-compose up
 ```
 
-None of this needs `swe-swe init --with-docker`. Apart from `swe-run`, swe-swe
-does **not** start, stop, or supervise your services -- that is your process
+None of this needs a Docker socket in the container. Apart from `swe-run`,
+swe-swe does **not** start, stop, or supervise your services -- that is your process
 runner's job (there is no auto "mini compose" runtime).
 
 ### Wildcard vs pinned mode
@@ -228,7 +228,8 @@ follow-up phase; the port-label and bare-port forms above work today.)
 
 `swe-run` covers the common case: several processes on one host talking over
 `localhost`. If you genuinely need container networking, image builds, or a
-compose stack, `swe-swe init --with-docker` is still available -- but prefer the
-Procfile path. `--with-docker` bind-mounts the host Docker socket, which is
-**host-root-equivalent** (ADR-0013) and whose containers are not tied to the
-session lifecycle, so they can leak. See `.swe-swe/docs/docker.md`.
+compose stack, `swe-swe init --runtime=container-with-docker-socket` is still
+available -- but prefer the Procfile path. That mode bind-mounts the host
+Docker socket, which is **host-root-equivalent** (ADR-0013), and whose
+containers are not tied to the session lifecycle, so they can leak. See
+`.swe-swe/docs/docker.md`.

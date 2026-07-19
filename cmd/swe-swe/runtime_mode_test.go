@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"flag"
+	"strings"
+	"testing"
+)
 
 func TestResolveRuntime(t *testing.T) {
 	tests := []struct {
@@ -107,6 +112,34 @@ func TestResolveRuntime(t *testing.T) {
 				t.Errorf("resolveRuntime() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// The legacy flags must keep parsing while no longer being advertised.
+func TestDeprecatedInitFlagsHiddenButUsable(t *testing.T) {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	withDocker := fs.Bool("with-docker", false, "legacy")
+	dockerless := fs.Bool("dockerless", false, "legacy")
+	fs.String("runtime", DefaultRuntime, "documented")
+
+	var buf bytes.Buffer
+	printInitFlagUsage(fs, &buf)
+	out := buf.String()
+
+	for name := range deprecatedInitFlags {
+		if strings.Contains(out, "-"+name+"\n") {
+			t.Errorf("deprecated flag -%s should not appear in usage:\n%s", name, out)
+		}
+	}
+	if !strings.Contains(out, "-runtime") {
+		t.Errorf("-runtime should appear in usage:\n%s", out)
+	}
+
+	if err := fs.Parse([]string{"--with-docker", "--dockerless"}); err != nil {
+		t.Fatalf("deprecated flags must still parse: %v", err)
+	}
+	if !*withDocker || !*dockerless {
+		t.Errorf("deprecated flags parsed but did not take effect")
 	}
 }
 

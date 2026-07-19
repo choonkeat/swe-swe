@@ -136,7 +136,8 @@ make the ports exist and be discoverable.
 
 `swe-run` covers the common case: several processes on one host talking over
 `localhost`. If you genuinely need container networking, image builds, or a
-compose stack, `swe-swe init --with-docker` is still available -- but prefer the
-Procfile path. `--with-docker` bind-mounts the host Docker socket, which is
-**host-root-equivalent** (ADR-0013) and whose containers are not tied to the
-session lifecycle, so they can leak. See `.swe-swe/docs/docker.md`.
+compose stack, `swe-swe init --runtime=container-with-docker-socket` is still
+available -- but prefer the Procfile path. That mode bind-mounts the host
+Docker socket, which is **host-root-equivalent** (ADR-0013), and whose
+containers are not tied to the session lifecycle, so they can leak. See
+`.swe-swe/docs/docker.md`.

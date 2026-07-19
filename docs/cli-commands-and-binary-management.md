@@ -22,7 +22,7 @@ All other commands are passed directly to `docker compose` with the project's co
 - Any other docker compose command...
 
 **Dockerless projects are the exception.** If the project was initialized with
-`swe-swe init --dockerless` there is no compose file, so nothing is passed to
+`swe-swe init --runtime=host` there is no compose file, so nothing is passed to
 `docker compose`. Instead:
 - `swe-swe up [--open] [server flags...]` -- runs `.swe-swe/bin/swe-swe-server`
   directly on the host, in the **foreground**. Ctrl-C stops it. `--open` opens a
@@ -59,7 +59,7 @@ live **inside** the `swe-swe` container rather than as separate services:
 | `swe-swe` | The whole environment: swe-swe-server, agents, per-session Chromium, code-server, embedded auth | always |
 | `traefik` | TLS-terminating reverse proxy | only with `--ssl=selfsign*` / `--ssl=letsencrypt*` |
 
-Neither is present in a `--dockerless` project, which has no compose file at all.
+Neither is present in a `--runtime=host` project, which has no compose file at all.
 
 ### Pass-through Arguments
 
@@ -137,10 +137,10 @@ swe-swe init --exclude-agents=aider
 swe-swe init --apt-get-install="vim htop tmux"
 
 # Initialize current directory with Docker access
-swe-swe init --with-docker
+swe-swe init --runtime=container-with-docker-socket
 
 # Initialize a host-native project with no Docker at all (Linux host)
-swe-swe init --dockerless
+swe-swe init --runtime=host
 
 # Initialize current directory with custom slash commands
 swe-swe init --with-slash-commands=ck@https://github.com/choonkeat/slash-commands.git
@@ -491,4 +491,4 @@ docker-compose -f $HOME/.swe-swe/projects/{sanitized-path}/docker-compose.yml lo
 - `cmd/swe-swe/templates/host/docker-compose.yml` — Docker Compose configuration
 - `cmd/swe-swe/templates/host/Dockerfile` — Docker image definition (multi-stage build)
 - `cmd/swe-swe/templates/host/swe-swe-server/` — Server source code (embedded)
-- `cmd/swe-swe/dockerless.go` -- Host-native (`--dockerless`) init and `up`/`down` handling
+- `cmd/swe-swe/dockerless.go` -- Host-native (`--runtime=host`) init and `up`/`down` handling
