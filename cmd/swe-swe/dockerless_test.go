@@ -228,7 +228,7 @@ func TestDockerlessServerInvocationTunnel(t *testing.T) {
 	}
 	// Enabled.
 	_, args, _ = dockerlessServerInvocation(sweDir, "/p", "1977", nil,
-		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem", localPorts: true})
+		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem"})
 	if !argsContainPair(args, "-tunnel-server-url", "https://tunnel.example.com") {
 		t.Errorf("args %v missing -tunnel-server-url", args)
 	}
@@ -238,8 +238,10 @@ func TestDockerlessServerInvocationTunnel(t *testing.T) {
 	if !argsContainPair(args, "-tunnel-client-cert", "/c.pem") {
 		t.Errorf("args %v missing -tunnel-client-cert", args)
 	}
-	if !argsContainValue(args, "-tunnel-local-ports") {
-		t.Errorf("args %v missing -tunnel-local-ports", args)
+	// Regression: --tunnel-local-ports is compose-only port publishing;
+	// swe-swe-server has no such flag and exits 2 (usage dump) if passed.
+	if argsContainValue(args, "-tunnel-local-ports") {
+		t.Errorf("args %v must not contain -tunnel-local-ports (server has no such flag)", args)
 	}
 }
 

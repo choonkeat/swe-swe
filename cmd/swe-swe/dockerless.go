@@ -167,9 +167,12 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, 
 		if tunnel.clientCert != "" {
 			args = append(args, "-tunnel-client-cert", tunnel.clientCert)
 		}
-		if tunnel.localPorts {
-			args = append(args, "-tunnel-local-ports")
-		}
+		// NOTE: --tunnel-local-ports is deliberately NOT forwarded. It is a
+		// compose-level concept (publish the container's listeners on the
+		// host loopback); swe-swe-server has no such flag, and passing it
+		// made the server exit 2 with a usage dump on every dockerless
+		// tunnel boot. Dockerless already binds the host loopback directly,
+		// so local access needs no extra wiring.
 	}
 
 	env = make([]string, 0, len(baseEnv)+2)
@@ -234,10 +237,11 @@ func writeDockerlessOpenShim(binDir string) error {
 
 // tunnelConfig carries the dockerless tunnel settings from init.json through
 // to the server flags. Zero value (empty serverURL) = tunnel disabled.
+// TunnelLocalPorts from init.json is intentionally absent: it only affects
+// compose port publishing, never server flags (see dockerlessServerInvocation).
 type tunnelConfig struct {
 	serverURL  string
 	clientCert string
-	localPorts bool
 }
 
 // loadDockerlessTunnelConfig reads the saved tunnel settings for a dockerless
@@ -250,7 +254,6 @@ func loadDockerlessTunnelConfig(sweDir string) tunnelConfig {
 	return tunnelConfig{
 		serverURL:  cfg.TunnelServerURL,
 		clientCert: cfg.TunnelClientCert,
-		localPorts: cfg.TunnelLocalPorts,
 	}
 }
 
