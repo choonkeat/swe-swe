@@ -83,6 +83,31 @@ func TestDockerlessMarker(t *testing.T) {
 	}
 }
 
+// Regression: a dockerless -> docker re-init must clear the mode marker,
+// otherwise every subsequent `swe-swe up` still routes to the (broken)
+// dockerless path and the user is locked out of compose mode until they
+// delete the marker by hand. executeInit calls clearDockerlessMarker.
+func TestClearDockerlessMarker(t *testing.T) {
+	sweDir := t.TempDir()
+	if err := writeDockerlessMarker(sweDir); err != nil {
+		t.Fatalf("writeDockerlessMarker: %v", err)
+	}
+	if err := clearDockerlessMarker(sweDir); err != nil {
+		t.Fatalf("clearDockerlessMarker: %v", err)
+	}
+	if isDockerlessProject(sweDir) {
+		t.Errorf("after clearDockerlessMarker, isDockerlessProject = true")
+	}
+	// Idempotent: clearing an already-clear (or never-dockerless) dir is not
+	// an error.
+	if err := clearDockerlessMarker(sweDir); err != nil {
+		t.Errorf("clearDockerlessMarker on clean dir: %v", err)
+	}
+	if err := clearDockerlessMarker(filepath.Join(sweDir, "does-not-exist")); err != nil {
+		t.Errorf("clearDockerlessMarker on missing dir: %v", err)
+	}
+}
+
 // `swe-swe up` on a dockerless project execs the dumped server with the
 // project as working dir, the dumped bin/ on PATH, and a loopback bind.
 func TestDockerlessServerInvocation(t *testing.T) {

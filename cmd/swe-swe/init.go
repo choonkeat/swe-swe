@@ -1023,6 +1023,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		log.Fatalf("Failed to create metadata directory: %v", err)
 	}
 
+	// A prior `init --dockerless` leaves a mode marker that `swe-swe up`
+	// checks before anything else; clear it so this docker-mode init
+	// actually takes effect.
+	if err := clearDockerlessMarker(sweDir); err != nil {
+		log.Fatalf("Failed to clear dockerless marker: %v", err)
+	}
+
 	// Capture host user's UID and GID for container app user creation
 	hostUID := os.Getuid()
 	hostGID := os.Getgid()

@@ -26,6 +26,19 @@ func writeDockerlessMarker(sweDir string) error {
 	return os.WriteFile(filepath.Join(sweDir, dockerlessMarkerFile), []byte("dockerless\n"), 0644)
 }
 
+// clearDockerlessMarker removes the dockerless mode marker so `swe-swe up`
+// goes back to docker compose. A docker-mode init must call this: the marker
+// is checked before anything else, so leaving it behind after a
+// dockerless -> docker re-init locks the project out of compose mode.
+// Missing file is fine (already cleared).
+func clearDockerlessMarker(sweDir string) error {
+	err := os.Remove(filepath.Join(sweDir, dockerlessMarkerFile))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // isDockerlessProject reports whether sweDir holds a dockerless mode marker.
 // Missing dir/file or any read error reports false (treat as compose mode).
 func isDockerlessProject(sweDir string) bool {
