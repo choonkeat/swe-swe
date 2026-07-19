@@ -100,6 +100,20 @@ compose deployment provides today:
 - [ ] recordings, worktree sessions, preview vhost behavior host-side
 - [ ] whatever else the live run surfaces -> append here
 
+Surfaced by the first live run (DO droplet, 2026-07-19):
+- FIXED b1225d44b: dockerless `up` passed `-tunnel-local-ports` to the
+  server, which has no such flag -> usage dump + exit 2 crash-loop. This
+  was the original "dockerless failed here" incident.
+- DNS is per-unique: no blanket wildcard on the tunnel domain; every new
+  unique needs `<unique>-tunnel` + `*.<unique>-tunnel` A records at the
+  DNS host before tunneld can complete LE issuance (client hangs in
+  "awaiting RegisterOK" until then). Candidate doc/UX fix: tunnel client
+  should surface "cert issuance pending -- does DNS exist?" instead of
+  waiting silently.
+- systemd unit with Restart=always works as the dockerless watchdog (no
+  screen/restart-script needed): see the droplet's /etc/systemd/system/
+  swe-swe.service.
+
 ## Related
 
 - tasks/2026-07-19-runtime-flag.md (--runtime enum; host default only
