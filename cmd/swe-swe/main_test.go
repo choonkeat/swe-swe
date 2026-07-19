@@ -775,6 +775,8 @@ func TestGoldenFiles(t *testing.T) {
 		{"with-status-bar-font", []string{"--status-bar-font-size", "14", "--status-bar-font-family", "monospace"}},
 		{"with-repos-dir", []string{"--repos-dir", "/data/repos"}},
 		{"with-proxy-port-offset", []string{"--proxy-port-offset", "50000"}},
+		{"runtime-container", []string{"--runtime=container"}},
+		{"runtime-container-with-docker-socket", []string{"--runtime=container-with-docker-socket"}},
 		{"tunnel-mode", []string{"--tunnel-server-url", "https://tunnel.example.com"}},
 		{"tunnel-mode-unique", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-unique", "myproject123"}},
 		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
@@ -1601,6 +1603,39 @@ func TestGoldenReuseTunnel(t *testing.T) {
 	}
 }
 
+// TestGoldenRuntimeRejections covers the --runtime variants that are supposed
+// to FAIL. They cannot join the TestGoldenFiles table: a rejected init writes
+// no project, so there is no home/target tree to compare -- only stderr.
+func TestGoldenRuntimeRejections(t *testing.T) {
+	variants := []struct {
+		name string
+		want string
+	}{
+		{"runtime-invalid", `Error: invalid --runtime "vm"`},
+		{"runtime-conflict-legacy", "Error: --runtime=container conflicts with --dockerless"},
+	}
+
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			goldenDir := filepath.Join("testdata", "golden", v.name)
+			if _, err := os.Stat(goldenDir); os.IsNotExist(err) {
+				t.Skipf("Golden files not found at %s - run 'make golden-update' first", goldenDir)
+			}
+			stderrContent, err := os.ReadFile(filepath.Join(goldenDir, "stderr.txt"))
+			if err != nil {
+				t.Fatalf("Failed to read stderr.txt: %v", err)
+			}
+			if !strings.Contains(string(stderrContent), v.want) {
+				t.Errorf("stderr should contain %q, got: %s", v.want, stderrContent)
+			}
+			// A rejected init must not leave a half-written project behind.
+			if _, err := os.Stat(filepath.Join(goldenDir, "target", ".swe-swe")); err == nil {
+				t.Errorf("%s wrote a project despite being rejected", v.name)
+			}
+		})
+	}
+}
+
 // TestInitConfigReuseCoverage is a guard against the class of bug where a new
 // persisted InitConfig field is added but never wired into the
 // --previous-init-flags=reuse block in init.go (which is how TunnelServerURL /
@@ -1638,13 +1673,14 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"TunnelUnique":        true,
 		"TunnelClientCert":    true,
 		"TunnelLocalPorts":    true,
+		"Runtime":             true,
 	}
 	// Fields intentionally NOT restored: computed or stamped fresh at init time.
 	notReused := map[string]bool{
 		"HostUID":        true, // host's current uid, re-detected each init
 		"HostGID":        true, // host's current gid, re-detected each init
 		"DockerfileOnly": true, // computed from SSL/tunnel (json:"-")
-		"Dockerless":     true, // mode flag, not persisted (json:"-"); marker file written separately
+		"Dockerless":     true, // mode flag, not persisted (json:"-"); derived from Runtime on reuse
 		"CLIVersion":     true, // stamped by saveInitConfig on every write
 	}
 

@@ -12,6 +12,7 @@
   "hostUID": 1000,
   "hostGID": 1000,
   "proxyPortOffset": 20000,
+  "runtime": "container",
   "tunnelServerURL": "https://tunnel.example.com",
   "tunnelUnique": "myproject123",
   "tunnelClientCert": "/etc/swe-swe-tunnel/client.crt",

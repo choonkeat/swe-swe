@@ -266,6 +266,10 @@ type InitConfig struct {
 	ProxyPortOffset     int                 `json:"proxyPortOffset,omitempty"`
 	DockerfileOnly      bool                `json:"-"` // computed: true when SSL=="no" && no tunnel
 	Dockerless          bool                `json:"-"` // mode flag: host-native, no Docker (marker file written separately)
+	// Runtime is the unified deployment mode (container /
+	// container-with-docker-socket / host). WithDocker above is still written
+	// for one release cycle so an older CLI can read a newer init.json.
+	Runtime string `json:"runtime,omitempty"`
 	TunnelServerURL     string              `json:"tunnelServerURL,omitempty"`
 	TunnelUnique        string              `json:"tunnelUnique,omitempty"`
 	TunnelClientCert    string              `json:"tunnelClientCert,omitempty"`
@@ -632,6 +636,7 @@ func handleInit() {
 	npmPackages := fs.String("npm-install", "", "Additional packages to install via npm (comma-separated)")
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux, or macOS experimentally)")
+	runtimeFlag := fs.String("runtime", DefaultRuntime, "Where the environment runs: 'container' (docker compose), 'container-with-docker-socket' (compose plus the host docker socket), or 'host' (no containers; Linux, or macOS experimentally)")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
@@ -682,13 +687,19 @@ func handleInit() {
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
 	fs.Parse(os.Args[2:])
 
-	// Dockerless is host-native: refuse early on a non-Linux CLI before
-	// writing anything, since the embedded binaries are static-Linux only.
-	if *dockerless {
-		if err := dockerlessGOOSGuard(runtime.GOOS); err != nil {
-			fmt.Fprintln(os.Stderr, "Error:", err)
-			os.Exit(1)
+	runtimeSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "runtime" {
+			runtimeSet = true
 		}
+	})
+
+	// Validate the runtime flags against each other up front, before any
+	// filesystem work. A saved runtime from a previous init is folded in
+	// later, once init.json has been read.
+	if _, err := resolveRuntime(*runtimeFlag, runtimeSet, *withDocker, *dockerless, ""); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
 	}
 
 	// Validate --previous-init-flags
@@ -891,8 +902,19 @@ func handleInit() {
 		if !explicitFlags["npm-install"] {
 			npmPkgs = savedConfig.NpmPackages
 		}
-		if !explicitFlags["with-docker"] {
-			*withDocker = savedConfig.WithDocker
+		// Restore the runtime mode as a unit. Deriving both legacy booleans
+		// from it is what makes reuse round-trip a dockerless project: the
+		// Dockerless field was never persisted to init.json, so before
+		// --runtime existed a reuse silently re-inited it as a container.
+		if !explicitFlags["runtime"] && !explicitFlags["with-docker"] && !explicitFlags["dockerless"] {
+			savedRuntime := savedConfig.Runtime
+			if savedRuntime == "" {
+				// init.json predates --runtime: fall back to the legacy
+				// field plus the on-disk mode marker.
+				savedRuntime = runtimeFromLegacy(savedConfig.WithDocker, isDockerlessProject(sweDir))
+			}
+			*withDocker = runtimeWithDocker(savedRuntime)
+			*dockerless = runtimeDockerless(savedRuntime)
 		}
 		if !explicitFlags["with-slash-commands"] {
 			slashCmds = savedConfig.SlashCommands
@@ -959,6 +981,26 @@ func handleInit() {
 		}
 	}
 
+	// Fold the flags and any restored saved mode into one runtime, then
+	// project it back onto the legacy booleans the rest of init.go still
+	// dispatches on.
+	resolvedRuntime, runtimeErr := resolveRuntime(*runtimeFlag, runtimeSet, *withDocker, *dockerless, "")
+	if runtimeErr != nil {
+		fmt.Fprintln(os.Stderr, "Error:", runtimeErr)
+		os.Exit(1)
+	}
+	*withDocker = runtimeWithDocker(resolvedRuntime)
+	*dockerless = runtimeDockerless(resolvedRuntime)
+
+	// Host runtime is host-native: refuse early on an unsupported CLI platform
+	// before writing anything, since the embedded binaries are not portable.
+	if *dockerless {
+		if err := dockerlessGOOSGuard(runtime.GOOS); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+	}
+
 	// Build config from parsed flag values
 	config := InitConfig{
 		Agents:      agents,
@@ -966,6 +1008,7 @@ func handleInit() {
 		NpmPackages: npmPkgs,
 		WithDocker:  *withDocker,
 		Dockerless:  *dockerless,
+		Runtime:     resolvedRuntime,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:
