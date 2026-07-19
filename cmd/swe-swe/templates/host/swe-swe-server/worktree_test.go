@@ -1888,6 +1888,51 @@ func TestHandleReposAPI(t *testing.T) {
 			t.Errorf("expected empty remoteURL for fake repo, got %q", result.Repos[0].RemoteURL)
 		}
 	})
+
+	t.Run("includes workspace remote URL", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		origReposDir := reposDir
+		reposDir = filepath.Join(tmpDir, "repos") // does not exist
+		defer func() { reposDir = origReposDir }()
+
+		wsDir := filepath.Join(tmpDir, "workspace")
+		if err := os.MkdirAll(wsDir, 0755); err != nil {
+			t.Fatalf("mkdir workspace: %v", err)
+		}
+		run := func(args ...string) {
+			t.Helper()
+			cmd := exec.Command("git", args...)
+			cmd.Dir = wsDir
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v failed: %v\n%s", args, err, out)
+			}
+		}
+		run("init", "-q", "-b", "main")
+		run("remote", "add", "origin", "git@example.com:foo/bar.git")
+
+		origWorkspaceDir := workspaceDir
+		workspaceDir = wsDir
+		defer func() { workspaceDir = origWorkspaceDir }()
+
+		req := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
+		w := httptest.NewRecorder()
+
+		handleReposAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var result map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if got := result["workspaceRemoteURL"]; got != "git@example.com:foo/bar.git" {
+			t.Errorf("expected workspaceRemoteURL %q, got %v", "git@example.com:foo/bar.git", got)
+		}
+	})
 }
 
 // newRepoPrepareTestRepo creates a git repo laid out like an external repo

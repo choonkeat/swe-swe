@@ -377,7 +377,20 @@
                 return response.json();
             })
             .then(function(data) {
-                if (!data || !data.repos || data.repos.length === 0) return;
+                if (!data) return;
+
+                // Give the static "Default workspace" option the same detail
+                // line the cloned-repo options get (its git origin URL).
+                // The .finally() below syncs the combo, so this shows even
+                // when there are no cloned repos.
+                if (data.workspaceRemoteURL) {
+                    var workspaceOption = modeSelect.querySelector('option[value="workspace"]');
+                    if (workspaceOption) {
+                        workspaceOption.dataset.detail = data.workspaceRemoteURL;
+                    }
+                }
+
+                if (!data.repos || data.repos.length === 0) return;
 
                 // Insert dynamic options before "Clone external repository..."
                 var cloneOption = modeSelect.querySelector('option[value="clone"]');

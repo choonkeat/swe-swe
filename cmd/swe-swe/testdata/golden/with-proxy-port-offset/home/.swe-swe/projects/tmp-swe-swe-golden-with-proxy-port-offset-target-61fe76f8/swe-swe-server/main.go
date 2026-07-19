@@ -3550,56 +3550,56 @@ type RepoInfo struct {
 }
 
 // handleReposAPI handles GET /api/repos
-// Scans /repos/ for existing git repositories and returns their info.
-// Returns: { "repos": [{"path": "/repos/foo/workspace", "remoteURL": "https://...", "dirName": "foo"}] }
+// Scans /repos/ for existing git repositories and returns their info, plus the
+// origin URL of the default workspace so the New Session dialog can show it.
+// Returns: { "repos": [{"path": "/repos/foo/workspace", "remoteURL": "https://...", "dirName": "foo"}], "workspaceRemoteURL": "https://..." }
 func handleReposAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	repos := []RepoInfo{}
-
-	entries, err := os.ReadDir(reposDir)
-	if err != nil {
-		// /repos/ doesn't exist or can't be read -- return empty list
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"repos": repos,
-		})
-		return
+	workspaceRemoteURL := ""
+	if url, err := getWorkspaceOriginURL(); err == nil {
+		workspaceRemoteURL = url
 	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	repos := []RepoInfo{}
+
+	// /repos/ may not exist or be readable -- then repos stays empty
+	if entries, err := os.ReadDir(reposDir); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			dirName := entry.Name()
+			workspacePath := filepath.Join(reposDir, dirName, "workspace")
+
+			// Check if workspace/.git exists
+			if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
+				continue
+			}
+
+			info := RepoInfo{
+				Path:    workspacePath,
+				DirName: dirName,
+			}
+
+			// Try to get remote URL
+			cmd := exec.Command("git", "-C", workspacePath, "remote", "get-url", "origin")
+			if output, err := cmd.Output(); err == nil {
+				info.RemoteURL = strings.TrimSpace(string(output))
+			}
+
+			repos = append(repos, info)
 		}
-
-		dirName := entry.Name()
-		workspacePath := filepath.Join(reposDir, dirName, "workspace")
-
-		// Check if workspace/.git exists
-		if _, err := os.Stat(filepath.Join(workspacePath, ".git")); err != nil {
-			continue
-		}
-
-		info := RepoInfo{
-			Path:    workspacePath,
-			DirName: dirName,
-		}
-
-		// Try to get remote URL
-		cmd := exec.Command("git", "-C", workspacePath, "remote", "get-url", "origin")
-		if output, err := cmd.Output(); err == nil {
-			info.RemoteURL = strings.TrimSpace(string(output))
-		}
-
-		repos = append(repos, info)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"repos": repos,
+		"repos":              repos,
+		"workspaceRemoteURL": workspaceRemoteURL,
 	})
 }
 
