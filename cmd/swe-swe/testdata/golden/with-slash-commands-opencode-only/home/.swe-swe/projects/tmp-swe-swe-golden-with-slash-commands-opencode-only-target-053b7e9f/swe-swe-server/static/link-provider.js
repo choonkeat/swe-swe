@@ -79,6 +79,15 @@ function charIndexToBufferPos(segments, charIndex) {
 }
 
 /**
+ * Whether the primary pointer is coarse (touch) -- such devices have no
+ * modifier keys, so modifier-gated link activation can never fire there.
+ * @returns {boolean}
+ */
+function isCoarsePointer() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+}
+
+/**
  * Check if a link-activating modifier key is pressed.
  * Returns true if Cmd (macOS), Ctrl (other platforms), or Shift is pressed.
  * @param {MouseEvent} event - The mouse event
@@ -412,6 +421,14 @@ function registerUrlLinkProvider(terminal, options = {}) {
                         }
 
                         if (!hasLinkModifier(event)) {
+                            // Touch devices have no modifier keys, so the
+                            // "Cmd+Click to open" hint is a dead end there --
+                            // hand the URL to the host UI (link banner) which
+                            // offers a big tappable open/copy target instead.
+                            if (options.onOpenRequest && isCoarsePointer()) {
+                                options.onOpenRequest(text);
+                                return;
+                            }
                             if (options.onHint) {
                                 options.onHint('Copied! ' + getLinkModifierHint() + ' to open link');
                             }

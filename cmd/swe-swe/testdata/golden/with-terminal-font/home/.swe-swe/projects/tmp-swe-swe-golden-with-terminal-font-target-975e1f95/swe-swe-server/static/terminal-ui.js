@@ -1084,6 +1084,10 @@ class TerminalUI extends HTMLElement {
         if (typeof registerUrlLinkProvider === 'function') {
             registerUrlLinkProvider(this.term, {
                 onCopy: (url) => this.showStatusNotification('Copied: ' + url),
+                // Touch devices: tapping a printed URL raises the link
+                // banner (big open/copy target) -- there are no modifier
+                // keys to satisfy the desktop Cmd+Click gate.
+                onOpenRequest: (url) => this._showLinkBanner(url, { title: 'Open link?' }),
                 onHint
             });
         }
