@@ -73,8 +73,13 @@ ported), so the proven Mac path is a Linux VM. Windows is refused. See
 [dockerless.md](dockerless.md) and [dockerless-mac-vm.md](dockerless-mac-vm.md).
 
 Flags that only describe the container image or the compose topology
-(`--apt-get-install`, `--npm-install`, `--ssl`) do not apply in host mode; the
-tunnel flags do.
+(`--apt-get-install`, `--npm-install`, `--ssl`) do not apply in host mode.
+
+`--tunnel-server-url`, `--tunnel-unique` and `--tunnel-client-cert` do apply.
+`--tunnel-local-ports` does **not**: it exists to publish compose ports onto the
+host's loopback, which host mode already binds directly. It is deliberately not
+forwarded to `swe-swe-server`, which has no such flag and would exit 2 if given
+it.
 
 ## Environment Variables
 

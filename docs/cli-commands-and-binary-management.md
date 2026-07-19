@@ -41,7 +41,7 @@ Pass-through commands `up`, `down`, and `build` support targeting specific servi
 ```bash
 # Target specific services
 swe-swe up swe-swe                   # Start only the swe-swe container
-swe-swe build traefik                # Rebuild only the traefik image (SSL modes)
+swe-swe build swe-swe                # Rebuild only the swe-swe image
 
 # No service specified = all services (default behavior)
 swe-swe up                           # Start all services

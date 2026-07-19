@@ -56,8 +56,11 @@ Works with Claude, Codex, OpenCode, Gemini, Aider, Goose, and Pi. Not listed? [L
 
 On a Linux host you can skip containers entirely: `swe-swe init --runtime=host`
 writes the embedded server and helper binaries into `.swe-swe/`, and `swe-swe up`
-runs them directly on the host in the foreground. On macOS, run it inside a Linux
-VM -- see [dockerless on a Mac](docs/dockerless-mac-vm.md).
+runs them directly on the host in the foreground.
+
+macOS is supported experimentally -- the per-session credential broker and PTY
+session recording are not ported yet. The proven Mac setup is a Linux VM: see
+[dockerless on a Mac](docs/dockerless-mac-vm.md).
 
 ## Commands
 

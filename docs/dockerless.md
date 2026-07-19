@@ -13,10 +13,16 @@ machine, you already have almost everything swe-swe needs.
 
 ```sh
 npm i -g swe-swe             # or run ad hoc: npx -y swe-swe <cmd>
-swe-swe init --runtime=host  # writes config + binaries into ./.swe-swe
+swe-swe init --runtime=host  # writes ./.swe-swe + project integration files
 swe-swe up                   # starts swe-swe on http://localhost:1977
 swe-swe up --open            # ...and opens your browser
 ```
+
+Init writes its runtime payload (the server and helper binaries) under
+`./.swe-swe`, plus two project integration files so the agent is wired up
+the way the container image wires it: a project-scoped `.mcp.json`, and
+`.claude/settings.local.json` with the hook guards. Nothing lands in your
+global `~/.claude`.
 
 `swe-swe up` notices this is a dockerless init and runs everything
 directly -- same command you would use for a Docker setup, it just does
