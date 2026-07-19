@@ -2713,3 +2713,12 @@ a.terminal-ui__link-banner-text {
     border: none;
     cursor: pointer;
 }
+
+/* Explanatory note inside the link banner (e.g. why a localhost-callback
+   OAuth link cannot complete from this device). */
+.terminal-ui__link-banner-note {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.45;
+    margin-bottom: 8px;
+}

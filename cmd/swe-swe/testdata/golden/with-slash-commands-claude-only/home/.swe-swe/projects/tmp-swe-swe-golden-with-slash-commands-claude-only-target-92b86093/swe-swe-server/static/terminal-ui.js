@@ -7290,6 +7290,21 @@ class TerminalUI extends HTMLElement {
     // necessarily a URL).
     _showLinkBanner(text, opts = {}) {
         if (this._linkBanner) this._linkBanner.remove();
+
+        // OAuth links whose redirect_uri points at localhost only work when
+        // the browser runs on the SAME machine as the agent (the CLI's tiny
+        // callback server lives there). If this page is NOT being viewed
+        // from that machine (origin isn't localhost), opening the link ends
+        // at "can't connect to localhost" AFTER the user has signed in --
+        // observed live with claude's OAuth login. Present it as copy-only
+        // with an explanation instead of a big inviting dead-end link; the
+        // CLI always prints a cross-device variant in the terminal.
+        let note = null;
+        if (!opts.copyOnly && this._isLocalhostCallbackLink(text) && !this._viewingFromLocalhost()) {
+            opts = { ...opts, copyOnly: true, title: 'Agent wants to open a login link' };
+            note = 'This link redirects back to the machine running the agent, so it cannot complete from this device. Use the URL printed in the terminal instead (tap it).';
+        }
+
         const banner = document.createElement('div');
         banner.className = 'terminal-ui__link-banner';
 
@@ -7297,6 +7312,13 @@ class TerminalUI extends HTMLElement {
         title.className = 'terminal-ui__link-banner-title';
         title.textContent = opts.title || 'Agent sent text';
         banner.appendChild(title);
+
+        if (note) {
+            const noteEl = document.createElement('div');
+            noteEl.className = 'terminal-ui__link-banner-note';
+            noteEl.textContent = note;
+            banner.appendChild(noteEl);
+        }
 
         // The URL text itself is the link (not a separate small Open
         // button): the whole text block is the tap target, which matters on
@@ -7345,6 +7367,28 @@ class TerminalUI extends HTMLElement {
             this._linkBanner.remove();
             this._linkBanner = null;
         }
+    }
+
+    // True when url is an OAuth-style link whose redirect_uri returns to
+    // localhost -- i.e. the auth dance ends at a callback server on the
+    // machine that launched it, not wherever this page is being viewed.
+    _isLocalhostCallbackLink(url) {
+        try {
+            const redirect = new URL(url).searchParams.get('redirect_uri');
+            if (!redirect) return false;
+            const host = new URL(redirect).hostname;
+            return host === 'localhost' || host === '127.0.0.1';
+        } catch {
+            return false;
+        }
+    }
+
+    // True when this page itself is served from localhost -- meaning the
+    // viewer's browser runs on the same machine as the server/agent, and
+    // localhost callbacks CAN complete.
+    _viewingFromLocalhost() {
+        const host = window.location.hostname;
+        return host === 'localhost' || host === '127.0.0.1';
     }
 
     // Write text to the user's clipboard. navigator.clipboard needs a secure
