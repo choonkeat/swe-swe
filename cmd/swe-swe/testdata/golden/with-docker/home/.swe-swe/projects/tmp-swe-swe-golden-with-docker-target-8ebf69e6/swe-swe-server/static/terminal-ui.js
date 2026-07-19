@@ -7198,8 +7198,20 @@ class TerminalUI extends HTMLElement {
                     if (msg.url) this._lastUrlChangeUrl = msg.url;
                 }
                 if (msg.t === 'open' && msg.url) {
-                    // xdg-open shim: activate preview tab and navigate via URL bar
-                    this.openIframePane('preview', msg.url);
+                    // xdg-open shim. External URLs (e.g. an OAuth login link)
+                    // cannot render inside the proxied preview iframe -- OAuth
+                    // pages send frame-ancestors deny -- so offer a real new
+                    // tab instead (same UX as typing an external URL into the
+                    // preview URL bar). Localhost URLs go to the preview pane.
+                    let openHost = null;
+                    try { openHost = new URL(msg.url).hostname; } catch { /* bare path */ }
+                    if (openHost && openHost !== 'localhost' && openHost !== '127.0.0.1') {
+                        if (confirm('Open in new tab?\n\n' + msg.url)) {
+                            window.open(msg.url, '_blank');
+                        }
+                    } else {
+                        this.openIframePane('preview', msg.url);
+                    }
                 }
                 if (msg.t === 'navstate') {
                     const backBtn = this.querySelector('.terminal-ui__iframe-back');
