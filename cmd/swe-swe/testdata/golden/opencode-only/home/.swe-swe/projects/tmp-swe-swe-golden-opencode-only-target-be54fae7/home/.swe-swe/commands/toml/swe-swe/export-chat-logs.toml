@@ -18,6 +18,7 @@ If this session's log is still `...-untitled.md`, call the `set_chat_title` tool
   - rename the file to `YYYY-MM-DD-NN-{new-slug}.md` (keep the date and `NN`),
   - update `title:` and `slug:` in the `<!-- agent-chat export ... -->` header comment and the `# H1` line,
   - update the matching entry in the `const MANIFEST` array in `agent-chats/index.html` (`md:` path and `title:`).
+- A header-only log with no conversation (a session that opened and never chatted) from an ended session: delete the file and its `MANIFEST` entry instead of committing noise.
 - Asset files (`agent-chats/assets/YYYY-MM-DD-NN-*`) are keyed by date + `NN`, not slug -- no renames needed.
 
 ## 3. Scrub sensitive content
