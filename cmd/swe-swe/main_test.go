@@ -387,6 +387,9 @@ func TestGetMetadataDirDifferentForDifferentPaths(t *testing.T) {
 
 // TestPathFileCreated verifies .path file is created and contains correct path
 func TestPathFileCreated(t *testing.T) {
+	// Isolate HOME: getMetadataDir resolves $HOME, and creating the metadata
+	// dir under the real home leaks tmp-* dirs that survive the test run.
+	t.Setenv("HOME", t.TempDir())
 	// Create temporary test directory
 	testDir := t.TempDir()
 	projectDir := filepath.Join(testDir, "myproject")
@@ -425,6 +428,7 @@ func TestPathFileCreated(t *testing.T) {
 
 // TestMetadataDirStructure verifies metadata directory contains expected subdirectories
 func TestMetadataDirStructure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	testDir := t.TempDir()
 	projectDir := filepath.Join(testDir, "myproject")
 
@@ -479,6 +483,7 @@ func TestSweSweNotCreatedInProject(t *testing.T) {
 
 // TestHandleUpMetadataDirLookup verifies handleUp uses getMetadataDir() to find metadata
 func TestHandleUpMetadataDirLookup(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	testDir := t.TempDir()
 	projectDir := filepath.Join(testDir, "myproject")
 
@@ -1295,6 +1300,7 @@ func TestProcessSimpleTemplate(t *testing.T) {
 
 // TestListDetectsAndPrunesStaleProjects verifies handleList detects missing paths and prunes them
 func TestListDetectsAndPrunesStaleProjects(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	testDir := t.TempDir()
 	projectDir := filepath.Join(testDir, "myproject")
 
