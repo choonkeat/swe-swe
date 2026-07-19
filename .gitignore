@@ -40,6 +40,7 @@ deploy/digitalocean/manifest.json
 !.claude/commands/reboot.md
 !.claude/commands/reboot-light.md
 !.claude/commands/test-full-e2e.md
+!.claude/commands/wrap-up.md
 .playwright-mcp
 .test-repos
 tools/
