@@ -7,7 +7,6 @@ Slash-command agents (Claude, Codex, Gemini, OpenCode, Pi) get these as `/swe-sw
 | Command | Description |
 |---------|-------------|
 | `debug-preview-page` | Debug web apps using the App Preview debug channel |
-| `export-chat-logs` | Title, scrub, and commit agent-chats/ chat logs |
 | `update-swe-swe` | Update workspace swe-swe files after a version upgrade |
 
 Agents without slash-command support (Goose, Aider) do not see these commands.
@@ -18,4 +17,4 @@ Agents without slash-command support (Goose, Aider) do not see these commands.
 - `PUBLIC_PORT` - a webpage served on this port is accessible to anyone (not protected behind auth).
 - Chrome CDP is lazy-loaded on demand: it starts the first time an MCP playwright tool is invoked. No browser process is running before that.
 - Tests/e2e that connect to `$BROWSER_CDP_PORT` directly must run after a Playwright MCP call (e.g. `browser_navigate`) to warm CDP. The suite won't trigger the lazy launch itself, so it will fail until then.
-- Chat sessions auto-archive their conversation into `agent-chats/` (markdown + assets, updated as the chat progresses). Once the task at hand is clear, name the log via `set_chat_title` so it is not left `-untitled`. Whenever you `git commit` your work, also run `/swe-swe:export-chat-logs` (agents without slash-command support: follow `~/.swe-swe/commands/md/swe-swe/export-chat-logs.md`) -- it titles, scrubs, and commits pending `agent-chats/` changes. Never delete or rewrite entries for other sessions.
+- Chat sessions auto-archive their conversation into `agent-chats/` (markdown + assets, updated as the chat progresses). Once the task at hand is clear, name the log via `set_chat_title` so it is not left `-untitled`. Never delete or rewrite other sessions' entries in `agent-chats/`.
