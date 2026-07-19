@@ -55,3 +55,24 @@ _2026-07-19 · 03 · claude · agent-chat 0.8.14 (b858a6b)_
 
 > introduce a /swe-swe:export-chat-logs which will do those things.  Then .swe-swe/docs/AGENTS.md should just mention to do /swe-swe:export-chat-logs so it is conceptually auto + possible to manually invoke
 
+<small>took 29.4s</small><br>
+**AGENT**
+
+> Done -- two commits on main.
+>
+> **Your question:** `.swe-swe/docs/AGENTS.md` is not install-once. `swe-swe init` **overwrites it every run** from the embedded template (init.go writes it plus a baseline snapshot under `.swe-swe/baseline/` for three-way merge). Repos seeded later by swe-swe-server get it only-if-missing, reconciled by `/swe-swe:update-swe-swe`. Either way: hand-edits to the live file do not survive; the durable place is the template source -- which is exactly where I made the change.
+>
+> **What I found + did:** the template already said "when committing, include agent-chats/ changes" -- it was just missing the titling and scrubbing steps. So:
+>
+> 1. `4d573bc5c` -- template bullet now reads: name the log via `set_chat_title` once the task is clear; before committing agent-chats/ changes, check for sensitive content (credentials, tokens, internal hostnames, personal data) and redact; and it states the current session's log keeps streaming after the commit, so an uncommitted tail is expected. `make build golden-update` regenerated 141 golden copies (verified the diff is only that line), `make test` passes.
+> 2. `2e7ae6cc2` -- dogfooded the rule: titled this session's log, scrub-scanned it (clean), committed it.
+>
+> I also patched the live `/workspace/.swe-swe/docs/AGENTS.md` so sibling sessions pick up the rule now; everywhere else it lands at next init/reboot or via update-swe-swe.
+>
+> **Still pending:** the backlog -- 3 untitled logs from earlier sessions (07-18-07, 07-19-01, 07-19-02), the titled-but-uncommitted 07-18-06 log, and the modified viewer assets/index.html. Want me to sweep those now (title the ended ones from their content, scrub, commit)?
+
+<small>took 4m 44s</small><br>
+**AGENT**
+
+> Shipped: /swe-swe:export-chat-logs (43e535053) -- bundled command (md+toml), AGENTS.md template now just says "run /swe-swe:export-chat-logs when you git commit", goldens regenerated, tests pass, live runtime copies seeded so it works before the next reboot. Now dogfooding it on the backlog: checking which sessions are still live, then titling/scrubbing/committing the rest...
+
