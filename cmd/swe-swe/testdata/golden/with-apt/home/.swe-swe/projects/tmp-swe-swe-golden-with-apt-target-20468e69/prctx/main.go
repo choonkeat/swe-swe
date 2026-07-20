@@ -90,21 +90,71 @@ Env & token permissions:
     - "api" scope (read + write). "read_api" is enough for fetch/show only.
   Staging (reply/comment/resolve/drop) is local and needs no token;
   only flush/approve/reject write to the server.
+
+Self-hosted / custom domains:
+  Any domain works. A full PR/MR url is self-describing (/pull/ vs
+  /-/merge_requests/), as are hosts named github.* or gitlab.*. For anything
+  else -- e.g. bare numbers against https://git.corp.example -- declare it:
+    PRCTX_GITHUB_HOSTS=git.corp.example,code.corp.example
+    PRCTX_GITLAB_HOSTS=scm.corp.example
+  API roots default to <host>/api/v3 + <host>/api/graphql (GitHub Enterprise)
+  and <host>/api/v4 (GitLab). Override if your install differs:
+    PRCTX_GITHUB_API_BASE=https://git.corp.example/api/v3
+    PRCTX_GITHUB_GRAPHQL_URL=https://git.corp.example/api/graphql
+    PRCTX_GITLAB_API_BASE=https://scm.corp.example/gitlab/api/v4
 `)
 }
 
-// providerFor selects the adapter for a ref's host. Self-hosted GitLab is
-// detected by a "gitlab." host prefix; self-hosted GitHub Enterprise is not
-// auto-detected yet.
+// providerFor selects the adapter for a ref. Any domain works -- github.com and
+// gitlab.com are only the defaults. Resolution order, most explicit first:
+//
+//  1. PRCTX_GITHUB_HOSTS / PRCTX_GITLAB_HOSTS -- comma-separated host lists.
+//  2. The URL shape the ref was parsed from (/pull/ vs /-/merge_requests/).
+//  3. Host-name heuristics for the well-known and conventionally-named hosts.
+//
+// A bare-number ref on a self-hosted host with an unconventional name reaches
+// neither 2 nor 3, which is exactly what the env vars are for.
 func providerFor(ref PRRef) (Provider, error) {
 	switch {
-	case ref.Host == "github.com":
+	case hostListed(os.Getenv("PRCTX_GITHUB_HOSTS"), ref.Host):
+		return githubProvider{}, nil
+	case hostListed(os.Getenv("PRCTX_GITLAB_HOSTS"), ref.Host):
+		return gitlabProvider{}, nil
+	}
+	switch ref.Kind {
+	case kindGitHub:
+		return githubProvider{}, nil
+	case kindGitLab:
+		return gitlabProvider{}, nil
+	}
+	switch {
+	case ref.Host == "github.com" || strings.HasPrefix(ref.Host, "github."):
 		return githubProvider{}, nil
 	case ref.Host == "gitlab.com" || strings.HasPrefix(ref.Host, "gitlab."):
 		return gitlabProvider{}, nil
-	default:
-		return nil, fmt.Errorf("unsupported host %q (github.com and gitlab.com supported)", ref.Host)
 	}
+	return nil, fmt.Errorf("cannot tell whether %q is GitHub or GitLab -- "+
+		"set PRCTX_GITHUB_HOSTS=%s or PRCTX_GITLAB_HOSTS=%s (comma-separated), "+
+		"or pass the full PR/MR url instead of a bare number", ref.Host, ref.Host, ref.Host)
+}
+
+// hostListed reports whether host appears in a comma-separated env var value.
+// Matching is case-insensitive and tolerates spaces and a scheme prefix, so
+// both "git.corp.example" and "https://git.corp.example" are accepted.
+func hostListed(list, host string) bool {
+	if list == "" || host == "" {
+		return false
+	}
+	host = strings.ToLower(host)
+	for _, entry := range strings.Split(list, ",") {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		entry = strings.TrimPrefix(strings.TrimPrefix(entry, "https://"), "http://")
+		entry = strings.TrimSuffix(entry, "/")
+		if entry != "" && entry == host {
+			return true
+		}
+	}
+	return false
 }
 
 var reDigits = regexp.MustCompile(`^\d+$`)

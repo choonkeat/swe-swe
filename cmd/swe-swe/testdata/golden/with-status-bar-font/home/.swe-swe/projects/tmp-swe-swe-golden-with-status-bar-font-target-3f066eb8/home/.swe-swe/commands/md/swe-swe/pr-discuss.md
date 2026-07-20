@@ -22,6 +22,30 @@ with "GITHUB_TOKEN is not set" (or the GitLab equivalent), tell the user to save
 the host token in that panel and reopen the session (env is injected at session
 start).
 
+## Self-hosted / custom domains
+
+Any domain works, not just github.com / gitlab.com. A full PR/MR url is
+self-describing (`/pull/` means GitHub, `/-/merge_requests/` means GitLab), as
+are hosts named `github.*` or `gitlab.*`. For anything else -- e.g. a bare
+number against `https://git.corp.example` -- prctx cannot guess, and errors
+telling the user to set one of:
+
+```bash
+PRCTX_GITHUB_HOSTS=git.corp.example,code.corp.example
+PRCTX_GITLAB_HOSTS=scm.corp.example
+```
+
+API roots default to `<host>/api/v3` + `<host>/api/graphql` (GitHub Enterprise)
+and `<host>/api/v4` (GitLab). Only if the install differs:
+
+```bash
+PRCTX_GITHUB_API_BASE=https://git.corp.example/api/v3
+PRCTX_GITHUB_GRAPHQL_URL=https://git.corp.example/api/graphql
+PRCTX_GITLAB_API_BASE=https://scm.corp.example/gitlab/api/v4
+```
+
+Persist any of these in `.swe-swe/env` so they survive session restarts.
+
 ## Workflow
 
 ### 1. Fetch and show

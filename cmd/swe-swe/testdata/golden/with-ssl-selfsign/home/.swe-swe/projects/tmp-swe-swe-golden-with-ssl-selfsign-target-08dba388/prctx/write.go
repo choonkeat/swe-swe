@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 )
 
 // apiBase returns the REST API root for a host. github.com uses
-// api.github.com; GitHub Enterprise uses <host>/api/v3.
+// api.github.com; GitHub Enterprise uses <host>/api/v3. PRCTX_GITHUB_API_BASE
+// overrides both, for installs that don't follow either layout.
 func (githubProvider) apiBase(host string) string {
+	if base := strings.TrimSuffix(strings.TrimSpace(os.Getenv("PRCTX_GITHUB_API_BASE")), "/"); base != "" {
+		return base
+	}
 	if host == "github.com" {
 		return "https://api.github.com"
 	}

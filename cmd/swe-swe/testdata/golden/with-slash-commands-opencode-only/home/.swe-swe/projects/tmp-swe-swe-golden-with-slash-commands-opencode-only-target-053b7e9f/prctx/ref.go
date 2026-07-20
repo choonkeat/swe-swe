@@ -8,9 +8,19 @@ import (
 	"strings"
 )
 
+// Provider kinds. Kind is what decides which adapter runs; the host name is
+// only ever a hint, so self-hosted installs on any domain work.
+const (
+	kindGitHub = "github"
+	kindGitLab = "gitlab"
+)
+
 // PRRef identifies a pull request / merge request on a provider host.
 type PRRef struct {
-	Host   string // e.g. "github.com"
+	Host string // e.g. "github.com", or a self-hosted domain
+	// Kind is "github", "gitlab", or "" when unknown. A PR/MR URL names it
+	// outright (/pull/ vs /-/merge_requests/); a bare number does not.
+	Kind   string `json:"kind,omitempty"`
 	Owner  string
 	Repo   string
 	Number int
@@ -20,7 +30,7 @@ func (r PRRef) slug() string { return r.Owner + "-" + r.Repo }
 
 var (
 	// https://github.com/owner/repo/pull/123  (and gitlab .../-/merge_requests/123)
-	reURL = regexp.MustCompile(`^https?://([^/]+)/(.+?)/(?:pull|-/merge_requests|merge_requests)/(\d+)`)
+	reURL = regexp.MustCompile(`^https?://([^/]+)/(.+?)/(pull|-/merge_requests|merge_requests)/(\d+)`)
 	// git@github.com:owner/repo.git
 	reSSH = regexp.MustCompile(`^git@([^:]+):(.+?)(?:\.git)?$`)
 	// https://github.com/owner/repo(.git)
@@ -32,12 +42,16 @@ var (
 // git "origin" remote).
 func parseRef(arg string) (PRRef, error) {
 	if m := reURL.FindStringSubmatch(arg); m != nil {
-		n, err := strconv.Atoi(m[3])
+		n, err := strconv.Atoi(m[4])
 		if err != nil {
 			return PRRef{}, fmt.Errorf("parse PR number from %q: %w", arg, err)
 		}
 		owner, repo := splitOwnerRepo(m[2])
-		return PRRef{Host: m[1], Owner: owner, Repo: repo, Number: n}, nil
+		kind := kindGitLab
+		if m[3] == "pull" {
+			kind = kindGitHub
+		}
+		return PRRef{Host: m[1], Kind: kind, Owner: owner, Repo: repo, Number: n}, nil
 	}
 
 	n, err := strconv.Atoi(arg)

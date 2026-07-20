@@ -16,7 +16,13 @@ import (
 // ones carry a position), individual general notes are top-level Notes.
 type gitlabProvider struct{}
 
+// apiBase returns the REST API root for a host. Self-hosted GitLab normally
+// lives at <host>/api/v4; PRCTX_GITLAB_API_BASE covers installs served from a
+// subpath or over plain http.
 func (gitlabProvider) apiBase(host string) string {
+	if base := strings.TrimSuffix(strings.TrimSpace(os.Getenv("PRCTX_GITLAB_API_BASE")), "/"); base != "" {
+		return base
+	}
 	return "https://" + host + "/api/v4"
 }
 

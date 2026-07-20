@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestMapDiscussions(t *testing.T) {
 	pos := &glPosition{NewPath: "a.go", NewLine: 12, HeadSHA: "abc"}
@@ -45,23 +48,104 @@ func TestMapDiscussions(t *testing.T) {
 
 func TestProviderFor(t *testing.T) {
 	cases := []struct {
-		host string
-		typ  string
-		ok   bool
+		name string
+		ref  PRRef
+		want string // "" means expect an error
 	}{
-		{"github.com", "main.githubProvider", true},
-		{"gitlab.com", "main.gitlabProvider", true},
-		{"gitlab.example.org", "main.gitlabProvider", true},
-		{"bitbucket.org", "", false},
+		{"github.com", PRRef{Host: "github.com"}, "main.githubProvider"},
+		{"gitlab.com", PRRef{Host: "gitlab.com"}, "main.gitlabProvider"},
+		{"gitlab subdomain", PRRef{Host: "gitlab.example.org"}, "main.gitlabProvider"},
+		{"github subdomain", PRRef{Host: "github.example.org"}, "main.githubProvider"},
+		{"unknown host", PRRef{Host: "bitbucket.org"}, ""},
+		// A custom domain is resolvable when the url named the kind.
+		{"custom host, pull url", PRRef{Host: "git.corp.example", Kind: kindGitHub}, "main.githubProvider"},
+		{"custom host, mr url", PRRef{Host: "scm.corp.example", Kind: kindGitLab}, "main.gitlabProvider"},
+	}
+	for _, c := range cases {
+		p, err := providerFor(c.ref)
+		if c.want == "" {
+			if err == nil {
+				t.Errorf("%s: expected error, got %T", c.name, p)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: unexpected error %v", c.name, err)
+			continue
+		}
+		if got := fmt.Sprintf("%T", p); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
+// A bare number against a custom domain has no url to learn the kind from; the
+// env lists are the only signal, and they outrank the host-name heuristics.
+func TestProviderForEnvHosts(t *testing.T) {
+	t.Setenv("PRCTX_GITHUB_HOSTS", "git.corp.example, https://code.corp.example/")
+	t.Setenv("PRCTX_GITLAB_HOSTS", "GITLAB-MIRROR.corp.example")
+
+	cases := []struct {
+		host string
+		want string
+	}{
+		{"git.corp.example", "main.githubProvider"},
+		{"code.corp.example", "main.githubProvider"},
+		{"gitlab-mirror.corp.example", "main.gitlabProvider"},
 	}
 	for _, c := range cases {
 		p, err := providerFor(PRRef{Host: c.host})
-		if c.ok && err != nil {
+		if err != nil {
 			t.Errorf("providerFor(%q): unexpected error %v", c.host, err)
+			continue
 		}
-		if !c.ok && err == nil {
-			t.Errorf("providerFor(%q): expected error, got %T", c.host, p)
+		if got := fmt.Sprintf("%T", p); got != c.want {
+			t.Errorf("providerFor(%q) = %s, want %s", c.host, got, c.want)
 		}
+	}
+}
+
+// An explicit env list wins over a misleading host name.
+func TestProviderForEnvOverridesHostname(t *testing.T) {
+	t.Setenv("PRCTX_GITHUB_HOSTS", "gitlab.corp.example")
+	p, err := providerFor(PRRef{Host: "gitlab.corp.example"})
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if got := fmt.Sprintf("%T", p); got != "main.githubProvider" {
+		t.Errorf("got %s, want main.githubProvider", got)
+	}
+}
+
+func TestAPIBaseOverrides(t *testing.T) {
+	t.Setenv("PRCTX_GITHUB_API_BASE", "https://git.corp.example/api/v3/")
+	t.Setenv("PRCTX_GITHUB_GRAPHQL_URL", "https://git.corp.example/api/graphql")
+	t.Setenv("PRCTX_GITLAB_API_BASE", "https://scm.corp.example/gitlab/api/v4")
+
+	if got := (githubProvider{}).apiBase("github.com"); got != "https://git.corp.example/api/v3" {
+		t.Errorf("github apiBase = %q", got)
+	}
+	if got := (githubProvider{}).graphqlEndpoint("github.com"); got != "https://git.corp.example/api/graphql" {
+		t.Errorf("github graphqlEndpoint = %q", got)
+	}
+	if got := (gitlabProvider{}).apiBase("gitlab.com"); got != "https://scm.corp.example/gitlab/api/v4" {
+		t.Errorf("gitlab apiBase = %q", got)
+	}
+}
+
+// Without overrides, enterprise hosts get the conventional API layouts.
+func TestAPIBaseDefaults(t *testing.T) {
+	if got := (githubProvider{}).apiBase("github.com"); got != "https://api.github.com" {
+		t.Errorf("github.com apiBase = %q", got)
+	}
+	if got := (githubProvider{}).apiBase("git.corp.example"); got != "https://git.corp.example/api/v3" {
+		t.Errorf("enterprise apiBase = %q", got)
+	}
+	if got := (githubProvider{}).graphqlEndpoint("git.corp.example"); got != "https://git.corp.example/api/graphql" {
+		t.Errorf("enterprise graphqlEndpoint = %q", got)
+	}
+	if got := (gitlabProvider{}).apiBase("scm.corp.example"); got != "https://scm.corp.example/api/v4" {
+		t.Errorf("gitlab apiBase = %q", got)
 	}
 }
 
@@ -70,8 +154,15 @@ func TestParseRef(t *testing.T) {
 		in   string
 		want PRRef
 	}{
-		{"https://github.com/owner/repo/pull/42", PRRef{"github.com", "owner", "repo", 42}},
-		{"https://gitlab.com/group/sub/repo/-/merge_requests/7", PRRef{"gitlab.com", "group/sub", "repo", 7}},
+		{"https://github.com/owner/repo/pull/42",
+			PRRef{Host: "github.com", Kind: kindGitHub, Owner: "owner", Repo: "repo", Number: 42}},
+		{"https://gitlab.com/group/sub/repo/-/merge_requests/7",
+			PRRef{Host: "gitlab.com", Kind: kindGitLab, Owner: "group/sub", Repo: "repo", Number: 7}},
+		// Custom domains carry the same self-describing url shape.
+		{"https://git.corp.example/team/api/pull/9",
+			PRRef{Host: "git.corp.example", Kind: kindGitHub, Owner: "team", Repo: "api", Number: 9}},
+		{"https://scm.corp.example/team/api/-/merge_requests/3",
+			PRRef{Host: "scm.corp.example", Kind: kindGitLab, Owner: "team", Repo: "api", Number: 3}},
 	}
 	for _, c := range cases {
 		got, err := parseRef(c.in)

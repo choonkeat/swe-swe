@@ -49,7 +49,11 @@ func (githubProvider) token() (string, error) {
 
 // graphqlEndpoint returns the GraphQL URL for a host. github.com uses
 // api.github.com/graphql; GitHub Enterprise uses <host>/api/graphql.
+// PRCTX_GITHUB_GRAPHQL_URL overrides both.
 func (githubProvider) graphqlEndpoint(host string) string {
+	if u := strings.TrimSpace(os.Getenv("PRCTX_GITHUB_GRAPHQL_URL")); u != "" {
+		return u
+	}
 	if host == "github.com" {
 		return "https://api.github.com/graphql"
 	}
