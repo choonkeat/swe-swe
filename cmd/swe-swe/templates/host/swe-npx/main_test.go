@@ -725,6 +725,138 @@ func TestReadCappedRejectsOverlongBody(t *testing.T) {
 	}
 }
 
+// --- 16. memo cannot force a downgrade ---
+
+func TestMemoOlderThanCacheIsIgnored(t *testing.T) {
+	newBin := []byte("#!md-serve 1.9.0")
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.9.0", map[string][]byte{
+		"1.9.0": tarGz(t, map[string][]byte{"package/bin/md-serve": newBin}),
+	})
+	opts := testOpts(t, reg.srv.URL)
+	stderr := &bytes.Buffer{}
+	opts.stderr = stderr
+
+	// the box is already on 1.9.0 ...
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.9.0", "md-serve", newBin)
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.0.0", "md-serve", []byte("#!md-serve 1.0.0"))
+	// ... but the memo is rewritten to pin the old release
+	if err := writeMemo(opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.0.0", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	binPath, err := resolve(opts, "@choonkeat/md-serve", "latest")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got := readFileT(t, binPath); !bytes.Equal(got, newBin) {
+		t.Errorf("memo downgraded the resolve: got %q, want %q", got, newBin)
+	}
+	if reg.requests.Load() == 0 {
+		t.Errorf("a below-floor memo must force a registry re-check")
+	}
+	if !strings.Contains(stderr.String(), "ignoring memoized") {
+		t.Errorf("expected a stderr note about the ignored memo: %q", stderr.String())
+	}
+	// the rejected memo is replaced by the registry answer
+	if v, ok := readMemo(opts, "@choonkeat/md-serve-linux-x64"); !ok || v != "1.9.0" {
+		t.Errorf("memo not refreshed: %q, %v", v, ok)
+	}
+}
+
+func TestMemoAtOrAboveFloorStillSkipsNetwork(t *testing.T) {
+	binContent := []byte("#!md-serve 1.9.0")
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.9.0", map[string][]byte{})
+	opts := testOpts(t, reg.srv.URL)
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.9.0", "md-serve", binContent)
+	if err := writeMemo(opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.9.0", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	binPath, err := resolve(opts, "@choonkeat/md-serve", "latest")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got := readFileT(t, binPath); !bytes.Equal(got, binContent) {
+		t.Errorf("binary content mismatch: %q", got)
+	}
+	if n := reg.requests.Load(); n != 0 {
+		t.Errorf("warm memo at the floor made %d registry requests, want 0", n)
+	}
+}
+
+func TestReadMemoExpiryAndFormats(t *testing.T) {
+	opts := testOpts(t, "https://registry.npmjs.org")
+	pkg := "@choonkeat/md-serve-linux-x64"
+
+	if _, ok := readMemo(opts, pkg); ok {
+		t.Errorf("missing memo must not be usable")
+	}
+
+	if err := writeMemo(opts.cacheDir, pkg, "1.2.3", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := readMemo(opts, pkg); !ok || v != "1.2.3" {
+		t.Errorf("fresh memo = (%q,%v), want (1.2.3,true)", v, ok)
+	}
+
+	// recorded timestamp older than the TTL, even though mtime is fresh
+	if err := writeMemo(opts.cacheDir, pkg, "1.2.3", time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readMemo(opts, pkg); ok {
+		t.Errorf("memo with an expired recorded timestamp must not be usable")
+	}
+
+	// future-dated memo counts as expired rather than valid forever
+	if err := writeMemo(opts.cacheDir, pkg, "1.2.3", time.Now().Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readMemo(opts, pkg); ok {
+		t.Errorf("future-dated memo must not be usable")
+	}
+
+	// legacy bare-version format still honoured, dated by mtime
+	if err := os.WriteFile(memoPath(opts.cacheDir, pkg), []byte("1.4.0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := readMemo(opts, pkg); !ok || v != "1.4.0" {
+		t.Errorf("legacy memo = (%q,%v), want (1.4.0,true)", v, ok)
+	}
+
+	// stale mtime expires the legacy format
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(memoPath(opts.cacheDir, pkg), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := readMemo(opts, pkg); ok {
+		t.Errorf("legacy memo past its mtime TTL must not be usable")
+	}
+}
+
+func TestRegistryRollbackIsAnnounced(t *testing.T) {
+	oldBin := []byte("#!md-serve 1.0.0")
+	reg := newFakeRegistry(t, "@choonkeat%2Fmd-serve-linux-x64", "1.0.0", map[string][]byte{
+		"1.0.0": tarGz(t, map[string][]byte{"package/bin/md-serve": oldBin}),
+	})
+	opts := testOpts(t, reg.srv.URL)
+	stderr := &bytes.Buffer{}
+	opts.stderr = stderr
+	seedCache(t, opts.cacheDir, "@choonkeat/md-serve-linux-x64", "1.9.0", "md-serve", []byte("#!md-serve 1.9.0"))
+
+	binPath, err := resolve(opts, "@choonkeat/md-serve", "latest")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	// the registry is authoritative -- the rollback is honoured ...
+	if got := readFileT(t, binPath); !bytes.Equal(got, oldBin) {
+		t.Errorf("registry rollback not honoured: %q", got)
+	}
+	// ... but never silently
+	if !strings.Contains(stderr.String(), "rollback") {
+		t.Errorf("expected a stderr warning about the rollback: %q", stderr.String())
+	}
+}
+
 // --- exec stub: full run() flow ---
 
 func TestRunExecsResolvedBinary(t *testing.T) {

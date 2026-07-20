@@ -333,18 +333,80 @@ func constantTimeEqualHex(a, b string) bool {
 	return hashEqual([]byte(a), []byte(b))
 }
 
+// writeMemo records a dist-tags answer as "<version> <unix-seconds>". The
+// timestamp is written into the file rather than inferred from mtime alone,
+// so a restore/rsync that resets mtimes cannot silently extend the TTL.
+func writeMemo(cacheDir, platformPkg, version string, now time.Time) error {
+	memo := memoPath(cacheDir, platformPkg)
+	if err := os.MkdirAll(filepath.Dir(memo), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(memo, []byte(fmt.Sprintf("%s %d\n", version, now.Unix())), 0644)
+}
+
+// readMemo returns a still-valid memoized version, if any. A memo is valid
+// only while both its recorded timestamp and its mtime are inside the TTL;
+// a future-dated memo (clock skew, or a hand-edited file) counts as expired
+// so it cannot be used to pin an answer indefinitely. The legacy bare-version
+// format is still accepted, falling back to mtime for the timestamp.
+func readMemo(opts options, platformPkg string) (string, bool) {
+	if opts.ttl <= 0 {
+		return "", false
+	}
+	memo := memoPath(opts.cacheDir, platformPkg)
+	info, err := os.Stat(memo)
+	if err != nil {
+		return "", false
+	}
+	data, err := os.ReadFile(memo)
+	if err != nil {
+		return "", false
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 || fields[0] == "" {
+		return "", false
+	}
+	stamp := info.ModTime()
+	if len(fields) > 1 {
+		if secs, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+			stamp = time.Unix(secs, 0)
+		}
+	}
+	age := time.Since(stamp)
+	if age < 0 || age >= opts.ttl {
+		return "", false
+	}
+	if mtimeAge := time.Since(info.ModTime()); mtimeAge < 0 || mtimeAge >= opts.ttl {
+		return "", false
+	}
+	return fields[0], true
+}
+
 // lookupLatest returns the dist-tags.latest version for platformPkg,
 // memoized in the cache dir for opts.ttl. Within the TTL no network request
 // is made. On registry failure it falls back to the newest verified cached
 // version with a stderr note; with no such cache, it returns an error.
+//
+// The cache itself is the floor: the memo is never allowed to resolve to
+// something older than the newest verified cached version. Rewriting the memo
+// to an old release -- the cheapest way to make an already-patched box run a
+// known-vulnerable build again -- therefore only forces a fresh registry
+// check instead of a silent downgrade. A downgrade the registry itself
+// declares (a rolled-back dist-tag) is honoured, but announced.
 func lookupLatest(opts options, platformPkg, binName string) (string, error) {
-	memo := memoPath(opts.cacheDir, platformPkg)
-	if info, err := os.Stat(memo); err == nil && opts.ttl > 0 && time.Since(info.ModTime()) < opts.ttl {
-		if data, err := os.ReadFile(memo); err == nil {
-			if v := strings.TrimSpace(string(data)); v != "" {
-				return v, nil
-			}
+	// The floor comes from a directory listing, not a digest check: the warm
+	// path must stay cheap, and the floor is only ever used to *reject* a memo
+	// (fail-closed towards asking the registry). Anything actually returned is
+	// digest-verified before exec.
+	floor := ""
+	if vs := cachedVersions(opts.cacheDir, platformPkg); len(vs) > 0 {
+		floor = vs[0]
+	}
+	if v, ok := readMemo(opts, platformPkg); ok {
+		if floor == "" || !versionLess(v, floor) {
+			return v, nil
 		}
+		fmt.Fprintf(opts.stderr, "swe-npx: ignoring memoized %s@%s, older than cached %s; re-checking the registry\n", platformPkg, v, floor)
 	}
 
 	url := opts.registry + "/" + escapePackage(platformPkg)
@@ -375,9 +437,10 @@ func lookupLatest(opts options, platformPkg, binName string) (string, error) {
 	if latest == "" {
 		return "", fmt.Errorf("packument for %s has no dist-tags.latest", platformPkg)
 	}
-	if err := os.MkdirAll(filepath.Dir(memo), 0755); err == nil {
-		os.WriteFile(memo, []byte(latest+"\n"), 0644)
+	if floor != "" && versionLess(latest, floor) {
+		fmt.Fprintf(opts.stderr, "swe-npx: warning: registry says latest is %s@%s, older than the cached %s (dist-tag rollback?)\n", platformPkg, latest, floor)
 	}
+	writeMemo(opts.cacheDir, platformPkg, latest, time.Now())
 	return latest, nil
 }
 
