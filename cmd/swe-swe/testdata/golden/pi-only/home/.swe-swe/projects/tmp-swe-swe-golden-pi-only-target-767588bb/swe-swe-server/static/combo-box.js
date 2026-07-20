@@ -68,7 +68,10 @@ const STYLES = /* css */ `
   }
 
   .arrow {
-    padding: 6px 8px;
+    /* Generous padding: the glyph is ~10px, far under any touch minimum. The
+       rest of the field opens the listbox too (see _onWrapClick), so this only
+       has to be big enough to aim at when closing. */
+    padding: 10px 12px;
     user-select: none;
     color: var(--combo-arrow, #666);
     font-size: 0.7em;
@@ -205,14 +208,14 @@ class ComboBox extends HTMLElement {
     this._onInputKeydown = this._onInputKeydown.bind(this);
     this._onInputFocus = this._onInputFocus.bind(this);
     this._onDocClick = this._onDocClick.bind(this);
-    this._onArrowClick = this._onArrowClick.bind(this);
+    this._onWrapClick = this._onWrapClick.bind(this);
   }
 
   connectedCallback() {
     this._input.addEventListener("input", this._onInputInput);
     this._input.addEventListener("keydown", this._onInputKeydown);
     this._input.addEventListener("focus", this._onInputFocus);
-    this._arrow.addEventListener("click", this._onArrowClick);
+    this._wrap.addEventListener("click", this._onWrapClick);
     document.addEventListener("click", this._onDocClick, true);
 
     // Upgrade from <select> or <input list="..."> if specified
@@ -237,7 +240,7 @@ class ComboBox extends HTMLElement {
     this._input.removeEventListener("input", this._onInputInput);
     this._input.removeEventListener("keydown", this._onInputKeydown);
     this._input.removeEventListener("focus", this._onInputFocus);
-    this._arrow.removeEventListener("click", this._onArrowClick);
+    this._wrap.removeEventListener("click", this._onWrapClick);
     document.removeEventListener("click", this._onDocClick, true);
   }
 
@@ -248,6 +251,14 @@ class ComboBox extends HTMLElement {
   }
 
   // --- Public API ---
+
+  // Commit whatever is typed in the input right now, without waiting for the
+  // listbox to close. In free-entry mode the value only becomes real on close,
+  // so anything reading .value on submit must call this first -- otherwise a
+  // user who types a branch and clicks Start straight away sends nothing.
+  commit() {
+    if (this.freeEntry) this._acceptFreeText();
+  }
 
   get value() {
     return this.#value;
@@ -620,10 +631,20 @@ class ComboBox extends HTMLElement {
 
   // --- Events ---
 
-  _onArrowClick(e) {
-    e.stopPropagation();
-    this._toggle();
+  // The whole field is a hit target, not just the arrow. Focus alone opens the
+  // listbox, so a first click into the text area arrives already-open and must
+  // not toggle -- that would close what the click just opened. A click once the
+  // input already holds focus (the common "it did nothing" case) has no focus
+  // event to ride, so it opens here. Only the arrow toggles both ways.
+  _onWrapClick(e) {
+    if (e.composedPath().includes(this._arrow)) {
+      e.stopPropagation();
+      this._toggle();
+      this._input.focus();
+      return;
+    }
     this._input.focus();
+    if (!this.#open) this._open();
   }
 
   _onInputFocus() {
@@ -660,7 +681,14 @@ class ComboBox extends HTMLElement {
         }
         break;
       case "Escape":
+        // Only swallow Escape while our own listbox is open. Otherwise it
+        // belongs to whatever contains us -- a dialog, typically -- and
+        // stopping it would strand the user with no keyboard way out. When we
+        // do consume it, stopPropagation matters: without it the same keypress
+        // reaches the dialog's document handler and discards the whole form.
+        if (!this.#open) break;
         e.preventDefault();
+        e.stopPropagation();
         this._close();
         break;
       case "Tab":

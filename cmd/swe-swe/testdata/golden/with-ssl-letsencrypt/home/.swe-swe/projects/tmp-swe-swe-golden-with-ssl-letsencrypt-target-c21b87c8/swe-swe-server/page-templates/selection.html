@@ -884,6 +884,17 @@
             align-items: center;
             margin-top: 24px;
             gap: 12px;
+            /* Pinned to the bottom of the scroll box so the Start buttons are
+               always on screen. Without this, a phone viewport clips them below
+               the fold -- and because the page body itself does not scroll,
+               nothing tells the user there is more dialog down there. The
+               negative offsets cancel .dialog's 24px padding so the bar sits
+               flush and its background hides content scrolling underneath. */
+            position: sticky;
+            bottom: -24px;
+            background: var(--bg-secondary);
+            padding: 12px 0 24px;
+            margin-bottom: -24px;
         }
         .dialog__error {
             color: #ef4444;
@@ -990,17 +1001,6 @@
         }
         .dialog__field--hidden {
             display: none;
-        }
-
-        /* While the branch combo is open, collapse the steps below it so the
-           wizard stays single-step and the user can't click Start before the
-           free-entry combo commits its typed text. !important is needed for
-           #new-session-env-hint because prepareRepo sets its display inline. */
-        .dialog__overlay--branch-editing .dialog__field:has(#new-session-agents),
-        .dialog__overlay--branch-editing .dialog__field:has(#new-session-extra-args),
-        .dialog__overlay--branch-editing #new-session-env-hint,
-        .dialog__overlay--branch-editing .dialog__footer {
-            display: none !important;
         }
 
         /* Hide original elements upgraded by combo-box */
