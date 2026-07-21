@@ -1018,12 +1018,14 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
-        .dialog__start--chat {
+        /* Agent Chat keeps the base accent fill (it is the default action);
+           Agent Terminal is demoted to the quiet outline. */
+        .dialog__start--terminal {
             background: var(--bg-primary);
             color: var(--text-bright);
             border: 1px solid var(--border-primary);
         }
-        .dialog__start--chat:hover:not(:disabled) {
+        .dialog__start--terminal:hover:not(:disabled) {
             background: var(--bg-secondary);
         }
         .dialog__select {
@@ -1137,17 +1139,6 @@
         .dialog combo-box.combo--in-row {
             flex: 1;
             min-width: 0;
-        }
-        .dialog__chat-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .dialog__experimental {
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-top: 2px;
-            letter-spacing: 0.03em;
         }
 
         /* Mobile responsiveness */
@@ -1544,14 +1535,20 @@
                         <div class="dialog__spinner"></div>
                         <span id="new-session-loading-text">Loading...</span>
                     </div>
-                    <div class="dialog__chat-group">
-                        <button class="dialog__start dialog__start--chat" id="new-session-start-chat" disabled>Start Agent Chat</button>
-                        <div class="dialog__experimental">Experimental</div>
-                    </div>
-                    <div class="dialog__chat-group">
-                        <button class="dialog__start dialog__start--terminal" id="new-session-start-terminal" disabled>Start Agent Terminal</button>
-                        <div class="dialog__experimental" style="visibility:hidden">&nbsp;</div>
-                    </div>
+                    <!-- Agent Chat is the default and, while Agent Terminal is
+                         hidden, the only way out of this dialog. It sits last so
+                         the footer's flex-end packing puts it rightmost (and
+                         bottom-most once the footer stacks).
+
+                         Agent Terminal is hidden pending a decision on removing
+                         it outright. Kept in the DOM (not deleted) so the JS that
+                         enables/disables both buttons in lockstep keeps working
+                         and restoring it is just dropping the `hidden` below. To
+                         remove it for real, delete this button, its
+                         `.dialog__start--terminal` CSS, and every
+                         `startTerminalBtn` reference in new-session-dialog.js. -->
+                    <button class="dialog__start dialog__start--terminal" id="new-session-start-terminal" disabled hidden>Start Agent Terminal</button>
+                    <button class="dialog__start dialog__start--chat" id="new-session-start-chat" disabled>Start Agent Chat</button>
                 </div>
             </div>
         </div>
