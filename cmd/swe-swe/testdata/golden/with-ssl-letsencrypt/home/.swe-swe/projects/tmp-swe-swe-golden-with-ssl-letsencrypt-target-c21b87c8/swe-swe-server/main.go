@@ -382,6 +382,7 @@ type SessionInfo struct {
 	SummaryStatus string // "green" (waiting for user) or "red" (agent busy) or "" (unknown)
 	MemoryUsage   string // Human-readable RSS of session process tree (e.g. "1.2 GB")
 	Ending        bool   // teardown in flight: card is inert until the poll drops it
+	EndRequested  bool   // agent is committing the chat log, then ending itself: card stays joinable
 }
 
 // formatDuration returns a human-readable duration string
@@ -640,6 +641,14 @@ type Session struct {
 	// latch a reconnect in that window found a session that was neither gone nor
 	// reapable() and happily attached to a PTY being torn down. Guarded by mu.
 	ending bool
+
+	// endRequested marks "the user pressed End and chose 'commit the log, then
+	// end', and the agent is now doing that". Deliberately NOT `ending`: the
+	// agent still needs its tools and working tree, so the session stays
+	// joinable and every teardown check must keep saying no. This exists only
+	// so the homepage can say the session is on its way out instead of
+	// rendering it identical to a live one. Guarded by mu.
+	endRequested bool
 }
 
 // markEnding latches the session as ending and reports whether THIS caller won
@@ -662,6 +671,23 @@ func (s *Session) isEnding() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ending
+}
+
+// markEndRequested records that the user asked for "commit the log, then end".
+// Unlike markEnding it is not a latch guarding teardown -- it is presentation
+// state -- so re-requesting is harmless and no caller needs to win a race.
+func (s *Session) markEndRequested() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.endRequested = true
+}
+
+// isEndRequested reports whether the agent is committing the chat log ahead of
+// ending itself. The session is still fully usable while this is true.
+func (s *Session) isEndRequested() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.endRequested
 }
 
 // setRestarting marks (or clears) the PTY reader's process-transition window so
@@ -2511,6 +2537,9 @@ func main() {
 					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
 					PublicPort:  sess.PublicPort,
 					Ending:      sess.isEnding(),
+					// Survives a reload: without this the "committing" card
+					// reverted to looking live until the next live-poll tick.
+					EndRequested: sess.isEndRequested(),
 					Query: SessionPageQuery{
 						Assistant:   sess.Assistant,
 						SessionMode: sess.SessionMode,
@@ -7254,8 +7283,9 @@ func calculateTerminalDimensions(logPath string) TerminalDimensions {
 //   - render=embedded: use embedded approach (data in HTML, no streaming)
 //   - (default): use streaming approach (fetch data via JS)
 //
-// getSessionSummaryFromChat reads the last event from an agent-chat events JSONL file
-// and returns a summary line and status color.
+// getSessionSummaryFromChat reads the newest event that has something to say
+// from an agent-chat events JSONL file and returns a summary line and status
+// color.
 // summaryLine: "{who}: {message start}" -- always starts from beginning, truncated by CSS.
 // status: "green" if last event is agent message with quick_replies (waiting for user),
 //
@@ -7289,48 +7319,76 @@ func getSessionSummaryFromChat(recordingUUID string) (summaryLine string, status
 		return "", ""
 	}
 
-	// Find the last complete JSON line
 	lines := bytes.Split(bytes.TrimRight(buf, "\n"), []byte("\n"))
 	if len(lines) == 0 {
 		return "", ""
 	}
-	lastLine := lines[len(lines)-1]
+	// The first line in the buffer is only whole when the whole file fit.
+	firstWhole := 0
+	if readSize < fi.Size() {
+		firstWhole = 1
+	}
 
-	// Parse the JSON event
+	// Walk backwards to the newest event that actually says something. The
+	// last line is often not it: agent-chat writes bookkeeping events such as
+	// userMessagesConsumed, with no text, straight after a real message. Those
+	// used to fall through to the catch-all below and render a bare "Agent:"
+	// -- hiding the user's message behind an empty agent line for as long as
+	// the agent stayed busy.
+	for i := len(lines) - 1; i >= firstWhole; i-- {
+		if line, st, ok := summaryFromChatEvent(lines[i]); ok {
+			return line, st
+		}
+	}
+	return "", ""
+}
+
+// summaryFromChatEvent renders one agent-chat JSONL event as a homepage summary
+// line. ok is false for anything with nothing to show -- unparseable lines and
+// text-less bookkeeping events alike -- so the caller can keep looking further
+// back in the file.
+func summaryFromChatEvent(raw []byte) (summaryLine string, status string, ok bool) {
 	var event struct {
 		Type         string   `json:"type"`
 		Text         string   `json:"text"`
 		QuickReplies []string `json:"quick_replies"`
 	}
-	if err := json.Unmarshal(lastLine, &event); err != nil {
-		return "", ""
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return "", "", false
 	}
 
-	// Build summary line
+	text := sanitizeSummaryText(event.Text)
+
 	switch event.Type {
 	case "userMessage":
-		summaryLine = "You: " + sanitizeSummaryText(event.Text)
-		status = "red" // user sent message, agent hasn't replied
+		if text == "" {
+			return "", "", false
+		}
+		// User sent a message, agent has not replied yet.
+		return "You: " + text, "red", true
 	case "agentMessage", "verbalReply":
-		summaryLine = "Agent: " + sanitizeSummaryText(event.Text)
-		if len(event.QuickReplies) > 0 {
-			status = "green" // waiting for user reply
-		} else {
-			status = "red" // agent sent update, still working
+		if text == "" {
+			return "", "", false
 		}
+		if len(event.QuickReplies) > 0 {
+			// Waiting for the user.
+			return "Agent: " + text, "green", true
+		}
+		// Agent sent an update and is still working.
+		return "Agent: " + text, "red", true
 	case "draw":
-		summaryLine = "Agent: [diagram]"
 		if len(event.QuickReplies) > 0 {
-			status = "green"
-		} else {
-			status = "red"
+			return "Agent: [diagram]", "green", true
 		}
+		return "Agent: [diagram]", "red", true
 	default:
-		// agentProgress, verbalProgress, etc.
-		summaryLine = "Agent: " + sanitizeSummaryText(event.Text)
-		status = "red" // still working
+		// agentProgress, verbalProgress and friends: worth showing when they
+		// carry text, skipped entirely when they do not.
+		if text == "" {
+			return "", "", false
+		}
+		return "Agent: " + text, "red", true
 	}
-	return summaryLine, status
 }
 
 // sanitizeSummaryText removes newlines, control characters, and excess whitespace
@@ -8843,6 +8901,9 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Could not ask the agent to commit the chat log: "+err.Error(), http.StatusBadGateway)
 			return
 		}
+		// Presentation only -- see endRequested. Set after the request lands so a
+		// failed hand-off leaves the card looking untouched.
+		session.markEndRequested()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(map[string]string{"mode": "commit"})
@@ -9003,6 +9064,9 @@ func handleLiveSessionsAPI(w http.ResponseWriter, r *http.Request) {
 	type liveSession struct {
 		UUID   string `json:"uuid"`
 		Ending bool   `json:"ending"`
+		// EndRequested: the agent is committing the chat log and will end
+		// itself afterwards. The card stays joinable, unlike Ending.
+		EndRequested bool `json:"endRequested"`
 	}
 	live := []liveSession{}
 
@@ -9016,7 +9080,7 @@ func handleLiveSessionsAPI(w http.ResponseWriter, r *http.Request) {
 		if sess.Cmd != nil && sess.Cmd.ProcessState != nil {
 			continue
 		}
-		live = append(live, liveSession{UUID: uuid, Ending: sess.isEnding()})
+		live = append(live, liveSession{UUID: uuid, Ending: sess.isEnding(), EndRequested: sess.isEndRequested()})
 	}
 	sessionsMu.RUnlock()
 

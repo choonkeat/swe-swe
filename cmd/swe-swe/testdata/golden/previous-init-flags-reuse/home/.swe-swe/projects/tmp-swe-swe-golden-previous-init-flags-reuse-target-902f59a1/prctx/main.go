@@ -63,24 +63,68 @@ func run(args []string) error {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `prctx - PR/MR review helper
+	fmt.Fprint(os.Stderr, `prctx - review a GitHub PR / GitLab MR from the terminal
+
+Use it to read the review comments on a PR/MR, answer them, and post the answers
+back. Everything you stage is local until you flush, so drafting is always safe.
+The diff itself is NOT here -- read that with git (the branch is in your
+worktree); prctx carries the conversation.
+
+Typical session -- copy this shape:
+
+  prctx fetch https://github.com/o/r/pull/42   # 1. pull threads, prints them
+  prctx show --json                            # 2. machine-readable, for deciding
+  prctx reply $ID "Fixed in abc1234."          # 3. stage answers (nothing sent)
+  prctx resolve $ID                            #    stage "mark resolved"
+  prctx comment src/main.go:88 "Leaks here."   #    stage a NEW comment
+  prctx show                                   # 4. review what you staged
+  prctx flush                                  # 5. post it all upstream
+  prctx approve --body "LGTM"                  # 6. optional verdict
+
+$ID above is a thread id copied verbatim from fetch/show output.
 
 Read:
   prctx fetch <pr-url|number>          pull review threads into local state, then show
-  prctx show [<pr>] [--json]           render staged review state
+  prctx show [<pr>] [--json]           render current threads + what you staged
 
-Stage (local only, nothing sent):
-  prctx reply [<pr>] <thread-id> <body>
-  prctx comment [<pr>] <file>:<line> <body>
-  prctx resolve [<pr>] <thread-id>
-  prctx drop [<pr>] <thread-id|draft-id>
+Stage (local only, nothing is sent until flush):
+  prctx reply [<pr>] <thread-id> <body>        answer an existing thread
+  prctx comment [<pr>] <file>:<line> <body>    start a new thread on a line
+  prctx resolve [<pr>] <thread-id>             mark a thread resolved
+  prctx drop [<pr>] <thread-id|draft-id>       unstage a reply/resolve/comment
 
-Sync:
+Send:
   prctx flush [<pr>] [--force]         post staged replies/comments/resolves
   prctx approve [<pr>] [--body <text>] set verdict: approve
   prctx reject  [<pr>] [--body <text>] set verdict: request changes
 
-<pr> is a PR/MR url or number; omit it to use the last-fetched PR.
+Arguments:
+  <pr>          a PR/MR url, or a bare number resolved against the git "origin"
+                remote. Omit it entirely to use the last-fetched PR.
+  <thread-id>   the opaque id on a "## thread <id>" line from fetch/show (also
+                threads[].id in --json). Provider-native and long -- copy it,
+                do not retype it.
+  <draft-id>    the "d<N>" id printed when a comment is staged (d1, d2, ...),
+                also shown in the "## staged new comments" section.
+  <body>        quote it. Remaining words are joined with spaces, so an unquoted
+                body still works, but shell metacharacters will not survive.
+  <file>:<line> path relative to the repo root, line number in the NEW file.
+
+Notes for agents:
+  - Nothing reaches the server until flush / approve / reject. reply, comment,
+    resolve and drop are pure local staging -- they need no token, and you can
+    re-run them freely to correct yourself before flushing.
+  - Prefer "show --json": threads[].id, .path, .line, .body, .pending_reply,
+    .pending_resolve, and drafts[] are the fields worth reading.
+  - fetch is re-runnable and preserves anything you staged but did not flush.
+  - flush is idempotent -- an already-posted reply is stamped and skipped, so a
+    retry after a partial failure will not double-post.
+  - flush refuses when your local HEAD has moved since fetch, because comments
+    anchor to the fetched state, not your local edits. Push, re-fetch, and
+    re-stage -- or pass --force if you know the anchors still hold.
+  - prctx never writes to git. "git push" is always your own separate step.
+  - State lives in $XDG_STATE_HOME/prctx (default ~/.local/state/prctx), keyed
+    by host and repo, so several PRs can be in flight at once.
 
 Global flags:
   --token-env NAME   read the token from env var NAME instead of the provider

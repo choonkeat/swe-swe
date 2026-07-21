@@ -106,9 +106,11 @@ function doEndSessionFromCard(uuid, button, chatlog) {
                 // Nothing is ending yet: the agent is scrubbing and committing,
                 // and will end the session itself when it lands. Saying
                 // "Ending..." here would be a lie, and greying the card out
-                // would hide a session the user may want to watch.
+                // would hide a session the user may want to watch -- so the
+                // card gets its own banner instead, keeping Join and dropping
+                // only End.
                 setButtonLoading(button, false);
-                alert('Asked the agent to commit the chat log. The session will end itself once the commit lands -- open it to watch progress.');
+                markCardCommitting(sessionCard(uuid));
                 return;
             }
             // The end request is only accepted, not finished. Flip the card to
@@ -132,6 +134,21 @@ function sessionCard(uuid) {
 function markSessionCardEnding(uuid) {
     var card = sessionCard(uuid);
     if (card) { card.classList.add('session-card--ending'); }
+}
+
+// "Commit the log, then end" was chosen: the session is still live and
+// joinable, so both buttons stay and the only change is the "(Ending)" suffix
+// on the Join label. Once the agent actually ends itself the live poll adds
+// --ending on top, which hides Join entirely and shows "Ending...".
+// Takes the element, not a uuid: the poll already has it in hand.
+var COMMITTING_HINT = "The agent is scrubbing and committing this session's chat log; it ends itself when that lands.";
+function markCardCommitting(card) {
+    if (!card) { return; }
+    card.classList.add('session-card--committing');
+    // Server-rendered cards carry this already; ones flipped by the poll or by
+    // this tab's own End press do not.
+    var join = card.querySelector('.btn-join');
+    if (join && !join.title) { join.title = COMMITTING_HINT; }
 }
 
 // Reconcile the rendered session cards against the server's live set: flag the
@@ -207,6 +224,10 @@ function pollLiveSessions() {
                     card.remove();
                 } else if (entry.ending) {
                     card.classList.add('session-card--ending');
+                } else if (entry.endRequested) {
+                    // Set on every tab, not just the one that pressed End, and
+                    // re-applied after a reload -- the server owns this state.
+                    markCardCommitting(card);
                 }
             }
         })

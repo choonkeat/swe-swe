@@ -7,9 +7,18 @@ Slash-command agents (Claude, Codex, Gemini, OpenCode, Pi) get these as `/swe-sw
 | Command | Description |
 |---------|-------------|
 | `debug-preview-page` | Debug web apps using the App Preview debug channel |
+| `pr-discuss` | Discuss and resolve a GitHub PR / GitLab MR over chat |
 | `update` | Update workspace swe-swe files after a version upgrade |
 
 Agents without slash-command support (Goose, Aider) do not see these commands.
+
+## Tools on PATH
+
+- `prctx` - read a GitHub PR / GitLab MR's review comments, stage replies and
+  new comments locally, then post them upstream. Reach for it whenever the user
+  points at a PR/MR url or asks to answer review feedback. Nothing is sent until
+  `prctx flush`, so drafting is safe. Run `prctx -h` for the full workflow; the
+  token comes from Settings > Credentials > Git HTTPS.
 
 ## Environment Conventions
 

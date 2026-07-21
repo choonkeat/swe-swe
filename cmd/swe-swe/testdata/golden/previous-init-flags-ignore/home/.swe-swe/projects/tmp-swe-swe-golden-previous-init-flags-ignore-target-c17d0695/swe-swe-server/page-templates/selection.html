@@ -387,6 +387,24 @@
         .session-card--ending .btn-end {
             display: none;
         }
+
+        /* "Commit the log, then end": the agent is scrubbing and committing,
+           and will end itself when it is done. Unlike a teardown the session is
+           still fully alive, so both buttons stay -- End in particular, because
+           the agent is told to refuse and NOT end if the log cannot be safely
+           committed, and taking End away would strand such a session.
+           The whole signal is a suffix on the Join label: a banner row was
+           tried first and it was too wordy and pushed the card taller than its
+           neighbours. This adds no box and no new row. */
+        .btn-join__ending-suffix {
+            display: none;
+        }
+        /* Both classes can be on the card at once once the agent's own
+           end_session lands, but --ending hides the Join button outright, so
+           the suffix goes with it and "Ending..." takes over. */
+        .session-card--committing .btn-join__ending-suffix {
+            display: inline;
+        }
         .btn-join {
             flex: 1;
             display: inline-flex;
@@ -1686,7 +1704,7 @@
                 <div class="sessions-list">
                     {{range .Agents}}
                     {{range .Sessions}}
-                    <div class="session-card{{if .Ending}} session-card--ending{{end}}" data-session-uuid="{{.UUID}}">
+                    <div class="session-card{{if .Ending}} session-card--ending{{else if .EndRequested}} session-card--committing{{end}}" data-session-uuid="{{.UUID}}">
                         <div class="session-card__top">
                             <div class="session-card__info">
                                 <div class="session-card__repo">
@@ -1725,12 +1743,15 @@
                         </div>
                         <div class="session-card__actions">
                             <span class="session-card__ending-label">Ending...</span>
-                            <a href="/session/{{.UUID}}?{{.Query.Encode}}" class="btn-join">
+                            <a href="/session/{{.UUID}}?{{.Query.Encode}}" class="btn-join"{{if .EndRequested}} title="The agent is scrubbing and committing this session's chat log; it ends itself when that lands."{{end}}>
                                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
                                     <path d="M8 21H16M12 17V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                                 </svg>
-                                Join Session
+                                <!-- One flex child, not two: .btn-join has an
+                                     8px gap for its icon, and a bare sibling
+                                     span put that gap before "(Ending)" too. -->
+                                <span>Join Session<span class="btn-join__ending-suffix"> (Ending)</span></span>
                             </a>
                             <button class="btn-end" data-action="end-session" data-uuid="{{.UUID}}" data-public-port="{{.PublicPort}}">End</button>
                         </div>

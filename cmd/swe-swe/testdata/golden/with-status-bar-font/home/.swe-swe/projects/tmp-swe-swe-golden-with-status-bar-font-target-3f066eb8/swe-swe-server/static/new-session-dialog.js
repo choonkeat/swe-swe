@@ -1081,15 +1081,29 @@
             return;
         }
 
-        // Focus the Where combo-box so the user can start typing immediately --
-        // but only where there is a keyboard to type on. Focus opens the
-        // listbox, so on touch the dialog's first frame was its own content
-        // hidden behind a dropdown, with the soft keyboard already up.
+        // Open the Where listbox either way -- picking one is the only thing
+        // this dialog does until you have, and the rest of it stays hidden
+        // until then, so there is nothing for the list to obscure.
+        //
+        // How differs by input. With a keyboard, focus the input: it opens the
+        // listbox AND lets you type to filter straight away. On touch, focus
+        // would bring the soft keyboard up over the dialog for no gain, so
+        // call _open() directly -- it shows the list without taking focus.
+        //
+        // Wait for /api/repos either way: _open() renders the options it has,
+        // so opening first meant the list visibly grew a moment later.
         const whereCombo = document.getElementById('where-combo');
         var hasPointer = !window.matchMedia || window.matchMedia('(hover: hover)').matches;
-        if (hasPointer && whereCombo && whereCombo._input) {
-            whereCombo._input.focus();
-        }
+        reposLoaded.then(function() {
+            if (overlay.style.display === 'none') { return; } // closed meanwhile
+            if (dialogState.pendingPrefill) { return; }       // a prefill took over
+            if (!whereCombo) { return; }
+            if (hasPointer && whereCombo._input) {
+                whereCombo._input.focus();
+            } else if (typeof whereCombo._open === 'function') {
+                whereCombo._open();
+            }
+        });
     };
 
     // Select the Where option a prefill targets and kick off prepare. If the
