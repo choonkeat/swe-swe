@@ -19,6 +19,7 @@
     var startTerminalBtn = document.getElementById('new-session-start-terminal');
     var startChatBtn = document.getElementById('new-session-start-chat');
     var errorDiv = document.getElementById('new-session-error');
+    var agentHint = document.getElementById('new-session-agent-hint');
     var loadingDiv = document.getElementById('new-session-loading');
     var loadingText = document.getElementById('new-session-loading-text');
     var repoHistoryList = document.getElementById('repo-history');
@@ -195,6 +196,7 @@
     function resetDownstream() {
         // Hide post-prepare fields
         postPrepareFields.classList.add('dialog__field--hidden');
+        if (agentHint) agentHint.style.display = 'none';
 
         // Hide any revealed clone-credential UI
         hideCloneCredUI();
@@ -285,6 +287,24 @@
         loadingDiv.style.display = 'none';
     }
 
+    // With exactly one agent available there is no choice to make, and leaving
+    // it unselected just leaves both Start buttons dead on arrival.
+    function autoSelectSoleAgent() {
+        if (dialogState.selectedAgent) return;
+        var labels = agentsContainer.querySelectorAll('.dialog__agent:not(.dialog__agent--disabled)');
+        if (labels.length === 1) selectAgent(labels[0]);
+    }
+
+    // Say why the Start buttons are dead. A disabled button fires no click, so
+    // the showError('Please select an agent') guard inside startSession() can
+    // never run -- the user was left with two greyed-out buttons and no reason.
+    function updateStartHint() {
+        if (!agentHint) return;
+        var waiting = !dialogState.selectedAgent &&
+                      !postPrepareFields.classList.contains('dialog__field--hidden');
+        agentHint.style.display = waiting ? 'block' : 'none';
+    }
+
     function enableBranchAndAgent() {
         // Enable branch input
         branchInput.disabled = false;
@@ -314,6 +334,9 @@
                 }
             }
         }
+
+        autoSelectSoleAgent();
+        updateStartHint();
     }
 
     function enableAgentOnly() {
@@ -342,6 +365,9 @@
                 }
             }
         }
+
+        autoSelectSoleAgent();
+        updateStartHint();
     }
 
     // Load sticky color for the current "where" key
@@ -890,6 +916,7 @@
             dialogState.selectedAgent = radio.value;
             applyExtraArgsPrefill(radio.value);
             startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+            updateStartHint();
         }
     }
 
@@ -1054,9 +1081,13 @@
             return;
         }
 
-        // Focus the Where combo-box so the user can start typing immediately.
+        // Focus the Where combo-box so the user can start typing immediately --
+        // but only where there is a keyboard to type on. Focus opens the
+        // listbox, so on touch the dialog's first frame was its own content
+        // hidden behind a dropdown, with the soft keyboard already up.
         const whereCombo = document.getElementById('where-combo');
-        if (whereCombo && whereCombo._input) {
+        var hasPointer = !window.matchMedia || window.matchMedia('(hover: hover)').matches;
+        if (hasPointer && whereCombo && whereCombo._input) {
             whereCombo._input.focus();
         }
     };

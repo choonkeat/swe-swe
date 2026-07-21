@@ -901,6 +901,21 @@
             font-size: 13px;
             flex: 1;
         }
+        /* Explains the disabled Start buttons. Not an error -- the user has done
+           nothing wrong yet -- so it is muted rather than red. */
+        .dialog__hint {
+            color: var(--text-secondary);
+            font-size: 13px;
+            /* Its own row above the buttons. Sharing the footer's free space
+               with them squeezed it to a 53px-wide three-line column. */
+            flex: 1 1 100%;
+            order: -1;
+        }
+        /* An empty error div still claims flex space, which is what left the
+           hint nothing to sit in. */
+        .dialog__error:empty {
+            display: none;
+        }
         .dialog__loading {
             display: none;
             align-items: center;
@@ -1001,6 +1016,25 @@
         }
         .dialog__field--hidden {
             display: none;
+        }
+        .dialog__advanced {
+            margin-bottom: 20px;
+        }
+        .dialog__advanced-summary {
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            /* Comfortable to hit on a phone without looking like a button. */
+            padding: 10px 0;
+            user-select: none;
+        }
+        .dialog__advanced-summary:hover {
+            color: var(--text-primary);
+        }
+        /* The last field inside the disclosure would otherwise double up its
+           own bottom margin with the details' own. */
+        .dialog__advanced .dialog__field:last-child {
+            margin-bottom: 0;
         }
 
         /* Hide original elements upgraded by combo-box */
@@ -1240,6 +1274,10 @@
             gap: 12px;
         }
         .color-picker__input {
+            /* flex-basis, not width: as a flex child next to .color-picker__hex
+               (flex: 1) a bare width collapsed this to a 10px sliver on a phone,
+               leaving the only indication of the chosen colour unreadable. */
+            flex: 0 0 48px;
             width: 48px;
             height: 36px;
             padding: 2px;
@@ -1248,7 +1286,12 @@
             cursor: pointer;
             background: transparent;
         }
+        /* Without this the hex field keeps its intrinsic ~205px width (default
+           size=20), and since the swatch beside it is now unshrinkable there is
+           nothing left in the row to absorb the overflow -- the Clear button
+           hangs off the dialog edge on a phone. */
         .color-picker__hex {
+            min-width: 0;
             flex: 1;
             padding: 8px 12px;
             font-size: 14px;
@@ -1376,15 +1419,6 @@
                 <div class="dialog__warning" id="new-session-warning"></div>
                 <!-- Post-prepare fields: color, branch, agent -->
                 <div id="post-prepare-fields" class="dialog__field--hidden">
-                    <!-- Theme color (optional) -->
-                    <div class="dialog__field">
-                        <label class="dialog__label">Theme Color (optional)</label>
-                        <div class="color-picker__custom" style="margin-top: 8px;">
-                            <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
-                            <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
-                            <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
-                        </div>
-                    </div>
                     <!-- Branch field (no Next button) -->
                     <div class="dialog__field" id="branch-field">
                         <label class="dialog__label">Branch (optional)</label>
@@ -1405,25 +1439,43 @@
                             {{end}}
                         </div>
                     </div>
-                    <!-- Extra CLI flags (optional) -->
-                    <div class="dialog__field">
-                        <label class="dialog__label">Extra CLI flags (optional)</label>
-                        <input type="text" class="dialog__input" id="new-session-extra-args" placeholder="e.g. --channels server:agent-chat">
-                    </div>
-                    <!-- Chat-log archive opt-out (chat sessions only; staged as an
-                         AGENT_CHAT_EXPORT_DIR= env override, see startSession) -->
-                    <div class="dialog__field">
-                        <label class="dialog__label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                            <input type="checkbox" id="new-session-chatlog-archive" checked>
-                            <span>Archive chat log into repo (<code>agent-chats/</code>)</span>
-                        </label>
-                    </div>
+                    <!-- Everything optional lives behind one disclosure. Agent is
+                         the only required choice, so it and Branch come first;
+                         burying the cosmetics takes ~200px off the default phone
+                         height and stops Theme Color being the second thing a
+                         first-time user is asked for. -->
+                    <details class="dialog__advanced">
+                        <summary class="dialog__advanced-summary">Appearance &amp; advanced</summary>
+                        <!-- Theme color (optional) -->
+                        <div class="dialog__field">
+                            <label class="dialog__label">Theme Color (optional)</label>
+                            <div class="color-picker__custom" style="margin-top: 8px;">
+                                <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
+                                <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
+                                <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+                            </div>
+                        </div>
+                        <!-- Extra CLI flags (optional) -->
+                        <div class="dialog__field">
+                            <label class="dialog__label">Extra CLI flags (optional)</label>
+                            <input type="text" class="dialog__input" id="new-session-extra-args" placeholder="e.g. --channels server:agent-chat">
+                        </div>
+                        <!-- Chat-log archive opt-out (chat sessions only; staged as an
+                             AGENT_CHAT_EXPORT_DIR= env override, see startSession) -->
+                        <div class="dialog__field">
+                            <label class="dialog__label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="new-session-chatlog-archive" checked>
+                                <span>Archive chat log into repo (<code>agent-chats/</code>)</span>
+                            </label>
+                        </div>
+                    </details>
                     <!-- Env file hint -->
                     <div class="dialog__env-hint" id="new-session-env-hint" style="display: none;"></div>
                 </div>
                 <!-- Footer: error, loading, start -->
                 <div class="dialog__footer">
                     <div class="dialog__error" id="new-session-error"></div>
+                    <div class="dialog__hint" id="new-session-agent-hint" style="display: none;">Pick an agent to continue</div>
                     <div class="dialog__loading" id="new-session-loading">
                         <div class="dialog__spinner"></div>
                         <span id="new-session-loading-text">Loading...</span>

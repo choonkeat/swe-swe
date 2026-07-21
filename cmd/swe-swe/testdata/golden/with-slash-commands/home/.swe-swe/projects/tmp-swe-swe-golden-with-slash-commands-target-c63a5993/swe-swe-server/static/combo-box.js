@@ -333,6 +333,8 @@ class ComboBox extends HTMLElement {
     select.setAttribute("aria-hidden", "true");
 
     this.addEventListener("change", (e) => {
+      // Native change events bubble up here too and carry no detail.
+      if (!e.detail) return;
       select.value = e.detail.value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -373,6 +375,7 @@ class ComboBox extends HTMLElement {
 
     // Sync back
     this.addEventListener("change", (e) => {
+      if (!e.detail) return;
       input.value = e.detail.value;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
