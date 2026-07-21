@@ -28,6 +28,8 @@
     var newSessionColorHex = document.getElementById('new-session-color-hex');
     var newSessionColorClear = document.getElementById('new-session-color-clear');
     var envHint = document.getElementById('new-session-env-hint');
+    var devChannelsField = document.getElementById('dev-channels-field');
+    var devChannelsCheckbox = document.getElementById('new-session-dev-channels');
     var whereCombo = document.getElementById('where-combo');
     var branchCombo = document.getElementById('branch-combo');
     var extraArgsInput = document.getElementById('new-session-extra-args');
@@ -71,11 +73,13 @@
     var cloneCredTokenInput = document.getElementById('clone-cred-token');
     var cloneCredSubmit = document.getElementById('clone-cred-submit');
 
-    // Per-agent default extra CLI flags. When the user selects an agent we
-    // prefill the extra-args field with these (rule (c) -- only if the field
-    // is empty or still matches a previous prefill, so user edits are kept).
-    var AGENT_EXTRA_ARGS_PREFILL = {
-        claude: '--dangerously-load-development-channels server:swe-swe-agent-chat'
+    // Development channels: a checkbox, offered only by the agents that
+    // understand the flag, and off unless you ask for it. Previously this was
+    // typed into Extra CLI flags on your behalf, so the field was never blank
+    // and opting out meant deleting a flag you did not put there.
+    var DEV_CHANNELS_FLAG = '--dangerously-load-development-channels server:swe-swe-agent-chat';
+    var AGENT_DEV_CHANNELS = {
+        claude: DEV_CHANNELS_FLAG
     };
 
     var dialogState = {
@@ -95,7 +99,6 @@
         // locate this repo's env-vars blob in localStorage so it can ride the
         // creation POST and reach the new session's process before it spawns.
         initSha: '',
-        lastExtraArgsPrefill: '', // last value we auto-filled into extraArgsInput
         // Settings carried over from a recording's "+ New" button, applied
         // once the prefilled repo finishes preparing. Cleared if the user
         // switches the Where selection before that happens.
@@ -105,18 +108,35 @@
         prefillName: ''
     };
 
-    // Apply prefill rule (c): set the extra-args field for the given agent
-    // ONLY if the field is empty or its current value exactly matches the
-    // previous auto-prefill (i.e. the user has not customized it).
-    function applyExtraArgsPrefill(agent) {
-        var nextPrefill = AGENT_EXTRA_ARGS_PREFILL[agent] || '';
-        var current = extraArgsInput.value;
-        var canOverwrite = current === '' || current === dialogState.lastExtraArgsPrefill;
-        if (canOverwrite) {
-            extraArgsInput.value = nextPrefill;
-            dialogState.extraArgs = nextPrefill;
-            dialogState.lastExtraArgsPrefill = nextPrefill;
+    // Show the development-channels checkbox only for agents that take the
+    // flag. Switching to an agent that does not also clears the tick, so the
+    // flag cannot ride along invisibly to an agent that would choke on it.
+    function updateDevChannelsOption(agent) {
+        var supported = !!AGENT_DEV_CHANNELS[agent];
+        if (devChannelsField) {
+            devChannelsField.classList.toggle('dialog__field--hidden', !supported);
         }
+        if (!supported && devChannelsCheckbox) {
+            devChannelsCheckbox.checked = false;
+        }
+    }
+
+    // The flags actually handed to the agent: whatever is typed in Extra CLI
+    // flags, plus the development-channels flag when its box is ticked.
+    function effectiveExtraArgs() {
+        var typed = (dialogState.extraArgs || '').trim();
+        if (!devChannelsCheckbox || !devChannelsCheckbox.checked) {
+            return typed;
+        }
+        var flag = AGENT_DEV_CHANNELS[dialogState.selectedAgent];
+        if (!flag) {
+            return typed;
+        }
+        // Typing it by hand as well should not pass it twice.
+        if (typed.indexOf(flag) !== -1) {
+            return typed;
+        }
+        return typed ? typed + ' ' + flag : flag;
     }
 
     var REPO_HISTORY_KEY = 'swe-swe-repo-history';
@@ -244,9 +264,12 @@
         dialogState.whereKey = '';
         dialogState.extraArgs = '';
         dialogState.initSha = '';
-        dialogState.lastExtraArgsPrefill = '';
         dialogState.prefillName = '';
         if (extraArgsInput) extraArgsInput.value = '';
+        // Unchecked by default, every time -- an opt-in that remembered itself
+        // would be indistinguishable from the auto-prefill this replaced.
+        if (devChannelsCheckbox) devChannelsCheckbox.checked = false;
+        if (devChannelsField) devChannelsField.classList.add('dialog__field--hidden');
 
         // Reset color picker
         if (window.sweSweTheme) {
@@ -329,7 +352,7 @@
                     radio.checked = true;
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
-                    applyExtraArgsPrefill(dialogState.preSelectedAgent);
+                    updateDevChannelsOption(dialogState.preSelectedAgent);
                     startTerminalBtn.disabled = false; startChatBtn.disabled = false;
                 }
             }
@@ -360,7 +383,7 @@
                     radio.checked = true;
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
-                    applyExtraArgsPrefill(dialogState.preSelectedAgent);
+                    updateDevChannelsOption(dialogState.preSelectedAgent);
                     startTerminalBtn.disabled = false; startChatBtn.disabled = false;
                 }
             }
@@ -507,11 +530,17 @@
             setBranchPlaceholder('Leave blank to reuse ' + prefill.branchHint);
         }
         if (prefill.extraArgs) {
-            extraArgsInput.value = prefill.extraArgs;
-            dialogState.extraArgs = prefill.extraArgs;
-            // Treat like an auto-prefill: picking another agent may replace
-            // it with that agent's default, same as any untouched field.
-            dialogState.lastExtraArgsPrefill = prefill.extraArgs;
+            // A recording made before the checkbox existed carries the flag
+            // inline. Lift it back into the checkbox rather than showing it as
+            // typed text, so the "+ New" dialog reads the way a fresh one does
+            // -- and so effectiveExtraArgs does not have to dedupe it.
+            var lifted = prefill.extraArgs;
+            if (lifted.indexOf(DEV_CHANNELS_FLAG) !== -1) {
+                lifted = lifted.split(DEV_CHANNELS_FLAG).join(' ').replace(/\s+/g, ' ').trim();
+                if (devChannelsCheckbox) devChannelsCheckbox.checked = true;
+            }
+            extraArgsInput.value = lifted;
+            dialogState.extraArgs = lifted;
         }
         if (prefill.name) {
             dialogState.prefillName = prefill.name;
@@ -914,14 +943,13 @@
         if (radio) {
             radio.checked = true;
             dialogState.selectedAgent = radio.value;
-            applyExtraArgsPrefill(radio.value);
+            updateDevChannelsOption(radio.value);
             startTerminalBtn.disabled = false; startChatBtn.disabled = false;
             updateStartHint();
         }
     }
 
-    // Track manual edits to the extra-args field so applyExtraArgsPrefill
-    // knows the user has customized it and stops auto-overwriting.
+    // Keep dialogState in step with what is typed; effectiveExtraArgs reads it.
     extraArgsInput.addEventListener('input', function() {
         dialogState.extraArgs = extraArgsInput.value;
     });
@@ -959,7 +987,8 @@
             p.set('pwd', dialogState.repoPath);
         }
         if (dialogState.debug) p.set('debug', '1');
-        if (dialogState.extraArgs) p.set('extra_args', dialogState.extraArgs);
+        var extraArgs = effectiveExtraArgs();
+        if (extraArgs) p.set('extra_args', extraArgs);
 
         // color is CSS-only (not read by server), append after canonical params
         if (dialogState.sessionColor) {
