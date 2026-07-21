@@ -117,6 +117,76 @@ func TestProviderForEnvOverridesHostname(t *testing.T) {
 	}
 }
 
+// --token-env is stripped from args wherever it appears, in either spelling.
+func TestExtractTokenEnv(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       []string
+		wantArgs []string
+		wantEnv  string
+	}{
+		{"absent", []string{"fetch", "7"}, []string{"fetch", "7"}, ""},
+		{"before command", []string{"--token-env", "MY_TOK", "fetch", "7"}, []string{"fetch", "7"}, "MY_TOK"},
+		{"after command", []string{"fetch", "--token-env", "MY_TOK", "7"}, []string{"fetch", "7"}, "MY_TOK"},
+		{"equals form", []string{"fetch", "--token-env=MY_TOK", "7"}, []string{"fetch", "7"}, "MY_TOK"},
+		{"dangling value", []string{"fetch", "--token-env"}, []string{"fetch"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tokenEnvOverride = ""
+			t.Cleanup(func() { tokenEnvOverride = "" })
+			got := extractTokenEnv(c.in)
+			if fmt.Sprint(got) != fmt.Sprint(c.wantArgs) {
+				t.Errorf("args = %v, want %v", got, c.wantArgs)
+			}
+			if tokenEnvOverride != c.wantEnv {
+				t.Errorf("tokenEnvOverride = %q, want %q", tokenEnvOverride, c.wantEnv)
+			}
+		})
+	}
+}
+
+// The override env var wins over the provider defaults; the error names every
+// var consulted.
+func TestLookupTokenOverride(t *testing.T) {
+	t.Setenv("GITLAB_TOKEN", "default-tok")
+	t.Setenv("MY_TOK", "override-tok")
+	tokenEnvOverride = "MY_TOK"
+	t.Cleanup(func() { tokenEnvOverride = "" })
+
+	if got, _ := (gitlabProvider{}).token(); got != "override-tok" {
+		t.Errorf("gitlab token = %q, want override-tok", got)
+	}
+
+	// Unset override falls back to the provider default.
+	tokenEnvOverride = "ABSENT_TOK"
+	if got, _ := (gitlabProvider{}).token(); got != "default-tok" {
+		t.Errorf("gitlab token = %q, want default-tok", got)
+	}
+
+	// Nothing set anywhere: the error lists every name tried, override first.
+	t.Setenv("GITLAB_TOKEN", "")
+	_, err := (gitlabProvider{}).token()
+	if err == nil || err.Error() != "ABSENT_TOK / GITLAB_TOKEN is not set" {
+		t.Errorf("err = %v, want \"ABSENT_TOK / GITLAB_TOKEN is not set\"", err)
+	}
+}
+
+// Without an override, the GitHub error still names both default vars.
+func TestLookupTokenDefaults(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "gh-tok")
+	tokenEnvOverride = ""
+	if got, _ := (githubProvider{}).token(); got != "gh-tok" {
+		t.Errorf("github token = %q, want gh-tok", got)
+	}
+	t.Setenv("GH_TOKEN", "")
+	_, err := (githubProvider{}).token()
+	if err == nil || err.Error() != "GITHUB_TOKEN / GH_TOKEN is not set" {
+		t.Errorf("err = %v, want \"GITHUB_TOKEN / GH_TOKEN is not set\"", err)
+	}
+}
+
 func TestAPIBaseOverrides(t *testing.T) {
 	t.Setenv("PRCTX_GITHUB_API_BASE", "https://git.corp.example/api/v3/")
 	t.Setenv("PRCTX_GITHUB_GRAPHQL_URL", "https://git.corp.example/api/graphql")

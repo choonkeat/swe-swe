@@ -28,6 +28,7 @@ func main() {
 }
 
 func run(args []string) error {
+	args = extractTokenEnv(args)
 	if len(args) == 0 {
 		usage()
 		return fmt.Errorf("no command given")
@@ -80,6 +81,11 @@ Sync:
   prctx reject  [<pr>] [--body <text>] set verdict: request changes
 
 <pr> is a PR/MR url or number; omit it to use the last-fetched PR.
+
+Global flags:
+  --token-env NAME   read the token from env var NAME instead of the provider
+                     default (GITHUB_TOKEN/GH_TOKEN, GITLAB_TOKEN). May appear
+                     before or after the command.
 
 Env & token permissions:
   GITHUB_TOKEN (or GH_TOKEN) for GitHub:
@@ -155,6 +161,49 @@ func hostListed(list, host string) bool {
 		}
 	}
 	return false
+}
+
+// tokenEnvOverride names the env var prctx reads the API token from, set by the
+// global --token-env flag. It takes precedence over the provider defaults
+// (GITHUB_TOKEN/GH_TOKEN, GITLAB_TOKEN).
+var tokenEnvOverride string
+
+// extractTokenEnv pulls the global "--token-env NAME" / "--token-env=NAME" flag
+// out of args -- it may appear anywhere, before or after the command -- and
+// records it in tokenEnvOverride. The remaining args are returned for dispatch.
+func extractTokenEnv(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--token-env":
+			if i+1 < len(args) {
+				tokenEnvOverride = strings.TrimSpace(args[i+1])
+				i++
+			}
+		case strings.HasPrefix(a, "--token-env="):
+			tokenEnvOverride = strings.TrimSpace(strings.TrimPrefix(a, "--token-env="))
+		default:
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// lookupToken returns the first non-empty, trimmed value among the --token-env
+// override (when set) followed by the provider's default env names. The second
+// return value is a "/"-joined list of the names consulted, for error messages;
+// it is empty on success.
+func lookupToken(defaults ...string) (token, tried string) {
+	names := defaults
+	if tokenEnvOverride != "" {
+		names = append([]string{tokenEnvOverride}, defaults...)
+	}
+	for _, n := range names {
+		if v := strings.TrimSpace(os.Getenv(n)); v != "" {
+			return v, ""
+		}
+	}
+	return "", strings.Join(names, " / ")
 }
 
 var reDigits = regexp.MustCompile(`^\d+$`)

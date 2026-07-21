@@ -22,6 +22,19 @@ with "GITHUB_TOKEN is not set" (or the GitLab equivalent), tell the user to save
 the host token in that panel and reopen the session (env is injected at session
 start).
 
+If the token lives under a different env var name -- common when a self-hosted
+instance has its own PAT alongside a github.com one -- pass the name instead of
+copying the value around:
+
+```bash
+prctx --token-env GITLAB_DEDICATED_TOKEN fetch <mr-url>
+```
+
+`--token-env NAME` is global: it may appear before or after the subcommand, and
+takes precedence over `GITHUB_TOKEN`/`GH_TOKEN` and `GITLAB_TOKEN`. If NAME is
+empty prctx falls back to those defaults, and the "is not set" error names every
+var it consulted.
+
 ## Self-hosted / custom domains
 
 Any domain works, not just github.com / gitlab.com. A full PR/MR url is

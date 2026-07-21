@@ -37,12 +37,9 @@ func ghPermHint(msg string) string {
 }
 
 func (githubProvider) token() (string, error) {
-	t := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	t, tried := lookupToken("GITHUB_TOKEN", "GH_TOKEN")
 	if t == "" {
-		t = strings.TrimSpace(os.Getenv("GH_TOKEN"))
-	}
-	if t == "" {
-		return "", fmt.Errorf("GITHUB_TOKEN is not set")
+		return "", fmt.Errorf("%s is not set", tried)
 	}
 	return t, nil
 }
