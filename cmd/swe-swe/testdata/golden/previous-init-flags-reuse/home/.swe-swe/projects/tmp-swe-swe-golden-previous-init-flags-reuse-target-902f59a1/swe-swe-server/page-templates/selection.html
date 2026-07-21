@@ -323,6 +323,25 @@
             align-items: center;
             gap: 12px;
         }
+        /* Teardown in flight: the card is inert until the live poll drops it.
+           Joining is refused server-side anyway, so hide the affordance rather
+           than let it 302 the user straight back to the homepage. */
+        .session-card__ending-label {
+            display: none;
+            flex: 1;
+            font-size: 14px;
+            color: var(--text-dim, #888);
+        }
+        .session-card--ending {
+            opacity: 0.55;
+        }
+        .session-card--ending .session-card__ending-label {
+            display: inline-flex;
+        }
+        .session-card--ending .btn-join,
+        .session-card--ending .btn-end {
+            display: none;
+        }
         .btn-join {
             flex: 1;
             display: inline-flex;
@@ -1594,7 +1613,7 @@
                 <div class="sessions-list">
                     {{range .Agents}}
                     {{range .Sessions}}
-                    <div class="session-card">
+                    <div class="session-card{{if .Ending}} session-card--ending{{end}}" data-session-uuid="{{.UUID}}">
                         <div class="session-card__top">
                             <div class="session-card__info">
                                 <div class="session-card__repo">
@@ -1632,6 +1651,7 @@
                             </span>{{end}}
                         </div>
                         <div class="session-card__actions">
+                            <span class="session-card__ending-label">Ending...</span>
                             <a href="/session/{{.UUID}}?{{.Query.Encode}}" class="btn-join">
                                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
