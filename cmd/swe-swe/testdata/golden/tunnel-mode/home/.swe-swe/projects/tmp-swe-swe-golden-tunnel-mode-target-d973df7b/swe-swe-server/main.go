@@ -2750,6 +2750,14 @@ func main() {
 			return
 		}
 
+		// Server reboot API endpoint: tear down the compose project so the
+		// host restart loop redeploys with the latest templates. Same auth
+		// posture as shutdown (cookie-gated, denied to shared guests).
+		if r.URL.Path == "/api/server/reboot" {
+			handleServerRebootAPI(w, r)
+			return
+		}
+
 		// Live-session poll for the homepage: lets an ending card show a
 		// terminating state and then remove itself once teardown finishes.
 		if r.URL.Path == "/api/sessions/live" {
@@ -9436,6 +9444,23 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if err != nil {
 			return nil, nil, err
 		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+	})
+
+	// reboot_server
+	type rebootServerArgs struct{}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reboot_server",
+		Description: "Reboot the whole swe-swe stack to redeploy the latest code (templates + server). Tears down this server's docker compose project; the host restart loop then re-inits, rebuilds images with --no-cache, and brings everything back up, so saved-but-not-yet-live template changes take effect. ALL sessions on this host end. Returns as soon as teardown is triggered, then the server and this MCP connection drop for ~1-3 minutes while it redeploys. IMPORTANT: verify the working tree builds first (run `make test`) -- a broken tree makes the rebuild fail and leaves the stack down. Not available in dockerless mode (no compose project).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args rebootServerArgs) (*mcp.CallToolResult, any, error) {
+		project, err := composeProject()
+		if err != nil {
+			return nil, nil, fmt.Errorf("reboot unavailable: %w", err)
+		}
+		if err := triggerRebuildReboot(project); err != nil {
+			return nil, nil, err
+		}
+		text := fmt.Sprintf("Rebooting the stack (compose project %s). This connection and every session on the host will drop within seconds and return in ~1-3 minutes once the host restart loop redeploys.", project)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
 	})
 

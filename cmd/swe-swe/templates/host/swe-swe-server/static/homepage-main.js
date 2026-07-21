@@ -140,6 +140,52 @@ function markSessionCardEnding(uuid) {
 // would linger until the user reloaded by hand.
 var liveSessionsPollTimer = null;
 
+// Replace the whole page with a "waiting for the server" screen and poll until
+// it answers again, then reload. Two-phase on purpose: we only reload after we
+// have first SEEN the server go away (sawDown), so a graceful shutdown that
+// keeps answering 200 for a moment does not bounce us straight back into a
+// server that is on its way out. Used by the Shut-down button and, after a run
+// of failed live polls, by a reboot triggered from elsewhere (MCP tool, CLI).
+var serverDownScreenActive = false;
+function showServerDownAndPoll(message) {
+    if (serverDownScreenActive) { return; }
+    serverDownScreenActive = true;
+    if (liveSessionsPollTimer) { clearInterval(liveSessionsPollTimer); liveSessionsPollTimer = null; }
+    document.body.innerHTML =
+        '<div style="display:flex; flex-direction:column; gap:10px; align-items:center; ' +
+        'justify-content:center; height:100vh; font-family:inherit; color:var(--text-secondary); ' +
+        'font-size:16px; text-align:center; padding:24px;">' +
+        '<div id="server-down-msg">' + message + '</div>' +
+        '<div style="font-size:13px; opacity:0.65;">This page reloads itself once the server is back.</div>' +
+        '</div>';
+    var sawDown = false;
+    function tick() {
+        // fetch rejects only on a network-level failure; any HTTP status
+        // (200/302/401) means the server is answering again.
+        fetch('/', { cache: 'no-store' })
+            .then(function() {
+                if (sawDown) { window.location.reload(); return; }
+                setTimeout(tick, 1000);
+            })
+            .catch(function() {
+                if (!sawDown) {
+                    sawDown = true;
+                    var m = document.getElementById('server-down-msg');
+                    if (m) { m.textContent = 'Waiting for the server to come back...'; }
+                }
+                setTimeout(tick, 2000);
+            });
+    }
+    setTimeout(tick, 1000);
+}
+
+// Consecutive failed live-session polls. A reboot from outside the browser (the
+// reboot_server MCP tool, a CLI compose down) shows up here as the poll simply
+// failing; after a few in a row we assume the server is down and switch to the
+// self-healing wait screen rather than leaving a stale homepage up.
+var liveSessionsFailStreak = 0;
+var LIVE_POLL_FAIL_THRESHOLD = 3;
+
 function pollLiveSessions() {
     return fetch('/api/sessions/live', { headers: { 'Accept': 'application/json' } })
         .then(function(response) {
@@ -147,6 +193,7 @@ function pollLiveSessions() {
             return response.json();
         })
         .then(function(body) {
+            liveSessionsFailStreak = 0;
             if (!body || !body.sessions) { return; }
 
             var live = {};
@@ -163,7 +210,14 @@ function pollLiveSessions() {
                 }
             }
         })
-        .catch(function() { /* transient: the next tick retries */ });
+        .catch(function() {
+            // A single miss is transient (the next tick retries); a run of them
+            // means the server is actually gone -- most likely a reboot -- so
+            // hand off to the self-healing wait screen.
+            if (++liveSessionsFailStreak >= LIVE_POLL_FAIL_THRESHOLD) {
+                showServerDownAndPoll('The server went away -- rebooting?');
+            }
+        });
 }
 
 (function() {
@@ -176,8 +230,10 @@ function pollLiveSessions() {
 })();
 
 // Shut down the whole server from the settings dialog. The server ends every
-// session then exits; the page goes unreachable, so on success we replace the
-// UI with a terminal notice instead of pretending anything is still live.
+// session then exits; the page goes unreachable, so on success we hand off to
+// the self-healing wait screen. On a plain shutdown it will sit on "shutting
+// down" forever (nothing comes back); on a reboot it reloads by itself once
+// the stack is up again.
 (function() {
     var btn = document.getElementById('server-shutdown-btn');
     if (!btn) return;
@@ -192,10 +248,7 @@ function pollLiveSessions() {
                 if (!resp.ok) {
                     return resp.text().then(function(t) { throw new Error(t || resp.status); });
                 }
-                document.body.innerHTML =
-                    '<div style="display:flex; align-items:center; justify-content:center; height:100vh; ' +
-                    'font-family:inherit; color:var(--text-secondary); font-size:16px;">' +
-                    'swe-swe is shutting down.</div>';
+                showServerDownAndPoll('swe-swe is shutting down...');
             })
             .catch(function(err) {
                 btn.disabled = false;
