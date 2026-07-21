@@ -323,6 +323,51 @@
             align-items: center;
             gap: 12px;
         }
+        /* End-session dialog. Shown only when the session actually has a chat
+           log to act on -- otherwise ending stays a single confirm, because
+           making every end a three-way choice would tax the common case. */
+        .end-dialog__options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 16px 0 4px;
+        }
+        .end-dialog__option {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 12px 14px;
+            border: 1px solid var(--border, #333);
+            border-radius: 8px;
+            background: var(--bg-secondary, #1a1a1a);
+            color: inherit;
+            font-size: 14px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .end-dialog__option:hover {
+            border-color: var(--accent-30, #555);
+            background: var(--accent-10, #222);
+        }
+        .end-dialog__option-title {
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+        .end-dialog__option-hint {
+            font-size: 12px;
+            color: var(--text-secondary, #999);
+            line-height: 1.45;
+        }
+        .end-dialog__logname {
+            font-size: 12px;
+            color: var(--text-secondary, #999);
+            word-break: break-all;
+        }
+        .end-dialog__option--danger:hover {
+            border-color: #b4453c;
+        }
+
         /* Teardown in flight: the card is inert until the live poll drops it.
            Joining is refused server-side anyway, so hide the affordance rather
            than let it 302 the user straight back to the homepage. */
@@ -1513,6 +1558,37 @@
     </div>
 
     <!-- Settings dialog -->
+    <!-- End-session dialog. Only shown when the session has an uncommitted
+         chat log; otherwise ending stays a plain confirm. -->
+    <div class="dialog-overlay" id="end-session-dialog-overlay">
+        <div class="dialog" style="max-width: 460px;">
+            <div class="dialog__header">
+                <div class="dialog__title">End this session?</div>
+                <button class="dialog__close" id="end-dialog-close">&times;</button>
+            </div>
+            <div class="dialog__field">
+                <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 6px;">
+                    This session has an unsaved chat log:
+                </p>
+                <div class="end-dialog__logname" id="end-dialog-logname"></div>
+                <div class="end-dialog__options">
+                    <button class="end-dialog__option" data-chatlog="">
+                        <div class="end-dialog__option-title">End, keep the log</div>
+                        <div class="end-dialog__option-hint">Ends now. The log stays on disk, uncommitted -- you can commit it later.</div>
+                    </button>
+                    <button class="end-dialog__option end-dialog__option--danger" data-chatlog="discard">
+                        <div class="end-dialog__option-title">Discard the log and end</div>
+                        <div class="end-dialog__option-hint">Deletes this session's chat log, then ends. Shared assets are left alone.</div>
+                    </button>
+                    <button class="end-dialog__option" data-chatlog="commit">
+                        <div class="end-dialog__option-title">Commit the log, then end</div>
+                        <div class="end-dialog__option-hint">Asks the agent to scrub and commit it. The session stays open until that's done, then ends itself.</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="dialog-overlay" id="settings-dialog-overlay">
         <div class="dialog" style="max-width: 400px;">
             <div class="dialog__header">

@@ -42,18 +42,75 @@ function setButtonLoading(button, loading) {
     }
 }
 
+// Ending a session throws away its chat log by default -- the file survives on
+// disk but nothing prompts you to keep it, and once the agent is dead nothing
+// can scrub or commit it either. So when there IS an uncommitted log, offer the
+// choice; when there isn't, stay out of the way with the plain confirm.
 function endSession(uuid, button) {
-    if (!confirm('End this session?')) {
+    fetchChatLogStatus(uuid).then(function(info) {
+        if (info && info.enabled && info.exists && !info.committed) {
+            openEndSessionDialog(uuid, button, info);
+            return;
+        }
+        if (confirm('End this session?')) {
+            doEndSessionFromCard(uuid, button, '');
+        }
+    });
+}
+
+function openEndSessionDialog(uuid, button, info) {
+    var overlay = document.getElementById('end-session-dialog-overlay');
+    if (!overlay) { // template without the dialog: fall back to the old flow
+        if (confirm('End this session?')) { doEndSessionFromCard(uuid, button, ''); }
         return;
     }
+    var name = document.getElementById('end-dialog-logname');
+    if (name) {
+        name.textContent = (info.path || '').split('/').pop() +
+            (info.titled ? '' : '  (untitled)');
+    }
+
+    function close() {
+        overlay.style.display = 'none';
+        document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) {
+        if (e.key === 'Escape') { close(); }
+    }
+
+    overlay.querySelectorAll('.end-dialog__option').forEach(function(btn) {
+        btn.onclick = function() {
+            close();
+            doEndSessionFromCard(uuid, button, btn.dataset.chatlog || '');
+        };
+    });
+    var closeBtn = document.getElementById('end-dialog-close');
+    if (closeBtn) { closeBtn.onclick = close; }
+    overlay.onclick = function(e) { if (e.target === overlay) { close(); } };
+    document.addEventListener('keydown', onKey);
+
+    overlay.style.display = 'flex';
+}
+
+function doEndSessionFromCard(uuid, button, chatlog) {
     var publicPort = parseInt(button.dataset.publicPort, 10) || 0;
     checkPublicPortAndEndSession({
+        chatlog: chatlog,
         uuid: uuid,
         publicPort: publicPort,
         onStart: function() {
             setButtonLoading(button, true);
         },
-        onSuccess: function() {
+        onSuccess: function(mode) {
+            if (mode === 'commit') {
+                // Nothing is ending yet: the agent is scrubbing and committing,
+                // and will end the session itself when it lands. Saying
+                // "Ending..." here would be a lie, and greying the card out
+                // would hide a session the user may want to watch.
+                setButtonLoading(button, false);
+                alert('Asked the agent to commit the chat log. The session will end itself once the commit lands -- open it to watch progress.');
+                return;
+            }
             // The end request is only accepted, not finished. Flip the card to
             // its inert "Ending..." state now and let the live poll remove it
             // once teardown actually completes -- a reload here would just

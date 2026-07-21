@@ -21,6 +21,9 @@
  * @param {function} opts.onSuccess - Called once the end request was accepted
  * @param {function} [opts.onError] - Called on error (defaults to alert)
  * @param {function} [opts.onStart] - Called once the API request is in flight
+ * @param {string} [opts.chatlog] - Chat-log disposition: 'discard' deletes the
+ *   log before teardown; 'commit' hands the whole job (scrub, commit, end) to
+ *   the agent and leaves the session running; omitted leaves the log alone.
  */
 function checkPublicPortAndEndSession(opts) {
     var uuid = opts.uuid;
@@ -34,7 +37,19 @@ function checkPublicPortAndEndSession(opts) {
     }
 
     if (onStart) { onStart(); }
-    doEndSession(uuid, null, onSuccess, onError);
+    doEndSession(uuid, null, onSuccess, onError, opts.chatlog);
+}
+
+/**
+ * Fetch this session's chat-log status so the caller can offer discard/commit
+ * only when there is a log to act on. Never rejects -- a session with no
+ * agent-chat, or an unreachable one, resolves to {enabled:false} so the End
+ * button keeps working.
+ */
+function fetchChatLogStatus(uuid) {
+    return fetch('/api/session/' + uuid + '/chatlog', { headers: { 'Accept': 'application/json' } })
+        .then(function(r) { return r.ok ? r.json() : { enabled: false }; })
+        .catch(function() { return { enabled: false }; });
 }
 
 /**
@@ -43,17 +58,25 @@ function checkPublicPortAndEndSession(opts) {
  * @param {number|null} confirmedPort - If set, sends X-Confirm-Public-Port header
  * @param {function} onSuccess
  * @param {function} onError
+ * @param {string} [chatlog] - Chat-log disposition, forwarded as a query param
  */
-function doEndSession(uuid, confirmedPort, onSuccess, onError) {
+function doEndSession(uuid, confirmedPort, onSuccess, onError, chatlog) {
     var headers = {};
     if (confirmedPort) {
         headers['X-Confirm-Public-Port'] = String(confirmedPort);
     }
+    var url = '/api/session/' + uuid + '/end';
+    if (chatlog) {
+        url += '?chatlog=' + encodeURIComponent(chatlog);
+    }
 
-    fetch('/api/session/' + uuid + '/end', { method: 'POST', headers: headers })
+    fetch(url, { method: 'POST', headers: headers })
         .then(function(response) {
             if (response.ok) {
-                onSuccess();
+                // 'commit' does not end anything yet -- the agent is now doing
+                // the work and will end the session itself. Tell the caller so
+                // it can say that rather than claiming the session is gone.
+                onSuccess(chatlog === 'commit' ? 'commit' : 'ended');
                 return;
             }
 
@@ -78,7 +101,7 @@ function doEndSession(uuid, confirmedPort, onSuccess, onError) {
                     }
 
                     // Retry with confirmation header
-                    doEndSession(uuid, port, onSuccess, onError);
+                    doEndSession(uuid, port, onSuccess, onError, chatlog);
                 });
                 return;
             }

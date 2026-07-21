@@ -2757,6 +2757,12 @@ func main() {
 			return
 		}
 
+		// Chat-log status for the End dialog.
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/chatlog") {
+			handleSessionChatLogAPI(w, r)
+			return
+		}
+
 		// Session end API endpoint
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
 			handleSessionEndAPI(w, r)
@@ -8810,6 +8816,31 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Chat-log disposition, chosen by the user in the End dialog.
+	switch r.URL.Query().Get("chatlog") {
+	case "discard":
+		// Delete the log while the agent is still alive to do it. If this
+		// fails, do NOT end: the user asked for the log to be gone, and
+		// tearing down anyway strands the file with nothing left to delete it.
+		if err := discardSessionChatLog(session); err != nil {
+			log.Printf("Session %s: chat-log discard failed, not ending: %v", sessionUUID, err)
+			http.Error(w, "Could not discard the chat log; session not ended: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+	case "commit":
+		// The agent scrubs, commits, and then ends its own session. Return
+		// without latching -- it needs its tools and its working tree, so the
+		// session must stay alive and joinable until it is finished.
+		if err := requestChatLogCommitThenEnd(session); err != nil {
+			http.Error(w, "Could not ask the agent to commit the chat log: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"mode": "commit"})
+		return
+	}
+
 	// Latch synchronously so the session is closed to new joins the instant we
 	// answer, then tear down in the background. Teardown is 3-5s for a plain
 	// session, 35s+ when a remote browser backend is unreachable, and unbounded
@@ -8833,6 +8864,122 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// orchestratorCall is the agent-chat orchestrator entry point, behind a
+// variable so tests can drive the chat-log paths without a live agent-chat.
+var orchestratorCall = callAgentChatOrchestrator
+
+// chatLogInfo is what the end-session UI needs to decide which chat-log
+// options to offer. Mirrors agent-chat's chatlog_status, plus Committed, which
+// only we can answer because only we know the repo.
+type chatLogInfo struct {
+	Enabled  bool   `json:"enabled"`
+	Path     string `json:"path,omitempty"`
+	Slug     string `json:"slug,omitempty"`
+	Titled   bool   `json:"titled"`
+	Stopped  bool   `json:"stopped"`
+	OptedOut bool   `json:"optedOut"`
+	Exists   bool   `json:"exists"`
+	// Committed: the .md is already tracked by git, so discarding it would
+	// need a git operation the user should make deliberately, not a side
+	// effect of ending a session.
+	Committed bool `json:"committed"`
+}
+
+// sessionChatLog asks agent-chat where this session's chat-log export is.
+//
+// This cannot be worked out from the filesystem: the filename carries the host
+// session UUID only while the export is untitled, and the `session:` header is
+// a hash of the event-log path, not the session UUID. Only the stream knows.
+//
+// A dead or unreachable agent-chat is reported as "no chat log", never an
+// error: failing to answer must not make ending a session impossible.
+func sessionChatLog(sess *Session) (chatLogInfo, error) {
+	if sess == nil || sess.AgentChatPort == 0 {
+		return chatLogInfo{}, nil
+	}
+	out, err := orchestratorCall(sess.AgentChatPort, "chatlog_status", map[string]any{})
+	if err != nil {
+		log.Printf("Session %s: chatlog_status unavailable: %v", sess.UUID, err)
+		return chatLogInfo{}, nil
+	}
+	var info chatLogInfo
+	if err := json.Unmarshal([]byte(out), &info); err != nil {
+		log.Printf("Session %s: chatlog_status returned unparseable output: %v", sess.UUID, err)
+		return chatLogInfo{}, nil
+	}
+	if info.Exists && info.Path != "" {
+		info.Committed = gitTracksFile(sess.WorkDir, info.Path)
+	}
+	return info, nil
+}
+
+// gitTracksFile reports whether path is already committed in the repo at
+// workDir. Any failure counts as "not tracked": the caller uses this to decide
+// whether discarding needs extra care, and being wrong in that direction only
+// costs an extra warning.
+func gitTracksFile(workDir, path string) bool {
+	if workDir == "" || path == "" {
+		return false
+	}
+	cmd := exec.Command("git", "ls-files", "--error-unmatch", path)
+	cmd.Dir = workDir
+	return cmd.Run() == nil
+}
+
+// handleSessionChatLogAPI serves GET /api/session/{uuid}/chatlog so the End
+// button can offer discard/commit only when there is actually a log to act on.
+func handleSessionChatLogAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sessionUUID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/session/"), "/chatlog")
+	sessionsMu.RLock()
+	sess, exists := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if !exists {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+	info, err := sessionChatLog(sess)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+// discardSessionChatLog deletes this session's chat-log .md via agent-chat.
+// Must run BEFORE teardown: killing the agent takes the orchestrator with it,
+// and a discard attempted afterwards would silently leave the file on disk.
+func discardSessionChatLog(sess *Session) error {
+	if sess.AgentChatPort == 0 {
+		return fmt.Errorf("session has no agent-chat port")
+	}
+	_, err := orchestratorCall(sess.AgentChatPort, "chatlog_optout", map[string]any{})
+	return err
+}
+
+// requestChatLogCommitThenEnd asks the agent to scrub and commit its own chat
+// log and then end its own session.
+//
+// Committing needs judgement -- redacting credentials, checking screenshots --
+// so it cannot be done server-side the way discarding can. Handing the agent
+// the whole job, ending included, also means there is no completion to detect:
+// no polling, no inotify, no watchdog racing a scrub. The session simply
+// disappears when the work is done.
+func requestChatLogCommitThenEnd(sess *Session) error {
+	if sess.AgentChatPort == 0 {
+		return fmt.Errorf("session has no agent-chat port")
+	}
+	text := fmt.Sprintf("Run /swe-swe:commit-session-chat-log to freeze, scrub and commit this session's chat log. "+
+		"When the commit has landed, end this session by calling the swe-swe MCP tool end_session with uuid %s. "+
+		"If you cannot commit it (for example a screenshot leaks a secret), say so and do NOT end the session.", sess.UUID)
+	_, err := orchestratorCall(sess.AgentChatPort, "send_chat_message", map[string]any{"text": text})
+	return err
 }
 
 // handleLiveSessionsAPI serves GET /api/sessions/live: the uuids the homepage
