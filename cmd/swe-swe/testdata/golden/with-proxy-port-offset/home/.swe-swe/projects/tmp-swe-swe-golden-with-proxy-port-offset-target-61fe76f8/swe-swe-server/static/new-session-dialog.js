@@ -861,29 +861,16 @@
         dialogState.selectedBranch = branchInput.value.trim();
     });
 
-    // While the branch combo is open OR focused, collapse the steps below it
-    // (Agent, Extra CLI flags, env hint, Start buttons). Mirrors the Where
-    // step's reveal-on-progress pattern and prevents the user from clicking
-    // Start before the free-entry combo has committed its typed text.
-    //
-    // Both signals matter: on iOS Safari, tapping into the combo's input
-    // fires focusin but doesn't always set the 'open' attribute right away
-    // (the dropdown opens only once filtering kicks in), so observing 'open'
-    // alone misses the keyboard-up state on touch devices.
-    if (branchCombo) {
-        function updateBranchEditing() {
-            var editing = branchCombo.hasAttribute('open') ||
-                          branchCombo.matches(':focus-within');
-            overlay.classList.toggle('dialog__overlay--branch-editing', editing);
-        }
-        var branchOpenObserver = new MutationObserver(updateBranchEditing);
-        branchOpenObserver.observe(branchCombo, { attributes: true, attributeFilter: ['open'] });
-        branchCombo.addEventListener('focusin', updateBranchEditing);
-        branchCombo.addEventListener('focusout', function() {
-            // focusout fires before focus settles on the next element; defer.
-            setTimeout(updateBranchEditing, 0);
-        });
-    }
+    // Focusing the branch combo used to collapse every field below it (Agent,
+    // Extra CLI flags, env hint, Start buttons) so the user could not press
+    // Start while the free-entry combo still held uncommitted text. That cure
+    // was worse than the disease: removing those fields from layout shrank the
+    // dialog mid-gesture, so the branch field slid ~150px out from under the
+    // pointer between mousedown and mouseup, the mouseup landed on a different
+    // control, and the document-click handler closed the listbox the same tap
+    // had just opened. It also made Agent unreachable by Tab. The uncommitted
+    // text is now handled where it belongs -- startSession() commits the combo
+    // before reading the branch.
 
     // Agent selection
     function selectAgent(label) {
@@ -968,6 +955,12 @@
     // longer materializes a session (no-ghost-session invariant), so the
     // staged intent is what grants permission to create.
     function startSession(sessionMode) {
+        // The branch combo is free-entry: typed text only becomes its value on
+        // close. Commit it here so a user who types a branch and hits Start in
+        // one motion still sends the branch they typed.
+        if (branchCombo && typeof branchCombo.commit === 'function') {
+            branchCombo.commit();
+        }
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
         // Record this repo as most-recently-used so it sorts to the top of the
         // Where dropdown next time (per-device recency). repoPath is the
@@ -1088,7 +1081,6 @@
     // Dialog close
     function closeDialog() {
         overlay.style.display = 'none';
-        overlay.classList.remove('dialog__overlay--branch-editing');
         resetDialog();
     }
 

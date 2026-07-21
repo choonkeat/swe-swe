@@ -4309,12 +4309,45 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 	return filepath.Join(filepath.Dir(repoPath), "worktrees", dirName)
 }
 
+// stripRemotePrefix turns a remote-tracking ref name like "origin/main" into
+// the local branch the user meant ("main").
+//
+// The branch dropdown is populated from `git branch -a`, so it offers the
+// origin/* refs itself -- users are not guessing, we are suggesting. Passed
+// through verbatim, "origin/main" makes `git worktree add <path> origin/main`
+// succeed with a DETACHED HEAD, silently, and the agent then commits onto no
+// branch at all. Stripping the prefix routes it to the --track path instead,
+// which is what "origin/main" reads as to everyone who types it.
+//
+// Only strips when the bare name really is a remote-tracking ref and no local
+// branch literally carries the prefixed name, so a repo that genuinely has
+// refs/heads/origin/main keeps working.
+func stripRemotePrefix(repoPath, branchName string) string {
+	remote, rest, found := strings.Cut(branchName, "/")
+	if !found || rest == "" {
+		return branchName
+	}
+	verify := func(ref string) bool {
+		return exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "--quiet", ref).Run() == nil
+	}
+	if !verify("refs/remotes/" + remote + "/" + rest) {
+		return branchName
+	}
+	if verify("refs/heads/" + branchName) {
+		return branchName
+	}
+	log.Printf("Branch %q is a remote-tracking ref; using local branch %q instead", branchName, rest)
+	return rest
+}
+
 // createWorktreeInRepo creates a worktree for a specific repo
 // Supports both /workspace and external repos at different paths
 func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 	if branchName == "" {
 		return repoPath, nil
 	}
+
+	branchName = stripRemotePrefix(repoPath, branchName)
 
 	// If the requested branch is already the one checked out in this repo, run
 	// directly in the repo instead of `git worktree add`-ing a branch git
