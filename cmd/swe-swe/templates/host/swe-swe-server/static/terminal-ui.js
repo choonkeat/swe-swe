@@ -752,9 +752,15 @@ class TerminalUI extends HTMLElement {
                             <div class="settings-panel__end-confirm-card">
                                 <h4 class="settings-panel__end-confirm-title">End this session?</h4>
                                 <p class="settings-panel__end-confirm-body">Closes the workspace, terminates the agent, and clears in-memory credentials. Repository changes on disk are unaffected.</p>
+                                <!-- Shown only when this session has an uncommitted chat log -->
+                                <p class="settings-panel__end-confirm-body" id="settings-end-chatlog-note" hidden>Uncommitted chat log: <code id="settings-end-logname"></code></p>
                                 <div class="settings-panel__end-confirm-actions">
                                     <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-cancel" type="button">Cancel</button>
                                     <button class="settings-panel__btn settings-panel__btn--danger-strong" id="settings-end-confirm-yes" type="button">Yes, end session</button>
+                                    <!-- Chat-log dispositions: revealed in place of the plain button when a log exists -->
+                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-keep" data-chatlog="" type="button" hidden>Keep log, end</button>
+                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-commit" data-chatlog="commit" type="button" hidden>Scrub, commit, then end</button>
+                                    <button class="settings-panel__btn settings-panel__btn--danger-strong" id="settings-end-discard" data-chatlog="discard" type="button" hidden>Discard log, end</button>
                                 </div>
                             </div>
                         </div>
@@ -2514,14 +2520,75 @@ class TerminalUI extends HTMLElement {
             });
         });
 
-        // End Session footer link -> show confirm popover
+        // End Session footer link -> show confirm popover. When the session
+        // has an uncommitted chat log, the confirm offers keep/commit/discard
+        // (mirroring the homepage card); otherwise it stays the plain
+        // single-button confirm so the common case is untouched.
         const endLink = panel.querySelector('#settings-end-session');
         const endConfirm = panel.querySelector('#settings-end-confirm');
         const endCancel = panel.querySelector('#settings-end-cancel');
         const endYes = panel.querySelector('#settings-end-confirm-yes');
+        const endChatlogNote = panel.querySelector('#settings-end-chatlog-note');
+        const endLogName = panel.querySelector('#settings-end-logname');
+        const endDispositionBtns = [
+            panel.querySelector('#settings-end-keep'),
+            panel.querySelector('#settings-end-commit'),
+            panel.querySelector('#settings-end-discard'),
+        ].filter(Boolean);
+
+        // End the session with the chosen chat-log disposition. 'commit' hands
+        // the whole job to the agent and leaves the session running, so stay on
+        // the page; every other disposition ends it and lands on the homepage.
+        const endWith = (chatlog) => {
+            this.closeSettingsPanel();
+            const uuid = this.sessionUUID;
+            if (!uuid) {
+                window.location.href = '/';
+                return;
+            }
+            // The server latches the session as ending and answers 202 straight
+            // away, so this lands on the homepage immediately instead of sitting
+            // on a dead terminal for the teardown.
+            checkPublicPortAndEndSession({
+                uuid: uuid,
+                chatlog: chatlog,
+                publicPort: this.publicPort,
+                onSuccess: function(mode) {
+                    if (mode === 'commit') {
+                        // Nothing is ending yet: the agent is scrubbing and
+                        // committing, and will end the session itself. Stay put
+                        // so the user can watch it land.
+                        alert('Asked the agent to commit the chat log. The session will end itself once the commit lands -- watch its progress here.');
+                        return;
+                    }
+                    window.location.href = '/';
+                }
+            });
+        };
+
         if (endLink && endConfirm) {
             endLink.addEventListener('click', () => {
+                // Show the plain confirm immediately (no blocking on the fetch),
+                // then upgrade to the three-way choice if a log turns up.
+                if (endChatlogNote) { endChatlogNote.setAttribute('hidden', ''); }
+                if (endYes) { endYes.removeAttribute('hidden'); }
+                endDispositionBtns.forEach((b) => b.setAttribute('hidden', ''));
                 endConfirm.removeAttribute('hidden');
+
+                const uuid = this.sessionUUID;
+                if (!uuid) { return; }
+                fetchChatLogStatus(uuid).then((info) => {
+                    if (!(info && info.enabled && info.exists && !info.committed)) {
+                        return; // no uncommitted log -- keep the plain confirm
+                    }
+                    if (endLogName) {
+                        endLogName.textContent = (info.path || '').split('/').pop() +
+                            (info.titled ? '' : '  (untitled)');
+                    }
+                    if (endChatlogNote) { endChatlogNote.removeAttribute('hidden'); }
+                    if (endYes) { endYes.setAttribute('hidden', ''); }
+                    endDispositionBtns.forEach((b) => b.removeAttribute('hidden'));
+                });
             });
         }
         if (endCancel && endConfirm) {
@@ -2532,25 +2599,11 @@ class TerminalUI extends HTMLElement {
             });
         }
         if (endYes) {
-            endYes.addEventListener('click', () => {
-                this.closeSettingsPanel();
-                const uuid = this.sessionUUID;
-                if (!uuid) {
-                    window.location.href = '/';
-                    return;
-                }
-                // The server latches the session as ending and answers 202
-                // straight away, so this lands on the homepage immediately
-                // instead of sitting on a dead terminal for the teardown.
-                checkPublicPortAndEndSession({
-                    uuid: uuid,
-                    publicPort: this.publicPort,
-                    onSuccess: function() {
-                        window.location.href = '/';
-                    }
-                });
-            });
+            endYes.addEventListener('click', () => endWith(''));
         }
+        endDispositionBtns.forEach((btn) => {
+            btn.addEventListener('click', () => endWith(btn.dataset.chatlog || ''));
+        });
 
         // Credentials Save button (Git HTTPS only)
         const credSaveBtn = panel.querySelector('#settings-cred-save');
