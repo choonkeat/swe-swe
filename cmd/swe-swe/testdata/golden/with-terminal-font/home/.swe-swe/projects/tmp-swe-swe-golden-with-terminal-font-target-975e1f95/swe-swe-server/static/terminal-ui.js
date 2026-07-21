@@ -751,16 +751,38 @@ class TerminalUI extends HTMLElement {
                         <div class="settings-panel__end-confirm" id="settings-end-confirm" hidden>
                             <div class="settings-panel__end-confirm-card">
                                 <h4 class="settings-panel__end-confirm-title">End this session?</h4>
-                                <p class="settings-panel__end-confirm-body">Closes the workspace, terminates the agent, and clears in-memory credentials. Repository changes on disk are unaffected.</p>
+                                <!-- Hidden once the chat-log choices appear: each
+                                     option spells out its own consequence, and
+                                     keeping this blurb too pushed the card past
+                                     the panel height. -->
+                                <p class="settings-panel__end-confirm-body" id="settings-end-generic-note">Closes the workspace, terminates the agent, and clears in-memory credentials. Repository changes on disk are unaffected.</p>
                                 <!-- Shown only when this session has an uncommitted chat log -->
                                 <p class="settings-panel__end-confirm-body" id="settings-end-chatlog-note" hidden>Uncommitted chat log: <code id="settings-end-logname"></code></p>
+                                <!-- Stacked rows, not a button row: four buttons
+                                     side by side in a 340px card wrapped every
+                                     label onto three or four lines. Each choice
+                                     now reads as title + consequence, matching
+                                     the homepage end dialog. -->
                                 <div class="settings-panel__end-confirm-actions">
-                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-cancel" type="button">Cancel</button>
-                                    <button class="settings-panel__btn settings-panel__btn--danger-strong" id="settings-end-confirm-yes" type="button">Yes, end session</button>
+                                    <button class="settings-panel__end-option settings-panel__end-option--danger" id="settings-end-confirm-yes" type="button">
+                                        <span class="settings-panel__end-option-title">Yes, end session</span>
+                                    </button>
                                     <!-- Chat-log dispositions: revealed in place of the plain button when a log exists -->
-                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-keep" data-chatlog="" type="button" hidden>Keep log, end</button>
-                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-commit" data-chatlog="commit" type="button" hidden>Scrub, commit, then end</button>
-                                    <button class="settings-panel__btn settings-panel__btn--danger-strong" id="settings-end-discard" data-chatlog="discard" type="button" hidden>Discard log, end</button>
+                                    <button class="settings-panel__end-option" id="settings-end-keep" data-chatlog="" type="button" hidden>
+                                        <span class="settings-panel__end-option-title">End, keep the log</span>
+                                        <span class="settings-panel__end-option-hint">Ends now. The log stays on disk, uncommitted -- you can commit it later.</span>
+                                    </button>
+                                    <button class="settings-panel__end-option" id="settings-end-commit" data-chatlog="commit" type="button" hidden>
+                                        <span class="settings-panel__end-option-title">Commit the log, then end</span>
+                                        <span class="settings-panel__end-option-hint">Asks the agent to scrub and commit it. The session stays open until that's done, then ends itself.</span>
+                                    </button>
+                                    <button class="settings-panel__end-option settings-panel__end-option--danger" id="settings-end-discard" data-chatlog="discard" type="button" hidden>
+                                        <span class="settings-panel__end-option-title">Discard the log and end</span>
+                                        <span class="settings-panel__end-option-hint">Deletes this session's chat log, then ends. Shared assets are left alone.</span>
+                                    </button>
+                                </div>
+                                <div class="settings-panel__end-confirm-cancel">
+                                    <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-end-cancel" type="button">Cancel</button>
                                 </div>
                             </div>
                         </div>
@@ -2529,6 +2551,7 @@ class TerminalUI extends HTMLElement {
         const endCancel = panel.querySelector('#settings-end-cancel');
         const endYes = panel.querySelector('#settings-end-confirm-yes');
         const endChatlogNote = panel.querySelector('#settings-end-chatlog-note');
+        const endGenericNote = panel.querySelector('#settings-end-generic-note');
         const endLogName = panel.querySelector('#settings-end-logname');
         const endDispositionBtns = [
             panel.querySelector('#settings-end-keep'),
@@ -2571,6 +2594,7 @@ class TerminalUI extends HTMLElement {
                 // Show the plain confirm immediately (no blocking on the fetch),
                 // then upgrade to the three-way choice if a log turns up.
                 if (endChatlogNote) { endChatlogNote.setAttribute('hidden', ''); }
+                if (endGenericNote) { endGenericNote.removeAttribute('hidden'); }
                 if (endYes) { endYes.removeAttribute('hidden'); }
                 endDispositionBtns.forEach((b) => b.setAttribute('hidden', ''));
                 endConfirm.removeAttribute('hidden');
@@ -2586,6 +2610,7 @@ class TerminalUI extends HTMLElement {
                             (info.titled ? '' : '  (untitled)');
                     }
                     if (endChatlogNote) { endChatlogNote.removeAttribute('hidden'); }
+                    if (endGenericNote) { endGenericNote.setAttribute('hidden', ''); }
                     if (endYes) { endYes.setAttribute('hidden', ''); }
                     endDispositionBtns.forEach((b) => b.removeAttribute('hidden'));
                 });

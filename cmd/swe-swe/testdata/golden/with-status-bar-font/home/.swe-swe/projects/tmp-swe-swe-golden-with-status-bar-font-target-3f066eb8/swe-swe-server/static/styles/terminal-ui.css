@@ -1089,9 +1089,12 @@ terminal-ui.embedded-in-iframe .mobile-only {
     inset: 0;
     background: rgba(15, 17, 23, 0.45);
     display: flex;
-    align-items: flex-end;
-    justify-content: flex-start;
-    padding: 0 0 56px 14px;
+    /* Centred, not anchored bottom-left. The old placement reserved 56px of
+       dead space under a small confirm; now that this is a list of described
+       choices it needs the panel's full height to avoid scrolling. */
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
     z-index: 2;
 }
 
@@ -1104,7 +1107,15 @@ terminal-ui.embedded-in-iframe .mobile-only {
     border: 1px solid #dc2626;
     border-radius: 8px;
     padding: 14px 16px;
-    width: min(340px, calc(100% - 32px));
+    /* Wide enough that each option's hint sits on one or two lines. At the old
+       340px every hint wrapped to three, which is what pushed the card past the
+       panel height and made the choices scroll. The panel is ~840px, so there
+       is room to spend here. */
+    width: min(520px, calc(100% - 32px));
+    /* Last-resort guard: on a short panel, scroll inside the card rather than
+       overflow off the top of it. */
+    max-height: 100%;
+    overflow-y: auto;
     box-shadow: 0 18px 40px rgba(0,0,0,0.3);
 }
 
@@ -1124,8 +1135,64 @@ terminal-ui.embedded-in-iframe .mobile-only {
 
 .settings-panel__end-confirm-actions {
     display: flex;
+    flex-direction: column;
     gap: 8px;
+}
+
+/* One full-width row per choice: title, then the consequence in muted text.
+   Mirrors .end-dialog__option on the homepage so the same decision reads the
+   same way in both places. */
+.settings-panel__end-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+/* Must restate display:none -- the display:block above outranks the UA
+   [hidden] rule, and the JS hides these buttons with the hidden attribute. */
+.settings-panel__end-option[hidden] {
+    display: none;
+}
+
+.settings-panel__end-option:hover {
+    background: var(--bg-secondary);
+    border-color: var(--text-muted);
+}
+
+.settings-panel__end-option-title {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.settings-panel__end-option-hint {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.settings-panel__end-option--danger .settings-panel__end-option-title {
+    color: #dc2626;
+}
+
+.settings-panel__end-option--danger:hover {
+    border-color: #dc2626;
+}
+
+.settings-panel__end-confirm-cancel {
+    display: flex;
     justify-content: flex-end;
+    margin-top: 10px;
 }
 
 /* Color picker (inside Appearance pane) */
