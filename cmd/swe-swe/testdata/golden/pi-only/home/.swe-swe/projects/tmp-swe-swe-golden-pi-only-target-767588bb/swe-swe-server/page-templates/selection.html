@@ -1528,19 +1528,12 @@
                                 <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
                             </div>
                         </div>
-                        <!-- Development channels (Claude only). A checkbox rather
-                             than a prefilled flag: it used to be typed into Extra
-                             CLI flags for you, which meant the field was never
-                             blank, the flag had to be deleted by hand to opt out,
-                             and "dangerously" showed up in a box you would
-                             otherwise skim past. Unchecked by default. -->
-                        <div class="dialog__field dialog__field--hidden" id="dev-channels-field">
-                            <label class="dialog__label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="new-session-dev-channels">
-                                <span>Load agent-chat development channels (<code>--dangerously-load-development-channels</code>)</span>
-                            </label>
-                        </div>
-                        <!-- Extra CLI flags (optional) -->
+                        <!-- Extra CLI flags (optional). Deliberately empty by
+                             default for every agent: Claude used to arrive with
+                             --dangerously-load-development-channels typed in for
+                             you, which read as something you had configured and
+                             had to be deleted by hand to opt out of. Type it
+                             here when you want it. -->
                         <div class="dialog__field">
                             <label class="dialog__label">Extra CLI flags (optional)</label>
                             <input type="text" class="dialog__input" id="new-session-extra-args" placeholder="e.g. --channels server:agent-chat">
