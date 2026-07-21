@@ -54,7 +54,12 @@ function endSession(uuid, button) {
             setButtonLoading(button, true);
         },
         onSuccess: function() {
-            window.location.reload();
+            // The end request is only accepted, not finished. Flip the card to
+            // its inert "Ending..." state now and let the live poll remove it
+            // once teardown actually completes -- a reload here would just
+            // re-render the same card, still mid-teardown.
+            markSessionCardEnding(uuid);
+            pollLiveSessions();
         },
         onError: function(msg) {
             setButtonLoading(button, false);
@@ -62,6 +67,56 @@ function endSession(uuid, button) {
         }
     });
 }
+
+function sessionCard(uuid) {
+    return document.querySelector('.session-card[data-session-uuid="' + uuid + '"]');
+}
+
+function markSessionCardEnding(uuid) {
+    var card = sessionCard(uuid);
+    if (card) { card.classList.add('session-card--ending'); }
+}
+
+// Reconcile the rendered session cards against the server's live set: flag the
+// ones being torn down, drop the ones that are gone. The homepage is otherwise
+// server-rendered with no polling, so without this an ended session's card
+// would linger until the user reloaded by hand.
+var liveSessionsPollTimer = null;
+
+function pollLiveSessions() {
+    return fetch('/api/sessions/live', { headers: { 'Accept': 'application/json' } })
+        .then(function(response) {
+            if (!response.ok) { return null; }
+            return response.json();
+        })
+        .then(function(body) {
+            if (!body || !body.sessions) { return; }
+
+            var live = {};
+            body.sessions.forEach(function(s) { live[s.uuid] = s; });
+
+            var cards = document.querySelectorAll('.session-card[data-session-uuid]');
+            for (var i = 0; i < cards.length; i++) {
+                var card = cards[i];
+                var entry = live[card.dataset.sessionUuid];
+                if (!entry) {
+                    card.remove();
+                } else if (entry.ending) {
+                    card.classList.add('session-card--ending');
+                }
+            }
+        })
+        .catch(function() { /* transient: the next tick retries */ });
+}
+
+(function() {
+    if (!document.querySelector('.session-card[data-session-uuid]')) { return; }
+    liveSessionsPollTimer = setInterval(pollLiveSessions, 3000);
+    // Catch up immediately on return to the tab rather than waiting a tick.
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) { pollLiveSessions(); }
+    });
+})();
 
 // Shut down the whole server from the settings dialog. The server ends every
 // session then exits; the page goes unreachable, so on success we replace the

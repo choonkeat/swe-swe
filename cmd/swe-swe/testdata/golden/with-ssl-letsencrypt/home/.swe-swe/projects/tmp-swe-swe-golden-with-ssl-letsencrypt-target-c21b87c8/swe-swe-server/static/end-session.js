@@ -10,8 +10,15 @@
  * the disruption (a port-safety check, not a general "are you sure" gate).
  *
  * @param {Object} opts
+ * The server answers 202 as soon as the session is latched as ending and runs
+ * the teardown in the background, so onSuccess means "accepted, session is
+ * closed to new joins" -- NOT "teardown finished". Callers must not wait for
+ * cleanup: it takes seconds normally and tens of seconds when a remote browser
+ * backend is unreachable. Poll /api/sessions/live to see it actually go away.
+ *
+ * @param {Object} opts
  * @param {string} opts.uuid - Session UUID
- * @param {function} opts.onSuccess - Called after session is ended successfully
+ * @param {function} opts.onSuccess - Called once the end request was accepted
  * @param {function} [opts.onError] - Called on error (defaults to alert)
  * @param {function} [opts.onStart] - Called once the API request is in flight
  */

@@ -2539,6 +2539,9 @@ class TerminalUI extends HTMLElement {
                     window.location.href = '/';
                     return;
                 }
+                // The server latches the session as ending and answers 202
+                // straight away, so this lands on the homepage immediately
+                // instead of sitting on a dead terminal for the teardown.
                 checkPublicPortAndEndSession({
                     uuid: uuid,
                     publicPort: this.publicPort,

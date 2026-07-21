@@ -381,6 +381,7 @@ type SessionInfo struct {
 	SummaryLine   string // One-line summary: "{who}: {message}" from last chat event or terminal
 	SummaryStatus string // "green" (waiting for user) or "red" (agent busy) or "" (unknown)
 	MemoryUsage   string // Human-readable RSS of session process tree (e.g. "1.2 GB")
+	Ending        bool   // teardown in flight: card is inert until the poll drops it
 }
 
 // formatDuration returns a human-readable duration string
@@ -630,6 +631,37 @@ type Session struct {
 	// session that is mid-restart. Guarded by mu. (A direct RestartProcess call
 	// needs no flag: it holds mu across the whole Wait-and-reassign.)
 	restarting bool
+
+	// ending is latched true the moment a teardown is committed to, BEFORE any
+	// process is signalled. Teardown is not instantaneous -- SIGTERM grace is 3s
+	// per session (serially, per child), proxy shutdown adds 2s, and freeing a
+	// remote browser can block on a 30s HTTP timeout -- and the session stays in
+	// the sessions map that whole time so its ports stay reserved. Without this
+	// latch a reconnect in that window found a session that was neither gone nor
+	// reapable() and happily attached to a PTY being torn down. Guarded by mu.
+	ending bool
+}
+
+// markEnding latches the session as ending and reports whether THIS caller won
+// the latch. Exactly one caller gets true, so teardown runs once no matter how
+// many end requests arrive (double-click, two tabs, REST plus MCP).
+func (s *Session) markEnding() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ending {
+		return false
+	}
+	s.ending = true
+	return true
+}
+
+// isEnding reports whether a teardown has been committed to for this session.
+// Anything that would hand the session to a user -- joining, attaching a
+// WebSocket -- must refuse when this is true.
+func (s *Session) isEnding() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ending
 }
 
 // setRestarting marks (or clears) the PTY reader's process-transition window so
@@ -2478,6 +2510,7 @@ func main() {
 					CreatedAt:   sess.CreatedAt,
 					DurationStr: formatDuration(time.Since(sess.CreatedAt)),
 					PublicPort:  sess.PublicPort,
+					Ending:      sess.isEnding(),
 					Query: SessionPageQuery{
 						Assistant:   sess.Assistant,
 						SessionMode: sess.SessionMode,
@@ -2717,6 +2750,13 @@ func main() {
 			return
 		}
 
+		// Live-session poll for the homepage: lets an ending card show a
+		// terminating state and then remove itself once teardown finishes.
+		if r.URL.Path == "/api/sessions/live" {
+			handleLiveSessionsAPI(w, r)
+			return
+		}
+
 		// Session end API endpoint
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/end") {
 			handleSessionEndAPI(w, r)
@@ -2836,6 +2876,12 @@ func main() {
 			sessionsMu.RLock()
 			existingSession, exists := sessions[sessionUUID]
 			sessionsMu.RUnlock()
+			// Being torn down: send the user home rather than render a terminal
+			// whose WebSocket is about to be refused with errSessionGone.
+			if exists && existingSession.isEnding() {
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
 			if exists && existingSession.Assistant != assistant {
 				q := r.URL.Query()
 				q.Set("assistant", existingSession.Assistant)
@@ -5143,6 +5189,14 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	defer sessionsMu.Unlock()
 
 	if sess, ok := sessions[p.UUID]; ok {
+		// A session being torn down is gone as far as users are concerned, even
+		// though it is still in the map (its ports stay reserved until cleanup
+		// finishes) and still not reapable() during the SIGTERM grace period.
+		// Refuse rather than attach to a PTY and proxies being shut down. Not a
+		// create-instead case either: the UUID is still occupied.
+		if sess.isEnding() {
+			return nil, false, errSessionGone
+		}
 		// Clean up and recreate if the session's process has finished -- however
 		// it ended (see Session.reapable; the old ProcessState.Exited() test
 		// missed signal-killed agents and stranded the session here too).
@@ -7983,8 +8037,63 @@ func probePort(port int) (bool, string) {
 	return true, ""
 }
 
+// errAlreadyEnding reports that a teardown for this session is already in
+// flight, so the caller must not start a second one. It is not a failure: the
+// session is going away, which is what the caller asked for.
+var errAlreadyEnding = errors.New("session is already ending")
+
+// markSessionEnding latches a session and its children as ending, closing them
+// to new joins before the first process is signalled. Children are latched
+// together with the parent because endSessionByUUID cascades to them: latching
+// each one only as its own teardown came around would leave a child joinable
+// for seconds after the user ended the parent.
+//
+// Returns errAlreadyEnding if a teardown is already in flight.
+func markSessionEnding(sessionUUID string) error {
+	sessionsMu.RLock()
+	session, exists := sessions[sessionUUID]
+	var children []*Session
+	if exists {
+		for _, sess := range sessions {
+			if sess.ParentUUID == sessionUUID {
+				children = append(children, sess)
+			}
+		}
+	}
+	sessionsMu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not found")
+	}
+	// Latch children first: the parent's latch is what callers race on, so it
+	// must be the last thing to flip.
+	for _, child := range children {
+		child.markEnding()
+	}
+	if !session.markEnding() {
+		return errAlreadyEnding
+	}
+	return nil
+}
+
+// endSessionTeardown is the blocking teardown, behind a variable so tests can
+// exercise the handler without killing real processes.
+var endSessionTeardown = endSessionByUUID
+
 // endSessionByUUID terminates a session by UUID. Used by both REST API and MCP tool.
+//
+// This blocks for the whole teardown. Callers serving a user-facing request
+// should latch with markSessionEnding and run this in the background instead --
+// see handleSessionEndAPI.
 func endSessionByUUID(sessionUUID string) error {
+	// Latch before signalling anything, so a reconnect racing the teardown is
+	// refused rather than handed a session whose PTY is being torn down. Callers
+	// that already latched (the REST API) land in the errAlreadyEnding branch,
+	// which is exactly the no-op we want here.
+	if err := markSessionEnding(sessionUUID); err != nil && !errors.Is(err, errAlreadyEnding) {
+		return err
+	}
+
 	// Find the session and collect child sessions, but keep them in the map
 	// so their ports stay reserved until cleanup completes.
 	sessionsMu.Lock()
@@ -8701,12 +8810,63 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := endSessionByUUID(sessionUUID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	// Latch synchronously so the session is closed to new joins the instant we
+	// answer, then tear down in the background. Teardown is 3-5s for a plain
+	// session, 35s+ when a remote browser backend is unreachable, and unbounded
+	// if a process will not die -- none of which the user should sit through.
+	// The homepage polls /api/sessions/live to drop the card when it is done.
+	if err := markSessionEnding(sessionUUID); err != nil {
+		if !errors.Is(err, errAlreadyEnding) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		// Teardown already in flight -- accept without starting a second one.
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	go func() {
+		defer recoverGoroutine("end session " + sessionUUID)
+		if err := endSessionTeardown(sessionUUID); err != nil {
+			log.Printf("Session %s: background teardown failed: %v", sessionUUID, err)
+		}
+	}()
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// handleLiveSessionsAPI serves GET /api/sessions/live: the uuids the homepage
+// still has cards for, each flagged if it is being torn down. The homepage is
+// server-rendered with no other polling, so this is what lets an ending card
+// show a terminating state and then vanish on its own.
+func handleLiveSessionsAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type liveSession struct {
+		UUID   string `json:"uuid"`
+		Ending bool   `json:"ending"`
+	}
+	live := []liveSession{}
+
+	sessionsMu.RLock()
+	for uuid, sess := range sessions {
+		// Mirror the homepage's own filters: child sessions are not cards, and
+		// a session whose process has exited is already hidden there.
+		if sess.ParentUUID != "" {
+			continue
+		}
+		if sess.Cmd != nil && sess.Cmd.ProcessState != nil {
+			continue
+		}
+		live = append(live, liveSession{UUID: uuid, Ending: sess.isEnding()})
+	}
+	sessionsMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"sessions": live})
 }
 
 // handleBrowserStartAPI handles POST /api/session/{uuid}/browser/start
@@ -8972,6 +9132,81 @@ func killProcessesOnPorts(ports []int) {
 
 // --- MCP Orchestration Tools ---
 
+// mcpSessionInfo is the list_sessions row.
+type mcpSessionInfo struct {
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	Assistant     string `json:"assistant"`
+	ClientCount   int    `json:"clientCount"`
+	Duration      string `json:"duration"`
+	WorkDir       string `json:"workDir"`
+	BranchName    string `json:"branchName,omitempty"`
+	PreviewPort   int    `json:"previewPort"`
+	PublicPort    int    `json:"publicPort"`
+	RecordingUUID string `json:"recordingUUID,omitempty"`
+	Busy          *bool  `json:"busy,omitempty"`
+	Ending        bool   `json:"ending,omitempty"`
+}
+
+// listSessionsSnapshot builds the list_sessions payload. Never returns nil, so
+// the tool emits [] rather than null.
+func listSessionsSnapshot() []mcpSessionInfo {
+	result := []mcpSessionInfo{}
+	var agentSessionIDs []string
+	sessionsMu.RLock()
+	for _, sess := range sessions {
+		if sess.Cmd.ProcessState != nil {
+			continue
+		}
+		sess.mu.RLock()
+		result = append(result, mcpSessionInfo{
+			UUID:          sess.UUID,
+			Name:          sess.Name,
+			Assistant:     sess.Assistant,
+			ClientCount:   len(sess.wsClients),
+			Duration:      formatDuration(time.Since(sess.CreatedAt)),
+			WorkDir:       sess.WorkDir,
+			BranchName:    sess.BranchName,
+			PreviewPort:   sess.PreviewPort,
+			PublicPort:    sess.PublicPort,
+			RecordingUUID: sess.RecordingUUID,
+			// Read the field directly: this block already holds sess.mu for
+			// reading, and calling isEnding() here would re-acquire it -- which
+			// deadlocks the moment a writer is queued between the two RLocks.
+			Ending: sess.ending,
+		})
+		agentSessionIDs = append(agentSessionIDs, sess.AgentSessionID)
+		sess.mu.RUnlock()
+	}
+	sessionsMu.RUnlock()
+	// Busy classification reads each agent's session log, so it runs
+	// after both locks are released.
+	for i := range result {
+		result[i].Busy = sessionTailBusy(result[i].Assistant, result[i].WorkDir, agentSessionIDs[i])
+	}
+	return result
+}
+
+// endSessionTool backs the end_session MCP tool: latch the session as ending,
+// then tear it down in the background. It must not block -- teardown is
+// unbounded if a process refuses to die, and a blocking tool call wedges the
+// agent that called it, not merely a browser tab.
+func endSessionTool(sessionUUID string) (string, error) {
+	if err := markSessionEnding(sessionUUID); err != nil {
+		if !errors.Is(err, errAlreadyEnding) {
+			return "", err
+		}
+		return "session already ending", nil
+	}
+	go func() {
+		defer recoverGoroutine("end session " + sessionUUID)
+		if err := endSessionTeardown(sessionUUID); err != nil {
+			log.Printf("Session %s: background teardown failed: %v", sessionUUID, err)
+		}
+	}()
+	return "session ending: closed to new joins now, disappears from list_sessions once cleanup finishes", nil
+}
+
 func registerOrchestrationTools(server *mcp.Server) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -8982,54 +9217,9 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	// list_sessions
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_sessions",
-		Description: "List all active agent sessions. busy=true means the agent is mid-work on an unresolved tool call (ending or forking it would truncate in-flight work); busy absent means unknown (agent has no tail classifier or no session id captured). recordingUUID feeds /api/fork/<recordingUUID>, which keeps working after the session ends -- post those as resume links before a planned shutdown.",
+		Description: "List all active agent sessions. busy=true means the agent is mid-work on an unresolved tool call (ending or forking it would truncate in-flight work); busy absent means unknown (agent has no tail classifier or no session id captured). ending=true means the session is being torn down: it can no longer be joined and will vanish from this list once cleanup finishes. recordingUUID feeds /api/fork/<recordingUUID>, which keeps working after the session ends -- post those as resume links before a planned shutdown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
-		type sessionInfo struct {
-			UUID          string `json:"uuid"`
-			Name          string `json:"name"`
-			Assistant     string `json:"assistant"`
-			ClientCount   int    `json:"clientCount"`
-			Duration      string `json:"duration"`
-			WorkDir       string `json:"workDir"`
-			BranchName    string `json:"branchName,omitempty"`
-			PreviewPort   int    `json:"previewPort"`
-			PublicPort    int    `json:"publicPort"`
-			RecordingUUID string `json:"recordingUUID,omitempty"`
-			Busy          *bool  `json:"busy,omitempty"`
-		}
-		var result []sessionInfo
-		var agentSessionIDs []string
-		sessionsMu.RLock()
-		for _, sess := range sessions {
-			if sess.Cmd.ProcessState != nil {
-				continue
-			}
-			sess.mu.RLock()
-			result = append(result, sessionInfo{
-				UUID:          sess.UUID,
-				Name:          sess.Name,
-				Assistant:     sess.Assistant,
-				ClientCount:   len(sess.wsClients),
-				Duration:      formatDuration(time.Since(sess.CreatedAt)),
-				WorkDir:       sess.WorkDir,
-				BranchName:    sess.BranchName,
-				PreviewPort:   sess.PreviewPort,
-				PublicPort:    sess.PublicPort,
-				RecordingUUID: sess.RecordingUUID,
-			})
-			agentSessionIDs = append(agentSessionIDs, sess.AgentSessionID)
-			sess.mu.RUnlock()
-		}
-		sessionsMu.RUnlock()
-		// Busy classification reads each agent's session log, so it runs
-		// after both locks are released.
-		for i := range result {
-			result[i].Busy = sessionTailBusy(result[i].Assistant, result[i].WorkDir, agentSessionIDs[i])
-		}
-		if result == nil {
-			result = []sessionInfo{}
-		}
-		data, _ := json.Marshal(result)
+		data, _ := json.Marshal(listSessionsSnapshot())
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
 	})
 
@@ -9093,12 +9283,13 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "end_session",
-		Description: "Gracefully terminate an agent session",
+		Description: "Gracefully terminate an agent session. Returns as soon as the session is closed to new joins; cleanup (killing the process tree, freeing ports and browsers) continues in the background and can take tens of seconds. The session reports ending=true in list_sessions until it is done, then disappears.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args endSessionArgs) (*mcp.CallToolResult, any, error) {
-		if err := endSessionByUUID(args.UUID); err != nil {
+		text, err := endSessionTool(args.UUID)
+		if err != nil {
 			return nil, nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "session ended"}}}, nil, nil
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
 	})
 
 	// set_session_name
