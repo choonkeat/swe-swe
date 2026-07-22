@@ -143,6 +143,18 @@
             text-transform: none;
             letter-spacing: 0;
         }
+        /* The 8px offset above is visual only: this invisible strip spans it so
+           the pointer never leaves the wrapper on its way from the badge down to
+           the tooltip. Without it :hover drops mid-gap and the tooltip (and its
+           link) disappears before it can be entered. */
+        .update-tip::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: 0;
+            right: 0;
+            height: 8px;
+        }
         .update-badge-wrap:hover .update-tip,
         .update-badge-wrap:focus-within .update-tip {
             display: block;
@@ -2014,5 +2026,6 @@
     <script src="/new-session-dialog.js"></script>
     <script type="module" src="/theme-mode.js"></script>
     <script type="module" src="/homepage-theme.js"></script>
+    <script type="module" src="/update-check.js"></script>
 </body>
 </html>
