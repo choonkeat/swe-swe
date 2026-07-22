@@ -185,6 +185,23 @@ func buildChromiumArgs(cdpInternalPort int, userDataDir, hostResolverRules strin
 // agent opens there reach the dev server, not this box -- see
 // buildLoopbackResolverRules. IP-literal URLs (127.0.0.1) bypass the resolver
 // and are out of scope. Local mode passes "".
+// diedDuringStartup reports whether a just-started process has already exited,
+// reading the one-shot channel its Wait goroutine writes to. Non-blocking: an
+// empty channel means the process is still alive, which is the healthy case.
+// A clean exit (nil from Wait) is still a death here -- these processes are
+// supposed to outlive startup -- so it maps to an explicit error.
+func diedDuringStartup(died <-chan error) error {
+	select {
+	case err := <-died:
+		if err == nil {
+			return fmt.Errorf("exited with status 0")
+		}
+		return err
+	default:
+		return nil
+	}
+}
+
 func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vncInternalPort int, hostResolverRules string) (*browserProcs, error) {
 	b := &browserProcs{}
 	displayStr := fmt.Sprintf(":%d", display)
@@ -198,16 +215,26 @@ func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vn
 	trackPid(xvfbPID)
 	b.pids = append(b.pids, xvfbPID)
 	log.Printf("Started Xvfb on display %s (PID %d) for browser %s", displayStr, xvfbPID, id)
+	xvfbDied := make(chan error, 1)
 	go func() {
 		defer recoverGoroutine(fmt.Sprintf("Xvfb wait (PID %d, browser %s)", xvfbPID, id))
 		defer untrackPid(xvfbPID)
-		if err := xvfbCmd.Wait(); err != nil {
+		err := xvfbCmd.Wait()
+		xvfbDied <- err
+		if err != nil {
 			log.Printf("Xvfb exited with error (PID %d, browser %s): %v", xvfbPID, id, err)
 		} else {
 			log.Printf("Xvfb exited normally (PID %d, browser %s)", xvfbPID, id)
 		}
 	}()
 	time.Sleep(500 * time.Millisecond)
+	// An Xvfb that is already gone means the display is unusable (stale
+	// /tmp/.X<n>-lock is the usual cause). Fail the allocation here: letting
+	// it through hands the caller a session whose CDP port never answers.
+	if err := diedDuringStartup(xvfbDied); err != nil {
+		b.stop()
+		return nil, fmt.Errorf("Xvfb on display %s exited immediately (%v) -- stale X lock or display in use", displayStr, err)
+	}
 
 	// 2. Chromium with remote debugging. Each instance gets its own
 	// --user-data-dir to avoid Chrome's singleton profile lock (which would
@@ -228,16 +255,25 @@ func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vn
 	trackPid(chromePID)
 	b.pids = append(b.pids, chromePID)
 	log.Printf("Started Chromium on CDP port %d, display %s (PID %d) for browser %s", cdpPort, displayStr, chromePID, id)
+	chromeDied := make(chan error, 1)
 	go func() {
 		defer recoverGoroutine(fmt.Sprintf("Chromium wait (PID %d, browser %s)", chromePID, id))
 		defer untrackPid(chromePID)
-		if err := chromeCmd.Wait(); err != nil {
+		err := chromeCmd.Wait()
+		chromeDied <- err
+		if err != nil {
 			log.Printf("Chromium exited with error (PID %d, browser %s): %v", chromePID, id, err)
 		} else {
 			log.Printf("Chromium exited normally (PID %d, browser %s)", chromePID, id)
 		}
 	}()
 	time.Sleep(1 * time.Second)
+	// Same reasoning as Xvfb: a chromium that is already gone leaves the CDP
+	// port dead, so refuse the allocation instead of advertising it.
+	if err := diedDuringStartup(chromeDied); err != nil {
+		b.stop()
+		return nil, fmt.Errorf("Chromium on CDP port %d exited immediately (%v) -- display %s unusable or profile locked", cdpPort, err, displayStr)
+	}
 
 	// 2b. CDP forwarder: expose chromium's loopback-only CDP on cdpPort for
 	// all interfaces. A reverse proxy (not a raw TCP splice) so the /json*

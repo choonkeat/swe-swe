@@ -14,4 +14,17 @@ if [ -f /corp-ca.crt ]; then
     certutil -d sql:"$NSSDB" -A -t "C,," -n corp-ca -i /corp-ca.crt
     echo "browser-backend: imported /corp-ca.crt into system bundle and NSS store"
 fi
+
+# Stale X state from a previous life of this container. `docker stop` +
+# `docker start` preserves the filesystem, so /tmp/.X<n>-lock and the
+# /tmp/.X11-unix sockets outlive the Xvfb processes that owned them. Xvfb
+# then refuses the display ("Server is already active"), exits 1, chromium
+# dies with it -- yet allocation still reports a healthy session and every
+# CDP connect fails with "connection refused" on the internal port. Nothing
+# in this container is expected to survive a restart, so clear it all.
+rm -f /tmp/.X*-lock 2>/dev/null || true
+rm -rf /tmp/.X11-unix/* 2>/dev/null || true
+rm -rf /tmp/chromium-session-* 2>/dev/null || true
+rm -rf /tmp/org.chromium.Chromium.* 2>/dev/null || true
+
 exec /usr/local/bin/swe-swe-server -mode browser-backend "$@"
