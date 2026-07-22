@@ -1437,6 +1437,12 @@
             .color-picker__hex {
                 font-size: 16px;
             }
+            /* combo-box hides the native select and renders its own <input> in
+               shadow DOM with `font: inherit`, so the host's font-size is what
+               iOS actually measures. Pinning .dialog__select alone missed it. */
+            .dialog combo-box {
+                font-size: 16px;
+            }
         }
     </style>
 </head>
