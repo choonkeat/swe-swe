@@ -2559,9 +2559,11 @@ class TerminalUI extends HTMLElement {
             panel.querySelector('#settings-end-discard'),
         ].filter(Boolean);
 
-        // End the session with the chosen chat-log disposition. 'commit' hands
-        // the whole job to the agent and leaves the session running, so stay on
-        // the page; every other disposition ends it and lands on the homepage.
+        // End the session with the chosen chat-log disposition. Every choice
+        // lands on the homepage, including 'commit' -- that one leaves the
+        // session running while the agent scrubs and commits, and the homepage
+        // card already tells that story (a "(Ending)" suffix on Join plus the
+        // committing tooltip), so there is nothing left for an alert to say.
         const endWith = (chatlog) => {
             this.closeSettingsPanel();
             const uuid = this.sessionUUID;
@@ -2576,14 +2578,7 @@ class TerminalUI extends HTMLElement {
                 uuid: uuid,
                 chatlog: chatlog,
                 publicPort: this.publicPort,
-                onSuccess: function(mode) {
-                    if (mode === 'commit') {
-                        // Nothing is ending yet: the agent is scrubbing and
-                        // committing, and will end the session itself. Stay put
-                        // so the user can watch it land.
-                        alert('Asked the agent to commit the chat log. The session will end itself once the commit lands -- watch its progress here.');
-                        return;
-                    }
+                onSuccess: function() {
                     window.location.href = '/';
                 }
             });
