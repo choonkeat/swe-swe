@@ -1427,6 +1427,17 @@
         [data-theme="light"] .dialog-overlay {
             background: rgba(0, 0, 0, 0.4);
         }
+        /* iOS Safari auto-zooms the whole page when a focused form control has
+           a font-size under 16px, and never zooms back out. Pin every control
+           to 16px on touch devices so focusing the mode dropdown or a text
+           field leaves the layout where it is. Desktop keeps the 14px look. */
+        @media (pointer: coarse) {
+            .dialog__input,
+            .dialog__select,
+            .color-picker__hex {
+                font-size: 16px;
+            }
+        }
     </style>
 </head>
 <body>
