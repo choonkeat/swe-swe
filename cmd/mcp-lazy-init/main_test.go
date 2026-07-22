@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -126,8 +127,26 @@ func TestDoInit(t *testing.T) {
 	}
 }
 
+// fastInitRetries shrinks the retry waits so tests exercise the loop without
+// sleeping for seconds.
+func fastInitRetries(t *testing.T, attempts int) {
+	t.Helper()
+	oldAttempts, oldDelay, oldFactor := initAttempts, initRetryDelay, initRetryFactor
+	initAttempts, initRetryDelay, initRetryFactor = attempts, time.Millisecond, 1
+	t.Cleanup(func() {
+		initAttempts, initRetryDelay, initRetryFactor = oldAttempts, oldDelay, oldFactor
+	})
+}
+
 func TestDoInitFailure(t *testing.T) {
+	fastInitRetries(t, 3)
+
+	var mu sync.Mutex
+	var callCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		callCount++
+		mu.Unlock()
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("internal error"))
 	}))
@@ -141,6 +160,128 @@ func TestDoInitFailure(t *testing.T) {
 	err := doInit(cfg)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
+	}
+
+	// 5xx is transient (the backend may be mid-restart): all attempts used.
+	mu.Lock()
+	defer mu.Unlock()
+	if callCount != 3 {
+		t.Errorf("expected 3 attempts for a 5xx, got %d", callCount)
+	}
+}
+
+// A 4xx means a bad key or an unknown session -- retrying cannot help, so it
+// must fail on the first attempt.
+func TestDoInitClientErrorNotRetried(t *testing.T) {
+	fastInitRetries(t, 3)
+
+	var mu sync.Mutex
+	var callCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		callCount++
+		mu.Unlock()
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("Unauthorized"))
+	}))
+	defer server.Close()
+
+	err := doInit(config{initMethod: "POST", initURL: server.URL + "/fail"})
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if callCount != 1 {
+		t.Errorf("expected 1 attempt for a 4xx, got %d", callCount)
+	}
+}
+
+// The real-world case: swe-swe-browser-backend was down when the agent made
+// its first browser tool call, and came back a moment later.
+func TestDoInitRetriesUntilBackendRecovers(t *testing.T) {
+	fastInitRetries(t, 4)
+
+	var mu sync.Mutex
+	var callCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n < 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("dial tcp 172.17.0.1:9333: connect: connection refused"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"started"}`))
+	}))
+	defer server.Close()
+
+	if err := doInit(config{initMethod: "POST", initURL: server.URL + "/init"}); err != nil {
+		t.Fatalf("doInit() should have succeeded on the 3rd attempt: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if callCount != 3 {
+		t.Errorf("expected 3 attempts, got %d", callCount)
+	}
+}
+
+// Regression: a failed init must not latch initDone. Before the fix, one
+// failure (backend down) left the session browser-less forever because every
+// later tools/call skipped init.
+func TestRunRetriesInitOnLaterToolsCall(t *testing.T) {
+	fastInitRetries(t, 1) // no in-call retries: isolate the per-tools/call retry
+
+	var mu sync.Mutex
+	var initCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		initCalls++
+		n := initCalls
+		mu.Unlock()
+		if n == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("browser backend down"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"started"}`))
+	}))
+	defer server.Close()
+
+	cfg := config{
+		initMethod: "POST",
+		initURL:    server.URL + "/init",
+		command:    []string{"cat"},
+	}
+
+	messages := []map[string]interface{}{
+		{"jsonrpc": "2.0", "method": "tools/call", "id": 1, "params": map[string]interface{}{"name": "browser_navigate"}},
+		{"jsonrpc": "2.0", "method": "tools/call", "id": 2, "params": map[string]interface{}{"name": "browser_navigate"}},
+		{"jsonrpc": "2.0", "method": "tools/call", "id": 3, "params": map[string]interface{}{"name": "browser_snapshot"}},
+	}
+	var input bytes.Buffer
+	for _, msg := range messages {
+		line, _ := json.Marshal(msg)
+		input.Write(line)
+		input.Write([]byte("\n"))
+	}
+
+	var output, stderr bytes.Buffer
+	if err := run(cfg, &input, &output, &stderr); err != nil {
+		t.Fatalf("run() error: %v", err)
+	}
+
+	// Call 1 fails, call 2 retries and succeeds, call 3 skips init.
+	mu.Lock()
+	defer mu.Unlock()
+	if initCalls != 2 {
+		t.Errorf("expected 2 init calls (fail then retry-success), got %d", initCalls)
 	}
 }
 

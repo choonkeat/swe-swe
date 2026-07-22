@@ -90,8 +90,22 @@ func jsonRPCMethod(line []byte) string {
 	return msg.Method
 }
 
-// doInit makes the configured HTTP request for lazy initialization.
-func doInit(cfg config) error {
+// Init retries. The init endpoint allocates a real resource (for the Agent
+// View: a browser on swe-swe-browser-backend), so a backend that is down or
+// mid-restart when the agent makes its first tool call must not permanently
+// cost the session its browser. Transient failures are retried here; package
+// vars so tests can shorten the waits.
+var (
+	initAttempts    = 4
+	initRetryDelay  = 1 * time.Second
+	initRetryFactor = 2
+)
+
+// initAttempt makes one init HTTP request. retryable reports whether a failure
+// is worth another attempt: transport errors (backend down / mid-restart) and
+// 5xx (the server reached the backend and it failed) are; 4xx is not -- a bad
+// key or an unknown session will never fix itself.
+func initAttempt(cfg config) (retryable bool, err error) {
 	var body io.Reader
 	if cfg.initRequestBody != "" {
 		body = strings.NewReader(cfg.initRequestBody)
@@ -99,7 +113,7 @@ func doInit(cfg config) error {
 
 	req, err := http.NewRequest(cfg.initMethod, cfg.initURL, body)
 	if err != nil {
-		return fmt.Errorf("creating init request: %w", err)
+		return false, fmt.Errorf("creating init request: %w", err)
 	}
 
 	for _, h := range cfg.initHeaders {
@@ -113,7 +127,7 @@ func doInit(cfg config) error {
 	resp, err := http.DefaultClient.Do(req)
 	elapsed := time.Since(start)
 	if err != nil {
-		return fmt.Errorf("init request failed (%v): %w", elapsed, err)
+		return true, fmt.Errorf("init request failed (%v): %w", elapsed, err)
 	}
 	defer resp.Body.Close()
 
@@ -121,9 +135,29 @@ func doInit(cfg config) error {
 	log.Printf("[mcp-lazy-init] init %s %s -> %d (%v): %s", cfg.initMethod, cfg.initURL, resp.StatusCode, elapsed, string(respBody))
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("init request returned %d: %s", resp.StatusCode, string(respBody))
+		return resp.StatusCode >= 500, fmt.Errorf("init request returned %d: %s", resp.StatusCode, string(respBody))
 	}
-	return nil
+	return false, nil
+}
+
+// doInit makes the configured HTTP request for lazy initialization, retrying
+// transient failures with capped-growth backoff.
+func doInit(cfg config) error {
+	delay := initRetryDelay
+	var err error
+	for attempt := 1; ; attempt++ {
+		var retryable bool
+		retryable, err = initAttempt(cfg)
+		if err == nil {
+			return nil
+		}
+		if !retryable || attempt >= initAttempts {
+			return err
+		}
+		log.Printf("[mcp-lazy-init] init attempt %d/%d failed: %v; retrying in %v", attempt, initAttempts, err, delay)
+		time.Sleep(delay)
+		delay *= time.Duration(initRetryFactor)
+	}
 }
 
 func run(cfg config, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
@@ -174,9 +208,15 @@ func run(cfg config, stdin io.Reader, stdout io.Writer, stderr io.Writer) error 
 			if method == "tools/call" {
 				logger.Printf("[mcp-lazy-init] intercepted tools/call, triggering init")
 				if err := doInit(cfg); err != nil {
-					logger.Printf("[mcp-lazy-init] init failed: %v (forwarding tools/call anyway)", err)
+					// Do NOT latch initDone on failure: a session whose
+					// first tool call caught the backend down stayed
+					// browser-less for its entire life, because every later
+					// tools/call skipped init. Leave it unset so the next
+					// tool call retries.
+					logger.Printf("[mcp-lazy-init] init failed: %v (forwarding tools/call anyway; will retry init on the next tools/call)", err)
+				} else {
+					initDone = true
 				}
-				initDone = true
 			}
 		}
 
