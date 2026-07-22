@@ -4,6 +4,10 @@
 
 ### Features
 
+- **Homepage tells you when a newer swe-swe is published**: The header's version stamp now grows a small `2.34.1 available` badge when the npm registry has a release newer than the one this server was built from; hovering it shows the upgrade command (`npx swe-swe@latest up`) and a link to the release notes, and clicking through opens the CHANGELOG. The check is a browser-side `fetch` of `https://registry.npmjs.org/swe-swe/latest` -- the registry sends `access-control-allow-origin: *` and `cache-control: max-age=300`, so the browser does the request and the caching, and the server makes no outbound call of its own. It fails silent: offline, blocked, or an unparseable response simply leaves the badge absent, as does a `dev` build (not on npm) or a server already on the newest version.
+
+- **`tesseract-ocr` in the base image**: OCR (`tesseract`, English + orientation/script data) is now installed alongside the existing `poppler-utils`, so an agent can read text out of screenshots and scanned PDFs without an ad-hoc install per session.
+
 - **Shut down the server from the homepage Settings dialog**: A new Server section in the homepage Settings dialog carries a "Shut down server" button (confirm-gated) that POSTs `/api/server/shutdown` and takes the exact graceful path a SIGTERM does -- every session closed in parallel, HTTP drained, exit 0 -- with the trigger named in the shutdown log (`shutdown requested via web UI from <addr>`). Especially useful in dockerless mode, where `swe-swe up` foregrounds the server and stopping it otherwise means finding the right terminal. The endpoint sits behind the auth cookie and is denied to shared-session guests; under a container restart policy (compose uses `unless-stopped`) the exit comes back as a fresh restart instead of a stop, and the dialog says so.
 
 ### Fixes

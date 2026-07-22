@@ -104,6 +104,8 @@ RUN apt-get update && apt-get install -y \
     lsof \
     poppler-utils \
     rsync \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     unzip \
     vim \
     && rm -rf /var/lib/apt/lists/*

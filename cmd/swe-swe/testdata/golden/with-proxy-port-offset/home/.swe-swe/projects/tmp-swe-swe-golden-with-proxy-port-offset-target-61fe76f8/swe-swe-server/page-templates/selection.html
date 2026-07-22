@@ -92,6 +92,90 @@
             text-transform: none;
         }
 
+        /* Update badge: rendered by homepage-main.js only when npm has a newer
+           version than the one this server was built from. */
+        .update-badge-wrap {
+            position: relative;
+            display: inline-block;
+        }
+        .update-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 6px;
+            padding: 1px 7px;
+            font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 10px;
+            letter-spacing: 0;
+            text-transform: none;
+            text-decoration: none;
+            color: #c4b5fd;
+            background: var(--accent-20);
+            border: 1px solid var(--accent-30);
+            border-radius: 999px;
+            vertical-align: middle;
+            cursor: pointer;
+        }
+        .update-badge:hover {
+            background: var(--accent-30);
+            color: #ddd6fe;
+        }
+        [data-theme="light"] .update-badge {
+            color: var(--accent-dark);
+        }
+        .update-badge svg {
+            width: 9px;
+            height: 9px;
+        }
+        .update-tip {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            z-index: 50;
+            width: 280px;
+            padding: 10px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .update-badge-wrap:hover .update-tip,
+        .update-badge-wrap:focus-within .update-tip {
+            display: block;
+        }
+        .update-tip__line {
+            font-size: 12px;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .update-tip__line strong {
+            color: var(--text-bright);
+        }
+        .update-tip__cmd {
+            display: block;
+            padding: 4px 6px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            background: rgba(148, 163, 184, 0.15);
+            border: 1px solid var(--border-primary);
+            border-radius: 5px;
+            color: var(--text-bright);
+        }
+        .update-tip__link {
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--accent-light);
+            text-decoration: none;
+        }
+        .update-tip__link:hover {
+            text-decoration: underline;
+        }
+
         /* Main content */
         .main {
             flex: 1;
@@ -1702,7 +1786,7 @@
                 </div>
                 <div class="header__text">
                     <h1>swe-swe</h1>
-                    <p>Session Manager{{if .Version}} <span class="header__version">{{.Version}}</span>{{end}}</p>
+                    <p>Session Manager{{if .Version}} <span class="header__version">{{.Version}}</span>{{end}}<span class="update-badge-wrap" id="update-badge-wrap" data-current-version="{{.VersionNumber}}"></span></p>
                 </div>
                 <button class="header__settings" id="settings-btn" title="Settings">
                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

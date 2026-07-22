@@ -2688,6 +2688,7 @@ func main() {
 				Debug                bool
 				DefaultRepoUrl       string
 				Version              string
+				VersionNumber        string
 			}{
 				Agents:               agents,
 				Recordings:           recordings,
@@ -2702,6 +2703,8 @@ func main() {
 				Debug:                debugMode,
 				DefaultRepoUrl:       defaultRepoUrl,
 				Version:              Version + " (" + GitCommit + ")",
+				// bare version, for the npm update check in homepage-main.js
+				VersionNumber: Version,
 			}
 			if err := selectionTemplate.Execute(w, data); err != nil {
 				log.Printf("Selection template error: %v", err)
