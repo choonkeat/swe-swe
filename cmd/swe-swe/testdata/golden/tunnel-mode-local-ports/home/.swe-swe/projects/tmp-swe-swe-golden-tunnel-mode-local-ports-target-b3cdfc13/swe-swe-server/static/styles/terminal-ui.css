@@ -1189,6 +1189,27 @@ terminal-ui.embedded-in-iframe .mobile-only {
     border-color: #dc2626;
 }
 
+/* The default choice, matching .end-dialog__option--primary on the homepage:
+   accent border + tint, not a filled button, so the other two rows do not
+   read as disabled. */
+.settings-panel__end-option--primary {
+    border-color: var(--accent-primary);
+    background: var(--accent-10, var(--bg-secondary));
+}
+
+.settings-panel__end-option--primary:hover {
+    border-color: var(--accent-primary);
+    background: var(--accent-20, var(--bg-secondary));
+}
+
+.settings-panel__end-option-badge {
+    display: block;
+    margin-top: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
 .settings-panel__end-confirm-cancel {
     display: flex;
     justify-content: flex-end;

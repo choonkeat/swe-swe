@@ -767,14 +767,17 @@ class TerminalUI extends HTMLElement {
                                     <button class="settings-panel__end-option settings-panel__end-option--danger" id="settings-end-confirm-yes" type="button">
                                         <span class="settings-panel__end-option-title">Yes, end session</span>
                                     </button>
-                                    <!-- Chat-log dispositions: revealed in place of the plain button when a log exists -->
+                                    <!-- Chat-log dispositions: revealed in place of the plain button when a log exists.
+                                         Ordered safest-first and matching the homepage dialog: commit leads and
+                                         carries the accent, discard is irreversible so it goes last. -->
+                                    <button class="settings-panel__end-option settings-panel__end-option--primary" id="settings-end-commit" data-chatlog="commit" type="button" hidden>
+                                        <span class="settings-panel__end-option-title">Commit the log, then end</span>
+                                        <span class="settings-panel__end-option-hint">Asks the agent to scrub and commit it. The session stays open until that's done, then ends itself.</span>
+                                        <span class="settings-panel__end-option-badge">Recommended</span>
+                                    </button>
                                     <button class="settings-panel__end-option" id="settings-end-keep" data-chatlog="" type="button" hidden>
                                         <span class="settings-panel__end-option-title">End, keep the log</span>
                                         <span class="settings-panel__end-option-hint">Ends now. The log stays on disk, uncommitted -- you can commit it later.</span>
-                                    </button>
-                                    <button class="settings-panel__end-option" id="settings-end-commit" data-chatlog="commit" type="button" hidden>
-                                        <span class="settings-panel__end-option-title">Commit the log, then end</span>
-                                        <span class="settings-panel__end-option-hint">Asks the agent to scrub and commit it. The session stays open until that's done, then ends itself.</span>
                                     </button>
                                     <button class="settings-panel__end-option settings-panel__end-option--danger" id="settings-end-discard" data-chatlog="discard" type="button" hidden>
                                         <span class="settings-panel__end-option-title">Discard the log and end</span>

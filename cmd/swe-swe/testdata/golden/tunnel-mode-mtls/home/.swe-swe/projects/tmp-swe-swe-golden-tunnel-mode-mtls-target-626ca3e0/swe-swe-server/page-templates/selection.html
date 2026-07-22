@@ -367,6 +367,23 @@
         .end-dialog__option--danger:hover {
             border-color: #b4453c;
         }
+        /* The default choice. Accent border + tint rather than a filled
+           button: all three options are equal-weight cards, and filling one
+           would make the other two read as disabled. */
+        .end-dialog__option--primary {
+            border-color: var(--accent-primary);
+            background: var(--accent-10, #222);
+        }
+        .end-dialog__option--primary:hover {
+            border-color: var(--accent-primary);
+            background: var(--accent-20, #262626);
+        }
+        .end-dialog__option-badge {
+            margin-top: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
 
         /* Teardown in flight: the card is inert until the live poll drops it.
            Joining is refused server-side anyway, so hide the affordance rather
@@ -1608,7 +1625,15 @@
                     This session has an unsaved chat log:
                 </p>
                 <div class="end-dialog__logname" id="end-dialog-logname"></div>
+                <!-- Ordered safest-first: committing the log is what the user
+                     almost always wants, so it leads and carries the accent;
+                     discarding is irreversible, so it goes last. -->
                 <div class="end-dialog__options">
+                    <button class="end-dialog__option end-dialog__option--primary" data-chatlog="commit">
+                        <div class="end-dialog__option-title">Commit the log, then end</div>
+                        <div class="end-dialog__option-hint">Asks the agent to scrub and commit it. The session stays open until that's done, then ends itself.</div>
+                        <div class="end-dialog__option-badge">Recommended</div>
+                    </button>
                     <button class="end-dialog__option" data-chatlog="">
                         <div class="end-dialog__option-title">End, keep the log</div>
                         <div class="end-dialog__option-hint">Ends now. The log stays on disk, uncommitted -- you can commit it later.</div>
@@ -1616,10 +1641,6 @@
                     <button class="end-dialog__option end-dialog__option--danger" data-chatlog="discard">
                         <div class="end-dialog__option-title">Discard the log and end</div>
                         <div class="end-dialog__option-hint">Deletes this session's chat log, then ends. Shared assets are left alone.</div>
-                    </button>
-                    <button class="end-dialog__option" data-chatlog="commit">
-                        <div class="end-dialog__option-title">Commit the log, then end</div>
-                        <div class="end-dialog__option-hint">Asks the agent to scrub and commit it. The session stays open until that's done, then ends itself.</div>
                     </button>
                 </div>
             </div>
