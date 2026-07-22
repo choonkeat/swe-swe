@@ -2789,3 +2789,22 @@ a.terminal-ui__link-banner-text {
     line-height: 1.45;
     margin-bottom: 8px;
 }
+
+/* === No-zoom form controls on touch devices ===
+   iOS Safari zooms the whole page when a focused input/select/textarea has a
+   font-size under 16px, and never zooms back out -- the pane layout is left
+   shifted and clipped. Pin every focusable text control to 16px under a
+   coarse pointer. Last block in the file so it also overrides the 12px
+   mobile-nav-select rule in the max-width:639px section above. */
+@media (pointer: coarse) {
+    .settings-panel__input,
+    .settings-panel__input--multiline,
+    .settings-panel__color-hex,
+    .terminal-ui__chat-input,
+    .terminal-ui__paste-textarea,
+    .terminal-ui__iframe-url-input,
+    .terminal-ui__mobile-nav-select,
+    .mobile-keyboard__text {
+        font-size: 16px;
+    }
+}
