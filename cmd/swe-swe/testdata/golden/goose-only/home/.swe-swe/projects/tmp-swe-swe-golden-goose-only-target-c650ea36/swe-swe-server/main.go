@@ -4261,8 +4261,65 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// listBranchNames returns the branch names the New Session dialog offers, as
+// plain local branch names -- never remote-tracking names.
+//
+// A remote-only branch is listed under its bare name ("feature-x", not
+// "origin/feature-x"): that is the branch the user gets, since the worktree is
+// created with `--track -b feature-x origin/feature-x`. Listing the remote name
+// instead duplicated every branch in the dropdown, and picking the remote copy
+// used to produce a detached HEAD (and, before that, a local branch literally
+// named "origin/feature-x"). See stripRemotePrefix, which still guards the
+// hand-typed and old-client cases.
+//
+// Local branches win any name collision, so a repo that genuinely has
+// refs/heads/origin/x keeps listing it verbatim -- it came from refs/heads.
+func listBranchNames(repoPath string) ([]string, error) {
+	output, err := exec.Command("git", "-C", repoPath, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var local, remoteOnly []string
+	seen := make(map[string]bool)
+	add := func(name string, dst *[]string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		*dst = append(*dst, name)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	// Two passes: every local name must be claimed before remote-only names are
+	// folded in, otherwise "origin/main" could shadow a local "main" it happens
+	// to precede in ref order.
+	for _, line := range lines {
+		if ref, ok := strings.CutPrefix(strings.TrimSpace(line), "refs/heads/"); ok {
+			add(ref, &local)
+		}
+	}
+	for _, line := range lines {
+		ref, ok := strings.CutPrefix(strings.TrimSpace(line), "refs/remotes/")
+		if !ok {
+			continue
+		}
+		// Drop the remote itself ("refs/remotes/origin") and its HEAD pointer.
+		_, branch, found := strings.Cut(ref, "/")
+		if !found || branch == "HEAD" {
+			continue
+		}
+		add(branch, &remoteOnly)
+	}
+
+	sort.Strings(local)
+	sort.Strings(remoteOnly)
+	// Local branches first: those are checkouts that already exist here.
+	return append(local, remoteOnly...), nil
+}
+
 // handleRepoBranchesAPI handles GET /api/repo/branches?path=/workspace
-// Returns: { "branches": ["main", "origin/feature-x", ...] }
+// Returns: { "branches": ["main", "feature-x", ...] }
 func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -4302,9 +4359,7 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get all branches (local and remote)
-	cmd := exec.Command("git", "-C", repoPath, "branch", "-a", "--format=%(refname:short)")
-	output, err := cmd.Output()
+	branches, err := listBranchNames(repoPath)
 	if err != nil {
 		log.Printf("Git branch list failed for %s: %v", repoPath, err)
 		w.Header().Set("Content-Type", "application/json")
@@ -4312,38 +4367,6 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to list branches"})
 		return
 	}
-
-	// Parse branch names
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	branches := make([]string, 0, len(lines))
-	seen := make(map[string]bool)
-
-	for _, line := range lines {
-		branch := strings.TrimSpace(line)
-		if branch == "" {
-			continue
-		}
-		// Skip HEAD pointer
-		if strings.Contains(branch, "HEAD") {
-			continue
-		}
-		// Avoid duplicates
-		if seen[branch] {
-			continue
-		}
-		seen[branch] = true
-		branches = append(branches, branch)
-	}
-
-	// Sort: local branches first, then remote
-	sort.Slice(branches, func(i, j int) bool {
-		iRemote := strings.HasPrefix(branches[i], "origin/")
-		jRemote := strings.HasPrefix(branches[j], "origin/")
-		if iRemote != jRemote {
-			return !iRemote // local before remote
-		}
-		return branches[i] < branches[j]
-	})
 
 	branchesResponse := map[string]interface{}{
 		"branches": branches,
@@ -4401,9 +4424,9 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 // stripRemotePrefix turns a remote-tracking ref name like "origin/main" into
 // the local branch the user meant ("main").
 //
-// The branch dropdown is populated from `git branch -a`, so it offers the
-// origin/* refs itself -- users are not guessing, we are suggesting. Passed
-// through verbatim, "origin/main" makes `git worktree add <path> origin/main`
+// The dropdown no longer offers origin/* names (see listBranchNames), but
+// hand-typed input and older clients still send them. Passed through
+// verbatim, "origin/main" makes `git worktree add <path> origin/main`
 // succeed with a DETACHED HEAD, silently, and the agent then commits onto no
 // branch at all. Stripping the prefix routes it to the --track path instead,
 // which is what "origin/main" reads as to everyone who types it.
@@ -5277,6 +5300,19 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// Ensure recordings directory exists
 	if err := ensureRecordingsDir(); err != nil {
 		log.Printf("Warning: failed to create recordings directory: %v", err)
+	}
+
+	// Normalize a remote-tracking pick ("origin/abc") down to the local branch
+	// we actually check out ("abc") BEFORE anything records it. Old clients and
+	// hand-typed input still reach us that way; createWorktreeInRepo strips its
+	// own copy, but BranchName below kept the raw string, so the session card
+	// advertised "origin/abc" while the worktree sat on "abc".
+	if p.Branch != "" {
+		normBase := p.RepoPath
+		if normBase == "" {
+			normBase = workspaceDir
+		}
+		p.Branch = stripRemotePrefix(normBase, p.Branch)
 	}
 
 	// Determine working directory and create worktree if needed

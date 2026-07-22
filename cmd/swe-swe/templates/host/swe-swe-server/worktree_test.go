@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -2095,6 +2096,99 @@ func TestHandleRepoBranchesAPIFetchParam(t *testing.T) {
 
 		if warning, ok := result["warning"]; ok {
 			t.Errorf("expected no warning for remoteless repo, got %v", warning)
+		}
+	})
+}
+
+// The branch dropdown lists PLAIN branch names only. A remote-only branch
+// appears under its bare name, because that is the local branch the worktree
+// ends up on; listing "origin/<name>" duplicated every branch and made the
+// remote copy a selectable trap.
+func TestListBranchNames(t *testing.T) {
+	newRepo := func(t *testing.T) string {
+		t.Helper()
+		repoPath := t.TempDir()
+		run := func(args ...string) {
+			t.Helper()
+			cmd := exec.Command("git", args...)
+			cmd.Dir = repoPath
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v failed: %v\n%s", args, err, out)
+			}
+		}
+		run("init", "-q", "-b", "main")
+		run("config", "user.email", "test@example.com")
+		run("config", "user.name", "Test User")
+		run("commit", "-q", "--allow-empty", "-m", "init")
+		return repoPath
+	}
+	setRef := func(t *testing.T, repoPath, ref string) {
+		t.Helper()
+		cmd := exec.Command("git", "update-ref", ref, "HEAD")
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("update-ref %s failed: %v\n%s", ref, err, out)
+		}
+	}
+
+	t.Run("remote-only branch listed bare, remote copy of a local branch dropped", func(t *testing.T) {
+		repoPath := newRepo(t)
+		setRef(t, repoPath, "refs/heads/mine")
+		setRef(t, repoPath, "refs/remotes/origin/main")
+		setRef(t, repoPath, "refs/remotes/origin/solo")
+		setRef(t, repoPath, "refs/remotes/origin/HEAD")
+
+		got, err := listBranchNames(repoPath)
+		if err != nil {
+			t.Fatalf("listBranchNames: %v", err)
+		}
+		// Locals alphabetical, then remote-only. No "origin/" anywhere, no HEAD.
+		want := []string{"main", "mine", "solo"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("listBranchNames = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("hierarchical remote-only branch keeps its slashes", func(t *testing.T) {
+		repoPath := newRepo(t)
+		setRef(t, repoPath, "refs/remotes/origin/feat/add-login")
+
+		got, err := listBranchNames(repoPath)
+		if err != nil {
+			t.Fatalf("listBranchNames: %v", err)
+		}
+		want := []string{"main", "feat/add-login"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("listBranchNames = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("a local branch genuinely named origin/x survives verbatim", func(t *testing.T) {
+		repoPath := newRepo(t)
+		setRef(t, repoPath, "refs/heads/origin/weird")
+
+		got, err := listBranchNames(repoPath)
+		if err != nil {
+			t.Fatalf("listBranchNames: %v", err)
+		}
+		want := []string{"main", "origin/weird"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("listBranchNames = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("second remote does not duplicate a name already listed", func(t *testing.T) {
+		repoPath := newRepo(t)
+		setRef(t, repoPath, "refs/remotes/origin/shared")
+		setRef(t, repoPath, "refs/remotes/upstream/shared")
+
+		got, err := listBranchNames(repoPath)
+		if err != nil {
+			t.Fatalf("listBranchNames: %v", err)
+		}
+		want := []string{"main", "shared"}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("listBranchNames = %v, want %v", got, want)
 		}
 	})
 }
