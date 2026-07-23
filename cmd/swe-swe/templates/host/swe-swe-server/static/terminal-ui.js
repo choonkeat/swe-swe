@@ -4860,12 +4860,30 @@ class TerminalUI extends HTMLElement {
                 this.sendKey(e.data.keystroke);
                 this.sendKey('\r');
             }
-            // When user says Stop/Cancel in Agent Chat, send Esc Esc to abort
-            // the current tool, then type the supplied text (e.g. a nudge or
-            // a slash-command like /clear). Falls back to the default nudge
-            // if the sender did not supply text (legacy agent-chat clients).
+            // When user says Stop/Cancel in Agent Chat, send a SINGLE Esc to
+            // abort the current tool, then type the supplied text (e.g. a
+            // nudge or a slash-command like /clear). Falls back to the
+            // default nudge if the sender did not supply text (legacy
+            // agent-chat clients).
+            //
+            // Exactly one Esc, deliberately. This used to send two, which is
+            // wrong twice over:
+            //
+            //  1. Two Escs written back-to-back reach the agent's input
+            //     parser as the single byte pair ESC ESC. That parser reads
+            //     ESC-then-byte as a meta sequence (same convention we rely
+            //     on above: Alt+Left is '\x1b'+'b'), so the pair collapses
+            //     into one Alt+Esc event that is typically discarded -- the
+            //     interrupt silently did nothing.
+            //  2. The first Esc already does the useful thing in every state
+            //     the agent can be in (interrupt a running turn, dismiss a
+            //     permission prompt, close an autocomplete popup, clear a
+            //     draft line). The second only advances one state further,
+            //     and from an idle prompt Claude Code binds Esc-Esc to the
+            //     "jump to a previous message" rewind picker -- which then
+            //     swallows the nudge text below as filter input and lets the
+            //     trailing Enter select a rewind target.
             if (e.data && e.data.type === 'agent-chat-interrupt') {
-                this.sendKey('\x1b');
                 this.sendKey('\x1b');
                 setTimeout(() => {
                     this.sendKey(e.data.text || 'check_messages; i sent u a chat message');
