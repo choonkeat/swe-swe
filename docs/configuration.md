@@ -152,6 +152,8 @@ The `PUBLIC_PORT` is accessible externally without authentication, unlike `PORT`
 
 swe-swe-server sets `AGENT_CHAT_DISABLE=1` for non-chat (terminal) sessions and leaves it unset for agent-chat sessions, so the fail-safe default in web chat is to block. Hooks are snapshotted at session start, so this env var (read at tool-call time) is the per-session knob.
 
+A second guard blocks the built-in `Artifact` tool for the same class of reason: it publishes a page to claude.ai, which is not the surface a swe-swe user is looking at and sends workspace content off-box. A swe-swe session already has a viewer, so the block message spells out the local route: write the page to `mockups/<name>.html`, serve that directory on the session's `PORT` with whatever static server suits the project, and put a `http://localhost:<PORT>/<name>.html` link in the chat reply -- the chat UI intercepts localhost links and opens them in the App Preview pane instead of a new tab. The guard uses the same agent-chat gating (terminal TUI and plain `claude` runs are exempt); set `SWE_ALLOW_ARTIFACTS=1` (or `AGENT_CHAT_DISABLE=1`) to allow the built-in tool.
+
 <a id="sweswe-env"></a>
 ### .swe-swe/env
 

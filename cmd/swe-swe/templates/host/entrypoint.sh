@@ -213,6 +213,15 @@ echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 # snapshotted at session start, so the env vars (read at tool-call time) are
 # the per-session knob; these files are static.
 #
+# Artifact guard (same shape, different reason): the built-in Artifact tool
+# publishes a page to claude.ai. A swe-swe session already has its own viewer,
+# so the block spells out the local route instead: write the page to
+# mockups/, serve that dir on the session's $PORT, and hand the user a
+# http://localhost:$PORT/... link -- the chat UI intercepts localhost links and
+# loads them in the App Preview pane. Keeps workspace content on-box and on the
+# surface the user is actually looking at. Same agent-chat gating;
+# SWE_ALLOW_ARTIFACTS=1 opts out.
+#
 # Stop guard (same philosophy at turn-end): in an agent-chat session plain
 # response text is invisible, so a turn that ends without any user-visible
 # send looks like a crash. The Stop hook blocks the FIRST silent stop of a
@@ -230,6 +239,10 @@ cat > /home/app/.claude/hooks/swe-swe-ask-guard.sh << 'ASKGUARDEOF'
 {{ASK_GUARD_SCRIPT}}
 ASKGUARDEOF
 chmod +x /home/app/.claude/hooks/swe-swe-ask-guard.sh
+cat > /home/app/.claude/hooks/swe-swe-artifact-guard.sh << 'ARTIFACTGUARDEOF'
+{{ARTIFACT_GUARD_SCRIPT}}
+ARTIFACTGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-artifact-guard.sh
 CLAUDE_SETTINGS=/home/app/.claude/settings.json
 cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 {
@@ -241,6 +254,15 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
           {
             "type": "command",
             "command": "/home/app/.claude/hooks/swe-swe-ask-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Artifact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/app/.claude/hooks/swe-swe-artifact-guard.sh"
           }
         ]
       }
@@ -260,11 +282,11 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 SETTINGSEOF
 if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
   # Merge idempotently into existing settings: drop any prior AskUserQuestion
-  # matcher and any prior swe-swe-stop-guard Stop entry, append ours, preserve
-  # every other key and hook entry.
+  # or Artifact matcher and any prior swe-swe-stop-guard Stop entry, append
+  # ours, preserve every other key and hook entry.
   TMP_SETTINGS=$(mktemp)
   if jq --slurpfile add /tmp/swe-claude-settings.json \
-       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion"))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
+       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion" and .matcher != "Artifact"))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
        "$CLAUDE_SETTINGS" > "$TMP_SETTINGS" 2>/dev/null; then
     mv "$TMP_SETTINGS" "$CLAUDE_SETTINGS"
   else
@@ -274,13 +296,13 @@ if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
   fi
 elif [ -s "$CLAUDE_SETTINGS" ]; then
   # File exists but jq is unavailable: do not risk clobbering it.
-  echo -e "${YELLOW}[warn] jq unavailable; left existing ~/.claude/settings.json untouched (AskUserQuestion guard not installed)${NC}"
+  echo -e "${YELLOW}[warn] jq unavailable; left existing ~/.claude/settings.json untouched (AskUserQuestion/Artifact guards not installed)${NC}"
 else
   cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
 fi
 rm -f /tmp/swe-claude-settings.json
 {{CHOWN_CLAUDE}}
-echo -e "${GREEN}[ok] Installed AskUserQuestion + silent-stop guard hooks${NC}"
+echo -e "${GREEN}[ok] Installed AskUserQuestion + Artifact + silent-stop guard hooks${NC}"
 # {{ENDIF}}
 
 # {{IF PI}}

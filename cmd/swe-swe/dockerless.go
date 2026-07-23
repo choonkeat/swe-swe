@@ -389,11 +389,15 @@ func writeDockerlessHooks(projectDir, sweDir string) error {
 	}
 	stopPath := filepath.Join(hooksDir, "swe-swe-stop-guard.sh")
 	askPath := filepath.Join(hooksDir, "swe-swe-ask-guard.sh")
+	artifactPath := filepath.Join(hooksDir, "swe-swe-artifact-guard.sh")
 	if err := os.WriteFile(stopPath, []byte(stopGuardScript), 0o755); err != nil {
 		return fmt.Errorf("write stop guard: %w", err)
 	}
 	if err := os.WriteFile(askPath, []byte(askGuardScript), 0o755); err != nil {
 		return fmt.Errorf("write ask guard: %w", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte(artifactGuardScript), 0o755); err != nil {
+		return fmt.Errorf("write artifact guard: %w", err)
 	}
 
 	settingsPath := filepath.Join(projectDir, ".claude", "settings.local.json")
@@ -429,8 +433,10 @@ func writeDockerlessHooks(projectDir, sweDir string) error {
 		return out
 	}
 	pre, _ := hooks["PreToolUse"].([]any)
-	pre = keep(pre, func(m map[string]any) bool { return m["matcher"] == "AskUserQuestion" })
-	hooks["PreToolUse"] = append(pre, cmdEntry("AskUserQuestion", askPath))
+	pre = keep(pre, func(m map[string]any) bool {
+		return m["matcher"] == "AskUserQuestion" || m["matcher"] == "Artifact"
+	})
+	hooks["PreToolUse"] = append(pre, cmdEntry("AskUserQuestion", askPath), cmdEntry("Artifact", artifactPath))
 	stop, _ := hooks["Stop"].([]any)
 	stop = keep(stop, func(m map[string]any) bool {
 		return strings.Contains(fmt.Sprint(m["hooks"]), "swe-swe-stop-guard")
