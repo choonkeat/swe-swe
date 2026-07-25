@@ -58,13 +58,33 @@
 
 - **Session cards and the in-session end dialog read correctly**: The homepage card now reflects the ending state and shows a last-message summary, the Where dropdown works on touch devices, and the in-session chat-log choice is legible (it inherited terminal-pane styling that made the option text near-invisible).
 
-## v2.32.0
+## v2.32.0 - Slash-Command Bundle Cleanup
 
-_No release notes were written for v2.32.0; see the git log for the commits._
+### Features
 
-## v2.31.0
+- **`/swe-swe:save-session` and `/swe-swe:resume-session` are bundled**: Promoted from personal commands. The handoff file location is explicit and worktree-aware -- always `<git rev-parse --show-toplevel>/.swe-swe/TODO.md` of the session's own checkout, never another checkout's.
 
-_No release notes were written for v2.31.0; see the git log for the commits._
+- **`/swe-swe:commit-session-chat-log` freezes the log before committing it**: The command predated agent-chat 0.8.16's `chatlog_close` and so accepted a dirty tail after every commit. It now closes first (titling the log in the same call if untitled), scrubs the frozen file, and stages exactly the returned paths; it warns that `set_chat_title` re-opens the log with a full-history rewrite that would undo redactions. New twin `/swe-swe:discard-session-chat-log` refuses if the log is already git-tracked, otherwise `chatlog_optout` deletes the uncommitted log and stops the stream (reversible via `set_chat_title`).
+
+- **Shipped command set culled 18 -> 15, with renames**: `/swe-swe:extract-skills` (deprecated) and `/swe-swe:fixup-upgrade` deleted, `/swe-swe:test-full-e2e` dropped from the bundle (its make targets exist only in this repo), `/swe-swe:pr` renamed `/swe-swe:pr-discuss`, `/swe-swe:update-swe-swe` renamed `/swe-swe:update`.
+
+- **`init` prunes swe-swe-owned command stores before re-seeding**: Seeding overwrote bundled slash commands but never deleted, so a command a newer bundle renamed or removed stayed in every install's autocomplete forever -- the gap `/swe-swe:fixup-upgrade` existed to paper over. Init now removes `commands/{md,toml}/swe-swe/` before writing the fresh bundle, mirroring the `swe-swe-server/` stale-source fix.
+
+- **The Where dropdown shows the workspace's own origin URL**: `/api/repos` returns `workspaceRemoteURL` (origin of `/workspace`), and the New Session dialog attaches it as the detail line on the static "Default workspace (/workspace)" option, matching the cloned-repo options.
+
+## v2.31.0 - Tap-to-Open Links & Chat-Log Commands
+
+### Features
+
+- **Tap-to-open link banner plus an OSC 52 clipboard bridge**: The `confirm('Open in new tab?')` + `window.open` pair does not survive iOS Safari -- the confirm's OK tap is not user activation for `window.open`, so the popup is silently blocked (live-reproduced during an OAuth login on a phone). It is replaced by a floating banner whose Open control is a real anchor (a direct tap is real activation) plus a Copy button (the clipboard write happens inside the tap handler, satisfying the gesture requirement) and a dismiss. The terminal also registers an OSC 52 handler: on a headless host there is no system clipboard, so `ESC]52;c;<base64>` is the only copy path that can reach the user's device; if the browser refuses the async clipboard write, the same banner appears in copy-only mode. Clipboard READ requests (`?`) are ignored -- the remote session is never given the user's clipboard.
+
+- **Tapping a terminal URL on a touch device raises the banner**: URL links in the terminal were modifier-gated (Cmd/Ctrl/Shift+Click), and touch devices have no modifier keys, so a tap only copied silently with a desktop-only hint. On coarse-pointer devices a tap now hands the URL to the link banner (full-width tappable open link + gesture-legal Copy); desktop behaviour is unchanged. The banner's URL text is itself the anchor -- a separate Open button's tap area was small enough on mobile to read as "nothing happened".
+
+- **`/swe-swe:commit-session-chat-log` replaces `/swe-swe:export-chat-logs`**: A short primitive scoped to the CURRENT session's log only: title it via `set_chat_title`, redact sensitive values (including leaky screenshots), commit the log with its referenced assets alone. The backlog-sweep behaviour (retitling other sessions' logs, MANIFEST surgery, empty-log deletion) is dropped -- swe-swe provides the primitive; when and whether to use it is the user's policy. Relatedly, swe-swe's own prompts no longer say anything about committing `agent-chats/`: the project ships the streaming-export mechanism but does not dictate whether a repo commits its chat logs to git.
+
+### Fixes
+
+- **OAuth links with a localhost callback are copy-only, with an explanation**: An agent's login pops the `$BROWSER` banner carrying a `redirect_uri=localhost` OAuth URL while the terminal prints the cross-device (paste-code) variant -- two near-identical long URLs, where the inviting banner link is the one that CANNOT work from another device, because the dance ends at the agent machine's own localhost callback. The banner now detects those links: viewed from anywhere other than localhost they are shown copy-only with a note pointing at the terminal's printed URL, while same-machine (dockerless) viewing keeps the normal open link, where the callback genuinely works.
 
 ## v2.30.0 - Chat-Log Archiving, Agent View Tunnel & swe-npx
 
@@ -86,13 +106,49 @@ _No release notes were written for v2.31.0; see the git log for the commits._
 
 - **Agent View survives a browser-backend restart (tunnel mode)**: A `swe-swe-browser-backend` restart (chromium bump, config change, crash) used to orphan every live session's Agent View forever -- the backend's allocation table is in-memory, so the session's tunnel client reconnect-looped on `bad handshake` and the Playwright MCP got `Target page, context or browser has been closed` until the session ended. The tunnel client now classifies the failed WebSocket upgrade: a 404 from `/sessions/<id>/tunnel` means "backend up, allocation gone" (401/403/409 and network errors keep the plain retry loop) and hands off to re-allocation, which re-POSTs `/sessions` with capped backoff, retargets the running CDP reverse proxy atomically (the new allocation may land on a different slot; no listener churn, the agent's `--cdp-endpoint` keeps working), updates the VNC target, starts a fresh tunnel client, and broadcasts session status so the Browser tab recovers. Session teardown racing a re-allocation is guarded: the fresh allocation is freed if the session closed mid-flight, and `Stop()` cancels a re-allocation stuck waiting out a still-restarting backend. Direct (non-tunnel) remote mode has no reconnect loop to hook and is unchanged (see `tasks/2026-07-18-agent-view-remote-reallocation.md`).
 
-## v2.29.0 / v2.29.1
+## v2.29.1 - Zombie Sessions & Shared-Session Guest Auth
 
-_No release notes were written for v2.29.0 and v2.29.1; see the git log for the commits._
+### Fixes
 
-## v2.28.0
+- **Sessions whose agent was signal-killed are now reaped**: The reaper and the reconnect cleanup both gated on `Cmd.ProcessState != nil && Cmd.ProcessState.Exited()`. `Exited()` is `WIFEXITED` -- true only for a NORMAL exit, false for a signal-killed process -- so an agent killed by a signal (an OOM kill, exit 137 = SIGKILL; a crash; an external kill) was never reaped. Its session lingered in the sessions map forever, invisible to `list_sessions`, while still holding all four per-port proxy listeners. That is a port leak with a user-visible tail: the zombie's agent port frees and is handed to a new session, but its proxy port is still bound, so the new session's listener cannot bind and the dead session's listener keeps serving it. `reapable()` now tests `ProcessState != nil` alone (Wait() having returned means the process is finished however it ended), with a `restarting` guard so the broadened predicate cannot reap a session mid-restart.
 
-_No release notes were written for v2.28.0; see the git log for the commits._
+- **Per-port panes are authorized by the live port owner, not a captured UUID**: Shared-session guests saw "unauthorized" in the Agent Chat pane (and would have in Preview/Files/VNC) while the session owner did not. The per-port proxy listeners pinned authorization to the session UUID captured when the listener was created; a guest cookie is scoped to their live session's UUID, while an unscoped owner cookie passes every gate -- so when a listener outlived its session and squatted a proxy port a new session later reused, its gate still matched the dead creator and every scoped guest of the new, legitimate session got a 401. Worktree sessions churn proxy-port numbers fastest, so they tripped it while a long-lived default session did not. `requireAuthCookie` now takes an authorizer predicate that resolves the guest's LIVE session at request time and admits them only if that session currently maps to this proxy port. Hardening alongside it: a listener can no longer be stored without `Close()` being able to shut it down, and a listener created for an already-closed session is torn down rather than stored.
+
+## v2.29.0 - Tailscale Removal, `--tunnel-unique` & Deterministic E2E
+
+### Features
+
+- **Tailscale bootstrap and its SaaS dependency are gone**: The stack no longer installs or configures Tailscale at all.
+
+- **`--tunnel-unique` names the tunnel label, and tunnel mode fails fast without it**: The flag is wired through to the generated `docker-compose.yml`, and enabling tunnel mode without a unique name is now a fast, explicit failure rather than a confusing runtime state.
+
+### Fixes
+
+- **`init` regenerates the `swe-swe-server` build context as a mirror**: Init only ever wrote embedded templates and never reconciled deletions, so the dumped `~/.swe-swe/projects/<hash>/swe-swe-server/` tree drifted into a superset of the templates. A renamed or removed template (`tailscale.go` -> `listen.go`) left a stale `.go` orphan that the Dockerfile's `COPY *.go` glob compiled, redeclaring symbols and breaking the image build. The directory is now removed before the host-file loop repopulates it, with an end-to-end regression test that plants a stale file and asserts it is pruned.
+
+### Testing
+
+- **The everyday e2e suite no longer waits on a live model**: Exactly one test needs a model reply (agent -> Playwright MCP -> CDP -> screenshot); it is split out as an opt-in capstone (`make test-e2e-llm`) and the agent-agnostic specs were converted to a deterministic shell PTY, taking the default suite to 50 tests with zero live-model dependency.
+
+- **Sessions are auto-reaped after every e2e test**: With Playwright at `workers:1` the resident session set grew monotonically -- six specs had no cleanup at all and two only reaped on PASS, so the first failure stopped all further cleanup. The pile-up slid host `MemAvailable` from ~1.5 GB to ~287 MB across a single spec file, OOM-crashing the server and tripping its memory-admission gate into false-refusing new sessions. A shared auto-fixture now ends all sessions after each test; `KEEP_SESSIONS_ON_FAIL=1` preserves a failed test's session for inspection.
+
+## v2.28.0 - Where Dropdown Readability & Build Reliability
+
+### Features
+
+- **`rsync` in the base image**.
+
+### Fixes
+
+- **Tailscale is installed from the apt mirror, not `curl | sh`**: `RUN curl -fsSL https://tailscale.com/install.sh | sh` swallows curl's exit code (the pipe takes `sh`'s), so a 5xx from the installer CDN produced a "successful" layer with tailscale silently absent from the image. Hit live during a reboot: the installer host was 504ing, the `--no-cache` rebuild reported success, and the built image had no tailscale while the running container did -- a compose-down would have returned the box degraded. apt fails the build loudly when the package cannot be fetched.
+
+- **Long git URLs render as two-line rows in the Where dropdown**: The listbox is pinned to the input width and options were nowrap + ellipsis, so a long remote URL was clipped to unreadability and indistinguishable from any other host. Each repo is now a short `org/repo` label over the full URL on a dimmed detail line, with a divider between options so wrapped multi-line rows stay tellable apart, and filtering fuzzy-matches both the label and the detail so the full URL stays searchable.
+
+- **A plain-checkout recording no longer prefills into a worktree**: A recording's "+ New" button prefilled the branch field with the checkout's branch (e.g. `main`) when the session used no explicit worktree branch. But a non-empty branch field means "make a worktree" and blank means "use the shared `/workspace` checkout", so prefilling `main` silently converted a plain shared-checkout session into a worktree-on-main, diverging the moment `/workspace`'s HEAD moved off that branch. A plain-checkout recording now prefills BLANK; the checkout branch is surfaced as a non-submitting placeholder hint ("Leave blank to reuse `<branch>`").
+
+- **The popout tooltip is pinned to the UI font**: It is appended to `<body>` so its `position: fixed` escapes the tab bar's overflow clipping, but its `font-family: inherit` then fell through to the browser default serif, because the Inter UI stack lives on an ancestor the tooltip escapes.
+
+- **The test-container harness works against the single-container stack**: Its scripts still assumed the old multi-container layout -- generating a compose override listing services that no longer exist, publishing ports that collide with the surrounding dev stack, and probing readiness from a host address unreachable inside the dev container, so it always reported failure on a healthy stack.
 
 ## v2.27.3 - App Preview Host-Demux & Procfile Runner
 
