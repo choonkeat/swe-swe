@@ -506,17 +506,29 @@
            still fully alive, so both buttons stay -- End in particular, because
            the agent is told to refuse and NOT end if the log cannot be safely
            committed, and taking End away would strand such a session.
-           The whole signal is a suffix on the Join label: a banner row was
-           tried first and it was too wordy and pushed the card taller than its
-           neighbours. This adds no box and no new row. */
-        .btn-join__ending-suffix {
+           The whole signal is one word inside the Join label ("Join Ending
+           Session"): a banner row was tried first and it was too wordy and
+           pushed the card taller than its neighbours. This adds no box and no
+           new row. */
+        .btn-join__ending-word {
             display: none;
         }
         /* Both classes can be on the card at once once the agent's own
            end_session lands, but --ending hides the Join button outright, so
-           the suffix goes with it and "Ending..." takes over. */
-        .session-card--committing .btn-join__ending-suffix {
+           the word goes with it and "Ending..." takes over. */
+        .session-card--committing .btn-join__ending-word {
             display: inline;
+        }
+        /* Same muted red as the end-dialog's "Discard the log and end" option,
+           so a session on its way out reads the same wherever it is shown. */
+        .session-card--committing .btn-join {
+            background: rgba(180, 69, 60, 0.12);
+            border-color: rgba(180, 69, 60, 0.5);
+            color: #d9857c;
+        }
+        .session-card--committing .btn-join:hover {
+            background: rgba(180, 69, 60, 0.2);
+            border-color: #b4453c;
         }
         .btn-join {
             flex: 1;
@@ -1889,8 +1901,8 @@
                                 </svg>
                                 <!-- One flex child, not two: .btn-join has an
                                      8px gap for its icon, and a bare sibling
-                                     span put that gap before "(Ending)" too. -->
-                                <span>Join Session<span class="btn-join__ending-suffix"> (Ending)</span></span>
+                                     span put that gap before "Ending" too. -->
+                                <span>Join <span class="btn-join__ending-word">Ending </span>Session</span>
                             </a>
                             <button class="btn-end" data-action="end-session" data-uuid="{{.UUID}}" data-public-port="{{.PublicPort}}">End</button>
                         </div>
