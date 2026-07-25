@@ -260,17 +260,32 @@ input=$(cat)
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false')" = "true" ] && exit 0
 tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 [ -n "$tp" ] && [ -f "$tp" ] || exit 0
-# Slice the transcript from the last real user message. Tool results also
-# arrive as type:user lines; excluding them keeps the slice to this turn.
-n=$(grep -n '"type":"user"' "$tp" | grep -v tool_result | tail -1 | cut -d: -f1)
+# Slice the transcript from the last GENUINE user message. A typed message is
+# a type:user line that is not a tool_result. An agent-chat reply arrives as a
+# tool_result carrying "User said:"/"User responded:" and also starts a turn --
+# without that anchor, back-to-back chat replies share one turn start and an
+# earlier send covers the newer turn.
+n=$(awk '/"type":"user"/ {
+  if (!/"tool_result"/ || /User said:|User responded:/) last = NR
+} END { if (last) print last }' "$tp")
 [ -n "$n" ] || exit 0
 turn=$(tail -n +"$n" "$tp")
-# A user-visible send already happened this turn (mcp CLI or native MCP id).
-printf '%s' "$turn" | grep -q \
-  -e 'agent-chat send_message' -e 'agent-chat__send_message' \
-  -e 'agent-chat send_progress' -e 'agent-chat__send_progress' \
-  -e 'send_verbal_reply' -e 'send_verbal_progress' \
-  -e 'agent-chat draw' -e 'agent-chat__draw' && exit 0
+# A user-visible send already happened this turn. Read the transcript as
+# structured records, not text: only a real tool_use counts, so log text that
+# merely names the tool cannot spoof it. Malformed lines are skipped, not fatal.
+sent=$(printf '%s\n' "$turn" | jq -r -R '
+  fromjson? // empty
+  | select(.type == "assistant")
+  | .message.content[]?
+  | select(.type == "tool_use")
+  | select(
+      (.name | test("agent[-_]chat__(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)$"))
+      or (.name == "Bash"
+          and ((.input.command // "")
+               | test("(^|[;&|]|\\n)[ \t]*(mcp[ \t]+)?agent-chat[ \t]+(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)([ \t]|$)")))
+    )
+  | "sent"' 2>/dev/null | head -n 1)
+[ -n "$sent" ] && exit 0
 # A check_messages that found an empty queue is an allowed silent turn.
 # (Escaped-JSON gap between the words is 5 chars: \":\" -- allow slack.)
 printf '%s' "$turn" | grep -q 'queue.\{0,8\}empty' && exit 0
