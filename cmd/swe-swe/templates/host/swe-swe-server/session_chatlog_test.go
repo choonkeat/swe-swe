@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -189,10 +191,69 @@ func TestEndAPICommitKeepsSessionAlive(t *testing.T) {
 	if sentText == "" {
 		t.Fatal("commit mode must push an instruction into the agent's chat")
 	}
-	for _, want := range []string{"commit-session-chat-log", "end_session", sess.UUID} {
+	for _, want := range []string{"commit-session-chat-log", "end_session"} {
 		if !strings.Contains(sentText, want) {
 			t.Errorf("instruction is missing %q; the agent cannot finish the job without it.\ngot: %s", want, sentText)
 		}
+	}
+	// The advice is the only way a user learns this behaviour is theirs to
+	// change -- nothing else in the product mentions the command.
+	if !strings.Contains(sentText, chatLogCommitThenEndCommand) {
+		t.Errorf("fallback must tell the user they can define their own %q command.\ngot: %s", chatLogCommitThenEndCommand, sentText)
+	}
+}
+
+// A user who has defined commit-log-then-end has said what this button should
+// do. Sending our instructions alongside it would override the thing we just
+// offered them control over, so the command goes out alone.
+func TestCommitThenEndPrefersUserCommand(t *testing.T) {
+	home := t.TempDir()
+	cmdDir := filepath.Join(home, ".claude", "commands")
+	if err := os.MkdirAll(cmdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, chatLogCommitThenEndCommand+".md"), []byte("mine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sess := &Session{
+		UUID:            "s",
+		AgentChatPort:   4001,
+		Assistant:       "claude",
+		WorkDir:         home,
+		AssistantConfig: AssistantConfig{SlashCmdFormat: SlashCmdMD},
+	}
+	var sentText string
+	swapOrchestrator(t, func(_ int, tool string, args any) (string, error) {
+		if tool == "send_chat_message" {
+			if m, ok := args.(map[string]any); ok {
+				sentText, _ = m["text"].(string)
+			}
+		}
+		return "message pushed", nil
+	})
+
+	if err := requestChatLogCommitThenEnd(sess); err != nil {
+		t.Fatalf("requestChatLogCommitThenEnd: %v", err)
+	}
+	if want := "/" + chatLogCommitThenEndCommand; sentText != want {
+		t.Errorf("want exactly %q, got %q", want, sentText)
+	}
+}
+
+// An agent with no slash command convention at all (aider, shell) must never be
+// handed a slash name it cannot resolve -- it would read as literal text and
+// the log would never be committed.
+func TestCommitThenEndAgentWithoutSlashCommands(t *testing.T) {
+	sess := &Session{
+		UUID:            "s",
+		AgentChatPort:   4001,
+		Assistant:       "aider",
+		WorkDir:         t.TempDir(),
+		AssistantConfig: AssistantConfig{SlashCmdFormat: SlashCmdNone},
+	}
+	if sessionHasSlashCommand(sess, chatLogCommitThenEndCommand) {
+		t.Error("an agent with no command convention can never have the command")
 	}
 }
 

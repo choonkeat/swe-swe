@@ -9071,6 +9071,49 @@ func discardSessionChatLog(sess *Session) error {
 	return err
 }
 
+// chatLogCommitThenEndCommand is the slash command a user can define to take
+// over what the "Commit the log, then end" button does. Deliberately NOT in
+// swe-swe's own namespace: installBundledSlashCommands wipes and re-seeds
+// commands/*/swe-swe on every init, so anything shipped there would be
+// overwritten, and a name swe-swe owns is a name the user cannot own.
+const chatLogCommitThenEndCommand = "commit-log-then-end"
+
+// chatLogCommitThenEndFallback is the built-in instruction used when the
+// session's agent has no commit-log-then-end command of its own. It is also
+// the description of the default behaviour a user's own command would replace,
+// which is why the advice line comes attached to it rather than shipped as a
+// bundled command file: a bundled file would always be found, the advice would
+// never appear, and nobody would learn the behaviour is theirs to change.
+const chatLogCommitThenEndFallback = "Run /swe-swe:commit-session-chat-log to freeze, scrub and commit this session's chat log. " +
+	"When the commit has landed, end this session by calling the swe-swe MCP tool end_session (no uuid needed -- it ends the calling session). " +
+	"If you cannot commit it (for example a screenshot leaks a secret), say so and do NOT end the session. " +
+	"Afterwards, tell the user in one line: they can save their own /" + chatLogCommitThenEndCommand + " command to decide what this button actually does " +
+	"-- their own redaction rules, commit message wording, whether to push, what to leave out -- and swe-swe will run that instead of these instructions."
+
+// sessionHasSlashCommand reports whether name is available as a flat (non
+// namespaced) slash command to this session's agent. Existence of the file in
+// THIS agent's own command directory is what proves this agent can run it --
+// each agent reads from a different directory, so no capability probing is
+// needed. Reuses the same discovery the autocomplete dropdown is built from,
+// so what the server offers the agent is exactly what the user can see.
+func sessionHasSlashCommand(sess *Session, name string) bool {
+	systemDir, ext := slashCommandDirForAgent(sess.Assistant, sess.AssistantConfig.SlashCmdFormat)
+	if ext == "" {
+		return false
+	}
+	for _, dir := range []string{projectCommandDir(sess.Assistant, sess.WorkDir), systemDir} {
+		if dir == "" {
+			continue
+		}
+		for _, item := range discoverSlashCommands(dir, ext) {
+			if item.V == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // requestChatLogCommitThenEnd asks the agent to scrub and commit its own chat
 // log and then end its own session.
 //
@@ -9079,13 +9122,18 @@ func discardSessionChatLog(sess *Session) error {
 // the whole job, ending included, also means there is no completion to detect:
 // no polling, no inotify, no watchdog racing a scrub. The session simply
 // disappears when the work is done.
+//
+// When the user has defined their own commit-log-then-end command we send only
+// that, so the wording of what happens lives in a file they control rather than
+// in this binary.
 func requestChatLogCommitThenEnd(sess *Session) error {
 	if sess.AgentChatPort == 0 {
 		return fmt.Errorf("session has no agent-chat port")
 	}
-	text := fmt.Sprintf("Run /swe-swe:commit-session-chat-log to freeze, scrub and commit this session's chat log. "+
-		"When the commit has landed, end this session by calling the swe-swe MCP tool end_session with uuid %s. "+
-		"If you cannot commit it (for example a screenshot leaks a secret), say so and do NOT end the session.", sess.UUID)
+	text := chatLogCommitThenEndFallback
+	if sessionHasSlashCommand(sess, chatLogCommitThenEndCommand) {
+		text = "/" + chatLogCommitThenEndCommand
+	}
 	_, err := orchestratorCall(sess.AgentChatPort, "send_chat_message", map[string]any{"text": text})
 	return err
 }
@@ -9537,13 +9585,22 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 
 	// end_session
 	type endSessionArgs struct {
-		UUID string `json:"uuid" jsonschema:"Session UUID to terminate"`
+		UUID string `json:"uuid,omitempty" jsonschema:"Session UUID to terminate. Omit to end the calling session."`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "end_session",
-		Description: "Gracefully terminate an agent session. Returns as soon as the session is closed to new joins; cleanup (killing the process tree, freeing ports and browsers) continues in the background and can take tens of seconds. The session reports ending=true in list_sessions until it is done, then disappears.",
+		Description: "Gracefully terminate an agent session. Omit uuid to end your own session -- the caller is identified by its per-session auth key, so an agent ending itself never has to name (or mistype) a UUID. Returns as soon as the session is closed to new joins; cleanup (killing the process tree, freeing ports and browsers) continues in the background and can take tens of seconds. The session reports ending=true in list_sessions until it is done, then disappears.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args endSessionArgs) (*mcp.CallToolResult, any, error) {
-		text, err := endSessionTool(args.UUID)
+		target := args.UUID
+		if target == "" {
+			// Self-end: derive the target from the unforgeable per-session auth
+			// key rather than a client-supplied argument, same as create_session.
+			target = callerSessionFromContext(ctx)
+			if target == "" {
+				return nil, nil, fmt.Errorf("uuid is required: the calling session could not be identified")
+			}
+		}
+		text, err := endSessionTool(target)
 		if err != nil {
 			return nil, nil, err
 		}
