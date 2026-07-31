@@ -649,12 +649,29 @@ terminal-ui.embedded-in-iframe .mobile-only {
 /* Settings Panel */
 .settings-panel {
     position: fixed;
-    inset: 0;
+    left: 0;
+    right: 0;
+    top: 0;
+    /* Sized to the band the user can actually see, not to `inset: 0`.
+       On mobile Safari the layout viewport (and every `vh` unit) keeps the
+       height the page had with the toolbars hidden and the keyboard closed,
+       so `inset: 0` drops this box's bottom -- and the footer holding
+       "End session" -- behind the bottom toolbar or the keyboard, with no
+       way to scroll it back. `dvh` covers the toolbar case; the keyboard
+       case needs window.visualViewport, so syncVisibleViewport()
+       overwrites top/height inline whenever that API is present. */
+    height: 100%;
     z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
+}
+
+@supports (height: 100dvh) {
+    .settings-panel {
+        height: 100dvh;
+    }
 }
 
 .settings-panel[hidden] {
@@ -673,7 +690,10 @@ terminal-ui.embedded-in-iframe .mobile-only {
     position: relative;
     width: 100%;
     max-width: 840px;
-    max-height: min(90vh, 720px);
+    /* Percentage of the panel, which is already sized to the visible band.
+       A `vh` cap here would outgrow that band whenever the browser toolbar
+       or keyboard is up and push the footer out of `overflow: hidden`. */
+    max-height: min(100%, 720px);
     background: var(--bg-secondary);
     border-radius: 12px;
     overflow: hidden;
@@ -723,6 +743,10 @@ terminal-ui.embedded-in-iframe .mobile-only {
     display: grid;
     grid-template-columns: 200px 1fr;
     min-height: 0;
+    /* Belt and braces: a pane that refuses to shrink scrolls inside here
+       instead of pushing the modal footer past the content box's
+       `overflow: hidden` edge. */
+    overflow: hidden;
 }
 
 .settings-panel__nav {
@@ -800,6 +824,7 @@ terminal-ui.embedded-in-iframe .mobile-only {
 .settings-panel__pane-host {
     overflow-y: auto;
     min-width: 0;
+    min-height: 0;
     background: var(--bg-secondary);
 }
 
@@ -1378,10 +1403,12 @@ terminal-ui.embedded-in-iframe .mobile-only {
     .settings-panel {
         align-items: flex-end;
         padding: 0;
+        /* Keeps the footer clear of the iPhone home indicator. */
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     .settings-panel__content {
         max-width: 100%;
-        max-height: 92vh;
+        max-height: 100%;
         border-radius: 12px 12px 0 0;
         border-bottom: 0;
     }

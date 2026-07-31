@@ -531,6 +531,12 @@ class TerminalUI extends HTMLElement {
             window.visualViewport.removeEventListener('resize', this._viewportHandler);
             window.visualViewport.removeEventListener('scroll', this._viewportHandler);
         }
+        if (this._viewportRefreshHandler) {
+            window.removeEventListener('pageshow', this._viewportRefreshHandler);
+            window.removeEventListener('focus', this._viewportRefreshHandler);
+            window.removeEventListener('orientationchange', this._viewportRefreshHandler);
+            document.removeEventListener('visibilitychange', this._viewportRefreshHandler);
+        }
         // Stop iframe load supervisors + their focus/visibility kick listeners.
         if (this._visibilityHandler) {
             document.removeEventListener('visibilitychange', this._visibilityHandler);
@@ -2402,6 +2408,10 @@ class TerminalUI extends HTMLElement {
 
         panel.removeAttribute('hidden');
         statusBar.setAttribute('aria-expanded', 'true');
+
+        // The panel may be opening long after the last resize event -- size it
+        // to the visible band now rather than trusting a stale layout viewport.
+        this.syncVisibleViewport();
 
         // Store the element that opened the panel to restore focus on close
         this._settingsPanelOpener = document.activeElement;
@@ -4604,9 +4614,29 @@ class TerminalUI extends HTMLElement {
     setupViewportListeners() {
         if (!window.visualViewport) return;
 
-        this._viewportHandler = () => this.updateViewport();
+        this._viewportHandler = () => {
+            // Unconditional: the visible band has to be re-measured even for
+            // small changes that updateViewport() filters out as noise.
+            this.syncVisibleViewport();
+            this.updateViewport();
+        };
         window.visualViewport.addEventListener('resize', this._viewportHandler);
         window.visualViewport.addEventListener('scroll', this._viewportHandler);
+
+        // Returning to a backgrounded tab is the case that strands the modal:
+        // Safari restores the page with the layout viewport (and every vh unit)
+        // still holding its pre-background height, and fires no resize event to
+        // correct it. Re-measure on every path back into the page.
+        this._viewportRefreshHandler = () => {
+            // One frame late: on pageshow/visibilitychange Safari has not
+            // finished settling visualViewport when the event fires.
+            requestAnimationFrame(() => this._viewportHandler());
+        };
+        window.addEventListener('pageshow', this._viewportRefreshHandler);
+        window.addEventListener('focus', this._viewportRefreshHandler);
+        window.addEventListener('orientationchange', this._viewportRefreshHandler);
+        document.addEventListener('visibilitychange', this._viewportRefreshHandler);
+        this.syncVisibleViewport();
 
         // Also handle input focus/blur to prevent iOS scroll weirdness
         const mobileInput = this.querySelector('.mobile-keyboard__text');
@@ -4623,6 +4653,38 @@ class TerminalUI extends HTMLElement {
                     this.updateViewport();
                 }, 100);
             });
+        }
+    }
+
+    // Publishes the band the user can actually see -- window.visualViewport --
+    // to the two places that would otherwise trust the layout viewport.
+    //
+    // On mobile Safari the layout viewport, `100%` heights and every `vh` unit
+    // can hold a stale height: after the tab is backgrounded and restored, or
+    // while the toolbar/keyboard is up, they keep the height the page had
+    // earlier and no resize event corrects them. That leaves the app painted
+    // short (a dead band under it) and, worse, leaves the settings modal's
+    // footer -- the row holding "End session" -- outside the drawn area with
+    // no way to scroll to it. Reloading was the only way out.
+    syncVisibleViewport() {
+        const vv = window.visualViewport;
+        if (!vv) return;
+
+        const height = Math.round(vv.height);
+        if (height <= 0) return;
+
+        // Consumed by `html, body { height: var(--app-viewport-height, 100%) }`.
+        if (height !== this._lastVisibleViewportHeight) {
+            document.documentElement.style.setProperty('--app-viewport-height', `${height}px`);
+            this._lastVisibleViewportHeight = height;
+        }
+
+        // The modal is position:fixed, so it is laid out against the layout
+        // viewport and needs the offset applied by hand.
+        const panel = this.querySelector('.settings-panel');
+        if (panel) {
+            panel.style.top = `${Math.round(vv.offsetTop)}px`;
+            panel.style.height = `${height}px`;
         }
     }
 

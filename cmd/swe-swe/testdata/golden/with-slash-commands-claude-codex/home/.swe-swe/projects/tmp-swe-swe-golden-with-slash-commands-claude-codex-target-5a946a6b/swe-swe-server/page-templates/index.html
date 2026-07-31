@@ -21,7 +21,12 @@
             box-sizing: border-box;
         }
         html, body {
-            height: 100%;
+            /* --app-viewport-height is written from window.visualViewport by
+               TerminalUI.syncVisibleViewport(). Plain `100%` is the layout
+               viewport, which mobile Safari leaves holding a stale height after
+               the tab is backgrounded and restored -- the app then paints short
+               with a dead band under it. */
+            height: var(--app-viewport-height, 100%);
             background: var(--bg-terminal, #1e1e1e);
             overflow: hidden;
         }
