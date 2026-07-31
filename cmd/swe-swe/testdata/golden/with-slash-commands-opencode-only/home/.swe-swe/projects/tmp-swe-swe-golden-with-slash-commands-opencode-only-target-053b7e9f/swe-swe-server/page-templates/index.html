@@ -32,7 +32,23 @@
         }
         terminal-ui {
             display: block;
-            height: 100%;
+            /* Pinned to the band window.visualViewport reports as on screen,
+               not just sized to it. When the keyboard opens over a document
+               that cannot scroll, mobile Safari scrolls the *visual* viewport
+               instead (visualViewport.offsetTop > 0, window.scrollY stays 0).
+               A statically positioned app stays anchored at the document
+               origin, so its top scrolls off above the visible band and an
+               equal strip of dead space appears below it. position: fixed is
+               laid out against the layout viewport, which that scroll does not
+               move, so top: offsetTop lands the app exactly on the band.
+               Both custom properties are written by
+               TerminalUI.syncVisibleViewport(); the fallbacks resolve against
+               the viewport, matching the old static layout. */
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: var(--app-viewport-offset, 0px);
+            height: var(--app-viewport-height, 100%);
         }
     </style>
 </head>

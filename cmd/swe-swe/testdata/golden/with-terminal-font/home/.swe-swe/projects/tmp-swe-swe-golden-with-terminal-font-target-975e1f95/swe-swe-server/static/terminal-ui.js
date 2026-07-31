@@ -4672,6 +4672,7 @@ class TerminalUI extends HTMLElement {
 
         const height = Math.round(vv.height);
         if (height <= 0) return;
+        const offsetTop = Math.round(vv.offsetTop);
 
         // Consumed by `html, body { height: var(--app-viewport-height, 100%) }`.
         if (height !== this._lastVisibleViewportHeight) {
@@ -4679,11 +4680,21 @@ class TerminalUI extends HTMLElement {
             this._lastVisibleViewportHeight = height;
         }
 
+        // Consumed by `terminal-ui { top: var(--app-viewport-offset, 0px) }`.
+        // Height alone is not enough: opening the keyboard over a document that
+        // cannot scroll makes Safari scroll the visual viewport instead, and an
+        // app anchored at the document origin then sits above the visible band
+        // with a strip of dead space -- exactly offsetTop tall -- below it.
+        if (offsetTop !== this._lastVisibleViewportOffset) {
+            document.documentElement.style.setProperty('--app-viewport-offset', `${offsetTop}px`);
+            this._lastVisibleViewportOffset = offsetTop;
+        }
+
         // The modal is position:fixed, so it is laid out against the layout
         // viewport and needs the offset applied by hand.
         const panel = this.querySelector('.settings-panel');
         if (panel) {
-            panel.style.top = `${Math.round(vv.offsetTop)}px`;
+            panel.style.top = `${offsetTop}px`;
             panel.style.height = `${height}px`;
         }
     }
@@ -4695,7 +4706,6 @@ class TerminalUI extends HTMLElement {
         // Calculate keyboard height using original window height as reference
         // (interactive-widget=resizes-content causes window.innerHeight to shrink)
         const keyboardHeight = Math.max(0, this.originalWindowHeight - vv.height);
-        const keyboardVisible = keyboardHeight > 50; // threshold to filter noise
 
         // Only update layout if significant change (>20px)
         if (Math.abs(keyboardHeight - this.lastKeyboardHeight) <= 20) {
@@ -4709,17 +4719,15 @@ class TerminalUI extends HTMLElement {
         const mobileKeyboard = this.querySelector('.mobile-keyboard');
         const target = mobileNav || mobileKeyboard;
 
-        if (keyboardVisible) {
-            // Keyboard is showing - adjust layout
-            // Apply margin to the bottom-most element so there's no gap
-            if (target) {
-                target.style.marginBottom = `${keyboardHeight}px`;
-            }
-        } else {
-            // Keyboard hidden - reset layout
-            if (target) {
-                target.style.marginBottom = '0';
-            }
+        // No keyboard margin here. syncVisibleViewport() already sizes html/body
+        // to window.visualViewport -- the band above the keyboard -- so the
+        // bottom-most fixed element is clear of the keyboard by construction.
+        // Adding marginBottom: keyboardHeight on top of that subtracts the
+        // keyboard twice and collapses the whole app into a strip at the top of
+        // the screen with dead space beneath it. Reset any margin left over from
+        // an earlier layout (or an earlier build) instead.
+        if (target && target.style.marginBottom !== '0px') {
+            target.style.marginBottom = '0px';
         }
 
         // Refit terminal immediately (no setTimeout - use rAF)
