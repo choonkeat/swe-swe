@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.35.1 - Phone-Sized Homepage
+
+### Fixes
+
+- **The homepage and its dialogs fit a phone screen**: Titles wrap instead of running off the card, the page no longer scrolls sideways below 340px, dialog inputs stay inside the dialog, and tap targets are enlarged with the hover-only keep/rename/delete row always shown -- the last two gated on `pointer: coarse`, so desktop is unchanged.
+
 ## v2.35.0 - Mobile Viewport, Session ID & Your Own End-Session Command
 
 ### Features
