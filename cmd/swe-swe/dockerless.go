@@ -301,6 +301,12 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 		}
 	case "down":
 		fmt.Println("Dockerless swe-swe runs in the foreground; stop it with Ctrl-C in the terminal running `swe-swe up`.")
+	case "build", "pull":
+		// Dockerless has no images to build or pull -- the server binary is
+		// dumped at init time. Treat these as successful no-ops so deploy/boot
+		// loops written for docker mode (which do `build` then `up`) don't
+		// abort here before reaching `up`.
+		fmt.Printf("`swe-swe %s` is a no-op in dockerless mode (nothing to build/pull; run `swe-swe up`).\n", command)
 	default:
 		log.Fatalf("`swe-swe %s` is not supported in dockerless mode (use: `swe-swe up [--open]` or `swe-swe down`)", command)
 	}
