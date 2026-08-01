@@ -262,10 +262,12 @@
             margin-bottom: 40px;
         }
 
-        /* Session cards container */
+        /* Session cards container. The min() keeps the 340px track floor from
+           forcing a wider-than-viewport column on a 320px phone -- a bare
+           minmax(340px, 1fr) made the whole page scroll sideways there. */
         .sessions-list {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
             gap: 16px;
         }
 
@@ -996,12 +998,25 @@
             color: var(--text-secondary);
             margin-bottom: 8px;
         }
+        /* Stacked label/input pairs inside one field (the clone credentials
+           block) had no gap above the second and third labels, so the text ran
+           straight into the input above it. */
+        .dialog__input + .dialog__label {
+            margin-top: 14px;
+        }
         .dialog__row {
             display: flex;
             gap: 8px;
         }
         .dialog__input {
             flex: 1;
+            /* Same treatment as .dialog__select. Without width the input keeps
+               its intrinsic ~200px (default size=20), so the ones that stand
+               alone came out narrower than the dialog; without min-width it
+               refuses to shrink, and on a 320px phone the Next/Clone button
+               beside it was pushed outside the dialog. */
+            width: 100%;
+            min-width: 0;
             padding: 12px 14px;
             font-size: 14px;
             background: var(--bg-primary);
@@ -1335,8 +1350,25 @@
                 flex-direction: column;
                 gap: 8px;
             }
+            /* Column flex + align-items:flex-start sizes this to its content,
+               so a long session title ran off the card (and off the screen)
+               instead of being clipped. Pin it to the card width so the
+               wrapping below has something to wrap against. */
+            .session-card__info {
+                width: 100%;
+            }
             .session-card__repo {
                 font-size: 15px;
+                align-items: flex-start;
+            }
+            /* Wrap instead of ellipsis on a phone: truncating drops the branch,
+               which is the part that tells two sessions of the same repo apart. */
+            .session-card__repo-text {
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+            .session-card__repo svg {
+                margin-top: 2px;
             }
             .session-card__meta {
                 flex-wrap: wrap;
@@ -1365,6 +1397,11 @@
             }
             .recording-card__title {
                 font-size: 14px;
+                /* Same reason as the session title: on one line the recording
+                   name is clipped mid-word and the short id after it is pushed
+                   out of the card entirely, so it can never be read. */
+                white-space: normal;
+                overflow-wrap: anywhere;
             }
             .recording-card__meta {
                 font-size: 12px;
@@ -1567,6 +1604,76 @@
                iOS actually measures. Pinning .dialog__select alone missed it. */
             .dialog combo-box {
                 font-size: 16px;
+            }
+            /* Touch targets: 32px icon buttons and 28-32px pill buttons are
+               under the ~44px a fingertip can hit reliably, and they sit in
+               rows where the neighbour is destructive (Delete next to Keep). */
+            .btn-icon {
+                width: 44px;
+                height: 44px;
+            }
+            .btn-view,
+            .btn-view--restart {
+                min-height: 44px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .btn-end,
+            .btn-join,
+            .btn-new-session {
+                min-height: 44px;
+            }
+            .header__settings {
+                width: 44px;
+                height: 44px;
+            }
+            /* Hover reveals these on a mouse; a touch screen has no hover, so
+               without this the keep/rename/delete row stays invisible on any
+               touch device wider than the 640px phone breakpoint. */
+            .recording-card__btn-group {
+                opacity: 1;
+            }
+            /* Same 44px floor inside the dialogs. The close X sits in the top
+               corner where a mis-tap lands on the field below it. */
+            .dialog__close {
+                width: 44px;
+                height: 44px;
+            }
+            .dialog__next,
+            .dialog__start,
+            .dialog__agent,
+            .dialog__advanced-summary,
+            .color-picker__reset,
+            .settings-logout-btn,
+            .settings-shutdown-btn,
+            .settings-panel__theme-btn {
+                min-height: 44px;
+            }
+            .color-picker__input {
+                flex: 0 0 56px;
+                width: 56px;
+                height: 44px;
+            }
+            .color-picker__hex,
+            .dialog__input {
+                min-height: 44px;
+            }
+            /* A 13px checkbox is smaller than any fingertip. The label around
+               it is tappable too, but the box is what people aim at. The
+               flex-basis stops it being squeezed by the text beside it. */
+            .dialog__field input[type="checkbox"] {
+                flex: 0 0 20px;
+                width: 20px;
+                height: 20px;
+            }
+            /* Inline links in hint text are one line tall. The padding gives
+               them a hittable band and the matching negative margin keeps the
+               sentence spacing exactly where it was. */
+            .dialog__env-hint a {
+                display: inline-block;
+                padding: 14px 6px;
+                margin: -14px 0;
             }
         }
     </style>
