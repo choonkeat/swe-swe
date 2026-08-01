@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v2.35.2 - Reboot Wait Screen & Dockerless Build
+
+### Fixes
+
+- **The reboot wait screen reloads itself behind a proxy or tunnel**: It only reloads once it has seen the server go away, but it inferred that from `fetch` rejecting -- and an edge that stays up answers 502/503/504 instead, which counted as alive, so the screen polled forever and read the real 200 as just another poll; those three statuses now mark it down.
+
+- **`swe-swe build` and `swe-swe pull` are no-ops in dockerless mode, not fatal errors**: A dockerless project has no images to build, but the fatal exit aborted deploy loops that run `build` before `up` under `set -e`, leaving the box down until someone connected by hand.
+
 ## v2.35.1 - Phone-Sized Homepage
 
 ### Fixes
