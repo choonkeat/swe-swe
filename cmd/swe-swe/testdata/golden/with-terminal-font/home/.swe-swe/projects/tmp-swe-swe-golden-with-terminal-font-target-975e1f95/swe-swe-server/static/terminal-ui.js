@@ -602,6 +602,16 @@ class TerminalUI extends HTMLElement {
                                         <label class="settings-panel__label" for="settings-session">Session name</label>
                                         <input type="text" id="settings-session" class="settings-panel__input" placeholder="Enter session name" maxlength="256">
                                     </div>
+                                    <!-- Session UUID, read-only + one-tap copy. Reuses the
+                                         Share pane's copyrow markup so the panel-wide
+                                         [data-copy-target] handler picks it up for free. -->
+                                    <div class="settings-panel__field-row settings-panel__field-row--stacked">
+                                        <label class="settings-panel__label" for="settings-session-id">Session ID</label>
+                                        <div class="settings-panel__share-copyrow">
+                                            <input type="text" id="settings-session-id" class="settings-panel__input" readonly>
+                                            <button class="settings-panel__btn settings-panel__btn--secondary" data-copy-target="settings-session-id" type="button">Copy</button>
+                                        </div>
+                                    </div>
                                     <div class="settings-panel__pane-footer">
                                         <span class="settings-panel__pane-status" id="settings-profile-status">Unsaved changes are discarded on close</span>
                                         <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-profile-revert" type="button">Revert</button>
@@ -1976,6 +1986,17 @@ class TerminalUI extends HTMLElement {
                                     // in-memory.
                                     if (this.sessionUUID) {
                                         u.searchParams.set('fork_session', this.sessionUUID);
+                                    }
+                                    // files_url enables agent-chat's workspace-file links:
+                                    // a bare relative markdown link like [x](docs/foo.md)
+                                    // gets this origin so cmd-click opens a real browser
+                                    // tab, while a plain click posts agent-chat-open-files
+                                    // back to us and lands in the Files pane instead. Absent
+                                    // when filesProxyPort hasn't arrived -- agent-chat then
+                                    // keeps its previous parent-relative link behaviour.
+                                    const filesBase = this._filesBaseUrl();
+                                    if (filesBase) {
+                                        u.searchParams.set('files_url', filesBase + '/');
                                     }
                                     chatSrc = u.toString();
                                 } catch (e) { /* keep chatSrc as-is on malformed URL */ }
@@ -3980,6 +4001,13 @@ class TerminalUI extends HTMLElement {
             sessionInput.value = this.sessionName || '';
         }
 
+        // Session UUID (read-only). Empty until the WS init handler sets
+        // sessionUUID; the panel repopulates on every open so it fills in.
+        const sessionIdInput = panel.querySelector('#settings-session-id');
+        if (sessionIdInput) {
+            sessionIdInput.value = this.sessionUUID || '';
+        }
+
         // Theme mode toggle
         this.populateThemeToggle();
 
@@ -4982,6 +5010,34 @@ class TerminalUI extends HTMLElement {
                 this.activeTab = 'preview';
                 this.setPreviewURL(e.data.url);
             }
+            // When user clicks a workspace-file link in Agent Chat, load it in
+            // the Files pane instead of a new browser tab. Mirrors the Preview
+            // reveal idiom above. The path is workspace-relative; we rebuild the
+            // URL here rather than trusting e.data.url so a stale files_url in
+            // the iframe (port reassigned after the src was built) can't point
+            // the pane at a dead origin.
+            if (e.data && e.data.type === 'agent-chat-open-files' && e.data.path) {
+                const filesBase = this._filesBaseUrl();
+                if (filesBase) {
+                    const slot = this._slotForPane('files');
+                    if (slot) {
+                        this.setActiveInSlot(slot, 'files');
+                    } else {
+                        this.autoAddPaneToHome('files', { activate: true });
+                    }
+                    this.switchMobileNav('files');
+                    // Drop the supervisor first: setIframeUrl keeps the existing
+                    // src when it matches, which would no-op a repeat click on
+                    // the same link after the user navigated away in-pane.
+                    const existing = this._iframeSupervisors['files'];
+                    if (existing) {
+                        existing.stop();
+                        delete this._iframeSupervisors['files'];
+                    }
+                    this._paneLoaded.add('files');
+                    this.setIframeUrl(filesBase + '/' + String(e.data.path).replace(/^\/+/, ''), 'files');
+                }
+            }
         });
 
         // Status bar click: reconnect when disconnected, open settings when connected
@@ -5534,6 +5590,16 @@ class TerminalUI extends HTMLElement {
         this._kickPaneSupervisor(paneId);
     }
 
+    // Origin of the per-session md-serve that backs the Files pane, or null
+    // until filesProxyPort arrives on the WS Status message. Tunnel mode
+    // demuxes {filesProxyPort}.{publicHostname}; legacy mode hits the
+    // auth-proxy port directly.
+    _filesBaseUrl() {
+        return this.effectivePublicHostname
+            ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
+            : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+    }
+
     // Re-tapping the already-active Files tab navigates the pane back to its
     // base directory (the session cwd). md-serve is cross-origin so in-pane
     // navigation is invisible here; the only reliable "go home" is to restart
@@ -5542,9 +5608,7 @@ class TerminalUI extends HTMLElement {
     // otherwise turn this into a no-op when the user never left the root.
     _resetFilesToRoot() {
         if (!this._paneLoaded.has('files')) return;
-        const filesUrl = this.effectivePublicHostname
-            ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
-            : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+        const filesUrl = this._filesBaseUrl();
         if (!filesUrl) return;
         const existing = this._iframeSupervisors['files'];
         if (existing) {
@@ -5687,9 +5751,7 @@ class TerminalUI extends HTMLElement {
                 // path prefix would break navigation. Tunnel mode demuxes
                 // {filesProxyPort}.{publicHostname} -> 127.0.0.1:{filesProxyPort};
                 // legacy mode hits the same auth-proxy port directly.
-                const filesUrl = this.effectivePublicHostname
-                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
-                    : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+                const filesUrl = this._filesBaseUrl();
                 // Defer if the proxy port hasn't arrived yet -- the WS Status
                 // handler re-kicks us once filesProxyPort flips from null.
                 if (!filesUrl) return;
@@ -6505,9 +6567,7 @@ class TerminalUI extends HTMLElement {
             case 'browser':
                 return this.getBrowserViewUrl();
             case 'files': {
-                const filesUrl = this.effectivePublicHostname
-                    ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
-                    : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+                const filesUrl = this._filesBaseUrl();
                 return filesUrl ? filesUrl + '/' : null;
             }
             case 'agent-chat': {
