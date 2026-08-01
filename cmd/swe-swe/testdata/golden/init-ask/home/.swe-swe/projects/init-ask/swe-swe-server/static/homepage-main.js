@@ -176,20 +176,31 @@ function showServerDownAndPoll(message) {
         '<div style="font-size:13px; opacity:0.65;">This page reloads itself once the server is back.</div>' +
         '</div>';
     var sawDown = false;
+    function markDown() {
+        if (sawDown) { return; }
+        sawDown = true;
+        var m = document.getElementById('server-down-msg');
+        if (m) { m.textContent = 'Waiting for the server to come back...'; }
+    }
     function tick() {
-        // fetch rejects only on a network-level failure; any HTTP status
-        // (200/302/401) means the server is answering again.
+        // fetch rejects only on a network-level failure, which is what a
+        // direct connection to a dead server looks like. Behind a proxy or
+        // tunnel the edge stays up and answers 502/503/504 instead -- that is
+        // the server being DOWN, not answering, so counting it as alive left
+        // the screen polling forever and never reloading once it came back.
+        // Any other status (200/302/401) does mean swe-swe itself replied.
         fetch('/', { cache: 'no-store' })
-            .then(function() {
+            .then(function(resp) {
+                if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
+                    markDown();
+                    setTimeout(tick, 2000);
+                    return;
+                }
                 if (sawDown) { window.location.reload(); return; }
                 setTimeout(tick, 1000);
             })
             .catch(function() {
-                if (!sawDown) {
-                    sawDown = true;
-                    var m = document.getElementById('server-down-msg');
-                    if (m) { m.textContent = 'Waiting for the server to come back...'; }
-                }
+                markDown();
                 setTimeout(tick, 2000);
             });
     }
