@@ -50,6 +50,35 @@
             top: var(--app-viewport-offset, 0px);
             height: var(--app-viewport-height, 100%);
         }
+
+        @supports (height: 100dvh) {
+            /* Ceiling, not a replacement. --app-viewport-height still fixes the
+               case it was added for (mobile Safari reporting a stale *short*
+               layout viewport, so the app paints short with a dead band under
+               it). What it cannot do is stay correct when it goes stale *tall*:
+               html/body are overflow:hidden and terminal-ui is position:fixed,
+               so the overhanging bottom strip -- which holds the chat input bar
+               -- is unreachable until a reload. 100dvh is resolved by the
+               browser at paint time and needs no event to stay current, so it
+               bounds the damage.
+
+               The plain declarations above come first so a browser without dvh
+               keeps a usable height; a bare min(..., 100dvh) would be dropped
+               wholesale there. Same shape as the @supports (height: 100dvh)
+               block already used for .settings-panel in
+               static/styles/terminal-ui.css.
+
+               Deliberately NOT applied to --app-viewport-offset: the reported
+               failure is height-only (the app's top was correct in both of the
+               reporter's screenshots), and clamping the offset would regress
+               the iPhone keyboard fix in 17dcef13b. */
+            html, body {
+                height: min(var(--app-viewport-height, 100%), 100dvh);
+            }
+            terminal-ui {
+                height: min(var(--app-viewport-height, 100%), 100dvh);
+            }
+        }
     </style>
 </head>
 <body>

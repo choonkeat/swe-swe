@@ -537,6 +537,9 @@ class TerminalUI extends HTMLElement {
             window.removeEventListener('orientationchange', this._viewportRefreshHandler);
             document.removeEventListener('visibilitychange', this._viewportRefreshHandler);
         }
+        // The post-event settle re-measure scheduled by _viewportHandler.
+        clearTimeout(this._viewportSettleTimer);
+        this._viewportSettleTimer = null;
         // Stop iframe load supervisors + their focus/visibility kick listeners.
         if (this._visibilityHandler) {
             document.removeEventListener('visibilitychange', this._visibilityHandler);
@@ -4647,6 +4650,13 @@ class TerminalUI extends HTMLElement {
             // small changes that updateViewport() filters out as noise.
             this.syncVisibleViewport();
             this.updateViewport();
+            // Safari has not always finished settling visualViewport when it
+            // fires the event, so the last measurement of a gesture can be a
+            // stale one. Re-measure once more after it has settled --
+            // _viewportRefreshHandler already does the one-frame version of
+            // this for pageshow/visibilitychange.
+            clearTimeout(this._viewportSettleTimer);
+            this._viewportSettleTimer = setTimeout(() => this.syncVisibleViewport(), 300);
         };
         window.visualViewport.addEventListener('resize', this._viewportHandler);
         window.visualViewport.addEventListener('scroll', this._viewportHandler);
