@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v2.36.0 - Idle Browser Reaping & Per-Session Login
+
+### Features
+
+- **Idle browsers are reaped, and a session whose browser went away heals itself**: `-browser-backend-idle` (env `SWE_BROWSER_BACKEND_IDLE`, default 30m, `0` disables) frees a browser untouched for that long -- CDP traffic, a live reverse tunnel and a 2-minute Agent View touch all count as use -- and the CDP proxy now re-allocates and replays a request whose browser is gone instead of breaking Agent View for the rest of the session.
+
+### Fixes
+
+- **Agent View no longer goes blank after a browser is replaced**: `x11vnc` and `websockify` were started unsupervised and quietly lost the race for the port slot, so the pane died while chromium stayed healthy; both are now supervised, started in their own process group so an orphaned `websockify` child cannot squat the port, and both the backend and a local session's own teardown now kill that group rather than the parent alone.
+
+- **The browser backend frees every browser stack on `SIGINT`/`SIGTERM`**: A restart abandoned Xvfb, chromium, `x11vnc` and `websockify` still holding their ports, which stranded one slot per live session until allocation failed outright.
+
+- **The login page is reachable on every per-session port**: In Traefik mode the `/swe-swe-auth` exemption was attached to the `websecure` entrypoint alone, so an unauthenticated request to a preview, chat, VNC or files port redirected to a login page that was itself gated, looping until the browser gave up.
+
+- **The chat input bar can no longer sit below the fold on a tablet**: When mobile Safari dropped the final settling event the app kept painting at the stale -- larger -- viewport height, pushing the input row off an unscrollable page until a reload, so the app is now also capped at `100dvh`.
+
 ## v2.35.2 - Reboot Wait Screen & Dockerless Build
 
 ### Fixes
