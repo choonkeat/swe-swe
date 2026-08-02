@@ -919,11 +919,90 @@ func TestInstallBundledSlashCommandsUsesCanonicalStoreAndSymlinks(t *testing.T) 
 		filepath.Join(homeDir, ".config", "opencode", "command", "swe-swe"),
 		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
 	assertSymlinkTarget(t,
-		filepath.Join(homeDir, ".pi", "agent", "prompts", "swe-swe"),
-		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe"))
-	assertSymlinkTarget(t,
 		filepath.Join(homeDir, ".gemini", "commands", "swe-swe"),
 		filepath.Join(homeDir, ".swe-swe", "commands", "toml", "swe-swe"))
+
+	// pi gets flat per-file links, never a directory (see the dedicated tests).
+	assertSymlinkTarget(t,
+		filepath.Join(homeDir, ".pi", "agent", "prompts", "swe-swe-setup.md"),
+		filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe", "setup.md"))
+}
+
+// pi's prompt loader skips every subdirectory, so the directory projection the
+// other agents get made the whole bundle invisible to pi. Each command must be
+// projected as its own prefixed .md symlink, and no directory may remain.
+func TestInstallBundledSlashCommandsProjectsFlatLinksForPi(t *testing.T) {
+	homeDir := t.TempDir()
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands: %v", err)
+	}
+
+	promptsDir := filepath.Join(homeDir, ".pi", "agent", "prompts")
+	bundleDir := filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe")
+
+	bundled, err := os.ReadDir(bundleDir)
+	if err != nil {
+		t.Fatalf("read bundle dir: %v", err)
+	}
+	wantCount := 0
+	for _, entry := range bundled {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		wantCount++
+		assertSymlinkTarget(t,
+			filepath.Join(promptsDir, "swe-swe-"+entry.Name()),
+			filepath.Join(bundleDir, entry.Name()))
+	}
+	if wantCount == 0 {
+		t.Fatal("no bundled .md commands found; the test would pass vacuously")
+	}
+
+	// pi reads only loose .md files here, so a directory named swe-swe would be
+	// silently dead -- and would double every command if pi ever recursed.
+	if _, err := os.Lstat(filepath.Join(promptsDir, "swe-swe")); !os.IsNotExist(err) {
+		t.Errorf("pi prompts dir must not contain a swe-swe directory projection (err=%v)", err)
+	}
+}
+
+// A command a newer bundle renamed or removed must not linger in pi's
+// autocomplete, and a real file a user put there must survive untouched.
+func TestProjectFlatPromptLinksPrunesStaleAndPreservesUserFiles(t *testing.T) {
+	homeDir := t.TempDir()
+	promptsDir := filepath.Join(homeDir, ".pi", "agent", "prompts")
+
+	// A stale link from an older bundle, plus a legacy directory projection.
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands: %v", err)
+	}
+	bundleDir := filepath.Join(homeDir, ".swe-swe", "commands", "md", "swe-swe")
+	stale := filepath.Join(promptsDir, "swe-swe-old-removed-command.md")
+	if err := os.Symlink(filepath.Join(bundleDir, "old-removed-command.md"), stale); err != nil {
+		t.Fatalf("seed stale link: %v", err)
+	}
+	legacyDir := filepath.Join(promptsDir, "swe-swe")
+	if err := os.Symlink(bundleDir, legacyDir); err != nil {
+		t.Fatalf("seed legacy dir projection: %v", err)
+	}
+	// A real file the user owns, sharing our prefix.
+	userOwned := filepath.Join(promptsDir, "swe-swe-mine.md")
+	if err := os.WriteFile(userOwned, []byte("mine"), 0644); err != nil {
+		t.Fatalf("write user file: %v", err)
+	}
+
+	if err := installBundledSlashCommands(homeDir); err != nil {
+		t.Fatalf("installBundledSlashCommands (re-run): %v", err)
+	}
+
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale prompt link survived re-seed (err=%v)", err)
+	}
+	if _, err := os.Lstat(legacyDir); !os.IsNotExist(err) {
+		t.Errorf("legacy directory projection survived re-seed (err=%v)", err)
+	}
+	if got, err := os.ReadFile(userOwned); err != nil || string(got) != "mine" {
+		t.Errorf("user-owned file was not preserved, got %q err=%v", got, err)
+	}
 }
 
 // The canonical store's swe-swe/ subdirs are pruned before re-seeding, so a
@@ -1179,7 +1258,10 @@ func TestProcessEntrypointTemplateSlashCommandsUseCanonicalStore(t *testing.T) {
 		`/home/app/.swe-swe/commands/md/ck`,
 		`cp -r /tmp/slash-commands/ck /home/app/.swe-swe/commands/md/ck`,
 		`ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.claude/commands/ck`,
-		`ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.pi/agent/prompts/ck`,
+		// pi skips subdirectories, so each command is linked in flat, prefixed
+		// with the repo alias to stand in for the namespacing pi lacks.
+		`piLink="/home/app/.pi/agent/prompts/ck-$(basename "$f")"`,
+		`ln -sfn "$f" "$piLink"`,
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(got, want) {
@@ -1189,6 +1271,8 @@ func TestProcessEntrypointTemplateSlashCommandsUseCanonicalStore(t *testing.T) {
 	mustNotContain := []string{
 		`/home/app/.codex/prompts/ck`,
 		`/home/app/.config/opencode/command/ck`,
+		// A directory projection into pi's prompts dir is silently dead.
+		`ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.pi/agent/prompts/ck`,
 	}
 	for _, unwanted := range mustNotContain {
 		if strings.Contains(got, unwanted) {

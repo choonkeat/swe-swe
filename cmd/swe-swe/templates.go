@@ -810,8 +810,37 @@ fi`, linkPath, linkPath, linkPath, agentName, centralDir, linkPath, centralDir, 
 			if hasAgent("opencode") {
 				copyLines = append(copyLines, genLinkBlock("opencode", "/home/app/.config/opencode/command"))
 			}
+			// pi's prompt loader reads only loose .md files in the prompts
+			// directory and skips every subdirectory, symlinked or not, so the
+			// directory projection above would leave the repo invisible with no
+			// diagnostic. Link each command in flat instead, prefixed with the
+			// repo alias because pi has no directory-based namespacing.
 			if hasAgent("pi") {
-				copyLines = append(copyLines, genLinkBlock("pi", "/home/app/.pi/agent/prompts"))
+				piDir := "/home/app/.pi/agent/prompts"
+				copyLines = append(copyLines, fmt.Sprintf(`if [ -d "%s" ]; then
+    mkdir -p "%s"
+    # Prune links from an earlier bundle before re-linking, so a command this
+    # repo renamed or removed does not linger in pi's autocomplete.
+    find "%s" -maxdepth 1 -type l -name '%s-*.md' -delete 2>/dev/null || true
+    # The pre-flat design linked the repo in as one directory, which pi never
+    # read. Drop it so it cannot double every command if pi learns to recurse.
+    if [ -L "%s/%s" ]; then rm -f "%s/%s"; fi
+    for f in "%s"/*.md; do
+        [ -e "$f" ] || continue
+        piLink="%s/%s-$(basename "$f")"
+        if [ -e "$piLink" ] && [ ! -L "$piLink" ]; then
+            echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: $piLink (pi)${NC}"
+        else
+            ln -sfn "$f" "$piLink"
+        fi
+    done
+    echo -e "${GREEN}[ok] Linked slash commands: %s (pi)${NC}"
+fi`, centralDir, piDir,
+					piDir, repo.Alias,
+					piDir, repo.Alias, piDir, repo.Alias,
+					centralDir,
+					piDir, repo.Alias,
+					repo.Alias))
 			}
 		}
 		slashCommandsCopy = strings.Join(copyLines, "\n")

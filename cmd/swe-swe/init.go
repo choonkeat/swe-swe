@@ -104,12 +104,96 @@ func installBundledSlashCommands(homeDir string) error {
 		{filepath.Join(homeDir, ".claude", "commands", "swe-swe"), mdSweSweDir},
 		{filepath.Join(homeDir, ".codex", "prompts", "swe-swe"), mdSweSweDir},
 		{filepath.Join(homeDir, ".config", "opencode", "command", "swe-swe"), mdSweSweDir},
-		{filepath.Join(homeDir, ".pi", "agent", "prompts", "swe-swe"), mdSweSweDir},
 		{filepath.Join(homeDir, ".gemini", "commands", "swe-swe"), tomlSweSweDir},
 	}
 	for _, projection := range projections {
 		if err := ensureRelativeSymlink(projection.link, projection.target); err != nil {
 			return err
+		}
+	}
+	// pi cannot use a directory projection (see projectFlatPromptLinks).
+	return projectFlatPromptLinks(
+		filepath.Join(homeDir, ".pi", "agent", "prompts"),
+		mdSweSweDir,
+		sweSwePromptPrefix,
+	)
+}
+
+// sweSwePromptPrefix namespaces swe-swe's bundled commands inside a prompt
+// directory that is shared with other sources. pi has no directory-based
+// namespacing, so the group name has to live in the filename: /swe-swe-setup
+// rather than /swe-swe:setup.
+const sweSwePromptPrefix = "swe-swe-"
+
+// projectFlatPromptLinks mirrors every .md in targetDir into linkDir as an
+// individual symlink named <prefix><command>.md, and prunes prefixed symlinks
+// that targetDir no longer provides.
+//
+// pi's prompt loader is deliberately non-recursive: loadTemplatesFromDir reads
+// only loose .md entries in the prompts directory and skips every subdirectory,
+// symlinked or not. The directory projection every other agent gets is
+// therefore invisible to pi -- the entire bundle silently never loads, with no
+// diagnostic. pi does resolve symlinks that point at files, so the projection
+// has to be flat and per-file.
+func projectFlatPromptLinks(linkDir, targetDir, prefix string) error {
+	if err := os.MkdirAll(linkDir, 0755); err != nil {
+		return fmt.Errorf("creating prompt link dir %s: %w", linkDir, err)
+	}
+
+	// Prune first, so a command a newer bundle renamed or removed does not
+	// linger in pi's autocomplete forever. Only prefixed symlinks are touched:
+	// a real file under the same name is someone else's and is left alone.
+	existing, err := os.ReadDir(linkDir)
+	if err != nil {
+		return fmt.Errorf("reading prompt link dir %s: %w", linkDir, err)
+	}
+	for _, entry := range existing {
+		name := entry.Name()
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		linkPath := filepath.Join(linkDir, name)
+		info, err := os.Lstat(linkPath)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			log.Printf("init: preserving %s (not a swe-swe symlink)", linkPath)
+			continue
+		}
+		if err := os.Remove(linkPath); err != nil {
+			return fmt.Errorf("pruning stale prompt link %s: %w", linkPath, err)
+		}
+	}
+
+	// The pre-flat design projected the whole bundle as one directory symlink
+	// here. pi never read it, so it is dead weight that would double every
+	// command if a future pi learned to recurse.
+	legacyDirLink := filepath.Join(linkDir, strings.TrimSuffix(prefix, "-"))
+	if info, err := os.Lstat(legacyDirLink); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		if err := os.Remove(legacyDirLink); err != nil {
+			return fmt.Errorf("removing legacy directory projection %s: %w", legacyDirLink, err)
+		}
+		log.Printf("init: removed legacy directory projection %s (pi does not read subdirectories)", legacyDirLink)
+	}
+
+	commands, err := os.ReadDir(targetDir)
+	if err != nil {
+		return fmt.Errorf("reading bundled commands %s: %w", targetDir, err)
+	}
+	for _, command := range commands {
+		name := command.Name()
+		if command.IsDir() || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		linkPath := filepath.Join(linkDir, prefix+name)
+		if info, err := os.Lstat(linkPath); err == nil && info.Mode()&os.ModeSymlink == 0 {
+			log.Printf("init: preserving %s (not a swe-swe symlink)", linkPath)
+			continue
+		}
+		relTarget, err := filepath.Rel(linkDir, filepath.Join(targetDir, name))
+		if err != nil {
+			return fmt.Errorf("computing relative symlink from %s to %s: %w", linkPath, name, err)
+		}
+		if err := os.Symlink(relTarget, linkPath); err != nil {
+			return fmt.Errorf("creating symlink %s -> %s: %w", linkPath, relTarget, err)
 		}
 	}
 	return nil

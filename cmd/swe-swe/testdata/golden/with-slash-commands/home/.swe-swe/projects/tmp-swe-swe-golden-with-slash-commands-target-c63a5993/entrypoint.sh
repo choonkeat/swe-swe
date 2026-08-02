@@ -46,11 +46,23 @@ elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
     ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.config/opencode/command/ck
     echo -e "${GREEN}[ok] Linked slash commands: ck (opencode)${NC}"
 fi
-if [ -e "/home/app/.pi/agent/prompts/ck" ] && [ ! -L "/home/app/.pi/agent/prompts/ck" ]; then
-    echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: /home/app/.pi/agent/prompts/ck (pi)${NC}"
-elif [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
-    mkdir -p "$(dirname "/home/app/.pi/agent/prompts/ck")"
-    ln -sfn /home/app/.swe-swe/commands/md/ck /home/app/.pi/agent/prompts/ck
+if [ -d "/home/app/.swe-swe/commands/md/ck" ]; then
+    mkdir -p "/home/app/.pi/agent/prompts"
+    # Prune links from an earlier bundle before re-linking, so a command this
+    # repo renamed or removed does not linger in pi's autocomplete.
+    find "/home/app/.pi/agent/prompts" -maxdepth 1 -type l -name 'ck-*.md' -delete 2>/dev/null || true
+    # The pre-flat design linked the repo in as one directory, which pi never
+    # read. Drop it so it cannot double every command if pi learns to recurse.
+    if [ -L "/home/app/.pi/agent/prompts/ck" ]; then rm -f "/home/app/.pi/agent/prompts/ck"; fi
+    for f in "/home/app/.swe-swe/commands/md/ck"/*.md; do
+        [ -e "$f" ] || continue
+        piLink="/home/app/.pi/agent/prompts/ck-$(basename "$f")"
+        if [ -e "$piLink" ] && [ ! -L "$piLink" ]; then
+            echo -e "${YELLOW}⚠ Slash command target exists and is not a symlink, leaving unchanged: $piLink (pi)${NC}"
+        else
+            ln -sfn "$f" "$piLink"
+        fi
+    done
     echo -e "${GREEN}[ok] Linked slash commands: ck (pi)${NC}"
 fi
 
