@@ -27,8 +27,9 @@ const EXTERNAL_REPO = '/repos/e2e-dialog-repo/workspace';
 // sessions (e.g. "choonkeat/swe-swe@mcp-less"): they run directly in a checkout
 // that happens to be on a feature branch, so the branch lives only in the git
 // checkout -- never in the session's worktree-branch param. The recording's
-// "+ New" prefill must recover the branch from the checkout, not from the
-// (empty) worktree-branch field.
+// "+ New" prefill surfaces that branch as a HINT and leaves the Branch field
+// blank, so starting again reuses the shared checkout instead of forcing a
+// worktree on whichever branch the checkout happened to be on.
 const DOGFOOD_REPO = '/repos/e2e-dogfood-repo/workspace';
 const DOGFOOD_BRANCH = 'dogfood-branch';
 
@@ -248,7 +249,7 @@ test.describe('new-session dialog', () => {
     await expect(page.locator('#new-session-warning')).toBeHidden();
   });
 
-  test('recording + New prefills the dialog; Start Agent Terminal reproduces the settings (external repo)', async ({ page }) => {
+  test('recording + New prefills the dialog; Start reproduces the settings (external repo)', async ({ page }) => {
     const { name, button: btn } = await recordingNewButton(page, {
       assistant: 'opencode',
       branch: 'e2e-prefill',
@@ -267,17 +268,19 @@ test.describe('new-session dialog', () => {
     expect(ds.name).toBe(name);
 
     // Clicking opens the dialog pre-filled with Start enabled -- no session
-    // is created yet.
+    // is created yet. Agent Chat is the only Start the dialog exposes; Agent
+    // Terminal is in the DOM but `hidden` (see selection.html), so asserting on
+    // it here would only test a button no user can reach.
     await btn.click();
-    await expect(page.locator('#new-session-start-terminal')).toBeEnabled({ timeout: 15_000 });
-    await expect(page.locator('#new-session-start-chat')).toBeEnabled();
+    await expect(page.locator('#new-session-start-chat')).toBeEnabled({ timeout: 15_000 });
+    await expect(page.locator('#new-session-start-terminal')).toBeHidden();
     expect(await page.locator('#new-session-mode').inputValue()).toBe(EXTERNAL_REPO);
     expect(await page.locator('#new-session-branch').inputValue()).toBe('e2e-prefill');
     await expect(page.locator('.dialog__agent--selected')).toHaveAttribute('data-agent', 'opencode');
     expect(await page.locator('#new-session-extra-args').inputValue()).toBe('--from-recording');
 
-    // Start Agent Terminal creates the session with the same settings.
-    await page.click('#new-session-start-terminal');
+    // Start creates the session with the same settings.
+    await page.click('#new-session-start-chat');
     await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
     const url = new URL(page.url());
     testSessions.push(url.pathname.split('/')[2]);
@@ -286,7 +289,7 @@ test.describe('new-session dialog', () => {
     expect(url.searchParams.get('pwd')).toBe(EXTERNAL_REPO);
     expect(url.searchParams.get('extra_args')).toBe('--from-recording');
     expect(url.searchParams.get('name')).toBe(name);
-    expect(url.searchParams.get('session')).toBeNull();
+    expect(url.searchParams.get('session')).toBe('chat');
   });
 
   test('recording + New from an agent-chat session can start agent chat again (default workspace)', async ({ page }) => {
@@ -321,7 +324,7 @@ test.describe('new-session dialog', () => {
   // branch_name is empty and the branch survives only in the git checkout.
   // The "+ New" prefill must recover the branch from the checkout, otherwise
   // the dialog's Branch field opens blank (the reported bug).
-  test('recording + New recovers the branch from the checkout when no worktree param was passed', async ({ page }) => {
+  test('recording + New hints the checkout branch without forcing a worktree on it', async ({ page }) => {
     // No `branch` here: the session runs directly in the DOGFOOD_REPO checkout,
     // which is on DOGFOOD_BRANCH. This is exactly how the reported recording
     // ("choonkeat/swe-swe@mcp-less") was created.
@@ -330,28 +333,32 @@ test.describe('new-session dialog', () => {
       pwd: DOGFOOD_REPO,
     });
 
-    // The "+ New" button must carry the checkout's branch even though no
-    // worktree-branch was ever passed.
+    // The "+ New" button carries the checkout's branch as a HINT only. Carrying
+    // it as the value would turn "reuse the shared checkout" into "worktree on
+    // DOGFOOD_BRANCH", which diverges the moment the checkout moves on.
     const ds = await btn.evaluate((el) => Object.assign({}, el.dataset));
     expect(ds.assistant).toBe('opencode');
     expect(ds.pwd).toBe(DOGFOOD_REPO);
-    expect(ds.branch).toBe(DOGFOOD_BRANCH);
+    expect(ds.branch).toBeUndefined();
+    expect(ds.branchHint).toBe(DOGFOOD_BRANCH);
 
-    // Opening the dialog pre-fills the Branch field with the recovered branch.
+    // Opening the dialog leaves Branch BLANK, with the checkout's branch shown
+    // as a non-submitting placeholder.
     await btn.click();
-    await expect(page.locator('#new-session-start-terminal')).toBeEnabled({ timeout: 15_000 });
+    await expect(page.locator('#new-session-start-chat')).toBeEnabled({ timeout: 15_000 });
     expect(await page.locator('#new-session-mode').inputValue()).toBe(DOGFOOD_REPO);
-    expect(await page.locator('#new-session-branch').inputValue()).toBe(DOGFOOD_BRANCH);
+    expect(await page.locator('#new-session-branch').inputValue()).toBe('');
+    expect(await page.locator('#new-session-branch').getAttribute('placeholder'))
+      .toBe(`Leave blank to reuse ${DOGFOOD_BRANCH}`);
     await expect(page.locator('.dialog__agent--selected')).toHaveAttribute('data-agent', 'opencode');
 
-    // Start reproduces the branch: because DOGFOOD_BRANCH is already the
-    // checkout's current branch, the new session runs in the repo root itself
-    // (no conflicting worktree), and the branch param round-trips.
-    await page.click('#new-session-start-terminal');
+    // Start reproduces the shared checkout: no branch param is submitted, so
+    // no worktree is created and the session runs in the repo root itself.
+    await page.click('#new-session-start-chat');
     await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
     const url = new URL(page.url());
     testSessions.push(url.pathname.split('/')[2]);
-    expect(url.searchParams.get('branch')).toBe(DOGFOOD_BRANCH);
+    expect(url.searchParams.get('branch')).toBeNull();
     expect(url.searchParams.get('pwd')).toBe(DOGFOOD_REPO);
     expect(url.searchParams.get('name')).toBe(name);
   });
