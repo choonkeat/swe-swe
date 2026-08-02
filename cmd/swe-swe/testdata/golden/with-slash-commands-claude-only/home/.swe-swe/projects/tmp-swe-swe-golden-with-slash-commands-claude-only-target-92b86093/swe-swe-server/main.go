@@ -9142,7 +9142,87 @@ func requestChatLogCommitThenEnd(sess *Session) error {
 		text = "/" + chatLogCommitThenEndCommand
 	}
 	_, err := orchestratorCall(sess.AgentChatPort, "send_chat_message", map[string]any{"text": text})
+	if err == nil {
+		wakeAgentForQueuedChat(sess)
+	}
 	return err
+}
+
+// chatNudgeText is what gets typed into an agent's terminal to make it notice a
+// queued chat message. It mirrors the text the browser types (see
+// agent-chat-first-user-message in static/terminal-ui.js) so both routes look
+// identical in the transcript.
+const chatNudgeText = "check_messages; reply me with a send_message"
+
+// chatNudgeDelay is how long to wait before concluding that nobody is going to
+// pick a queued message up. "No agent parked" is also briefly true while the
+// agent is between tool calls mid-turn, and a nudge typed then is noise; a few
+// seconds is long enough for a real waiter to re-park. Var, not const, so tests
+// do not sleep.
+var chatNudgeDelay = 4 * time.Second
+
+// wakeAgentForQueuedChat types a check_messages nudge into the session's
+// terminal when a chat message pushed by the server would otherwise sit unread.
+//
+// Delivery only happens if an agent is parked in a blocking send_message. When
+// none is, the message lands in the queue and NOTHING tells the agent to look:
+// the wake-up is normally typed by the browser page, so a message pushed with
+// no browser attached (MCP, automation, end-of-session prompts) strands
+// indefinitely. Measured on both pi and Claude: a fresh session ignores its
+// first message, and an agent whose turn ended without a pending send_message
+// ignores every later one too.
+func wakeAgentForQueuedChat(sess *Session) {
+	if sess == nil || sess.AgentChatPort == 0 {
+		return
+	}
+	// A browser attached to this session types the nudge itself. Staying out of
+	// its way is what keeps the text from being typed twice.
+	if sess.ClientCount() > 0 {
+		return
+	}
+	go func() {
+		time.Sleep(chatNudgeDelay)
+		if sess.ClientCount() > 0 {
+			return
+		}
+		if agentIsParkedOnChat(sess) {
+			return
+		}
+		if err := sess.WriteInput([]byte(chatNudgeText)); err != nil {
+			log.Printf("Session %s: chat nudge write failed: %v", sess.UUID, err)
+			return
+		}
+		// Enter goes separately, after a beat, so the TUI has processed the
+		// text before it is submitted (same pattern as send_session_input).
+		time.Sleep(300 * time.Millisecond)
+		if err := sess.WriteInput([]byte{'\r'}); err != nil {
+			log.Printf("Session %s: chat nudge submit failed: %v", sess.UUID, err)
+			return
+		}
+		log.Printf("Session %s: woke idle agent for a queued chat message", sess.UUID)
+	}()
+}
+
+// agentIsParkedOnChat reports whether an agent is currently blocked in
+// send_message, i.e. whether a queued message will reach it on its own.
+//
+// An orchestrator too old to know the tool errors out; that is reported as "not
+// parked" deliberately. A redundant nudge costs one wasted check_messages,
+// while a suppressed one strands the message with no other recovery.
+func agentIsParkedOnChat(sess *Session) bool {
+	out, err := orchestratorCall(sess.AgentChatPort, "agent_waiting", map[string]any{})
+	if err != nil {
+		log.Printf("Session %s: agent_waiting unavailable (%v), assuming no agent is waiting", sess.UUID, err)
+		return false
+	}
+	var status struct {
+		Waiting bool `json:"waiting"`
+	}
+	if err := json.Unmarshal([]byte(out), &status); err != nil {
+		log.Printf("Session %s: agent_waiting returned %q (%v), assuming no agent is waiting", sess.UUID, out, err)
+		return false
+	}
+	return status.Waiting
 }
 
 // handleLiveSessionsAPI serves GET /api/sessions/live: the uuids the homepage
@@ -9954,6 +10034,9 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("agent chat error: %w", err)
 		}
+		// Nothing else will tell an idle agent to look at the queue -- the
+		// browser normally does it, and an MCP caller has no browser.
+		wakeAgentForQueuedChat(sess)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result}}}, nil, nil
 	})
 
