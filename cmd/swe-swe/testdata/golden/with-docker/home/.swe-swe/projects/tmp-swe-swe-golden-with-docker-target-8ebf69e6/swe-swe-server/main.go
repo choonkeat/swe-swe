@@ -582,6 +582,11 @@ type Session struct {
 	// forwards to. Atomic (not closure-captured) so a backend re-allocation
 	// can retarget the running proxy without listener churn.
 	remoteCDPTarget atomic.Pointer[string]
+	// remoteRecoverMu serializes re-allocation of the remote browser. Two
+	// triggers can fire at once for the same loss (a dropped tunnel and a CDP
+	// request that failed to dial the reaped browser); without this they would
+	// allocate two browsers and leak one.
+	remoteRecoverMu sync.Mutex
 	// AgentViewTunnel is the reverse-tunnel client when -agent-view-tunnel is
 	// on: it dials OUT to the backend and shuttles loopback page traffic, so
 	// this box needs no inbound reachability. Nil in direct/local modes.
@@ -2226,6 +2231,10 @@ func main() {
 	browserBackendHost := flag.String("browser-backend-host", "",
 		"browser-backend mode: hostname clients should dial for the CDP/VNC "+
 			"ports (env: SWE_BROWSER_BACKEND_HOST).")
+	browserBackendIdle := flag.Duration("browser-backend-idle", defaultBrowserBackendIdle,
+		"browser-backend mode: free a browser session after this long with no "+
+			"use (open CDP connections and live tunnels always count as use). "+
+			"0 disables reaping. Env: SWE_BROWSER_BACKEND_IDLE.")
 	flag.Parse()
 
 	// Resolve the Agent View backend (flag -> env -> default "local"). On a
@@ -2289,7 +2298,8 @@ func main() {
 	if *mode == "browser-backend" {
 		host := firstNonEmpty(*browserBackendHost, os.Getenv("SWE_BROWSER_BACKEND_HOST"), "")
 		token := os.Getenv("SWE_BROWSER_BACKEND_TOKEN")
-		log.Fatal(runBrowserBackend(listenAddr, *browserBackendMax, token, host))
+		idle := resolveBrowserBackendIdle(*browserBackendIdle, flagPassed("browser-backend-idle"))
+		log.Fatal(runBrowserBackend(listenAddr, *browserBackendMax, token, host, idle))
 	}
 
 	// Tunnel-mode subprocess supervisor. Trigger is non-empty
@@ -5746,7 +5756,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		vncPP := vncProxyPort(vncPort)
 		vncHandler := requireAuthCookie(authPassword, func(scope string) bool {
 			return scopeOwnsProxyPort(scope, vncPP, func(s *Session) int { return vncProxyPort(s.VNCPort) })
-		}, vncReverseProxy)
+		}, remoteBrowserVNCKeepalive(sess, vncReverseProxy))
 		sess.trackProxyServer(
 			startProxyListener("vnc", sess.UUID, fmt.Sprintf(":%d", vncPP), vncHandler),
 			func(s *Session, srv *http.Server) { s.VNCProxyServer = srv })

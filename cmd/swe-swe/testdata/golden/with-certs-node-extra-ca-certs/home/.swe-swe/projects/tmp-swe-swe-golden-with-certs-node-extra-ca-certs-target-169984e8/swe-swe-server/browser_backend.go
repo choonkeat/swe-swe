@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -138,6 +139,44 @@ type browserProcs struct {
 	pids    []int
 	dataDir string
 	cdpSrv  *http.Server
+	// cdpLastActive / cdpInFlight track REAL agent use of this browser: every
+	// request through the CDP forwarder is the agent driving chromium. The
+	// browser-backend's idle reaper consults them so a browser someone is
+	// actually using is never reaped (browser_backend_service.go). In-flight
+	// matters as much as the timestamp: Playwright holds ONE long-lived CDP
+	// websocket for the whole session, so a busy agent can go a long time
+	// between new requests while never being idle.
+	cdpLastActive atomic.Int64 // unix nanos; 0 = never
+	cdpInFlight   atomic.Int64
+}
+
+// markCDPActivity stamps "the agent touched this browser just now".
+func (b *browserProcs) markCDPActivity() {
+	b.cdpLastActive.Store(time.Now().UnixNano())
+}
+
+// lastCDPActivity reports when the agent last drove this browser, and whether
+// a CDP request/websocket is open right now (which outranks any timestamp).
+func (b *browserProcs) lastCDPActivity() (t time.Time, busy bool) {
+	if ns := b.cdpLastActive.Load(); ns != 0 {
+		t = time.Unix(0, ns)
+	}
+	return t, b.cdpInFlight.Load() > 0
+}
+
+// cdpActivityTracker wraps the CDP forwarder so every request -- including the
+// long-lived websocket, whose handler stays in ServeHTTP for its whole life --
+// counts as use.
+func (b *browserProcs) cdpActivityTracker(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b.markCDPActivity()
+		b.cdpInFlight.Add(1)
+		defer func() {
+			b.cdpInFlight.Add(-1)
+			b.markCDPActivity()
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // buildChromiumArgs assembles the chromium launch argv. hostResolverRules ==
@@ -310,7 +349,7 @@ func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vn
 		b.stop()
 		return nil, fmt.Errorf("CDP forwarder listen on %d: %w", cdpPort, err)
 	}
-	b.cdpSrv = &http.Server{Handler: cdpProxy}
+	b.cdpSrv = &http.Server{Handler: b.cdpActivityTracker(cdpProxy)}
 	go func() {
 		defer recoverGoroutine(fmt.Sprintf("CDP forwarder for browser %s", id))
 		if err := b.cdpSrv.Serve(cdpLn); err != nil && err != http.ErrServerClosed {

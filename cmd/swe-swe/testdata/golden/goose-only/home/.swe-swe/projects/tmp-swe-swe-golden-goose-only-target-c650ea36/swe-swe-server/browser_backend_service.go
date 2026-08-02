@@ -6,9 +6,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The browser-backend service is the network-facing allocator that a lean
@@ -22,9 +24,10 @@ import (
 //
 // Contract (the remote client in browser_backend_remote.go calls this):
 //
-//	POST   /sessions            -> {sessionId, host, cdpPort, vncPort}
+//	POST   /sessions             -> {sessionId, host, cdpPort, vncPort}
 //	DELETE /sessions/{id}        -> 204
 //	GET    /sessions/{id}/ready  -> 200 (websockify up) | 503
+//	POST   /sessions/{id}/touch  -> 204 | 404 (keepalive; see the reaper below)
 //	GET    /health               -> {sessions, max}
 //
 // Auth: a shared bearer token (SWE_BROWSER_BACKEND_TOKEN) guards the /sessions
@@ -74,6 +77,36 @@ type backendSession struct {
 	// the live tunnel (WS + listeners) on session teardown.
 	tunnelActive bool
 	tunnelStop   func()
+	// lastUsed is the last time a CLIENT touched this session over the
+	// allocation API (create, /ready, /touch, tunnel connect). Agent traffic
+	// does not come through here -- it hits the per-session CDP forwarder --
+	// so idleFor() also consults procs. Guarded by browserBackend.mu.
+	lastUsed time.Time
+}
+
+// idleFor reports how long nothing has used this session, and true only if it
+// is genuinely idle. Anything in flight (an open CDP websocket, a live reverse
+// tunnel) reports not-idle regardless of timestamps: the whole point of the
+// reaper is to reclaim ABANDONED slots, never to pull a browser out from under
+// an agent that is using it. Caller holds bb.mu.
+func (s *backendSession) idleFor(now time.Time) (time.Duration, bool) {
+	if s.tunnelActive {
+		return 0, false
+	}
+	last := s.lastUsed
+	if s.procs != nil {
+		cdpAt, busy := s.procs.lastCDPActivity()
+		if busy {
+			return 0, false
+		}
+		if cdpAt.After(last) {
+			last = cdpAt
+		}
+	}
+	if last.IsZero() {
+		return 0, false
+	}
+	return now.Sub(last), true
 }
 
 // browserBackend is the allocator state for the service.
@@ -89,7 +122,17 @@ type browserBackend struct {
 	// tunnelGuard vets connections accepted on tunnel-bound loopback ports.
 	// Defaults to the platform tunnelPeerGuard; injectable for tests.
 	tunnelGuard func(*backendSession, net.Conn) error
+	// idleTimeout is how long a session may sit unused before the reaper frees
+	// it; 0 disables reaping entirely. Set from -browser-backend-idle.
+	idleTimeout time.Duration
+	// now is time.Now, indirected so reaper tests need not sleep.
+	now func() time.Time
 }
+
+// defaultBrowserBackendIdle is the shipped -browser-backend-idle value. Long
+// enough that a human who wandered off mid-task still finds their browser;
+// short enough that a crashed client's slot returns the same afternoon.
+const defaultBrowserBackendIdle = 30 * time.Minute
 
 func newBrowserBackend(maxSessions int, token, advertiseHost string) *browserBackend {
 	if maxSessions <= 0 {
@@ -101,6 +144,7 @@ func newBrowserBackend(maxSessions int, token, advertiseHost string) *browserBac
 		token:         token,
 		advertiseHost: advertiseHost,
 		tunnelGuard:   tunnelPeerGuard,
+		now:           time.Now,
 	}
 }
 
@@ -175,6 +219,7 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// even when the pool is at capacity (its own slot is what filled it).
 	if req.SessionID != "" {
 		if existing, ok := bb.sessions[req.SessionID]; ok {
+			existing.lastUsed = bb.timeNow()
 			bb.mu.Unlock()
 			bb.writeAlloc(w, existing)
 			return
@@ -199,7 +244,7 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	display := slot + 10 // avoid :0 (the host's own display)
 	// Reserve the slot before the slow start so concurrent creates don't race
 	// onto the same ports.
-	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort, tunnel: req.Tunnel}
+	bb.sessions[id] = &backendSession{id: id, slot: slot, cdpPort: cdpPort, vncPort: vncPort, tunnel: req.Tunnel, lastUsed: bb.timeNow()}
 	bb.mu.Unlock()
 
 	procs, err := browserProcsStarter(id, display, cdpPort, cdpInternal, vncPort, vncInternal, hostResolverRules)
@@ -213,6 +258,9 @@ func (bb *browserBackend) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	bb.mu.Lock()
 	bb.sessions[id].procs = procs
+	// The stack takes seconds to come up; re-stamp so the idle clock starts
+	// when the browser is actually usable, not when it was requested.
+	bb.sessions[id].lastUsed = bb.timeNow()
 	sess := bb.sessions[id]
 	bb.mu.Unlock()
 	log.Printf("browser-backend: allocated %s (slot %d, cdp %d, vnc %d)", id, slot, cdpPort, vncPort)
@@ -253,9 +301,105 @@ func (bb *browserBackend) handleDelete(w http.ResponseWriter, id string) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// timeNow is bb.now with a nil-safe fallback (zero-value browserBackends in
+// older tests never went through newBrowserBackend).
+func (bb *browserBackend) timeNow() time.Time {
+	if bb.now != nil {
+		return bb.now()
+	}
+	return time.Now()
+}
+
+// handleTouch is the explicit keepalive: "someone is still using this session,
+// do not reap it". The swe-swe host calls it while a human has the Agent View
+// (VNC) pane open -- that traffic terminates in websockify, not in any Go
+// handler here, so it is otherwise invisible to the reaper.
+func (bb *browserBackend) handleTouch(w http.ResponseWriter, id string) {
+	bb.mu.Lock()
+	sess, ok := bb.sessions[id]
+	if ok {
+		sess.lastUsed = bb.timeNow()
+	}
+	bb.mu.Unlock()
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// reapIdle frees every session idle for longer than idleTimeout and returns
+// their ids. Teardown runs OUTSIDE bb.mu: stop() kills processes and deletes a
+// profile dir, which must not block allocation.
+func (bb *browserBackend) reapIdle() []string {
+	if bb.idleTimeout <= 0 {
+		return nil
+	}
+	now := bb.timeNow()
+	var reaped []string
+	var doomed []*backendSession
+	bb.mu.Lock()
+	for id, sess := range bb.sessions {
+		idle, isIdle := sess.idleFor(now)
+		if !isIdle || idle < bb.idleTimeout {
+			continue
+		}
+		delete(bb.sessions, id)
+		doomed = append(doomed, sess)
+		reaped = append(reaped, id)
+		log.Printf("browser-backend: reaping %s (slot %d) -- idle %s (limit %s)",
+			id, sess.slot, idle.Round(time.Second), bb.idleTimeout)
+	}
+	bb.mu.Unlock()
+	for _, sess := range doomed {
+		if sess.tunnelStop != nil {
+			sess.tunnelStop()
+		}
+		if sess.procs != nil {
+			sess.procs.stop()
+		}
+	}
+	return reaped
+}
+
+// startReaper runs reapIdle on a ticker until stop closes. No-op when idle
+// reaping is disabled.
+func (bb *browserBackend) startReaper(stop <-chan struct{}) {
+	if bb.idleTimeout <= 0 {
+		log.Printf("browser-backend: idle reaping disabled")
+		return
+	}
+	// Check often enough that a freed slot is available promptly, without
+	// waking up pointlessly on a long timeout.
+	interval := bb.idleTimeout / 6
+	if interval < 10*time.Second {
+		interval = 10 * time.Second
+	}
+	if interval > time.Minute {
+		interval = time.Minute
+	}
+	log.Printf("browser-backend: idle reaper on (timeout %s, checking every %s)", bb.idleTimeout, interval)
+	go func() {
+		defer recoverGoroutine("browser-backend idle reaper")
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				bb.reapIdle()
+			}
+		}
+	}()
+}
+
 func (bb *browserBackend) handleReady(w http.ResponseWriter, id string) {
 	bb.mu.Lock()
 	sess, ok := bb.sessions[id]
+	if ok {
+		sess.lastUsed = bb.timeNow()
+	}
 	bb.mu.Unlock()
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -302,6 +446,14 @@ func (bb *browserBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			bb.handleReady(w, id)
 			return
 		}
+		if id := strings.TrimSuffix(rest, "/touch"); id != rest {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			bb.handleTouch(w, id)
+			return
+		}
 		if id := strings.TrimSuffix(rest, "/tunnel"); id != rest {
 			if r.Method != http.MethodGet {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -322,17 +474,36 @@ func (bb *browserBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // runBrowserBackend starts the allocation service on addr and blocks. Invoked
 // from main() when -mode browser-backend is set.
-func runBrowserBackend(addr string, maxSessions int, token, advertiseHost string) error {
+func runBrowserBackend(addr string, maxSessions int, token, advertiseHost string, idleTimeout time.Duration) error {
 	if !browserStackAvailable() {
 		return fmt.Errorf("browser-backend mode requires the display stack (Xvfb/chromium/x11vnc/websockify) -- none found on PATH")
 	}
 	bb := newBrowserBackend(maxSessions, token, advertiseHost)
+	bb.idleTimeout = idleTimeout
 	if _, portStr, err := net.SplitHostPort(addr); err == nil {
 		if p, err := strconv.Atoi(portStr); err == nil {
 			bb.servicePort = p
 		}
 	}
-	log.Printf("browser-backend: listening on %s (max %d sessions, auth=%v, advertise=%q)",
-		addr, bb.maxSessions, token != "", advertiseHost)
+	log.Printf("browser-backend: listening on %s (max %d sessions, auth=%v, advertise=%q, idle=%s)",
+		addr, bb.maxSessions, token != "", advertiseHost, idleTimeout)
+	bb.startReaper(nil)
 	return http.ListenAndServe(addr, bb)
+}
+
+// resolveBrowserBackendIdle applies flag -> env -> default for the idle reap
+// timeout. "0" (either source) disables reaping.
+func resolveBrowserBackendIdle(flagVal time.Duration, flagWasSet bool) time.Duration {
+	if !flagWasSet {
+		if env := strings.TrimSpace(os.Getenv("SWE_BROWSER_BACKEND_IDLE")); env != "" {
+			d, err := time.ParseDuration(env)
+			if err != nil {
+				log.Printf("browser-backend: ignoring SWE_BROWSER_BACKEND_IDLE=%q: %v", env, err)
+				return defaultBrowserBackendIdle
+			}
+			return d
+		}
+		return defaultBrowserBackendIdle
+	}
+	return flagVal
 }

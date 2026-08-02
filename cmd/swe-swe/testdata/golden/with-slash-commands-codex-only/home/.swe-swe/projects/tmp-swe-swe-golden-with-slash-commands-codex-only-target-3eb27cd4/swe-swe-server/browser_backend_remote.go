@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -128,6 +129,70 @@ func freeRemoteBrowser(backendURL, token, sessionID string) {
 	resp.Body.Close()
 }
 
+// touchRemoteBrowser tells the backend this session is still in use, so its
+// idle reaper leaves the browser alone. Best-effort: logged at most nowhere,
+// since a failure just means the reaper may take the slot back.
+func touchRemoteBrowser(backendURL, token, sessionID string) {
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(backendURL, "/")+"/sessions/"+sessionID+"/touch", nil)
+	if err != nil {
+		return
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := browserBackendClient.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+}
+
+// remoteBrowserVNCKeepalive keeps the remote browser alive for as long as a
+// human has the Agent View pane open. VNC traffic terminates in websockify on
+// the backend, invisible to the allocator there, so a person watching a page
+// for an hour would otherwise look exactly like an abandoned session. The noVNC
+// websocket stays inside ServeHTTP for its whole life, so "request in flight"
+// is precisely "someone is watching".
+func remoteBrowserVNCKeepalive(sess *Session, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess.mu.RLock()
+		remoteID := sess.RemoteBrowserID
+		sess.mu.RUnlock()
+		if remoteID == "" || !agentViewRemote() {
+			next.ServeHTTP(w, r)
+			return
+		}
+		done := make(chan struct{})
+		go func() {
+			defer recoverGoroutine(fmt.Sprintf("Agent View VNC keepalive for session %s", sess.UUID))
+			t := time.NewTicker(remoteBrowserTouchInterval)
+			defer t.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-t.C:
+					// Re-read: a re-allocation swaps the id underneath us.
+					sess.mu.RLock()
+					id := sess.RemoteBrowserID
+					sess.mu.RUnlock()
+					if id == "" {
+						return
+					}
+					touchRemoteBrowser(agentViewBackend, browserBackendToken, id)
+				}
+			}
+		}()
+		defer close(done)
+		touchRemoteBrowser(agentViewBackend, browserBackendToken, remoteID)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// remoteBrowserTouchInterval must stay well under the backend's idle timeout so
+// a watcher never falls off it between ticks.
+const remoteBrowserTouchInterval = 2 * time.Minute
+
 // remoteHostFor returns the host clients should dial for the remote browser's
 // CDP/VNC ports: the advertised host if the backend gave one, else the host
 // from the backend URL.
@@ -181,16 +246,91 @@ func startSessionTunnelClient(sess *Session, remoteID string) *agentViewTunnelCl
 	return c
 }
 
-// reallocateRemoteAgentView re-runs the allocation half of startRemoteAgentView
-// after the backend reported our allocation gone (it restarted and lost its
-// in-memory table). Runs on the dead tunnel client's goroutine. lost doubles as
-// the cancellation handle (session teardown Stop()s it, which aborts the
-// backoff wait) and the supersession guard (sess.AgentViewTunnel moving off it
-// means teardown or another recovery already re-wired the session).
+// errRemoteRecoverySuperseded reports that the caller's view of the session was
+// already stale: someone else re-allocated (or tore down) while it queued on
+// remoteRecoverMu. Not a failure -- the session is fine, just not ours to fix.
+var errRemoteRecoverySuperseded = errors.New("remote browser recovery superseded")
+
+// recoverRemoteBrowser is the ONE place a live session's remote browser is
+// re-allocated after the backend dropped it (idle reap, backend restart). Both
+// triggers funnel here -- the tunnel client's allocation-lost callback and a
+// CDP proxy request that could not reach the browser -- serialized on
+// sess.remoteRecoverMu so a single loss cannot allocate two browsers.
+//
+// superseded() reports that the caller's view is stale (someone recovered
+// first); recovery then returns errRemoteRecoverySuperseded, which callers
+// treat as success. It is ALWAYS invoked with sess.mu held, so it must read
+// session fields directly and must not lock.
+//
+// Returns the new CDP "host:port".
 //
 // Locking: only sess.mu, never sessionsMu, and no teardown paths are entered
 // while holding it (see the Close/clearVhostPin self-deadlock, 3f3fb88f9).
+func recoverRemoteBrowser(sess *Session, superseded func() bool) (string, error) {
+	sess.remoteRecoverMu.Lock()
+	defer sess.remoteRecoverMu.Unlock()
+
+	sess.mu.RLock()
+	abort := sess.closed || superseded()
+	sess.mu.RUnlock()
+	if abort {
+		return "", errRemoteRecoverySuperseded
+	}
+	alloc, err := remoteAllocate(agentViewBackend, browserBackendToken, sess.UUID)
+	if err != nil {
+		return "", err
+	}
+	host := remoteHostFor(agentViewBackend, alloc.Host)
+	cdp := fmt.Sprintf("%s:%d", host, alloc.CDPPort)
+
+	sess.mu.Lock()
+	if sess.closed || superseded() {
+		sess.mu.Unlock()
+		// Session ended (or was re-wired) while we allocated: the fresh
+		// allocation has no owner, free it.
+		freeRemoteBrowser(agentViewBackend, browserBackendToken, alloc.SessionID)
+		return "", errRemoteRecoverySuperseded
+	}
+	previousTunnel := sess.AgentViewTunnel
+	sess.RemoteBrowserID = alloc.SessionID
+	sess.RemoteVNCTarget = fmt.Sprintf("%s:%d", host, alloc.VNCPort)
+	// New allocation may land on a different slot: retarget the running CDP
+	// proxy (per-request atomic read, no listener churn).
+	sess.remoteCDPTarget.Store(&cdp)
+	if agentViewTunnelMode && alloc.Tunnel {
+		sess.AgentViewTunnel = startSessionTunnelClient(sess, alloc.SessionID)
+	} else {
+		sess.AgentViewTunnel = nil
+	}
+	newTunnel := sess.AgentViewTunnel
+	sess.mu.Unlock()
+	// Outside sess.mu: Stop() touches the client's own state. Only matters when
+	// the CDP path recovered first and the old tunnel client is still running
+	// against the dead allocation.
+	if previousTunnel != nil && previousTunnel != newTunnel {
+		previousTunnel.Stop()
+	}
+	sess.BroadcastStatus()
+	log.Printf("Agent View remote: session %s re-allocated -> %s (cdp %d, vnc %d, tunnel %v)",
+		sess.UUID, host, alloc.CDPPort, alloc.VNCPort, alloc.Tunnel)
+	return cdp, nil
+}
+
+// reallocateRemoteAgentView retries recoverRemoteBrowser until it succeeds
+// after the backend reported our allocation gone (it restarted and lost its
+// in-memory table, or reaped us as idle). Runs on the dead tunnel client's
+// goroutine. lost doubles as the cancellation handle (session teardown Stop()s
+// it, which aborts the backoff wait) and the supersession guard
+// (sess.AgentViewTunnel moving off it means teardown or another recovery
+// already re-wired the session).
 func reallocateRemoteAgentView(sess *Session, lost *agentViewTunnelClient) {
+	// Called with sess.mu held (see recoverRemoteBrowser): read, never lock.
+	stale := func() bool { return sess.AgentViewTunnel != lost }
+	staleLocking := func() bool {
+		sess.mu.RLock()
+		defer sess.mu.RUnlock()
+		return stale()
+	}
 	backoff := time.Second
 	for {
 		select {
@@ -198,38 +338,11 @@ func reallocateRemoteAgentView(sess *Session, lost *agentViewTunnelClient) {
 			return
 		default:
 		}
-		sess.mu.RLock()
-		stale := sess.closed || sess.AgentViewTunnel != lost
-		sess.mu.RUnlock()
-		if stale {
+		if staleLocking() {
 			return
 		}
-		alloc, err := remoteAllocate(agentViewBackend, browserBackendToken, sess.UUID)
-		if err == nil {
-			host := remoteHostFor(agentViewBackend, alloc.Host)
-			sess.mu.Lock()
-			if sess.closed || sess.AgentViewTunnel != lost {
-				sess.mu.Unlock()
-				// Session ended (or was re-wired) while we allocated: the
-				// fresh allocation has no owner, free it.
-				freeRemoteBrowser(agentViewBackend, browserBackendToken, alloc.SessionID)
-				return
-			}
-			sess.RemoteBrowserID = alloc.SessionID
-			sess.RemoteVNCTarget = fmt.Sprintf("%s:%d", host, alloc.VNCPort)
-			// New allocation may land on a different slot: retarget the
-			// running CDP proxy (per-request atomic read, no listener churn).
-			cdp := fmt.Sprintf("%s:%d", host, alloc.CDPPort)
-			sess.remoteCDPTarget.Store(&cdp)
-			if agentViewTunnelMode && alloc.Tunnel {
-				sess.AgentViewTunnel = startSessionTunnelClient(sess, alloc.SessionID)
-			} else {
-				sess.AgentViewTunnel = nil
-			}
-			sess.mu.Unlock()
-			sess.BroadcastStatus()
-			log.Printf("Agent View remote: session %s re-allocated after backend restart -> %s (cdp %d, vnc %d, tunnel %v)",
-				sess.UUID, host, alloc.CDPPort, alloc.VNCPort, alloc.Tunnel)
+		_, err := recoverRemoteBrowser(sess, stale)
+		if err == nil || errors.Is(err, errRemoteRecoverySuperseded) {
 			return
 		}
 		log.Printf("Agent View remote: session %s re-allocation failed (%v); retrying in %s", sess.UUID, err, backoff)
@@ -288,6 +401,42 @@ func wireRemoteSession(sess *Session, host string, cdpPort, vncPort int, remoteI
 		return nil
 	}
 
+	// Self-healing: the remote browser can vanish under a live session (idle
+	// reaped by the backend, backend restarted, box rebooted). The agent's
+	// Playwright MCP asks for a browser exactly once and never retries, so
+	// without this a vanished browser breaks Agent View for the rest of the
+	// session. Re-allocate on the failing request and replay it against the
+	// new browser; the agent sees a pause, not a failure.
+	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
+		failed := req.URL.Host
+		log.Printf("Session %s: remote CDP proxy to %s failed: %v", sess.UUID, failed, err)
+		if req.Header.Get(cdpRetriedHeader) != "" {
+			// Already replayed once against a fresh browser and still failing:
+			// stop, and say why in words the agent can act on.
+			writeCDPUnreachable(w, sess, err, false)
+			return
+		}
+		_, rerr := recoverRemoteBrowser(sess, func() bool {
+			cur := sess.remoteCDPTarget.Load()
+			return cur != nil && *cur != failed
+		})
+		if rerr != nil && !errors.Is(rerr, errRemoteRecoverySuperseded) {
+			writeCDPUnreachable(w, sess, rerr, false)
+			return
+		}
+		if !cdpReplayable(req) {
+			// A request with a body cannot be replayed here (it is already
+			// consumed). The browser IS back, so tell the agent to retry.
+			writeCDPUnreachable(w, sess, err, true)
+			return
+		}
+		req.Header.Set(cdpRetriedHeader, "1")
+		// Director re-reads sess.remoteCDPTarget, so this goes to the new
+		// browser. Nothing has been written to w yet -- the failure was on the
+		// dial, before any response or websocket hijack.
+		proxy.ServeHTTP(w, req)
+	}
+
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", sess.CDPPort))
 	if err != nil {
 		return fmt.Errorf("remote CDP proxy listen on %d: %w", sess.CDPPort, err)
@@ -302,6 +451,57 @@ func wireRemoteSession(sess *Session, host string, cdpPort, vncPort int, remoteI
 		}
 	}()
 	return nil
+}
+
+// cdpRetriedHeader marks a request already replayed against a fresh browser, so
+// a browser that is down for good cannot loop.
+const cdpRetriedHeader = "X-Swe-Cdp-Retried"
+
+// cdpReplayable reports whether a failed request can simply be re-sent. Bodies
+// are single-read by the time ErrorHandler sees them; CDP discovery
+// (/json/version, /json/list) and the debugger websocket upgrade are all
+// bodiless GETs, which covers every request that matters here.
+func cdpReplayable(req *http.Request) bool {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		return false
+	}
+	return req.Body == nil || req.Body == http.NoBody
+}
+
+// browserRestartedMessage is what the agent reads when its browser was
+// replaced. Written for an LLM: say what happened, what was lost, and the next
+// action -- not a bare dial error.
+const browserRestartedMessage = "The Agent View browser was shut down (idle timeout, or the browser backend restarted) " +
+	"and a fresh one has been started in its place. Open pages, history, cookies and signed-in sessions from before are gone. " +
+	"Retry this request; if you were part-way through a task, navigate to the page you need again from the start."
+
+// browserUnreachableMessage is the harder failure: no browser could be brought
+// back at all.
+const browserUnreachableMessage = "The Agent View browser is unreachable and could not be restarted. " +
+	"The browser backend may be down or at capacity. Do not keep retrying browser tools; " +
+	"report this and continue without the browser, or ask the user to check the browser backend."
+
+// writeCDPUnreachable answers a CDP request whose browser could not be reached.
+// recovered says a fresh browser IS running and the agent should simply retry.
+// The body is JSON (CDP clients parse JSON here) but the message is a plain
+// sentence, because what surfaces to the agent is usually the raw body text.
+func writeCDPUnreachable(w http.ResponseWriter, sess *Session, cause error, recovered bool) {
+	msg, status := browserUnreachableMessage, http.StatusBadGateway
+	if recovered {
+		msg, status = browserRestartedMessage, http.StatusServiceUnavailable
+	}
+	log.Printf("Session %s: Agent View CDP unavailable (recovered=%v): %v", sess.UUID, recovered, cause)
+	w.Header().Set("Content-Type", "application/json")
+	if recovered {
+		w.Header().Set("Retry-After", "1")
+	}
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error":     "agent-view-browser-unavailable",
+		"message":   msg,
+		"cause":     cause.Error(),
+		"recovered": recovered,
+	})
 }
 
 // rewriteCDPHosts replaces the remote chromium host:port with the local proxy
