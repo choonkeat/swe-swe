@@ -97,15 +97,14 @@ test.describe('Port Connectivity', () => {
     // --- Files proxy (per-session md-serve) ---
     // The files port is derived as previewPort+6000, then wrapped by the same
     // proxyPortOffset as every other proxy band. So independent of the
-    // configured offset, filesProxyPort - previewProxyPort === 6000. With the
-    // e2e simple stack's preview band (3200-3229) and the default offset
-    // (20000), filesProxyPort lands in 29200-29229. Unlike VNC, md-serve
-    // answers under the auth cookie without any MCP_AUTH_KEY gate, so we can
-    // drive the proxy end-to-end here.
+    // configured offset AND of which preview band this stack was given
+    // (simple uses 3200-3229, compose 3100-3129), the invariant is
+    // filesProxyPort - previewProxyPort === 6000. Asserting an absolute band
+    // here would only encode one stack's config. Unlike VNC, md-serve answers
+    // under the auth cookie without any MCP_AUTH_KEY gate, so we can drive the
+    // proxy end-to-end here.
     expect(ports.filesProxyPort).toBeTruthy();
     expect(ports.filesProxyPort - ports.previewProxyPort).toBe(6000);
-    expect(ports.filesProxyPort).toBeGreaterThanOrEqual(29200);
-    expect(ports.filesProxyPort).toBeLessThanOrEqual(29229);
     console.log(`Testing files proxy port: ${ports.filesProxyPort}`);
     // Unlike the preview/agent-chat proxies (in-process Go, ready almost
     // immediately), the Files proxy fronts a per-session md-serve that

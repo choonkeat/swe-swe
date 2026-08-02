@@ -447,6 +447,24 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Auth router: no ForwardAuth, higher priority. The main
+					// router's ForwardAuth answers an unauthenticated request
+					// with a redirect to /swe-swe-auth/login ON THIS SAME PORT;
+					// without this exemption that login page is itself gated,
+					// so it redirects to itself until the browser gives up
+					// (ERR_TOO_MANY_REDIRECTS). The `websecure` swe-auth router
+					// covers only the main port -- every per-session entrypoint
+					// needs its own.
+					authName := routerName + "-auth"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/swe-swe-auth`)\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, authName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=login-ratelimit@file\"", indent, authName))
+					// Served by the MAIN server port, not this entrypoint's
+					// per-session proxy port: that proxy only listens while a
+					// session holds the port, so pointing the login page at it
+					// would answer 502 exactly when someone needs to log in.
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=${PROJECT_NAME}-swe-swe\"", indent, authName))
 					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
@@ -457,10 +475,13 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, authName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, authName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, authName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}
@@ -481,6 +502,24 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Auth router: no ForwardAuth, higher priority. The main
+					// router's ForwardAuth answers an unauthenticated request
+					// with a redirect to /swe-swe-auth/login ON THIS SAME PORT;
+					// without this exemption that login page is itself gated,
+					// so it redirects to itself until the browser gives up
+					// (ERR_TOO_MANY_REDIRECTS). The `websecure` swe-auth router
+					// covers only the main port -- every per-session entrypoint
+					// needs its own.
+					authName := routerName + "-auth"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/swe-swe-auth`)\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, authName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=login-ratelimit@file\"", indent, authName))
+					// Served by the MAIN server port, not this entrypoint's
+					// per-session proxy port: that proxy only listens while a
+					// session holds the port, so pointing the login page at it
+					// would answer 502 exactly when someone needs to log in.
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=${PROJECT_NAME}-swe-swe\"", indent, authName))
 					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
@@ -491,10 +530,13 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, authName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, authName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, authName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}
@@ -535,6 +577,24 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Auth router: no ForwardAuth, higher priority. The main
+					// router's ForwardAuth answers an unauthenticated request
+					// with a redirect to /swe-swe-auth/login ON THIS SAME PORT;
+					// without this exemption that login page is itself gated,
+					// so it redirects to itself until the browser gives up
+					// (ERR_TOO_MANY_REDIRECTS). The `websecure` swe-auth router
+					// covers only the main port -- every per-session entrypoint
+					// needs its own.
+					authName := routerName + "-auth"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/swe-swe-auth`)\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, authName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=login-ratelimit@file\"", indent, authName))
+					// Served by the MAIN server port, not this entrypoint's
+					// per-session proxy port: that proxy only listens while a
+					// session holds the port, so pointing the login page at it
+					// would answer 502 exactly when someone needs to log in.
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=${PROJECT_NAME}-swe-swe\"", indent, authName))
 					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
@@ -545,10 +605,13 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, authName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, authName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, authName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}
@@ -568,6 +631,24 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, probeName, entrypoint))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, probeName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=%s\"", indent, probeName, routerName))
+					// Auth router: no ForwardAuth, higher priority. The main
+					// router's ForwardAuth answers an unauthenticated request
+					// with a redirect to /swe-swe-auth/login ON THIS SAME PORT;
+					// without this exemption that login page is itself gated,
+					// so it redirects to itself until the browser gives up
+					// (ERR_TOO_MANY_REDIRECTS). The `websecure` swe-auth router
+					// covers only the main port -- every per-session entrypoint
+					// needs its own.
+					authName := routerName + "-auth"
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/swe-swe-auth`)\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, authName, entrypoint))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.priority=200\"", indent, authName))
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.middlewares=login-ratelimit@file\"", indent, authName))
+					// Served by the MAIN server port, not this entrypoint's
+					// per-session proxy port: that proxy only listens while a
+					// session holds the port, so pointing the login page at it
+					// would answer 502 exactly when someone needs to log in.
+					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.service=${PROJECT_NAME}-swe-swe\"", indent, authName))
 					// Main router with ForwardAuth
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.rule=PathPrefix(`/`)\"", indent, routerName))
 					result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.entrypoints=%s\"", indent, routerName, entrypoint))
@@ -578,10 +659,13 @@ func processSimpleTemplate(content string, withDocker bool, ssl string, hostUID 
 						if isLetsEncrypt {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, probeName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, probeName, domain))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, authName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, authName, domain))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.certresolver=letsencrypt\"", indent, routerName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls.domains[0].main=%s\"", indent, routerName, domain))
 						} else if isSelfSign {
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, probeName))
+							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, authName))
 							result = append(result, fmt.Sprintf("%s- \"traefik.http.routers.%s.tls=true\"", indent, routerName))
 						}
 					}
