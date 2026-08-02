@@ -46,12 +46,39 @@ service and the client.)
 | POST   | `/sessions`              | Allocate a browser → `{sessionId,host,cdpPort,vncPort}` |
 | DELETE | `/sessions/{id}`         | Free a session + reap its processes       |
 | GET    | `/sessions/{id}/ready`   | Readiness (websockify listening)          |
+| POST   | `/sessions/{id}/touch`   | Keepalive: "still in use, do not reap"    |
 | GET    | `/health`                | `{sessions,max}` (open, no auth)          |
 
 `/sessions*` require `Authorization: Bearer $SWE_BROWSER_BACKEND_TOKEN` when a
 token is configured. Each session gets an isolated Chromium profile and X
 display; the service caps concurrency at the VNC port-range size (override with
 `-browser-backend-max`).
+
+## Idle reaping
+
+A client that crashes (or whose `DELETE` fails) would otherwise hold its slot
+and its 4 processes forever, so ~20 losses exhaust the pool. The backend
+therefore frees sessions that nothing has used for `-browser-backend-idle`
+(default `30m`, env `SWE_BROWSER_BACKEND_IDLE`, `0` disables).
+
+"Used" is deliberately broad, so an active browser is never pulled out from
+under anyone:
+
+- any request through the session's CDP forwarder -- **including** the
+  long-lived debugger websocket, which counts for as long as it stays open, not
+  just when it was opened;
+- a live reverse tunnel;
+- `POST /sessions/{id}/touch`, which the swe-swe host sends every 2 minutes
+  while a human has the Agent View (VNC) pane open -- that traffic terminates
+  inside websockify and is invisible to the allocator otherwise;
+- `POST /sessions` (including the idempotent re-POST) and `GET .../ready`.
+
+If a browser IS reaped and the agent uses it afterwards, the swe-swe host's CDP
+proxy re-allocates and replays the request, so the agent sees a pause rather
+than a failure. The replacement is a **fresh** browser: open pages, history,
+cookies and logins are gone. When no replacement can be had, the proxy answers
+with a plain-English JSON body (`agent-view-browser-unavailable`) instead of a
+bare dial error.
 
 ## Networking
 
