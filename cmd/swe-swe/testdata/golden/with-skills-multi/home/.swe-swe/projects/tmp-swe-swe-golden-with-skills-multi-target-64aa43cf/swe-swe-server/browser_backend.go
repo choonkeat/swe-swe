@@ -241,12 +241,172 @@ func diedDuringStartup(died <-chan error) error {
 	}
 }
 
+// Tuning for the supervised VNC-side processes (x11vnc, websockify). A
+// replacement browser reuses the port slot of the browser it replaces, often
+// within ~2s of that one being killed, so the first start can lose the race
+// for the port and exit. These were unsupervised: the Agent View pane then
+// stayed blank for the rest of the session while chromium and CDP looked
+// perfectly healthy, with nothing in the log to say why.
+var (
+	vncStartAttempts    = 4
+	vncStartSettle      = 300 * time.Millisecond
+	vncStartTimeout     = 5 * time.Second
+	superviseRetryDelay = 500 * time.Millisecond
+	healthPollInterval  = 100 * time.Millisecond
+	// Grace period between "the port answered" and the final liveness check:
+	// a process that binds and then exits (python websockify takes ~1s to get
+	// that far) must not be mistaken for a healthy one.
+	healthConfirmDelay = 250 * time.Millisecond
+	// How long a start attempt waits for its port to be released by whatever
+	// held it before. See waitPortFree.
+	portFreeTimeout = 2 * time.Second
+)
+
+// killBrowserProc kills a browser stack process AND its process group. The
+// group matters: python websockify forks a child that inherits the listening
+// VNC socket and survives a SIGKILL aimed at the parent alone. That orphan
+// then holds the VNC port, so the next browser allocated into the same slot
+// could not bind it -- the Agent View pane stayed blank while chromium and CDP
+// looked healthy. Every process here is started with Setpgid, so pgid == pid.
+func killBrowserProc(pid int, what string) {
+	if pid <= 0 {
+		return
+	}
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		log.Printf("Failed to kill %s process group PGID %d: %v", what, pid, err)
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		if !errors.Is(err, syscall.ESRCH) {
+			log.Printf("Failed to kill %s PID %d: %v", what, pid, err)
+		}
+		return
+	}
+	log.Printf("[KILL] Killed %s PID %d (+group) (server PID %d)", what, pid, os.Getpid())
+}
+
+// waitPortFree blocks until nothing is listening on addr. A start attempt runs
+// this first so a leftover listener can never be mistaken for the process we
+// just launched: the leftover answers the readiness probe while our own
+// process is dying on "address already in use".
+func waitPortFree(addr string, timeout time.Duration) error {
+	start := time.Now()
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err != nil {
+			return nil
+		}
+		conn.Close()
+		if time.Since(start) >= timeout {
+			return fmt.Errorf("%s is still held by another process after %s", addr, timeout)
+		}
+		time.Sleep(healthPollInterval)
+	}
+}
+
+// waitProcHealthy blocks until a just-started process is demonstrably usable,
+// died, or ran out of time. Usable means: still running AND, when readyAddr is
+// non-empty, accepting connections there -- a process that is alive but never
+// bound its port is precisely the blank-pane failure, so aliveness alone is
+// not enough.
+func waitProcHealthy(died <-chan error, readyAddr string, minSettle, timeout time.Duration) error {
+	start := time.Now()
+	for {
+		if err := diedDuringStartup(died); err != nil {
+			return err
+		}
+		if time.Since(start) >= minSettle {
+			ready := readyAddr == ""
+			if !ready {
+				if conn, err := net.DialTimeout("tcp", readyAddr, 200*time.Millisecond); err == nil {
+					conn.Close()
+					ready = true
+				}
+			}
+			if ready {
+				time.Sleep(healthConfirmDelay)
+				if err := diedDuringStartup(died); err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+		if time.Since(start) >= timeout {
+			if readyAddr == "" {
+				return fmt.Errorf("still not up after %s", timeout)
+			}
+			return fmt.Errorf("nothing listening on %s after %s", readyAddr, timeout)
+		}
+		time.Sleep(healthPollInterval)
+	}
+}
+
+// startSupervisedProc starts one of the browser stack's long-lived helper
+// processes, confirms it came up (see waitProcHealthy), and retries when it
+// did not. newCmd builds a fresh *exec.Cmd per attempt. Every attempt and
+// every exit reason is logged; the returned error names the process so an
+// allocation failure is self-explaining rather than a silently degraded
+// browser.
+func (b *browserProcs) startSupervisedProc(name, id string, newCmd func() *exec.Cmd, readyAddr string, attempts int, minSettle, timeout time.Duration) error {
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(superviseRetryDelay)
+		}
+		if readyAddr != "" {
+			if err := waitPortFree(readyAddr, portFreeTimeout); err != nil {
+				lastErr = err
+				log.Printf("%s cannot start for browser %s (attempt %d/%d): %v", name, id, attempt, attempts, err)
+				continue
+			}
+		}
+		cmd := newCmd()
+		// Own process group, so killBrowserProc can take the whole tree down.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			lastErr = err
+			log.Printf("Failed to start %s for browser %s (attempt %d/%d): %v", name, id, attempt, attempts, err)
+			continue
+		}
+		pid := cmd.Process.Pid
+		trackPid(pid)
+		b.pids = append(b.pids, pid)
+		died := make(chan error, 1)
+		go func() {
+			defer recoverGoroutine(fmt.Sprintf("%s wait (PID %d, browser %s)", name, pid, id))
+			defer untrackPid(pid)
+			err := cmd.Wait()
+			died <- err
+			if err != nil {
+				log.Printf("%s exited with error (PID %d, browser %s): %v", name, pid, id, err)
+			} else {
+				log.Printf("%s exited normally (PID %d, browser %s)", name, pid, id)
+			}
+		}()
+		if err := waitProcHealthy(died, readyAddr, minSettle, timeout); err != nil {
+			lastErr = err
+			log.Printf("%s did not come up (PID %d, browser %s, attempt %d/%d): %v", name, pid, id, attempt, attempts, err)
+			// Kill an alive-but-unusable attempt so the retry gets the port
+			// back instead of competing with its own leftover.
+			killBrowserProc(pid, name)
+			continue
+		}
+		log.Printf("Started %s (PID %d) for browser %s", name, pid, id)
+		return nil
+	}
+	return fmt.Errorf("%s never came up for browser %s after %d attempt(s): %w", name, id, attempts, lastErr)
+}
+
 func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vncInternalPort int, hostResolverRules string) (*browserProcs, error) {
 	b := &browserProcs{}
 	displayStr := fmt.Sprintf(":%d", display)
 
 	// 1. Xvfb on a unique display, Unix socket only (no TCP).
 	xvfbCmd := exec.Command("Xvfb", displayStr, "-screen", "0", "1024x768x24", "-nolisten", "tcp")
+	// Own process group: see killBrowserProc.
+	xvfbCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := xvfbCmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start Xvfb on display %s: %w", displayStr, err)
 	}
@@ -286,6 +446,9 @@ func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vn
 	b.dataDir = userDataDir
 	chromeCmd := exec.Command(chromiumBinary, buildChromiumArgs(cdpInternalPort, userDataDir, hostResolverRules)...)
 	chromeCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", displayStr))
+	// Own process group: chromium's zygote and renderer children must die with
+	// it, not linger holding the profile dir. See killBrowserProc.
+	chromeCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := chromeCmd.Start(); err != nil {
 		b.stop()
 		return nil, fmt.Errorf("failed to start Chromium on CDP port %d: %w", cdpPort, err)
@@ -358,56 +521,46 @@ func startBrowserProcs(id string, display, cdpPort, cdpInternalPort, vncPort, vn
 	}()
 	log.Printf("Started CDP forwarder :%d -> %s for browser %s", cdpPort, internalCDP, id)
 
-	// 3. x11vnc on an internal raw-VNC port consumed by noVNC.
-	x11vncCmd := exec.Command("x11vnc",
-		"-display", displayStr,
-		"-forever",
-		"-shared",
-		"-nopw",
-		"-rfbport", fmt.Sprintf("%d", vncInternalPort),
-		"-xkb",
-	)
-	if err := x11vncCmd.Start(); err != nil {
+	// 3. x11vnc on an internal raw-VNC port consumed by noVNC. Supervised:
+	// see startSupervisedProc.
+	if err := b.startSupervisedProc(
+		fmt.Sprintf("x11vnc on port %d, display %s", vncInternalPort, displayStr),
+		id,
+		func() *exec.Cmd {
+			return exec.Command("x11vnc",
+				"-display", displayStr,
+				"-forever",
+				"-shared",
+				"-nopw",
+				"-rfbport", fmt.Sprintf("%d", vncInternalPort),
+				"-xkb",
+			)
+		},
+		fmt.Sprintf("127.0.0.1:%d", vncInternalPort),
+		vncStartAttempts, vncStartSettle, vncStartTimeout,
+	); err != nil {
 		b.stop()
-		return nil, fmt.Errorf("failed to start x11vnc on port %d: %w", vncInternalPort, err)
+		return nil, err
 	}
-	x11vncPID := x11vncCmd.Process.Pid
-	trackPid(x11vncPID)
-	b.pids = append(b.pids, x11vncPID)
-	log.Printf("Started x11vnc on port %d, display %s (PID %d) for browser %s", vncInternalPort, displayStr, x11vncPID, id)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("x11vnc wait (PID %d, browser %s)", x11vncPID, id))
-		defer untrackPid(x11vncPID)
-		if err := x11vncCmd.Wait(); err != nil {
-			log.Printf("x11vnc exited with error (PID %d, browser %s): %v", x11vncPID, id, err)
-		} else {
-			log.Printf("x11vnc exited normally (PID %d, browser %s)", x11vncPID, id)
-		}
-	}()
 
-	// 4. websockify (noVNC) bridging the WebSocket vncPort to raw vncInternalPort.
-	noVNCCmd := exec.Command("websockify",
-		"--web", "/usr/share/novnc",
-		fmt.Sprintf("%d", vncPort),
-		fmt.Sprintf("localhost:%d", vncInternalPort),
-	)
-	if err := noVNCCmd.Start(); err != nil {
+	// 4. websockify (noVNC) bridging the WebSocket vncPort to raw
+	// vncInternalPort. Supervised for the same reason as x11vnc.
+	if err := b.startSupervisedProc(
+		fmt.Sprintf("noVNC proxy on port %d -> localhost:%d", vncPort, vncInternalPort),
+		id,
+		func() *exec.Cmd {
+			return exec.Command("websockify",
+				"--web", "/usr/share/novnc",
+				fmt.Sprintf("%d", vncPort),
+				fmt.Sprintf("localhost:%d", vncInternalPort),
+			)
+		},
+		fmt.Sprintf("127.0.0.1:%d", vncPort),
+		vncStartAttempts, vncStartSettle, vncStartTimeout,
+	); err != nil {
 		b.stop()
-		return nil, fmt.Errorf("failed to start noVNC proxy on port %d: %w", vncPort, err)
+		return nil, err
 	}
-	noVNCPID := noVNCCmd.Process.Pid
-	trackPid(noVNCPID)
-	b.pids = append(b.pids, noVNCPID)
-	log.Printf("Started noVNC proxy on port %d -> localhost:%d (PID %d) for browser %s", vncPort, vncInternalPort, noVNCPID, id)
-	go func() {
-		defer recoverGoroutine(fmt.Sprintf("noVNC wait (PID %d, browser %s)", noVNCPID, id))
-		defer untrackPid(noVNCPID)
-		if err := noVNCCmd.Wait(); err != nil {
-			log.Printf("noVNC exited with error (PID %d, browser %s): %v", noVNCPID, id, err)
-		} else {
-			log.Printf("noVNC exited normally (PID %d, browser %s)", noVNCPID, id)
-		}
-	}()
 
 	return b, nil
 }
@@ -419,13 +572,7 @@ func (b *browserProcs) stop() {
 		b.cdpSrv = nil
 	}
 	for _, pid := range b.pids {
-		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
-			if !errors.Is(err, syscall.ESRCH) {
-				log.Printf("Failed to kill browser process PID %d: %v", pid, err)
-			}
-		} else {
-			log.Printf("[KILL] Killed browser process PID %d (server PID %d)", pid, os.Getpid())
-		}
+		killBrowserProc(pid, "browser process")
 	}
 	b.pids = nil
 	if b.dataDir != "" {

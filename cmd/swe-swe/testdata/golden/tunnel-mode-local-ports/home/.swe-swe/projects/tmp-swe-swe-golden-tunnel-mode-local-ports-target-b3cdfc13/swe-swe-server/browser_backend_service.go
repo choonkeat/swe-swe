@@ -487,6 +487,11 @@ func runBrowserBackend(addr string, maxSessions int, token, advertiseHost string
 	}
 	log.Printf("browser-backend: listening on %s (max %d sessions, auth=%v, advertise=%q, idle=%s)",
 		addr, bb.maxSessions, token != "", advertiseHost, idleTimeout)
+	// main() only reaches startSubreaper() on the UI-server path, so this mode
+	// had no zombie reaper at all. It needs one MORE than the UI server does:
+	// every allocation leaves a websockify child that killBrowserProc kills but
+	// nobody wait4()s, and this process runs for weeks.
+	startSubreaper()
 	bb.startReaper(nil)
 	return http.ListenAndServe(addr, bb)
 }
