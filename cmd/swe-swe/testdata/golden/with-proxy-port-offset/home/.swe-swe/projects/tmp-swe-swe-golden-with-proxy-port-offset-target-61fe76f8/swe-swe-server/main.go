@@ -4997,14 +4997,11 @@ func stopSessionBrowser(sess *Session) {
 	}
 	sess.BrowserProcs = nil
 	for _, pid := range sess.BrowserPIDs {
-		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
-			// Process may have already exited
-			if !errors.Is(err, syscall.ESRCH) {
-				log.Printf("Failed to kill browser process PID %d for session %s: %v", pid, sess.UUID, err)
-			}
-		} else {
-			log.Printf("[KILL] Killed browser process PID %d for session %s (server PID %d)", pid, sess.UUID, os.Getpid())
-		}
+		// Process group, not just the pid: websockify forks a child that
+		// inherits the listening VNC socket and outlives a kill aimed at its
+		// parent alone, then squats the port the next session allocated into
+		// this slot needs. Same reason as browserProcs.stop().
+		killBrowserProc(pid, fmt.Sprintf("browser process for session %s", sess.UUID))
 	}
 	sess.BrowserPIDs = nil
 	// Clean up per-session Chromium user data directory
