@@ -64,9 +64,35 @@ cleanup() {
     echo "=== Cleanup ==="
     [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
     pkill -f "bin/swe-swe-server.*127.0.0.1:$E2E_PORT" 2>/dev/null || true
-    [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
+    # SIGTERM, then WAIT: the backend frees its browser stacks on the way out
+    # (Xvfb/chromium/x11vnc/websockify). Exiting before it finishes leaves them
+    # holding this tier's VNC/CDP ports, and the NEXT tier's allocation then
+    # fails outright -- startSupervisedProc refuses a held port. That is how the
+    # direct tier used to poison the tunnel tier.
+    if [ -n "$BACKEND_PID" ]; then
+        kill "$BACKEND_PID" 2>/dev/null || true
+        for _ in $(seq 1 20); do
+            kill -0 "$BACKEND_PID" 2>/dev/null || break
+            sleep 0.5
+        done
+        kill -9 "$BACKEND_PID" 2>/dev/null || true
+        wait "$BACKEND_PID" 2>/dev/null || true
+    fi
     [ -n "$BACKEND_CONTAINER" ] && docker rm -f "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
     [ -n "$MARKER_PID" ] && kill "$MARKER_PID" 2>/dev/null || true
+    # Belt and braces: if teardown was skipped or timed out, do not hand the
+    # next tier a port still held by this tier's stack. Only this script's own
+    # dedicated ranges are swept.
+    # x11vnc's raw VNC port sits one range-size above websockify's (see
+    # handleCreate: vncInternal = vncPort + range size).
+    vnc_span=$(( ${BACKEND_VNC##*-} - ${BACKEND_VNC%%-*} + 1 ))
+    for p in $(seq "${BACKEND_VNC%%-*}" "${BACKEND_VNC##*-}"); do
+        pkill -f "websockify .* $p " 2>/dev/null || true
+        pkill -f "x11vnc .*-rfbport $((p + vnc_span))" 2>/dev/null || true
+    done
+    for p in $(seq "${BACKEND_CDP%%-*}" "${BACKEND_CDP##*-}"); do
+        pkill -f "remote-debugging-port=$p" 2>/dev/null || true
+    done
     rm -rf "$TEST_DIR"
 }
 trap cleanup EXIT

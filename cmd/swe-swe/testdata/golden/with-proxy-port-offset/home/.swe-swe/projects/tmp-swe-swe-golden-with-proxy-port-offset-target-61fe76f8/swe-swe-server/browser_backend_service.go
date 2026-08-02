@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -362,6 +365,39 @@ func (bb *browserBackend) reapIdle() []string {
 	return reaped
 }
 
+// freeAll tears every live session down and empties the table, returning the
+// ids it freed. Same teardown as handleDelete/reapIdle, applied to all of them.
+//
+// This exists for shutdown. Without it a SIGTERM (docker stop, a systemd
+// restart, the e2e harness killing the process) ends THIS process only and
+// abandons every browser stack it started: Xvfb, chromium, x11vnc and
+// websockify keep running and keep holding their VNC/CDP ports. The next
+// backend then cannot bind those slots, and since startSupervisedProc refuses
+// a held port, allocation fails outright -- observed as Agent View never
+// appearing after a backend restart.
+func (bb *browserBackend) freeAll() []string {
+	bb.mu.Lock()
+	doomed := make([]*backendSession, 0, len(bb.sessions))
+	freed := make([]string, 0, len(bb.sessions))
+	for id, sess := range bb.sessions {
+		doomed = append(doomed, sess)
+		freed = append(freed, id)
+		delete(bb.sessions, id)
+	}
+	bb.mu.Unlock()
+	// Outside bb.mu, same as reapIdle: stop() kills process groups and deletes
+	// profile dirs.
+	for _, sess := range doomed {
+		if sess.tunnelStop != nil {
+			sess.tunnelStop()
+		}
+		if sess.procs != nil {
+			sess.procs.stop()
+		}
+	}
+	return freed
+}
+
 // startReaper runs reapIdle on a ticker until stop closes. No-op when idle
 // reaping is disabled.
 func (bb *browserBackend) startReaper(stop <-chan struct{}) {
@@ -493,7 +529,29 @@ func runBrowserBackend(addr string, maxSessions int, token, advertiseHost string
 	// nobody wait4()s, and this process runs for weeks.
 	startSubreaper()
 	bb.startReaper(nil)
-	return http.ListenAndServe(addr, bb)
+	// Free every browser stack before exiting. A plain ListenAndServe dies on
+	// SIGTERM with its browsers still running, and those orphans hold the very
+	// ports the next backend needs (see freeAll).
+	srv := &http.Server{Addr: addr, Handler: bb}
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigs)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.ListenAndServe() }()
+	select {
+	case err := <-serveErr:
+		return err
+	case sig := <-sigs:
+		log.Printf("browser-backend: %s -- tearing down browsers before exit", sig)
+		freed := bb.freeAll()
+		log.Printf("browser-backend: freed %d session(s) on shutdown", len(freed))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("browser-backend: shutdown: %v", err)
+		}
+		return nil
+	}
 }
 
 // resolveBrowserBackendIdle applies flag -> env -> default for the idle reap

@@ -240,3 +240,48 @@ func TestCDPActivityTracker(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// A backend that exits must not abandon its browsers. Each abandoned stack
+// keeps holding its VNC/CDP ports, and startSupervisedProc refuses a held
+// port -- so the NEXT backend cannot allocate those slots at all (seen live as
+// "127.0.0.1:42600 is still held by another process", Agent View never
+// appearing). freeAll is what the SIGTERM path runs before exiting.
+func TestFreeAllTearsDownEverySession(t *testing.T) {
+	withStubStarter(t)
+	bb := newBrowserBackend(3, "", "h")
+
+	mustAlloc(t, bb, "s1")
+	mustAlloc(t, bb, "s2")
+
+	var stopped []string
+	bb.mu.Lock()
+	for id, sess := range bb.sessions {
+		id := id
+		sess.tunnelStop = func() { stopped = append(stopped, id) }
+	}
+	bb.mu.Unlock()
+
+	freed := bb.freeAll()
+	if len(freed) != 2 {
+		t.Fatalf("freed = %v, want both sessions", freed)
+	}
+	if len(stopped) != 2 {
+		t.Errorf("tunnels stopped = %v, want both", stopped)
+	}
+	if n := len(sessionIDs(bb)); n != 0 {
+		t.Errorf("%d session(s) survived shutdown", n)
+	}
+	// Every slot is genuinely free again -- the point of the whole exercise.
+	mustAlloc(t, bb, "next-1")
+	mustAlloc(t, bb, "next-2")
+	mustAlloc(t, bb, "next-3")
+}
+
+// Shutdown with nothing allocated is a no-op, not a panic.
+func TestFreeAllOnEmptyBackend(t *testing.T) {
+	withStubStarter(t)
+	bb := newBrowserBackend(2, "", "h")
+	if freed := bb.freeAll(); len(freed) != 0 {
+		t.Fatalf("freed = %v, want none", freed)
+	}
+}
