@@ -32,6 +32,173 @@ function stripCSI3J(data) {
     return result.subarray(0, j);
 }
 
+// index.html pulls four classic scripts in before this module runs. On a
+// flaky network -- typically a phone waking a backgrounded tab, where the
+// whole page reloads while the connection is still coming up -- one of those
+// requests can fail while the rest succeed. The browser reports nothing; the
+// element then dies on the first use of the missing global (`new
+// FitAddon.FitAddon()`) and dumps a raw stack trace over the page. Re-fetch
+// whatever is missing before booting, and only surface a failure (as a
+// Reload card, not a stack trace) once the retries are exhausted.
+const TERMINAL_DEPS = [
+    { src: '/xterm.js', global: 'Terminal' },
+    { src: '/xterm-addon-fit.js', global: 'FitAddon' },
+    { src: '/link-provider.js', global: 'registerUrlLinkProvider' },
+    { src: '/end-session.js', global: 'checkPublicPortAndEndSession' },
+];
+
+const DEP_RETRY_DELAYS = [0, 1000, 3000];
+const DEP_LOAD_TIMEOUT_MS = 15000;
+
+function missingTerminalDeps() {
+    return TERMINAL_DEPS.filter((dep) => typeof window[dep.global] === 'undefined');
+}
+
+// Reuse the ?v= the page was served with so a retry pulls the same build,
+// and add a retry marker so an intermediary that cached the failed response
+// cannot hand us the same nothing twice.
+function depRetryUrl(dep, attempt) {
+    let src = dep.src;
+    for (const el of document.querySelectorAll('script[src]')) {
+        const raw = el.getAttribute('src');
+        try {
+            if (new URL(raw, window.location.href).pathname === dep.src) {
+                src = raw;
+                break;
+            }
+        } catch (e) {
+            // malformed src attribute; fall back to the bare path
+        }
+    }
+    return src + (src.includes('?') ? '&' : '?') + 'retry=' + attempt;
+}
+
+function loadScriptOnce(src) {
+    return new Promise((resolve) => {
+        const el = document.createElement('script');
+        el.src = src;
+        // Preserve execution order for the classic scripts we re-add.
+        el.async = false;
+        let settled = false;
+        const finish = (ok) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(ok);
+        };
+        // A request that hangs never fires onerror, so bound it ourselves.
+        const timer = setTimeout(() => {
+            el.remove();
+            finish(false);
+        }, DEP_LOAD_TIMEOUT_MS);
+        el.onload = () => finish(true);
+        el.onerror = () => {
+            el.remove();
+            finish(false);
+        };
+        document.head.appendChild(el);
+    });
+}
+
+async function reloadMissingTerminalDeps(onAttempt) {
+    for (let i = 0; i < DEP_RETRY_DELAYS.length; i++) {
+        const missing = missingTerminalDeps();
+        if (missing.length === 0) return true;
+        if (DEP_RETRY_DELAYS[i] > 0) {
+            await new Promise((r) => setTimeout(r, DEP_RETRY_DELAYS[i]));
+        }
+        if (onAttempt) onAttempt(i + 1, DEP_RETRY_DELAYS.length, missing);
+        await Promise.all(missing.map((dep) => loadScriptOnce(depRetryUrl(dep, i + 1))));
+    }
+    return missingTerminalDeps().length === 0;
+}
+
+// Self-contained styling: the stylesheet may be one of the things that
+// failed to arrive, so this card cannot depend on it.
+function startupCard() {
+    let card = document.querySelector('.swe-startup-card');
+    if (card) return card;
+    card = document.createElement('div');
+    card.className = 'swe-startup-card';
+    card.setAttribute('role', 'status');
+    card.style.cssText = [
+        'position:fixed', 'inset:0', 'z-index:2147483647',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'padding:24px', 'background:#1b1b1f', 'color:#e6e6e6',
+        'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+        'text-align:center',
+    ].join(';');
+    document.body.appendChild(card);
+    return card;
+}
+
+function showStartupRetrying(attempt, total) {
+    const card = startupCard();
+    card.textContent = '';
+    const box = document.createElement('div');
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:6px;';
+    title.textContent = 'Still loading...';
+    const sub = document.createElement('div');
+    sub.style.cssText = 'opacity:0.7;';
+    sub.textContent = 'Part of the page did not arrive. Retrying (' + attempt + ' of ' + total + ').';
+    box.appendChild(title);
+    box.appendChild(sub);
+    card.appendChild(box);
+}
+
+function clearStartupCard() {
+    const card = document.querySelector('.swe-startup-card');
+    if (card) card.remove();
+}
+
+function showStartupFailure(message, detail) {
+    const card = startupCard();
+    card.textContent = '';
+    const box = document.createElement('div');
+    box.style.cssText = 'max-width:420px;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:17px;font-weight:600;margin-bottom:8px;';
+    title.textContent = 'Something did not load';
+
+    const body = document.createElement('div');
+    body.style.cssText = 'opacity:0.75;margin-bottom:18px;';
+    body.textContent = message;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Reload';
+    button.style.cssText = [
+        'appearance:none', 'border:0', 'border-radius:8px',
+        'padding:11px 26px', 'font-size:15px', 'font-weight:600',
+        'background:#4f7cff', 'color:#fff', 'cursor:pointer',
+    ].join(';');
+    button.addEventListener('click', () => window.location.reload());
+
+    box.appendChild(title);
+    box.appendChild(body);
+    box.appendChild(button);
+
+    if (detail) {
+        const details = document.createElement('details');
+        details.style.cssText = 'margin-top:20px;text-align:left;opacity:0.6;';
+        const summary = document.createElement('summary');
+        summary.style.cssText = 'cursor:pointer;';
+        summary.textContent = 'Technical details';
+        const pre = document.createElement('pre');
+        pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;font-size:12px;margin:8px 0 0;';
+        pre.textContent = detail;
+        details.appendChild(summary);
+        details.appendChild(pre);
+        box.appendChild(details);
+    }
+
+    card.appendChild(box);
+    // The button is the only action; give it focus so Enter works.
+    button.focus();
+}
+
 // Preset definitions: slot ids, default pane assignments, and a small SVG
 // icon describing the grid layout. The icon's rects describe cells laid out
 // on a 12x12 viewBox so buttons can render a mini-diagram of the layout.
@@ -395,6 +562,16 @@ class TerminalUI extends HTMLElement {
         this.originalWindowHeight = window.innerHeight;
         this.lastKeyboardHeight = 0;
 
+        // Nothing below can run without the classic scripts index.html loads
+        // ahead of this module. If any of them went missing, refetch first and
+        // re-enter; bailing here keeps the half-initialized DOM from ever
+        // being rendered.
+        if (missingTerminalDeps().length > 0) {
+            this.recoverMissingDeps();
+            return;
+        }
+        clearStartupCard();
+
         try {
             // Redirect to homepage if no assistant specified
             if (!this.assistant) {
@@ -489,8 +666,40 @@ class TerminalUI extends HTMLElement {
         } catch (e) {
             console.error('[TerminalUI] connectedCallback failed:', e);
             // Show error in the UI since we might not have console
-            document.body.innerHTML = '<pre style="color:red;padding:20px;">Init error: ' + e.message + '\n' + e.stack + '</pre>';
+            showStartupFailure(
+                'This session could not start up. Reloading usually fixes it.',
+                'Init error: ' + e.message + '\n' + e.stack
+            );
         }
+    }
+
+    // Refetch the classic scripts that failed to arrive, then re-enter
+    // connectedCallback. Only one recovery runs at a time.
+    async recoverMissingDeps() {
+        if (this._recoveringDeps) return;
+        this._recoveringDeps = true;
+        const initiallyMissing = missingTerminalDeps().map((dep) => dep.src);
+        console.warn('[TerminalUI] missing scripts, retrying:', initiallyMissing.join(', '));
+        let recovered = false;
+        try {
+            recovered = await reloadMissingTerminalDeps((attempt, total) => {
+                // Skip the card on the first, immediate attempt: it usually
+                // succeeds fast enough that flashing a message is worse than
+                // showing nothing.
+                if (attempt > 1) showStartupRetrying(attempt, total);
+            });
+        } catch (e) {
+            console.error('[TerminalUI] script recovery failed:', e);
+        }
+        this._recoveringDeps = false;
+        if (recovered) {
+            this.connectedCallback();
+            return;
+        }
+        showStartupFailure(
+            'Part of this page could not be downloaded. Check your connection and reload.',
+            'Failed to load: ' + missingTerminalDeps().map((dep) => dep.src).join(', ')
+        );
     }
 
     disconnectedCallback() {
