@@ -11,6 +11,31 @@ import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustom
 import { IframeLoadSupervisor } from './modules/iframe-load-supervisor.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
+// --- Tab title ---
+// A session tab used to read "claude - 4f2a1b90 - swe-swe" forever: three
+// facts, none of them the one you go looking for with six tabs open. It now
+// carries the session name and the turn, in agent-chat's own clock:
+//
+//   {hourglass}5m32s - {name}   the agent is working, and for how long
+//   {green circle} {name}       it finished while you were looking elsewhere
+//   {name}                      nothing waiting on you
+//
+// The state arrives by postMessage from the agent-chat iframe (cross-origin,
+// so there is no other way in) -- see the 'agent-chat-turn-state' handler.
+// Escaped rather than literal because scripts/ascii-check.sh keeps this tree
+// ASCII-only.
+const TITLE_BUSY = '\u23f3';             // hourglass
+const TITLE_DONE = '\ud83d\udfe2';       // large green circle
+
+function formatTitleElapsed(startedAt) {
+    let secs = Math.floor((Date.now() - startedAt) / 1000);
+    if (secs < 0) secs = 0;
+    if (secs < 60) return `${secs}s`;
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m${String(secs % 60).padStart(2, '0')}s`;
+    return `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')}m`;
+}
+
 // Strip CSI 3J (\x1b[3J = clear scrollback buffer) from a Uint8Array.
 // Claude's TUI emits this during full-screen redraws, causing viewport jumps.
 // The sequence is 4 bytes: 0x1b, 0x5b, 0x33, 0x4a
@@ -758,6 +783,9 @@ class TerminalUI extends HTMLElement {
         }
         Object.values(this._iframeSupervisors || {}).forEach((sup) => sup.stop());
         this._iframeSupervisors = {};
+        // The tab-title clock ticks once a second for as long as the agent is
+        // busy; nothing else stops it.
+        if (this._titleTimer) { clearInterval(this._titleTimer); this._titleTimer = null; }
         if (this.term) {
             this.term.dispose();
         }
@@ -2412,6 +2440,40 @@ class TerminalUI extends HTMLElement {
         window.location.href = '/' + getDebugQueryString(this.debugMode);
     }
 
+    // Record the turn reported by the agent-chat iframe and repaint the tab.
+    // state: { busy, since, finished } -- `since` is agent-chat's own loader
+    // anchor, so a reload shows how long the agent has really been going
+    // rather than restarting the count at 0s, and `finished` marks only the
+    // busy -> idle edge of a live run (never a replayed one).
+    _applyChatTurnState(state) {
+        this._turnState = { busy: !!state.busy, since: Number(state.since) || 0 };
+        if (this._turnState.busy) {
+            this._turnDone = false;
+        } else if (state.finished && !document.hasFocus()) {
+            // Only worth marking when it landed unseen. With the window
+            // already focused the answer is on screen, and a badge you have
+            // to dismiss after reading is a badge you stop reading.
+            this._turnDone = true;
+        }
+        if (this._titleTimer) { clearInterval(this._titleTimer); this._titleTimer = null; }
+        if (this._turnState.busy) {
+            this._titleTimer = setInterval(() => this.updateTabTitle(), 1000);
+        }
+        this.updateTabTitle();
+    }
+
+    updateTabTitle() {
+        const name = this.sessionName || this.uuidShort || 'Session';
+        const st = this._turnState || { busy: false, since: 0 };
+        if (st.busy && st.since) {
+            document.title = `${TITLE_BUSY}${formatTitleElapsed(st.since)} - ${name}`;
+        } else if (this._turnDone) {
+            document.title = `${TITLE_DONE} ${name}`;
+        } else {
+            document.title = name;
+        }
+    }
+
     updateStatusInfo() {
         const isConnected = this.ws && this.ws.readyState === WebSocket.OPEN;
 
@@ -2422,6 +2484,9 @@ class TerminalUI extends HTMLElement {
         if (sessionNameEl) {
             sessionNameEl.textContent = this.sessionName || this.uuidShort || 'Session';
         }
+        // The name arrives over the websocket, well after the server rendered
+        // <title>, and changes again whenever the agent renames the session.
+        this.updateTabTitle();
 
         if (viewersEl && isConnected) {
             if (this.viewers > 1) {
@@ -5152,7 +5217,15 @@ class TerminalUI extends HTMLElement {
             if (document.visibilityState === 'visible') this._kickVisibleSupervisors();
         };
         document.addEventListener('visibilitychange', this._visibilityHandler);
-        this._windowFocusHandler = () => this._kickVisibleSupervisors();
+        this._windowFocusHandler = () => {
+            this._kickVisibleSupervisors();
+            // Coming back to the window IS reading the reply: drop the
+            // "finished while you were away" mark on the tab.
+            if (this._turnDone) {
+                this._turnDone = false;
+                this.updateTabTitle();
+            }
+        };
         window.addEventListener('focus', this._windowFocusHandler);
 
         // Listen for messages from iframes
@@ -5171,6 +5244,13 @@ class TerminalUI extends HTMLElement {
                     this.sendKey(e.data.text || 'check_messages; i sent u a chat message');
                     setTimeout(() => this.sendKey('\r'), 300);
                 }
+            }
+            // Agent Chat reports which side the turn is on. It is the only
+            // thing in the page that knows: the PTY stream cannot tell a
+            // thinking agent from an idle one, and the homepage's green/red
+            // dot is computed server-side per page load.
+            if (e.data && e.data.type === 'agent-chat-turn-state') {
+                this._applyChatTurnState(e.data);
             }
             // When user clicks Allow/Deny in Agent Chat, forward keystroke to PTY
             if (e.data && e.data.type === 'agent-chat-permission-response') {
