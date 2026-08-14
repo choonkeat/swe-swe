@@ -17,24 +17,17 @@ import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 // carries the session name and the turn, in agent-chat's own clock:
 //
 //   {hourglass}5m32s - {name}   the agent is working, and for how long
-//   {green circle} {name}       it finished while you were looking elsewhere
+//   {dot} {name}                it finished while you were looking elsewhere
 //   {name}                      nothing waiting on you
 //
-// The state arrives by postMessage from the agent-chat iframe (cross-origin,
-// so there is no other way in) -- see the 'agent-chat-turn-state' handler.
-// Escaped rather than literal because scripts/ascii-check.sh keeps this tree
-// ASCII-only.
-const TITLE_BUSY = '\u23f3';             // hourglass
-const TITLE_DONE = '\ud83d\udfe2';       // large green circle
-
-function formatTitleElapsed(startedAt) {
-    let secs = Math.floor((Date.now() - startedAt) / 1000);
-    if (secs < 0) secs = 0;
-    if (secs < 60) return `${secs}s`;
-    const mins = Math.floor(secs / 60);
-    if (mins < 60) return `${mins}m${String(secs % 60).padStart(2, '0')}s`;
-    return `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')}m`;
-}
+// The format itself is NOT written here. agent-chat owns it and posts the
+// finished prefix ("{hourglass}5m32s - ", "{dot} ", or "") over postMessage;
+// this file only puts it in front of the session name. The symbols and the
+// clock used to be spelled out on both sides, identically, with nothing
+// keeping the two copies in step -- see the 'agent-chat-turn-state' handler.
+//
+// An agent-chat too old to send a prefix leaves it empty, and the tab falls
+// back to the plain session name.
 
 // Strip CSI 3J (\x1b[3J = clear scrollback buffer) from a Uint8Array.
 // Claude's TUI emits this during full-screen redraws, causing viewport jumps.
@@ -783,9 +776,6 @@ class TerminalUI extends HTMLElement {
         }
         Object.values(this._iframeSupervisors || {}).forEach((sup) => sup.stop());
         this._iframeSupervisors = {};
-        // The tab-title clock ticks once a second for as long as the agent is
-        // busy; nothing else stops it.
-        if (this._titleTimer) { clearInterval(this._titleTimer); this._titleTimer = null; }
         if (this.term) {
             this.term.dispose();
         }
@@ -2446,32 +2436,49 @@ class TerminalUI extends HTMLElement {
     // rather than restarting the count at 0s, and `finished` marks only the
     // busy -> idle edge of a live run (never a replayed one).
     _applyChatTurnState(state) {
-        this._turnState = { busy: !!state.busy, since: Number(state.since) || 0 };
-        if (this._turnState.busy) {
-            this._turnDone = false;
-        } else if (state.finished && !document.hasFocus()) {
-            // Only worth marking when it landed unseen. With the window
-            // already focused the answer is on screen, and a badge you have
-            // to dismiss after reading is a badge you stop reading.
-            this._turnDone = true;
+        this._turnBusy = !!state.busy;
+        // agent-chat re-sends the prefix every second while it is busy, which
+        // is what advances the clock inside it: there is no timer on this side
+        // any more, because a timer here would have to know how to draw the
+        // next tick.
+        this._titlePrefix = typeof state.titlePrefix === 'string' ? state.titlePrefix : '';
+        // agent-chat decides whether a finish went unseen by asking whether
+        // ITS document had focus, and inside swe-swe that document is one pane
+        // of several. Reading a reply with the cursor left in the terminal
+        // would otherwise mark the tab of the window you are staring at. Only
+        // this window can answer the question it was really asking, so the
+        // answer is applied here.
+        //
+        // `focused` says the chat iframe just took focus. That is the reading
+        // of the reply, and it is a clear this window cannot observe for
+        // itself: the focus event goes to the browsing context that gained
+        // focus, so focus landing in the cross-origin iframe reaches us only
+        // because the iframe forwards it. Without this the mark survives the
+        // one gesture that should retire it. It needs no branch of its own --
+        // the prefix arrives already cleared, and the line below agrees.
+        if (!this._turnBusy && document.hasFocus()) {
+            this._titlePrefix = '';
         }
-        if (this._titleTimer) { clearInterval(this._titleTimer); this._titleTimer = null; }
-        if (this._turnState.busy) {
-            this._titleTimer = setInterval(() => this.updateTabTitle(), 1000);
-        }
+        this.updateTabTitle();
+    }
+
+    // Retire the "finished while you were away" mark. Three separate things
+    // count as the user arriving -- window focus, tab visibility, focus taken
+    // by the chat iframe -- and no single one of them fires in every case, so
+    // the two this window can see are handled here and the third is forwarded.
+    //
+    // Dropping the prefix outright is safe precisely because it is opaque: the
+    // only prefix worth keeping is the running clock, and that is the one case
+    // busy rules out.
+    _clearTurnDone() {
+        if (this._turnBusy || !this._titlePrefix) return;
+        this._titlePrefix = '';
         this.updateTabTitle();
     }
 
     updateTabTitle() {
         const name = this.sessionName || this.uuidShort || 'Session';
-        const st = this._turnState || { busy: false, since: 0 };
-        if (st.busy && st.since) {
-            document.title = `${TITLE_BUSY}${formatTitleElapsed(st.since)} - ${name}`;
-        } else if (this._turnDone) {
-            document.title = `${TITLE_DONE} ${name}`;
-        } else {
-            document.title = name;
-        }
+        document.title = (this._titlePrefix || '') + name;
     }
 
     updateStatusInfo() {
@@ -5214,17 +5221,21 @@ class TerminalUI extends HTMLElement {
         // becoming visible again we kick the active supervisors (no-op if already
         // loaded) so the pane recovers near-instantly instead of staying stuck.
         this._visibilityHandler = () => {
-            if (document.visibilityState === 'visible') this._kickVisibleSupervisors();
+            if (document.visibilityState === 'visible') {
+                this._kickVisibleSupervisors();
+                // Returning to the tab is reading the reply too, and this
+                // fires even when the focus event does not -- e.g. focus came
+                // back to a pane iframe, or to browser chrome and nothing in
+                // the page at all.
+                this._clearTurnDone();
+            }
         };
         document.addEventListener('visibilitychange', this._visibilityHandler);
         this._windowFocusHandler = () => {
             this._kickVisibleSupervisors();
             // Coming back to the window IS reading the reply: drop the
             // "finished while you were away" mark on the tab.
-            if (this._turnDone) {
-                this._turnDone = false;
-                this.updateTabTitle();
-            }
+            this._clearTurnDone();
         };
         window.addEventListener('focus', this._windowFocusHandler);
 

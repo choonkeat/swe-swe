@@ -2,17 +2,19 @@ import { test, expect } from './_helpers/reaper.js';
 import { endSessions, openSessionViaPost } from './_helpers/sessions.js';
 
 // The browser tab is the only part of a session visible when the session is
-// not, so it carries the turn: hourglass + elapsed while the agent works, a
-// green circle for a run that finished while you were looking elsewhere, and
-// the bare session name when nothing is waiting on you.
+// not, so it carries the turn. What it puts in front of the session name --
+// hourglass and clock while the agent works, a dot for a run that finished
+// while you were looking elsewhere, nothing when nothing is waiting -- is
+// agent-chat's to decide, and arrives already rendered as `titlePrefix`.
 //
-// The turn itself is reported by the agent-chat iframe, which is cross-origin
-// and therefore only reachable by postMessage. These tests post the same
-// messages agent-chat posts, which is the contract the two halves share --
-// driving the real chat pane would test agent-chat's release, not this one.
+// So these tests assert the contract, not the format: whatever prefix arrives
+// is used verbatim, and the mark is retired on each of the three ways the user
+// can come back. A deliberately unreal prefix keeps them honest -- an
+// assertion on the hourglass would be this repo re-stating a format it no
+// longer owns, and would start failing the day agent-chat changed its mind.
 
-const HOURGLASS = '⏳';
-const GREEN = '🟢';
+const BUSY_PREFIX = 'BUSY42 - ';
+const DONE_PREFIX = 'DOT ';
 
 let testSessions = [];
 
@@ -58,40 +60,41 @@ test('idle tab title is the session name, not the server-rendered triple', async
   expect(await page.title()).not.toContain('swe-swe');
 });
 
-test('busy tab title shows the hourglass and the elapsed clock', async ({ page }) => {
+test('the prefix agent-chat sends is used verbatim', async ({ page }) => {
   await openSession(page);
   const name = await expectedName(page);
 
-  // 92s ago -> "1m32s". Anchored to agent-chat's own loader start, so a
-  // reloaded tab shows the true age of the run instead of restarting at 0s.
-  await reportTurn(page, { busy: true, since: Date.now() - 92_000, finished: false });
-  expect(await page.title()).toMatch(new RegExp(`^${HOURGLASS}1m3\\ds - ${escapeRe(name)}$`));
+  await reportTurn(page, { busy: true, titlePrefix: BUSY_PREFIX });
+  expect(await page.title()).toBe(`${BUSY_PREFIX}${name}`);
 
-  // Under a minute drops the minutes entirely.
-  await reportTurn(page, { busy: true, since: Date.now() - 5_000, finished: false });
-  expect(await page.title()).toMatch(new RegExp(`^${HOURGLASS}\\ds - ${escapeRe(name)}$`));
+  // The clock advances because agent-chat re-sends it, not because anything
+  // here knows how to draw the next tick.
+  await reportTurn(page, { busy: true, titlePrefix: 'BUSY43 - ' });
+  expect(await page.title()).toBe(`BUSY43 - ${name}`);
+
+  await reportTurn(page, { busy: false, titlePrefix: '' });
+  expect(await page.title()).toBe(name);
 });
 
-test('the clock ticks while the agent stays busy', async ({ page }) => {
+test('an agent-chat too old to send a prefix leaves the plain session name', async ({ page }) => {
   await openSession(page);
-  await reportTurn(page, { busy: true, since: Date.now(), finished: false });
-  const first = await page.title();
-  await page.waitForTimeout(2200);
-  const later = await page.title();
-  expect(later).not.toBe(first);
-  expect(later.startsWith(HOURGLASS)).toBe(true);
+  const name = await expectedName(page);
+
+  // The pre-titlePrefix message shape, which older installs still post.
+  await reportTurn(page, { busy: true, since: Date.now() - 92_000, finished: false });
+  expect(await page.title()).toBe(name);
 });
 
-test('a run that finishes while the window is unfocused leaves a green mark', async ({ page }) => {
+test('a run that finishes while the window is unfocused leaves the mark', async ({ page }) => {
   await openSession(page);
   const name = await expectedName(page);
 
   // Headless Chromium reports the only page as focused, so the "you were
   // looking elsewhere" condition has to be stated outright.
   await page.evaluate(() => { document.hasFocus = () => false; });
-  await reportTurn(page, { busy: true, since: Date.now(), finished: false });
-  await reportTurn(page, { busy: false, since: 0, finished: true });
-  expect(await page.title()).toBe(`${GREEN} ${name}`);
+  await reportTurn(page, { busy: true, titlePrefix: BUSY_PREFIX });
+  await reportTurn(page, { busy: false, finished: true, titlePrefix: DONE_PREFIX });
+  expect(await page.title()).toBe(`${DONE_PREFIX}${name}`);
 
   // Coming back to the window IS reading the reply.
   await page.evaluate(() => {
@@ -102,29 +105,71 @@ test('a run that finishes while the window is unfocused leaves a green mark', as
   expect(await page.title()).toBe(name);
 });
 
-test('a run that finishes while you are watching leaves no mark to dismiss', async ({ page }) => {
+// The clear used to hang off this window's focus event alone, which is the one
+// arrival that does NOT happen when the user goes back to the chat: focus
+// fires on the browsing context that gained it, so focus landing in the
+// cross-origin chat iframe reaches the iframe and blur reaches us. The mark
+// then outlived the reading of the reply it pointed at.
+test('focus taken by the chat iframe clears the mark', async ({ page }) => {
   await openSession(page);
   const name = await expectedName(page);
 
-  await page.evaluate(() => { document.hasFocus = () => true; });
-  await reportTurn(page, { busy: true, since: Date.now(), finished: false });
-  await reportTurn(page, { busy: false, since: 0, finished: true });
-  expect(await page.title()).toBe(name);
-});
-
-test('a replayed history finish never lights the green mark', async ({ page }) => {
-  await openSession(page);
-  const name = await expectedName(page);
-
-  // agent-chat suppresses `finished` during history replay; this asserts the
-  // swe-swe half honours a plain busy -> idle report with no finish edge,
-  // which is what a reconnecting tab sees.
   await page.evaluate(() => { document.hasFocus = () => false; });
-  await reportTurn(page, { busy: true, since: Date.now() - 60_000, finished: false });
-  await reportTurn(page, { busy: false, since: 0, finished: false });
+  await reportTurn(page, { busy: true, titlePrefix: BUSY_PREFIX });
+  await reportTurn(page, { busy: false, finished: true, titlePrefix: DONE_PREFIX });
+  expect(await page.title()).toBe(`${DONE_PREFIX}${name}`);
+
+  // What agent-chat posts from its own focus handler: cleared prefix, plus the
+  // flag. No top-window focus event accompanies it -- that is the whole point.
+  await page.evaluate(() => { document.hasFocus = () => true; });
+  await reportTurn(page, { busy: false, focused: true, titlePrefix: '' });
   expect(await page.title()).toBe(name);
 });
 
-function escapeRe(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+test('returning to the tab clears the mark without a focus event', async ({ page }) => {
+  await openSession(page);
+  const name = await expectedName(page);
+
+  await page.evaluate(() => { document.hasFocus = () => false; });
+  await reportTurn(page, { busy: true, titlePrefix: BUSY_PREFIX });
+  await reportTurn(page, { busy: false, finished: true, titlePrefix: DONE_PREFIX });
+  expect(await page.title()).toBe(`${DONE_PREFIX}${name}`);
+
+  // visibilitychange fires when focus comes back to browser chrome, or to a
+  // pane iframe, and nothing in this document is focused at all.
+  await page.evaluate(() => {
+    document.hasFocus = () => true;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(100);
+  expect(await page.title()).toBe(name);
+});
+
+test('coming back mid-run leaves the running clock alone', async ({ page }) => {
+  await openSession(page);
+  const name = await expectedName(page);
+
+  await reportTurn(page, { busy: true, titlePrefix: BUSY_PREFIX });
+  // Clicking into the chat while the agent is still working must not be read
+  // as the run ending, on any of the three arrivals.
+  await reportTurn(page, { busy: true, focused: true, titlePrefix: BUSY_PREFIX });
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(100);
+  expect(await page.title()).toBe(`${BUSY_PREFIX}${name}`);
+});
+
+test('a finish read with the cursor in the terminal leaves no mark', async ({ page }) => {
+  await openSession(page);
+  const name = await expectedName(page);
+
+  // agent-chat asks whether ITS document had focus, and inside swe-swe it is
+  // one pane of several: focus resting in the terminal makes it report the
+  // finish as unseen. This window knows better.
+  await page.evaluate(() => { document.hasFocus = () => true; });
+  await reportTurn(page, { busy: true, titlePrefix: BUSY_PREFIX });
+  await reportTurn(page, { busy: false, finished: true, titlePrefix: DONE_PREFIX });
+  expect(await page.title()).toBe(name);
+});
