@@ -43,6 +43,13 @@ const LONGURL_REPO = '/repos/e2e-longurl-repo/workspace';
 const LONGURL_REMOTE = 'git@gitlab.example.com:acme/payments-backend-service.git';
 const LONGURL_SHORT = 'acme/payments-backend-service';
 
+// A repo on an HTTPS remote: the case where the background branch refresh
+// needs the browser's saved token, because the server holds no credentials
+// outside a session.
+const HTTPS_REPO = '/repos/e2e-https-repo/workspace';
+const HTTPS_HOST = 'git.e2e.invalid';
+const HTTPS_REMOTE = `https://${HTTPS_HOST}/acme/private.git`;
+
 // Helper: get the e2e swe-swe container name (works for both simple and
 // compose modes). Same lookup mcp-create-session.spec.js uses.
 function getContainerName() {
@@ -107,6 +114,28 @@ function setupLongUrlRepo(containerName) {
     git commit -q --allow-empty -m init &&
     git remote add origin ${LONGURL_REMOTE}
   '`);
+}
+
+// Create a repo whose origin is an HTTPS remote. Those are the ones that need
+// a username/token, and the server has none of its own (credentials live per
+// session, and the dialog runs before any session exists) -- so the browser
+// must hand its saved token to the background refresh. The host resolves
+// nowhere, so the fetch fails fast instead of hanging.
+function setupHttpsRepo(containerName) {
+  execSync(`docker exec ${containerName} sh -c '
+    rm -rf /repos/e2e-https-repo &&
+    mkdir -p ${HTTPS_REPO} &&
+    cd ${HTTPS_REPO} &&
+    git init -q -b main &&
+    git config user.email e2e@test.invalid &&
+    git config user.name e2e &&
+    git commit -q --allow-empty -m init &&
+    git remote add origin ${HTTPS_REMOTE}
+  '`);
+}
+
+function removeHttpsRepo(containerName) {
+  execSync(`docker exec ${containerName} sh -c 'rm -rf /repos/e2e-https-repo'`);
 }
 
 function removeLongUrlRepo(containerName) {
@@ -180,6 +209,7 @@ test.describe('new-session dialog', () => {
     setupExternalRepo(c);
     setupDogfoodRepo(c);
     setupLongUrlRepo(c);
+    setupHttpsRepo(c);
   });
 
   test.afterAll(() => {
@@ -187,6 +217,7 @@ test.describe('new-session dialog', () => {
     removeExternalRepo(c);
     removeDogfoodRepo(c);
     removeLongUrlRepo(c);
+    removeHttpsRepo(c);
   });
 
   test.beforeEach(() => {
@@ -206,7 +237,9 @@ test.describe('new-session dialog', () => {
     const held = new Promise((resolve) => { releaseFetch = resolve; });
     let fetchStarted = false;
     await page.route('**/api/repo/branches*', async (route) => {
-      if (route.request().url().includes('fetch=1')) {
+      // The refreshing call is the POST (it carries the saved HTTPS token in
+      // its body); the instant no-fetch listing is the GET.
+      if (route.request().method() === 'POST') {
         fetchStarted = true;
         await held;
       }
@@ -238,6 +271,129 @@ test.describe('new-session dialog', () => {
       /Using cached branches/, { timeout: 15_000 }
     );
     await expect(page.locator('#new-session-branch')).toBeEnabled();
+  });
+
+  // The server runs the refresh outside any session, so it owns no
+  // credentials: a private HTTPS remote used to fail every refresh with
+  // "Using cached branches" even though git worked fine inside a session. The
+  // browser holds the token (same localStorage entry Settings > Git writes),
+  // so it hands it over on the refresh POST -- in the body, never the URL.
+  test('the branch refresh carries the saved HTTPS token for the repo host', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(([host, bag]) => {
+      localStorage.setItem('swe-swe-creds:' + host, JSON.stringify(bag));
+    }, [HTTPS_HOST, { username: 'e2e-user', token: 'e2e-secret-token' }]);
+
+    const posts = [];
+    await page.route('**/api/repo/branches*', async (route) => {
+      const req = route.request();
+      if (req.method() === 'POST') {
+        posts.push({ url: req.url(), body: JSON.parse(req.postData() || '{}') });
+      }
+      await route.continue();
+    });
+
+    await openDialog(page);
+    await selectWhere(page, HTTPS_REPO);
+    await expect(page.locator('#new-session-branch')).toBeEnabled({ timeout: 10_000 });
+
+    await expect.poll(() => posts.length, { timeout: 15_000 }).toBeGreaterThan(0);
+    const post = posts[posts.length - 1];
+    expect(post.body.path).toBe(HTTPS_REPO);
+    expect(post.body.fetch).toBe(true);
+    expect(post.body.credHost).toBe(HTTPS_HOST);
+    expect(post.body.credUsername).toBe('e2e-user');
+    expect(post.body.credToken).toBe('e2e-secret-token');
+    // The token must never ride in the URL, where access logs would keep it.
+    expect(post.url).not.toContain('e2e-secret-token');
+
+    // The unreachable host still soft-fails into a warning, dialog usable.
+    await expect(page.locator('#new-session-warning')).toHaveText(
+      /Using cached branches/, { timeout: 20_000 }
+    );
+    await expect(page.locator('#new-session-branch')).toBeEnabled();
+
+    await page.evaluate((host) => localStorage.removeItem('swe-swe-creds:' + host), HTTPS_HOST);
+  });
+
+  // A refresh landing mid-typing must not move the user. Before this was
+  // fixed, setOptions re-rendered the listbox unfiltered and dropped the
+  // keyboard highlight, so the next Enter committed the raw typed text
+  // instead of the branch the user had arrowed onto.
+  test('a background branch refresh does not disturb the branch box', async ({ page }) => {
+    await openDialog(page);
+    await selectWhere(page, 'workspace');
+    await expect(page.locator('#new-session-branch')).toBeEnabled({ timeout: 10_000 });
+
+    // Seed a branch list with several matches for the filter below.
+    await page.evaluate(() => {
+      document.getElementById('branch-combo')
+        .setOptions(['main', 'feature-alpha', 'feature-beta', 'hotfix-1']);
+    });
+
+    // The user types a filter and arrows onto the second match.
+    await page.click('#branch-combo');
+    await page.keyboard.type('feature');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+
+    const readCombo = () => page.evaluate(() => {
+      const combo = document.getElementById('branch-combo');
+      const active = combo.shadowRoot.querySelector('.option[aria-selected="true"]');
+      return {
+        typed: combo.shadowRoot.querySelector('input').value,
+        visible: [...combo.shadowRoot.querySelectorAll('.option')].map((o) => o.dataset.value),
+        active: active ? active.dataset.value : null,
+      };
+    });
+
+    const before = await readCombo();
+    expect(before.visible).toEqual(['feature-alpha', 'feature-beta']);
+    expect(before.active).toBe('feature-beta');
+
+    // A refresh lands, carrying one branch someone else just pushed.
+    await page.evaluate(() => {
+      document.getElementById('branch-combo').setOptions(
+        ['main', 'feature-alpha', 'feature-beta', 'feature-gamma', 'hotfix-1']);
+    });
+
+    const after = await readCombo();
+    expect(after.typed).toBe('feature');
+    expect(after.visible).toEqual(['feature-alpha', 'feature-beta', 'feature-gamma']);
+    expect(after.active).toBe('feature-beta');
+
+    // Enter still commits the branch the user was on.
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => page.evaluate(() => document.getElementById('branch-combo').value))
+      .toBe('feature-beta');
+  });
+
+  // A slow refresh must never gate session creation: Start works while the
+  // fetch is still in flight, and the abandoned request cannot come back and
+  // change anything.
+  test('a slow branch refresh does not block Start', async ({ page }) => {
+    let releaseFetch;
+    const held = new Promise((resolve) => { releaseFetch = resolve; });
+    await page.route('**/api/repo/branches*', async (route) => {
+      if (route.request().method() === 'POST') await held;
+      await route.continue();
+    });
+
+    await openDialog(page);
+    await selectWhere(page, 'workspace');
+    await expect(page.locator('#new-session-branch')).toBeEnabled({ timeout: 10_000 });
+
+    // Pick an agent and start while the refresh is still held open. Agent
+    // Chat is the only Start the dialog exposes (Agent Terminal is hidden).
+    await page.locator('.dialog__agent').first().click();
+    await expect(page.locator('#new-session-start-chat')).toBeEnabled({ timeout: 10_000 });
+    await page.click('#new-session-start-chat');
+
+    await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
+    testSessions.push(new URL(page.url()).pathname.split('/')[2]);
+
+    releaseFetch();
   });
 
   test('default workspace prepares without a warning and lists branches', async ({ page }) => {

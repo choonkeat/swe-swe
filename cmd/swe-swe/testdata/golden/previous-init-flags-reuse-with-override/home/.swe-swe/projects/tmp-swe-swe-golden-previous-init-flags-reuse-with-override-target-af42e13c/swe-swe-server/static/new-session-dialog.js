@@ -88,6 +88,15 @@
         // locate this repo's env-vars blob in localStorage so it can ride the
         // creation POST and reach the new session's process before it spawns.
         initSha: '',
+        // Host of the selected repo's HTTPS remote (from /api/repo/prepare or
+        // /api/repo/branches). Empty for SSH/local remotes. Used to look up
+        // the saved PAT the background branch refresh needs -- the server has
+        // no session, so no credentials of its own.
+        remoteHost: '',
+        // In-flight background branch refresh, so it can be abandoned the
+        // moment it stops mattering (dialog closed, repo switched, session
+        // created). A slow fetch must never hold the user up.
+        branchRefreshAbort: null,
         // Settings carried over from a recording's "+ New" button, applied
         // once the prefilled repo finishes preparing. Cleared if the user
         // switches the Where selection before that happens.
@@ -222,7 +231,11 @@
         dialogState.whereKey = '';
         dialogState.extraArgs = '';
         dialogState.initSha = '';
+        dialogState.remoteHost = '';
         dialogState.prefillName = '';
+        // Whatever repo the in-flight refresh was for, it is not the one the
+        // user is now looking at.
+        abortBranchRefresh();
         if (extraArgsInput) extraArgsInput.value = '';
 
         // Reset color picker
@@ -430,10 +443,12 @@
     }
 
     // Fill the branch datalist/combo from a /api/repo/branches payload.
-    // setOptions leaves the combo's typed value alone, so a later refresh
-    // never clobbers what the user is entering.
+    // setOptions preserves the combo's typed value, its filter and its
+    // keyboard highlight, so a refresh landing mid-typing never redirects the
+    // user to a different branch.
     function populateBranches(branchData) {
         dialogState.initSha = branchData.init_sha || '';
+        if (branchData.remoteHost) dialogState.remoteHost = branchData.remoteHost;
         var branches = branchData.branches || [];
         branchList.innerHTML = '';
         branches.forEach(function(branch) {
@@ -445,14 +460,51 @@
         if (branchData.warning) {
             warningDiv.textContent = branchData.warning;
             warningDiv.style.display = 'block';
+        } else {
+            // A later refresh that succeeded retires an earlier failure's
+            // message; leaving it up made a transient error look permanent.
+            warningDiv.textContent = '';
+            warningDiv.style.display = 'none';
+        }
+    }
+
+    // Abandon an in-flight branch refresh. Called whenever its result stops
+    // mattering (dialog closed, repo switched, session created) so a slow
+    // fetch can never hold the user up; the cached list stays on screen.
+    function abortBranchRefresh() {
+        if (dialogState.branchRefreshAbort) {
+            dialogState.branchRefreshAbort.abort();
+            dialogState.branchRefreshAbort = null;
         }
     }
 
     // Freshen remote refs (git fetch) without blocking the dialog, then
     // update the branch list. Best-effort: errors are ignored, and a result
     // that arrives after the user switched repos is dropped.
+    //
+    // POST, not GET, because a private HTTPS remote needs the saved token: the
+    // server runs this fetch outside any session and so holds no credentials
+    // of its own. The token goes in the body -- never the query string, which
+    // access logs would keep.
     function refreshBranchesInBackground(repoPath) {
-        fetch('/api/repo/branches?path=' + encodeURIComponent(repoPath) + '&fetch=1')
+        abortBranchRefresh();
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        dialogState.branchRefreshAbort = controller;
+
+        var body = { path: repoPath, fetch: true };
+        var creds = readCloneCreds(dialogState.remoteHost);
+        if (creds && creds.token) {
+            body.credHost = dialogState.remoteHost;
+            body.credUsername = creds.username || 'x-access-token';
+            body.credToken = creds.token;
+        }
+
+        fetch('/api/repo/branches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller ? controller.signal : undefined
+        })
             .then(function(response) {
                 return response.ok ? response.json() : null;
             })
@@ -461,7 +513,12 @@
                 if (dialogState.repoPath !== repoPath) return;
                 populateBranches(branchData);
             })
-            .catch(function() {});
+            .catch(function() {})
+            .finally(function() {
+                if (dialogState.branchRefreshAbort === controller) {
+                    dialogState.branchRefreshAbort = null;
+                }
+            });
     }
 
     // Apply the settings a recording's "+ New" button carried over, once the
@@ -642,6 +699,9 @@
                 preseedCredsTrust(data.initSha);
             }
             dialogState.repoPath = data.path;
+            // Which host a saved PAT would be filed under, so the background
+            // branch refresh can attach it. Empty for SSH/local remotes.
+            dialogState.remoteHost = data.remoteHost || '';
             dialogState.isNewProject = data.isNew || false;
             if (body.mode === 'create' && body.name) {
                 dialogState.projectName = body.name;
@@ -961,6 +1021,9 @@
             branchCombo.commit();
         }
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        // The session is being created: a still-running branch refresh has
+        // nothing left to update, and must not compete with the create call.
+        abortBranchRefresh();
         // Record this repo as most-recently-used so it sorts to the top of the
         // Where dropdown next time (per-device recency). repoPath is the
         // resolved local path, matching the dynamic option's value.

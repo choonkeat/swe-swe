@@ -282,13 +282,47 @@ class ComboBox extends HTMLElement {
     v ? this.setAttribute("free-entry", "") : this.removeAttribute("free-entry");
   }
 
+  // Replace the option list. Safe to call while the user is mid-interaction:
+  // a background refresh (the New Session dialog's git fetch landing, say)
+  // must not disturb them. The typed text was always left alone; the filter
+  // and the keyboard highlight are preserved here too, so the next Enter
+  // still commits the row they were on rather than their raw typing.
   setOptions(opts) {
+    const filter = this._currentFilter();
+    const activeValue = this._activeOptionValue();
+
     this.#options = opts.map((o) =>
       typeof o === "string"
         ? { value: o, label: o }
         : { value: o.value, label: o.label, detail: o.detail || "" }
     );
-    this._renderOptions();
+    this._renderOptions(filter);
+    this._restoreHighlight(activeValue);
+  }
+
+  // The filter the listbox is currently showing: nothing when the input still
+  // holds the committed selection's label, otherwise whatever was typed.
+  _currentFilter() {
+    return this._input.value === this._labelForValue(this.#value)
+      ? ""
+      : this._input.value;
+  }
+
+  // Value of the highlighted row, or null when nothing is highlighted.
+  _activeOptionValue() {
+    const el = this._getVisibleOptions()[this.#activeIndex];
+    return el ? el.dataset.value : null;
+  }
+
+  // Re-highlight a row by value after a re-render. No-op when it is gone
+  // (e.g. the branch was deleted upstream) -- better no highlight than one
+  // silently sitting on a different branch.
+  _restoreHighlight(value) {
+    if (value == null) return;
+    const idx = this._getVisibleOptions().findIndex(
+      (el) => el.dataset.value === value
+    );
+    if (idx >= 0) this._highlight(idx);
   }
 
   // --- Upgrade <select> or <input list="..."> ---
@@ -564,7 +598,7 @@ class ComboBox extends HTMLElement {
     this.setAttribute("open", "");
     this._input.setAttribute("aria-expanded", "true");
     this._positionListbox();
-    this._renderOptions(this._input.value === this._labelForValue(this.#value) ? "" : this._input.value);
+    this._renderOptions(this._currentFilter());
   }
 
   _positionListbox() {

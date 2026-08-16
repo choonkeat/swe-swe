@@ -1579,8 +1579,11 @@ func TestResolveWorkingDirectory(t *testing.T) {
 }
 
 func TestHandleRepoBranchesAPI(t *testing.T) {
-	t.Run("POST returns method not allowed", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/repo/branches", nil)
+	// POST is the credential-carrying form of this endpoint (the refresh needs
+	// the browser's saved HTTPS token, which must travel in a body rather than
+	// a query string). Everything else stays rejected.
+	t.Run("PUT returns method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, "/api/repo/branches", nil)
 		w := httptest.NewRecorder()
 
 		handleRepoBranchesAPI(w, req)
@@ -1588,6 +1591,18 @@ func TestHandleRepoBranchesAPI(t *testing.T) {
 		resp := w.Result()
 		if resp.StatusCode != http.StatusMethodNotAllowed {
 			t.Errorf("expected status 405, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("POST with an unreadable body returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/repo/branches", strings.NewReader("not json"))
+		w := httptest.NewRecorder()
+
+		handleRepoBranchesAPI(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", resp.StatusCode)
 		}
 	})
 

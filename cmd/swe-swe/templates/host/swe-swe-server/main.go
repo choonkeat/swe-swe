@@ -4078,6 +4078,12 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 	remoteOutput, err := remoteCmd.Output()
 	response["hasRemote"] = err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0
 
+	// Which host a saved HTTPS token would be keyed under, so the dialog can
+	// attach it to the background branch refresh. Empty for SSH/local remotes.
+	if host := repoHTTPSRemoteHost(workDir); host != "" {
+		response["remoteHost"] = host
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -4331,15 +4337,42 @@ func listBranchNames(repoPath string) ([]string, error) {
 	return append(local, remoteOnly...), nil
 }
 
-// handleRepoBranchesAPI handles GET /api/repo/branches?path=/workspace
-// Returns: { "branches": ["main", "feature-x", ...] }
+// branchesRequestBody is the POST form of /api/repo/branches. The credentials
+// travel in the body, never the query string: query strings land in access
+// logs. All fields optional; an empty credToken behaves exactly like the GET
+// form (bare fetch, no helper wired).
+type branchesRequestBody struct {
+	Path         string `json:"path"`
+	Fetch        bool   `json:"fetch"`
+	CredHost     string `json:"credHost"`
+	CredUsername string `json:"credUsername"`
+	CredToken    string `json:"credToken"`
+}
+
+// handleRepoBranchesAPI handles GET /api/repo/branches?path=/workspace and
+// POST /api/repo/branches (same thing, plus optional HTTPS credentials for
+// the fetch).
+// Returns: { "branches": ["main", "feature-x", ...], "remoteHost": "github.com" }
 func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	repoPath := r.URL.Query().Get("path")
+	var req branchesRequestBody
+	if r.Method == http.MethodPost {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
+			return
+		}
+	} else {
+		req.Path = r.URL.Query().Get("path")
+		req.Fetch = r.URL.Query().Get("fetch") == "1"
+	}
+
+	repoPath := req.Path
 	if repoPath == "" {
 		repoPath = workspaceDir
 	}
@@ -4355,17 +4388,23 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	// Clean path to prevent traversal
 	repoPath = filepath.Clean(repoPath)
 
-	// fetch=1: freshen remote refs before listing. Soft-fail -- a failed
-	// fetch still returns the cached branch list, plus a warning. The dialog
-	// calls this in the background after the instant no-fetch listing.
+	// The host the dialog should look a saved HTTPS token up under. Empty for
+	// SSH/local remotes, which need no token.
+	remoteHost := repoHTTPSRemoteHost(repoPath)
+
+	// fetch: freshen remote refs before listing. Soft-fail -- a failed fetch
+	// still returns the cached branch list, plus a warning, and is bounded by
+	// branchFetchTimeout so a stalled remote never delays session creation.
+	// The dialog calls this in the background after the instant no-fetch
+	// listing.
 	warning := ""
-	if r.URL.Query().Get("fetch") == "1" {
+	if req.Fetch {
 		remoteOutput, err := exec.Command("git", "-C", repoPath, "remote").Output()
 		if err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0 {
 			log.Printf("Fetching all for %s", repoPath)
-			if out, err := exec.Command("git", "-C", repoPath, "fetch", "--all").CombinedOutput(); err != nil {
+			if out, err := runBranchFetch(repoPath, req.CredHost, req.CredUsername, req.CredToken); err != nil {
 				log.Printf("Git fetch failed (continuing with cached): %v, output: %s", err, string(out))
-				warning = "Unable to fetch latest changes. Using cached branches."
+				warning = branchRefreshWarning(string(out), err, remoteHost)
 			}
 		} else {
 			log.Printf("No remote configured for %s, skipping fetch", repoPath)
@@ -4388,6 +4427,9 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 		// settings panel) so it can attach it to the creation POST. Empty for a
 		// non-git or shallow-history path -- the dialog then just skips env.
 		"init_sha": repoInitSHA(repoPath),
+	}
+	if remoteHost != "" {
+		branchesResponse["remoteHost"] = remoteHost
 	}
 	if warning != "" {
 		branchesResponse["warning"] = warning
