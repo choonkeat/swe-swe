@@ -878,6 +878,35 @@ terminal-ui.embedded-in-iframe .mobile-only {
     padding-top: 0;
 }
 
+/* Consent row: a persistent tick box, not a browser confirm() the user can
+   dismiss (or suppress with "prevent additional dialogs") and never see
+   again. Spans both grid columns since it carries its own label. */
+.settings-panel__field-row--check {
+    grid-template-columns: 1fr;
+}
+
+.settings-panel__check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.settings-panel__check input[type="checkbox"] {
+    margin: 2px 0 0;
+    flex: none;
+    cursor: pointer;
+}
+
+.settings-panel__check input[type="checkbox"]:disabled,
+.settings-panel__check input[type="checkbox"]:disabled + span {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
 /* Share pane: link/password with an inline copy button. */
 .settings-panel__share-result {
     margin-top: 16px;

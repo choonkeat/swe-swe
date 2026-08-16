@@ -1,10 +1,10 @@
-.PHONY: build test test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-js test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
 CONTAINER_TEMPLATES := cmd/swe-swe/templates/container
 
-test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync check-mcp-sync check-swe-run-sync test-cli test-mcp-lazy-init test-mcp-cli-proxy test-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx test-swe-run
+test: ascii-check check-gomod-sync check-prctx-sync check-mcp-cli-proxy-sync check-mcp-sync check-swe-run-sync test-cli test-js test-mcp-lazy-init test-mcp-cli-proxy test-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx test-swe-run
 
 # ASCII-only lint: fail if source files contain non-ASCII characters not in per-file allowlist
 # See scripts/ascii-allowlist.txt for the per-file character allowlist
@@ -17,6 +17,12 @@ ascii-fix:
 
 test-cli: dockerless-payload
 	go test -v ./cmd/swe-swe
+
+# Browser-side unit tests for the pure modules in the server template's
+# static/modules/. They existed but nothing ran them, so a regression in
+# (say) the credential auto-restore logic reached users unchallenged.
+test-js:
+	cd $(SERVER_TEMPLATE)/static/modules && node --test
 
 test-mcp-lazy-init:
 	go test -v ./cmd/mcp-lazy-init

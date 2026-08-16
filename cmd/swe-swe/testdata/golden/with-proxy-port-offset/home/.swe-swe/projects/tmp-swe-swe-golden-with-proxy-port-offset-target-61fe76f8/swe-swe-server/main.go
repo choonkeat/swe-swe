@@ -6213,23 +6213,26 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				// API to read them back to the browser. Server-side they
 				// flow OUT to git via the broker socket.
 				var payload struct {
-					Host                 string `json:"host"`
-					Username             string `json:"username"`
-					Token                string `json:"token"`
-					Name                 string `json:"name"`
-					Email                string `json:"email"`
-					SigningPrivateKeyPEM string `json:"signing_private_key_pem"`
-					SigningPassphrase    string `json:"signing_passphrase"`
-					SigningKeyLabel      string `json:"signing_key_label"`
+					Host                 string               `json:"host"`
+					Username             string               `json:"username"`
+					Token                string               `json:"token"`
+					Name                 string               `json:"name"`
+					Email                string               `json:"email"`
+					AdditionalHosts      []additionalHostCred `json:"additional_hosts"`
+					SigningPrivateKeyPEM string               `json:"signing_private_key_pem"`
+					SigningPassphrase    string               `json:"signing_passphrase"`
+					SigningKeyLabel      string               `json:"signing_key_label"`
 				}
 				if err := json.Unmarshal(msg.Data, &payload); err != nil {
 					log.Printf("Session %s: set_credentials invalid payload: %v", sess.UUID, err)
 					continue
 				}
-				host := strings.TrimSpace(payload.Host)
-				if host == "" {
-					host = "github.com"
-				}
+				// The browser re-sends EVERY host it holds a token for on
+				// session start, not just the workspace's origin remote --
+				// see cred_payload.go. One message, so the author and the
+				// gitconfig rewrite below still happen exactly once.
+				updates := credentialUpdates(payload.Host, payload.Username, payload.Token, payload.AdditionalHosts)
+				host := updates[0].Host
 
 				// Parse the signing key (CPU-bound, may decrypt) BEFORE
 				// taking the compound lock -- never hold a lock across it.
@@ -6255,10 +6258,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				// critical section so a concurrent session_cred_state snapshot
 				// never sees a half-applied update (new author, old key, etc.).
 				sessionCredStateMu.Lock()
-				setCredential(sess.UUID, host, CredentialBag{
-					Username: strings.TrimSpace(payload.Username),
-					Token:    payload.Token,
-				})
+				for _, u := range updates {
+					setCredential(sess.UUID, u.Host, u.Bag)
+				}
 				setAuthor(sess.UUID, AuthorIdent{
 					Name:  strings.TrimSpace(payload.Name),
 					Email: strings.TrimSpace(payload.Email),
@@ -6276,7 +6278,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if err := writeSessionGitconfig(sess.UUID, sess.effectiveWorkDir()); err != nil {
 					log.Printf("Session %s: writeSessionGitconfig failed: %v", sess.UUID, err)
 				}
-				log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
+				if len(updates) > 1 {
+					extra := make([]string, 0, len(updates)-1)
+					for _, u := range updates[1:] {
+						extra = append(extra, u.Host)
+					}
+					log.Printf("Session %s: stored credentials for host=%q (+%d more: %s)", sess.UUID, host, len(extra), strings.Join(extra, ", "))
+				} else {
+					log.Printf("Session %s: stored credentials for host=%q", sess.UUID, host)
+				}
 				// Push the refreshed state to all conns of this session so
 				// co-viewers do not go stale (idempotent; see BroadcastJSON).
 				sess.BroadcastJSON(buildSessionCredState(sess.UUID, sess.effectiveWorkDir()))

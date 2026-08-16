@@ -471,10 +471,10 @@ test.describe('per-session SSH commit signing UI', () => {
   });
 
   test('auto-restore: trusted (origin, init_sha) auto-sends signing key on next session', async ({ page }) => {
-    // After the user explicitly trusts a (origin, init_sha) pair via
-    // the "Trust this browser to auto-load..." confirm dialog, opening a
-    // new session at the same origin should send the bound key to the
-    // server without any UI interaction. The server's _signingFingerprint
+    // After the user explicitly trusts a (origin, init_sha) pair via the
+    // "Remember on this device" tick box, opening a new session at the same
+    // origin should send the bound key to the server without any UI
+    // interaction. The server's _signingFingerprint
     // populates from the signing_key_stored ack, so we watch for that.
     await openSession(page);
     // Sanity: the page exposes the workdir's init-commit SHA. Without
@@ -491,12 +491,14 @@ test.describe('per-session SSH commit signing UI', () => {
       if (window.terminalUI) window.terminalUI._signingFingerprint = '';
     });
 
-    // First session: explicit Save flow.
+    // First session: explicit Save flow, then the persistent consent tick box.
+    // (It used to be a confirm() dialog; a dismissed or browser-suppressed
+    // dialog silently disabled auto-restore for good, so consent now lives in
+    // the pane where the user can see and change it.)
     await openSettings(page);
     await switchSettingsTab(page, 'ssh');
     await page.fill('#settings-cred-signing-key', TEST_SIGNING_KEY_PEM);
     await page.fill('#settings-cred-signing-label', 'auto-restore-key');
-    page.once('dialog', d => d.accept());
     await page.click('#settings-cred-signing-save');
     await waitForUi(page, () => {
       const ui = window.terminalUI;
@@ -504,8 +506,9 @@ test.describe('per-session SSH commit signing UI', () => {
     });
     const fpAfterSave = await page.evaluate(() => window.terminalUI._signingFingerprint);
     expect(fpAfterSave).toBe(TEST_SIGNING_FINGERPRINT);
+    await page.locator('#settings-cred-signing-remember').check();
 
-    // Trust entry was written by the dialog accept above.
+    // Trust entry was written by the tick box above.
     const trust = await page.evaluate((initSha) => {
       const key = 'swe-swe:signing-trust:' + window.location.origin + '|' + initSha;
       const raw = localStorage.getItem(key);
@@ -607,5 +610,158 @@ test.describe('per-session SSH commit signing UI', () => {
     await page.waitForTimeout(500);
     const fpAfterReload = await page.evaluate(() => window.terminalUI._signingFingerprint || '');
     expect(fpAfterReload).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End session -> START A NEW ONE. The suite above only ever reloaded the SAME
+// session, which is why three separate auto-restore defects shipped: a token
+// saved under a host other than the workspace's origin remote was never sent,
+// a dismissed consent dialog silently disabled auto-restore forever, and both
+// failures were invisible in the UI.
+// ---------------------------------------------------------------------------
+test.describe('credentials survive ending a session and starting a new one', () => {
+  // Tick "Remember on this device" in the Git HTTPS pane and confirm the trust
+  // entry lands. No dialog is involved any more -- a confirm() the browser can
+  // suppress is exactly what left users re-entering their PAT every session.
+  async function rememberOnThisDevice(page) {
+    const box = page.locator('#settings-cred-remember');
+    await box.waitFor({ timeout: 5_000 });
+    if (!(await box.isChecked())) await box.check();
+  }
+
+  // End the session we are on, the way the user does, before opening the next
+  // one. Also keeps the suite from holding two sessions' worth of ports.
+  async function endSession(page, uuid) {
+    await page.evaluate(async (u) => {
+      try { await fetch('/api/session/' + u + '/end', { method: 'POST', credentials: 'include' }); } catch (e) {}
+    }, uuid);
+  }
+
+  const trustEntry = (page) => page.evaluate(() => {
+    const sha = document.querySelector('terminal-ui')?.dataset?.initSha || '';
+    const raw = localStorage.getItem('swe-swe:signing-trust:' + window.location.origin + '|' + sha);
+    return raw ? JSON.parse(raw) : null;
+  });
+
+  const paneFields = (page) => page.evaluate(() => ({
+    host: document.querySelector('#settings-cred-host')?.value || '',
+    username: document.querySelector('#settings-cred-username')?.value || '',
+    token: document.querySelector('#settings-cred-token')?.value || '',
+    serverHosts: window.terminalUI?._credsStoredHosts || [],
+    hint: (() => {
+      const el = document.querySelector('#settings-cred-autorestore-hint');
+      return el && !el.hasAttribute('hidden') ? el.textContent : '';
+    })(),
+  }));
+
+  test('a token saved under a host that is NOT the repo origin still comes back', async ({ page }) => {
+    // The regression User B reported. The e2e workspace has no origin remote,
+    // so the resolved host is the github.com default; saving under a different
+    // forge is the same mismatch as an origin that points somewhere else.
+    const OTHER = 'git.example.test';
+    const first = await openSession(page);
+    const initSha = await page.evaluate(() => document.querySelector('terminal-ui')?.dataset?.initSha || '');
+    test.skip(!initSha, 'workdir is not a git repo with commits; no repo identity to bind to');
+
+    await page.evaluate(() => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe:signing-'))
+        .forEach(k => localStorage.removeItem(k));
+    });
+
+    await openSettings(page);
+    await switchSettingsTab(page, 'git');
+    await page.fill('#settings-cred-host', OTHER);
+    await page.fill('#settings-cred-username', 'x-access-token');
+    await page.fill('#settings-cred-token', 'tok_other_forge');
+    await page.click('#settings-cred-save');
+    await waitForUi(page, () => window.terminalUI?._credsStoredHosts?.length > 0);
+    await rememberOnThisDevice(page);
+    expect(await trustEntry(page)).not.toBeNull();
+
+    // End it and start a genuinely new session, not a reload of this one.
+    await endSession(page, first);
+    await openSession(page);
+    await waitForUi(page, () => (window.terminalUI?._credsStoredHosts || []).length > 0);
+    expect(await page.evaluate(() => window.terminalUI._credsStoredHosts)).toContain(OTHER);
+
+    // ...and the pane shows the host we actually hold a token for, rather than
+    // making the user retype it before the token reappears.
+    await openSettings(page);
+    await switchSettingsTab(page, 'git');
+    const f = await paneFields(page);
+    expect(f.host).toBe(OTHER);
+    expect(f.token).toBe('tok_other_forge');
+    expect(f.hint).toBe('');
+  });
+
+  test('without "Remember on this device", nothing is auto-sent and the pane says why', async ({ page }) => {
+    const first = await openSession(page);
+    const initSha = await page.evaluate(() => document.querySelector('terminal-ui')?.dataset?.initSha || '');
+    test.skip(!initSha, 'workdir is not a git repo with commits; no repo identity to bind to');
+
+    await page.evaluate(() => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe:signing-'))
+        .forEach(k => localStorage.removeItem(k));
+    });
+
+    await openSettings(page);
+    await switchSettingsTab(page, 'git');
+    await page.fill('#settings-cred-host', 'github.com');
+    await page.fill('#settings-cred-username', 'x-access-token');
+    await page.fill('#settings-cred-token', 'ghp_not_remembered');
+    await page.click('#settings-cred-save');
+    await waitForUi(page, () => window.terminalUI?._credsStoredHosts?.length > 0);
+    // Deliberately do NOT tick Remember.
+    expect(await page.locator('#settings-cred-remember').isChecked()).toBe(false);
+    expect(await trustEntry(page)).toBeNull();
+
+    await endSession(page, first);
+    await openSession(page);
+    await waitForUi(page, () => Array.isArray(window.terminalUI?._credsStoredHosts));
+    expect(await page.evaluate(() => window.terminalUI._credsStoredHosts)).toEqual([]);
+
+    // The old build left the user staring at an empty form with no explanation.
+    await openSettings(page);
+    await switchSettingsTab(page, 'git');
+    const f = await paneFields(page);
+    expect(f.token).toBe('ghp_not_remembered');
+    expect(f.hint).toContain('Remember on this device');
+  });
+
+  test('ticking "Remember on this device" needs no dialog and carries the signing key too', async ({ page }) => {
+    let dialogs = 0;
+    page.on('dialog', async (d) => { dialogs += 1; await d.dismiss(); });
+
+    const first = await openSession(page);
+    const initSha = await page.evaluate(() => document.querySelector('terminal-ui')?.dataset?.initSha || '');
+    test.skip(!initSha, 'workdir is not a git repo with commits; no repo identity to bind to');
+
+    await page.evaluate(() => {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('swe-swe-creds:') || k.startsWith('swe-swe:signing-'))
+        .forEach(k => localStorage.removeItem(k));
+      if (window.terminalUI) window.terminalUI._signingFingerprint = '';
+    });
+
+    await openSettings(page);
+    await switchSettingsTab(page, 'ssh');
+    await page.fill('#settings-cred-signing-key', TEST_SIGNING_KEY_PEM);
+    await page.fill('#settings-cred-signing-label', 'remember-box-key');
+    await page.click('#settings-cred-signing-save');
+    await waitForUi(page, () => (window.terminalUI?._signingFingerprint || '').startsWith('SHA256:'));
+    await page.locator('#settings-cred-signing-remember').check();
+
+    // A dismissed confirm() is what used to strand people; there is no longer
+    // a dialog on this path at all.
+    expect(dialogs).toBe(0);
+    expect((await trustEntry(page)).fingerprint).toBe(TEST_SIGNING_FINGERPRINT);
+
+    await endSession(page, first);
+    await openSession(page);
+    await waitForUi(page, () => (window.terminalUI?._signingFingerprint || '').startsWith('SHA256:'));
+    expect(await page.evaluate(() => window.terminalUI._signingFingerprint)).toBe(TEST_SIGNING_FINGERPRINT);
   });
 });

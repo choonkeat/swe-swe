@@ -9,6 +9,7 @@ import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueC
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
 import { IframeLoadSupervisor } from './modules/iframe-load-supervisor.js';
+import { REASON as AUTOSEND_REASON, isAutoSendSafe, orderedCredHosts, pickPaneHost, planAutoSend, autoRestoreHint } from './modules/cred-autosend.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
 // --- Tab title ---
@@ -906,6 +907,13 @@ class TerminalUI extends HTMLElement {
                                         <label class="settings-panel__label" for="settings-cred-email">Author email</label>
                                         <input type="email" id="settings-cred-email" class="settings-panel__input" placeholder="you@example.com">
                                     </div>
+                                    <div class="settings-panel__field-row settings-panel__field-row--check">
+                                        <label class="settings-panel__check">
+                                            <input type="checkbox" id="settings-cred-remember">
+                                            <span>Remember on this device &mdash; send these to my future sessions in this repo automatically</span>
+                                        </label>
+                                    </div>
+                                    <p class="settings-panel__hint settings-panel__hint--warn" id="settings-cred-autorestore-hint" hidden></p>
                                     <div class="settings-panel__pane-footer">
                                         <span class="settings-panel__pane-status settings-panel__cred-status" id="settings-cred-status"></span>
                                         <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-cred-forget" type="button" hidden>Forget HTTPS on this device</button>
@@ -930,6 +938,13 @@ class TerminalUI extends HTMLElement {
                                         <label class="settings-panel__label" for="settings-cred-signing-label">Label</label>
                                         <input type="text" id="settings-cred-signing-label" class="settings-panel__input" placeholder="laptop@example">
                                     </div>
+                                    <div class="settings-panel__field-row settings-panel__field-row--check">
+                                        <label class="settings-panel__check">
+                                            <input type="checkbox" id="settings-cred-signing-remember">
+                                            <span>Remember on this device &mdash; send this key to my future sessions in this repo automatically</span>
+                                        </label>
+                                    </div>
+                                    <p class="settings-panel__hint settings-panel__hint--warn" id="settings-cred-signing-autorestore-hint" hidden></p>
                                     <div class="settings-panel__pane-footer">
                                         <span class="settings-panel__pane-status settings-panel__cred-status" id="settings-cred-signing-status"></span>
                                         <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-cred-signing-forget" type="button" hidden>Forget on this device</button>
@@ -2963,6 +2978,13 @@ class TerminalUI extends HTMLElement {
         if (credHost) {
             credHost.addEventListener('change', () => this.populateCredentialsSection());
         }
+        // "Remember on this device": the persistent replacement for the
+        // dismissable confirm(). Both panes drive the one shared trust entry.
+        ['#settings-cred-remember', '#settings-cred-signing-remember'].forEach((sel) => {
+            const box = panel.querySelector(sel);
+            if (!box) return;
+            box.addEventListener('change', () => this._setTrustForRepo(box.checked));
+        });
 
         // SSH signing pane: Save key + Verify key + Forget on this device
         const sigSave = panel.querySelector('#settings-cred-signing-save');
@@ -3048,19 +3070,15 @@ class TerminalUI extends HTMLElement {
     // reuses the same (origin, init_sha) entry so one decision covers both
     // the PAT and the key. Only when TLS/loopback-safe and not already
     // trusted.
+    // The consent gesture used to be a window.confirm() fired once after a
+    // manual Save. Dismiss it -- or let Chrome's "prevent this page from
+    // creating additional dialogs" answer it -- and auto-send stayed off
+    // forever with nothing on screen to say so. It is now the persistent
+    // "Remember on this device" tick box, so all a Save has to do is bring
+    // the controls up to date.
     _maybePromptCredsTrust() {
-        const initSha = this.dataset.initSha || '';
-        if (!initSha || !this._signingAutoSendSafe()) return;
-        const existing = this._readSigningTrust(initSha);
-        if (existing && !this._signingTrustExpired(existing)) return;
-        const shortSha = initSha.slice(0, 7);
-        const msg = 'Trust this browser to auto-send your saved HTTPS credentials on future visits to this repo (init ' + shortSha + ')?\n\nYou can revoke this with "Forget HTTPS on this device" in Settings > Git HTTPS.';
-        try {
-            if (window.confirm(msg)) this._writeCredsTrust(initSha);
-        } catch (e) {}
-        this._refreshCredsForgetButton();
+        this._refreshTrustControls();
     }
-
     // Show/hide "Forget HTTPS on this device" based on whether a trust
     // entry exists for this (origin, init_sha) pair (shared with signing).
     _refreshCredsForgetButton() {
@@ -3080,10 +3098,15 @@ class TerminalUI extends HTMLElement {
     _forgetCredsOnThisDevice() {
         const initSha = this.dataset.initSha || '';
         if (initSha) this._clearSigningTrust(initSha);
-        const host = this._resolvedCredHost();
+        // The host the pane is showing, not the repo's origin remote: those
+        // differ exactly when the user saved a token for another forge, and
+        // forgetting the wrong one left the real PAT on the device.
+        const panel = this.querySelector('.settings-panel');
+        const host = (panel?.querySelector('#settings-cred-host')?.value || '').trim() || this._resolvedCredHost();
         try { localStorage.removeItem(this._credsLocalKey(host)); } catch (e) {}
         this._refreshCredsForgetButton();
         this._refreshSigningForgetButton();
+        this._refreshTrustControls();
         const status = this.querySelector('#settings-cred-status');
         if (status) {
             status.textContent = 'Forgotten on this device. Re-save to trust again.';
@@ -3228,20 +3251,13 @@ class TerminalUI extends HTMLElement {
         }
     }
 
-    // Offer to trust this browser to auto-send saved env vars on future
-    // visits to this repo. Writes the SAME (origin, init_sha) trust entry the
-    // PAT/signing key use, so one decision covers all three.
+    // Env vars share the SAME (origin, init_sha) trust entry the PAT and
+    // signing key use, so the "Remember on this device" tick box in either
+    // credential pane covers them too. Nothing to prompt for; just bring the
+    // controls up to date after a Save.
     _maybePromptEnvTrust() {
-        const initSha = this.dataset.initSha || '';
-        if (!initSha || !this._signingAutoSendSafe()) return;
-        const existing = this._readSigningTrust(initSha);
-        if (existing && !this._signingTrustExpired(existing)) return;
-        const shortSha = initSha.slice(0, 7);
-        const msg = 'Trust this browser to auto-send your saved repo env vars on future visits to this repo (init ' + shortSha + ')?\n\nYou can revoke this with "Forget on this device" in Settings > Environment variables.';
-        try {
-            if (window.confirm(msg)) this._writeCredsTrust(initSha);
-        } catch (e) {}
         this._refreshCredsForgetButton();
+        this._refreshTrustControls();
     }
 
     // Switch between sidebar nav panes.
@@ -3591,22 +3607,18 @@ class TerminalUI extends HTMLElement {
             this._writeSigningKeyByFp(fingerprint, this._signingPendingSave);
             this._signingPendingSave = null;
         }
-        // Prompt for trust binding only when (a) this server told us
-        // there is a repo to bind to, (b) we have not already trusted
-        // this fingerprint for this repo, and (c) the connection is
-        // TLS-protected so the auto-restore could actually fire later.
+        // If this browser is already trusted for this repo, bind the new
+        // fingerprint straight into that entry. The user consented once, for
+        // this repo; making them consent again per key is what left people
+        // with HTTPS auto-restoring while the signing key silently did not.
         const initSha = this.dataset.initSha || '';
         if (!initSha || !this._signingAutoSendSafe()) return;
         const existing = this._readSigningTrust(initSha);
-        if (existing && existing.fingerprint === fingerprint) return;
-        const shortSha = initSha.slice(0, 7);
-        const msg = 'Trust this browser to auto-load this signing key on future visits to this repo (init ' + shortSha + ')?\n\nYou can revoke this with "Forget on this device" in Settings > SSH Signing.';
-        try {
-            if (window.confirm(msg)) {
-                this._writeSigningTrust(initSha, fingerprint);
-            }
-        } catch (e) {}
+        if (existing && !this._signingTrustExpired(existing) && existing.fingerprint !== fingerprint) {
+            this._writeSigningTrust(initSha, fingerprint);
+        }
         this._refreshSigningForgetButton();
+        this._refreshTrustControls();
     }
 
     _verifySigningKey() {
@@ -3791,9 +3803,7 @@ class TerminalUI extends HTMLElement {
     // as a "secure context" for capabilities like service workers.
     _signingAutoSendSafe() {
         try {
-            if (window.location.protocol === 'https:') return true;
-            const host = window.location.hostname;
-            return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1' || host === 'host.docker.internal';
+            return isAutoSendSafe(window.location.protocol, window.location.hostname);
         } catch (e) {
             return false;
         }
@@ -3823,58 +3833,129 @@ class TerminalUI extends HTMLElement {
     // new trust assumption beyond what signing already made.
     _maybeAutoConnectSecrets() {
         const initSha = this.dataset.initSha || '';
-        if (!initSha) return;
-        if (!this._signingAutoSendSafe()) return;
+        const plan = planAutoSend({
+            initSha: initSha,
+            protocol: window.location.protocol,
+            hostname: window.location.hostname,
+            trust: initSha ? this._readSigningTrust(initSha) : null,
+            now: Date.now(),
+            ttlMs: TerminalUI.SIGNING_TRUST_TTL_MS,
+            resolvedHost: this._resolvedCredHost(),
+            creds: this._readAllCredsLocal(),
+            keyByFingerprint: this._readAllSigningKeysLocal(),
+            envRaw: this._readEnvLocal() || '',
+        });
+        // Why nothing was sent, so the Settings pane can say so instead of
+        // leaving the user to guess (causes 2 and 3 of the "credentials get
+        // wiped every session" report were both silent failures).
+        this._autoRestoreReason = plan.reason;
+        if (plan.clearTrust && initSha) this._clearSigningTrust(initSha);
+        for (const msg of plan.messages) {
+            if (msg.type === 'set_credentials') this._autoConnectInFlight = true;
+            if (msg.type === 'set_signing_key') this._signingAutoRestoreInFlight = true;
+            this.sendJSON(msg);
+        }
+        this._refreshTrustControls();
+    }
+
+    // Every host this browser holds a bag for, as {host: bag}. The auto-send
+    // used to look up ONE host -- the workdir's origin remote -- so a token
+    // saved under any other host was held and never sent, which is what made
+    // credentials look wiped on every new session.
+    _readAllCredsLocal() {
+        const out = {};
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (!k || !k.startsWith('swe-swe-creds:')) continue;
+                const host = k.slice('swe-swe-creds:'.length);
+                if (!host) continue;
+                const bag = this._readCredsLocal(host);
+                if (bag) out[host] = bag;
+            }
+        } catch (e) {}
+        return out;
+    }
+
+    // Hosts with an actual token, for the pane prefill and the trust controls.
+    _storedCredHosts() {
+        const all = this._readAllCredsLocal();
+        return Object.keys(all).filter((h) => all[h] && all[h].token);
+    }
+
+    // Every signing key this browser holds, as {fingerprint: bag}.
+    _readAllSigningKeysLocal() {
+        const out = {};
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (!k || !k.startsWith('swe-swe:signing-key:')) continue;
+                const fp = k.slice('swe-swe:signing-key:'.length);
+                if (!fp) continue;
+                const bag = this._readSigningKeyByFp(fp);
+                if (bag) out[fp] = bag;
+            }
+        } catch (e) {}
+        return out;
+    }
+
+    // Whether this browser is currently trusted to auto-send for this repo.
+    _isTrustedForRepo() {
+        const initSha = this.dataset.initSha || '';
+        if (!initSha) return false;
         const trust = this._readSigningTrust(initSha);
-        if (!trust) return;
-        if (this._signingTrustExpired(trust)) {
+        return !!(trust && !this._signingTrustExpired(trust));
+    }
+
+    // Turn auto-send on or off for this repo. Ticking binds any signing key
+    // the server has already accepted, so a user who consents from the Git
+    // HTTPS pane gets their key restored too (it used to need a second,
+    // separately-dismissable prompt).
+    _setTrustForRepo(on) {
+        const initSha = this.dataset.initSha || '';
+        if (!initSha) return;
+        if (!on) {
             this._clearSigningTrust(initSha);
-            return;
+        } else if (this._signingFingerprint) {
+            this._writeSigningTrust(initSha, this._signingFingerprint);
+        } else {
+            this._writeCredsTrust(initSha);
         }
-        // Encrypted keys would need a passphrase, which we never persist,
-        // so only unencrypted keys auto-restore. If the server rejects a
-        // PEM, _signingError surfaces it and we drop the trust below.
-        const key = trust.fingerprint ? this._readSigningKeyByFp(trust.fingerprint) : null;
-        const haveKey = !!(key && key.pem);
-        const host = this._resolvedCredHost();
-        const creds = this._readCredsLocal(host);
-        const haveCreds = !!(creds && creds.token);
+        this._autoRestoreReason = on ? '' : AUTOSEND_REASON.UNTRUSTED;
+        this._refreshTrustControls();
+    }
 
-        if (haveCreds) {
-            // ONE combined message (carries the key too when present).
-            this._autoConnectInFlight = true;
-            this.sendJSON({
-                type: 'set_credentials',
-                data: {
-                    host: host,
-                    username: creds.username || '',
-                    token: creds.token,
-                    name: creds.name || '',
-                    email: creds.email || '',
-                    signing_private_key_pem: haveKey ? key.pem : '',
-                    signing_passphrase: '',
-                    signing_key_label: haveKey ? (key.label || '') : '',
-                },
-            });
-        } else if (haveKey) {
-            this._signingAutoRestoreInFlight = true;
-            this.sendJSON({
-                type: 'set_signing_key',
-                data: {
-                    signing_private_key_pem: key.pem,
-                    signing_passphrase: '',
-                    signing_key_label: key.label || '',
-                },
-            });
-        }
-
-        // Repo env vars share the same (origin, init_sha) trust gate validated
-        // above -- so if this browser holds a blob for this repo, auto-send it
-        // too. Injected into the next session's process env at spawn.
-        const envRaw = this._readEnvLocal();
-        if (envRaw && envRaw.trim()) {
-            this.sendJSON({ type: 'set_env', data: { raw: envRaw } });
-        }
+    // Keep both "Remember on this device" boxes (Git HTTPS + SSH Signing) and
+    // both explanation lines in step with the single shared trust entry.
+    _refreshTrustControls() {
+        const panel = this.querySelector('.settings-panel');
+        if (!panel) return;
+        const initSha = this.dataset.initSha || '';
+        const safe = this._signingAutoSendSafe();
+        const on = this._isTrustedForRepo();
+        const enabled = !!initSha && safe;
+        ['#settings-cred-remember', '#settings-cred-signing-remember'].forEach((sel) => {
+            const box = panel.querySelector(sel);
+            if (!box) return;
+            box.checked = on;
+            box.disabled = !enabled;
+        });
+        // Explain a silent refusal, but only once the user actually has
+        // something saved that we could have sent.
+        let reason = this._autoRestoreReason || '';
+        if (!initSha) reason = AUTOSEND_REASON.NO_REPO;
+        else if (!safe) reason = AUTOSEND_REASON.INSECURE;
+        else if (!on) reason = AUTOSEND_REASON.UNTRUSTED;
+        else reason = '';
+        const haveSecrets = this._storedCredHosts().length > 0 || !!this._readSigningLocal();
+        const text = haveSecrets ? autoRestoreHint(reason) : '';
+        ['#settings-cred-autorestore-hint', '#settings-cred-signing-autorestore-hint'].forEach((sel) => {
+            const el = panel.querySelector(sel);
+            if (!el) return;
+            el.textContent = text;
+            if (text) el.removeAttribute('hidden');
+            else el.setAttribute('hidden', '');
+        });
     }
 
     _refreshSigningStatus() {
@@ -4323,7 +4404,12 @@ class TerminalUI extends HTMLElement {
         // non-github forge's stored creds apply without switching Host.
         // Only when empty -- never clobber a value the user typed.
         if (!hostInput.value) {
-            hostInput.value = (this.dataset.localRemoteHost || 'github.com').trim();
+            // Prefill a host we actually hold a token for, preferring the
+            // repo's origin remote. Prefilling the origin unconditionally
+            // rendered the pane blank whenever the saved token lived under a
+            // different host, and the user had to retype the host by hand to
+            // make their own credentials reappear.
+            hostInput.value = pickPaneHost(this._resolvedCredHost(), this._storedCredHosts());
         }
         const host = (hostInput.value || 'github.com').trim();
         const stored = this._readCredsLocal(host);
@@ -4378,6 +4464,7 @@ class TerminalUI extends HTMLElement {
         }
         this._refreshCredsStatus();
         this._refreshCredsForgetButton();
+        this._refreshTrustControls();
 
         // Rehydrate the signing key textarea + label from localStorage.
         // Passphrase intentionally stays blank -- not persisted.

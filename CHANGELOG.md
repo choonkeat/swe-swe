@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## Unreleased
+
+### Fixes
+
+- **Saved git credentials survive ending a session**: The session-start auto-restore looked up only the workspace's `origin` remote host, so a token saved under any other host was held by the browser and never sent; consent was a `confirm()` that a dismissal (or Chrome's "prevent additional dialogs") silently disabled for good; and a plain-http LAN address disabled auto-restore with nothing on screen to say so -- every stored host now rides in one message, consent is a persistent "Remember on this device" tick box in the credential panes, and a refusal explains itself where the user is looking.
+
 ## v2.37.0 - Turn in the Tab Title & Script Recovery
 
 ### Features
