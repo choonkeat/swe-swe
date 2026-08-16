@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v2.37.0 - Turn in the Tab Title & Script Recovery
+
+### Features
+
+- **The session tab title carries whose turn it is and how long it has been running**: A tab read `claude - 4f2a1b90 - swe-swe` for its entire life, and now shows the session name behind an hourglass and a running clock while the agent works, a quiet dot when a run finished with the window elsewhere -- retired by window focus, tab visibility or the chat itself taking focus, whichever arrives first -- and nothing at all when nothing is waiting; the turn is reported by the agent-chat iframe over `postMessage`, the only thing in the page that knows, and agent-chat 0.11.0 spells the format out so the two projects cannot drift apart.
+
+### Fixes
+
+- **A session page recovers from a script that failed to download**: `index.html` loads xterm.js, its fit addon and two more scripts before `terminal-ui.js` runs, and a backgrounded tab reloading on a network still coming up can lose one while the rest succeed -- nothing checked, so the element died on the first missing global and painted a raw stack trace over the whole viewport -- so it now refetches only what is absent (3 attempts, 0/1s/3s backoff, 15s per-load timeout, same build as the page was served with) and, only once the retries are exhausted, shows a Reload card with the technical detail folded away.
+
+- **A chat message pushed with no browser attached wakes an idle agent**: The `check_messages` nudge is typed by the browser page, so a message pushed over MCP, automation or an end-of-session prompt sat unread until someone opened the session -- measured on both pi and Claude, a fresh session ignored its first message and an agent whose turn had ended ignored every later one -- and the server now types the nudge itself when no browser is attached and the orchestrator reports nobody parked in a blocking `send_message`, re-checking after a delay so an agent merely between tool calls is not interrupted.
+
+- **pi can see the bundled slash commands**: pi's prompt loader reads only loose `.md` entries and skips every subdirectory, symlinked or not, so the directory projection every other agent gets made all 17 shipped commands invisible with no diagnostic; both `swe-swe init` and the container entrypoint now link each command in flat as `<alias>-<command>.md` and prune prefixed links a newer bundle no longer provides.
+
 ## v2.36.0 - Idle Browser Reaping & Per-Session Login
 
 ### Features
