@@ -37,7 +37,7 @@ fi
 # NPM_TAG=next (etc.) publishes under that dist-tag instead of `latest`, so a
 # pre-release build is reachable as `npx swe-swe@next` without moving what
 # a plain `npx swe-swe` resolves to.
-if [ -n "$NPM_TAG" ]; then
+if [ -n "${NPM_TAG:-}" ]; then
   PUBLISH_ARGS="$PUBLISH_ARGS --tag $NPM_TAG"
   echo "Publishing under dist-tag: $NPM_TAG"
 fi
