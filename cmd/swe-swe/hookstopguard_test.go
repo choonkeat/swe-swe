@@ -180,6 +180,21 @@ func TestStopGuard(t *testing.T) {
 		},
 		want: allowed,
 	}, {
+		// The real MCP-less form: the `mcp` CLI takes the full server name.
+		name: "command-line send via the mcp CLI's full server name passes",
+		lines: []string{
+			tlUserTyped("do the thing"),
+			tlToolUse("Bash", map[string]any{"command": "mcp swe-swe-agent-chat send_message --text hi"}),
+		},
+		want: allowed,
+	}, {
+		name: "command-line progress via the mcp CLI chained after a command passes",
+		lines: []string{
+			tlUserTyped("do the thing"),
+			tlToolUse("Bash", map[string]any{"command": "go test ./... ; mcp swe-swe-agent-chat send_progress --text done"}),
+		},
+		want: allowed,
+	}, {
 		// The tightening: the tool name appearing as an argument is not a send.
 		name: "tool name as a search argument is blocked",
 		lines: []string{

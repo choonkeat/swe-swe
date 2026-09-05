@@ -334,7 +334,7 @@ sent=$(printf '%s\n' "$turn" | jq -r -R '
       (.name | test("agent[-_]chat__(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)$"))
       or (.name == "Bash"
           and ((.input.command // "")
-               | test("(^|[;&|]|\\n)[ \t]*(mcp[ \t]+)?agent-chat[ \t]+(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)([ \t]|$)")))
+               | test("(^|[;&|]|\\n)[ \t]*(mcp[ \t]+)?(swe-swe-)?agent-chat[ \t]+(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)([ \t]|$)")))
     )
   | "sent"' 2>/dev/null | head -n 1)
 [ -n "$sent" ] && exit 0
