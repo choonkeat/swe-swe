@@ -880,7 +880,7 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	// PATH=/usr/local/go/bin:$PATH prepends to the SESSION PATH (which includes
 	// /home/app/.swe-swe/bin) rather than the server's PATH (which does not).
 	// Without this, such a line would silently drop the swe-swe PATH prefixes,
-	// causing `agent-chat`, `agent-whiteboard`, etc. to resolve to the wrong
+	// causing `agent-chat`, `agent-reverse-proxy`, etc. to resolve to the wrong
 	// binary (or fail to resolve) and MCP servers to fail to start.
 	if p.WorkDir != "" {
 		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, ".swe-swe", "env"), envLookup(env))...)

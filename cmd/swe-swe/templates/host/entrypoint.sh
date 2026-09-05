@@ -55,10 +55,6 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
       "type": "local",
       "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
     },
-    "swe-swe-whiteboard": {
-      "type": "local",
-      "command": ["swe-npx", "-y", "@choonkeat/agent-whiteboard"]
-    },
     "swe-swe": {
       "type": "local",
       "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
@@ -98,10 +94,6 @@ command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
-[mcp_servers.swe-swe-whiteboard]
-command = "swe-npx"
-args = ["-y", "@choonkeat/agent-whiteboard"]
-
 [mcp_servers.swe-swe]
 command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
@@ -128,10 +120,6 @@ cat > /home/app/.gemini/settings.json << 'EOF'
     "swe-swe-preview": {
       "command": "sh",
       "args": ["-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
-    },
-    "swe-swe-whiteboard": {
-      "command": "swe-npx",
-      "args": ["-y", "@choonkeat/agent-whiteboard"]
     },
     "swe-swe": {
       "command": "sh",
@@ -167,12 +155,6 @@ extensions:
     args:
       - "-c"
       - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
-  swe-swe-whiteboard:
-    type: stdio
-    cmd: swe-npx
-    args:
-      - "-y"
-      - "@choonkeat/agent-whiteboard"
   swe-swe:
     type: stdio
     cmd: sh
@@ -308,7 +290,7 @@ echo -e "${GREEN}[ok] Installed AskUserQuestion + Artifact + silent-stop guard h
 # {{IF PI}}
 # Install Pi mcp-bridge extension into the global Pi config dir so every
 # session in every workspace gets the swe-swe / agent-chat / playwright /
-# preview / whiteboard MCPs without per-workspace setup. Pi prefers a
+# preview MCPs without per-workspace setup. Pi prefers a
 # project-local .pi/extensions/ override, so /workspace can still drop a
 # custom mcp-bridge.ts to hack on it.
 mkdir -p /home/app/.pi/agent/extensions

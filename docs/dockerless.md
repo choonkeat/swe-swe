@@ -53,8 +53,8 @@ nothing to declare at init. Provide:
 - **browser stack** (optional) -- only for the Agent View tab; see below.
 
 swe-swe's own npm-published tools (`@choonkeat/md-serve`,
-`@choonkeat/agent-chat`, `@choonkeat/agent-whiteboard`,
-`@choonkeat/agent-reverse-proxy`) are static Go binaries; the bundled
+`@choonkeat/agent-chat`, `@choonkeat/agent-reverse-proxy`) are static Go
+binaries; the bundled
 `swe-npx` helper resolves each one straight from the npm registry
 (honoring `dist-tags.latest` with a 15m memo) and caches the platform
 binary under the user-level `~/.swe-swe/npx-cache/`, shared across
@@ -78,7 +78,7 @@ swe-swe up
 No `.mcp.json` is written (one from an earlier init is retired). Instead
 `swe-swe up` exports `SWE_MCP_LESS=1` and, per session, `swe-swe-server`
 launches one `mcp-cli-proxy` per MCP server (agent-chat, playwright,
-preview, whiteboard, swe-swe), each serving a unix socket under
+preview, swe-swe), each serving a unix socket under
 `$TMPDIR/swe-swe-<uid>/mcp/<session>/` (short on purpose: unix socket
 paths cap at 108 bytes). The agent reaches them through the bundled
 `mcp` CLI on its PATH (`SWE_MCP_DIR` names the session's socket dir):

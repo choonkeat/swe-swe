@@ -62,10 +62,6 @@ command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
 
-[mcp_servers.swe-swe-whiteboard]
-command = "swe-npx"
-args = ["-y", "@choonkeat/agent-whiteboard"]
-
 [mcp_servers.swe-swe]
 command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]

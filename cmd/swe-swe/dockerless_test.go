@@ -201,19 +201,19 @@ func TestWriteDockerlessMCPConfig(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe-whiteboard", "swe-swe"} {
+	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe"} {
 		if _, ok := doc.MCPServers[name]; !ok {
 			t.Errorf("missing MCP server %q", name)
 		}
+	}
+	// The whiteboard MCP was retired; it must not come back via the template.
+	if _, ok := doc.MCPServers["swe-swe-whiteboard"]; ok {
+		t.Error("retired swe-swe-whiteboard server still in .mcp.json")
 	}
 	// agent-chat keeps the sh -c form with the autocomplete env-var URL.
 	ac := doc.MCPServers["swe-swe-agent-chat"]
 	if ac.Command != "sh" || len(ac.Args) != 2 || !strings.Contains(ac.Args[1], "$SWE_SERVER_PORT") {
 		t.Errorf("agent-chat spec not preserved: %+v", ac)
-	}
-	// whiteboard is a plain swe-npx command (no shell, no env vars needed).
-	if wb := doc.MCPServers["swe-swe-whiteboard"]; wb.Command != "swe-npx" {
-		t.Errorf("whiteboard command = %q, want swe-npx", wb.Command)
 	}
 }
 
