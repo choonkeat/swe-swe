@@ -813,7 +813,9 @@ type SessionEnvParams struct {
 }
 
 func buildSessionEnv(p SessionEnvParams) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN")
+	// SWE_TUNNEL_IDENTITY_KEY is the server's own secret (tunnel_runtime.go)
+	// and must never reach an agent, whichever way it arrived.
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN", "SWE_TUNNEL_IDENTITY_KEY")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", p.PreviewPort),
@@ -868,6 +870,14 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	// the textarea can't break the credential broker or proxies. Placed
 	// before the .swe-swe/env file load so the checked-in file wins any
 	// collision. $VAR expands against the session env built above.
+	// Server-wide vars (homepage Settings) go first so the per-session
+	// blob below and .swe-swe/env win on collision.
+	if kept, dropped := serverEnvVars(envLookup(env)); len(kept) > 0 || len(dropped) > 0 {
+		if len(dropped) > 0 {
+			log.Printf("Session %s: server env vars dropped reserved keys: %v", p.SID, dropped)
+		}
+		env = append(env, kept...)
+	}
 	if p.SID != "" {
 		kept, dropped := sessionEnvVars(p.SID, envLookup(env))
 		if len(dropped) > 0 {
@@ -2323,6 +2333,13 @@ func main() {
 	if envCert, ok := os.LookupEnv("SWE_TUNNEL_CLIENT_CERT"); ok && !flagPassed("tunnel-client-cert") {
 		resolvedTunnelClientCert = envCert
 	}
+	// The non-secret parts are shared with any later runtime configure
+	// (POST /api/server/tunnel from the homepage Settings dialog).
+	initTunnelRuntime(tunnelSupervisorOpts{
+		BinPath:        resolvedTunnelBin,
+		LocalAddr:      listenAddr,
+		ClientCertPath: resolvedTunnelClientCert,
+	})
 	maybeStartTunnel(context.Background(), tunnelSupervisorOpts{
 		ServerURL:      resolvedTunnelServerURL,
 		Unique:         resolvedTunnelUnique,
@@ -2797,6 +2814,18 @@ func main() {
 		// posture as shutdown (cookie-gated, denied to shared guests).
 		if r.URL.Path == "/api/server/reboot" {
 			handleServerRebootAPI(w, r)
+			return
+		}
+
+		// Homepage Settings: runtime tunnel config (secrets stay in the
+		// server process) and the server-wide session environment. Same
+		// auth posture as shutdown.
+		if r.URL.Path == "/api/server/tunnel" {
+			handleServerTunnelAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/server/env" {
+			handleServerEnvAPI(w, r)
 			return
 		}
 

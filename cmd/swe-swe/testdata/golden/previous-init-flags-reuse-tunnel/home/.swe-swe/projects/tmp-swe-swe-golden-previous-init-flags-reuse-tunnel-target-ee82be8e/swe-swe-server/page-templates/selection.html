@@ -596,6 +596,69 @@
             background: var(--accent-primary);
         }
 
+        /* Homepage Settings: tunnel secrets + session environment panes */
+        .settings-env__hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 0 0 8px;
+        }
+        .settings-env__textarea {
+            font-family: Menlo, Monaco, "Courier New", monospace;
+            font-size: 12px;
+            resize: vertical;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .settings-env__remember {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin: 6px 0 8px;
+        }
+        .settings-env__btn {
+            padding: 6px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            background: transparent;
+            color: var(--accent-primary);
+            border: 1px solid var(--accent-primary);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .settings-env__btn:hover { color: var(--accent-text); background: var(--accent-primary); }
+        .settings-env__btn:disabled { opacity: 0.6; cursor: default; }
+        .settings-env__saved {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .settings-env__saved-text { flex: 1; }
+        .settings-env__status {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            min-height: 1.2em;
+            word-break: break-word;
+        }
+        .settings-env__status--error { color: #ef4444; }
+        /* The panes toggle parts with the hidden attribute; the display rules
+           above must not resurrect them. */
+        .settings-env [hidden] { display: none !important; }
+        /* Tunnel status strip at the top of the homepage */
+        .tunnel-strip {
+            padding: 6px 12px;
+            font: 12px/1.4 Menlo, Monaco, "Courier New", monospace;
+            text-align: center;
+            color: #fff;
+        }
+        .tunnel-strip a { color: inherit; font-weight: 600; }
+        .tunnel-strip--connecting { background: #1e3a8a; }
+        .tunnel-strip--reconnecting { background: #92400e; }
+        .tunnel-strip--connected { background: #166534; }
+        .tunnel-strip--error, .tunnel-strip--fatal, .tunnel-strip--disconnected { background: #991b1b; }
         /* Shut down server button in the settings dialog */
         .settings-shutdown-btn {
             display: block;
@@ -1895,6 +1958,36 @@
             <div class="dialog__field">
                 <label class="dialog__label">Account</label>
                 <a class="settings-logout-btn" href="/swe-swe-auth/logout">Log out</a>
+            </div>
+            <div class="dialog__field">
+                <label class="dialog__label">Tunnel secrets</label>
+                <p class="settings-env__hint">Server process only. <strong>Never given to sessions.</strong> Applying starts (or restarts) the swe-swe-tunnel client; the strip at the top of the page shows its progress and the public URL.</p>
+                <div class="settings-env" id="server-tunnel-pane" data-kind="tunnel">
+                    <div class="settings-env__saved" hidden>
+                        <span class="settings-env__saved-text"></span>
+                        <button type="button" class="settings-env__btn settings-env__edit">Edit</button>
+                        <button type="button" class="settings-env__btn settings-env__forget">Forget</button>
+                    </div>
+                    <textarea class="dialog__input settings-env__textarea" rows="4" placeholder="SWE_TUNNEL_SERVER_URL=https://tunnel.example.com&#10;SWE_TUNNEL_UNIQUE=my-box&#10;SWE_TUNNEL_IDENTITY_KEY=&lt;base64 -w0 &lt; identity.key&gt;" spellcheck="false" autocomplete="off"></textarea>
+                    <label class="settings-env__remember"><input type="checkbox" class="settings-env__remember-box"> Remember on this device (this browser, this address only)</label>
+                    <button type="button" class="settings-env__btn settings-env__apply">Apply</button>
+                    <div class="settings-env__status" aria-live="polite"></div>
+                </div>
+            </div>
+            <div class="dialog__field">
+                <label class="dialog__label">Session environment</label>
+                <p class="settings-env__hint"><strong>Every new session inherits these.</strong> One KEY=VALUE per line, # comments and $VAR expansion. SWE_TUNNEL_* and swe-swe's own keys are refused here. Running sessions are unaffected.</p>
+                <div class="settings-env" id="server-env-pane" data-kind="env">
+                    <div class="settings-env__saved" hidden>
+                        <span class="settings-env__saved-text"></span>
+                        <button type="button" class="settings-env__btn settings-env__edit">Edit</button>
+                        <button type="button" class="settings-env__btn settings-env__forget">Forget</button>
+                    </div>
+                    <textarea class="dialog__input settings-env__textarea" rows="4" placeholder="OPENAI_API_KEY=sk-...&#10;DATABASE_URL=postgres://app:$DB_PASSWORD@db/prod" spellcheck="false" autocomplete="off"></textarea>
+                    <label class="settings-env__remember"><input type="checkbox" class="settings-env__remember-box"> Remember on this device (this browser, this address only)</label>
+                    <button type="button" class="settings-env__btn settings-env__apply">Apply</button>
+                    <div class="settings-env__status" aria-live="polite"></div>
+                </div>
             </div>
             <div class="dialog__field">
                 <label class="dialog__label">Server</label>

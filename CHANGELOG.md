@@ -4,6 +4,8 @@
 
 ### Features
 
+- **Tunnel secrets and a session environment can be pasted into the homepage Settings**: an ephemeral host with nowhere to keep secrets boots with no tunnel config, then a "Tunnel secrets" pane (server process only, never given to sessions) starts the swe-swe-tunnel client at runtime and a strip at the top of the homepage shows it connecting and then the public URL, while a separate "Session environment" pane feeds every new session; both can be remembered per browser and re-apply on page load.
+
 - **`swe-swe init --runtime=host --without-mcp` runs on a host whose Claude ignores MCP config**: the `mcp` + `mcp-cli-proxy` binaries now ship in the dockerless payload, the server launches the proxy fleet per session with sockets under a short `$TMPDIR/swe-swe-<uid>/mcp/` root (unix socket paths cap at 108 bytes), and keeps the `mcp`-CLI steering in the session's `CLAUDE.local.md`.
 
 - **The whiteboard MCP server is gone**: `swe-swe-whiteboard` is no longer registered for any agent (the chat canvas is agent-chat's own `draw` tool and is unaffected), so each session starts one process fewer and the upgrade path removes the stale user-scope registration.

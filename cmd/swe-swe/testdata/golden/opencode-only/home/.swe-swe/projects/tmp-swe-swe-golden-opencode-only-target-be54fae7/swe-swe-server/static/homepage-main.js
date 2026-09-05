@@ -439,3 +439,205 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// Homepage Settings: "Tunnel secrets" and "Session environment" panes, plus
+// the tunnel status strip. Both panes hold a KEY=VALUE blob; "Remember on
+// this device" keeps it in localStorage (per origin) and the page re-applies
+// it on load, so an ephemeral host needs no re-paste across reloads. The
+// tunnel blob goes to /api/server/tunnel (server process only), the env blob
+// to /api/server/env (inherited by new sessions); neither is ever rendered
+// once saved -- the pane collapses to a count until Edit.
+(function() {
+    function parseKV(raw) {
+        var out = {};
+        String(raw || '').split('\n').forEach(function(line) {
+            line = line.trim();
+            if (!line || line.charAt(0) === '#') return;
+            var i = line.indexOf('=');
+            if (i <= 0) return;
+            out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+        });
+        return out;
+    }
+    function countLines(raw) {
+        return Object.keys(parseKV(raw)).length;
+    }
+    function postJSON(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        }).then(function(resp) {
+            return resp.json().catch(function() { return {}; }).then(function(data) {
+                if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+                return data;
+            });
+        });
+    }
+    var KINDS = {
+        tunnel: {
+            key: 'swe-swe-server-tunnel:' + window.location.origin,
+            apply: function(raw) {
+                var kv = parseKV(raw);
+                return postJSON('/api/server/tunnel', {
+                    serverUrl: kv.SWE_TUNNEL_SERVER_URL || '',
+                    unique: kv.SWE_TUNNEL_UNIQUE || '',
+                    identityKey: kv.SWE_TUNNEL_IDENTITY_KEY || '',
+                }).then(function(data) {
+                    return 'Applied. Tunnel connecting to ' + data.serverUrl + ' as ' + data.unique + '; watch the strip at the top.';
+                });
+            },
+        },
+        env: {
+            key: 'swe-swe-server-env:' + window.location.origin,
+            apply: function(raw) {
+                return postJSON('/api/server/env', { raw: raw }).then(function(data) {
+                    var msg = data.count + ' variable' + (data.count === 1 ? '' : 's') + ' will be given to new sessions.';
+                    if (data.dropped && data.dropped.length) {
+                        msg += ' Refused (reserved): ' + data.dropped.join(', ') + '.';
+                    }
+                    return msg;
+                });
+            },
+        },
+    };
+    function readSaved(key) {
+        try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+    }
+    function writeSaved(key, raw) {
+        try {
+            if (raw && raw.trim()) localStorage.setItem(key, raw);
+            else localStorage.removeItem(key);
+        } catch (e) {}
+    }
+
+    function wirePane(pane) {
+        var kind = KINDS[pane.dataset.kind];
+        if (!kind) return;
+        var saved = pane.querySelector('.settings-env__saved');
+        var savedText = pane.querySelector('.settings-env__saved-text');
+        var textarea = pane.querySelector('.settings-env__textarea');
+        var remember = pane.querySelector('.settings-env__remember-box');
+        var rememberLabel = pane.querySelector('.settings-env__remember');
+        var apply = pane.querySelector('.settings-env__apply');
+        var status = pane.querySelector('.settings-env__status');
+
+        function setStatus(text, isError) {
+            status.textContent = text || '';
+            status.classList.toggle('settings-env__status--error', !!isError);
+        }
+        function showCollapsed(raw) {
+            savedText.textContent = countLines(raw) + ' line' + (countLines(raw) === 1 ? '' : 's') + ' saved on this device; applied on page load.';
+            saved.hidden = false;
+            textarea.hidden = true;
+            rememberLabel.hidden = true;
+            apply.hidden = true;
+        }
+        function showEditor(raw) {
+            textarea.value = raw || '';
+            saved.hidden = true;
+            textarea.hidden = false;
+            rememberLabel.hidden = false;
+            apply.hidden = false;
+        }
+
+        var stored = readSaved(kind.key);
+        remember.checked = !!stored;
+        if (stored) showCollapsed(stored); else showEditor('');
+
+        pane.querySelector('.settings-env__edit').onclick = function() {
+            showEditor(readSaved(kind.key));
+            textarea.focus();
+        };
+        pane.querySelector('.settings-env__forget').onclick = function() {
+            writeSaved(kind.key, '');
+            remember.checked = false;
+            showEditor('');
+            setStatus('Forgotten on this device. The server keeps what was last applied until you apply again or it restarts.');
+        };
+        apply.onclick = function() {
+            var raw = textarea.value;
+            apply.disabled = true;
+            setStatus('Applying...');
+            kind.apply(raw).then(function(msg) {
+                if (remember.checked) {
+                    writeSaved(kind.key, raw);
+                    showCollapsed(raw);
+                } else {
+                    writeSaved(kind.key, '');
+                }
+                setStatus(msg);
+            }).catch(function(err) {
+                setStatus('Not applied: ' + err.message, true);
+            }).then(function() {
+                apply.disabled = false;
+            });
+        };
+
+        // Auto-apply what this device remembers, tunnel first (it is the
+        // thing that makes the rest reachable).
+        if (stored) {
+            setStatus('Applying saved values...');
+            kind.apply(stored).then(function(msg) {
+                setStatus(msg);
+            }).catch(function(err) {
+                setStatus('Saved values were not accepted: ' + err.message, true);
+            });
+        }
+    }
+    var panes = Array.prototype.slice.call(document.querySelectorAll('.settings-env'));
+    panes.sort(function(a) { return a.dataset.kind === 'tunnel' ? -1 : 1; }).forEach(wirePane);
+
+    // Tunnel status strip: polled, in-flow above the header so the public
+    // URL is a real link. Hidden until a tunnel has been configured.
+    var strip = null;
+    var lastKey = '';
+    function renderStrip(st) {
+        var app = document.querySelector('.app');
+        if (!app) return;
+        if (!st || !st.configured) {
+            if (strip) { strip.remove(); strip = null; }
+            lastKey = '';
+            return;
+        }
+        var state = st.state || 'connecting';
+        var key = [state, st.url, st.reason, st.retryAfterMs, st.serverUrl].join('|');
+        if (key === lastKey) return;
+        lastKey = key;
+        if (!strip) {
+            strip = document.createElement('div');
+            strip.id = 'server-tunnel-strip';
+            app.insertBefore(strip, app.firstChild);
+        }
+        strip.className = 'tunnel-strip tunnel-strip--' + state;
+        while (strip.firstChild) strip.removeChild(strip.firstChild);
+        var text;
+        if (state === 'connected' && st.url) {
+            strip.appendChild(document.createTextNode('Tunnel open: '));
+            var a = document.createElement('a');
+            a.href = st.url;
+            a.textContent = st.url;
+            strip.appendChild(a);
+            return;
+        }
+        var reason = st.reason ? ' (' + st.reason + ')' : '';
+        if (state === 'reconnecting') {
+            var secs = st.retryAfterMs ? Math.ceil(st.retryAfterMs / 1000) : 0;
+            text = 'Tunnel reconnecting to ' + st.serverUrl + reason + (secs ? ' in ' + secs + 's' : '');
+        } else if (state === 'error' || state === 'fatal' || state === 'disconnected') {
+            text = 'Tunnel ' + state + reason + '. Fix the Tunnel secrets in Settings and Apply again.';
+        } else {
+            text = 'Tunnel connecting to ' + st.serverUrl + ' as ' + st.unique + reason + '...';
+        }
+        strip.textContent = text;
+    }
+    function pollTunnel() {
+        if (document.hidden) return;
+        fetch('/api/server/tunnel', { headers: { 'Accept': 'application/json' } })
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(renderStrip)
+            .catch(function() {});
+    }
+    pollTunnel();
+    setInterval(pollTunnel, 3000);
+})();

@@ -159,7 +159,9 @@ func scopedPathAllowed(scope, path string) bool {
 		path == "/api/repo/prepare",
 		path == "/api/repo/branches",
 		path == "/api/server/shutdown",
-		path == "/api/server/reboot":
+		path == "/api/server/reboot",
+		path == "/api/server/tunnel",
+		path == "/api/server/env":
 		return false
 	}
 

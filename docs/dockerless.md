@@ -97,6 +97,33 @@ discipline is the same as with native MCP. Re-init without the flag and
 the block is removed on the next session. Only Claude gets the steering
 today; the proxies serve every agent.
 
+## Ephemeral host: no secrets at boot
+
+A sandbox that is rebuilt from an init script and cannot hold secrets can
+still run swe-swe behind a tunnel. Boot with no tunnel config at all:
+
+```sh
+npx -y swe-swe init --runtime=host --without-mcp
+SWE_SWE_PASSWORD=... SWE_AGENT_VIEW=off npx -y swe-swe up
+```
+
+Open the homepage through whatever single-port door the sandbox gives you,
+open Settings, and paste into **Tunnel secrets**:
+
+```
+SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
+SWE_TUNNEL_UNIQUE=my-box
+SWE_TUNNEL_IDENTITY_KEY=<base64 -w0 < identity.key>
+```
+
+Apply: the strip at the top of the page shows the tunnel connecting, then
+the stable `https://1977.my-box-tunnel.<suffix>/` link -- the same URL on
+every rebuild, since it depends only on the unique. Switch to it; every
+pane works there. The secrets never leave the server process, and no
+session inherits them. The **Session environment** pane next to it is the
+place for values sessions should inherit. See
+[configuration.md](configuration.md#homepage-settings-tunnel-secrets-and-session-environment).
+
 ## Browser stack (Agent View)
 
 Agent View shows a live, agent-drivable Chromium over VNC. It is the one
