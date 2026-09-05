@@ -1697,6 +1697,7 @@ func TestGoldenRuntimeRejections(t *testing.T) {
 	}{
 		{"runtime-invalid", `Error: invalid --runtime "vm"`},
 		{"runtime-conflict-legacy", "Error: --runtime=container conflicts with --dockerless"},
+		{"without-mcp-container", "Error: --without-mcp requires --runtime=host"},
 	}
 
 	for _, v := range variants {
@@ -1758,6 +1759,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"TunnelClientCert":    true,
 		"TunnelLocalPorts":    true,
 		"Runtime":             true,
+		"WithoutMCP":          true,
 	}
 	// Fields intentionally NOT restored: computed or stamped fresh at init time.
 	notReused := map[string]bool{

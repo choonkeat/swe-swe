@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+### Features
+
+- **`swe-swe init --runtime=host --without-mcp` runs on a host whose Claude ignores MCP config**: the `mcp` + `mcp-cli-proxy` binaries now ship in the dockerless payload, the server launches the proxy fleet per session with sockets under a short `$TMPDIR/swe-swe-<uid>/mcp/` root (unix socket paths cap at 108 bytes), and keeps the `mcp`-CLI steering in the session's `CLAUDE.local.md`.
+
 ### Fixes
+
+- **The Stop hook guard now recognises `mcp swe-swe-agent-chat send_message`**: it only matched the short `agent-chat` name, so every MCP-less turn ended with a spurious "no user-visible message" nudge.
+
 
 - **Saved git credentials survive ending a session**: The session-start auto-restore looked up only the workspace's `origin` remote host, so a token saved under any other host was held by the browser and never sent; consent was a `confirm()` that a dismissal (or Chrome's "prevent additional dialogs") silently disabled for good; and a plain-http LAN address disabled auto-restore with nothing on screen to say so -- every stored host now rides in one message, consent is a persistent "Remember on this device" tick box in the credential panes, and a refusal explains itself where the user is looking.
 

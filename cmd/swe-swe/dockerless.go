@@ -107,10 +107,23 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 
 	// Project-scoped MCP config (option ii): no global ~/.claude.json
 	// pollution. Claude reads .mcp.json from the project root at launch.
-	if err := writeDockerlessMCPConfig(absPath); err != nil {
-		log.Fatalf("Failed to write .mcp.json: %v", err)
+	// MCP-less mode writes none (and retires one a previous init wrote):
+	// the server runs the proxy fleet and the agent uses the `mcp` CLI.
+	if config.WithoutMCP {
+		removed, err := removeDockerlessMCPConfig(absPath)
+		if err != nil {
+			log.Fatalf("Failed to remove .mcp.json: %v", err)
+		}
+		if removed {
+			fmt.Printf("Removed MCP config %s (MCP-less mode)\n", filepath.Join(absPath, ".mcp.json"))
+		}
+		fmt.Println("MCP-less mode: no .mcp.json; the agent reaches tools through the `mcp` CLI")
+	} else {
+		if err := writeDockerlessMCPConfig(absPath); err != nil {
+			log.Fatalf("Failed to write .mcp.json: %v", err)
+		}
+		fmt.Printf("Wrote MCP config to %s\n", filepath.Join(absPath, ".mcp.json"))
 	}
-	fmt.Printf("Wrote MCP config to %s\n", filepath.Join(absPath, ".mcp.json"))
 
 	// Claude hook guards (AskUserQuestion + silent-stop), project-scoped so
 	// the host user's global ~/.claude is never touched.
@@ -140,9 +153,12 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 // dockerlessServerInvocation builds the command to run the dumped server for a
 // dockerless project: the server binary path, its args (project as working
 // dir, loopback bind on the chosen port), and the environment with the dumped
-// bin/ prepended to PATH so the git credential/signing helpers resolve. Pure
+// bin/ prepended to PATH so the git credential/signing helpers resolve.
+// mcpLess exports SWE_MCP_LESS=1 so the server runs the mcp-cli-proxy fleet
+// per session (the `mcp` + `mcp-cli-proxy` binaries resolve via that same
+// PATH entry). Pure
 // for testability; the actual exec lives in handleDockerlessCommand.
-func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig) (bin string, args, env []string) {
+func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig, mcpLess bool) (bin string, args, env []string) {
 	binDir := filepath.Join(sweDir, "bin")
 	bin = filepath.Join(binDir, "swe-swe-server")
 	// Host-native paths: the project is the workspace; the dumped sweDir is
@@ -192,6 +208,9 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, 
 	// SWE_SERVER_PORT; the server passes it through to sessions. In the
 	// container the entrypoint exports it; here `swe-swe up` does.
 	env = append(env, "SWE_SERVER_PORT="+port)
+	if mcpLess {
+		env = append(env, "SWE_MCP_LESS=1")
+	}
 	return bin, args, env
 }
 
@@ -257,6 +276,16 @@ func loadDockerlessTunnelConfig(sweDir string) tunnelConfig {
 	}
 }
 
+// loadDockerlessMCPLess reports whether the dockerless project was initialized
+// with --without-mcp. Missing/unreadable config = native MCP (false).
+func loadDockerlessMCPLess(sweDir string) bool {
+	cfg, err := loadInitConfig(sweDir)
+	if err != nil {
+		return false
+	}
+	return cfg.WithoutMCP
+}
+
 // handleDockerlessCommand is the dockerless counterpart to the docker-compose
 // passthrough: it runs the dumped server directly instead of `docker compose`.
 // Supports `up [--open]` (foreground) and `down`.
@@ -275,9 +304,13 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 	case "up":
 		port := dockerlessPort(os.Getenv)
 		tunnel := loadDockerlessTunnelConfig(sweDir)
-		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel)
+		mcpLess := loadDockerlessMCPLess(sweDir)
+		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel, mcpLess)
 		if tunnel.serverURL != "" {
 			fmt.Printf("Tunnel mode: connecting via %s\n", tunnel.serverURL)
+		}
+		if mcpLess {
+			fmt.Println("MCP-less mode: agents reach tools through the `mcp` CLI (server-launched proxy fleet)")
 		}
 		if _, err := os.Stat(bin); err != nil {
 			log.Fatalf("dockerless server not found at %s -- re-run `swe-swe init --dockerless`: %v", bin, err)
@@ -376,6 +409,47 @@ func writeDockerlessMCPConfig(projectDir string) error {
 		return fmt.Errorf("write .mcp.json: %w", err)
 	}
 	return nil
+}
+
+// removeDockerlessMCPConfig retires a .mcp.json that a previous (native-MCP)
+// dockerless init wrote, so an MCP-less re-init leaves the agent no stale
+// server config to trip on. It drops only the swe-swe entries: a file that
+// also carries the user's own servers is rewritten without ours, and one
+// holding nothing else is deleted. Reports whether anything changed.
+func removeDockerlessMCPConfig(projectDir string) (bool, error) {
+	path := filepath.Join(projectDir, ".mcp.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var doc map[string]any
+	if json.Unmarshal(data, &doc) != nil {
+		// Not ours to judge; leave a hand-written or malformed file alone.
+		return false, nil
+	}
+	servers, _ := doc["mcpServers"].(map[string]any)
+	changed := false
+	for name := range dockerlessMCPServers() {
+		if _, ok := servers[name]; ok {
+			delete(servers, name)
+			changed = true
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	if len(servers) == 0 {
+		return true, os.Remove(path)
+	}
+	doc["mcpServers"] = servers
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(path, append(out, '\n'), 0644)
 }
 
 // writeDockerlessHooks installs the Claude hook guards that the container

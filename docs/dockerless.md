@@ -62,6 +62,41 @@ sessions and projects. First use downloads once; after that spawns are
 instant and never consult the project cwd -- so a session working inside
 a checkout of one of those very repos cannot shadow the tool.
 
+## MCP-less mode
+
+Some hosts let you run the `claude` CLI but not its MCP client: a
+managed Claude Code that ignores project `.mcp.json`, a sandbox that
+only allows an allowlisted set of servers. Every swe-swe pane (Agent
+Chat above all) is an MCP server, so on such a host a session boots but
+the agent can never reach the user. Init with `--without-mcp`:
+
+```sh
+swe-swe init --runtime=host --without-mcp
+swe-swe up
+```
+
+No `.mcp.json` is written (one from an earlier init is retired). Instead
+`swe-swe up` exports `SWE_MCP_LESS=1` and, per session, `swe-swe-server`
+launches one `mcp-cli-proxy` per MCP server (agent-chat, playwright,
+preview, whiteboard, swe-swe), each serving a unix socket under
+`$TMPDIR/swe-swe-<uid>/mcp/<session>/` (short on purpose: unix socket
+paths cap at 108 bytes). The agent reaches them through the bundled
+`mcp` CLI on its PATH (`SWE_MCP_DIR` names the session's socket dir):
+
+```sh
+mcp -h                                            # full docs, every server and tool
+mcp swe-swe-agent-chat check_messages
+mcp swe-swe-agent-chat send_message --text "..."  # blocks until the user replies
+```
+
+Claude is told the contract through a fenced block the server maintains
+in the session workDir's `CLAUDE.local.md` (Claude Code's machine-local
+project memory; never committed), and the Stop / AskUserQuestion /
+Artifact hook guards recognise the CLI form, so the agent-chat
+discipline is the same as with native MCP. Re-init without the flag and
+the block is removed on the next session. Only Claude gets the steering
+today; the proxies serve every agent.
+
 ## Browser stack (Agent View)
 
 Agent View shows a live, agent-drivable Chromium over VNC. It is the one

@@ -10,6 +10,8 @@ Init Options:
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
   --runtime MODE                         Where the environment runs (default: container)
+  --without-mcp                          MCP-less mode (--runtime=host only): no .mcp.json; the server runs
+                                         an mcp-cli-proxy fleet and the agent uses the bundled `mcp` CLI
                                            container                     docker compose
                                            container-with-docker-socket  ...plus the host docker socket,
                                                                          letting agents run docker commands
@@ -80,6 +82,16 @@ Flags that only describe the container image or the compose topology
 host's loopback, which host mode already binds directly. It is deliberately not
 forwarded to `swe-swe-server`, which has no such flag and would exit 2 if given
 it.
+
+`--without-mcp` is host-mode only: it selects MCP-less mode, for hosts where the
+agent's native MCP client is gated (a managed Claude Code that ignores project
+`.mcp.json`, say). No `.mcp.json` is written; instead `swe-swe up` exports
+`SWE_MCP_LESS=1`, `swe-swe-server` launches one `mcp-cli-proxy` per MCP server
+per session, and the agent reaches every tool through the bundled `mcp` CLI over
+unix sockets (`mcp -h` prints the same docs a native client would inject). The
+server keeps a steering block in the session workDir's `CLAUDE.local.md` so
+Claude knows the contract, and removes it again on a switch back to native MCP.
+See [dockerless.md](dockerless.md#mcp-less-mode).
 
 ## Environment Variables
 

@@ -5396,6 +5396,12 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	if err := upsertAgentDocInclude(workDir, p.Assistant); err != nil {
 		log.Printf("Warning: failed to upsert agent doc include in %s: %v", workDir, err)
 	}
+	// MCP-less steering rides in the workDir's machine-local memory file;
+	// keep it in sync with the mode either way so a stale block never
+	// misleads an agent after the project switches back to native MCP.
+	if err := syncMcpLessSteering(workDir, p.Assistant, mcpLessEnabled()); err != nil {
+		log.Printf("Warning: failed to sync MCP-less steering in %s: %v", workDir, err)
+	}
 
 	var previewPort int
 	var acPort int
@@ -5576,7 +5582,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// through `mcp <server> <tool>` over these sockets.
 	var mcpLessProxies []*exec.Cmd
 	if mcpLessEnabled() {
-		mcpSockDir := filepath.Join(mcpLessSocketRoot, p.UUID)
+		mcpSockDir := filepath.Join(mcpLessSocketRoot(), p.UUID)
 		env = append(env, "SWE_MCP_DIR="+mcpSockDir)
 		var fleetErr error
 		mcpLessProxies, fleetErr = launchMcpLessFleet(p.SessionMode, mcpSockDir, env, workDir)
