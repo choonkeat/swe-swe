@@ -22,7 +22,7 @@ NC='\033[0m' # No Color
 
 # Install Pi mcp-bridge extension into the global Pi config dir so every
 # session in every workspace gets the swe-swe / agent-chat / playwright /
-# preview / whiteboard MCPs without per-workspace setup. Pi prefers a
+# preview MCPs without per-workspace setup. Pi prefers a
 # project-local .pi/extensions/ override, so /workspace can still drop a
 # custom mcp-bridge.ts to hack on it.
 mkdir -p /home/app/.pi/agent/extensions

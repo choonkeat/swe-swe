@@ -30,12 +30,18 @@ var dockerlessBinaries = []string{
 	// Foreman-compatible Procfile runner for docker-free multi-service dev.
 	"swe-run",
 	// Registry-resolving exec helper for our distribute-go-bin npm tools
-	// (md-serve, agent-chat, whiteboard-mcp, reverse-proxy); replaces the
+	// (md-serve, agent-chat, reverse-proxy); replaces the
 	// plain-npx spawns of those tools so they need no node.
 	"swe-npx",
 	// External tunnel client (pinned ref), embedded so `swe-swe up` can run
 	// tunnel mode with no Docker. Only spawned when -tunnel-server-url is set.
 	"swe-swe-tunnel",
+	// MCP-less mode (`init --runtime=host --without-mcp`): swe-swe-server
+	// launches one mcp-cli-proxy per MCP server per session and the agent
+	// reaches them through the `mcp` CLI over unix sockets, so an agent
+	// whose native MCP client is gated still gets every tool.
+	"mcp-cli-proxy",
+	"mcp",
 }
 
 // dockerlessPayloadBinDir returns the embed path holding the static host

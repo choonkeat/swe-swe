@@ -20,6 +20,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"syscall"
@@ -50,6 +51,12 @@ type tunnelSupervisorOpts struct {
 	ServerURL string
 	Unique    string
 	BinPath   string
+
+	// IdentityKey is the base64 PEM Ed25519 identity handed to the child
+	// as SWE_TUNNEL_IDENTITY_KEY in ITS environment only. Empty means the
+	// child resolves its identity itself (inherited env or key file).
+	// SECRET: never log it, never put it in a session env.
+	IdentityKey string
 
 	// LocalAddr is the swe-swe-server listen address (e.g. ":1977",
 	// "127.0.0.1:1977"). The supervisor uses just the port portion to
@@ -234,7 +241,9 @@ func maybeStartTunnel(ctx context.Context, opts tunnelSupervisorOpts) bool {
 		}
 		return false
 	default:
-		go runTunnelSupervisor(ctx, opts)
+		// The runtime owns the instance so a later POST /api/server/tunnel
+		// can replace it.
+		liveTunnelRuntime.start(ctx, opts)
 		return true
 	}
 }
@@ -461,10 +470,17 @@ func applyEvent(ev supervisorEvent, opts tunnelSupervisorOpts) {
 		// Permanent deny from tunneld -- record the reason so the
 		// outer supervisor loop can stop instead of restarting.
 		var data struct {
-			Reason string `json:"reason"`
+			Reason  string `json:"reason"`
+			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(ev.Data, &data)
 		reason := data.Reason
+		if reason == "" {
+			// Client-side fatals (bad identity key, unusable config) carry
+			// only a message; surface it so the homepage strip says what
+			// to fix instead of "unspecified".
+			reason = data.Message
+		}
 		if reason == "" {
 			reason = "unspecified"
 		}
@@ -546,6 +562,9 @@ func startExecChild(ctx context.Context, opts tunnelSupervisorOpts) (childProces
 	}
 	args := tunnelChildArgs(opts)
 	cmd := exec.CommandContext(ctx, opts.BinPath, args...)
+	if opts.IdentityKey != "" {
+		cmd.Env = tunnelChildEnv(os.Environ(), opts.IdentityKey)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)

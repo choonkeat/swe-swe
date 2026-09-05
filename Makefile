@@ -217,6 +217,9 @@ dockerless-payload:
 	@$(MAKE) _payload-helper NAME=git-credential-swe-swe
 	@$(MAKE) _payload-helper NAME=git-sign-swe-swe
 	@$(MAKE) _payload-helper NAME=swe-npx
+	@# MCP-less mode: per-server stdio adapter + the agent-facing `mcp` client.
+	@$(MAKE) _payload-helper NAME=mcp-cli-proxy
+	@$(MAKE) _payload-helper NAME=mcp
 	@# swe-run is a multi-file stdlib-only package (Procfile runner); build the
 	@# whole dir, mirroring how the Dockerfile builds it.
 	@$(MAKE) _payload-helper-multi NAME=swe-run
@@ -524,6 +527,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=runtime-container-with-docker-socket FLAGS="--runtime=container-with-docker-socket"
 	@$(MAKE) _golden-variant NAME=runtime-invalid FLAGS="--runtime=vm"
 	@$(MAKE) _golden-variant NAME=runtime-conflict-legacy FLAGS="--runtime=container --dockerless"
+	@$(MAKE) _golden-variant NAME=without-mcp-container FLAGS="--runtime=container --without-mcp"
 	@$(MAKE) _golden-variant NAME=tunnel-mode FLAGS="--tunnel-server-url https://tunnel.example.com"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-unique FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-unique myproject123"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-mtls FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt"

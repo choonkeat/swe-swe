@@ -353,7 +353,11 @@ type InitConfig struct {
 	// Runtime is the unified deployment mode (container /
 	// container-with-docker-socket / host). WithDocker above is still written
 	// for one release cycle so an older CLI can read a newer init.json.
-	Runtime          string `json:"runtime,omitempty"`
+	Runtime string `json:"runtime,omitempty"`
+	// WithoutMCP is MCP-less mode (host runtime only): no .mcp.json is
+	// written and `swe-swe up` exports SWE_MCP_LESS=1 so the server runs the
+	// mcp-cli-proxy fleet and the agent uses the `mcp` CLI.
+	WithoutMCP       bool   `json:"withoutMCP,omitempty"`
 	TunnelServerURL  string `json:"tunnelServerURL,omitempty"`
 	TunnelUnique     string `json:"tunnelUnique,omitempty"`
 	TunnelClientCert string `json:"tunnelClientCert,omitempty"`
@@ -775,6 +779,7 @@ func handleInit() {
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux, or macOS experimentally)")
 	runtimeFlag := fs.String("runtime", DefaultRuntime, "Where the environment runs: 'container' (docker compose), 'container-with-docker-socket' (compose plus the host docker socket), or 'host' (no containers; Linux, or macOS experimentally)")
+	withoutMCP := fs.Bool("without-mcp", false, "MCP-less mode (--runtime=host only): write no .mcp.json; swe-swe-server runs one mcp-cli-proxy per MCP server per session and the agent reaches every tool through the bundled mcp CLI over unix sockets. For hosts where the agent's native MCP client is gated.")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
@@ -1108,6 +1113,9 @@ func handleInit() {
 		if !explicitFlags["tunnel-local-ports"] {
 			*tunnelLocalPorts = savedConfig.TunnelLocalPorts
 		}
+		if !explicitFlags["without-mcp"] {
+			*withoutMCP = savedConfig.WithoutMCP
+		}
 		if len(explicitFlags) > 0 {
 			fmt.Printf("Reusing saved configuration from %s (with overrides)\n", initConfigPath)
 		} else {
@@ -1126,6 +1134,14 @@ func handleInit() {
 	*withDocker = runtimeWithDocker(resolvedRuntime)
 	*dockerless = runtimeDockerless(resolvedRuntime)
 
+	// MCP-less is wired for the host runtime only: the container entrypoint
+	// always writes the agent's native MCP config and never exports
+	// SWE_MCP_LESS, so accepting the flag there would silently do nothing.
+	if *withoutMCP && !*dockerless {
+		fmt.Fprintf(os.Stderr, "Error: --without-mcp requires --runtime=host (got --runtime=%s)\n", resolvedRuntime)
+		os.Exit(1)
+	}
+
 	// Host runtime is host-native: refuse early on an unsupported CLI platform
 	// before writing anything, since the embedded binaries are not portable.
 	if *dockerless {
@@ -1143,6 +1159,7 @@ func handleInit() {
 		WithDocker:  *withDocker,
 		Dockerless:  *dockerless,
 		Runtime:     resolvedRuntime,
+		WithoutMCP:  *withoutMCP,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:

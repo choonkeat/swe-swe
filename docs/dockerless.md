@@ -53,14 +53,76 @@ nothing to declare at init. Provide:
 - **browser stack** (optional) -- only for the Agent View tab; see below.
 
 swe-swe's own npm-published tools (`@choonkeat/md-serve`,
-`@choonkeat/agent-chat`, `@choonkeat/agent-whiteboard`,
-`@choonkeat/agent-reverse-proxy`) are static Go binaries; the bundled
+`@choonkeat/agent-chat`, `@choonkeat/agent-reverse-proxy`) are static Go
+binaries; the bundled
 `swe-npx` helper resolves each one straight from the npm registry
 (honoring `dist-tags.latest` with a 15m memo) and caches the platform
 binary under the user-level `~/.swe-swe/npx-cache/`, shared across
 sessions and projects. First use downloads once; after that spawns are
 instant and never consult the project cwd -- so a session working inside
 a checkout of one of those very repos cannot shadow the tool.
+
+## MCP-less mode
+
+Some hosts let you run the `claude` CLI but not its MCP client: a
+managed Claude Code that ignores project `.mcp.json`, a sandbox that
+only allows an allowlisted set of servers. Every swe-swe pane (Agent
+Chat above all) is an MCP server, so on such a host a session boots but
+the agent can never reach the user. Init with `--without-mcp`:
+
+```sh
+swe-swe init --runtime=host --without-mcp
+swe-swe up
+```
+
+No `.mcp.json` is written (one from an earlier init is retired). Instead
+`swe-swe up` exports `SWE_MCP_LESS=1` and, per session, `swe-swe-server`
+launches one `mcp-cli-proxy` per MCP server (agent-chat, playwright,
+preview, swe-swe), each serving a unix socket under
+`$TMPDIR/swe-swe-<uid>/mcp/<session>/` (short on purpose: unix socket
+paths cap at 108 bytes). The agent reaches them through the bundled
+`mcp` CLI on its PATH (`SWE_MCP_DIR` names the session's socket dir):
+
+```sh
+mcp -h                                            # full docs, every server and tool
+mcp swe-swe-agent-chat check_messages
+mcp swe-swe-agent-chat send_message --text "..."  # blocks until the user replies
+```
+
+Claude is told the contract through a fenced block the server maintains
+in the session workDir's `CLAUDE.local.md` (Claude Code's machine-local
+project memory; never committed), and the Stop / AskUserQuestion /
+Artifact hook guards recognise the CLI form, so the agent-chat
+discipline is the same as with native MCP. Re-init without the flag and
+the block is removed on the next session. Only Claude gets the steering
+today; the proxies serve every agent.
+
+## Ephemeral host: no secrets at boot
+
+A sandbox that is rebuilt from an init script and cannot hold secrets can
+still run swe-swe behind a tunnel. Boot with no tunnel config at all:
+
+```sh
+npx -y swe-swe init --runtime=host --without-mcp
+SWE_SWE_PASSWORD=... SWE_AGENT_VIEW=off npx -y swe-swe up
+```
+
+Open the homepage through whatever single-port door the sandbox gives you,
+open Settings, and paste into **Tunnel secrets**:
+
+```
+SWE_TUNNEL_SERVER_URL=https://tunnel.example.com
+SWE_TUNNEL_UNIQUE=my-box
+SWE_TUNNEL_IDENTITY_KEY=<base64 -w0 < identity.key>
+```
+
+Apply: the strip at the top of the page shows the tunnel connecting, then
+the stable `https://1977.my-box-tunnel.<suffix>/` link -- the same URL on
+every rebuild, since it depends only on the unique. Switch to it; every
+pane works there. The secrets never leave the server process, and no
+session inherits them. The **Session environment** pane next to it is the
+place for values sessions should inherit. See
+[configuration.md](configuration.md#homepage-settings-tunnel-secrets-and-session-environment).
 
 ## Browser stack (Agent View)
 

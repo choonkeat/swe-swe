@@ -113,7 +113,7 @@ func TestClearDockerlessMarker(t *testing.T) {
 func TestDockerlessServerInvocation(t *testing.T) {
 	sweDir := "/home/u/.swe-swe/projects/proj"
 	absPath := "/work/proj"
-	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"}, tunnelConfig{})
+	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"}, tunnelConfig{}, false)
 
 	if want := filepath.Join(sweDir, "bin", "swe-swe-server"); bin != want {
 		t.Errorf("bin = %q, want %q", bin, want)
@@ -201,19 +201,19 @@ func TestWriteDockerlessMCPConfig(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe-whiteboard", "swe-swe"} {
+	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe"} {
 		if _, ok := doc.MCPServers[name]; !ok {
 			t.Errorf("missing MCP server %q", name)
 		}
+	}
+	// The whiteboard MCP was retired; it must not come back via the template.
+	if _, ok := doc.MCPServers["swe-swe-whiteboard"]; ok {
+		t.Error("retired swe-swe-whiteboard server still in .mcp.json")
 	}
 	// agent-chat keeps the sh -c form with the autocomplete env-var URL.
 	ac := doc.MCPServers["swe-swe-agent-chat"]
 	if ac.Command != "sh" || len(ac.Args) != 2 || !strings.Contains(ac.Args[1], "$SWE_SERVER_PORT") {
 		t.Errorf("agent-chat spec not preserved: %+v", ac)
-	}
-	// whiteboard is a plain swe-npx command (no shell, no env vars needed).
-	if wb := doc.MCPServers["swe-swe-whiteboard"]; wb.Command != "swe-npx" {
-		t.Errorf("whiteboard command = %q, want swe-npx", wb.Command)
 	}
 }
 
@@ -222,13 +222,13 @@ func TestWriteDockerlessMCPConfig(t *testing.T) {
 func TestDockerlessServerInvocationTunnel(t *testing.T) {
 	sweDir := "/home/u/.swe-swe/projects/proj"
 	// Disabled: no tunnel args.
-	_, args, _ := dockerlessServerInvocation(sweDir, "/p", "1977", nil, tunnelConfig{})
+	_, args, _ := dockerlessServerInvocation(sweDir, "/p", "1977", nil, tunnelConfig{}, false)
 	if argsContainValue(args, "-tunnel-server-url") {
 		t.Errorf("unexpected tunnel args when disabled: %v", args)
 	}
 	// Enabled.
 	_, args, _ = dockerlessServerInvocation(sweDir, "/p", "1977", nil,
-		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem"})
+		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem"}, false)
 	if !argsContainPair(args, "-tunnel-server-url", "https://tunnel.example.com") {
 		t.Errorf("args %v missing -tunnel-server-url", args)
 	}
@@ -246,7 +246,7 @@ func TestDockerlessServerInvocationTunnel(t *testing.T) {
 }
 
 func TestDockerlessServerInvocationSetsServerPort(t *testing.T) {
-	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{})
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false)
 	found := false
 	for _, e := range env {
 		if e == "SWE_SERVER_PORT=1977" {
@@ -353,5 +353,99 @@ func TestWriteDockerlessHooks(t *testing.T) {
 	joined = fmt.Sprint(stop)
 	if !strings.Contains(joined, "my-notifier") || !strings.Contains(joined, "swe-swe-stop-guard.sh") {
 		t.Errorf("Stop merge wrong: %s", joined)
+	}
+}
+
+// --without-mcp: `swe-swe up` exports SWE_MCP_LESS=1 so the server launches
+// the mcp-cli-proxy fleet; native MCP leaves the env untouched.
+func TestDockerlessServerInvocationMCPLess(t *testing.T) {
+	has := func(env []string) bool {
+		for _, e := range env {
+			if e == "SWE_MCP_LESS=1" {
+				return true
+			}
+		}
+		return false
+	}
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, true)
+	if !has(env) {
+		t.Errorf("mcpLess=true: env %v lacks SWE_MCP_LESS=1", env)
+	}
+	_, _, env = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false)
+	if has(env) {
+		t.Errorf("mcpLess=false: env %v must not export SWE_MCP_LESS", env)
+	}
+}
+
+// The MCP-less flag round-trips through init.json so `swe-swe up` (a separate
+// process) sees what init decided.
+func TestLoadDockerlessMCPLess(t *testing.T) {
+	sweDir := t.TempDir()
+	if loadDockerlessMCPLess(sweDir) {
+		t.Error("no init.json: want false")
+	}
+	if err := saveInitConfig(sweDir, InitConfig{Runtime: RuntimeHost, WithoutMCP: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !loadDockerlessMCPLess(sweDir) {
+		t.Error("saved withoutMCP=true not read back")
+	}
+}
+
+// An MCP-less re-init retires the .mcp.json a native-MCP init wrote: ours-only
+// files are deleted, a file also carrying the user's servers keeps theirs,
+// and a hand-written file with none of ours is left alone.
+func TestRemoveDockerlessMCPConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+
+	// Nothing there: no-op.
+	if removed, err := removeDockerlessMCPConfig(dir); err != nil || removed {
+		t.Errorf("absent file: removed=%v err=%v, want false,nil", removed, err)
+	}
+
+	// Ours only: deleted.
+	if err := writeDockerlessMCPConfig(dir); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := removeDockerlessMCPConfig(dir); err != nil || !removed {
+		t.Errorf("ours-only: removed=%v err=%v, want true,nil", removed, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("ours-only .mcp.json should be deleted")
+	}
+
+	// Mixed: user's server survives, ours go.
+	mixed := `{"mcpServers":{"swe-swe":{"command":"sh","args":[]},"mine":{"command":"my-mcp","args":[]}}}`
+	if err := os.WriteFile(path, []byte(mixed), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := removeDockerlessMCPConfig(dir); err != nil || !removed {
+		t.Errorf("mixed: removed=%v err=%v, want true,nil", removed, err)
+	}
+	b, _ := os.ReadFile(path)
+	var doc struct {
+		MCPServers map[string]any `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("rewritten .mcp.json unparsable: %v\n%s", err, b)
+	}
+	if _, ok := doc.MCPServers["mine"]; !ok {
+		t.Errorf("user's server dropped: %s", b)
+	}
+	if _, ok := doc.MCPServers["swe-swe"]; ok {
+		t.Errorf("swe-swe server not removed: %s", b)
+	}
+
+	// None of ours: untouched.
+	theirs := `{"mcpServers":{"mine":{"command":"my-mcp"}}}`
+	if err := os.WriteFile(path, []byte(theirs), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := removeDockerlessMCPConfig(dir); err != nil || removed {
+		t.Errorf("theirs-only: removed=%v err=%v, want false,nil", removed, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != theirs {
+		t.Errorf("theirs-only file rewritten: %s", b)
 	}
 }

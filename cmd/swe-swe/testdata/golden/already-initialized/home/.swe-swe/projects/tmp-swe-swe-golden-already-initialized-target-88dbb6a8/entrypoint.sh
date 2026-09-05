@@ -27,12 +27,13 @@ claude_mcp_setup() {
   claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
   claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
   claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
+  # swe-swe-whiteboard was retired; keep removing it so an upgraded user
+  # scope does not carry a dead registration forward.
   claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
   claude mcp remove --scope user swe-swe 2>/dev/null || true
   claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
   claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
   claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY'
-  claude mcp add --scope user --transport stdio swe-swe-whiteboard -- swe-npx -y @choonkeat/agent-whiteboard
   claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
 }
 claude_mcp_setup
@@ -109,7 +110,7 @@ sent=$(printf '%s\n' "$turn" | jq -r -R '
       (.name | test("agent[-_]chat__(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)$"))
       or (.name == "Bash"
           and ((.input.command // "")
-               | test("(^|[;&|]|\\n)[ \t]*(mcp[ \t]+)?agent-chat[ \t]+(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)([ \t]|$)")))
+               | test("(^|[;&|]|\\n)[ \t]*(mcp[ \t]+)?(swe-swe-)?agent-chat[ \t]+(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)([ \t]|$)")))
     )
   | "sent"' 2>/dev/null | head -n 1)
 [ -n "$sent" ] && exit 0

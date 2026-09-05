@@ -205,7 +205,7 @@ func TestPlatformPackage(t *testing.T) {
 		{"@choonkeat/md-serve", "linux", "amd64", "@choonkeat/md-serve-linux-x64"},
 		{"@choonkeat/md-serve", "linux", "arm64", "@choonkeat/md-serve-linux-arm64"},
 		{"@choonkeat/agent-chat", "darwin", "amd64", "@choonkeat/agent-chat-darwin-x64"},
-		{"@choonkeat/whiteboard-mcp", "darwin", "arm64", "@choonkeat/whiteboard-mcp-darwin-arm64"},
+		{"@choonkeat/agent-reverse-proxy", "darwin", "arm64", "@choonkeat/agent-reverse-proxy-darwin-arm64"},
 	}
 	for _, c := range cases {
 		got, err := platformPackage(c.pkg, c.goos, c.goarch)

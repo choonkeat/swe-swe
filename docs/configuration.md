@@ -10,6 +10,8 @@ Init Options:
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
   --runtime MODE                         Where the environment runs (default: container)
+  --without-mcp                          MCP-less mode (--runtime=host only): no .mcp.json; the server runs
+                                         an mcp-cli-proxy fleet and the agent uses the bundled `mcp` CLI
                                            container                     docker compose
                                            container-with-docker-socket  ...plus the host docker socket,
                                                                          letting agents run docker commands
@@ -80,6 +82,41 @@ Flags that only describe the container image or the compose topology
 host's loopback, which host mode already binds directly. It is deliberately not
 forwarded to `swe-swe-server`, which has no such flag and would exit 2 if given
 it.
+
+`--without-mcp` is host-mode only: it selects MCP-less mode, for hosts where the
+agent's native MCP client is gated (a managed Claude Code that ignores project
+`.mcp.json`, say). No `.mcp.json` is written; instead `swe-swe up` exports
+`SWE_MCP_LESS=1`, `swe-swe-server` launches one `mcp-cli-proxy` per MCP server
+per session, and the agent reaches every tool through the bundled `mcp` CLI over
+unix sockets (`mcp -h` prints the same docs a native client would inject). The
+server keeps a steering block in the session workDir's `CLAUDE.local.md` so
+Claude knows the contract, and removes it again on a switch back to native MCP.
+See [dockerless.md](dockerless.md#mcp-less-mode).
+
+## Homepage Settings: tunnel secrets and session environment
+
+The homepage Settings dialog (gear icon) has two textareas for values that
+should not, or cannot, be baked in at boot -- an ephemeral host with no place
+to keep secrets, say. Both take one `KEY=VALUE` per line, both can be
+remembered in this browser for this address ("Remember on this device"), and a
+remembered blob is re-applied on every page load. Neither is written to disk
+on the server, and a saved pane collapses to a line count until you press Edit.
+
+- **Tunnel secrets** -- `SWE_TUNNEL_SERVER_URL`, `SWE_TUNNEL_UNIQUE` and
+  `SWE_TUNNEL_IDENTITY_KEY` (`base64 -w0 < identity.key`). Applying starts, or
+  restarts, the swe-swe-tunnel client with those values. They stay in the
+  server process: no session ever sees them (`SWE_TUNNEL_IDENTITY_KEY` is
+  stripped from every session environment whichever way it arrived). A strip
+  at the top of the homepage shows the client connecting, the reason if it
+  fails, and the public `https://<port>.<unique>-tunnel.<suffix>/` link once
+  registered. The same values still work as boot-time env or `init` flags.
+- **Session environment** -- exported to every session created afterwards
+  (running sessions are unaffected). Ranks below a session's own Environment
+  variables pane and below the checked-in `.swe-swe/env`. Reserved keys and
+  the whole `SWE_TUNNEL_*` namespace are refused and reported back.
+
+The two endpoints behind the panes, `POST /api/server/tunnel` and
+`POST /api/server/env`, are cookie-gated and denied to shared-session guests.
 
 ## Environment Variables
 

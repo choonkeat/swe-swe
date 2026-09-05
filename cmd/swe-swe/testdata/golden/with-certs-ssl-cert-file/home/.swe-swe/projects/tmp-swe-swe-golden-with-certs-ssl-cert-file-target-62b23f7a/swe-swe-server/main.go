@@ -813,7 +813,9 @@ type SessionEnvParams struct {
 }
 
 func buildSessionEnv(p SessionEnvParams) []string {
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN")
+	// SWE_TUNNEL_IDENTITY_KEY is the server's own secret (tunnel_runtime.go)
+	// and must never reach an agent, whichever way it arrived.
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN", "SWE_TUNNEL_IDENTITY_KEY")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", p.PreviewPort),
@@ -868,6 +870,14 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	// the textarea can't break the credential broker or proxies. Placed
 	// before the .swe-swe/env file load so the checked-in file wins any
 	// collision. $VAR expands against the session env built above.
+	// Server-wide vars (homepage Settings) go first so the per-session
+	// blob below and .swe-swe/env win on collision.
+	if kept, dropped := serverEnvVars(envLookup(env)); len(kept) > 0 || len(dropped) > 0 {
+		if len(dropped) > 0 {
+			log.Printf("Session %s: server env vars dropped reserved keys: %v", p.SID, dropped)
+		}
+		env = append(env, kept...)
+	}
 	if p.SID != "" {
 		kept, dropped := sessionEnvVars(p.SID, envLookup(env))
 		if len(dropped) > 0 {
@@ -880,7 +890,7 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	// PATH=/usr/local/go/bin:$PATH prepends to the SESSION PATH (which includes
 	// /home/app/.swe-swe/bin) rather than the server's PATH (which does not).
 	// Without this, such a line would silently drop the swe-swe PATH prefixes,
-	// causing `agent-chat`, `agent-whiteboard`, etc. to resolve to the wrong
+	// causing `agent-chat`, `agent-reverse-proxy`, etc. to resolve to the wrong
 	// binary (or fail to resolve) and MCP servers to fail to start.
 	if p.WorkDir != "" {
 		env = append(env, loadEnvFile(filepath.Join(p.WorkDir, ".swe-swe", "env"), envLookup(env))...)
@@ -2323,6 +2333,13 @@ func main() {
 	if envCert, ok := os.LookupEnv("SWE_TUNNEL_CLIENT_CERT"); ok && !flagPassed("tunnel-client-cert") {
 		resolvedTunnelClientCert = envCert
 	}
+	// The non-secret parts are shared with any later runtime configure
+	// (POST /api/server/tunnel from the homepage Settings dialog).
+	initTunnelRuntime(tunnelSupervisorOpts{
+		BinPath:        resolvedTunnelBin,
+		LocalAddr:      listenAddr,
+		ClientCertPath: resolvedTunnelClientCert,
+	})
 	maybeStartTunnel(context.Background(), tunnelSupervisorOpts{
 		ServerURL:      resolvedTunnelServerURL,
 		Unique:         resolvedTunnelUnique,
@@ -2797,6 +2814,18 @@ func main() {
 		// posture as shutdown (cookie-gated, denied to shared guests).
 		if r.URL.Path == "/api/server/reboot" {
 			handleServerRebootAPI(w, r)
+			return
+		}
+
+		// Homepage Settings: runtime tunnel config (secrets stay in the
+		// server process) and the server-wide session environment. Same
+		// auth posture as shutdown.
+		if r.URL.Path == "/api/server/tunnel" {
+			handleServerTunnelAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/server/env" {
+			handleServerEnvAPI(w, r)
 			return
 		}
 
@@ -5396,6 +5425,12 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	if err := upsertAgentDocInclude(workDir, p.Assistant); err != nil {
 		log.Printf("Warning: failed to upsert agent doc include in %s: %v", workDir, err)
 	}
+	// MCP-less steering rides in the workDir's machine-local memory file;
+	// keep it in sync with the mode either way so a stale block never
+	// misleads an agent after the project switches back to native MCP.
+	if err := syncMcpLessSteering(workDir, p.Assistant, mcpLessEnabled()); err != nil {
+		log.Printf("Warning: failed to sync MCP-less steering in %s: %v", workDir, err)
+	}
 
 	var previewPort int
 	var acPort int
@@ -5576,7 +5611,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// through `mcp <server> <tool>` over these sockets.
 	var mcpLessProxies []*exec.Cmd
 	if mcpLessEnabled() {
-		mcpSockDir := filepath.Join(mcpLessSocketRoot, p.UUID)
+		mcpSockDir := filepath.Join(mcpLessSocketRoot(), p.UUID)
 		env = append(env, "SWE_MCP_DIR="+mcpSockDir)
 		var fleetErr error
 		mcpLessProxies, fleetErr = launchMcpLessFleet(p.SessionMode, mcpSockDir, env, workDir)

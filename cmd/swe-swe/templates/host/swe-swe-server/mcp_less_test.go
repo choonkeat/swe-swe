@@ -22,10 +22,10 @@ func specNames(specs []proxySpec) map[string]bool {
 func TestMcpLessProxySpecs(t *testing.T) {
 	t.Run("chat session includes agent-chat and the full fleet", func(t *testing.T) {
 		specs := mcpLessProxySpecs("chat")
-		if len(specs) != 5 {
-			t.Fatalf("chat: want 5 specs, got %d (%v)", len(specs), specNames(specs))
+		if len(specs) != 4 {
+			t.Fatalf("chat: want 4 specs, got %d (%v)", len(specs), specNames(specs))
 		}
-		for _, want := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe-whiteboard", "swe-swe"} {
+		for _, want := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe"} {
 			if !specNames(specs)[want] {
 				t.Errorf("chat fleet missing %q", want)
 			}
@@ -37,8 +37,8 @@ func TestMcpLessProxySpecs(t *testing.T) {
 		if specNames(specs)["swe-swe-agent-chat"] {
 			t.Error("terminal session must NOT launch the agent-chat proxy")
 		}
-		if len(specs) != 4 {
-			t.Fatalf("terminal: want 4 specs, got %d (%v)", len(specs), specNames(specs))
+		if len(specs) != 3 {
+			t.Fatalf("terminal: want 3 specs, got %d (%v)", len(specs), specNames(specs))
 		}
 	})
 
@@ -111,14 +111,14 @@ func TestLaunchMcpLessFleet(t *testing.T) {
 	}
 	t.Cleanup(func() { stopMcpLessFleet(cmds) })
 
-	if len(cmds) != 5 {
-		t.Fatalf("want 5 started proxies, got %d", len(cmds))
+	if len(cmds) != 4 {
+		t.Fatalf("want 4 started proxies, got %d", len(cmds))
 	}
 	if _, err := os.Stat(sockDir); err != nil {
 		t.Errorf("socket dir not created: %v", err)
 	}
 
-	lines := waitForLines(t, logPath, 5)
+	lines := waitForLines(t, logPath, 4)
 	joined := strings.Join(lines, "\n")
 	// Every proxy must run with the session's workDir as cwd -- cwd-dependent
 	// tools (agent-chat autocomplete, export_chat_md) rely on it.
@@ -127,7 +127,7 @@ func TestLaunchMcpLessFleet(t *testing.T) {
 			t.Errorf("proxy not launched in session workDir %q: %s", workDir, line)
 		}
 	}
-	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe-whiteboard", "swe-swe"} {
+	for _, name := range []string{"swe-swe-agent-chat", "swe-swe-playwright", "swe-swe-preview", "swe-swe"} {
 		wantSock := filepath.Join(sockDir, name+".sock")
 		if !strings.Contains(joined, "--name "+name+" ") {
 			t.Errorf("no invocation named %q in:\n%s", name, joined)
@@ -171,10 +171,10 @@ func TestLaunchMcpLessFleet_TerminalOmitsAgentChat(t *testing.T) {
 	}
 	t.Cleanup(func() { stopMcpLessFleet(cmds) })
 
-	if len(cmds) != 4 {
-		t.Fatalf("terminal: want 4 started proxies, got %d", len(cmds))
+	if len(cmds) != 3 {
+		t.Fatalf("terminal: want 3 started proxies, got %d", len(cmds))
 	}
-	lines := waitForLines(t, logPath, 4)
+	lines := waitForLines(t, logPath, 3)
 	if strings.Contains(strings.Join(lines, "\n"), "swe-swe-agent-chat") {
 		t.Error("terminal fleet must not launch agent-chat")
 	}

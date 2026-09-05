@@ -478,32 +478,12 @@ class McpBridge {
       portRegex: /Agent Chat UI:\s+(http:\/\/localhost:(\d+))/,
     });
 
-    // Whiteboard inherits PORT from pi (set to the preview port by swe-swe-
-    // server, e.g. 3200), which whiteboard would happily bind -- conflicting
-    // with whatever else expects the preview port. Clear PORT so whiteboard
-    // falls back to its own default.
-    const whiteboardService = new SpawnedHttpService({
-      name: "whiteboard",
-      command: "swe-npx",
-      args: ["-y", "@choonkeat/agent-whiteboard", "--no-stdio-mcp"],
-      env: { PORT: "" },
-      portRegex: /Agent Whiteboard UI:\s+(http:\/\/localhost:(\d+))/,
-    });
-
     const agentChatUrl = await agentChatService.start().catch((err) => {
       ctx.ui?.notify?.(`MCP bridge agent-chat: ${err.message}`, "warning");
       return undefined;
     });
     if (agentChatUrl) {
       endpoints.push({ name: "swe-swe-agent-chat", client: new HttpMcpClient("agent-chat", `${agentChatUrl}/mcp`) });
-    }
-
-    const whiteboardUrl = await whiteboardService.start().catch((err) => {
-      ctx.ui?.notify?.(`MCP bridge whiteboard: ${err.message}`, "warning");
-      return undefined;
-    });
-    if (whiteboardUrl) {
-      endpoints.push({ name: "swe-swe-whiteboard", client: new HttpMcpClient("whiteboard", `${whiteboardUrl}/mcp`) });
     }
 
     // swe-swe-playwright: wrap @playwright/mcp in mcp-lazy-init so the
