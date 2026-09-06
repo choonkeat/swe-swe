@@ -18,7 +18,7 @@
   <input type="search" id="filter" class="filter" placeholder="Filter…">
   <nav id="chat-list" class="chat-list" aria-label="Chats"></nav>
   <div class="footer-links">
-    <a href="./assets/" target="_blank">browse assets/ →</a>
+    <a id="assets-link" href="./assets/" target="_blank">browse assets/ →</a>
   </div>
 </aside>
 
@@ -36,6 +36,7 @@
 // Manifest is maintained by the export tool. Newest first. Each new export
 // prepends an entry on the line above the sentinel comment below.
 const MANIFEST = [
+  { md: './2026-09-06-01-lo-fi-mockup-homepage-session-list-3-options.md', date: '2026-09-06', idx: '01', title: 'Lo Fi Mockup Homepage Session List 3 Options' },
   { md: './2026-08-20-01-container-test-the-credentials-fix.md', date: '2026-08-20', idx: '01', title: 'Container Test The Credentials Fix' },
   { md: './2026-08-19-01-credentials-wiped-on-end-session.md', date: '2026-08-19', idx: '01', title: 'Credentials Wiped On End Session' },
   { md: './2026-08-17-01-branch-refresh-cannot-fetch-over-https.md', date: '2026-08-17', idx: '01', title: 'Branch Refresh Cannot Fetch Over Https' },
@@ -156,6 +157,9 @@ async function selectChat(entry) {
   const rawMd = document.getElementById('raw-md-link');
   rawMd.href = entry.md;
   rawMd.hidden = false;
+  // Attachments live beside the chat that uses them, so the browse link
+  // follows the selection into that month's directory.
+  document.getElementById('assets-link').href = new URL('assets/', new URL(entry.md, location.href)).href;
 
   await viewer.load(entry.md, document.getElementById('chat-pane'));
   history.replaceState(null, '', '#' + encodeURIComponent(entry.md));
