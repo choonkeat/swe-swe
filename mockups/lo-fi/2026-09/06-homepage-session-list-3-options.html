@@ -101,6 +101,13 @@
         font-size:11px;color:var(--grey);}
   .verdict{font-size:12px;color:#333;margin:10px 0 0;}
   .verdict b{font-weight:600;}
+
+  /* --- comparison table --- */
+  .cmp{width:100%;border-collapse:collapse;margin:8px 0 0;font-size:12px;}
+  .cmp th,.cmp td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;}
+  .cmp thead th{background:var(--grey-lite);font-size:10px;letter-spacing:.08em;
+                text-transform:uppercase;color:#3a3a38;font-weight:600;}
+  .cmp tbody th{width:150px;font-weight:600;color:#333;background:#fbfbf8;}
 </style>
 </head>
 <body>
@@ -178,16 +185,6 @@
       </div>
     </div>
 
-    <div class="flow" style="margin-top:14px;">
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">List</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Press</div><div class="title" style="margin:0;">Start</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">New session pop-up</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Inside the session</div></div>
-    </div>
-    <p class="verdict"><b>Trade-off:</b> simplest to scan, but a long history pushes the running sessions around.</p>
   </div>
 
   <!-- ============================ OPTION B ============================ -->
@@ -254,16 +251,6 @@
       </div>
     </div>
 
-    <div class="flow" style="margin-top:14px;">
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Left list</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Shows</div><div class="title" style="margin:0;">Right panel</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Press</div><div class="title" style="margin:0;">Open</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Inside the session</div></div>
-    </div>
-    <p class="verdict"><b>Trade-off:</b> you can check a session without leaving the page, but half the screen is spent on one session and it is cramped on a phone.</p>
   </div>
 
   <!-- ============================ OPTION C ============================ -->
@@ -336,16 +323,73 @@
       </div>
     </div>
 
-    <div class="flow" style="margin-top:14px;">
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Page top</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Fill in</div><div class="title" style="margin:0;">3 fields</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Press</div><div class="title" style="margin:0;">Start</div></div>
-      <div class="arrow">-&gt;</div>
-      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Inside the session</div></div>
-    </div>
-    <p class="verdict"><b>Trade-off:</b> starting takes one screen instead of two, but the form takes the top of the page every visit, even when you only came to reopen something.</p>
+  </div>
+
+  <!-- ======================= COMPARE THE THREE ======================= -->
+  <div class="option">
+    <h2>Compare the three</h2>
+    <p class="sub">Same page, three ways of arranging it.</p>
+
+    <table class="cmp">
+      <thead>
+        <tr>
+          <th></th>
+          <th>A -- One list</th>
+          <th>B -- List + details</th>
+          <th>C -- Start form on page</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>Steps to start a session</th>
+          <td>2 (button, then pop-up)</td>
+          <td>2 (button, then pop-up)</td>
+          <td>1 (fill in, press Start)</td>
+        </tr>
+        <tr>
+          <th>Steps to reopen a session</th>
+          <td>1 (press Open)</td>
+          <td>2 (pick, then Open)</td>
+          <td>1 (press Open)</td>
+        </tr>
+        <tr>
+          <th>Check a session without entering it</th>
+          <td>No -- only the one-line summary</td>
+          <td>Yes -- right panel shows detail</td>
+          <td>No -- only the card</td>
+        </tr>
+        <tr>
+          <th>Sessions visible without scrolling</th>
+          <td>About 5</td>
+          <td>About 10 (short rows)</td>
+          <td>About 6 (3 across)</td>
+        </tr>
+        <tr>
+          <th>Where finished sessions go</th>
+          <td>Dimmed, same list</td>
+          <td>Behind a Finished switch</td>
+          <td>Folded, opens in place</td>
+        </tr>
+        <tr>
+          <th>Works on a phone</th>
+          <td>Yes</td>
+          <td>Poorly -- two columns do not fit</td>
+          <td>Yes, after the form</td>
+        </tr>
+        <tr>
+          <th>Main cost</th>
+          <td>A long history pushes running sessions down</td>
+          <td>Half the screen spent on one session</td>
+          <td>Form takes the top every visit</td>
+        </tr>
+        <tr>
+          <th>Best when</th>
+          <td>You keep a handful of sessions</td>
+          <td>You keep many and compare them</td>
+          <td>You start sessions constantly</td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
   <p class="note">Same in all three: header with settings, a footer with certificate / GitHub / version, and every session showing name, one-line summary, how long it has run, and Open / End.</p>
