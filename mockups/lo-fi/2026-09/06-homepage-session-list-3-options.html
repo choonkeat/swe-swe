@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - Homepage / session list, 3 options</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* --- layout helpers for this sheet only --- */
+  .option{margin:0 0 46px;}
+  .option > h2{font-size:15px;margin:0 0 2px;}
+  .option > .sub{font-size:12px;color:#555;margin:0 0 12px;}
+  .screen{border:1px solid var(--line);border-radius:3px;background:#fff;padding:0;overflow:hidden;}
+  .bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+       padding:10px 14px;border-bottom:1px solid var(--line);}
+  .bar .btn{padding:5px 12px;font-size:12px;font-weight:600;}
+  .pad{padding:14px;}
+  .btn.sm{padding:5px 12px;font-size:12px;}
+  .rowline{display:flex;align-items:center;gap:12px;
+           border:1px solid var(--line);border-radius:3px;padding:10px 12px;margin:0 0 8px;background:#fff;}
+  .rowline .grow{flex:1;min-width:0;}
+  .rowline .acts{display:flex;gap:6px;flex:0 0 auto;}
+  .dim{opacity:.45;}
+  .cols{display:flex;gap:0;align-items:stretch;}
+  .cols .rail{flex:0 0 240px;border-right:1px solid var(--line);padding:12px;}
+  .cols .detail{flex:1;padding:14px;}
+  .tabs{display:flex;gap:6px;margin:0 0 10px;}
+  .tab{border:1px solid var(--line);border-radius:3px;padding:4px 10px;font-size:11px;
+       text-transform:uppercase;letter-spacing:.06em;color:var(--grey);background:#fff;}
+  .tab.on{background:var(--grey-lite);color:var(--ink);}
+  .pick{background:var(--grey-lite);}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .form{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;}
+  .field{min-width:150px;}
+  .fold{display:flex;align-items:center;gap:8px;border:1px dashed #cfcec8;border-radius:3px;
+        padding:9px 12px;font-size:12px;color:#555;}
+  .foot{display:flex;gap:14px;padding:10px 14px;border-top:1px solid var(--line);
+        font-size:11px;color:var(--grey);}
+  .verdict{font-size:12px;color:#333;margin:10px 0 0;}
+  .verdict b{font-weight:600;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Homepage / session list -- 3 options</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only. Grey dashed blocks stand for text we have not written yet.</p>
+
+  <!-- ============================ OPTION A ============================ -->
+  <div class="option">
+    <h2>Option A -- One list</h2>
+    <p class="sub">Running sessions and finished ones share a single list. Finished ones are dimmed and sit below.</p>
+
+    <div class="screen">
+      <div class="bar">
+        <div>
+          <div class="title" style="margin:0;">swe-swe</div>
+          <div class="label">Session manager</div>
+        </div>
+        <div class="btn sm">Settings</div>
+      </div>
+
+      <div class="pad">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;">
+          <div class="label">Sessions</div>
+          <div class="btn filled">Start a session</div>
+        </div>
+
+        <div class="rowline">
+          <div class="grow">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="scribble long" style="margin:0;"></div>
+            <div class="label" style="margin-top:6px;">Running 2h 14m</div>
+          </div>
+          <div class="acts">
+            <div class="btn sm">Open</div>
+            <div class="btn sm">End</div>
+          </div>
+        </div>
+
+        <div class="rowline">
+          <div class="grow">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="scribble mid" style="margin:0;"></div>
+            <div class="label" style="margin-top:6px;">Running 11m</div>
+          </div>
+          <div class="acts">
+            <div class="btn sm">Open</div>
+            <div class="btn sm">End</div>
+          </div>
+        </div>
+
+        <div class="label" style="margin:18px 0 8px;">Finished</div>
+
+        <div class="rowline dim">
+          <div class="grow">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="scribble short" style="margin:0;"></div>
+            <div class="label" style="margin-top:6px;">Ended yesterday</div>
+          </div>
+          <div class="acts"><div class="btn sm">Resume</div></div>
+        </div>
+
+        <div class="rowline dim">
+          <div class="grow">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="scribble mid" style="margin:0;"></div>
+            <div class="label" style="margin-top:6px;">Ended 3 days ago</div>
+          </div>
+          <div class="acts"><div class="btn sm">Resume</div></div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>Certificate</span><span>GitHub</span><span>Version</span>
+      </div>
+    </div>
+
+    <div class="flow" style="margin-top:14px;">
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">List</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Press</div><div class="title" style="margin:0;">Start</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">New session pop-up</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Inside the session</div></div>
+    </div>
+    <p class="verdict"><b>Trade-off:</b> simplest to scan, but a long history pushes the running sessions around.</p>
+  </div>
+
+  <!-- ============================ OPTION B ============================ -->
+  <div class="option">
+    <h2>Option B -- List on the left, details on the right</h2>
+    <p class="sub">Left column is one line per session. Picking one fills the right panel. Nothing opens until Open is pressed.</p>
+
+    <div class="screen">
+      <div class="bar">
+        <div>
+          <div class="title" style="margin:0;">swe-swe</div>
+          <div class="label">Session manager</div>
+        </div>
+        <div class="btn sm">Settings</div>
+      </div>
+
+      <div class="cols">
+        <div class="rail">
+          <div class="btn filled" style="display:block;margin:0 0 12px;">Start a session</div>
+          <div class="tabs">
+            <div class="tab on">Running</div>
+            <div class="tab">Finished</div>
+          </div>
+          <div class="rowline pick" style="display:block;">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="label">2h 14m</div>
+          </div>
+          <div class="rowline" style="display:block;">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="label">11m</div>
+          </div>
+          <div class="rowline" style="display:block;">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="label">4m</div>
+          </div>
+          <div class="rowline" style="display:block;">
+            <div class="title" style="margin:0 0 4px;">Session name</div>
+            <div class="label">1m</div>
+          </div>
+        </div>
+
+        <div class="detail">
+          <div class="label">Selected session</div>
+          <div class="title" style="font-size:15px;">Session name</div>
+          <div class="scribble long"></div>
+          <div class="scribble mid"></div>
+          <div class="label" style="margin:12px 0 4px;">Running 2h 14m &nbsp; . &nbsp; Agent &nbsp; . &nbsp; Memory</div>
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <div class="btn filled">Open</div>
+            <div class="btn">End</div>
+            <div class="btn">Share</div>
+          </div>
+          <div class="box" style="margin-top:18px;">
+            <div class="label">Latest activity</div>
+            <div class="scribble long"></div>
+            <div class="scribble long"></div>
+            <div class="scribble short"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>Certificate</span><span>GitHub</span><span>Version</span>
+      </div>
+    </div>
+
+    <div class="flow" style="margin-top:14px;">
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Left list</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Shows</div><div class="title" style="margin:0;">Right panel</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Press</div><div class="title" style="margin:0;">Open</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Inside the session</div></div>
+    </div>
+    <p class="verdict"><b>Trade-off:</b> you can check a session without leaving the page, but half the screen is spent on one session and it is cramped on a phone.</p>
+  </div>
+
+  <!-- ============================ OPTION C ============================ -->
+  <div class="option">
+    <h2>Option C -- Start form on the page, sessions below</h2>
+    <p class="sub">No pop-up. The start form sits at the top of the page; existing sessions are cards underneath; finished ones are folded away.</p>
+
+    <div class="screen">
+      <div class="bar">
+        <div>
+          <div class="title" style="margin:0;">swe-swe</div>
+          <div class="label">Session manager</div>
+        </div>
+        <div class="btn sm">Settings</div>
+      </div>
+
+      <div class="pad">
+        <div class="box">
+          <div class="label">Start a session</div>
+          <div class="form" style="margin-top:10px;">
+            <div class="field">
+              <div class="label">Where</div>
+              <div class="input">this folder</div>
+            </div>
+            <div class="field">
+              <div class="label">Project name</div>
+              <div class="input">type a name</div>
+            </div>
+            <div class="field">
+              <div class="label">Agent</div>
+              <div class="input">pick one</div>
+            </div>
+            <div class="btn filled">Start</div>
+          </div>
+          <div class="note" style="margin-top:10px;">More choices (colour, branch, variables) stay folded until asked for.</div>
+        </div>
+
+        <div class="label" style="margin:20px 0 8px;">Running now</div>
+        <div class="grid">
+          <div class="box">
+            <div class="title" style="margin:0 0 6px;">Session name</div>
+            <div class="scribble long"></div>
+            <div class="scribble short"></div>
+            <div class="label" style="margin:8px 0 10px;">2h 14m</div>
+            <div style="display:flex;gap:6px;"><div class="btn sm">Open</div><div class="btn sm">End</div></div>
+          </div>
+          <div class="box">
+            <div class="title" style="margin:0 0 6px;">Session name</div>
+            <div class="scribble mid"></div>
+            <div class="scribble short"></div>
+            <div class="label" style="margin:8px 0 10px;">11m</div>
+            <div style="display:flex;gap:6px;"><div class="btn sm">Open</div><div class="btn sm">End</div></div>
+          </div>
+          <div class="box">
+            <div class="title" style="margin:0 0 6px;">Session name</div>
+            <div class="scribble long"></div>
+            <div class="scribble short"></div>
+            <div class="label" style="margin:8px 0 10px;">4m</div>
+            <div style="display:flex;gap:6px;"><div class="btn sm">Open</div><div class="btn sm">End</div></div>
+          </div>
+        </div>
+
+        <div class="fold" style="margin-top:16px;">
+          <span>+</span><span>Finished sessions (12)</span>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span>Certificate</span><span>GitHub</span><span>Version</span>
+      </div>
+    </div>
+
+    <div class="flow" style="margin-top:14px;">
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Page top</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Fill in</div><div class="title" style="margin:0;">3 fields</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Press</div><div class="title" style="margin:0;">Start</div></div>
+      <div class="arrow">-&gt;</div>
+      <div class="box node"><div class="label">Place</div><div class="title" style="margin:0;">Inside the session</div></div>
+    </div>
+    <p class="verdict"><b>Trade-off:</b> starting takes one screen instead of two, but the form takes the top of the page every visit, even when you only came to reopen something.</p>
+  </div>
+
+  <p class="note">Same in all three: header with settings, a footer with certificate / GitHub / version, and every session showing name, one-line summary, how long it has run, and Open / End.</p>
+</div>
+</body>
+</html>
