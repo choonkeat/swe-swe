@@ -6689,6 +6689,10 @@ class TerminalUI extends HTMLElement {
     // the end opens a popover of panes not in any slot (dumping ground);
     // clicking adds a new tab to this slot and activates it.
     _buildSlotTabBar(slotId) {
+        // The hovered tab (if any) is about to be replaced by a fresh
+        // element, so its pointerleave will never fire: drop the tooltip
+        // here or it outlives its anchor.
+        this._hidePopoutTooltip();
         const bar = document.createElement('div');
         bar.className = 'terminal-ui__slot-tab-bar';
         bar.dataset.slot = slotId;
@@ -6755,9 +6759,17 @@ class TerminalUI extends HTMLElement {
                 glyph.addEventListener('click', (e) => tryPopout(e));
                 btn.insertBefore(glyph, btn.firstChild);
                 // Prominent styled tooltip, positioned out-of-flow (fixed) so
-                // the tab bar's overflow clipping never hides it.
-                btn.addEventListener('mouseenter', () => this._showPopoutTooltip(btn, hint));
-                btn.addEventListener('mouseleave', () => this._hidePopoutTooltip());
+                // the tab bar's overflow clipping never hides it. Pointer
+                // events (not mouse*) so a touch tap's leave fires on lift;
+                // any press on the tab dismisses it too, since the click
+                // usually rebuilds the bar underneath the pointer.
+                btn.addEventListener('pointerenter', (e) => {
+                    if (e.pointerType === 'touch') return;
+                    this._showPopoutTooltip(btn, hint);
+                });
+                btn.addEventListener('pointerleave', () => this._hidePopoutTooltip());
+                btn.addEventListener('pointercancel', () => this._hidePopoutTooltip());
+                btn.addEventListener('pointerdown', () => this._hidePopoutTooltip());
             }
             btn.addEventListener('click', (e) => {
                 if (e.metaKey || e.ctrlKey) {
@@ -6996,6 +7008,18 @@ class TerminalUI extends HTMLElement {
             document.body.appendChild(tip);
             this._popoutTip = tip;
         }
+        if (!this._popoutTipGlobalsWired) {
+            // Dismissers for every way the pointer can stop hovering the tab
+            // without the tab seeing a pointerleave: a press anywhere, a
+            // scroll, the window losing focus, the tab going hidden, a key.
+            this._popoutTipGlobalsWired = true;
+            const hide = () => this._hidePopoutTooltip();
+            document.addEventListener('pointerdown', hide, true);
+            document.addEventListener('keydown', hide, true);
+            document.addEventListener('scroll', hide, true);
+            document.addEventListener('visibilitychange', hide);
+            window.addEventListener('blur', hide);
+        }
         return this._popoutTip;
     }
 
@@ -7010,10 +7034,27 @@ class TerminalUI extends HTMLElement {
         const left = Math.max(8, Math.min(r.left, maxLeft));
         tip.style.top = (r.bottom + 6) + 'px';
         tip.style.left = left + 'px';
+        // Watchdog: the anchor can vanish (bar re-render) or stop being
+        // hovered (pointer left via an iframe, an alt-tab, a touch lift)
+        // with no event reaching the tab. Poll cheaply while visible and
+        // hide the moment the anchor is gone or no longer under the pointer.
+        this._popoutTipAnchor = anchorEl;
+        if (this._popoutTipWatch) clearInterval(this._popoutTipWatch);
+        this._popoutTipWatch = setInterval(() => {
+            const a = this._popoutTipAnchor;
+            let hovered = false;
+            try { hovered = !!(a && a.isConnected && a.matches(':hover')); } catch (e) { hovered = false; }
+            if (!hovered) this._hidePopoutTooltip();
+        }, 250);
     }
 
     _hidePopoutTooltip() {
         if (this._popoutTip) this._popoutTip.hidden = true;
+        this._popoutTipAnchor = null;
+        if (this._popoutTipWatch) {
+            clearInterval(this._popoutTipWatch);
+            this._popoutTipWatch = null;
+        }
     }
 
     initSplitPaneUi() {
