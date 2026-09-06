@@ -1,0 +1,110 @@
+---
+description: Stitch before/after screenshots into ONE image per impacted screen, with a real pixel-diff panel, then audit what else the change touches.
+---
+
+Target screens / screenshots: $ARGUMENTS
+
+Produce visual proof of what a change did to the UI: one stitched image per
+impacted screen (`BEFORE | AFTER | DIFF`), a numeric diff, and an honest audit
+of what else the change could have touched.
+
+## Do
+
+### 1. Pair them
+
+For every impacted screen find a BEFORE and an AFTER full-page shot.
+
+- Missing a BEFORE? Re-shoot it -- check out the pre-change ref (`git stash`, or
+  `git worktree add` the base commit) and screenshot the same URL at the same
+  viewport size. **Never fake one.**
+- If you genuinely cannot produce a BEFORE, say so for that screen. Do not
+  silently drop the screen from the report.
+- Shoot both sides at the same viewport width and the same zoom, or the diff is
+  meaningless.
+
+Screenshots come from the Playwright MCP browser
+(`mcp__swe-swe-playwright__browser_take_screenshot`, full page) against your app
+on `http://localhost:$PORT`.
+
+### 2. Stitch one image per screen
+
+Write to `.swe-swe/screenshots/before-after/<screen-slug>.png` (or the path the
+project already uses for test evidence, if it has one). Layout is three panels
+side by side, each labelled: **BEFORE | AFTER | DIFF**.
+
+The DIFF panel is a real pixel comparison -- changed pixels highlighted,
+unchanged greyed out. **Pad to equal height rather than rescaling**; a rescale
+invents differences that are not there.
+
+Python + PIL (Pillow) is the tool to use; ImageMagick is not installed. Starting
+point:
+
+```python
+from PIL import Image, ImageChops, ImageDraw
+
+def load(p):
+    return Image.open(p).convert("RGB")
+
+def pad(im, h):
+    if im.height == h:
+        return im
+    out = Image.new("RGB", (im.width, h), (255, 255, 255))
+    out.paste(im, (0, 0))
+    return out
+
+before, after = load(B), load(A)
+w = max(before.width, after.width)
+h = max(before.height, after.height)
+before = pad(before.crop((0, 0, w, before.height)), h)
+after = pad(after.crop((0, 0, w, after.height)), h)
+
+# diff panel: greyed base, changed pixels in red
+mask = ImageChops.difference(before, after).convert("L").point(lambda v: 255 if v > 12 else 0)
+changed = sum(1 for v in mask.getdata() if v)
+total = w * h
+diff = after.convert("L").convert("RGB").point(lambda v: 160 + v // 4)
+diff.paste(Image.new("RGB", (w, h), (220, 30, 30)), (0, 0), mask)
+
+LABEL = 28
+sheet = Image.new("RGB", (w * 3 + 24, h + LABEL), (255, 255, 255))
+for i, (im, name) in enumerate([(before, "BEFORE"), (after, "AFTER"), (diff, "DIFF")]):
+    x = i * (w + 12)
+    ImageDraw.Draw(sheet).text((x + 4, 6), name, fill=(0, 0, 0))
+    sheet.paste(im, (x, LABEL))
+sheet.save(OUT)
+print(f"{changed} px changed ({100.0 * changed / total:.2f}%)")
+```
+
+### 3. Report the diff numerically
+
+Per screen: changed-pixel count and percentage. **A screen with 0% is evidence
+too** -- report it, do not omit it.
+
+### 4. Audit the repercussions
+
+For every changed region, say whether the change is **intended** or
+**collateral**.
+
+Then ask what else reads the same component, view, template, or config, and
+answer it with evidence:
+
+- `grep` for the changed selector / class / component name / config key across
+  the repo, and list every other screen or flow that imports or renders it.
+- Name the shared file and state, per consumer, whether it is **affected** or
+  **untouched**, citing what you found (`path:line`).
+- Call out shared runtime layers explicitly -- a shared layout, theme, design
+  token, form runtime, or config loader is where collateral damage hides.
+- If a consumer is affected and you have no screenshot for it, say that it needs
+  one; do not assume it is fine.
+
+### 5. Deliver
+
+Send every stitched image to the user with one caption line each (in an
+agent-chat session, pass the paths in `send_message`'s `image_urls`).
+
+## Do not
+
+- Do not assert on file size, exit codes, or test names -- assert on the pixels.
+- Do not rescale, crop, or auto-level; the diff must be honest.
+- Do not commit anything unless asked. If asked, stage the images by explicit
+  path (`git add <path>` -- never `git add -A`).
