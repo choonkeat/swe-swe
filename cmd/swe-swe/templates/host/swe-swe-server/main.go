@@ -2365,8 +2365,13 @@ func main() {
 	if publicHostnameDecided.Hostname != "" {
 		configuredPublicHostname = publicHostnameDecided.Hostname
 		setLiveTunnelHostname(configuredPublicHostname)
-		log.Printf("Public hostname: %s (per-port panes are served as {port}.%s)",
-			configuredPublicHostname, configuredPublicHostname)
+		// The tunnel supervisor prints an OPEN AT line when it learns its
+		// hostname; wildcard mode has no supervisor, so print the equivalent
+		// here. The port is part of the address: unlike the tunnel, which
+		// serves on 443, this box demuxes subdomains on its own listener.
+		log.Printf("Public hostname: %s -- OPEN AT http://%d.%s:%d/ (per-port panes are served as {port}.%s:%d)",
+			configuredPublicHostname, tunnelServerPort, configuredPublicHostname,
+			tunnelServerPort, configuredPublicHostname, tunnelServerPort)
 	}
 
 	// The non-secret parts are shared with any later runtime configure
@@ -3125,6 +3130,12 @@ func main() {
 		handler = setupEmbeddedAuth(authPassword)
 		log.Printf("Embedded auth enabled (SWE_SWE_PASSWORD set)")
 	}
+
+	// Wildcard host-demux (phase 2): serve {port}.{apex} on this same
+	// listener. Outermost wrap, ahead of auth, because each per-port
+	// destination checks the login cookie itself -- exactly as it does when
+	// tunneld forwards to those ports. No-op when -public-hostname is unset.
+	handler = publicHostnameDemux(configuredPublicHostname, tunnelServerPort, handler)
 
 	srv := &http.Server{Addr: listenAddr, Handler: handler}
 	go func() {

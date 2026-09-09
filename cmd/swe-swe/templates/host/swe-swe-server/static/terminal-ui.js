@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -6933,7 +6933,8 @@ class TerminalUI extends HTMLElement {
         // and port= query params are missing, so we omit them and let it derive
         // the right wss target from its own page origin.
         if (this.effectivePublicHostname) {
-            return `${loc.protocol}//${this.vncProxyPort}.${this.effectivePublicHostname}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
+            const origin = buildSubdomainOrigin(loc, this.vncProxyPort, this.effectivePublicHostname);
+            return `${origin}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
         }
         // Legacy port-based mode: same hostname, different port. Pass host=
         // and port= explicitly so noVNC dials the correct WebSocket regardless

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -373,6 +373,59 @@ test('buildPortBasedProxyUrl returns null when port is null', () => {
     assert.strictEqual(
         buildPortBasedProxyUrl({ protocol: 'http:', hostname: 'localhost' }, null, 'http://localhost:3000/'),
         null
+    );
+});
+
+// buildSubdomainOrigin tests -- the port the page was reached on has to survive.
+// Tunnel mode serves on 443/80 (location.port empty) so nothing changes there;
+// a wildcard box serves its own subdomains on its own listener (:1977), and
+// dropping the port would send the browser to :80 and reach nothing.
+test('buildSubdomainOrigin omits the port when the page has none (tunnel mode)', () => {
+    assert.strictEqual(
+        buildSubdomainOrigin({ protocol: 'https:', port: '' }, 23000, 'abc-tunnel.example.com'),
+        'https://23000.abc-tunnel.example.com'
+    );
+});
+
+test('buildSubdomainOrigin keeps the page port (wildcard box on :1977)', () => {
+    assert.strictEqual(
+        buildSubdomainOrigin({ protocol: 'http:', port: '1977' }, 23000, 'example.com'),
+        'http://23000.example.com:1977'
+    );
+});
+
+test('buildSubdomainOrigin tolerates a location with no port property', () => {
+    assert.strictEqual(
+        buildSubdomainOrigin({ protocol: 'https:' }, 23000, 'example.com'),
+        'https://23000.example.com'
+    );
+});
+
+test('buildSubdomainPreviewUrl keeps the page port', () => {
+    assert.strictEqual(
+        buildSubdomainPreviewUrl({ protocol: 'http:', port: '1977' }, 23000, 'example.com'),
+        'http://23000.example.com:1977'
+    );
+});
+
+test('buildSubdomainAgentChatUrl keeps the page port', () => {
+    assert.strictEqual(
+        buildSubdomainAgentChatUrl({ protocol: 'http:', port: '1977' }, 24000, 'example.com'),
+        'http://24000.example.com:1977'
+    );
+});
+
+test('buildSubdomainFilesUrl keeps the page port', () => {
+    assert.strictEqual(
+        buildSubdomainFilesUrl({ protocol: 'http:', port: '1977' }, 29000, 'example.com'),
+        'http://29000.example.com:1977'
+    );
+});
+
+test('buildSubdomainProxyUrl keeps the page port and appends the path', () => {
+    assert.strictEqual(
+        buildSubdomainProxyUrl({ protocol: 'http:', port: '1977' }, 23000, 'example.com', 'http://localhost:3000/a?b=1'),
+        'http://23000.example.com:1977/a?b=1'
     );
 });
 

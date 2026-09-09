@@ -1,6 +1,6 @@
 # Wildcard host-demux: one port, no tunnel
 
-**Status**: phase 1 done 2026-09-10 on branch `feat/wildcard-host-demux`. Phases 2-4 pending.
+**Status**: phases 1-2 done 2026-09-10 on branch `feat/wildcard-host-demux`. Phases 3-4 pending.
 
 ## Goal
 
@@ -127,10 +127,32 @@ use today. Phase 1 is plain http, or an admin-supplied wildcard certificate.
      either direction, with a log line saying which lost; both explicit or
      both inherited stays a hard error. Same family as the browser-backend
      port bug (7b343826f).
-2. **Demux + allowlist.** Host parsing, target resolution, the port allowlist
-   derived from the live range variables. Unit tests for the parser and the
-   allowlist, including the hostile cases (`23000.evil.com`, `23000.example.com.evil.com`,
-   a label that is digits but out of range, an IP-literal Host).
+2. **Demux + allowlist.** DONE (`public_hostname_demux.go`). Host parsing,
+   target resolution, the port allowlist derived from the live range
+   variables. Unit tests cover the parser (including `23000.evil.com`,
+   `23000.example.com.evil.com`, `a.23000.example.com`, `23000x.example.com`,
+   out-of-range and IP-literal Hosts), the allowlist in both directions, and
+   the handler end to end (fallthrough, 404, forward-with-Host-preserved,
+   502).
+
+   Three things settled while building it:
+
+   - **A request for the server's own port falls through instead of being
+     proxied.** It has to: the landing line advertises
+     `{server port}.{apex}`, and proxying that to ourselves would arrive with
+     the same Host and match again, forever.
+   - **The inbound Host is passed through unrewritten**, so the upstream sees
+     exactly what tunneld would have delivered and per-port behaviour cannot
+     drift between the two modes.
+   - **Open question 1 answered, and it needed a frontend change.** The
+     subdomain URL builders dropped the port
+     (`https://23000.host`), which is right behind a tunnel on 443 and wrong
+     on a wildcard box serving its own subdomains on :1977. Added
+     `buildSubdomainOrigin` in `static/modules/url-builder.js`, routed the
+     preview/agent-chat/files builders and the VNC URL through it, and it is
+     a no-op in tunnel mode (`location.port` is empty there). Open question 2
+     (whether `--public-hostname` should imply `SWE_PREVIEW_REACH_DOMAIN`) is
+     still open and belongs to phase 3.
 3. **Live proof.** Boot dockerless with `--public-hostname` on a wildcard that
    resolves here, log in once, and confirm the preview and Agent View panes
    load on their own subdomains with no second login -- the exact thing that
