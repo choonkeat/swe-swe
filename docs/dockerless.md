@@ -149,8 +149,26 @@ If your host has no display stack (a slim VM, a laptop you would rather
 keep clean), run the browser backend somewhere else and point swe-swe at
 it. The other tabs stay fully local; only the browser is offloaded.
 
-On the browser box (build the image first with `make browser-backend-image`;
-see `dockerless-mac-vm.md` for the full invocation):
+On the browser box, with no Docker and no source checkout (Linux x86-64 or
+arm64; the display stack is X11):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+sudo apt-get install -y chromium xvfb x11vnc novnc websockify
+SWE_BROWSER_BACKEND_TOKEN=some-shared-secret swe-swe browser-backend
+```
+
+`swe-swe browser-backend` extracts `swe-swe-server` to
+`~/.swe-swe/browser-backend/bin/` and execs it with `-mode browser-backend`,
+forwarding every other argument. It listens on `:9333`; pass `-bind`/`-addr`
+to change that. `SWE_BIND`, `SWE_PORT` and `PORT` are deliberately ignored
+here, so a variable the box exports for something else cannot move or break
+the service. It refuses to start, naming the missing packages, if the display
+stack is absent. This machine runs no sessions, so it is not a project and
+never appears in `swe-swe list`.
+
+Or with Docker (build the image first with `make browser-backend-image`; see
+`dockerless-mac-vm.md` for the full invocation):
 
 ```sh
 docker run -p 9333:9333 swe-swe/browser-backend

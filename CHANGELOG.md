@@ -8,6 +8,8 @@
 
 - **`swe-swe init --runtime=host --without-mcp` runs on a host whose Claude ignores MCP config**: the `mcp` + `mcp-cli-proxy` binaries now ship in the dockerless payload, the server launches the proxy fleet per session with sockets under a short `$TMPDIR/swe-swe-<uid>/mcp/` root (unix socket paths cap at 108 bytes), and keeps the `mcp`-CLI steering in the session's `CLAUDE.local.md`.
 
+- **`swe-swe browser-backend` runs the Agent View browser box with no Docker and no source checkout**: it extracts `swe-swe-server`, execs it in browser-backend mode on `:9333`, refuses to start if the display stack is missing, and ignores an inherited `SWE_BIND`/`SWE_PORT`/`PORT` so the host's own variables cannot move it.
+
 - **The whiteboard MCP server is gone**: `swe-swe-whiteboard` is no longer registered for any agent (the chat canvas is agent-chat's own `draw` tool and is unaffected), so each session starts one process fewer and the upgrade path removes the stale user-scope registration.
 
 ### Fixes
