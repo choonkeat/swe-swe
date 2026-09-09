@@ -29,6 +29,8 @@ func main() {
 		handleList()
 	case "proxy":
 		handleProxy()
+	case "browser-backend":
+		handleBrowserBackend()
 	case "-h", "--help":
 		printUsage()
 	default:
@@ -45,6 +47,9 @@ Native Commands:
   init [options]                         Initialize a new swe-swe project
   list                                   List all initialized swe-swe projects (auto-prunes stale ones)
   proxy <command>                        Proxy host commands to containers with real-time streaming
+  browser-backend [options]              Run the standalone Agent View browser backend on this
+                                         machine, so a host with no display stack can offload
+                                         Agent View to it (swe-swe browser-backend -h)
 
 Pass-through Commands:
   All other commands (up, down, build, ps, logs, exec, etc.) are passed directly

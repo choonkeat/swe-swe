@@ -20,6 +20,24 @@ docker build -f docker/browser-backend/Dockerfile --build-arg ARCH=amd64 \
     -t swe-swe/browser-backend .
 ```
 
+## Run without Docker
+
+`swe-swe browser-backend` runs this same service straight from the published
+binary, so the browser box needs no Docker and no source checkout:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+sudo apt-get install -y chromium xvfb x11vnc novnc websockify
+SWE_BROWSER_BACKEND_TOKEN=some-shared-secret swe-swe browser-backend
+```
+
+It extracts `swe-swe-server` to `~/.swe-swe/browser-backend/bin/` and execs it
+with `-mode browser-backend`, forwarding every other argument. Default listen
+address `:9333` (this image's `ENV SWE_PORT=9333` has no equivalent off
+Docker); pass `-bind`/`-addr` to change it. `SWE_BIND`, `SWE_PORT` and `PORT`
+are ignored, so a variable the box exports for its own service cannot capture
+this one.
+
 ## Run
 
 ```sh
