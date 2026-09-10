@@ -1,6 +1,6 @@
 # Wildcard host-demux: one port, no tunnel
 
-**Status**: phases 1-2 done 2026-09-10 on branch `feat/wildcard-host-demux`. Phases 3-4 pending.
+**Status**: phases 1-3 done 2026-09-10 on branch `feat/wildcard-host-demux`. Phase 4 (docs) pending.
 
 ## Goal
 
@@ -153,10 +153,37 @@ use today. Phase 1 is plain http, or an admin-supplied wildcard certificate.
      a no-op in tunnel mode (`location.port` is empty there). Open question 2
      (whether `--public-hostname` should imply `SWE_PREVIEW_REACH_DOMAIN`) is
      still open and belongs to phase 3.
-3. **Live proof.** Boot dockerless with `--public-hostname` on a wildcard that
-   resolves here, log in once, and confirm the preview and Agent View panes
-   load on their own subdomains with no second login -- the exact thing that
-   bounced in ADR-0043's sidecar.
+3. **Live proof.** DONE 2026-09-10, driven with a real chromium (playwright)
+   against a host-native server on `lvh.me`, whose every subdomain already
+   resolves to 127.0.0.1 -- no DNS to set up, and the mechanism is identical
+   to a real wildcard.
+
+   Server: `SWE_RUNTIME=host SWE_SWE_PASSWORD=... swe-swe-server
+   -public-hostname=lvh.me -bind 127.0.0.1:19771`.
+
+   What was observed:
+
+   - Login once at `19771.lvh.me:19771` issues the cookie with
+     `Domain=.lvh.me` (ADR-0043 break 1).
+   - The page reports `publicHostname=lvh.me` and builds
+     `http://23000.lvh.me:19771` / `http://27000.lvh.me:19771/vnc_lite.html`
+     -- WITH the port, after the `buildSubdomainOrigin` fix. Before it, the
+     same run produced `http://23000.lvh.me` and would have gone to :80
+     (break 2, and the reason that fix is not optional).
+   - With that one login, `23000.lvh.me:19771` served a real app running on
+     the session's preview target (200, app's own body) and
+     `29000.lvh.me:19771` served the Files pane (200). Neither asked to log
+     in again (breaks 3 and 4).
+   - From a browser context with NO cookie, both return 401. The demuxer sits
+     in front of auth but is not a way past it: each per-port destination
+     still checks. 401-not-302 is the documented contract for cross-origin
+     iframes.
+   - The refusals from phase 2 were re-confirmed on this same box: `22.lvh.me`
+     and a raw (unproxied) target port 404, logged once per port.
+
+   Note for phase 4: the preview pane worked with NO `SWE_PREVIEW_REACH_DOMAIN`
+   set, which narrows open question 2 -- the reach domain is only needed for
+   viewing several apps at once, not for the mode to work.
 4. **Docs.** `docs/dockerless.md` (a third option beside co-located and tunnel),
    `docs/tunnel-explained.md` (when you do NOT need a tunnel), and an ADR
    recording that ADR-0043's rejection was re-examined and why this shape
