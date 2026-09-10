@@ -159,45 +159,64 @@ export function themeCookieDomain(location, publicHostname) {
 }
 
 /**
+ * Build the origin for a "{port}.{publicHostname}" address, keeping the port
+ * the page itself was reached on.
+ *
+ * Behind swe-swe-tunnel the page is served on 443 (or 80), so location.port is
+ * empty and the origin is just "{port}.{publicHostname}" -- unchanged. On a
+ * wildcard box serving its own subdomains (--public-hostname), swe-swe-server
+ * demuxes them on ITS OWN listener, which is typically :1977, so the port has
+ * to survive or the browser would go to :80 and reach nothing.
+ * @param {{protocol: string, port?: string}} location - Location-like object
+ * @param {number} port - The leftmost label: the loopback port to reach
+ * @param {string} publicHostname - Public hostname (e.g. "example.com")
+ * @returns {string} Origin, e.g. "https://23000.example.com" or "http://23000.example.com:1977"
+ */
+export function buildSubdomainOrigin(location, port, publicHostname) {
+    const suffix = location.port ? ':' + location.port : '';
+    return `${location.protocol}//${port}.${publicHostname}${suffix}`;
+}
+
+/**
  * Build the subdomain-based preview URL for tunnel mode. When swe-swe runs
  * behind a reverse tunnel (SWE_PUBLIC_HOSTNAME / --public-hostname), browser
  * requests to "{port}.{publicHostname}" are demuxed by the tunnel server
  * and forwarded to the right session's target port. The raw target port is
  * the leftmost subdomain label -- proxyPortOffset does not apply.
- * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {{protocol: string, port?: string}} location - Location-like object (protocol + port)
  * @param {number|null} targetPort - The per-session preview target port
  * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
  * @returns {string|null} Subdomain preview URL, or null if either input is missing
  */
 export function buildSubdomainPreviewUrl(location, targetPort, publicHostname) {
     if (!targetPort || !publicHostname) return null;
-    return `${location.protocol}//${targetPort}.${publicHostname}`;
+    return buildSubdomainOrigin(location, targetPort, publicHostname);
 }
 
 /**
  * Build the subdomain-based agent chat URL for tunnel mode. Same shape as
  * buildSubdomainPreviewUrl but for the agent-chat target port.
- * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {{protocol: string, port?: string}} location - Location-like object (protocol + port)
  * @param {number|null} targetPort - The per-session agent chat target port
  * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
  * @returns {string|null} Subdomain agent chat URL, or null if either input is missing
  */
 export function buildSubdomainAgentChatUrl(location, targetPort, publicHostname) {
     if (!targetPort || !publicHostname) return null;
-    return `${location.protocol}//${targetPort}.${publicHostname}`;
+    return buildSubdomainOrigin(location, targetPort, publicHostname);
 }
 
 /**
  * Build the subdomain-based files URL for tunnel mode. Same shape as
  * buildSubdomainPreviewUrl but for the files target port.
- * @param {{protocol: string}} location - Location-like object (only protocol used)
+ * @param {{protocol: string, port?: string}} location - Location-like object (protocol + port)
  * @param {number|null} targetPort - The per-session files target port
  * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
  * @returns {string|null} Subdomain files URL, or null if either input is missing
  */
 export function buildSubdomainFilesUrl(location, targetPort, publicHostname) {
     if (!targetPort || !publicHostname) return null;
-    return `${location.protocol}//${targetPort}.${publicHostname}`;
+    return buildSubdomainOrigin(location, targetPort, publicHostname);
 }
 
 /**

@@ -2197,6 +2197,13 @@ func main() {
 			"process and consumes its lifecycle events on stdout to learn "+
 			"the assigned public hostname. Empty disables tunnel mode. "+
 			"Env: SWE_TUNNEL_SERVER_URL.")
+	publicHostname := flag.String("public-hostname", "",
+		"Wildcard apex this box is reached at, e.g. example.com, when "+
+			"*.example.com DNS points here. Every per-port pane is then "+
+			"addressed as {port}.{this hostname} on this server's own "+
+			"listening port, so no swe-swe-tunnel is needed. --runtime=host "+
+			"only, and mutually exclusive with -tunnel-server-url. "+
+			"Env: SWE_PUBLIC_HOSTNAME.")
 	tunnelUnique := flag.String("tunnel-unique", "",
 		"Bare unique label for the tunnel registration (server appends "+
 			"-tunnel suffix). Optional; empty falls through to whatever "+
@@ -2333,6 +2340,40 @@ func main() {
 	if envCert, ok := os.LookupEnv("SWE_TUNNEL_CLIENT_CERT"); ok && !flagPassed("tunnel-client-cert") {
 		resolvedTunnelClientCert = envCert
 	}
+	// Wildcard host-demux: an operator-supplied public hostname takes the
+	// same seat the tunnel's register_ok hostname takes, so the cookie
+	// domain, the frontend's subdomain URL builders and the landing page
+	// all work with no tunnel at all. Refused under compose (Traefik cannot
+	// route wildcards) and refused alongside the tunnel (both own the
+	// value). See tasks/2026-09-09-wildcard-host-demux.md.
+	publicHostnameDecided, err := resolveConfiguredPublicHostname(
+		resolvePublicHostname(*publicHostname, flagPassed("public-hostname"), os.LookupEnv),
+		flagPassed("public-hostname"),
+		resolvedTunnelServerURL,
+		flagPassed("tunnel-server-url"),
+		os.Getenv(publicHostnameRuntimeEnv),
+	)
+	if err != nil {
+		log.Fatalf("swe-swe-server: %v", err)
+	}
+	if publicHostnameDecided.Note != "" {
+		log.Printf("Public hostname: %s", publicHostnameDecided.Note)
+	}
+	if publicHostnameDecided.DropTunnel {
+		resolvedTunnelServerURL = ""
+	}
+	if publicHostnameDecided.Hostname != "" {
+		configuredPublicHostname = publicHostnameDecided.Hostname
+		setLiveTunnelHostname(configuredPublicHostname)
+		// The tunnel supervisor prints an OPEN AT line when it learns its
+		// hostname; wildcard mode has no supervisor, so print the equivalent
+		// here. The port is part of the address: unlike the tunnel, which
+		// serves on 443, this box demuxes subdomains on its own listener.
+		log.Printf("Public hostname: %s -- OPEN AT http://%d.%s:%d/ (per-port panes are served as {port}.%s:%d)",
+			configuredPublicHostname, tunnelServerPort, configuredPublicHostname,
+			tunnelServerPort, configuredPublicHostname, tunnelServerPort)
+	}
+
 	// The non-secret parts are shared with any later runtime configure
 	// (POST /api/server/tunnel from the homepage Settings dialog).
 	initTunnelRuntime(tunnelSupervisorOpts{
@@ -3089,6 +3130,12 @@ func main() {
 		handler = setupEmbeddedAuth(authPassword)
 		log.Printf("Embedded auth enabled (SWE_SWE_PASSWORD set)")
 	}
+
+	// Wildcard host-demux (phase 2): serve {port}.{apex} on this same
+	// listener. Outermost wrap, ahead of auth, because each per-port
+	// destination checks the login cookie itself -- exactly as it does when
+	// tunneld forwards to those ports. No-op when -public-hostname is unset.
+	handler = publicHostnameDemux(configuredPublicHostname, tunnelServerPort, handler)
 
 	srv := &http.Server{Addr: listenAddr, Handler: handler}
 	go func() {
