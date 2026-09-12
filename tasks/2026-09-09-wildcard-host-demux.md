@@ -1,6 +1,6 @@
 # Wildcard host-demux: one port, no tunnel
 
-**Status**: phases 1-3 done 2026-09-10, merged. Break 5 re-tested 2026-09-12 and found FALSE -- the mode now works in every runtime. Phase 4 (docs) pending.
+**Status**: phases 1-3 done 2026-09-10, merged. Break 5 re-tested 2026-09-12 and found FALSE -- the mode now works in every runtime, PROVEN live through Traefik in a compose stack. Phase 4 (docs) pending.
 
 ## Goal
 
@@ -191,6 +191,32 @@ use today. Phase 1 is plain http, or an admin-supplied wildcard certificate.
    `docs/tunnel-explained.md` (when you do NOT need a tunnel), and an ADR
    recording that ADR-0043's rejection was re-examined and why this shape
    differs. CHANGELOG: one sentence.
+
+## Compose-mode proof, 2026-09-12
+
+Booted `make e2e-up-compose` (Traefik + selfsign, port 9770), set
+`SWE_PUBLIC_HOSTNAME=lvh.me`, logged in once at `9770.lvh.me` and:
+
+| Request | Result |
+|---|---|
+| `9770.lvh.me` | 200, the UI, and the login cookie carried `Domain=lvh.me` |
+| `23100.lvh.me` | 502 with `demux: -> upstream error: dial 127.0.0.1:23100` -- Traefik forwarded the Host and the demuxer acted; nothing was listening because no session was running |
+| `22.lvh.me` | 404, refused, logged once |
+| `3100.lvh.me` | 404 -- a raw app port, not its proxy |
+| `23100.evil.com` | 302, fell through to the normal UI |
+
+The refusal log printed the allowlist as `preview 23100-23129, agent-chat
+24100-24129, ...`, i.e. the e2e stack's own `--preview-ports`, confirming the
+bands really are derived from the live variables rather than hardcoded.
+
+Two things that bit during the run, both worth remembering:
+
+1. **ForwardAuth answers first.** An unauthenticated request never reaches the
+   backend, so the demuxer cannot be tested until you hold a cookie.
+2. **The cookie must be obtained AT a subdomain of the apex.** Logging in at
+   `host.docker.internal` yields a host-only cookie (`resolveCookieDomain`
+   correctly refuses to stamp a Domain that does not match the request host),
+   and every wildcard address then bounces.
 
 ## Open questions
 
