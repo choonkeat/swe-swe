@@ -520,58 +520,51 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
 
   <!-- ============ REACHABILITY ============ -->
   <section class="section">
-    <h2>Reaching it from a web browser</h2>
-    <p class="lede">This one applies whichever way you answered above.</p>
+    <h2>It is reached from a web browser by</h2>
+    <p class="lede">Pick one. This one applies whichever way you answered above.</p>
     <div class="card">
 
-      <div class="q">
-        <div class="q-head">
-          <input type="checkbox" id="c-anyport" checked>
-          <div>
-            <label class="q-label" for="c-anyport">Any port on this machine can be reached</label>
-            <div class="q-sub">Each session gets its own port for the app preview, so one port on its own is not enough.</div>
-          </div>
+      <div class="radio-row">
+        <input type="radio" name="reach" id="reach-anyport" value="anyport" checked>
+        <div>
+          <label class="r-label" for="reach-anyport">any port on it</label>
+          <div class="q-note">Your own laptop, a machine on your network, or a private network such as Tailscale. Each session gets its own port for the app preview, and they all just work. Nothing is added to the script.</div>
         </div>
-        <div class="q-body">
+      </div>
+
+      <div class="radio-row">
+        <input type="radio" name="reach" id="reach-wildcard" value="wildcard">
+        <div>
+          <label class="r-label" for="reach-wildcard">one fixed port, and wildcard subdomains reach it</label>
+          <div class="q-note">That is: <code>anything.&lt;the machine's hostname&gt;</code> reaches it, whatever you put in front of the dot. Running it locally, <code>lvh.me</code> already behaves this way.</div>
           <details class="how">
             <summary>how do I check?</summary>
             <div class="how-body">
-              <p class="q-sub">No command can answer this; it depends on who runs the machine. On your own laptop, leave it ticked. If someone handed you a single fixed web address to reach the machine, untick it.</p>
+              <p class="q-note">In a browser on the machine you will actually be using, open <code>anything.&lt;the machine's hostname&gt;</code> &mdash; literally the word "anything", or any word you like. If it reaches this machine, pick this one.</p>
             </div>
           </details>
-
-          <div id="oneport-body" hidden>
-            <div class="sub-box">
-              <h3>Wildcard subdomains reach this machine</h3>
-              <p class="q-sub">That is: <code>anything.&lt;the machine's hostname&gt;</code> reaches it, whatever you put in front of the dot.</p>
-              <details class="how">
-                <summary>how do I check?</summary>
-                <div class="how-body">
-                  <p class="q-sub">In a browser on the machine you will actually be using, open <code>anything.&lt;the machine's hostname&gt;</code> &mdash; literally the word "anything", or any word you like. If it reaches this machine, tick it.</p>
-                </div>
-              </details>
-              <label class="sub-check" style="margin-top:0.6rem;"><input type="checkbox" id="c-wildcard"> <span><b>Yes, they do</b> &mdash; then no tunnel is needed.</span></label>
-
-              <div id="wildcard-yes" hidden>
-                <div class="consequence">
-                  swe-swe serves every pane on that one port, each on its own subdomain. Nothing to run, nothing to paste, no steps after boot.
-                  <input type="text" id="c-wildcard-domain" placeholder="the machine's hostname, e.g. the-box.example.com" spellcheck="false">
-                </div>
-                <div class="warn">
-                  <p><b>Two limits, stated rather than hidden.</b></p>
-                  <p>1. Plain web addresses only. For a secure address (the padlock), something in front of this machine has to do the encryption and pass the traffic on, keeping the address it was asked for. swe-swe does not do it itself, and a wildcard certificate &mdash; one that covers every subdomain at once &mdash; is a different and slower thing to obtain.</p>
-                  <p>2. Only on a machine without Docker, so the second option at the top has to be the one you picked. With Docker, the traffic router in front cannot match wildcard subdomains.</p>
-                </div>
-                <div class="warn" id="wildcard-needs-host" hidden>
-                  <p><b>You picked Docker at the top, so this is not available.</b> Untick it and use the tunnel, or pick "git and the coding agents" instead.</p>
-                </div>
-              </div>
-
-              <div id="wildcard-no" class="consequence">
-                Without them, a tunnel is the only route. It gives you wildcard subdomains of its own hostname and hands your ports back on those. It needs a tunnel server to connect to, which is a separate thing to run &mdash; see the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Setting it up is the three steps below the script.
-              </div>
+          <div id="wildcard-yes" hidden>
+            <div class="consequence">
+              swe-swe serves every pane on that one port, each on its own subdomain. No tunnel, nothing to paste, no steps after boot.
+              <input type="text" id="c-wildcard-domain" placeholder="the machine's hostname, e.g. the-box.example.com" spellcheck="false">
+            </div>
+            <div class="warn">
+              <p><b>Two limits, stated rather than hidden.</b></p>
+              <p>1. Plain web addresses only. For a secure address (the padlock), something in front of this machine has to do the encryption and pass the traffic on, keeping the address it was asked for. swe-swe does not do it itself, and a wildcard certificate &mdash; one that covers every subdomain at once &mdash; is a different and slower thing to obtain.</p>
+              <p>2. Only on a machine without Docker, so the second option at the top has to be the one you picked. With Docker, the traffic router in front cannot match wildcard subdomains.</p>
+            </div>
+            <div class="warn" id="wildcard-needs-host" hidden>
+              <p><b>You picked Docker at the top, so this is not available.</b> Pick the option below and use a tunnel, or pick "git and the coding agents" at the top.</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="radio-row">
+        <input type="radio" name="reach" id="reach-tunnel" value="tunnel">
+        <div>
+          <label class="r-label" for="reach-tunnel">one fixed port, and nothing else</label>
+          <div class="q-note">A tunnel is then the only route. It gives you wildcard subdomains of its own hostname and hands your ports back on those. It needs a tunnel server to connect to, which is a separate thing to run &mdash; see the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Setting it up is the three steps below the script.</div>
         </div>
       </div>
 
@@ -603,7 +596,7 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     <div class="card">
       <ol>
         <li>Open the address your host gives you, and log in with your password.</li>
-        <li>Gear icon, Settings, "Tunnel secrets". Paste your lines. Apply.</li>
+        <li>Gear icon, then Settings. In the "Tunnel secrets" box, paste your tunnel lines. Apply.</li>
         <li>The strip at the top of the page shows "connecting", then a link. Open that link. Every pane works there, and it is the same link every boot.</li>
       </ol>
     </div>
@@ -695,8 +688,7 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     browserAddr: '',
     browserNoInbound: false,
     mcpOk: true,
-    anyPort: true,
-    wildcard: false,
+    reach: 'anyport',
     wildcardDomain: '',
     runMode: 'hand'
   };
@@ -719,12 +711,12 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
   // The wildcard route lives inside swe-swe-server's own listener, which only
   // exists host-native: with Docker, the traffic router in front cannot match
   // a wildcard.
-  function wildcardRoute() { return !state.anyPort && state.wildcard && hostRuntime(); }
-  function needsTunnel() { return !state.anyPort && !wildcardRoute(); }
+  function wildcardRoute() { return state.reach === 'wildcard' && hostRuntime(); }
+  function needsTunnel() { return state.reach !== 'anyport' && !wildcardRoute(); }
 
   // "Ordinary" means a laptop with Docker and every port reachable, which is
   // what the home page already documents.
-  function ordinary() { return state.have === 'docker' && state.anyPort; }
+  function ordinary() { return state.have === 'docker' && state.reach === 'anyport'; }
 
   // ---------- Script generation ----------
   var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
@@ -880,10 +872,8 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
       renderProbes();
     }
 
-    el('oneport-body').hidden = state.anyPort;
-    el('wildcard-yes').hidden = state.anyPort || !state.wildcard;
-    el('wildcard-no').hidden = state.anyPort || state.wildcard;
-    el('wildcard-needs-host').hidden = !(!state.anyPort && state.wildcard && !hostRuntime());
+    el('wildcard-yes').hidden = state.reach !== 'wildcard';
+    el('wildcard-needs-host').hidden = !(state.reach === 'wildcard' && !hostRuntime());
 
     el('version-note').hidden = ordinary();
     el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
@@ -913,14 +903,15 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
   el('c-node').addEventListener('change', function() { state.node = this.checked; render(); });
   el('c-browsertools').addEventListener('change', function() { state.browserTools = this.checked; render(); });
   el('c-mcp').addEventListener('change', function() { state.mcpOk = this.checked; render(); });
-  el('c-anyport').addEventListener('change', function() { state.anyPort = this.checked; render(); });
-  el('c-wildcard').addEventListener('change', function() { state.wildcard = this.checked; render(); });
   el('c-browser-noinbound').addEventListener('change', function() { state.browserNoInbound = this.checked; render(); });
   el('c-browser-addr').addEventListener('input', function() { state.browserAddr = this.value; render(); });
   el('c-wildcard-domain').addEventListener('input', function() { state.wildcardDomain = this.value; render(); });
 
   Array.prototype.forEach.call(document.querySelectorAll('input[name="browser-fallback"]'), function(r) {
     r.addEventListener('change', function() { if (this.checked) { state.browserFallback = this.value; render(); } });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="reach"]'), function(r) {
+    r.addEventListener('change', function() { if (this.checked) { state.reach = this.value; render(); } });
   });
 
   document.getElementById('run-mode').addEventListener('click', function(e) {
