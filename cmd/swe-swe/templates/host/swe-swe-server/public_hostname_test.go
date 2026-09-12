@@ -95,31 +95,6 @@ func TestNormalizePublicHostnameRejects(t *testing.T) {
 	}
 }
 
-// The mode is host-runtime only: ADR-0043 break 5 (Traefik's Host() rules
-// cannot match a wildcard, and its certificate is pinned to one domain).
-func TestRequirePublicHostnameHostRuntime(t *testing.T) {
-	tests := []struct {
-		mode    string
-		wantErr bool
-	}{
-		{"host", false},
-		{"container", true},
-		{"container-with-docker-socket", true},
-		{"", true},
-	}
-	for _, tc := range tests {
-		t.Run("runtime="+tc.mode, func(t *testing.T) {
-			err := requirePublicHostnameHostRuntime(tc.mode)
-			if tc.wantErr && err == nil {
-				t.Fatalf("requirePublicHostnameHostRuntime(%q) = nil, want an error", tc.mode)
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("requirePublicHostnameHostRuntime(%q) errored: %v", tc.mode, err)
-			}
-		})
-	}
-}
-
 func TestResolveConfiguredPublicHostname(t *testing.T) {
 	const tunnelURL = "https://tunnel.example.com"
 	tests := []struct {
@@ -128,20 +103,22 @@ func TestResolveConfiguredPublicHostname(t *testing.T) {
 		rawExplicit   bool
 		tunnel        string
 		tunnelExplict bool
-		runtime       string
 		want          string
 		wantDropTun   bool
 		wantNote      bool
 		wantErr       bool
 	}{
-		{name: "off by default", runtime: "host"},
-		{name: "off leaves the tunnel alone", tunnel: tunnelURL, runtime: "container"},
-		{name: "host runtime accepts", raw: "*.example.com", rawExplicit: true, runtime: "host", want: "example.com"},
-		{name: "compose rejects", raw: "example.com", rawExplicit: true, runtime: "container", wantErr: true},
-		{name: "compose with docker socket rejects", raw: "example.com", rawExplicit: true, runtime: "container-with-docker-socket", wantErr: true},
-		{name: "undeclared runtime rejects", raw: "example.com", rawExplicit: true, runtime: "", wantErr: true},
-		{name: "bad hostname rejects before anything else", raw: "example.com:1977", rawExplicit: true, runtime: "host", wantErr: true},
-		{name: "blank tunnel is not set", raw: "example.com", rawExplicit: true, tunnel: "   ", runtime: "host", want: "example.com"},
+		{name: "off by default"},
+		{name: "off leaves the tunnel alone", tunnel: tunnelURL},
+		{name: "accepted", raw: "*.example.com", rawExplicit: true, want: "example.com"},
+		{name: "bad hostname rejected", raw: "example.com:1977", rawExplicit: true, wantErr: true},
+		{name: "blank tunnel is not set", raw: "example.com", rawExplicit: true, tunnel: "   ", want: "example.com"},
+
+		// Every runtime is allowed: the rules swe-swe generates for Traefik
+		// carry no Host() matcher, so a wildcard address reaches this server
+		// with its Host intact, and the default compose setup has no Traefik
+		// at all.
+		{name: "no runtime is refused", raw: "example.com", rawExplicit: true, want: "example.com"},
 
 		// A flag cannot be inherited by accident; a variable can. A box
 		// carrying a stale SWE_TUNNEL_SERVER_URL must not defeat an
@@ -150,38 +127,38 @@ func TestResolveConfiguredPublicHostname(t *testing.T) {
 			name: "explicit flag beats inherited tunnel env",
 			raw:  "example.com", rawExplicit: true,
 			tunnel: tunnelURL, tunnelExplict: false,
-			runtime: "host", want: "example.com", wantDropTun: true, wantNote: true,
+			want: "example.com", wantDropTun: true, wantNote: true,
 		},
 		{
 			name: "explicit tunnel flag beats inherited hostname env",
 			raw:  "example.com", rawExplicit: false,
 			tunnel: tunnelURL, tunnelExplict: true,
-			runtime: "host", want: "", wantNote: true,
+			want: "", wantNote: true,
 		},
 		{
 			name: "both explicit is a hard error",
 			raw:  "example.com", rawExplicit: true,
 			tunnel: tunnelURL, tunnelExplict: true,
-			runtime: "host", wantErr: true,
+			wantErr: true,
 		},
 		{
 			name: "both inherited is a hard error",
 			raw:  "example.com", rawExplicit: false,
 			tunnel: tunnelURL, tunnelExplict: false,
-			runtime: "host", wantErr: true,
+			wantErr: true,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveConfiguredPublicHostname(tc.raw, tc.rawExplicit, tc.tunnel, tc.tunnelExplict, tc.runtime)
+			got, err := resolveConfiguredPublicHostname(tc.raw, tc.rawExplicit, tc.tunnel, tc.tunnelExplict)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("resolveConfiguredPublicHostname(%q, %v, %q, %v, %q) = %+v, want an error", tc.raw, tc.rawExplicit, tc.tunnel, tc.tunnelExplict, tc.runtime, got)
+					t.Fatalf("resolveConfiguredPublicHostname(%q, %v, %q, %v) = %+v, want an error", tc.raw, tc.rawExplicit, tc.tunnel, tc.tunnelExplict, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolveConfiguredPublicHostname(%q, %v, %q, %v, %q) errored: %v", tc.raw, tc.rawExplicit, tc.tunnel, tc.tunnelExplict, tc.runtime, err)
+				t.Fatalf("resolveConfiguredPublicHostname(%q, %v, %q, %v) errored: %v", tc.raw, tc.rawExplicit, tc.tunnel, tc.tunnelExplict, err)
 			}
 			if got.Hostname != tc.want {
 				t.Errorf("Hostname = %q, want %q", got.Hostname, tc.want)
@@ -196,14 +173,14 @@ func TestResolveConfiguredPublicHostname(t *testing.T) {
 	}
 }
 
-// The whole point of phase 1: the setting lands in the same place the tunnel's
+// The whole point: the setting lands in the same place the tunnel's
 // hostname lands, so every existing consumer (cookie domain, subdomain URL
 // builders, landing page) picks it up unchanged.
 func TestPublicHostnameFeedsLiveTunnelHostname(t *testing.T) {
 	prev := getLiveTunnelHostname()
 	t.Cleanup(func() { setLiveTunnelHostname(prev) })
 
-	decided, err := resolveConfiguredPublicHostname("*.example.com", true, "", false, "host")
+	decided, err := resolveConfiguredPublicHostname("*.example.com", true, "", false)
 	if err != nil {
 		t.Fatalf("resolveConfiguredPublicHostname errored: %v", err)
 	}

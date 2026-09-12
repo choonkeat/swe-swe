@@ -208,11 +208,6 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, 
 	// SWE_SERVER_PORT; the server passes it through to sessions. In the
 	// container the entrypoint exports it; here `swe-swe up` does.
 	env = append(env, "SWE_SERVER_PORT="+port)
-	// Declare the runtime to the server. Settings that only work host-native
-	// (today: -public-hostname, whose wildcard addressing Traefik cannot route)
-	// gate on this. docker-compose never sets it, which is the discrimination
-	// they need.
-	env = append(env, "SWE_RUNTIME="+RuntimeHost)
 	if mcpLess {
 		env = append(env, "SWE_MCP_LESS=1")
 	}
