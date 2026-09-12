@@ -468,19 +468,16 @@ code { font-family: var(--mono); color: var(--text-primary); }
             <div class="choice">
               <label><input type="radio" name="browser-fallback" value="install" checked> <span><b>I can install them.</b> The script adds the install line.</span></label>
               <label><input type="radio" name="browser-fallback" value="off"> <span><b>I cannot install anything.</b> The Agent View pane is switched off. Every other pane still works.</span></label>
-              <label><input type="radio" name="browser-fallback" value="remote"> <span><b>I run the browser on another machine.</b></span></label>
+              <label><input type="radio" name="browser-fallback" value="remote"> <span><b>I can install them on a different machine.</b> Its setup is a separate block below the script.</span></label>
             </div>
             <div id="browser-install" class="consequence">
               Added before swe-swe starts. That package list is for Debian and Ubuntu; other systems have the same programs under different names.
               <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sudo apt-get install -y chromium xvfb x11vnc novnc websockify</code></pre></div>
             </div>
             <div id="browser-remote" hidden>
-              <input type="text" id="c-browser-addr" placeholder="http://browser-box:9333" spellcheck="false">
               <div class="consequence">
-                On that other machine, three lines. It needs Linux on a 64-bit machine, and its own ports reachable from this one.
-                <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
-sudo apt-get install -y chromium xvfb x11vnc novnc websockify
-SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></pre></div>
+                That machine needs Linux on a 64-bit machine, and its own ports reachable from this one.
+                <input type="text" id="c-browser-addr" placeholder="the address it will answer on, e.g. http://browser-box:9333" spellcheck="false">
               </div>
               <label class="sub-check"><input type="checkbox" id="c-browser-noinbound"> <span>That machine cannot open connections back to this one. <span class="q-sub">Ticked, this machine does the connecting instead, outward only, so nothing has to be able to reach in.</span></span></label>
             </div>
@@ -599,6 +596,12 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
 
     <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code id="script-out"></code></pre></div>
     <p class="lede" id="script-note" style="margin-top:0.75rem;margin-bottom:0;"></p>
+
+    <div id="other-machine" hidden style="margin-top:1.75rem;">
+      <h2 style="font-size:1.1rem;font-weight:600;margin-bottom:0.35rem;">And on the different machine, the one with the browser</h2>
+      <p class="lede" style="margin-bottom:0.5rem;">Run this there, not on the machine above. Pick any shared secret you like, as long as both machines use the same one.</p>
+      <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code id="other-machine-script"></code></pre></div>
+    </div>
   </section>
 
   <!-- ============ SECOND BLOCK ============ -->
@@ -822,6 +825,16 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     return lines.join('\n');
   }
 
+  function otherMachineScript() {
+    return [
+      INSTALL_SH,
+      'export PATH="$HOME/.local/bin:$PATH"',
+      APT_LINE,
+      '',
+      'SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend'
+    ].join('\n');
+  }
+
   function scriptNote() {
     if (state.runMode === 'startup') {
       return 'Always included without asking: the port number spelled out, the most basic shell syntax, and starting in the background with a log file. There is no terminal to keep open on a machine like this.';
@@ -897,6 +910,8 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     el('version-note').hidden = ordinary();
     el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
     el('script-note').textContent = scriptNote();
+    el('other-machine').hidden = !agentViewRemote();
+    if (agentViewRemote()) el('other-machine-script').textContent = otherMachineScript();
     el('tunnel-steps').hidden = blocked() || !needsTunnel();
   }
 
