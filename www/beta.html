@@ -318,6 +318,20 @@ code { font-family: var(--mono); color: var(--text-primary); }
   .header h1 { font-size: 2rem; }
   .q-body { margin-left: 0; }
 }
+
+.q-note { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.35rem; }
+
+.radio-row { display: flex; gap: 0.65rem; align-items: flex-start; padding: 0.4rem 0; }
+.radio-row input[type="radio"] { margin-top: 0.4rem; accent-color: var(--accent); flex: 0 0 auto; }
+.radio-row .r-label { font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+
+.blocked {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+  background: var(--bg-primary);
+}
+.blocked h3 { font-size: 1rem; margin-bottom: 0.35rem; }
 </style>
 </head>
 <body>
@@ -330,7 +344,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   <header class="header">
     <h1>swe-swe<span class="beta-badge">beta</span></h1>
-    <p class="tagline">Tell the page what your machine <b>cannot</b> do, and it writes the start-up script for you. Tick nothing and you get the ordinary four lines.</p>
+    <p class="tagline">Tell the page what your machine <b>has</b>, and it writes the start-up script for you. Leave everything as it is and you get the ordinary four lines.</p>
     <div class="links">
       <a href="/">home</a>
       <a href="https://github.com/choonkeat/swe-swe">github</a>
@@ -339,60 +353,85 @@ code { font-family: var(--mono); color: var(--text-primary); }
     </div>
   </header>
 
-  <!-- ============ AGENT PICKER ============ -->
+  <!-- ============ Q1: WHAT THE MACHINE HAS ============ -->
   <section class="section">
-    <h2>Which coding agents do you use?</h2>
-    <p class="lede">Pick any. This decides which check commands you are shown, and whether question 3 answers itself.</p>
-    <div class="card">
-      <div class="pills" id="agent-pills">
-        <button type="button" class="pill" data-agent="claude" aria-pressed="true">Claude</button>
-        <button type="button" class="pill" data-agent="codex" aria-pressed="false">Codex</button>
-        <button type="button" class="pill" data-agent="opencode" aria-pressed="false">OpenCode</button>
-        <button type="button" class="pill" data-agent="gemini" aria-pressed="false">Gemini</button>
-        <button type="button" class="pill" data-agent="goose" aria-pressed="false">Goose</button>
-        <button type="button" class="pill" data-agent="aider" aria-pressed="false">Aider</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ CHECKLIST ============ -->
-  <section class="section">
-    <h2>Anything your machine can't do?</h2>
-    <p class="lede">Every check below prints its own answer: <b>leave the box CLEAR</b> or <b>TICK the box</b>. Paste it into a terminal on the machine you are setting up.</p>
-
+    <h2>My machine has</h2>
+    <p class="lede">Pick one. Every check below prints its own answer, so you never have to interpret a wall of output.</p>
     <div class="card">
 
-      <!-- Q1 Docker -->
-      <div class="q" id="q1">
-        <div class="q-head">
-          <input type="checkbox" id="c-docker">
-          <div>
-            <label class="q-label" for="c-docker">1. This machine cannot run Docker</label>
-            <div class="q-sub">Docker packages up the agent and its tools. Without it, swe-swe runs them directly on the machine.</div>
-          </div>
-        </div>
-        <div class="q-body">
+      <div class="radio-row">
+        <input type="radio" name="have" id="have-docker" value="docker" checked>
+        <div>
+          <label class="r-label" for="have-docker">Docker</label>
+          <div class="q-note">swe-swe packages up the coding agent and all its tools for you. Nothing else needs installing.</div>
           <details class="how">
             <summary>how do I check?</summary>
             <div class="how-body verdict-cmd">
-              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>docker info &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Docker works: leave the box CLEAR" || echo "No Docker here: TICK the box"</code></pre></div>
-              <p class="q-sub">If you have Docker Desktop, start it and run this again before ticking.</p>
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>docker info &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Docker works: pick Docker" || echo "No Docker here: pick one of the others"</code></pre></div>
+              <p class="q-note">If you have Docker Desktop, start it and run this again.</p>
             </div>
           </details>
-          <div class="consequence" id="q1-consequence" hidden>
-            <b>Ticked, so this machine also needs:</b> git, and at least one coding agent already installed. Without Docker, swe-swe cannot supply the agent itself.
-            <div class="code-block verdict-cmd"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>command -v git &gt;/dev/null 2&gt;&amp;1 &amp;&amp; command -v claude gemini codex goose aider opencode pi &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Ready: git and a coding agent are installed" || echo "Not ready: install git and one of claude gemini codex goose aider opencode pi"</code></pre></div>
-            <div>Linux on a 64-bit machine, Intel or ARM. Not Windows, and not tested on macOS.</div>
-          </div>
         </div>
       </div>
 
-      <!-- Q2 Node -->
-      <div class="q" id="q2">
+      <div class="radio-row">
+        <input type="radio" name="have" id="have-agents" value="agents">
+        <div>
+          <label class="r-label" for="have-agents">git and the coding agents</label>
+          <div class="q-note">No Docker, but the agent is already installed on the machine. swe-swe runs everything directly. Linux on a 64-bit machine, Intel or ARM.</div>
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body verdict-cmd">
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>command -v git &gt;/dev/null 2&gt;&amp;1 &amp;&amp; command -v claude gemini codex goose aider opencode pi &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "git and a coding agent are installed: pick this one" || echo "Missing one of them: pick none of the above"</code></pre></div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div class="radio-row">
+        <input type="radio" name="have" id="have-none" value="none">
+        <div>
+          <label class="r-label" for="have-none">none of the above</label>
+        </div>
+      </div>
+
+      <div id="agent-picker" hidden style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border-primary);">
+        <div class="q-note" style="margin-bottom:0.5rem;">Which coding agents? This decides the check you are shown further down, and whether one of the boxes answers itself.</div>
+        <div class="pills" id="agent-pills">
+          <button type="button" class="pill" data-agent="claude" aria-pressed="true">Claude</button>
+          <button type="button" class="pill" data-agent="codex" aria-pressed="false">Codex</button>
+          <button type="button" class="pill" data-agent="opencode" aria-pressed="false">OpenCode</button>
+          <button type="button" class="pill" data-agent="gemini" aria-pressed="false">Gemini</button>
+          <button type="button" class="pill" data-agent="goose" aria-pressed="false">Goose</button>
+          <button type="button" class="pill" data-agent="aider" aria-pressed="false">Aider</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ BLOCKED ============ -->
+  <section class="section" id="blocked" hidden>
+    <div class="blocked">
+      <h3>Install one of these first</h3>
+      <p class="q-note">swe-swe needs either Docker, or git plus a coding agent already on the machine. There is no third way.</p>
+      <p class="q-note" style="margin-top:0.6rem;"><b>Easiest:</b> install <a href="https://docs.docker.com/get-docker/" target="_blank" rel="noopener">Docker</a>, then come back and pick the first option.</p>
+      <p class="q-note"><b>Or:</b> install git and one of claude, gemini, codex, goose, aider, opencode, pi &mdash; then pick the second option.</p>
+    </div>
+  </section>
+
+  <!-- ============ WHAT ELSE THE MACHINE HAS ============ -->
+  <section class="section" id="host-questions" hidden>
+    <h2>It also has</h2>
+    <p class="lede">These start ticked. Untick anything your machine does not have.</p>
+    <div class="card">
+
+      <!-- Node -->
+      <div class="q">
         <div class="q-head">
-          <input type="checkbox" id="c-node">
+          <input type="checkbox" id="c-node" checked>
           <div>
-            <label class="q-label" for="c-node">2. Node is not installed</label>
+            <label class="q-label" for="c-node">Node installed</label>
             <div class="q-sub">Node is what the usual one-line install uses. Without it there is a plain download instead.</div>
           </div>
         </div>
@@ -400,48 +439,21 @@ code { font-family: var(--mono); color: var(--text-primary); }
           <details class="how">
             <summary>how do I check?</summary>
             <div class="how-body verdict-cmd">
-              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>command -v node &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Node is installed: leave the box CLEAR" || echo "No Node: TICK the box"</code></pre></div>
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>command -v node &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Node is installed: leave it TICKED" || echo "No Node: UNTICK it"</code></pre></div>
             </div>
           </details>
-          <div class="consequence" id="q2-consequence" hidden>
-            <b>Ticked:</b> the first line of the script becomes a plain download instead of the Node one-liner. Nothing else changes.
+          <div class="consequence" id="node-consequence" hidden>
+            <b>Unticked:</b> the first line of the script becomes a plain download. Nothing else changes.
           </div>
         </div>
       </div>
 
-      <!-- Q3 MCP -->
-      <div class="q" id="q3">
+      <!-- Browser tools -->
+      <div class="q">
         <div class="q-head">
-          <input type="checkbox" id="c-mcp">
+          <input type="checkbox" id="c-browsertools" checked>
           <div>
-            <label class="q-label" for="c-mcp">3. My agent cannot use swe-swe's bundled MCP config</label>
-            <div class="q-sub" id="q3-why">Only applies without Docker. With Docker the agent runs inside swe-swe's own setup, where the config always works, so tick question 1 first.</div>
-          </div>
-        </div>
-        <div class="q-body" id="q3-body" hidden>
-          <details class="how">
-            <summary>how do I check?</summary>
-            <div class="how-body verdict-cmd">
-              <p class="q-sub">One command per agent you picked. Each makes a throwaway folder, asks the agent to list its tools, then deletes the folder. Your real settings are never touched.</p>
-              <div id="q3-probes"></div>
-              <p class="q-sub" id="q3-noprobe" hidden>No check for the agents you picked. Leave it clear, and if the chat never answers you once swe-swe is running, come back and tick it.</p>
-            </div>
-          </details>
-          <div class="consequence" id="q3-forced" hidden>
-            <b>Ticked for you:</b> without Docker, swe-swe only writes a tools file for Claude, so Codex and OpenCode always need this.
-          </div>
-          <div class="consequence" id="q3-consequence" hidden>
-            <b>Ticked:</b> the agent reaches every tool by typing a command instead of through its own tools list.
-          </div>
-        </div>
-      </div>
-
-      <!-- Q4 Browser tools -->
-      <div class="q" id="q4">
-        <div class="q-head">
-          <input type="checkbox" id="c-browser">
-          <div>
-            <label class="q-label" for="c-browser">4. The browser tools are missing and I cannot install them</label>
+            <label class="q-label" for="c-browsertools">chromium, xvfb, x11vnc, novnc and websockify installed</label>
             <div class="q-sub">These are what the Agent View pane uses to show you a browser the agent can drive.</div>
           </div>
         </div>
@@ -449,18 +461,20 @@ code { font-family: var(--mono); color: var(--text-primary); }
           <details class="how">
             <summary>how do I check?</summary>
             <div class="how-body verdict-cmd">
-              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sh -c 'm=""; for b in Xvfb x11vnc websockify; do command -v "$b" &gt;/dev/null 2&gt;&amp;1 || m="$m $b"; done; command -v chromium &gt;/dev/null 2&gt;&amp;1 || command -v chromium-browser &gt;/dev/null 2&gt;&amp;1 || m="$m chromium"; [ -z "$m" ] &amp;&amp; echo "All browser tools present: leave the box CLEAR" || echo "Missing:$m -- if you can install them, leave the box CLEAR; if you cannot install anything, TICK the box"'</code></pre></div>
-              <p class="q-sub">If they are missing but you can install them, leave the box clear and run this first:</p>
-              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sudo apt-get install -y chromium xvfb x11vnc novnc websockify</code></pre></div>
-              <p class="q-sub">That package list is for Debian and Ubuntu. Other systems have the same programs under different names.</p>
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sh -c 'm=""; for b in Xvfb x11vnc websockify; do command -v "$b" &gt;/dev/null 2&gt;&amp;1 || m="$m $b"; done; command -v chromium &gt;/dev/null 2&gt;&amp;1 || command -v chromium-browser &gt;/dev/null 2&gt;&amp;1 || m="$m chromium"; [ -z "$m" ] &amp;&amp; echo "All present: leave it TICKED" || echo "Missing:$m -- UNTICK it"'</code></pre></div>
             </div>
           </details>
-          <div id="q4-body" hidden>
+          <div id="browser-body" hidden>
             <div class="choice">
-              <label><input type="radio" name="browser-choice" value="off" checked> <span><b>No browser.</b> The Agent View pane is switched off. Every other pane still works.</span></label>
-              <label><input type="radio" name="browser-choice" value="remote"> <span><b>I run the browser on another machine.</b></span></label>
+              <label><input type="radio" name="browser-fallback" value="install" checked> <span><b>I can install them.</b> The script adds the install line.</span></label>
+              <label><input type="radio" name="browser-fallback" value="off"> <span><b>I cannot install anything.</b> The Agent View pane is switched off. Every other pane still works.</span></label>
+              <label><input type="radio" name="browser-fallback" value="remote"> <span><b>I run the browser on another machine.</b></span></label>
             </div>
-            <div id="q4-remote" hidden>
+            <div id="browser-install" class="consequence">
+              Added before swe-swe starts. That package list is for Debian and Ubuntu; other systems have the same programs under different names.
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sudo apt-get install -y chromium xvfb x11vnc novnc websockify</code></pre></div>
+            </div>
+            <div id="browser-remote" hidden>
               <input type="text" id="c-browser-addr" placeholder="http://browser-box:9333" spellcheck="false">
               <div class="consequence">
                 On that other machine, three lines. It needs Linux on a 64-bit machine, and its own ports reachable from this one.
@@ -474,38 +488,71 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
         </div>
       </div>
 
-      <!-- Q5 One port -->
-      <div class="q" id="q5">
+      <!-- MCP -->
+      <div class="q">
         <div class="q-head">
-          <input type="checkbox" id="c-oneport">
+          <input type="checkbox" id="c-mcp" checked>
           <div>
-            <label class="q-label" for="c-oneport">5. Only one port on this machine can be reached from a web browser</label>
-            <div class="q-sub">Each session gets its own port for the app preview, so one port is not enough on its own.</div>
+            <label class="q-label" for="c-mcp">An agent that can use swe-swe's bundled MCP config</label>
+            <div class="q-sub">That config is how the agent finds swe-swe's own tools. Some agents ignore a config placed in the project folder.</div>
+          </div>
+        </div>
+        <div class="q-body">
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body verdict-cmd">
+              <p class="q-sub">One command per agent you picked. Each makes a throwaway folder, asks the agent to list its tools, then deletes the folder. Your real settings are never touched.</p>
+              <div id="mcp-probes"></div>
+              <p class="q-sub" id="mcp-noprobe" hidden>No check for the agents you picked. Leave it ticked, and if the chat never answers you once swe-swe is running, come back and untick it.</p>
+            </div>
+          </details>
+          <div class="consequence" id="mcp-forced" hidden>
+            <b>Unticked for you:</b> without Docker, swe-swe only writes that config for Claude, so Codex and OpenCode always need the other route.
+          </div>
+          <div class="consequence" id="mcp-consequence" hidden>
+            <b>Unticked:</b> the agent reaches every tool by typing a command instead of through its own tools list.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ REACHABILITY ============ -->
+  <section class="section">
+    <h2>Reaching it from a web browser</h2>
+    <p class="lede">This one applies whichever way you answered above.</p>
+    <div class="card">
+
+      <div class="q">
+        <div class="q-head">
+          <input type="checkbox" id="c-anyport" checked>
+          <div>
+            <label class="q-label" for="c-anyport">Any port on this machine can be reached</label>
+            <div class="q-sub">Each session gets its own port for the app preview, so one port on its own is not enough.</div>
           </div>
         </div>
         <div class="q-body">
           <details class="how">
             <summary>how do I check?</summary>
             <div class="how-body">
-              <p class="q-sub">No command can answer this; it depends on who runs the machine. If someone handed you a single web address to reach it, tick it.</p>
+              <p class="q-sub">No command can answer this; it depends on who runs the machine. On your own laptop, leave it ticked. If someone handed you a single fixed web address to reach the machine, untick it.</p>
             </div>
           </details>
-          <div id="q5-body" hidden>
+
+          <div id="oneport-body" hidden>
             <div class="sub-box">
-              <h3>Does this machine have wildcard subdomains?</h3>
-              <p class="q-sub">That is: <code>anything.&lt;the machine's hostname&gt;</code> reaches this machine, whatever you put in front of the dot.</p>
+              <h3>Wildcard subdomains reach this machine</h3>
+              <p class="q-sub">That is: <code>anything.&lt;the machine's hostname&gt;</code> reaches it, whatever you put in front of the dot.</p>
               <details class="how">
                 <summary>how do I check?</summary>
                 <div class="how-body">
-                  <p class="q-sub">In a browser on the machine you will actually be using, open <code>anything.&lt;the machine's hostname&gt;</code> &mdash; literally the word "anything", or any word you like. If it reaches this machine, the answer is yes.</p>
+                  <p class="q-sub">In a browser on the machine you will actually be using, open <code>anything.&lt;the machine's hostname&gt;</code> &mdash; literally the word "anything", or any word you like. If it reaches this machine, tick it.</p>
                 </div>
               </details>
-              <div class="choice">
-                <label><input type="radio" name="wildcard" value="yes"> <span><b>Yes</b> &mdash; no tunnel needed.</span></label>
-                <label><input type="radio" name="wildcard" value="no" checked> <span><b>No</b> &mdash; a tunnel is the only route.</span></label>
-              </div>
+              <label class="sub-check" style="margin-top:0.6rem;"><input type="checkbox" id="c-wildcard"> <span><b>Yes, they do</b> &mdash; then no tunnel is needed.</span></label>
 
-              <div id="q5-yes" hidden>
+              <div id="wildcard-yes" hidden>
                 <div class="consequence">
                   swe-swe serves every pane on that one port, each on its own subdomain. Nothing to run, nothing to paste, no steps after boot.
                   <input type="text" id="c-wildcard-domain" placeholder="the machine's hostname, e.g. the-box.example.com" spellcheck="false">
@@ -513,15 +560,15 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
                 <div class="warn">
                   <p><b>Two limits, stated rather than hidden.</b></p>
                   <p>1. Plain web addresses only. For a secure address (the padlock), something in front of this machine has to do the encryption and pass the traffic on, keeping the address it was asked for. swe-swe does not do it itself, and a wildcard certificate &mdash; one that covers every subdomain at once &mdash; is a different and slower thing to obtain.</p>
-                  <p>2. Only on a machine with no Docker, so question 1 has to be ticked too. With Docker, the traffic router in front cannot match wildcard subdomains.</p>
+                  <p>2. Only on a machine without Docker, so the second option at the top has to be the one you picked. With Docker, the traffic router in front cannot match wildcard subdomains.</p>
                 </div>
-                <div class="warn" id="q5-needs-q1" hidden>
-                  <p><b>Question 1 is not ticked, so this is not available.</b> Tick question 1, or answer No here and use the tunnel.</p>
+                <div class="warn" id="wildcard-needs-host" hidden>
+                  <p><b>You picked Docker at the top, so this is not available.</b> Untick it and use the tunnel, or pick "git and the coding agents" instead.</p>
                 </div>
               </div>
 
-              <div id="q5-no" class="consequence" hidden>
-                The tunnel gives you wildcard subdomains of its own hostname, and hands your ports back on those. It needs a tunnel server to connect to, which is a separate thing to run &mdash; see the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Setting it up is the three steps below the script.
+              <div id="wildcard-no" class="consequence">
+                Without them, a tunnel is the only route. It gives you wildcard subdomains of its own hostname and hands your ports back on those. It needs a tunnel server to connect to, which is a separate thing to run &mdash; see the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Setting it up is the three steps below the script.
               </div>
             </div>
           </div>
@@ -532,7 +579,7 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
   </section>
 
   <!-- ============ OUTPUT ============ -->
-  <section class="section">
+  <section class="section" id="output">
     <div class="output-head">
       <h2 style="margin:0;">Run this</h2>
       <div class="toggle" id="run-mode">
@@ -623,8 +670,8 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
   // asks the agent to list its tools, and deletes the folder. Codex is the odd
   // one: it only reads a settings file in the home folder, never one in a
   // project folder, so its probe passes the fake tool on the command line.
-  var VERDICT_YES = 'Agent can use the bundled config: leave the box CLEAR';
-  var VERDICT_NO = 'Agent ignores it: TICK the box';
+  var VERDICT_YES = 'Agent can use the bundled config: leave it TICKED';
+  var VERDICT_NO = 'Agent ignores it: UNTICK it';
 
   var PROBES = {
     claude: 'sh -c \'d=$(mktemp -d); printf "%s" "{\\"mcpServers\\":{\\"sweprobe\\":{\\"command\\":\\"true\\"}}}" > "$d/.mcp.json"; cd "$d"; claude mcp list 2>&1 | grep -q sweprobe && echo "' + VERDICT_YES + '" || echo "' + VERDICT_NO + '"; rm -rf "$d"\'',
@@ -634,50 +681,60 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
 
   var AGENT_NAMES = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', gemini: 'Gemini', goose: 'Goose', aider: 'Aider' };
 
-  // Agents that get no tools file at all without Docker, so the box is ticked
-  // for them whatever a probe would say.
-  var FORCES_MCP = ['codex', 'opencode'];
+  // Agents that get no config written at all without Docker, so the box is
+  // unticked for them whatever a probe would say.
+  var FORCES_MCP_OFF = ['codex', 'opencode'];
 
-  // ---------- State ----------
+  // ---------- State. Everything starts at "my machine has it". ----------
   var state = {
+    have: 'docker',
     agents: ['claude'],
-    docker: false,
-    node: false,
-    mcp: false,
-    browser: false,
-    browserChoice: 'off',
+    node: true,
+    browserTools: true,
+    browserFallback: 'install',
     browserAddr: '',
     browserNoInbound: false,
-    onePort: false,
-    wildcard: 'no',
+    mcpOk: true,
+    anyPort: true,
+    wildcard: false,
     wildcardDomain: '',
     runMode: 'hand'
   };
 
   var el = function(id) { return document.getElementById(id); };
 
-  function agentForcesMCP() {
-    return state.agents.some(function(a) { return FORCES_MCP.indexOf(a) !== -1; });
-  }
+  function hostRuntime() { return state.have === 'agents'; }
+  function blocked() { return state.have === 'none'; }
 
-  // The bundled-config question only means anything without Docker, and the
-  // wildcard route is host-only too, so both hang off question 1.
-  function mcpApplies() { return state.docker; }
-  function mcpForced() { return mcpApplies() && agentForcesMCP(); }
-  function mcpEffective() { return mcpApplies() && (state.mcp || mcpForced()); }
-  function wildcardApplies() { return state.onePort && state.wildcard === 'yes' && state.docker; }
-  function needsTunnel() { return state.onePort && !wildcardApplies(); }
-  function anythingTicked() {
-    return state.docker || state.node || mcpEffective() || state.browser || state.onePort;
+  function mcpForcedOff() {
+    return hostRuntime() && state.agents.some(function(a) { return FORCES_MCP_OFF.indexOf(a) !== -1; });
   }
+  function withoutMCP() { return hostRuntime() && (!state.mcpOk || mcpForcedOff()); }
+
+  function browserMissing() { return hostRuntime() && !state.browserTools; }
+  function agentViewOff() { return browserMissing() && state.browserFallback === 'off'; }
+  function agentViewRemote() { return browserMissing() && state.browserFallback === 'remote'; }
+  function installsBrowserTools() { return browserMissing() && state.browserFallback === 'install'; }
+
+  // The wildcard route lives inside swe-swe-server's own listener, which only
+  // exists host-native: with Docker, the traffic router in front cannot match
+  // a wildcard.
+  function wildcardRoute() { return !state.anyPort && state.wildcard && hostRuntime(); }
+  function needsTunnel() { return !state.anyPort && !wildcardRoute(); }
+
+  // "Ordinary" means a laptop with Docker and every port reachable, which is
+  // what the home page already documents.
+  function ordinary() { return state.have === 'docker' && state.anyPort; }
 
   // ---------- Script generation ----------
   var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
+  var NPX_ALIAS = "alias swe-swe='npx -y swe-swe'";
+  var APT_LINE = 'sudo apt-get install -y chromium xvfb x11vnc novnc websockify';
 
   function initFlags() {
     var f = [];
-    if (state.docker) f.push('--runtime=host');
-    if (mcpEffective()) f.push('--without-mcp');
+    if (hostRuntime()) f.push('--runtime=host');
+    if (withoutMCP()) f.push('--without-mcp');
     return f.join(' ');
   }
 
@@ -685,34 +742,22 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     var e = [];
     e.push("SWE_SWE_PASSWORD='pick-one'");
     e.push('SWE_PORT=1977');
-    if (state.browser) {
-      if (state.browserChoice === 'remote') {
-        e.push('SWE_AGENT_VIEW=' + (state.browserAddr.trim() || 'http://browser-box:9333'));
-        if (state.browserNoInbound) e.push('SWE_AGENT_VIEW_TUNNEL=1');
-      } else {
-        e.push('SWE_AGENT_VIEW=off');
-      }
+    if (agentViewOff()) e.push('SWE_AGENT_VIEW=off');
+    if (agentViewRemote()) {
+      e.push('SWE_AGENT_VIEW=' + (state.browserAddr.trim() || 'http://browser-box:9333'));
+      if (state.browserNoInbound) e.push('SWE_AGENT_VIEW_TUNNEL=1');
     }
-    if (wildcardApplies()) {
+    if (wildcardRoute()) {
       e.push('SWE_PUBLIC_HOSTNAME=' + (state.wildcardDomain.trim() || 'the-box.example.com'));
     }
     return e;
   }
 
-  // Nothing ticked: exactly the four ordinary lines, so someone who reads none
-  // of this page still gets the laptop instructions.
+  // The ordinary four lines, so someone who reads none of this page still gets
+  // the home page's instructions.
   function plainScript() {
-    if (state.node) {
-      return [
-        INSTALL_SH,
-        'cd /path/to/project',
-        'swe-swe up',
-        '',
-        '# then open http://localhost:1977'
-      ].join('\n');
-    }
     return [
-      "alias swe-swe='npx -y swe-swe'",
+      NPX_ALIAS,
       'cd /path/to/project',
       'swe-swe up',
       '',
@@ -720,22 +765,25 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     ].join('\n');
   }
 
-  function handScript() {
-    if (!anythingTicked()) return plainScript();
-    var lines = [];
-    if (state.node) {
-      lines.push(INSTALL_SH);
-      lines.push('export PATH="$HOME/.local/bin:$PATH"');
-    } else {
-      lines.push("alias swe-swe='npx -y swe-swe'");
+  function firstLines() {
+    // With Docker we assume the usual Node one-liner; the Node question is
+    // only asked on the host-native path.
+    if (hostRuntime() && !state.node) {
+      return [INSTALL_SH, 'export PATH="$HOME/.local/bin:$PATH"'];
     }
+    return [NPX_ALIAS];
+  }
+
+  function handScript() {
+    if (ordinary()) return plainScript();
+    var lines = firstLines();
+    if (installsBrowserTools()) lines.push(APT_LINE);
     lines.push('');
     lines.push('cd /path/to/project');
     var flags = initFlags();
     lines.push('swe-swe init' + (flags ? ' ' + flags : ''));
     lines.push('');
-    var env = envPairs();
-    lines.push(env.join(' \\\n  ') + ' \\\n  swe-swe up');
+    lines.push(envPairs().join(' \\\n  ') + ' \\\n  swe-swe up');
     return lines.join('\n');
   }
 
@@ -748,11 +796,12 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     lines.push('PROJECT_DIR="${PROJECT_DIR:-$HOME/proj}"');
     lines.push('LOG="$HOME/swe-swe-up.log"');
     lines.push('');
-    if (state.node || anythingTicked()) {
-      lines.push(INSTALL_SH);
-      lines.push('export PATH="$HOME/.local/bin:$PATH"');
-      lines.push('');
-    }
+    // A start-up script runs with no terminal and no alias, so it always uses
+    // the plain download rather than the Node one-liner.
+    lines.push(INSTALL_SH);
+    lines.push('export PATH="$HOME/.local/bin:$PATH"');
+    if (installsBrowserTools()) lines.push(APT_LINE);
+    lines.push('');
     lines.push('mkdir -p "$PROJECT_DIR"');
     lines.push('cd "$PROJECT_DIR"');
     lines.push('[ -d .git ] || git init -q');
@@ -761,8 +810,8 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     lines.push('swe-swe init' + (flags ? ' ' + flags : ''));
     lines.push('');
     lines.push('export SWE_SWE_PASSWORD');
-    var env = envPairs().filter(function(p) { return p.indexOf('SWE_SWE_PASSWORD') !== 0; });
-    env.forEach(function(p) { lines.push('export ' + p); });
+    envPairs().filter(function(p) { return p.indexOf('SWE_SWE_PASSWORD') !== 0; })
+      .forEach(function(p) { lines.push('export ' + p); });
     lines.push('');
     lines.push('nohup swe-swe up >"$LOG" 2>&1 &');
     lines.push('echo "started; log: $LOG"');
@@ -773,13 +822,13 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     if (state.runMode === 'startup') {
       return 'Always included without asking: the port number spelled out, the most basic shell syntax, and starting in the background with a log file. There is no terminal to keep open on a machine like this.';
     }
-    if (!anythingTicked()) return 'Nothing ticked, so these are the ordinary instructions.';
+    if (ordinary()) return 'Everything left as it is, so these are the ordinary instructions.';
     return 'Stays in front of you; Ctrl-C stops it.';
   }
 
   // ---------- Rendering ----------
   function renderProbes() {
-    var host = el('q3-probes');
+    var host = el('mcp-probes');
     host.innerHTML = '';
     var shown = 0;
     state.agents.forEach(function(a) {
@@ -807,47 +856,46 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
       wrap.appendChild(block);
       host.appendChild(wrap);
     });
-    el('q3-noprobe').hidden = shown > 0;
+    el('mcp-noprobe').hidden = shown > 0;
   }
 
   function render() {
-    // Q1
-    el('q1-consequence').hidden = !state.docker;
+    el('agent-picker').hidden = !hostRuntime();
+    el('blocked').hidden = !blocked();
+    el('host-questions').hidden = !hostRuntime();
+    el('output').hidden = blocked();
 
-    // Q2
-    el('q2-consequence').hidden = !state.node;
+    if (hostRuntime()) {
+      el('node-consequence').hidden = state.node;
 
-    // Q3 -- greyed out until question 1 is ticked, not hidden: someone with
-    // this exact problem will go looking for it.
-    var q3 = el('q3');
-    var q3box = el('c-mcp');
-    q3.classList.toggle('disabled', !mcpApplies());
-    el('q3-why').hidden = mcpApplies();
-    el('q3-body').hidden = !mcpApplies();
-    q3box.disabled = !mcpApplies() || mcpForced();
-    q3box.checked = mcpEffective();
-    el('q3-forced').hidden = !mcpForced();
-    el('q3-consequence').hidden = !mcpEffective() || mcpForced();
-    if (mcpApplies()) renderProbes();
+      el('browser-body').hidden = state.browserTools;
+      el('browser-install').hidden = !installsBrowserTools();
+      el('browser-remote').hidden = !agentViewRemote();
 
-    // Q4
-    el('q4-body').hidden = !state.browser;
-    el('q4-remote').hidden = !(state.browser && state.browserChoice === 'remote');
+      var mcpBox = el('c-mcp');
+      mcpBox.checked = !withoutMCP();
+      mcpBox.disabled = mcpForcedOff();
+      el('mcp-forced').hidden = !mcpForcedOff();
+      el('mcp-consequence').hidden = !withoutMCP() || mcpForcedOff();
+      renderProbes();
+    }
 
-    // Q5
-    el('q5-body').hidden = !state.onePort;
-    el('q5-yes').hidden = !(state.onePort && state.wildcard === 'yes');
-    el('q5-no').hidden = !(state.onePort && state.wildcard === 'no');
-    el('q5-needs-q1').hidden = !(state.onePort && state.wildcard === 'yes' && !state.docker);
+    el('oneport-body').hidden = state.anyPort;
+    el('wildcard-yes').hidden = state.anyPort || !state.wildcard;
+    el('wildcard-no').hidden = state.anyPort || state.wildcard;
+    el('wildcard-needs-host').hidden = !(!state.anyPort && state.wildcard && !hostRuntime());
 
-    // Output
-    el('version-note').hidden = !anythingTicked();
+    el('version-note').hidden = ordinary();
     el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
     el('script-note').textContent = scriptNote();
-    el('tunnel-steps').hidden = !needsTunnel();
+    el('tunnel-steps').hidden = blocked() || !needsTunnel();
   }
 
   // ---------- Wiring ----------
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="have"]'), function(r) {
+    r.addEventListener('change', function() { if (this.checked) { state.have = this.value; render(); } });
+  });
+
   document.getElementById('agent-pills').addEventListener('click', function(e) {
     var p = e.target.closest('.pill');
     if (!p) return;
@@ -862,20 +910,17 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
     render();
   });
 
-  el('c-docker').addEventListener('change', function() { state.docker = this.checked; render(); });
   el('c-node').addEventListener('change', function() { state.node = this.checked; render(); });
-  el('c-mcp').addEventListener('change', function() { state.mcp = this.checked; render(); });
-  el('c-browser').addEventListener('change', function() { state.browser = this.checked; render(); });
-  el('c-oneport').addEventListener('change', function() { state.onePort = this.checked; render(); });
+  el('c-browsertools').addEventListener('change', function() { state.browserTools = this.checked; render(); });
+  el('c-mcp').addEventListener('change', function() { state.mcpOk = this.checked; render(); });
+  el('c-anyport').addEventListener('change', function() { state.anyPort = this.checked; render(); });
+  el('c-wildcard').addEventListener('change', function() { state.wildcard = this.checked; render(); });
   el('c-browser-noinbound').addEventListener('change', function() { state.browserNoInbound = this.checked; render(); });
   el('c-browser-addr').addEventListener('input', function() { state.browserAddr = this.value; render(); });
   el('c-wildcard-domain').addEventListener('input', function() { state.wildcardDomain = this.value; render(); });
 
-  Array.prototype.forEach.call(document.querySelectorAll('input[name="browser-choice"]'), function(r) {
-    r.addEventListener('change', function() { if (this.checked) { state.browserChoice = this.value; render(); } });
-  });
-  Array.prototype.forEach.call(document.querySelectorAll('input[name="wildcard"]'), function(r) {
-    r.addEventListener('change', function() { if (this.checked) { state.wildcard = this.value; render(); } });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="browser-fallback"]'), function(r) {
+    r.addEventListener('change', function() { if (this.checked) { state.browserFallback = this.value; render(); } });
   });
 
   document.getElementById('run-mode').addEventListener('click', function(e) {
