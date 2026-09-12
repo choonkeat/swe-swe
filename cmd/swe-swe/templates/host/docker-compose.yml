@@ -227,6 +227,10 @@ services:
       - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
       # Container-internal app port range for public (no-auth) sessions
       - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
+      # Wildcard host-demux: serve every per-port pane as {port}.{this
+      # hostname} on the ONE published port, so a box whose *.domain DNS
+      # points at it needs no tunnel. Empty = off (the default).
+      - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME:-}
       # Container-internal port range for Chrome DevTools Protocol (per-session)
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       # Container-internal port range for VNC browser view (per-session)
