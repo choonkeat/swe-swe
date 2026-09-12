@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - Landing page box-limits checklist</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+  .btn.sm{padding:5px 11px;font-size:12px;font-weight:500;}
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* --- sketch-local helpers --- */
+  h2.opt{font-size:15px;margin:38px 0 2px;border-top:1px solid var(--line);padding-top:16px;}
+  h2.opt:first-of-type{border-top:0;padding-top:0;margin-top:8px;}
+  .opt-note{font-size:12px;color:#555;margin:0 0 12px;}
+  .stack{display:flex;flex-direction:column;gap:10px;}
+  .tabs{display:flex;gap:0;}
+  .tab{border:1px solid var(--line);border-bottom:0;border-radius:3px 3px 0 0;
+       padding:6px 14px;font-size:12px;background:#fff;color:var(--grey);}
+  .tab.on{font-weight:600;color:var(--ink);}
+  .tabbody{border:1px solid var(--line);border-radius:0 3px 3px 3px;background:#fff;padding:14px 16px;}
+  .row{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px dashed #d8d7d1;}
+  .row:last-child{border-bottom:0;}
+  .tick{flex:0 0 auto;width:14px;height:14px;border:1px solid var(--line);border-radius:2px;
+        font-size:11px;line-height:12px;text-align:center;background:#fff;margin-top:2px;}
+  .tick.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .rowmain{flex:1 1 auto;}
+  .rowlabel{font-size:13px;}
+  .expander{font-size:11px;color:var(--grey);margin-top:4px;}
+  .expander-open{border-left:2px solid var(--grey-lite);margin-top:6px;padding:6px 0 2px 10px;}
+  .cmd{background:#f0efe9;border:1px dashed #cfcec8;border-radius:2px;padding:5px 8px;
+       font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#333;}
+  .script{background:#f0efe9;border:1px dashed #cfcec8;border-radius:2px;padding:10px 12px;}
+  .script .scribble{background:#dedcd4;margin:6px 0;}
+  .warnbar{border:1px solid var(--line);border-radius:2px;padding:6px 9px;font-size:11px;color:#333;background:#fff;}
+  .cols{display:flex;gap:14px;flex-wrap:wrap;}
+  .cols > *{flex:1 1 300px;}
+  .ghost{opacity:.45;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Landing page: "what can't your box do?" checklist</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only. Three layout options for the same content.</p>
+
+  <!-- ============================ SHARED PIECES ============================ -->
+  <h2 class="opt">Shared: one checklist row (used by all three options)</h2>
+  <p class="opt-note">Voice: what the box CANNOT do. Nothing ticked = today's four lines. Every row that cannot be answered from the armchair carries its own "how do I check?".</p>
+
+  <div class="cols">
+    <div class="box">
+      <span class="label">row, collapsed</span>
+      <div class="row">
+        <div class="tick"></div>
+        <div class="rowmain">
+          <div class="rowlabel">My agent cannot see swe-swe's tools</div>
+          <div class="expander">&#9656; how do I check?</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box">
+      <span class="label">row, expander open</span>
+      <div class="row">
+        <div class="tick on">&#10003;</div>
+        <div class="rowmain">
+          <div class="rowlabel">My agent cannot see swe-swe's tools</div>
+          <div class="expander">&#9662; how do I check?</div>
+          <div class="expander-open">
+            <div class="note" style="margin-bottom:5px;">Run this on the box:</div>
+            <div class="cmd">claude mcp list</div>
+            <div class="note" style="margin-top:7px;">Tick the box if the answer is:</div>
+            <div class="scribble short" style="margin-top:5px;"></div>
+            <div class="note" style="margin-top:7px;">Leave it clear if the answer is:</div>
+            <div class="scribble short" style="margin-top:5px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:12px;">
+    Five rows, in this order &mdash; 1 cannot run Docker &middot; 2 Node not installed &middot;
+    3 agent cannot see the tools &middot; 4 tiny memory / no browser &middot; 5 only one web address reaches the box.
+    Rows 1, 2, 4 have a one-line check. Row 3 needs the box running first. Row 5 is answered by the host, not a command.
+  </p>
+
+  <!-- ============================ OPTION A ============================ -->
+  <h2 class="opt">Option A &mdash; checklist always visible, inline under Quick Start</h2>
+  <p class="opt-note">Everyone sees the five limits. Highest discovery, most noise on the page for the 90% who are on a laptop.</p>
+
+  <div class="stack">
+    <div>
+      <div class="tabs">
+        <div class="tab on">npx</div>
+        <div class="tab">install</div>
+      </div>
+      <div class="tabbody">
+        <div class="scribble short"></div>
+        <div class="script"><div class="scribble mid" style="margin:0;"></div></div>
+      </div>
+    </div>
+
+    <div class="box">
+      <span class="label">new block</span>
+      <div class="title">Anything your box can't do?</div>
+      <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">Cannot run Docker</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">Node is not installed</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">My agent cannot see swe-swe's tools</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">Very little memory, or no browser needed</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">Only one web address reaches this box</div><div class="expander">&#9656; how do I check?</div></div></div>
+    </div>
+
+    <div class="box">
+      <span class="label">then</span>
+      <div class="title">Run this</div>
+      <div class="script">
+        <div class="scribble long"></div>
+        <div class="scribble mid"></div>
+        <div class="scribble short"></div>
+      </div>
+      <div style="margin-top:10px;"><span class="btn sm">Copy</span></div>
+    </div>
+  </div>
+
+  <!-- ============================ OPTION B ============================ -->
+  <h2 class="opt">Option B &mdash; one preset button, checklist folded away behind it</h2>
+  <p class="opt-note">The real path for a locked-down box is "tick everything". Preset does rows 1-4 in one click; row 5 stays separate because it changes no script line. Quiet by default.</p>
+
+  <div class="stack">
+    <div>
+      <div class="tabs">
+        <div class="tab on">npx</div>
+        <div class="tab">install</div>
+      </div>
+      <div class="tabbody">
+        <div class="scribble short"></div>
+        <div class="script"><div class="scribble mid" style="margin:0;"></div></div>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="cols" style="align-items:center;">
+        <div style="flex:2 1 340px;">
+          <div class="title" style="margin-bottom:4px;">Running somewhere restricted?</div>
+          <div class="note">A cloud sandbox, a locked-down work box, anything wiped on restart.</div>
+        </div>
+        <div style="flex:0 0 auto;text-align:right;">
+          <span class="btn">My box is locked down</span>
+        </div>
+      </div>
+      <div class="expander" style="margin-top:12px;">&#9656; or pick the limits one by one</div>
+    </div>
+
+    <div class="box ghost">
+      <span class="label">after the preset click (or after opening "one by one")</span>
+      <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">Cannot run Docker</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">Node is not installed</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">My agent cannot see swe-swe's tools</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">Very little memory, or no browser needed</div><div class="expander">&#9656; how do I check?</div></div></div>
+      <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">Only one web address reaches this box</div><div class="expander">&#9656; how do I check?</div><div class="note" style="margin-top:4px;">not part of the preset &mdash; adds browser steps, not script lines</div></div></div>
+    </div>
+
+    <div class="box">
+      <div class="warnbar" style="margin-bottom:10px;">preview build warning line &mdash; the flags below are not in the normal release yet</div>
+      <span class="label">block 1 of 2</span>
+      <div class="title">Save this as your start-up script</div>
+      <div class="script">
+        <div class="scribble long"></div>
+        <div class="scribble long"></div>
+        <div class="scribble mid"></div>
+        <div class="scribble short"></div>
+      </div>
+      <div style="margin-top:10px;"><span class="btn sm">Copy</span></div>
+    </div>
+
+    <div class="box">
+      <span class="label">block 2 of 2 &mdash; only when row 5 is ticked</span>
+      <div class="title">Then, once per boot, in your browser</div>
+      <div class="note">Not copyable. Three short steps.</div>
+      <div class="scribble long"></div>
+      <div class="scribble long"></div>
+      <div class="scribble mid"></div>
+    </div>
+  </div>
+
+  <!-- ============================ OPTION C ============================ -->
+  <h2 class="opt">Option C &mdash; a third tab, next to npx and install</h2>
+  <p class="opt-note">Today's page is untouched for laptop users. The whole restricted story lives behind one tab, which also gives it room for the two output blocks.</p>
+
+  <div class="stack">
+    <div>
+      <div class="tabs">
+        <div class="tab">npx</div>
+        <div class="tab">install</div>
+        <div class="tab on">restricted box</div>
+      </div>
+      <div class="tabbody">
+        <div class="note" style="margin-bottom:12px;">One line saying what this tab is for.</div>
+
+        <span class="label">step 1</span>
+        <div class="title">Tick what your box can't do</div>
+        <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">Cannot run Docker</div><div class="expander">&#9656; how do I check?</div></div></div>
+        <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">Node is not installed</div><div class="expander">&#9656; how do I check?</div></div></div>
+        <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">My agent cannot see swe-swe's tools</div><div class="expander">&#9656; how do I check?</div></div></div>
+        <div class="row"><div class="tick"></div><div class="rowmain"><div class="rowlabel">Very little memory, or no browser needed</div><div class="expander">&#9656; how do I check?</div></div></div>
+        <div class="row"><div class="tick on">&#10003;</div><div class="rowmain"><div class="rowlabel">Only one web address reaches this box</div><div class="expander">&#9656; how do I check?</div></div></div>
+
+        <div style="margin-top:18px;"><span class="label">step 2</span></div>
+        <div class="title">Save this as your start-up script</div>
+        <div class="warnbar" style="margin-bottom:8px;">preview build warning line</div>
+        <div class="script">
+          <div class="scribble long"></div>
+          <div class="scribble long"></div>
+          <div class="scribble mid"></div>
+        </div>
+        <div style="margin-top:10px;"><span class="btn filled">Copy</span></div>
+
+        <div style="margin-top:22px;"><span class="label">step 3 &mdash; appears with row 5</span></div>
+        <div class="title">Once per boot, in your browser</div>
+        <div class="scribble long"></div>
+        <div class="scribble mid"></div>
+        <div class="scribble short"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ FLOW ============================ -->
+  <h2 class="opt">What changes what</h2>
+  <p class="opt-note">Same in all three options.</p>
+
+  <div class="flow">
+    <div class="box node"><div class="rowlabel">tick a row</div></div>
+    <div class="arrow">&#8594;</div>
+    <div class="box node"><div class="rowlabel">script rewrites in place</div></div>
+    <div class="arrow">&#8594;</div>
+    <div class="box node"><div class="rowlabel">Copy</div></div>
+  </div>
+
+  <div class="branches">
+    <div class="box" style="flex:1 1 260px;">
+      <span class="label">row 5 only</span>
+      <div class="note" style="margin-top:6px;">also reveals the browser-steps block. Adds no script line.</div>
+    </div>
+    <div class="box" style="flex:1 1 260px;">
+      <span class="label">always on, never asked</span>
+      <div class="note" style="margin-top:6px;">explicit port number &middot; basic shell syntax &middot; background + log file</div>
+    </div>
+    <div class="box" style="flex:1 1 260px;">
+      <span class="label">nothing ticked</span>
+      <div class="note" style="margin-top:6px;">output is exactly today's four lines</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

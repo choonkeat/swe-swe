@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>swe-swe - restricted box setup (beta)</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+// FOUC prevention -- resolve system preference before first paint
+(function() {
+  var resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', resolved);
+})();
+</script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --border-primary: #334155;
+  --accent: #7c3aed;
+  --accent-hover: #8b5cf6;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fb;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --border-primary: #e2e8f0;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+}
+
+/* Header */
+.header { text-align: center; margin-bottom: 2.5rem; }
+
+.header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 560px;
+  margin: 0 auto 1.25rem;
+}
+
+.links { display: flex; gap: 1.5rem; justify-content: center; font-size: 0.9rem; }
+
+.beta-badge {
+  display: inline-block;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+}
+
+/* Theme toggle */
+.theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 10; }
+
+.theme-toggle button {
+  background: none;
+  border: 1px solid var(--border-primary);
+  border-radius: 50%;
+  width: 32px; height: 32px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.theme-toggle button:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+
+/* Sections */
+.section { margin-bottom: 2.25rem; }
+
+.section > h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.35rem; }
+
+.section > .lede { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem; }
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+/* Agent pills */
+.pills { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.pill {
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 0.85rem;
+  font-family: var(--font-family);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.pill:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+
+.pill[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Questions */
+.q {
+  border-top: 1px solid var(--border-primary);
+  padding: 1rem 0;
+}
+
+.q:first-child { border-top: none; padding-top: 0.25rem; }
+.q:last-child { padding-bottom: 0.25rem; }
+
+.q-head { display: flex; gap: 0.65rem; align-items: flex-start; }
+
+.q-head input[type="checkbox"] { margin-top: 0.35rem; width: 15px; height: 15px; accent-color: var(--accent); flex: 0 0 auto; }
+
+.q-label { font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+
+.q-sub { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.2rem; }
+
+.q.disabled { opacity: 0.5; }
+.q.disabled .q-label { cursor: default; }
+
+.q-body { margin-left: 1.9rem; }
+
+details.how { margin-top: 0.5rem; }
+
+details.how > summary {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  display: inline-block;
+  border-bottom: 1px dotted var(--border-primary);
+}
+
+details.how > summary::-webkit-details-marker { display: none; }
+details.how > summary::before { content: "\25B8  "; }
+details.how[open] > summary::before { content: "\25BE  "; }
+details.how > summary:hover { color: var(--text-primary); }
+
+.how-body { margin-top: 0.5rem; }
+
+.consequence {
+  margin-top: 0.6rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--border-primary);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.consequence b, .warn b { color: var(--text-primary); }
+
+.warn {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+}
+
+.warn p + p { margin-top: 0.4rem; }
+
+.choice { margin-top: 0.6rem; }
+
+.choice label { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; padding: 0.25rem 0; cursor: pointer; }
+
+.choice input[type="radio"] { margin-top: 0.35rem; accent-color: var(--accent); flex: 0 0 auto; }
+
+.sub-check { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.85rem; margin-top: 0.5rem; cursor: pointer; }
+.sub-check input { margin-top: 0.35rem; accent-color: var(--accent); flex: 0 0 auto; }
+
+input[type="text"] {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 6px 9px;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 0.4rem;
+}
+
+input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+.sub-box {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  background: var(--bg-primary);
+}
+
+.sub-box > h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.15rem; }
+
+/* Code */
+.code-block { position: relative; margin-top: 0.5rem; }
+
+.code-block .copy-btn {
+  position: absolute;
+  top: 6px; right: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-family: var(--font-family);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.code-block .copy-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+
+/* Keep the first line clear of the Copy button, which floats over the block. */
+.code-block pre { padding-right: 4.75rem; }
+
+pre {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
+.card pre { background: var(--bg-primary); }
+
+code { font-family: var(--mono); color: var(--text-primary); }
+
+.verdict-cmd pre { font-size: 0.72rem; line-height: 1.55; }
+
+/* Output */
+.output-head { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 0.85rem; }
+
+.toggle { display: inline-flex; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; }
+
+.toggle button {
+  background: var(--bg-primary);
+  border: none;
+  border-right: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-size: 0.8rem;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.toggle button:last-child { border-right: none; }
+.toggle button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+
+.steps ol { padding-left: 1.25rem; }
+.steps li { padding: 0.35rem 0; color: var(--text-secondary); font-size: 0.9rem; }
+
+.footer {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-primary);
+}
+
+[hidden] { display: none !important; }
+
+@media (max-width: 480px) {
+  .container { padding: 2rem 1rem; }
+  .header h1 { font-size: 2rem; }
+  .q-body { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="theme-toggle">
+  <button type="button" id="theme-btn" aria-label="Toggle theme"></button>
+</div>
+
+<div class="container">
+
+  <header class="header">
+    <h1>swe-swe<span class="beta-badge">beta</span></h1>
+    <p class="tagline">Tell the page what your machine <b>cannot</b> do, and it writes the start-up script for you. Tick nothing and you get the ordinary four lines.</p>
+    <div class="links">
+      <a href="/">home</a>
+      <a href="https://github.com/choonkeat/swe-swe">github</a>
+      <a href="https://www.npmjs.com/package/swe-swe">npm</a>
+      <a href="https://github.com/choonkeat/swe-swe/tree/main/docs">docs</a>
+    </div>
+  </header>
+
+  <!-- ============ AGENT PICKER ============ -->
+  <section class="section">
+    <h2>Which coding agents do you use?</h2>
+    <p class="lede">Pick any. This decides which check commands you are shown, and whether question 3 answers itself.</p>
+    <div class="card">
+      <div class="pills" id="agent-pills">
+        <button type="button" class="pill" data-agent="claude" aria-pressed="true">Claude</button>
+        <button type="button" class="pill" data-agent="codex" aria-pressed="false">Codex</button>
+        <button type="button" class="pill" data-agent="opencode" aria-pressed="false">OpenCode</button>
+        <button type="button" class="pill" data-agent="gemini" aria-pressed="false">Gemini</button>
+        <button type="button" class="pill" data-agent="goose" aria-pressed="false">Goose</button>
+        <button type="button" class="pill" data-agent="aider" aria-pressed="false">Aider</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CHECKLIST ============ -->
+  <section class="section">
+    <h2>Anything your machine can't do?</h2>
+    <p class="lede">Every check below prints its own answer: <b>leave the box CLEAR</b> or <b>TICK the box</b>. Paste it into a terminal on the machine you are setting up.</p>
+
+    <div class="card">
+
+      <!-- Q1 Docker -->
+      <div class="q" id="q1">
+        <div class="q-head">
+          <input type="checkbox" id="c-docker">
+          <div>
+            <label class="q-label" for="c-docker">1. This machine cannot run Docker</label>
+            <div class="q-sub">Docker packages up the agent and its tools. Without it, swe-swe runs them directly on the machine.</div>
+          </div>
+        </div>
+        <div class="q-body">
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body verdict-cmd">
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>docker info &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Docker works: leave the box CLEAR" || echo "No Docker here: TICK the box"</code></pre></div>
+              <p class="q-sub">If you have Docker Desktop, start it and run this again before ticking.</p>
+            </div>
+          </details>
+          <div class="consequence" id="q1-consequence" hidden>
+            <b>Ticked, so this machine also needs:</b> git, and at least one coding agent already installed. Without Docker, swe-swe cannot supply the agent itself.
+            <div class="code-block verdict-cmd"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>command -v git &gt;/dev/null 2&gt;&amp;1 &amp;&amp; command -v claude gemini codex goose aider opencode pi &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Ready: git and a coding agent are installed" || echo "Not ready: install git and one of claude gemini codex goose aider opencode pi"</code></pre></div>
+            <div>Linux on a 64-bit machine, Intel or ARM. Not Windows, and not tested on macOS.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q2 Node -->
+      <div class="q" id="q2">
+        <div class="q-head">
+          <input type="checkbox" id="c-node">
+          <div>
+            <label class="q-label" for="c-node">2. Node is not installed</label>
+            <div class="q-sub">Node is what the usual one-line install uses. Without it there is a plain download instead.</div>
+          </div>
+        </div>
+        <div class="q-body">
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body verdict-cmd">
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>command -v node &gt;/dev/null 2&gt;&amp;1 &amp;&amp; echo "Node is installed: leave the box CLEAR" || echo "No Node: TICK the box"</code></pre></div>
+            </div>
+          </details>
+          <div class="consequence" id="q2-consequence" hidden>
+            <b>Ticked:</b> the first line of the script becomes a plain download instead of the Node one-liner. Nothing else changes.
+          </div>
+        </div>
+      </div>
+
+      <!-- Q3 MCP -->
+      <div class="q" id="q3">
+        <div class="q-head">
+          <input type="checkbox" id="c-mcp">
+          <div>
+            <label class="q-label" for="c-mcp">3. My agent cannot use swe-swe's bundled MCP config</label>
+            <div class="q-sub" id="q3-why">Only applies without Docker. With Docker the agent runs inside swe-swe's own setup, where the config always works, so tick question 1 first.</div>
+          </div>
+        </div>
+        <div class="q-body" id="q3-body" hidden>
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body verdict-cmd">
+              <p class="q-sub">One command per agent you picked. Each makes a throwaway folder, asks the agent to list its tools, then deletes the folder. Your real settings are never touched.</p>
+              <div id="q3-probes"></div>
+              <p class="q-sub" id="q3-noprobe" hidden>No check for the agents you picked. Leave it clear, and if the chat never answers you once swe-swe is running, come back and tick it.</p>
+            </div>
+          </details>
+          <div class="consequence" id="q3-forced" hidden>
+            <b>Ticked for you:</b> without Docker, swe-swe only writes a tools file for Claude, so Codex and OpenCode always need this.
+          </div>
+          <div class="consequence" id="q3-consequence" hidden>
+            <b>Ticked:</b> the agent reaches every tool by typing a command instead of through its own tools list.
+          </div>
+        </div>
+      </div>
+
+      <!-- Q4 Browser tools -->
+      <div class="q" id="q4">
+        <div class="q-head">
+          <input type="checkbox" id="c-browser">
+          <div>
+            <label class="q-label" for="c-browser">4. The browser tools are missing and I cannot install them</label>
+            <div class="q-sub">These are what the Agent View pane uses to show you a browser the agent can drive.</div>
+          </div>
+        </div>
+        <div class="q-body">
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body verdict-cmd">
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sh -c 'm=""; for b in Xvfb x11vnc websockify; do command -v "$b" &gt;/dev/null 2&gt;&amp;1 || m="$m $b"; done; command -v chromium &gt;/dev/null 2&gt;&amp;1 || command -v chromium-browser &gt;/dev/null 2&gt;&amp;1 || m="$m chromium"; [ -z "$m" ] &amp;&amp; echo "All browser tools present: leave the box CLEAR" || echo "Missing:$m -- if you can install them, leave the box CLEAR; if you cannot install anything, TICK the box"'</code></pre></div>
+              <p class="q-sub">If they are missing but you can install them, leave the box clear and run this first:</p>
+              <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>sudo apt-get install -y chromium xvfb x11vnc novnc websockify</code></pre></div>
+              <p class="q-sub">That package list is for Debian and Ubuntu. Other systems have the same programs under different names.</p>
+            </div>
+          </details>
+          <div id="q4-body" hidden>
+            <div class="choice">
+              <label><input type="radio" name="browser-choice" value="off" checked> <span><b>No browser.</b> The Agent View pane is switched off. Every other pane still works.</span></label>
+              <label><input type="radio" name="browser-choice" value="remote"> <span><b>I run the browser on another machine.</b></span></label>
+            </div>
+            <div id="q4-remote" hidden>
+              <input type="text" id="c-browser-addr" placeholder="http://browser-box:9333" spellcheck="false">
+              <div class="consequence">
+                On that other machine, three lines. It needs Linux on a 64-bit machine, and its own ports reachable from this one.
+                <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code>curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+sudo apt-get install -y chromium xvfb x11vnc novnc websockify
+SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></pre></div>
+              </div>
+              <label class="sub-check"><input type="checkbox" id="c-browser-noinbound"> <span>That machine cannot open connections back to this one. <span class="q-sub">Ticked, this machine does the connecting instead, outward only, so nothing has to be able to reach in.</span></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q5 One port -->
+      <div class="q" id="q5">
+        <div class="q-head">
+          <input type="checkbox" id="c-oneport">
+          <div>
+            <label class="q-label" for="c-oneport">5. Only one port on this machine can be reached from a web browser</label>
+            <div class="q-sub">Each session gets its own port for the app preview, so one port is not enough on its own.</div>
+          </div>
+        </div>
+        <div class="q-body">
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body">
+              <p class="q-sub">No command can answer this; it depends on who runs the machine. If someone handed you a single web address to reach it, tick it.</p>
+            </div>
+          </details>
+          <div id="q5-body" hidden>
+            <div class="sub-box">
+              <h3>Does this machine have wildcard subdomains?</h3>
+              <p class="q-sub">That is: <code>anything.&lt;the machine's hostname&gt;</code> reaches this machine, whatever you put in front of the dot.</p>
+              <details class="how">
+                <summary>how do I check?</summary>
+                <div class="how-body">
+                  <p class="q-sub">In a browser on the machine you will actually be using, open <code>anything.&lt;the machine's hostname&gt;</code> &mdash; literally the word "anything", or any word you like. If it reaches this machine, the answer is yes.</p>
+                </div>
+              </details>
+              <div class="choice">
+                <label><input type="radio" name="wildcard" value="yes"> <span><b>Yes</b> &mdash; no tunnel needed.</span></label>
+                <label><input type="radio" name="wildcard" value="no" checked> <span><b>No</b> &mdash; a tunnel is the only route.</span></label>
+              </div>
+
+              <div id="q5-yes" hidden>
+                <div class="consequence">
+                  swe-swe serves every pane on that one port, each on its own subdomain. Nothing to run, nothing to paste, no steps after boot.
+                  <input type="text" id="c-wildcard-domain" placeholder="the machine's hostname, e.g. the-box.example.com" spellcheck="false">
+                </div>
+                <div class="warn">
+                  <p><b>Two limits, stated rather than hidden.</b></p>
+                  <p>1. Plain web addresses only. For a secure address (the padlock), something in front of this machine has to do the encryption and pass the traffic on, keeping the address it was asked for. swe-swe does not do it itself, and a wildcard certificate &mdash; one that covers every subdomain at once &mdash; is a different and slower thing to obtain.</p>
+                  <p>2. Only on a machine with no Docker, so question 1 has to be ticked too. With Docker, the traffic router in front cannot match wildcard subdomains.</p>
+                </div>
+                <div class="warn" id="q5-needs-q1" hidden>
+                  <p><b>Question 1 is not ticked, so this is not available.</b> Tick question 1, or answer No here and use the tunnel.</p>
+                </div>
+              </div>
+
+              <div id="q5-no" class="consequence" hidden>
+                The tunnel gives you wildcard subdomains of its own hostname, and hands your ports back on those. It needs a tunnel server to connect to, which is a separate thing to run &mdash; see the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Setting it up is the three steps below the script.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ OUTPUT ============ -->
+  <section class="section">
+    <div class="output-head">
+      <h2 style="margin:0;">Run this</h2>
+      <div class="toggle" id="run-mode">
+        <button type="button" data-mode="hand" aria-pressed="true">Run it by hand</button>
+        <button type="button" data-mode="startup" aria-pressed="false">Save as a start-up script</button>
+      </div>
+    </div>
+
+    <div class="warn" id="version-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
+      <p>Needs swe-swe 2.38.0 or newer.</p>
+    </div>
+
+    <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code id="script-out"></code></pre></div>
+    <p class="lede" id="script-note" style="margin-top:0.75rem;margin-bottom:0;"></p>
+  </section>
+
+  <!-- ============ SECOND BLOCK ============ -->
+  <section class="section steps" id="tunnel-steps" hidden>
+    <h2>Then, once per boot, in your browser</h2>
+    <p class="lede">About 30 seconds. None of this is a command, so there is nothing to copy.</p>
+    <div class="card">
+      <ol>
+        <li>Open the address your host gives you, and log in with your password.</li>
+        <li>Gear icon, Settings, "Tunnel secrets". Paste your lines. Apply.</li>
+        <li>The strip at the top of the page shows "connecting", then a link. Open that link. Every pane works there, and it is the same link every boot.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer class="footer">
+    Preview page. The ordinary instructions are on the <a href="/">home page</a>.
+  </footer>
+
+</div>
+
+<script>
+(function() {
+
+  // ---------- Theme toggle (not persisted -- follows system, click to flip) ----------
+  var btn = document.getElementById('theme-btn');
+  var sunIcon = '\u2600\uFE0F';   // sun
+  var moonIcon = '\uD83C\uDF19';  // crescent moon
+
+  function currentTheme() { return document.documentElement.getAttribute('data-theme'); }
+  function updateIcon() { btn.textContent = currentTheme() === 'dark' ? sunIcon : moonIcon; }
+
+  btn.addEventListener('click', function() {
+    document.documentElement.setAttribute('data-theme', currentTheme() === 'dark' ? 'light' : 'dark');
+    updateIcon();
+  });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+    document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+    updateIcon();
+  });
+  updateIcon();
+
+  // ---------- Copy buttons (delegated, so generated blocks work too) ----------
+  function showCopied(b) {
+    b.textContent = 'Copied!';
+    setTimeout(function() { b.textContent = 'Copy'; }, 1500);
+  }
+  function fallbackCopy(text, b) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopied(b);
+  }
+  document.addEventListener('click', function(e) {
+    var b = e.target.closest ? e.target.closest('.copy-btn') : null;
+    if (!b) return;
+    var code = b.closest('.code-block').querySelector('code');
+    if (!code) return;
+    var text = code.textContent;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() { showCopied(b); }, function() { fallbackCopy(text, b); });
+    } else {
+      fallbackCopy(text, b);
+    }
+  });
+
+  // ---------- The MCP probes, one per agent ----------
+  // Each makes a throwaway project folder, drops a fake tool definition in it,
+  // asks the agent to list its tools, and deletes the folder. Codex is the odd
+  // one: it only reads a settings file in the home folder, never one in a
+  // project folder, so its probe passes the fake tool on the command line.
+  var VERDICT_YES = 'Agent can use the bundled config: leave the box CLEAR';
+  var VERDICT_NO = 'Agent ignores it: TICK the box';
+
+  var PROBES = {
+    claude: 'sh -c \'d=$(mktemp -d); printf "%s" "{\\"mcpServers\\":{\\"sweprobe\\":{\\"command\\":\\"true\\"}}}" > "$d/.mcp.json"; cd "$d"; claude mcp list 2>&1 | grep -q sweprobe && echo "' + VERDICT_YES + '" || echo "' + VERDICT_NO + '"; rm -rf "$d"\'',
+    codex: 'codex -c \'mcp_servers.sweprobe.command="true"\' mcp list 2>&1 | grep -q sweprobe && echo "' + VERDICT_YES + '" || echo "' + VERDICT_NO + '"',
+    opencode: 'sh -c \'d=$(mktemp -d); printf "%s" "{\\"mcp\\":{\\"sweprobe\\":{\\"type\\":\\"local\\",\\"command\\":[\\"true\\"],\\"enabled\\":true}}}" > "$d/opencode.json"; cd "$d"; opencode mcp list 2>&1 | grep -q sweprobe && echo "' + VERDICT_YES + '" || echo "' + VERDICT_NO + '"; rm -rf "$d"\''
+  };
+
+  var AGENT_NAMES = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', gemini: 'Gemini', goose: 'Goose', aider: 'Aider' };
+
+  // Agents that get no tools file at all without Docker, so the box is ticked
+  // for them whatever a probe would say.
+  var FORCES_MCP = ['codex', 'opencode'];
+
+  // ---------- State ----------
+  var state = {
+    agents: ['claude'],
+    docker: false,
+    node: false,
+    mcp: false,
+    browser: false,
+    browserChoice: 'off',
+    browserAddr: '',
+    browserNoInbound: false,
+    onePort: false,
+    wildcard: 'no',
+    wildcardDomain: '',
+    runMode: 'hand'
+  };
+
+  var el = function(id) { return document.getElementById(id); };
+
+  function agentForcesMCP() {
+    return state.agents.some(function(a) { return FORCES_MCP.indexOf(a) !== -1; });
+  }
+
+  // The bundled-config question only means anything without Docker, and the
+  // wildcard route is host-only too, so both hang off question 1.
+  function mcpApplies() { return state.docker; }
+  function mcpForced() { return mcpApplies() && agentForcesMCP(); }
+  function mcpEffective() { return mcpApplies() && (state.mcp || mcpForced()); }
+  function wildcardApplies() { return state.onePort && state.wildcard === 'yes' && state.docker; }
+  function needsTunnel() { return state.onePort && !wildcardApplies(); }
+  function anythingTicked() {
+    return state.docker || state.node || mcpEffective() || state.browser || state.onePort;
+  }
+
+  // ---------- Script generation ----------
+  var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
+
+  function initFlags() {
+    var f = [];
+    if (state.docker) f.push('--runtime=host');
+    if (mcpEffective()) f.push('--without-mcp');
+    return f.join(' ');
+  }
+
+  function envPairs() {
+    var e = [];
+    e.push("SWE_SWE_PASSWORD='pick-one'");
+    e.push('SWE_PORT=1977');
+    if (state.browser) {
+      if (state.browserChoice === 'remote') {
+        e.push('SWE_AGENT_VIEW=' + (state.browserAddr.trim() || 'http://browser-box:9333'));
+        if (state.browserNoInbound) e.push('SWE_AGENT_VIEW_TUNNEL=1');
+      } else {
+        e.push('SWE_AGENT_VIEW=off');
+      }
+    }
+    if (wildcardApplies()) {
+      e.push('SWE_PUBLIC_HOSTNAME=' + (state.wildcardDomain.trim() || 'the-box.example.com'));
+    }
+    return e;
+  }
+
+  // Nothing ticked: exactly the four ordinary lines, so someone who reads none
+  // of this page still gets the laptop instructions.
+  function plainScript() {
+    if (state.node) {
+      return [
+        INSTALL_SH,
+        'cd /path/to/project',
+        'swe-swe up',
+        '',
+        '# then open http://localhost:1977'
+      ].join('\n');
+    }
+    return [
+      "alias swe-swe='npx -y swe-swe'",
+      'cd /path/to/project',
+      'swe-swe up',
+      '',
+      '# then open http://localhost:1977'
+    ].join('\n');
+  }
+
+  function handScript() {
+    if (!anythingTicked()) return plainScript();
+    var lines = [];
+    if (state.node) {
+      lines.push(INSTALL_SH);
+      lines.push('export PATH="$HOME/.local/bin:$PATH"');
+    } else {
+      lines.push("alias swe-swe='npx -y swe-swe'");
+    }
+    lines.push('');
+    lines.push('cd /path/to/project');
+    var flags = initFlags();
+    lines.push('swe-swe init' + (flags ? ' ' + flags : ''));
+    lines.push('');
+    var env = envPairs();
+    lines.push(env.join(' \\\n  ') + ' \\\n  swe-swe up');
+    return lines.join('\n');
+  }
+
+  function startupScript() {
+    var lines = [];
+    lines.push('#!/bin/sh');
+    lines.push('set -eu');
+    lines.push('');
+    lines.push(': "${SWE_SWE_PASSWORD:?set a password first}"');
+    lines.push('PROJECT_DIR="${PROJECT_DIR:-$HOME/proj}"');
+    lines.push('LOG="$HOME/swe-swe-up.log"');
+    lines.push('');
+    if (state.node || anythingTicked()) {
+      lines.push(INSTALL_SH);
+      lines.push('export PATH="$HOME/.local/bin:$PATH"');
+      lines.push('');
+    }
+    lines.push('mkdir -p "$PROJECT_DIR"');
+    lines.push('cd "$PROJECT_DIR"');
+    lines.push('[ -d .git ] || git init -q');
+    lines.push('');
+    var flags = initFlags();
+    lines.push('swe-swe init' + (flags ? ' ' + flags : ''));
+    lines.push('');
+    lines.push('export SWE_SWE_PASSWORD');
+    var env = envPairs().filter(function(p) { return p.indexOf('SWE_SWE_PASSWORD') !== 0; });
+    env.forEach(function(p) { lines.push('export ' + p); });
+    lines.push('');
+    lines.push('nohup swe-swe up >"$LOG" 2>&1 &');
+    lines.push('echo "started; log: $LOG"');
+    return lines.join('\n');
+  }
+
+  function scriptNote() {
+    if (state.runMode === 'startup') {
+      return 'Always included without asking: the port number spelled out, the most basic shell syntax, and starting in the background with a log file. There is no terminal to keep open on a machine like this.';
+    }
+    if (!anythingTicked()) return 'Nothing ticked, so these are the ordinary instructions.';
+    return 'Stays in front of you; Ctrl-C stops it.';
+  }
+
+  // ---------- Rendering ----------
+  function renderProbes() {
+    var host = el('q3-probes');
+    host.innerHTML = '';
+    var shown = 0;
+    state.agents.forEach(function(a) {
+      if (!PROBES[a]) return;
+      shown++;
+      var wrap = document.createElement('div');
+      wrap.style.marginTop = '0.6rem';
+      var h = document.createElement('div');
+      h.className = 'q-sub';
+      h.textContent = AGENT_NAMES[a];
+      var block = document.createElement('div');
+      block.className = 'code-block';
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'copy-btn';
+      b.setAttribute('aria-label', 'Copy');
+      b.textContent = 'Copy';
+      var pre = document.createElement('pre');
+      var code = document.createElement('code');
+      code.textContent = PROBES[a];
+      pre.appendChild(code);
+      block.appendChild(b);
+      block.appendChild(pre);
+      wrap.appendChild(h);
+      wrap.appendChild(block);
+      host.appendChild(wrap);
+    });
+    el('q3-noprobe').hidden = shown > 0;
+  }
+
+  function render() {
+    // Q1
+    el('q1-consequence').hidden = !state.docker;
+
+    // Q2
+    el('q2-consequence').hidden = !state.node;
+
+    // Q3 -- greyed out until question 1 is ticked, not hidden: someone with
+    // this exact problem will go looking for it.
+    var q3 = el('q3');
+    var q3box = el('c-mcp');
+    q3.classList.toggle('disabled', !mcpApplies());
+    el('q3-why').hidden = mcpApplies();
+    el('q3-body').hidden = !mcpApplies();
+    q3box.disabled = !mcpApplies() || mcpForced();
+    q3box.checked = mcpEffective();
+    el('q3-forced').hidden = !mcpForced();
+    el('q3-consequence').hidden = !mcpEffective() || mcpForced();
+    if (mcpApplies()) renderProbes();
+
+    // Q4
+    el('q4-body').hidden = !state.browser;
+    el('q4-remote').hidden = !(state.browser && state.browserChoice === 'remote');
+
+    // Q5
+    el('q5-body').hidden = !state.onePort;
+    el('q5-yes').hidden = !(state.onePort && state.wildcard === 'yes');
+    el('q5-no').hidden = !(state.onePort && state.wildcard === 'no');
+    el('q5-needs-q1').hidden = !(state.onePort && state.wildcard === 'yes' && !state.docker);
+
+    // Output
+    el('version-note').hidden = !anythingTicked();
+    el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
+    el('script-note').textContent = scriptNote();
+    el('tunnel-steps').hidden = !needsTunnel();
+  }
+
+  // ---------- Wiring ----------
+  document.getElementById('agent-pills').addEventListener('click', function(e) {
+    var p = e.target.closest('.pill');
+    if (!p) return;
+    var a = p.getAttribute('data-agent');
+    var on = p.getAttribute('aria-pressed') === 'true';
+    p.setAttribute('aria-pressed', on ? 'false' : 'true');
+    if (on) {
+      state.agents = state.agents.filter(function(x) { return x !== a; });
+    } else if (state.agents.indexOf(a) === -1) {
+      state.agents.push(a);
+    }
+    render();
+  });
+
+  el('c-docker').addEventListener('change', function() { state.docker = this.checked; render(); });
+  el('c-node').addEventListener('change', function() { state.node = this.checked; render(); });
+  el('c-mcp').addEventListener('change', function() { state.mcp = this.checked; render(); });
+  el('c-browser').addEventListener('change', function() { state.browser = this.checked; render(); });
+  el('c-oneport').addEventListener('change', function() { state.onePort = this.checked; render(); });
+  el('c-browser-noinbound').addEventListener('change', function() { state.browserNoInbound = this.checked; render(); });
+  el('c-browser-addr').addEventListener('input', function() { state.browserAddr = this.value; render(); });
+  el('c-wildcard-domain').addEventListener('input', function() { state.wildcardDomain = this.value; render(); });
+
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="browser-choice"]'), function(r) {
+    r.addEventListener('change', function() { if (this.checked) { state.browserChoice = this.value; render(); } });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="wildcard"]'), function(r) {
+    r.addEventListener('change', function() { if (this.checked) { state.wildcard = this.value; render(); } });
+  });
+
+  document.getElementById('run-mode').addEventListener('click', function(e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    state.runMode = b.getAttribute('data-mode');
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x) {
+      x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+    });
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

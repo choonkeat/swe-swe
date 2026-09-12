@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - Box limits checklist, real copy</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish.
+     Departure from the usual rule: this one carries REAL labels, REAL check commands and
+     the REAL generated script, because the point is to review the wording. Still greyscale,
+     still plain boxes, no components. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .btn.sm{padding:5px 11px;font-size:12px;font-weight:500;}
+
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  .note{font-size:12px;color:#555;}
+
+  /* --- sketch-local helpers --- */
+  h2.sec{font-size:15px;margin:34px 0 2px;border-top:1px solid var(--line);padding-top:16px;}
+  h2.sec:first-of-type{border-top:0;padding-top:0;margin-top:6px;}
+  .sec-note{font-size:12px;color:#555;margin:0 0 12px;}
+  .stack{display:flex;flex-direction:column;gap:10px;}
+
+  .row{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed #d8d7d1;}
+  .row:last-child{border-bottom:0;}
+  .tick{flex:0 0 auto;width:14px;height:14px;border:1px solid var(--line);border-radius:2px;
+        font-size:11px;line-height:12px;text-align:center;background:#fff;margin-top:2px;}
+  .tick.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .tick.locked{background:var(--grey-lite);color:#555;border-color:var(--line);}
+  .radio{flex:0 0 auto;width:13px;height:13px;border:1px solid var(--line);border-radius:50%;
+         background:#fff;margin-top:3px;}
+  .radio.on{background:var(--ink);border-color:var(--ink);}
+  .rowmain{flex:1 1 auto;}
+  .rowlabel{font-size:13px;font-weight:600;}
+  .rowlabel.plain{font-weight:400;}
+  .expander{font-size:11px;color:var(--grey);margin-top:5px;}
+  .drawer{border-left:2px solid var(--grey-lite);margin-top:7px;padding:6px 0 2px 10px;}
+  .cmd{background:#f0efe9;border:1px dashed #cfcec8;border-radius:2px;padding:6px 8px;
+       font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:#333;
+       white-space:pre-wrap;word-break:break-word;overflow-x:auto;margin:5px 0;}
+  .verdict{font-size:11.5px;color:#333;margin-top:6px;}
+  .script{background:#f0efe9;border:1px dashed #cfcec8;border-radius:2px;padding:11px 13px;
+          font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#222;
+          white-space:pre;overflow-x:auto;}
+  .warnbar{border:1px solid var(--line);border-radius:2px;padding:6px 9px;font-size:11px;color:#333;background:#fff;}
+  .pills{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 2px;}
+  .pill{border:1px solid var(--line);border-radius:11px;padding:3px 11px;font-size:12px;background:#fff;color:#555;}
+  .pill.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .greyed{opacity:.5;}
+  .flag{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);
+        border:1px solid var(--line);border-radius:2px;padding:1px 5px;margin-left:6px;white-space:nowrap;}
+  ol.steps{margin:8px 0 0;padding-left:20px;font-size:12.5px;}
+  ol.steps li{margin:5px 0;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Box limits checklist, real copy</h1>
+  <p class="caption">Lo-fi wireframe with the actual labels, the actual check commands (all run and verified) and the actual generated script. Greyscale and plain on purpose; only the words are real.</p>
+
+  <!-- ================= AGENT SELECTOR ================= -->
+  <h2 class="sec">Above the checklist</h2>
+  <p class="sec-note">Needed because question 3 behaves differently per agent. Not a limit, just a fact about you.</p>
+
+  <div class="box">
+    <div class="title" style="margin-bottom:6px;">Which coding agent do you use?</div>
+    <div class="pills">
+      <span class="pill on">Claude</span>
+      <span class="pill">Codex</span>
+      <span class="pill">OpenCode</span>
+      <span class="pill">Gemini</span>
+      <span class="pill">Other</span>
+    </div>
+  </div>
+
+  <!-- ================= THE CHECKLIST ================= -->
+  <h2 class="sec">Anything your box can&rsquo;t do?</h2>
+  <p class="sec-note">Nothing ticked = today&rsquo;s four lines. Every expander prints its own verdict: &ldquo;leave the box CLEAR&rdquo; or &ldquo;TICK the box&rdquo;.</p>
+
+  <div class="box">
+
+    <!-- Q1 -->
+    <div class="row">
+      <div class="tick on">&#10003;</div>
+      <div class="rowmain">
+        <div class="rowlabel">This box cannot run Docker</div>
+        <div class="expander">&#9662; how do I check?</div>
+        <div class="drawer">
+          <div class="cmd">docker info >/dev/null 2>&amp;1 &amp;&amp; echo "Docker works: leave the box CLEAR" || echo "No Docker here: TICK the box"</div>
+          <div class="verdict">If you have Docker Desktop, start it and run this again before ticking.</div>
+        </div>
+        <div class="drawer" style="border-left-color:var(--line);">
+          <div class="note"><b>Ticked, so this box also needs:</b> git, and at least one of claude, gemini, codex, goose, aider, opencode, pi already installed.</div>
+          <div class="cmd">command -v git >/dev/null 2>&amp;1 &amp;&amp; command -v claude gemini codex goose aider opencode pi >/dev/null 2>&amp;1 &amp;&amp; echo "Ready: git and a coding agent are installed" || echo "Not ready: install git and one of claude gemini codex goose aider opencode pi"</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Q2 -->
+    <div class="row">
+      <div class="tick on">&#10003;</div>
+      <div class="rowmain">
+        <div class="rowlabel">Node is not installed</div>
+        <div class="expander">&#9662; how do I check?</div>
+        <div class="drawer">
+          <div class="cmd">command -v node >/dev/null 2>&amp;1 &amp;&amp; echo "Node is installed: leave the box CLEAR" || echo "No Node: TICK the box"</div>
+          <div class="verdict">Changes the first line of the script from the npx form to a plain download.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Q3 -->
+    <div class="row">
+      <div class="tick on">&#10003;</div>
+      <div class="rowmain">
+        <div class="rowlabel">My agent cannot see swe-swe&rsquo;s tools</div>
+        <div class="expander">&#9662; how do I check? <span class="flag">command shown matches the agent picked above</span></div>
+        <div class="drawer">
+          <div class="note" style="margin-bottom:2px;">Claude</div>
+          <div class="cmd">sh -c 'd=$(mktemp -d); printf "%s" "{\"mcpServers\":{\"sweprobe\":{\"command\":\"true\"}}}" > "$d/.mcp.json"; cd "$d"; claude mcp list 2>&amp;1 | grep -q sweprobe &amp;&amp; echo "Agent sees project tools: leave the box CLEAR" || echo "Agent ignores project tools: TICK the box"; rm -rf "$d"'</div>
+          <div class="note" style="margin-bottom:2px;">Codex</div>
+          <div class="cmd">codex -c 'mcp_servers.sweprobe.command="true"' mcp list 2>&amp;1 | grep -q sweprobe &amp;&amp; echo "Agent sees project tools: leave the box CLEAR" || echo "Agent ignores project tools: TICK the box"</div>
+          <div class="note" style="margin-bottom:2px;">OpenCode</div>
+          <div class="cmd">sh -c 'd=$(mktemp -d); printf "%s" "{\"mcp\":{\"sweprobe\":{\"type\":\"local\",\"command\":[\"true\"],\"enabled\":true}}}" > "$d/opencode.json"; cd "$d"; opencode mcp list 2>&amp;1 | grep -q sweprobe &amp;&amp; echo "Agent sees project tools: leave the box CLEAR" || echo "Agent ignores project tools: TICK the box"; rm -rf "$d"'</div>
+          <div class="verdict">Makes a throwaway folder, asks the agent to list its tools, deletes the folder. Your real settings are never touched.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Q3 alternate states -->
+    <div class="row greyed">
+      <div class="tick"></div>
+      <div class="rowmain">
+        <div class="rowlabel">My agent cannot see swe-swe&rsquo;s tools <span class="flag">state B: question 1 not ticked</span></div>
+        <div class="note" style="margin-top:4px;">Only applies without Docker. With containers the agent runs inside swe-swe&rsquo;s own setup, where the tools always work.</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="tick locked">&#10003;</div>
+      <div class="rowmain">
+        <div class="rowlabel">My agent cannot see swe-swe&rsquo;s tools <span class="flag">state C: Codex or OpenCode picked</span></div>
+        <div class="note" style="margin-top:4px;">Ticked for you and not changeable. Without Docker, swe-swe only writes a tools file for Claude, so Codex and OpenCode always need this.</div>
+      </div>
+    </div>
+
+    <!-- Q4 -->
+    <div class="row">
+      <div class="tick on">&#10003;</div>
+      <div class="rowmain">
+        <div class="rowlabel">The browser tools are missing and I cannot install them</div>
+        <div class="expander">&#9662; how do I check?</div>
+        <div class="drawer">
+          <div class="cmd">sh -c 'm=""; for b in Xvfb x11vnc websockify; do command -v "$b" >/dev/null 2>&amp;1 || m="$m $b"; done; command -v chromium >/dev/null 2>&amp;1 || command -v chromium-browser >/dev/null 2>&amp;1 || m="$m chromium"; [ -z "$m" ] &amp;&amp; echo "All browser tools present: leave the box CLEAR" || echo "Missing:$m -- if you can run: sudo apt-get install -y chromium xvfb x11vnc novnc websockify then leave the box CLEAR; if you cannot install anything, TICK the box"'</div>
+        </div>
+        <div class="drawer" style="border-left-color:var(--line);">
+          <div class="note" style="margin-bottom:6px;"><b>Ticked. Pick one:</b></div>
+          <div class="row" style="padding:4px 0;border:0;">
+            <div class="radio on"></div>
+            <div class="rowmain"><div class="rowlabel plain">No browser. The Agent View pane is switched off; every other pane still works.</div></div>
+          </div>
+          <div class="row" style="padding:4px 0;border:0;">
+            <div class="radio"></div>
+            <div class="rowmain">
+              <div class="rowlabel plain">I run the browser on another machine.</div>
+              <div style="margin-top:6px;"><span class="input">address of that machine, e.g. https://browser-box:9333</span></div>
+              <div class="note" style="margin-top:8px;">On that other machine (3 lines, shown when this is picked):</div>
+              <div class="cmd">curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+sudo apt-get install -y chromium xvfb x11vnc novnc websockify
+swe-swe browser-backend</div>
+              <div class="note"><span class="flag">the third line does not exist yet, about an hour to add</span></div>
+              <div class="row" style="padding:8px 0 0;border:0;">
+                <div class="tick"></div>
+                <div class="rowmain"><div class="rowlabel plain">that machine cannot open connections back to this box</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================= Q5 ================= -->
+  <h2 class="sec">How is this box reached from a web browser?</h2>
+  <p class="sec-note">No command can answer this one; it depends on who runs the box.</p>
+
+  <div class="box">
+    <div class="row"><div class="radio"></div><div class="rowmain"><div class="rowlabel plain">Same machine. I open it at <code>localhost</code>.</div></div></div>
+    <div class="row"><div class="radio"></div><div class="rowmain"><div class="rowlabel plain">Remote box. I can reach any of its ports directly.</div></div></div>
+    <div class="row"><div class="radio on"></div><div class="rowmain"><div class="rowlabel plain">Remote box. Exactly one hostname on one port routes to it, and <code>*.thathostname</code> does not resolve here.</div><div class="note" style="margin-top:4px;">Adds the tunnel setup and the once-per-boot browser steps below. Needs a tunnel server you can connect to. <span class="flag">docs link, or a how-to panel: undecided</span></div></div></div>
+    <div class="row"><div class="radio"></div><div class="rowmain"><div class="rowlabel plain">Public server. I control a domain and its DNS, and ports 80 and 443 accept incoming connections.</div></div></div>
+    <div class="note" style="margin-top:10px;">Why this is asked: each session gets its own port for the app preview, and preview addresses use subdomains, so the third choice is the only one that needs the tunnel.</div>
+  </div>
+
+  <!-- ================= Q6 ================= -->
+  <h2 class="sec">Question 6 <span class="flag">not discussed yet, draft</span></h2>
+
+  <div class="box">
+    <div class="row">
+      <div class="tick on">&#10003;</div>
+      <div class="rowmain">
+        <div class="rowlabel">This box is wiped when it restarts</div>
+        <div class="note" style="margin-top:5px;">Ticked: the script is written to be saved and re-run automatically, starts in the background, and writes to a log file. Secrets are pasted into Settings after boot instead of being put in the script.</div>
+        <div class="note" style="margin-top:5px;">Clear: the script runs in front of you and you stop it with Ctrl-C.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= OUTPUT ================= -->
+  <h2 class="sec">Output, block 1 of 2</h2>
+  <p class="sec-note">State shown: everything above ticked, third reachability choice, no browser. This is the locked-down box.</p>
+
+  <div class="box">
+    <div class="warnbar" style="margin-bottom:9px;">Needs swe-swe 2.38.0 or newer.</div>
+    <div class="title">Save this as your start-up script</div>
+    <div class="script">#!/bin/sh
+set -eu
+: "${SWE_SWE_PASSWORD:?set a password first}"
+PROJECT_DIR="${PROJECT_DIR:-$HOME/proj}"
+LOG="$HOME/swe-swe-up.log"
+
+curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+mkdir -p "$PROJECT_DIR"
+cd "$PROJECT_DIR"
+[ -d .git ] || git init -q
+
+swe-swe init --runtime=host --without-mcp
+
+export SWE_SWE_PASSWORD SWE_PORT=1977 SWE_AGENT_VIEW=off
+nohup swe-swe up >"$LOG" 2>&amp;1 &amp;
+echo "started; log: $LOG"</div>
+    <div style="margin-top:10px;"><span class="btn filled">Copy</span></div>
+    <div class="note" style="margin-top:10px;">Never asked, always included: the port number spelled out, the most basic shell syntax, background plus a log file.</div>
+  </div>
+
+  <h2 class="sec">Output, block 2 of 2</h2>
+  <p class="sec-note">Appears only with the third reachability choice. Not copyable, because none of it is a command.</p>
+
+  <div class="box">
+    <div class="title">Then, once per boot, in your browser</div>
+    <ol class="steps">
+      <li>Open the address your host gives you, and log in with your password.</li>
+      <li>Gear icon, Settings, &ldquo;Tunnel secrets&rdquo;. Paste your three lines. Apply.</li>
+      <li>The strip at the top of the page shows &ldquo;connecting&rdquo;, then a link. Open that link. Every pane works there, and it is the same link every boot.</li>
+    </ol>
+    <div class="note" style="margin-top:10px;">About 30 seconds.</div>
+  </div>
+
+  <!-- ================= OPEN ITEMS ================= -->
+  <h2 class="sec">Marked on this sheet as not yet real</h2>
+  <div class="box">
+    <div class="note">1. <code>swe-swe browser-backend</code> does not exist. About an hour.</div>
+    <div class="note" style="margin-top:6px;">2. Reachability choice 3: docs link, or a how-to-run-a-tunnel-server panel. Undecided.</div>
+    <div class="note" style="margin-top:6px;">3. Question 6 wording has not been discussed.</div>
+  </div>
+
+</div>
+</body>
+</html>
