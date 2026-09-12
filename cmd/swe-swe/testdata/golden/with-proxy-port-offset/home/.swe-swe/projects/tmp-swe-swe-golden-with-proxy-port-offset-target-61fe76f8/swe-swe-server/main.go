@@ -2201,8 +2201,9 @@ func main() {
 		"Wildcard apex this box is reached at, e.g. example.com, when "+
 			"*.example.com DNS points here. Every per-port pane is then "+
 			"addressed as {port}.{this hostname} on this server's own "+
-			"listening port, so no swe-swe-tunnel is needed. --runtime=host "+
-			"only, and mutually exclusive with -tunnel-server-url. "+
+			"listening port, so no swe-swe-tunnel is needed. Mutually "+
+			"exclusive with -tunnel-server-url. Plain http: a TLS-terminating "+
+			"proxy in front needs a wildcard certificate of its own. "+
 			"Env: SWE_PUBLIC_HOSTNAME.")
 	tunnelUnique := flag.String("tunnel-unique", "",
 		"Bare unique label for the tunnel registration (server appends "+
@@ -2351,7 +2352,6 @@ func main() {
 		flagPassed("public-hostname"),
 		resolvedTunnelServerURL,
 		flagPassed("tunnel-server-url"),
-		os.Getenv(publicHostnameRuntimeEnv),
 	)
 	if err != nil {
 		log.Fatalf("swe-swe-server: %v", err)
@@ -2372,6 +2372,10 @@ func main() {
 		log.Printf("Public hostname: %s -- OPEN AT http://%d.%s:%d/ (per-port panes are served as {port}.%s:%d)",
 			configuredPublicHostname, tunnelServerPort, configuredPublicHostname,
 			tunnelServerPort, configuredPublicHostname, tunnelServerPort)
+		// Plain http only unless whatever terminates TLS in front holds a
+		// certificate covering every subdomain; the usual one covers a single
+		// exact name, and a browser then refuses {port}.{apex} over https.
+		log.Printf("Public hostname: https needs a wildcard certificate on whatever terminates TLS in front of this server; swe-swe-server itself serves plain http")
 	}
 
 	// The non-secret parts are shared with any later runtime configure

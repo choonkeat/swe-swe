@@ -258,22 +258,6 @@ func TestDockerlessServerInvocationSetsServerPort(t *testing.T) {
 	}
 }
 
-// The server gates host-native-only settings (today -public-hostname, whose
-// wildcard addressing Traefik cannot route) on this declaration, and compose
-// never sets it. Without it those settings refuse to start.
-func TestDockerlessServerInvocationDeclaresHostRuntime(t *testing.T) {
-	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false)
-	found := false
-	for _, e := range env {
-		if e == "SWE_RUNTIME=host" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("env %v missing SWE_RUNTIME=host", env)
-	}
-}
-
 func argsContainValue(args []string, v string) bool {
 	for _, a := range args {
 		if a == v {

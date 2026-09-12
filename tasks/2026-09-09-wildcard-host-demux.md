@@ -1,6 +1,6 @@
 # Wildcard host-demux: one port, no tunnel
 
-**Status**: phases 1-3 done 2026-09-10 on branch `feat/wildcard-host-demux`. Phase 4 (docs) pending.
+**Status**: phases 1-3 done 2026-09-10, merged. Break 5 re-tested 2026-09-12 and found FALSE -- the mode now works in every runtime. Phase 4 (docs) pending.
 
 ## Goal
 
@@ -52,11 +52,14 @@ unchanged, and the difference is the demux living inside swe-swe-server:
 | 2 | Frontend builds path URLs the wildcard can't route | **Fixed**: the frontend builds subdomain URLs from the same value, and unlike the sidecar, those URLs now resolve -- our own demuxer serves them |
 | 3 | Per-port iframe 401 forever | **Fixed**: follows from 1 |
 | 4 | Landing page has no usable URL | **Fixed**: follows from the same value |
-| 5 | Traefik `Host()` rules don't match wildcards; TLS pinned to one domain | **REAL, and the reason this is host-runtime only.** Dockerless has no Traefik. Compose mode must reject the flag |
+| 5 | Traefik `Host()` rules don't match wildcards; TLS pinned to one domain | **HALF FALSE, retested 2026-09-12.** The generated rules carry NO `Host()` matcher -- every one is `PathPrefix` plus an entrypoint. Verified against traefik:v2.11 with the generated rule shape: any Host, wildcard subdomains included, is forwarded through with the header intact. And the DEFAULT compose setup (`ssl=no`, no tunnel) is Dockerfile-only, with no Traefik at all. Only the TLS half stands: a fronting proxy's certificate covers one exact name, so a padlocked `{port}.{apex}` fails the certificate check until a wildcard certificate is installed there. That is the operator's setup, not a reason to refuse to start |
 | 6 | Label rotation invalidates sessions, unobservable | **Moot**: a static wildcard domain never rotates |
 
-Five of six either do not apply or fall out of the one value. Break 5 is the
-constraint, not a blocker: scope this to `--runtime=host`.
+Five of six either do not apply or fall out of the one value. Break 5 looked
+like the constraint, so phases 1-3 scoped the mode to `--runtime=host`. That
+scoping was removed on 2026-09-12 once break 5 was actually tested: see the
+table row. The mode now works in every runtime, and the `SWE_RUNTIME=host`
+export that existed only to enforce the old gate is gone with it.
 
 ## Design
 

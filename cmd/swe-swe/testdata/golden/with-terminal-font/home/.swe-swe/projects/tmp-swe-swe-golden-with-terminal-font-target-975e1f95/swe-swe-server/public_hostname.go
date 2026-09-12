@@ -22,20 +22,26 @@ import (
 // (resolveCookieDomain), the frontend's subdomain URL builders and the landing
 // page all light up unchanged.
 //
-// Phase 1 stops there deliberately. The demuxer that RECEIVES
-// 23000.example.com and forwards it to 127.0.0.1:23000 -- plus the port
-// allowlist that keeps it from becoming an open relay into every local service
-// -- is phase 2. See tasks/2026-09-09-wildcard-host-demux.md.
+// The demuxer that RECEIVES 23000.example.com and forwards it to
+// 127.0.0.1:23000, plus the port allowlist that keeps it from becoming an open
+// relay into every local service, lives in public_hostname_demux.go. See
+// tasks/2026-09-09-wildcard-host-demux.md.
+//
+// This works in every runtime. It was once refused under docker-compose on the
+// reading that Traefik's Host() rules could not match a wildcard -- but the
+// generated rules carry no Host() matcher at all: they are PathPrefix plus an
+// entrypoint, and Traefik forwards any Host straight through (verified against
+// traefik:v2.11 with the generated rule shape). The default compose setup has
+// no Traefik in front at all. What DOES remain true is that a TLS-terminating
+// proxy in front holds a certificate for one exact name, so a padlocked
+// {port}.{apex} address fails the certificate check until someone installs a
+// wildcard certificate there. That is the operator's setup, not something to
+// refuse to start over.
 
 // configuredPublicHostname is the wildcard apex resolved at boot, or "" when
 // the mode is off. Phase 2's demuxer matches Host headers against it. It is
 // written once during main() before any listener starts, then only read.
 var configuredPublicHostname string
-
-// publicHostnameRuntimeEnv is the env var `swe-swe up` exports for a
-// --runtime=host project. docker-compose never sets it, which is exactly the
-// discrimination this mode needs (see requirePublicHostnameHostRuntime).
-const publicHostnameRuntimeEnv = "SWE_RUNTIME"
 
 // resolvePublicHostname folds the -public-hostname flag and the
 // SWE_PUBLIC_HOSTNAME env var into one value, using the same precedence as
@@ -133,25 +139,6 @@ func validateHostLabel(l, raw string) error {
 	return nil
 }
 
-// requirePublicHostnameHostRuntime rejects the mode anywhere but a
-// --runtime=host project.
-//
-// This is ADR-0043's break 5, and it is real: under docker-compose every
-// request arrives through Traefik, whose Host() router rules cannot match a
-// wildcard and whose TLS certificate is pinned to one domain. A wildcard
-// hostname there would produce addresses that never reach this server, which
-// is worse than refusing to start. `swe-swe up` on a host-runtime project
-// exports SWE_RUNTIME=host; compose never does.
-func requirePublicHostnameHostRuntime(runtimeMode string) error {
-	if runtimeMode == "host" {
-		return nil
-	}
-	if runtimeMode == "" {
-		return fmt.Errorf("-public-hostname needs a host-native run: start the server with `swe-swe up` on a project initialized with --runtime=host (or export %s=host if you are launching swe-swe-server yourself)", publicHostnameRuntimeEnv)
-	}
-	return fmt.Errorf("-public-hostname is not supported with %s=%s: under docker-compose, Traefik routes by exact hostname and cannot match *.<domain>. Use --runtime=host, or reach this box through a tunnel instead", publicHostnameRuntimeEnv, runtimeMode)
-}
-
 // publicHostnameDecision is the outcome of the boot-time resolution.
 // Hostname is the apex to publish ("" = mode off). DropTunnel says the
 // wildcard hostname beat an inherited tunnel setting, so the caller must not
@@ -178,16 +165,13 @@ type publicHostnameDecision struct {
 //
 // Ambiguous cases -- both explicit, or both inherited -- are a hard error, not
 // a silent winner.
-func resolveConfiguredPublicHostname(raw string, rawExplicit bool, tunnelServerURL string, tunnelExplicit bool, runtimeMode string) (publicHostnameDecision, error) {
+func resolveConfiguredPublicHostname(raw string, rawExplicit bool, tunnelServerURL string, tunnelExplicit bool) (publicHostnameDecision, error) {
 	host, err := normalizePublicHostname(raw)
 	if err != nil {
 		return publicHostnameDecision{}, err
 	}
 	if host == "" {
 		return publicHostnameDecision{}, nil
-	}
-	if err := requirePublicHostnameHostRuntime(runtimeMode); err != nil {
-		return publicHostnameDecision{}, err
 	}
 
 	if strings.TrimSpace(tunnelServerURL) == "" {
