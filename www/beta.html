@@ -529,7 +529,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
         </div>
       </div>
 
-      <div class="radio-row" id="row-wildcard">
+      <div class="radio-row">
         <input type="radio" name="reach" id="reach-wildcard" value="wildcard">
         <div>
           <label class="r-label" for="reach-wildcard">one fixed port, with wildcard subdomains</label>
@@ -542,7 +542,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
           </details>
           <div id="wildcard-yes" hidden>
             <div class="consequence">
-              swe-swe serves every pane on that one port, each on its own subdomain. No tunnel, nothing to paste, no steps after boot.
+              swe-swe serves every pane on that one port, each on its own subdomain. No tunnel, nothing to paste, no steps after boot. Plain addresses; for a padlock, whatever handles the encryption in front needs a certificate covering every subdomain.
               <input type="text" id="c-wildcard-domain" placeholder="the machine's hostname, e.g. the-box.example.com" spellcheck="false">
             </div>
           </div>
@@ -726,7 +726,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // The wildcard route lives inside swe-swe-server's own listener, which only
   // exists host-native: with Docker, the traffic router in front cannot match
   // a wildcard.
-  function wildcardRoute() { return state.reach === 'wildcard' && hostRuntime(); }
+  function wildcardRoute() { return state.reach === 'wildcard'; }
   function needsTunnel() { return state.reach === 'tunnel'; }
 
   // "Ordinary" means a laptop with Docker and every port reachable, which is
@@ -897,14 +897,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
       renderProbes();
     }
 
-    // The wildcard route lives in swe-swe-server's own listener, which only
-    // exists host-native. With Docker it is not an option, so it is not
-    // offered -- rather than offered and then explained away.
-    el('row-wildcard').hidden = !hostRuntime();
-    if (!hostRuntime() && state.reach === 'wildcard') {
-      state.reach = 'anyport';
-      el('reach-anyport').checked = true;
-    }
     el('wildcard-yes').hidden = state.reach !== 'wildcard';
 
     el('version-note').hidden = ordinary();
