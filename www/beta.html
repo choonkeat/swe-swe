@@ -355,7 +355,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   <!-- ============ Q1: WHAT THE MACHINE HAS ============ -->
   <section class="section">
-    <h2>My machine has</h2>
+    <h2>My machine running swe-swe will have</h2>
     <p class="lede">Pick one. Every check below prints its own answer, so you never have to interpret a wall of output.</p>
     <div class="card">
 
@@ -377,7 +377,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
       <div class="radio-row">
         <input type="radio" name="have" id="have-agents" value="agents">
         <div>
-          <label class="r-label" for="have-agents">git and the coding agents</label>
+          <label class="r-label" for="have-agents">git and the coding agents preinstalled</label>
           <div class="q-note">No Docker, but the agent is already installed on the machine. swe-swe runs everything directly. Linux on a 64-bit machine, Intel or ARM.</div>
           <details class="how">
             <summary>how do I check?</summary>
@@ -520,22 +520,22 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
 
   <!-- ============ REACHABILITY ============ -->
   <section class="section">
-    <h2>It is reached from a web browser by</h2>
-    <p class="lede">Pick one. This one applies whichever way you answered above.</p>
+    <h2>My browser can reach it by</h2>
+    <p class="lede">Pick one. This applies whichever way you answered above.</p>
     <div class="card">
 
       <div class="radio-row">
         <input type="radio" name="reach" id="reach-anyport" value="anyport" checked>
         <div>
           <label class="r-label" for="reach-anyport">any port on it</label>
-          <div class="q-note">Your own laptop, a machine on your network, or a private network such as Tailscale. Each session gets its own port for the app preview, and they all just work. Nothing is added to the script.</div>
+          <div class="q-note">Your own laptop, or a machine on your network. Each session gets its own port for the app preview, and they all just work.</div>
         </div>
       </div>
 
-      <div class="radio-row">
+      <div class="radio-row" id="row-wildcard">
         <input type="radio" name="reach" id="reach-wildcard" value="wildcard">
         <div>
-          <label class="r-label" for="reach-wildcard">one fixed port, and wildcard subdomains reach it</label>
+          <label class="r-label" for="reach-wildcard">one fixed port, with wildcard subdomains</label>
           <div class="q-note">That is: <code>anything.&lt;the machine's hostname&gt;</code> reaches it, whatever you put in front of the dot. Running it locally, <code>lvh.me</code> already behaves this way.</div>
           <details class="how">
             <summary>how do I check?</summary>
@@ -548,23 +548,35 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
               swe-swe serves every pane on that one port, each on its own subdomain. No tunnel, nothing to paste, no steps after boot.
               <input type="text" id="c-wildcard-domain" placeholder="the machine's hostname, e.g. the-box.example.com" spellcheck="false">
             </div>
-            <div class="warn">
-              <p><b>Two limits, stated rather than hidden.</b></p>
-              <p>1. Plain web addresses only. For a secure address (the padlock), something in front of this machine has to do the encryption and pass the traffic on, keeping the address it was asked for. swe-swe does not do it itself, and a wildcard certificate &mdash; one that covers every subdomain at once &mdash; is a different and slower thing to obtain.</p>
-              <p>2. Only on a machine without Docker, so the second option at the top has to be the one you picked. With Docker, the traffic router in front cannot match wildcard subdomains.</p>
-            </div>
-            <div class="warn" id="wildcard-needs-host" hidden>
-              <p><b>You picked Docker at the top, so this is not available.</b> Pick the option below and use a tunnel, or pick "git and the coding agents" at the top.</p>
-            </div>
           </div>
+        </div>
+      </div>
+
+      <div class="radio-row">
+        <input type="radio" name="reach" id="reach-tailscale" value="tailscale">
+        <div>
+          <label class="r-label" for="reach-tailscale">Tailscale</label>
+          <div class="q-note">A private network between your own machines. Every port becomes reachable, so nothing is added to the script.</div>
+          <details class="how">
+            <summary>how does that work?</summary>
+            <div class="how-body">
+              <p class="q-note">Install Tailscale on this machine and on the one you browse from, sign both into the same account, and reach swe-swe at the name Tailscale gives it. swe-swe neither installs nor configures it; it is just a network your machines are both on.</p>
+            </div>
+          </details>
         </div>
       </div>
 
       <div class="radio-row">
         <input type="radio" name="reach" id="reach-tunnel" value="tunnel">
         <div>
-          <label class="r-label" for="reach-tunnel">one fixed port, and nothing else</label>
-          <div class="q-note">A tunnel is then the only route. It gives you wildcard subdomains of its own hostname and hands your ports back on those. It needs a tunnel server to connect to, which is a separate thing to run &mdash; see the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Setting it up is the three steps below the script.</div>
+          <label class="r-label" for="reach-tunnel">swe-swe-tunnel</label>
+          <div class="q-note">For a machine reachable on one fixed port and nothing else. It gives you wildcard subdomains of its own hostname and hands your ports back on those.</div>
+          <details class="how">
+            <summary>what do I need?</summary>
+            <div class="how-body">
+              <p class="q-note">A tunnel server to connect to, which is a separate thing to run: a machine that stays up, a domain whose subdomains point at it, and your key authorised on it. See the <a href="https://github.com/choonkeat/swe-swe/tree/main/docs" target="_blank" rel="noopener">docs</a>. Once it is running, connecting this machine to it is the three steps below the script.</p>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -712,7 +724,7 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
   // exists host-native: with Docker, the traffic router in front cannot match
   // a wildcard.
   function wildcardRoute() { return state.reach === 'wildcard' && hostRuntime(); }
-  function needsTunnel() { return state.reach !== 'anyport' && !wildcardRoute(); }
+  function needsTunnel() { return state.reach === 'tunnel'; }
 
   // "Ordinary" means a laptop with Docker and every port reachable, which is
   // what the home page already documents.
@@ -872,8 +884,15 @@ SWE_BROWSER_BACKEND_TOKEN=pick-a-shared-secret swe-swe browser-backend</code></p
       renderProbes();
     }
 
+    // The wildcard route lives in swe-swe-server's own listener, which only
+    // exists host-native. With Docker it is not an option, so it is not
+    // offered -- rather than offered and then explained away.
+    el('row-wildcard').hidden = !hostRuntime();
+    if (!hostRuntime() && state.reach === 'wildcard') {
+      state.reach = 'anyport';
+      el('reach-anyport').checked = true;
+    }
     el('wildcard-yes').hidden = state.reach !== 'wildcard';
-    el('wildcard-needs-host').hidden = !(state.reach === 'wildcard' && !hostRuntime());
 
     el('version-note').hidden = ordinary();
     el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
