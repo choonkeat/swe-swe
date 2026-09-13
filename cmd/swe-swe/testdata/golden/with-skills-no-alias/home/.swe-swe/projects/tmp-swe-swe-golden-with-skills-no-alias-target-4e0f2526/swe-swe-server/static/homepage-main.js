@@ -656,15 +656,53 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // navigator.clipboard exists only in a secure context, and a box reached
+    // over plain http on anything but localhost is not one -- which is exactly
+    // how you reach it BEFORE the tunnel is up, so the async API alone would
+    // leave Copy dead on the page that needs it most.
+    function copyText(text) {
+        if (window.isSecureContext && navigator.clipboard) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function(resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            if (ok) resolve(); else reject(new Error('copy unavailable'));
+        });
+    }
+
     var copyBtn = document.getElementById('server-tunnel-copy');
     if (copyBtn) {
         copyBtn.addEventListener('click', function() {
             var url = copyBtn.dataset.url || '';
-            if (!url || !navigator.clipboard) return;
-            navigator.clipboard.writeText(url).then(function() {
-                copyBtn.textContent = 'Copied';
+            if (!url) return;
+            function flash(word) {
+                copyBtn.textContent = word;
                 setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
-            }).catch(function() {});
+            }
+            copyText(url).then(function() {
+                flash('Copied');
+            }).catch(function() {
+                // Neither route worked. Select the address so the keyboard
+                // still gets it, and say so rather than doing nothing.
+                var link = document.getElementById('server-tunnel-link');
+                if (link && window.getSelection) {
+                    var range = document.createRange();
+                    range.selectNodeContents(link);
+                    var sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+                flash('Selected - press Ctrl+C');
+            });
         });
     }
 
