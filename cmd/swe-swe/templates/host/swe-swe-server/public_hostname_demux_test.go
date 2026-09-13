@@ -126,6 +126,34 @@ func TestPublicHostnameRoutablePortsFollowTheRangeVariables(t *testing.T) {
 	}
 }
 
+// The files band is derived from the preview port, not from the
+// filesPortStart/filesPortEnd constants. A box with SWE_PREVIEW_PORTS=3200-3229
+// hands out files ports 9200-9229, whose proxies are 29200-29229 -- and the
+// constants describe 29000-29019, so the Files pane was refused outright over
+// the wildcard route. Caught live by e2e/tests/public-hostname.spec.js.
+func TestPublicHostnameFilesBandFollowsThePreviewRange(t *testing.T) {
+	prevStart, prevEnd := previewPortStart, previewPortEnd
+	t.Cleanup(func() {
+		previewPortStart, previewPortEnd = prevStart, prevEnd
+	})
+
+	previewPortStart, previewPortEnd = 3200, 3229
+
+	for _, port := range []int{29200, 29207, 29229} {
+		band, ok := publicHostnamePortRoutable(port)
+		if !ok {
+			t.Errorf("%d should be routable as a files proxy port with preview 3200-3229", port)
+			continue
+		}
+		if band != "files" {
+			t.Errorf("%d routed as %q, want \"files\"", port, band)
+		}
+	}
+	if _, ok := publicHostnamePortRoutable(29230); ok {
+		t.Errorf("29230 is past the end of the files band and must not be routable")
+	}
+}
+
 // newDemuxProbe starts a fake upstream on an allowlisted port and returns the
 // demux handler in front of a fallthrough marker.
 func demuxProbe(t *testing.T, apex string, serverPort int) (h http.Handler, fellThrough *bool) {

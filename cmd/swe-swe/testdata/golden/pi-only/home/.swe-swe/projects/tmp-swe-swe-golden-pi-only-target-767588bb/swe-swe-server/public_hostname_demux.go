@@ -56,13 +56,19 @@ type publicHostnamePortRange struct {
 func publicHostnameRoutablePorts() []publicHostnamePortRange {
 	cdpSize := cdpPortEnd - cdpPortStart + 1
 	vncSize := vncPortEnd - vncPortStart + 1
+	// Files is the one band that is NOT a constant range: a session's files
+	// port is derived from its preview port, so it moves with -preview-ports
+	// while filesPortStart/filesPortEnd stay at the default. Using the
+	// constants here refused the Files pane outright on any box with a
+	// non-default preview range.
+	filesLo, filesHi := filesPortRange()
 	return []publicHostnamePortRange{
 		{"preview", previewProxyPort(previewPortStart), previewProxyPort(previewPortEnd)},
 		{"agent-chat", agentChatProxyPort(agentChatPortStart), agentChatProxyPort(agentChatPortEnd)},
 		{"public", proxyPortOffset + publicPortStart, proxyPortOffset + publicPortEnd},
 		{"cdp", cdpProxyPort(cdpPortStart), cdpProxyPort(cdpPortEnd + 2*cdpSize)},
 		{"vnc", vncProxyPort(vncPortStart), vncProxyPort(vncPortEnd + vncSize)},
-		{"files", filesProxyPort(filesPortStart), filesProxyPort(filesPortEnd)},
+		{"files", filesProxyPort(filesLo), filesProxyPort(filesHi)},
 	}
 }
 

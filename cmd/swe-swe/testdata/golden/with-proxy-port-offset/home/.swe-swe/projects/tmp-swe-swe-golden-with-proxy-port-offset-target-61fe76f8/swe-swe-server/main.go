@@ -5074,6 +5074,18 @@ func filesPortFromPreview(previewPort int) int {
 	return previewPort + 6000
 }
 
+// filesPortRange is the band of files ports this server can actually hand out.
+//
+// filesPortStart/filesPortEnd are constants, but a session's files port is
+// derived from ITS preview port (filesPortFromPreview), so the real band moves
+// with -preview-ports and the constants only describe the default. Anything
+// reasoning about "which files ports exist" must ask here: with
+// SWE_PREVIEW_PORTS=3200-3229 the files ports are 9200-9229, and a caller
+// using the constants would decide 9207 does not exist.
+func filesPortRange() (int, int) {
+	return filesPortFromPreview(previewPortStart), filesPortFromPreview(previewPortEnd)
+}
+
 // displayNumberFromPreview derives a unique X11 display number from a preview port.
 // Preview port 3000 -> DISPLAY=:1, 3001 -> :2, etc.
 func displayNumberFromPreview(previewPort int) int {

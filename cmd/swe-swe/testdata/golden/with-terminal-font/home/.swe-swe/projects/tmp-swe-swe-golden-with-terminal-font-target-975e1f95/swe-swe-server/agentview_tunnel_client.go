@@ -99,6 +99,11 @@ func tunnelPortExcluded(ranges []tunnelPortRange, port int) bool {
 func defaultTunnelExcludePorts() []tunnelPortRange {
 	cdpSize := cdpPortEnd - cdpPortStart + 1
 	vncSize := vncPortEnd - vncPortStart + 1
+	// Files ports are derived from the preview port, not from the constants,
+	// so they move with -preview-ports (see filesPortRange). Excluding the
+	// constant band on a box with a non-default preview range would leave the
+	// real files ports unexcluded.
+	filesLo, filesHi := filesPortRange()
 	r := []tunnelPortRange{
 		{agentChatPortStart, agentChatPortEnd},
 		{publicPortStart, publicPortEnd},
@@ -106,7 +111,7 @@ func defaultTunnelExcludePorts() []tunnelPortRange {
 		// range AND the remote-mode CDP proxy listeners (remoteCDPProxyOffset).
 		{cdpPortStart, cdpPortEnd + 2*cdpSize},
 		{vncPortStart, vncPortEnd + vncSize},
-		{filesPortStart, filesPortEnd},
+		{filesLo, filesHi},
 	}
 	for _, band := range [][2]int{
 		{previewPortStart, previewPortEnd},
@@ -114,7 +119,7 @@ func defaultTunnelExcludePorts() []tunnelPortRange {
 		{publicPortStart, publicPortEnd},
 		{cdpPortStart, cdpPortEnd},
 		{vncPortStart, vncPortEnd},
-		{filesPortStart, filesPortEnd},
+		{filesLo, filesHi},
 	} {
 		r = append(r, tunnelPortRange{proxyPortOffset + band[0], proxyPortOffset + band[1]})
 	}
