@@ -276,6 +276,11 @@ pre {
 
 .card pre { background: var(--bg-primary); }
 
+/* On a phone a long command is easier to read wrapped than side-scrolled. */
+@media (max-width: 600px) {
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+}
+
 code { font-family: var(--mono); color: var(--text-primary); }
 
 .verdict-cmd pre { font-size: 0.72rem; line-height: 1.55; }
@@ -322,6 +327,9 @@ code { font-family: var(--mono); color: var(--text-primary); }
 .q-note { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.35rem; }
 
 .radio-row { display: flex; gap: 0.65rem; align-items: flex-start; padding: 0.4rem 0; }
+/* Without this the text column refuses to shrink below the width of the long
+   command inside it, dragging the whole page wider than the viewport. */
+.radio-row > div { min-width: 0; }
 .radio-row input[type="radio"] { margin-top: 0.4rem; accent-color: var(--accent); flex: 0 0 auto; }
 .radio-row .r-label { font-size: 0.95rem; font-weight: 600; cursor: pointer; }
 
@@ -516,7 +524,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   </section>
 
   <!-- ============ REACHABILITY ============ -->
-  <section class="section">
+  <section class="section" id="reach-questions">
     <h2>My browser can reach it by</h2>
     <p class="lede">Pick one. This applies whichever way you answered above.</p>
     <div class="card">
@@ -880,6 +888,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
     el('agent-picker').hidden = !hostRuntime();
     el('blocked').hidden = !blocked();
     el('host-questions').hidden = !hostRuntime();
+    el('reach-questions').hidden = blocked();
     el('output').hidden = blocked();
 
     if (hostRuntime()) {
