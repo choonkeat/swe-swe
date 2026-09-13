@@ -391,6 +391,13 @@ test-e2e-agent-view-remote:
 test-e2e-agent-view-remote-image:
 	E2E_AV_BACKEND=image ./scripts/e2e-agent-view-remote.sh
 
+# Same assertions, started through `swe-swe browser-backend` -- the standalone
+# command a backend machine actually runs (no Docker, no checkout, no project).
+# Adds the wrapper's own contract: payload extraction, the imposed :9333, and
+# the inherited SWE_BIND/SWE_PORT/PORT it must ignore.
+test-e2e-agent-view-remote-command:
+	E2E_AV_BACKEND=command ./scripts/e2e-agent-view-remote.sh
+
 # Reverse-tunnel tiers: the instance dials OUT (-agent-view-tunnel); zero
 # inbound reachability needed. The -image variant is the genuine cross-netns
 # no-inbound-route proof; the binary variant shares one loopback (smoke).
@@ -409,7 +416,7 @@ test-e2e-agent-view-remote-tunnel-image:
 # (the fast unit gate). Mirrors the /swe-swe:test-full-e2e slash command.
 # Run before releases. Prerequisites run left-to-right and stop at the first
 # failure, so a late agent-view failure still means the earlier tiers passed.
-test-full-e2e: test test-e2e test-e2e-dockerless test-e2e-agent-view-remote test-e2e-agent-view-remote-tunnel
+test-full-e2e: test test-e2e test-e2e-dockerless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
 	@echo "✓ full e2e suite passed (unit + container e2e + dockerless + agent-view-remote)"
 
 # --- Manual tunnel-mode test ---

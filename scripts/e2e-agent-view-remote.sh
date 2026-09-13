@@ -11,6 +11,15 @@
 #                       display stack: Xvfb/chromium/x11vnc/websockify)
 #   image            -- build + run the docker/browser-backend image (needs
 #                       Docker; exercises the Dockerfile itself)
+#   command          -- run `swe-swe browser-backend` (the standalone command:
+#                       no Docker, no checkout, no project). This is the tier
+#                       that exercises the WRAPPER -- payload extraction into
+#                       ~/.swe-swe/browser-backend/bin, the display-stack
+#                       precheck, and the listen-address contract. It is run
+#                       with NO -bind flag on purpose, with hostile SWE_BIND /
+#                       SWE_PORT / PORT exported, so the service landing on
+#                       :9333 anyway is itself an assertion (a real deployment
+#                       once lost a boot to an inherited PORT).
 #
 # Plus an orthogonal MODE, selected by E2E_AV_TUNNEL:
 #   (unset)          -- direct mode: chromium reaches the swe-swe host via
@@ -29,14 +38,25 @@
 #
 # Usage: ./scripts/e2e-agent-view-remote.sh
 #        E2E_AV_BACKEND=image ./scripts/e2e-agent-view-remote.sh
+#        E2E_AV_BACKEND=command ./scripts/e2e-agent-view-remote.sh
 #        E2E_AV_TUNNEL=1 ./scripts/e2e-agent-view-remote.sh
 #        E2E_AV_TUNNEL=1 E2E_AV_BACKEND=image ./scripts/e2e-agent-view-remote.sh
 set -uo pipefail
 
 WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 E2E_PORT="${E2E_PORT:-19833}"
-BACKEND_PORT="${BACKEND_PORT:-19844}"
 E2E_AV_BACKEND="${E2E_AV_BACKEND:-binary}"
+# The command tier deliberately passes NO listen flag, so its port is whatever
+# `swe-swe browser-backend` imposes (9333, mirroring the image's SWE_PORT).
+# Hard-coding the expected value here is the point: if the wrapper's default
+# moves, or an inherited variable wins, /health never answers and the tier
+# fails. The other tiers are told where to listen, so they keep the high,
+# collision-unlikely port.
+if [ "$E2E_AV_BACKEND" = "command" ]; then
+    BACKEND_PORT="${BACKEND_PORT:-9333}"
+else
+    BACKEND_PORT="${BACKEND_PORT:-19844}"
+fi
 E2E_AV_TUNNEL="${E2E_AV_TUNNEL:-}"
 # High, unlikely-to-collide ranges; distinct pools for the instance's own
 # (unused-in-remote-mode) allocator vs the backend's real one.
@@ -45,6 +65,13 @@ INSTANCE_VNC=42400-42409
 BACKEND_CDP=42500-42509
 BACKEND_VNC=42600-42609
 TOKEN="e2e-agent-view-secret"
+# Command tier only: decoy listen addresses exported into the wrapper's
+# environment. Each is a place the service must never land. They are asserted
+# silent after boot, so "the wrapper cleared them" is proved twice -- once by
+# /health answering on 9333, once by nothing answering here.
+INHERITED_BIND_PORT=42998
+INHERITED_SWE_PORT=42997
+INHERITED_PORT=42996
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swe-agent-view-e2e.XXXXXX")"
 HOME_DIR="$TEST_DIR/home"
 CLI="$WORKSPACE_DIR/dist/swe-swe.$(go env GOOS)-$(go env GOARCH)"
@@ -172,6 +199,19 @@ if [ "$E2E_AV_BACKEND" = "image" ]; then
         -e SWE_CDP_PORTS="$BACKEND_CDP" -e SWE_VNC_PORTS="$BACKEND_VNC" \
         -e SWE_BROWSER_BACKEND_TOKEN="$TOKEN" \
         swe-swe/browser-backend >/dev/null || { fail "backend container start"; exit 1; }
+elif [ "$E2E_AV_BACKEND" = "command" ]; then
+    # No -bind: the wrapper must impose its own default. The three hostile
+    # variables below are every name swe-swe-server consults for a listen
+    # address; each is set to somewhere the service must NOT end up. If the
+    # wrapper stops clearing them, SWE_BIND wins inside the server and /health
+    # never answers on 9333.
+    projects_before="$(ls -1 "$HOME_DIR"/.swe-swe/projects/ 2>/dev/null | wc -l)"
+    env SWE_CDP_PORTS="$BACKEND_CDP" SWE_VNC_PORTS="$BACKEND_VNC" \
+        SWE_BROWSER_BACKEND_TOKEN="$TOKEN" HOME="$HOME_DIR" \
+        SWE_BIND="127.0.0.1:$INHERITED_BIND_PORT" SWE_PORT="$INHERITED_SWE_PORT" PORT="$INHERITED_PORT" \
+        "$CLI" browser-backend \
+        > "$TEST_DIR/backend.log" 2>&1 &
+    BACKEND_PID=$!
 else
     env SWE_CDP_PORTS="$BACKEND_CDP" SWE_VNC_PORTS="$BACKEND_VNC" \
         SWE_BROWSER_BACKEND_TOKEN="$TOKEN" HOME="$HOME_DIR" \
@@ -189,6 +229,39 @@ for _ in $(seq 1 30); do
 done
 [ "$backend_ready" = 1 ] && pass "backend /health answering" \
     || { fail "backend never became healthy"; [ -f "$TEST_DIR/backend.log" ] && tail -10 "$TEST_DIR/backend.log"; exit 1; }
+
+if [ "$E2E_AV_BACKEND" = "command" ]; then
+    # /health answered on 9333 with no -bind flag: the wrapper's default held.
+    pass "wrapper imposed its own port ($BACKEND_PORT) with no -bind flag"
+
+    # ...and none of the inherited variables moved it.
+    for decoy in "$INHERITED_BIND_PORT" "$INHERITED_SWE_PORT" "$INHERITED_PORT"; do
+        if curl -s --max-time 2 "http://127.0.0.1:$decoy/health" | grep -q '"sessions"'; then
+            fail "an inherited listen variable moved the service to :$decoy"
+        else
+            pass "inherited listen variable for :$decoy was ignored"
+        fi
+    done
+
+    # The wrapper dumps ONLY swe-swe-server, into a project-independent dir.
+    EXTRACTED="$HOME_DIR/.swe-swe/browser-backend/bin/swe-swe-server"
+    [ -x "$EXTRACTED" ] && pass "server extracted to ~/.swe-swe/browser-backend/bin" \
+        || fail "expected an executable at $EXTRACTED"
+
+    # A backend machine runs no sessions: it must not gain a project, or it
+    # would show up in `swe-swe list` and be prunable as stale.
+    projects_after="$(ls -1 "$HOME_DIR"/.swe-swe/projects/ 2>/dev/null | wc -l)"
+    [ "$projects_after" = "$projects_before" ] \
+        && pass "no project created by the backend command ($projects_after)" \
+        || fail "backend command created a project: $projects_before -> $projects_after"
+
+    # The unset-token path is the one warning an operator must not miss.
+    if env HOME="$HOME_DIR" SWE_BROWSER_BACKEND_TOKEN= "$CLI" browser-backend -h 2>&1 | grep -q "SWE_BROWSER_BACKEND_TOKEN"; then
+        pass "usage documents the shared secret"
+    else
+        fail "usage does not mention SWE_BROWSER_BACKEND_TOKEN"
+    fi
+fi
 
 echo "=== Phase 4: boot the dockerless instance pointed at the backend ==="
 # Tunnel tier: SWE_AGENT_VIEW_LOCALHOST is a TEST-NET blackhole on purpose --
