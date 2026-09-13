@@ -68,3 +68,7 @@ Bad: ...
 | [040](0040-same-origin-vnc-readiness-probe.md) | Same-origin VNC readiness probe | Accepted |
 | [041](0041-deferred-log-compression.md) | Deferred log compression | Accepted |
 | [042](0042-tunnel-subprocess-supervisor.md) | Tunnel-mode subprocess supervisor | Accepted |
+| [043](0043-tunnel-mode-not-a-sidecar.md) | Tunnel mode is not a runtime sidecar | Accepted |
+| [044](0044-per-session-credential-broker.md) | Per-session credential broker | Accepted |
+| [045](0045-preview-host-demux.md) | Preview host-demux (vhost apps) | Accepted |
+| [046](0046-wildcard-host-demux.md) | Wildcard host-demux (one port, no tunnel) | Accepted |
