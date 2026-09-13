@@ -647,32 +647,44 @@
         /* The panes toggle parts with the hidden attribute; the display rules
            above must not resurrect them. */
         .settings-env [hidden] { display: none !important; }
-        /* Tunnel status dot on the settings gear. Absent entirely until a
-           tunnel is configured, so a box without one gains no chrome. The
-           public URL itself lives in the Settings tunnel pane below. */
-        .header__settings-dot {
-            position: absolute;
-            top: 3px;
-            right: 3px;
-            width: 9px;
-            height: 9px;
-            border-radius: 50%;
-            box-shadow: 0 0 0 2px var(--bg-primary);
-        }
-        .header__settings-dot--connected { background: #22c55e; }
-        .header__settings-dot--connecting,
-        .header__settings-dot--reconnecting { background: #f59e0b; }
-        .header__settings-dot--error,
-        .header__settings-dot--fatal,
-        .header__settings-dot--disconnected { background: #ef4444; }
-        /* Retrying pulses; a still amber dot reads the same as a stuck one. */
-        @keyframes tunnel-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-        .header__settings-dot--connecting,
-        .header__settings-dot--reconnecting {
-            animation: tunnel-dot-pulse 1.6s ease-in-out infinite;
+        /* Tunnel status on the settings gear: the gear itself takes the
+           colour, rather than wearing a badge -- a coloured dot in the corner
+           of an icon reads as unread notifications. The gear keeps its normal
+           colour until a tunnel is configured, so a box without one gains no
+           chrome. The public URL itself lives in the Settings tunnel pane
+           below.
+
+           Every selector names .header__settings twice and repeats itself for
+           :hover. Both are specificity, not style: .header__settings and
+           .header__settings:hover are defined LATER in this sheet and would
+           otherwise win the tie and paint the gear its ordinary grey again. */
+        .header__settings.header__settings--tunnel-connected,
+        .header__settings.header__settings--tunnel-connected:hover { color: #22c55e; }
+        .header__settings.header__settings--tunnel-connecting,
+        .header__settings.header__settings--tunnel-connecting:hover,
+        .header__settings.header__settings--tunnel-reconnecting,
+        .header__settings.header__settings--tunnel-reconnecting:hover { color: #f59e0b; }
+        .header__settings.header__settings--tunnel-error,
+        .header__settings.header__settings--tunnel-error:hover,
+        .header__settings.header__settings--tunnel-fatal,
+        .header__settings.header__settings--tunnel-fatal:hover,
+        .header__settings.header__settings--tunnel-disconnected,
+        .header__settings.header__settings--tunnel-disconnected:hover { color: #ef4444; }
+        /* On the light theme the mid greens sit too pale against white. */
+        [data-theme="light"] .header__settings.header__settings--tunnel-connected,
+        [data-theme="light"] .header__settings.header__settings--tunnel-connected:hover { color: #16a34a; }
+        [data-theme="light"] .header__settings.header__settings--tunnel-connecting,
+        [data-theme="light"] .header__settings.header__settings--tunnel-connecting:hover,
+        [data-theme="light"] .header__settings.header__settings--tunnel-reconnecting,
+        [data-theme="light"] .header__settings.header__settings--tunnel-reconnecting:hover { color: #d97706; }
+        /* Retrying pulses; a still amber gear reads the same as a stuck one. */
+        @keyframes tunnel-gear-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .header__settings--tunnel-connecting svg,
+        .header__settings--tunnel-reconnecting svg {
+            animation: tunnel-gear-pulse 1.6s ease-in-out infinite;
         }
         @media (prefers-reduced-motion: reduce) {
-            .header__settings-dot { animation: none !important; }
+            .header__settings svg { animation: none !important; }
         }
         /* Public address row inside the Settings tunnel pane */
         .tunnel-url {
@@ -1557,7 +1569,6 @@
         /* Settings button in header */
         .header__settings {
             margin-left: auto;
-            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2000,7 +2011,7 @@
             </div>
             <div class="dialog__field">
                 <label class="dialog__label">Tunnel secrets</label>
-                <p class="settings-env__hint">Server process only. <strong>Never given to sessions.</strong> Applying starts (or restarts) the swe-swe-tunnel client; the dot on the settings gear shows its state, and the public address appears here.</p>
+                <p class="settings-env__hint">Server process only. <strong>Never given to sessions.</strong> Applying starts (or restarts) the swe-swe-tunnel client; the settings gear takes the colour of its state, and the public address appears here.</p>
                 <div class="tunnel-url" id="server-tunnel-url" hidden>
                     <span class="tunnel-url__state" id="server-tunnel-state"></span>
                     <a class="tunnel-url__link" id="server-tunnel-link" href="#" target="_blank" rel="noopener"></a>

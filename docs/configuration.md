@@ -106,11 +106,11 @@ on the server, and a saved pane collapses to a line count until you press Edit.
   `SWE_TUNNEL_IDENTITY_KEY` (`base64 -w0 < identity.key`). Applying starts, or
   restarts, the swe-swe-tunnel client with those values. They stay in the
   server process: no session ever sees them (`SWE_TUNNEL_IDENTITY_KEY` is
-  stripped from every session environment whichever way it arrived). A
-  coloured dot on the homepage settings gear shows the client's state --
-  amber while connecting or retrying, green once registered, red on failure,
-  and absent entirely when no tunnel is configured; hovering it names the
-  state and the reason. The public
+  stripped from every session environment whichever way it arrived). The
+  homepage settings gear takes the colour of the client's state -- amber
+  (pulsing) while connecting or retrying, green once registered, red on
+  failure, and its ordinary grey when no tunnel is configured; hovering it
+  names the state and the reason. The public
   `https://<port>.<unique>-tunnel.<suffix>/` link appears in this same pane
   with a Copy button. The same values still work as boot-time env or `init`
   flags.

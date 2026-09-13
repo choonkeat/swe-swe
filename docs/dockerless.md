@@ -116,7 +116,7 @@ SWE_TUNNEL_UNIQUE=my-box
 SWE_TUNNEL_IDENTITY_KEY=<base64 -w0 < identity.key>
 ```
 
-Apply: the dot on the settings gear turns amber while the tunnel
+Apply: the settings gear turns amber while the tunnel
 connects and green once it is up; the stable
 `https://1977.my-box-tunnel.<suffix>/` link then appears in the same
 Settings pane with a Copy button -- the same URL on every rebuild, since

@@ -484,7 +484,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     unique: kv.SWE_TUNNEL_UNIQUE || '',
                     identityKey: kv.SWE_TUNNEL_IDENTITY_KEY || '',
                 }).then(function(data) {
-                    return 'Applied. Tunnel connecting to ' + data.serverUrl + ' as ' + data.unique + '; watch the dot on the settings gear.';
+                    return 'Applied. Tunnel connecting to ' + data.serverUrl + ' as ' + data.unique + '; watch the colour of the settings gear.';
                 });
             },
         },
@@ -588,10 +588,11 @@ document.addEventListener('DOMContentLoaded', function() {
     var panes = Array.prototype.slice.call(document.querySelectorAll('.settings-env'));
     panes.sort(function(a) { return a.dataset.kind === 'tunnel' ? -1 : 1; }).forEach(wirePane);
 
-    // Tunnel status: a dot on the settings gear, plus the public address in
-    // the Settings tunnel pane. No dot at all until a tunnel is configured,
-    // so a box without one carries no permanent banner.
-    var dot = null;
+    // Tunnel status: the settings gear takes the colour of the tunnel state,
+    // plus the public address in the Settings tunnel pane. The gear keeps its
+    // normal colour until a tunnel is configured, so a box without one carries
+    // no permanent banner.
+    var TUNNEL_CLASS_PREFIX = 'header__settings--tunnel-';
     var lastKey = '';
     var GEAR_TITLE = 'Settings';
 
@@ -611,26 +612,25 @@ document.addEventListener('DOMContentLoaded', function() {
         return 'Tunnel connecting to ' + st.serverUrl + ' as ' + st.unique + reason + '...';
     }
 
-    function renderDot(st) {
+    function clearTunnelClasses(gear) {
+        Array.prototype.slice.call(gear.classList).forEach(function(cls) {
+            if (cls.indexOf(TUNNEL_CLASS_PREFIX) === 0) gear.classList.remove(cls);
+        });
+    }
+
+    function renderGear(st) {
         var gear = document.getElementById('settings-btn');
         if (!gear) return;
+        clearTunnelClasses(gear);
         if (!st || !st.configured) {
-            if (dot) { dot.remove(); dot = null; }
             gear.title = GEAR_TITLE;
             return;
         }
         var state = st.state || 'connecting';
-        if (!dot) {
-            dot = document.createElement('span');
-            dot.id = 'server-tunnel-dot';
-            gear.appendChild(dot);
-        }
-        dot.className = 'header__settings-dot header__settings-dot--' + state;
-        var words = describe(st);
-        // Both the dot and the gear carry the words: the dot is a 9px target
-        // and easy to miss, so the whole button answers on hover too.
-        dot.title = words;
-        gear.title = GEAR_TITLE + ' - ' + words;
+        gear.classList.add(TUNNEL_CLASS_PREFIX + state);
+        // The colour alone says which of three families the state is in; the
+        // words on hover say which state, and why.
+        gear.title = GEAR_TITLE + ' - ' + describe(st);
     }
 
     function renderTunnelPane(st) {
@@ -710,7 +710,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var key = st ? [st.configured, st.state, st.url, st.reason, st.retryAfterMs, st.serverUrl].join('|') : '';
         if (key === lastKey) return;
         lastKey = key;
-        renderDot(st);
+        renderGear(st);
         renderTunnelPane(st);
     }
     function pollTunnel() {
