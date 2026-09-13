@@ -107,10 +107,11 @@ on the server, and a saved pane collapses to a line count until you press Edit.
   restarts, the swe-swe-tunnel client with those values. They stay in the
   server process: no session ever sees them (`SWE_TUNNEL_IDENTITY_KEY` is
   stripped from every session environment whichever way it arrived). The
-  homepage settings gear takes the colour of the client's state -- amber
-  (pulsing) while connecting or retrying, green once registered, red on
-  failure, and its ordinary grey when no tunnel is configured; hovering it
-  names the state and the reason. The public
+  settings gear takes the colour of the client's state: amber (pulsing) while
+  connecting or retrying, green once registered, red on failure, and its
+  ordinary grey when no tunnel is configured. Hovering it names the state and
+  the reason. It is one component, so the gear in a session header carries the
+  same colour as the homepage's. The public
   `https://<port>.<unique>-tunnel.<suffix>/` link appears in this same pane
   with a Copy button. The same values still work as boot-time env or `init`
   flags.

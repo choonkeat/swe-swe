@@ -1978,25 +1978,8 @@ terminal-ui.embedded-in-iframe .mobile-only {
     justify-content: center;
 }
 
-.terminal-ui__settings-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    color: var(--text-muted);
-    font-size: 18px;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-}
-
-.terminal-ui__settings-btn:hover {
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-}
+/* The settings button is <settings-gear>, styled by
+   static/styles/settings-gear.css and shared with the homepage header. */
 
 /* === Terminal Bar (mobile only - 40px) === */
 .terminal-ui__terminal-bar {

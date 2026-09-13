@@ -1107,7 +1107,7 @@ class TerminalUI extends HTMLElement {
                             <span class="terminal-ui__chat-icon">💬</span>
                             <span class="terminal-ui__chat-badge" style="display: none;">0</span>
                         </button>
-                        <button class="terminal-ui__settings-btn" title="Settings">⚙</button>
+                        <settings-gear></settings-gear>
                     </div>
                 </header>
 
@@ -4107,8 +4107,10 @@ class TerminalUI extends HTMLElement {
             });
         }
 
-        // Settings button -> open settings panel
-        const settingsBtn = this.querySelector('.terminal-ui__settings-btn');
+        // Settings button -> open settings panel. The click is taken on the
+        // <settings-gear> host rather than the button inside it, so the
+        // component stays free to change its own markup.
+        const settingsBtn = this.querySelector('settings-gear');
         if (settingsBtn) {
             settingsBtn.addEventListener('click', () => {
                 this.openSettingsPanel();

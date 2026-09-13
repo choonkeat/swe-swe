@@ -588,52 +588,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var panes = Array.prototype.slice.call(document.querySelectorAll('.settings-env'));
     panes.sort(function(a) { return a.dataset.kind === 'tunnel' ? -1 : 1; }).forEach(wirePane);
 
-    // Tunnel status: the settings gear takes the colour of the tunnel state,
-    // plus the public address in the Settings tunnel pane. The gear keeps its
-    // normal colour until a tunnel is configured, so a box without one carries
-    // no permanent banner.
-    var TUNNEL_CLASS_PREFIX = 'header__settings--tunnel-';
+    // Tunnel status in the Settings tunnel pane. The settings gear itself is
+    // <settings-gear> (static/settings-gear.js): it carries the tunnel's colour
+    // and owns the only poll on this page, so the pane just listens.
     var lastKey = '';
-    var GEAR_TITLE = 'Settings';
 
-    // One sentence per state, used for both the dot's tooltip and the line
-    // above the address in Settings.
-    function describe(st) {
-        var state = st.state || 'connecting';
-        var reason = st.reason ? ' (' + st.reason + ')' : '';
-        if (state === 'connected') return 'Tunnel connected';
-        if (state === 'reconnecting') {
-            var secs = st.retryAfterMs ? Math.ceil(st.retryAfterMs / 1000) : 0;
-            return 'Tunnel reconnecting to ' + st.serverUrl + reason + (secs ? ' in ' + secs + 's' : '');
-        }
-        if (state === 'error' || state === 'fatal' || state === 'disconnected') {
-            return 'Tunnel ' + state + reason + '. Fix the Tunnel secrets below and Apply again.';
-        }
-        return 'Tunnel connecting to ' + st.serverUrl + ' as ' + st.unique + reason + '...';
-    }
-
-    function clearTunnelClasses(gear) {
-        Array.prototype.slice.call(gear.classList).forEach(function(cls) {
-            if (cls.indexOf(TUNNEL_CLASS_PREFIX) === 0) gear.classList.remove(cls);
-        });
-    }
-
-    function renderGear(st) {
-        var gear = document.getElementById('settings-btn');
-        if (!gear) return;
-        clearTunnelClasses(gear);
-        if (!st || !st.configured) {
-            gear.title = GEAR_TITLE;
-            return;
-        }
-        var state = st.state || 'connecting';
-        gear.classList.add(TUNNEL_CLASS_PREFIX + state);
-        // The colour alone says which of three families the state is in; the
-        // words on hover say which state, and why.
-        gear.title = GEAR_TITLE + ' - ' + describe(st);
-    }
-
-    function renderTunnelPane(st) {
+    function renderTunnelPane(st, description) {
         var row = document.getElementById('server-tunnel-url');
         if (!row) return;
         if (!st || !st.configured) { row.hidden = true; return; }
@@ -643,7 +603,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var copy = document.getElementById('server-tunnel-copy');
         var detail = document.getElementById('server-tunnel-detail');
         var connected = (st.state === 'connected') && !!st.url;
-        stateEl.textContent = connected ? 'Connected:' : describe(st);
+        stateEl.textContent = connected ? 'Connected:' : description;
         link.hidden = !connected;
         copy.hidden = !connected;
         detail.hidden = connected;
@@ -706,20 +666,13 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function renderTunnel(st) {
+    // The poll repeats every few seconds whether or not anything moved; the
+    // key skips the repaint when nothing did.
+    document.addEventListener('swe-tunnel-status', function(e) {
+        var st = e.detail && e.detail.status;
         var key = st ? [st.configured, st.state, st.url, st.reason, st.retryAfterMs, st.serverUrl].join('|') : '';
         if (key === lastKey) return;
         lastKey = key;
-        renderGear(st);
-        renderTunnelPane(st);
-    }
-    function pollTunnel() {
-        if (document.hidden) return;
-        fetch('/api/server/tunnel', { headers: { 'Accept': 'application/json' } })
-            .then(function(r) { return r.ok ? r.json() : null; })
-            .then(renderTunnel)
-            .catch(function() {});
-    }
-    pollTunnel();
-    setInterval(pollTunnel, 3000);
+        renderTunnelPane(st, (e.detail && e.detail.description) || '');
+    });
 })();

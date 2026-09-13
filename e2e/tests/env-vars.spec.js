@@ -21,7 +21,7 @@ async function openSession(page) {
 }
 
 async function openSettings(page) {
-  await page.locator('.terminal-ui__settings-btn').first().click();
+  await page.locator('settings-gear').first().click();
   await page.locator('.settings-panel:not([hidden])').waitFor({ timeout: 5_000 });
 }
 

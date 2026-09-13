@@ -1,0 +1,83 @@
+/* <settings-gear> -- the settings button shared by the homepage header and the
+   session header. Loaded by both pages so the button looks and behaves the same
+   on each; see static/settings-gear.js.
+
+   The host element is the layout handle: a page positions <settings-gear>
+   itself (margin, order) and leaves the button inside alone. */
+settings-gear {
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.settings-gear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary, #94a3b8);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.settings-gear:hover {
+    background: rgba(100, 116, 139, 0.2);
+    color: var(--text-bright, var(--text-primary, #e2e8f0));
+}
+
+.settings-gear svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Tunnel state: the gear itself takes the colour, rather than wearing a badge
+   -- a coloured dot in the corner of an icon reads as unread notifications,
+   which is the one thing the tunnel state is not. The gear keeps its ordinary
+   colour until a tunnel is configured, so a box without one gains no chrome.
+   The public URL itself lives in the homepage Settings tunnel pane.
+
+   Each state rule follows the plain .settings-gear and :hover rules above, so
+   it wins the tie on order and needs no doubled selector. */
+.settings-gear--tunnel-connected,
+.settings-gear--tunnel-connected:hover { color: #22c55e; }
+.settings-gear--tunnel-connecting,
+.settings-gear--tunnel-connecting:hover,
+.settings-gear--tunnel-reconnecting,
+.settings-gear--tunnel-reconnecting:hover { color: #f59e0b; }
+.settings-gear--tunnel-error,
+.settings-gear--tunnel-error:hover,
+.settings-gear--tunnel-fatal,
+.settings-gear--tunnel-fatal:hover,
+.settings-gear--tunnel-disconnected,
+.settings-gear--tunnel-disconnected:hover { color: #ef4444; }
+
+/* On the light theme the mid greens sit too pale against white. */
+[data-theme="light"] .settings-gear--tunnel-connected,
+[data-theme="light"] .settings-gear--tunnel-connected:hover { color: #16a34a; }
+[data-theme="light"] .settings-gear--tunnel-connecting,
+[data-theme="light"] .settings-gear--tunnel-connecting:hover,
+[data-theme="light"] .settings-gear--tunnel-reconnecting,
+[data-theme="light"] .settings-gear--tunnel-reconnecting:hover { color: #d97706; }
+
+/* Retrying pulses; a still amber gear reads the same as a stuck one. */
+@keyframes tunnel-gear-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.settings-gear--tunnel-connecting svg,
+.settings-gear--tunnel-reconnecting svg {
+    animation: tunnel-gear-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .settings-gear svg { animation: none !important; }
+}
+
+/* Touch targets: the 36px square is comfortable for a mouse, under the 44px
+   floor for a finger. */
+@media (pointer: coarse) {
+    .settings-gear {
+        width: 44px;
+        height: 44px;
+    }
+}

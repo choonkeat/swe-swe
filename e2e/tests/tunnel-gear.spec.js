@@ -35,8 +35,11 @@ async function stubTunnel(page, body) {
   });
 }
 
+// The tint, the tooltip and the click all land on the button that
+// <settings-gear> renders inside itself; #settings-btn is only the host the
+// homepage header positions.
 function gear(page) {
-  return page.locator('#settings-btn');
+  return page.locator('#settings-btn button');
 }
 
 async function gearColor(page) {
@@ -75,7 +78,7 @@ test.describe('tunnel status colour on the settings gear', () => {
     // Give the first poll room to have tinted the gear if it were going to.
     await page.waitForTimeout(1500);
 
-    expect(await gear(page).evaluate((el) => el.className)).toBe('header__settings');
+    expect(await gear(page).evaluate((el) => el.className)).toBe('settings-gear');
     await expect(gear(page)).toHaveAttribute('title', 'Settings');
     // The state colours must be absent, not merely unnoticeable.
     expect(await gearColor(page)).not.toBe(await expected(page, 'connected'));
@@ -95,7 +98,7 @@ test.describe('tunnel status colour on the settings gear', () => {
     });
     await page.goto('/');
 
-    await expect(gear(page)).toHaveClass(/header__settings--tunnel-connected/);
+    await expect(gear(page)).toHaveClass(/settings-gear--tunnel-connected/);
     await expectGearColor(page, 'connected');
     await expect(gear(page)).toHaveAttribute('title', 'Settings - Tunnel connected');
 
@@ -112,7 +115,7 @@ test.describe('tunnel status colour on the settings gear', () => {
     // unnoticed alongside the tinted gear.
     await expect(page.locator('#server-tunnel-strip, .tunnel-strip')).toHaveCount(0);
     // ...and so is the badge the tint replaced.
-    await expect(page.locator('#server-tunnel-dot, .header__settings-dot')).toHaveCount(0);
+    await expect(page.locator('#server-tunnel-dot, .settings-gear-dot')).toHaveCount(0);
   });
 
   test('connected: the tint survives hover, which sets a colour of its own', async ({ page }) => {
@@ -124,7 +127,7 @@ test.describe('tunnel status colour on the settings gear', () => {
       unique: 'my-box',
     });
     await page.goto('/');
-    await expect(gear(page)).toHaveClass(/header__settings--tunnel-connected/);
+    await expect(gear(page)).toHaveClass(/settings-gear--tunnel-connected/);
 
     await gear(page).hover();
     await expectGearColor(page, 'connected');
@@ -181,7 +184,7 @@ test.describe('tunnel status colour on the settings gear', () => {
     });
     await page.goto('/');
 
-    await expect(gear(page)).toHaveClass(/header__settings--tunnel-connecting/);
+    await expect(gear(page)).toHaveClass(/settings-gear--tunnel-connecting/);
     await expectGearColor(page, 'amber');
     // A still amber gear reads the same as a stuck one, so the pulse is part
     // of the design, not decoration.
@@ -210,7 +213,7 @@ test.describe('tunnel status colour on the settings gear', () => {
     });
     await page.goto('/');
 
-    await expect(gear(page)).toHaveClass(/header__settings--tunnel-reconnecting/);
+    await expect(gear(page)).toHaveClass(/settings-gear--tunnel-reconnecting/);
     await expectGearColor(page, 'amber');
     await expect(gear(page)).toHaveAttribute(
       'title',
@@ -229,7 +232,7 @@ test.describe('tunnel status colour on the settings gear', () => {
       });
       await page.goto('/');
 
-      await expect(gear(page)).toHaveClass(new RegExp(`header__settings--tunnel-${state}`));
+      await expect(gear(page)).toHaveClass(new RegExp(`settings-gear--tunnel-${state}`));
       await expectGearColor(page, 'red');
       const words = `Tunnel ${state} (identity rejected). Fix the Tunnel secrets below and Apply again.`;
       await expect(gear(page)).toHaveAttribute('title', `Settings - ${words}`);
@@ -249,7 +252,7 @@ test.describe('tunnel status colour on the settings gear', () => {
       unique: 'my-box',
     });
     await page.goto('/');
-    await expect(gear(page)).toHaveClass(/header__settings--tunnel-connected/);
+    await expect(gear(page)).toHaveClass(/settings-gear--tunnel-connected/);
 
     await gear(page).click();
     await expect(page.locator('#settings-dialog-overlay')).toBeVisible();
@@ -291,7 +294,7 @@ test.describe('tunnel status colour on the settings gear', () => {
     configured = false;
     await expect
       .poll(() => gear(page).evaluate((el) => el.className), { timeout: 15_000 })
-      .toBe('header__settings');
+      .toBe('settings-gear');
     await expect(gear(page)).toHaveAttribute('title', 'Settings');
   });
 });

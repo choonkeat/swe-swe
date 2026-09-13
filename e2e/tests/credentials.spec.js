@@ -23,7 +23,7 @@ async function openSession(page) {
 }
 
 async function openSettings(page) {
-  const settingsBtn = page.locator('.terminal-ui__settings-btn').first();
+  const settingsBtn = page.locator('settings-gear').first();
   await settingsBtn.click();
   await page.locator('.settings-panel:not([hidden])').waitFor({ timeout: 5_000 });
 }

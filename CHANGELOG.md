@@ -16,6 +16,8 @@
 
 ### Fixes
 
+- **The session header carries the same settings gear as the homepage**: it drew a bare text glyph and never showed the tunnel's state, because the two pages each had their own button; both now render one shared `<settings-gear>` component.
+
 - **The Stop hook guard now recognises `mcp swe-swe-agent-chat send_message`**: it only matched the short `agent-chat` name, so every MCP-less turn ended with a spurious "no user-visible message" nudge.
 
 
