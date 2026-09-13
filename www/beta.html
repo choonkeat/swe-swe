@@ -165,6 +165,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 
 .q.disabled { opacity: 0.5; }
 .q.disabled .q-label { cursor: default; }
+.q--fixed .q-label { cursor: default; }
 
 .q-body { margin-left: 1.9rem; }
 
@@ -431,7 +432,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
   <!-- ============ WHAT ELSE THE MACHINE HAS ============ -->
   <section class="section" id="host-questions" hidden>
     <h2>It also has</h2>
-    <p class="lede">These start ticked. Untick anything your machine does not have.</p>
     <div class="card">
 
       <!-- Node -->
@@ -494,7 +494,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
       </div>
 
       <!-- MCP -->
-      <div class="q">
+      <div class="q" id="mcp-q">
         <div class="q-head">
           <input type="checkbox" id="c-mcp" checked>
           <div>
@@ -503,7 +503,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
           </div>
         </div>
         <div class="q-body">
-          <details class="how">
+          <details class="how" id="mcp-how">
             <summary>how do I check?</summary>
             <div class="how-body verdict-cmd">
               <p class="q-sub">One command per agent you picked. Each makes a throwaway folder, asks the agent to list its tools, then deletes the folder. Your real settings are never touched.</p>
@@ -512,7 +512,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
             </div>
           </details>
           <div class="consequence" id="mcp-forced" hidden>
-            <b>Unticked for you:</b> without Docker, swe-swe only writes that config for Claude, so Codex and OpenCode always need the other route.
+            <b>Not available with Goose.</b> Goose reads its settings from one file in your home folder and offers no per-project file, so swe-swe will not write there. The agent reaches every tool by typing a command instead.
           </div>
           <div class="consequence" id="mcp-consequence" hidden>
             <b>Unticked:</b> the agent reaches every tool by typing a command instead of through its own tools list.
@@ -697,9 +697,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   var AGENT_NAMES = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', gemini: 'Gemini', goose: 'Goose', aider: 'Aider' };
 
-  // Agents that get no config written at all without Docker, so the box is
-  // unticked for them whatever a probe would say.
-  var FORCES_MCP_OFF = ['codex', 'opencode'];
+  // Goose is the one agent with no project-scoped config format, so without
+  // Docker there is nowhere to write its config that is not the user's own
+  // home. The box is unticked for it whatever a probe would say. Every other
+  // agent gets a real host-side config now.
+  var FORCES_MCP_OFF = ['goose'];
 
   // ---------- State. Everything starts at "my machine has it". ----------
   var state = {
@@ -898,11 +900,17 @@ code { font-family: var(--mono); color: var(--text-primary); }
       el('browser-install').hidden = !installsBrowserTools();
       el('browser-remote').hidden = !agentViewRemote();
 
+      // Forced off by the agent choice: there is nothing to tick, so show a
+      // statement rather than a checkbox that silently refuses to move.
+      var mcpForced = mcpForcedOff();
       var mcpBox = el('c-mcp');
       mcpBox.checked = !withoutMCP();
-      mcpBox.disabled = mcpForcedOff();
-      el('mcp-forced').hidden = !mcpForcedOff();
-      el('mcp-consequence').hidden = !withoutMCP() || mcpForcedOff();
+      mcpBox.disabled = mcpForced;
+      mcpBox.hidden = mcpForced;
+      el('mcp-q').classList.toggle('q--fixed', mcpForced);
+      el('mcp-how').hidden = mcpForced;
+      el('mcp-forced').hidden = !mcpForced;
+      el('mcp-consequence').hidden = !withoutMCP() || mcpForced;
       renderProbes();
     }
 

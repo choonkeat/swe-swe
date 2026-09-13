@@ -105,24 +105,33 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 		log.Fatalf("Failed to write swe-swe-open shim: %v", err)
 	}
 
-	// Project-scoped MCP config (option ii): no global ~/.claude.json
-	// pollution. Claude reads .mcp.json from the project root at launch.
-	// MCP-less mode writes none (and retires one a previous init wrote):
+	// Project-scoped MCP config (option ii): no global config pollution.
+	// Each selected agent gets the form it actually reads -- Claude a
+	// .mcp.json, OpenCode an opencode.json, Gemini a .gemini/settings.json,
+	// Pi a project extension, Codex a launch wrapper (it has no
+	// project-scoped config file and its ~/.codex/config.toml is the user's).
+	// MCP-less mode writes none (and retires any a previous init wrote):
 	// the server runs the proxy fleet and the agent uses the `mcp` CLI.
 	if config.WithoutMCP {
-		removed, err := removeDockerlessMCPConfig(absPath)
+		removed, err := removeDockerlessAgentMCPConfigs(absPath, binDir, config.Agents)
 		if err != nil {
-			log.Fatalf("Failed to remove .mcp.json: %v", err)
+			log.Fatalf("Failed to remove MCP config: %v", err)
 		}
-		if removed {
-			fmt.Printf("Removed MCP config %s (MCP-less mode)\n", filepath.Join(absPath, ".mcp.json"))
+		for _, path := range removed {
+			fmt.Printf("Removed MCP config %s (MCP-less mode)\n", path)
 		}
-		fmt.Println("MCP-less mode: no .mcp.json; the agent reaches tools through the `mcp` CLI")
+		fmt.Println("MCP-less mode: no agent MCP config; the agent reaches tools through the `mcp` CLI")
 	} else {
-		if err := writeDockerlessMCPConfig(absPath); err != nil {
-			log.Fatalf("Failed to write .mcp.json: %v", err)
+		written, err := writeDockerlessAgentMCPConfigs(absPath, binDir, config.Agents)
+		if err != nil {
+			log.Fatalf("Failed to write MCP config: %v", err)
 		}
-		fmt.Printf("Wrote MCP config to %s\n", filepath.Join(absPath, ".mcp.json"))
+		for _, path := range written {
+			fmt.Printf("Wrote MCP config to %s\n", path)
+		}
+		if unsupported := agentsWithoutHostMCPConfig(config.Agents); len(unsupported) > 0 {
+			fmt.Printf("No host-side MCP config for %s (no project-scoped config format); it reaches tools through the `mcp` CLI if you re-init with --without-mcp\n", strings.Join(unsupported, ", "))
+		}
 	}
 
 	// Claude hook guards (AskUserQuestion + silent-stop), project-scoped so
@@ -368,87 +377,6 @@ func dockerlessPort(getenv func(string) string) string {
 		}
 	}
 	return "1977"
-}
-
-// mcpServerSpec is one entry in a Claude Code .mcp.json (stdio transport).
-type mcpServerSpec struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
-}
-
-// dockerlessMCPServers returns the swe-swe MCP servers, mirroring the
-// `claude mcp add` commands the container entrypoint registers
-// (templates.go claude_mcp_setup). The `sh -c '... $VAR ...'` form is kept
-// verbatim so the session env vars (SWE_SERVER_PORT/SESSION_UUID/
-// MCP_AUTH_KEY/BROWSER_CDP_PORT) the server sets expand at agent-launch time.
-func dockerlessMCPServers() map[string]mcpServerSpec {
-	sh := func(script string) mcpServerSpec { return mcpServerSpec{Command: "sh", Args: []string{"-c", script}} }
-	return map[string]mcpServerSpec{
-		"swe-swe-agent-chat": sh("exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
-		"swe-swe-playwright": sh("exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"),
-		"swe-swe-preview":    sh("exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp"),
-		"swe-swe":            sh("exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"),
-	}
-}
-
-// writeDockerlessMCPConfig writes a project-scoped .mcp.json into projectDir
-// (option ii: no global ~/.claude.json pollution). Claude Code, launched with
-// cwd=projectDir by the server, reads it. Overwrites any existing file so
-// re-init picks up command changes.
-func writeDockerlessMCPConfig(projectDir string) error {
-	doc := struct {
-		MCPServers map[string]mcpServerSpec `json:"mcpServers"`
-	}{MCPServers: dockerlessMCPServers()}
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal .mcp.json: %w", err)
-	}
-	data = append(data, '\n')
-	if err := os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0644); err != nil {
-		return fmt.Errorf("write .mcp.json: %w", err)
-	}
-	return nil
-}
-
-// removeDockerlessMCPConfig retires a .mcp.json that a previous (native-MCP)
-// dockerless init wrote, so an MCP-less re-init leaves the agent no stale
-// server config to trip on. It drops only the swe-swe entries: a file that
-// also carries the user's own servers is rewritten without ours, and one
-// holding nothing else is deleted. Reports whether anything changed.
-func removeDockerlessMCPConfig(projectDir string) (bool, error) {
-	path := filepath.Join(projectDir, ".mcp.json")
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	var doc map[string]any
-	if json.Unmarshal(data, &doc) != nil {
-		// Not ours to judge; leave a hand-written or malformed file alone.
-		return false, nil
-	}
-	servers, _ := doc["mcpServers"].(map[string]any)
-	changed := false
-	for name := range dockerlessMCPServers() {
-		if _, ok := servers[name]; ok {
-			delete(servers, name)
-			changed = true
-		}
-	}
-	if !changed {
-		return false, nil
-	}
-	if len(servers) == 0 {
-		return true, os.Remove(path)
-	}
-	doc["mcpServers"] = servers
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return false, err
-	}
-	return true, os.WriteFile(path, append(out, '\n'), 0644)
 }
 
 // writeDockerlessHooks installs the Claude hook guards that the container

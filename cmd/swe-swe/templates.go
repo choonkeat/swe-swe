@@ -933,21 +933,12 @@ done`,
 	}
 
 	// Generate Claude MCP setup block (varies by docker mode)
-	claudeMCPSetup := `claude_mcp_setup() {
-  unset CLAUDECODE
-  claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
-  claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
-  claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
-  # swe-swe-whiteboard was retired; keep removing it so an upgraded user
-  # scope does not carry a dead registration forward.
-  claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
-  claude mcp remove --scope user swe-swe 2>/dev/null || true
-  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
-  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
-  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY'
-  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
-}
-`
+	// Body generated from the one MCP server table (mcpspec.go), so this
+	// block cannot drift from the other agents' configs.
+	claudeMCPSetup := "claude_mcp_setup() {\n" +
+		"  unset CLAUDECODE\n" +
+		mcpClaudeAddLines("  ") +
+		"}\n"
 	if withDocker {
 		claudeMCPSetup += `# Run as app user so config goes to /home/app/.claude.json (not /root/)
 su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
@@ -1036,6 +1027,21 @@ su -s /bin/bash app -c "$(declare -f claude_mcp_setup); claude_mcp_setup"`
 		}
 		if strings.Contains(line, "{{ARTIFACT_GUARD_SCRIPT}}") {
 			line = strings.ReplaceAll(line, "{{ARTIFACT_GUARD_SCRIPT}}", strings.TrimRight(artifactGuardScript, "\n"))
+		}
+
+		// Per-agent MCP config payloads, all generated from the one server
+		// table in mcpspec.go so they cannot drift from each other.
+		if strings.Contains(line, "{{OPENCODE_MCP_JSON}}") {
+			line = strings.ReplaceAll(line, "{{OPENCODE_MCP_JSON}}", mcpOpencodeJSON())
+		}
+		if strings.Contains(line, "{{CODEX_MCP_TOML}}") {
+			line = strings.ReplaceAll(line, "{{CODEX_MCP_TOML}}", strings.TrimRight(mcpCodexTOML(), "\n"))
+		}
+		if strings.Contains(line, "{{GEMINI_MCP_JSON}}") {
+			line = strings.ReplaceAll(line, "{{GEMINI_MCP_JSON}}", mcpStdioJSON())
+		}
+		if strings.Contains(line, "{{GOOSE_MCP_YAML}}") {
+			line = strings.ReplaceAll(line, "{{GOOSE_MCP_YAML}}", strings.TrimRight(mcpGooseYAML(), "\n"))
 		}
 
 		// Handle chown placeholders (empty string when non-DOCKER)

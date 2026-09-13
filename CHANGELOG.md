@@ -4,6 +4,8 @@
 
 ### Features
 
+- **`swe-swe init --runtime=host` configures every agent's MCP tools, not just Claude's**: opencode, gemini and pi get project-scoped configs and codex a PATH wrapper passing `-c` overrides, all generated from one server table that also feeds the container entrypoint, with goose the sole exception (no project-scoped format) and init now saying so.
+
 - **Tunnel secrets and a session environment can be pasted into the homepage Settings**: an ephemeral host with nowhere to keep secrets boots with no tunnel config, then a "Tunnel secrets" pane (server process only, never given to sessions) starts the swe-swe-tunnel client at runtime and the settings gear takes the colour of its state while the public URL appears in the same pane with a Copy button, while a separate "Session environment" pane feeds every new session; both can be remembered per browser and re-apply on page load.
 
 - **`swe-swe init --runtime=host --without-mcp` runs on a host whose Claude ignores MCP config**: the `mcp` + `mcp-cli-proxy` binaries now ship in the dockerless payload, the server launches the proxy fleet per session with sockets under a short `$TMPDIR/swe-swe-<uid>/mcp/` root (unix socket paths cap at 108 bytes), and keeps the `mcp`-CLI steering in the session's `CLAUDE.local.md`.

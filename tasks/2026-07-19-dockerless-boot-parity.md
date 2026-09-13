@@ -29,11 +29,11 @@ code every boot.
 | slash-commands copy                    | yes                  | **MISSING** (flag saved to init.json, never installed) |
 | skills install ({{SKILLS_INSTALL}})    | yes                  | **MISSING**                             |
 | Claude MCP config                      | yes (claude mcp add, user scope) | yes (project .mcp.json)     |
-| OpenCode MCP config                    | yes                  | **MISSING**                             |
-| Codex MCP config (TOML, env_vars gotcha)| yes                 | **MISSING**                             |
-| Gemini MCP config                      | yes                  | **MISSING**                             |
-| Goose MCP config + configure-wrapper   | yes                  | **MISSING**                             |
-| Pi mcp-bridge extension                | yes                  | **MISSING**                             |
+| OpenCode MCP config                    | yes                  | yes (project opencode.json, merged)     |
+| Codex MCP config (TOML, env_vars gotcha)| yes                 | yes (bin/codex wrapper, -c overrides)   |
+| Gemini MCP config                      | yes                  | yes (project .gemini/settings.json)     |
+| Goose MCP config + configure-wrapper   | yes                  | **EXEMPT** (no project-scoped format; init says so) |
+| Pi mcp-bridge extension                | yes                  | yes (project .pi/extensions/)           |
 | Claude hook guards (ask + stop)        | yes (global ~/.claude, jq merge) | yes (project settings.local.json, Go merge) -- single-sourced scripts, GOOD pattern |
 | SWE_SERVER_PORT resolution             | yes                  | yes (`swe-swe up` env)                  |
 | swe-swe-open shim + xdg-open symlinks  | yes (heredoc)        | yes (Go const) -- **DUPLICATED CONTENT**|
@@ -58,12 +58,21 @@ users do not get that. Long-term fix (phase C) erases the difference.
 ## Plan
 
 ### Phase A -- single-source the duplicated payloads
-- Move the open-shim body to one embedded asset consumed by both
+- DONE (2026-09-14): the MCP server specs are defined once in
+  `cmd/swe-swe/mcpspec.go` and every consumer generates from that table --
+  claude `mcp add` lines, project .mcp.json, opencode json, codex toml,
+  codex `-c` overrides, gemini json, goose yaml. The six hand-maintained
+  copies (four heredocs in entrypoint.sh, the templates.go claude block and
+  `dockerlessMCPServers()`) are gone. Resolved a drift it exposed: the
+  opencode/gemini/goose `swe-swe` bridge URL used a different quoting form
+  from claude/codex; all now use claude's.
+- DONE (2026-09-14): host-side configs written for opencode, gemini and pi
+  (project-scoped) and codex (a `bin/codex` wrapper passing `-c` overrides,
+  because codex has no project-scoped config and its ~/.codex/config.toml
+  belongs to the user). Goose stays exempt for the same reason, and init
+  now prints that rather than leaving it silent.
+- STILL TODO: move the open-shim body to one embedded asset consumed by both
   entrypoint.sh templating and `writeDockerlessOpenShim`.
-- Define the 5 MCP server specs ONCE (command + args + env deps as data),
-  generate: claude `mcp add` lines, project .mcp.json, opencode json,
-  codex toml (respect its env_vars whitelist gotcha), gemini json, goose
-  yaml from that single table.
 - Mirror the hook-scripts/ precedent for anything else that graduates.
 
 ### Phase B -- parity checklist test

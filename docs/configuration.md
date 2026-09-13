@@ -83,6 +83,11 @@ host's loopback, which host mode already binds directly. It is deliberately not
 forwarded to `swe-swe-server`, which has no such flag and would exit 2 if given
 it.
 
+Host mode writes each selected agent the MCP config it reads -- project-scoped
+for claude/opencode/gemini/pi, a PATH wrapper for codex -- and never touches a
+home directory. Goose has no project-scoped format, so it gets none and `init`
+says so. See [dockerless.md](dockerless.md#agent-mcp-config-host-side).
+
 `--without-mcp` is host-mode only: it selects MCP-less mode, for hosts where the
 agent's native MCP client is gated (a managed Claude Code that ignores project
 `.mcp.json`, say). No `.mcp.json` is written; instead `swe-swe up` exports

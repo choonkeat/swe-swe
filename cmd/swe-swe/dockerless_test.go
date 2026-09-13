@@ -188,15 +188,15 @@ func TestWriteDockerlessOpenShim(t *testing.T) {
 // launch.
 func TestWriteDockerlessMCPConfig(t *testing.T) {
 	dir := t.TempDir()
-	if err := writeDockerlessMCPConfig(dir); err != nil {
-		t.Fatalf("writeDockerlessMCPConfig: %v", err)
+	if _, err := writeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"claude"}); err != nil {
+		t.Fatalf("writeDockerlessAgentMCPConfigs: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 	if err != nil {
 		t.Fatalf("read .mcp.json: %v", err)
 	}
 	var doc struct {
-		MCPServers map[string]mcpServerSpec `json:"mcpServers"`
+		MCPServers map[string]mcpStdioSpec `json:"mcpServers"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -400,15 +400,15 @@ func TestRemoveDockerlessMCPConfig(t *testing.T) {
 	path := filepath.Join(dir, ".mcp.json")
 
 	// Nothing there: no-op.
-	if removed, err := removeDockerlessMCPConfig(dir); err != nil || removed {
+	if removed, err := removeClaudeMCPConfigForTest(dir); err != nil || removed {
 		t.Errorf("absent file: removed=%v err=%v, want false,nil", removed, err)
 	}
 
 	// Ours only: deleted.
-	if err := writeDockerlessMCPConfig(dir); err != nil {
+	if _, err := writeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"claude"}); err != nil {
 		t.Fatal(err)
 	}
-	if removed, err := removeDockerlessMCPConfig(dir); err != nil || !removed {
+	if removed, err := removeClaudeMCPConfigForTest(dir); err != nil || !removed {
 		t.Errorf("ours-only: removed=%v err=%v, want true,nil", removed, err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -420,7 +420,7 @@ func TestRemoveDockerlessMCPConfig(t *testing.T) {
 	if err := os.WriteFile(path, []byte(mixed), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if removed, err := removeDockerlessMCPConfig(dir); err != nil || !removed {
+	if removed, err := removeClaudeMCPConfigForTest(dir); err != nil || !removed {
 		t.Errorf("mixed: removed=%v err=%v, want true,nil", removed, err)
 	}
 	b, _ := os.ReadFile(path)
@@ -442,10 +442,17 @@ func TestRemoveDockerlessMCPConfig(t *testing.T) {
 	if err := os.WriteFile(path, []byte(theirs), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if removed, err := removeDockerlessMCPConfig(dir); err != nil || removed {
+	if removed, err := removeClaudeMCPConfigForTest(dir); err != nil || removed {
 		t.Errorf("theirs-only: removed=%v err=%v, want false,nil", removed, err)
 	}
 	if b, _ := os.ReadFile(path); string(b) != theirs {
 		t.Errorf("theirs-only file rewritten: %s", b)
 	}
+}
+
+// removeClaudeMCPConfigForTest mirrors what an MCP-less re-init does to a
+// Claude project config, reporting whether anything changed.
+func removeClaudeMCPConfigForTest(dir string) (bool, error) {
+	removed, err := removeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"claude"})
+	return len(removed) > 0, err
 }

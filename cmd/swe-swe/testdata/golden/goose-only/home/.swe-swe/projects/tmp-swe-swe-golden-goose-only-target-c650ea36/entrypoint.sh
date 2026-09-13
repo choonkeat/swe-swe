@@ -45,7 +45,7 @@ extensions:
     cmd: sh
     args:
       - "-c"
-      - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"
+      - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"
 EOF
 
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"

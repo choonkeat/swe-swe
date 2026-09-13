@@ -21,21 +21,37 @@ mkdir -p /home/app/.config/opencode
 cat > /home/app/.config/opencode/opencode.json << 'EOF'
 {
   "mcp": {
+    "swe-swe": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"
+      ]
+    },
     "swe-swe-agent-chat": {
       "type": "local",
-      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
+      "command": [
+        "sh",
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"
+      ]
     },
     "swe-swe-playwright": {
       "type": "local",
-      "command": ["sh", "-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
+      "command": [
+        "sh",
+        "-c",
+        "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
+      ]
     },
     "swe-swe-preview": {
       "type": "local",
-      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
-    },
-    "swe-swe": {
-      "type": "local",
-      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
+      "command": [
+        "sh",
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
+      ]
     }
   }
 }

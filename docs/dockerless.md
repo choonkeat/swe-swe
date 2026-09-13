@@ -62,6 +62,41 @@ sessions and projects. First use downloads once; after that spawns are
 instant and never consult the project cwd -- so a session working inside
 a checkout of one of those very repos cannot shadow the tool.
 
+## Agent MCP config, host-side
+
+`swe-swe init --runtime=host` writes each selected agent the MCP config it
+actually reads. Nothing goes into a home directory: in the container those
+paths sit in a throwaway `/home/app`, but on a host they are the user's own
+settings.
+
+| Agent    | What init writes                                    |
+|----------|-----------------------------------------------------|
+| claude   | project `.mcp.json`                                  |
+| opencode | project `opencode.json` (merged, `mcp` key)          |
+| gemini   | project `.gemini/settings.json` (merged)             |
+| pi       | project `.pi/extensions/mcp-bridge.ts`               |
+| codex    | a `bin/codex` wrapper passing `-c mcp_servers.*`     |
+| goose    | nothing -- see below                                 |
+| aider    | nothing (aider has no MCP support in either runtime) |
+
+The JSON writers merge: an existing file keeps its own keys and any servers
+you added yourself, and `--without-mcp` takes back only swe-swe's entries.
+
+Codex is the exception because it has no project-scoped config at all -- only
+`~/.codex/config.toml`, which is yours. So swe-swe puts a `codex` wrapper on
+the session PATH that passes its servers as `-c` overrides; your own config
+still applies underneath. The wrapper skips its own directory when resolving
+the real `codex`, so it cannot exec itself.
+
+Goose is the one gap: its only config is `~/.config/goose/config.yaml` and it
+offers no per-project form, so swe-swe declines to write there. `init` prints
+which selected agents got no config rather than leaving it silent; use
+`--without-mcp` to reach tools through the `mcp` CLI instead.
+
+All of these are generated from one table (`cmd/swe-swe/mcpspec.go`), which
+also generates the container entrypoint's copies, so the two runtimes cannot
+drift.
+
 ## MCP-less mode
 
 Some hosts let you run the `claude` CLI but not its MCP client: a

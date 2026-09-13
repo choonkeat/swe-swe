@@ -41,26 +41,7 @@ fi
 # OpenCode uses a different schema: type="local" and command as array
 mkdir -p /home/app/.config/opencode
 cat > /home/app/.config/opencode/opencode.json << 'EOF'
-{
-  "mcp": {
-    "swe-swe-agent-chat": {
-      "type": "local",
-      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
-    },
-    "swe-swe-playwright": {
-      "type": "local",
-      "command": ["sh", "-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
-    },
-    "swe-swe-preview": {
-      "type": "local",
-      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
-    },
-    "swe-swe": {
-      "type": "local",
-      "command": ["sh", "-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
-    }
-  }
-}
+{{OPENCODE_MCP_JSON}}
 EOF
 {{CHOWN_OPENCODE}}
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
@@ -75,29 +56,7 @@ echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 # substitute $VAR references in args from the declared env_vars whitelist.
 mkdir -p /home/app/.codex
 cat > /home/app/.codex/config.toml << 'EOF'
-[mcp_servers.swe-swe-agent-chat]
-command = "swe-npx"
-args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme", "--welcome-replies", "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned", "--autocomplete-triggers", "/=slash-command", "--autocomplete-url", "http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
-# AGENT_CHAT_EVENT_LOG (chat history / recordings) and AGENT_CHAT_EXPORT_DIR
-# (streaming chat-log export, which chatlog_close needs) are read by
-# agent-chat itself, so they have to be on the whitelist or Codex sessions
-# silently lose both.
-env_vars = ["AGENT_CHAT_PORT", "AGENT_CHAT_EVENT_LOG", "AGENT_CHAT_EXPORT_DIR", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
-
-[mcp_servers.swe-swe-playwright]
-command = "mcp-lazy-init"
-args = ["--init-method", "POST", "--init-url", "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY", "--", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:$BROWSER_CDP_PORT"]
-env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY", "BROWSER_CDP_PORT"]
-
-[mcp_servers.swe-swe-preview]
-command = "swe-npx"
-args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
-env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
-
-[mcp_servers.swe-swe]
-command = "swe-npx"
-args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
-env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
+{{CODEX_MCP_TOML}}
 EOF
 {{CHOWN_CODEX}}
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
@@ -107,26 +66,7 @@ echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 # Create Gemini MCP configuration
 mkdir -p /home/app/.gemini
 cat > /home/app/.gemini/settings.json << 'EOF'
-{
-  "mcpServers": {
-    "swe-swe-agent-chat": {
-      "command": "sh",
-      "args": ["-c", "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
-    },
-    "swe-swe-playwright": {
-      "command": "sh",
-      "args": ["-c", "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"]
-    },
-    "swe-swe-preview": {
-      "command": "sh",
-      "args": ["-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
-    },
-    "swe-swe": {
-      "command": "sh",
-      "args": ["-c", "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"]
-    }
-  }
-}
+{{GEMINI_MCP_JSON}}
 EOF
 {{CHOWN_GEMINI}}
 echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
@@ -136,31 +76,7 @@ echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 # Create Goose MCP configuration (YAML format)
 mkdir -p /home/app/.config/goose
 cat > /home/app/.config/goose/config.yaml << 'EOF'
-extensions:
-  swe-swe-agent-chat:
-    type: stdio
-    cmd: sh
-    args:
-      - "-c"
-      - "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"
-  swe-swe-playwright:
-    type: stdio
-    cmd: sh
-    args:
-      - "-c"
-      - "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
-  swe-swe-preview:
-    type: stdio
-    cmd: sh
-    args:
-      - "-c"
-      - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
-  swe-swe:
-    type: stdio
-    cmd: sh
-    args:
-      - "-c"
-      - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge 'http://localhost:$SWE_SERVER_PORT/mcp?key='$MCP_AUTH_KEY"
+{{GOOSE_MCP_YAML}}
 EOF
 {{CHOWN_GOOSE}}
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
