@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -275,5 +276,123 @@ func TestEndAPIWithoutChatLogParamJustEnds(t *testing.T) {
 	<-done
 	if len(*calls) != 0 {
 		t.Errorf("expected no orchestrator calls, got %v", *calls)
+	}
+}
+
+// newChatLogRepo makes a git repo at a temp path with one empty commit on main,
+// and returns the path plus a git runner rooted there.
+func newChatLogRepo(t *testing.T) (string, func(args ...string)) {
+	t.Helper()
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test User")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	return repo, run
+}
+
+// A log committed on THIS tree's branch is committed. The baseline case.
+func TestGitHasCommittedFileOnCurrentBranch(t *testing.T) {
+	repo, run := newChatLogRepo(t)
+	logPath := filepath.Join(repo, "agent-chats", "log.md")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(logPath, []byte("# log\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	run("add", "agent-chats/log.md")
+	run("commit", "-q", "-m", "add log")
+
+	if !gitHasCommittedFile(repo, logPath) {
+		t.Error("a log committed on the checked-out branch must report committed")
+	}
+}
+
+// The regression this function exists for: the log is committed on a branch
+// inside a throwaway worktree, then the worktree is removed. This tree's index
+// has never seen the file -- `git ls-files` says "never committed" -- but the
+// commit is still reachable through refs/heads, so the End dialog must not
+// offer to commit it again.
+func TestGitHasCommittedFileOnBranchFromRemovedWorktree(t *testing.T) {
+	repo, run := newChatLogRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	run("worktree", "add", "-q", "-b", "chatlog/export", wt)
+
+	wtLog := filepath.Join(wt, "agent-chats", "log.md")
+	if err := os.MkdirAll(filepath.Dir(wtLog), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(wtLog, []byte("# log\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	wtRun := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = wt
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in worktree failed: %v\n%s", args, err, out)
+		}
+	}
+	wtRun("add", "agent-chats/log.md")
+	wtRun("commit", "-q", "-m", "chat log")
+	run("worktree", "remove", "--force", wt)
+
+	// Precondition: the old probe really does get this wrong.
+	lsFiles := exec.Command("git", "ls-files", "--error-unmatch", "agent-chats/log.md")
+	lsFiles.Dir = repo
+	if lsFiles.Run() == nil {
+		t.Fatal("precondition: ls-files should not find a file committed only on another branch")
+	}
+
+	sessionLog := filepath.Join(repo, "agent-chats", "log.md")
+	if !gitHasCommittedFile(repo, sessionLog) {
+		t.Error("a log committed on a branch from a removed worktree must report committed")
+	}
+}
+
+// A log that exists on disk but in no commit anywhere is not committed -- this
+// is the case that must keep offering the commit/discard choice.
+func TestGitHasCommittedFileUncommitted(t *testing.T) {
+	repo, _ := newChatLogRepo(t)
+	logPath := filepath.Join(repo, "agent-chats", "log.md")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(logPath, []byte("# log\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if gitHasCommittedFile(repo, logPath) {
+		t.Error("an untracked log must report NOT committed")
+	}
+}
+
+// Anything we cannot answer counts as "not committed": an empty workDir, an
+// empty path, and a directory that is not a repo at all.
+func TestGitHasCommittedFileUnanswerable(t *testing.T) {
+	repo, _ := newChatLogRepo(t)
+	cases := []struct {
+		name    string
+		workDir string
+		path    string
+	}{
+		{"no workDir", "", filepath.Join(repo, "agent-chats", "log.md")},
+		{"no path", repo, ""},
+		{"not a repo", t.TempDir(), "agent-chats/log.md"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if gitHasCommittedFile(tc.workDir, tc.path) {
+				t.Error("want NOT committed")
+			}
+		})
 	}
 }

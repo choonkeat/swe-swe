@@ -9163,22 +9163,53 @@ func sessionChatLog(sess *Session) (chatLogInfo, error) {
 		return chatLogInfo{}, nil
 	}
 	if info.Exists && info.Path != "" {
-		info.Committed = gitTracksFile(sess.WorkDir, info.Path)
+		info.Committed = gitHasCommittedFile(sess.WorkDir, info.Path)
 	}
 	return info, nil
 }
 
-// gitTracksFile reports whether path is already committed in the repo at
-// workDir. Any failure counts as "not tracked": the caller uses this to decide
-// whether discarding needs extra care, and being wrong in that direction only
-// costs an extra warning.
-func gitTracksFile(workDir, path string) bool {
+// gitCommittedFileTimeout bounds the history walk below. The End dialog gives
+// up on this answer after 4s and falls back to the plain confirm, so a walk
+// that outlives that budget is pure latency. Var, not const, so tests can cut
+// it.
+var gitCommittedFileTimeout = 3 * time.Second
+
+// gitHasCommittedFile reports whether path exists in ANY commit reachable from
+// the repo at workDir. Any failure counts as "not committed": the caller uses
+// this to decide whether discarding needs extra care, and being wrong in that
+// direction only costs an extra warning.
+//
+// This asks the object store, not the index, and that is the whole point. The
+// obvious probe -- `git ls-files --error-unmatch` -- answers for THIS tree's
+// index only, which is wrong for the standard export-into-an-MR flow: the log
+// is committed on a branch inside a throwaway worktree, and `git worktree
+// remove` deletes the checkout, not the branch. The commit stays reachable
+// while this tree's index has never seen the file, so ls-files said "never
+// committed" and the End dialog kept offering to commit an already-committed
+// log. `rev-list --all` covers both survivors of that flow: the local branch
+// (refs/heads) and, once pushed, its remote-tracking ref (refs/remotes).
+//
+// Limits worth knowing: --all reads refs only, so a commit reachable solely
+// from another worktree's detached HEAD is invisible; and a match proves *a*
+// version of the path was committed, not that the bytes on disk right now are.
+// Both are acceptable here -- the export is frozen (chatlog_close) before it is
+// committed, and the fallback direction is the safe one.
+func gitHasCommittedFile(workDir, path string) bool {
 	if workDir == "" || path == "" {
 		return false
 	}
-	cmd := exec.Command("git", "ls-files", "--error-unmatch", path)
+	ctx, cancel := context.WithTimeout(context.Background(), gitCommittedFileTimeout)
+	defer cancel()
+	// --max-count=1 applies after the pathspec filter, so this stops at the
+	// first commit that touches path instead of walking all of history.
+	cmd := exec.CommandContext(ctx, "git", "rev-list", "--all", "--max-count=1", "--", path)
 	cmd.Dir = workDir
-	return cmd.Run() == nil
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	// A path git has never seen is not an error: it exits 0 with no output.
+	return len(bytes.TrimSpace(out)) > 0
 }
 
 // handleSessionChatLogAPI serves GET /api/session/{uuid}/chatlog so the End
