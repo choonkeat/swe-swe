@@ -201,6 +201,25 @@ function splitTurns(body) {
   return { preamble: body.trim(), turns: [] };
 }
 
+// Relative links inside a chat live relative to the .md file, but the parsed
+// HTML is injected into index.html's document — so the browser would resolve
+// `./assets/x.png` against index.html's URL, not the chat's. That was the same
+// directory until exports moved into per-month subdirectories; now it is one
+// level off. Rebase every relative src/href against the .md's own URL so the
+// viewer agrees with how GitHub renders the very same markdown.
+function rebaseRelativeURLs(root, mdPath) {
+  const base = new URL(mdPath, location.href);
+  for (const [sel, attr] of [['img[src]', 'src'], ['a[href]', 'href']]) {
+    for (const el of root.querySelectorAll(sel)) {
+      const raw = el.getAttribute(attr);
+      // Absolute URLs, protocol-relative, in-page anchors and root-relative
+      // paths already mean what they say.
+      if (!raw || /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//') || raw.startsWith('#') || raw.startsWith('/')) continue;
+      el.setAttribute(attr, new URL(raw, base).href);
+    }
+  }
+}
+
 async function loadChat(mdPath, container) {
   container = container || document.querySelector('.chat');
   container.innerHTML = '';
@@ -225,6 +244,7 @@ async function loadChat(mdPath, container) {
       const pre = document.createElement('div');
       pre.className = 'bubble system';
       pre.innerHTML = marked.parse(preambleClean);
+      rebaseRelativeURLs(pre, mdPath);
       container.appendChild(pre);
     }
     for (const turn of turns) {
@@ -237,6 +257,7 @@ async function loadChat(mdPath, container) {
       const bubble = document.createElement('div');
       bubble.className = 'bubble ' + turn.role;
       bubble.innerHTML = marked.parse(turn.body);
+      rebaseRelativeURLs(bubble, mdPath);
       container.appendChild(bubble);
       if (turn.replies && turn.replies.length) {
         const fr = document.createElement('div');
