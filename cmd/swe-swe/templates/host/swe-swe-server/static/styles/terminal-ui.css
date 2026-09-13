@@ -1196,6 +1196,14 @@ terminal-ui.embedded-in-iframe .mobile-only {
     color: var(--text-secondary, #9ca3af);
 }
 
+/* Must restate display:none -- the display:flex above outranks the UA
+   [hidden] rule, and the JS hides this line with the hidden attribute once
+   the answer lands. Without this the spinner spins forever under a card that
+   has already decided. */
+.settings-panel__end-checking[hidden] {
+    display: none;
+}
+
 .settings-panel__end-spinner {
     width: 12px;
     height: 12px;
