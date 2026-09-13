@@ -71,6 +71,13 @@ users do not get that. Long-term fix (phase C) erases the difference.
   because codex has no project-scoped config and its ~/.codex/config.toml
   belongs to the user). Goose stays exempt for the same reason, and init
   now prints that rather than leaving it silent.
+- Visual proof of the beta.html half, BEFORE | AFTER | DIFF per screen:
+  `assets/2026-09-14-dockerless-mcp-parity-host-codex.png` (codex: locked
+  empty box and `--without-mcp` -> live ticked box, no flag),
+  `assets/...-host-goose.png` (goose: the reverse, and it shows the old page
+  handed goose a ticked box with no config behind it),
+  `assets/...-host-claude-only.png` (lede removal only),
+  `assets/...-docker-default.png` (0 px changed, the control).
 - STILL TODO: move the open-shim body to one embedded asset consumed by both
   entrypoint.sh templating and `writeDockerlessOpenShim`.
 - Mirror the hook-scripts/ precedent for anything else that graduates.
