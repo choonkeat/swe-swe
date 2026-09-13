@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { login, endAllSessions } from './tests/_helpers/sessions.js';
+import { wildcardResolverArgs } from './resolver-args.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const STORAGE_STATE_PATH = path.join(__dirname, '.auth', 'state.json');
@@ -41,11 +42,14 @@ export default async function globalSetup(config) {
   // Debian package whose zygote dies on this kernel); scripts/e2e-test.sh
   // detects that and points CHROMIUM_BIN at a working Playwright-bundled
   // chromium. Keep this in sync with playwright.config.js.
+  const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  // In wildcard mode baseURL is the apex, which no DNS points here; without
+  // the same resolver pinning the config uses, this very first navigation
+  // (the login that mints the shared cookie) would have nowhere to go.
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_BIN || '/usr/bin/chromium',
-    args: ['--no-sandbox', '--disable-gpu'],
+    args: ['--no-sandbox', '--disable-gpu', ...(await wildcardResolverArgs(baseURL))],
   });
-  const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
   // compose mode serves https behind Traefik with a self-signed cert; this
   // context is created directly (not via config `use`), so it must opt into
   // ignoring cert errors itself. No-op for http (simple/docker) modes.

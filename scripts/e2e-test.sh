@@ -95,13 +95,48 @@ test_mode() {
     cd "$E2E_DIR"
     npm install --silent 2>/dev/null
 
+    # Wildcard mode: the app must be REACHED at the apex, not just configured
+    # with it. The frontend only builds "{port}.{apex}" links when the page it
+    # is running in was itself loaded from that domain (terminal-ui.js,
+    # effectivePublicHostname) -- and the login cookie is only issued with
+    # Domain=.{apex} on that path. Loading at the container's own host instead
+    # leaves every subdomain URL untested, which is how the subdomain branch of
+    # tunnel.spec.js sat unrun for so long.
+    #
+    # E2E_RESOLVE_IP is where the browser must actually send those names;
+    # playwright.config.js turns it into a resolver rule, so no real DNS for
+    # the apex is required (and lvh.me's real record -- 127.0.0.1 -- would be
+    # the wrong machine anyway).
+    local base_host="$host_ip"
+    local forwarder_pid=""
+    if [[ -n "${SWE_PUBLIC_HOSTNAME:-}" ]]; then
+        base_host="$SWE_PUBLIC_HOSTNAME"
+        echo "    wildcard mode: reaching the app at ${scheme}://${base_host}:${port} (resolver-pinned to ${host_ip})"
+        # Chromium is pinned by --host-resolver-rules, but Playwright's Node
+        # side (page.request) uses the OS resolver, and lvh.me's real record --
+        # 127.0.0.1 -- is this runner's own loopback, not the stack. /etc/hosts
+        # is root-owned here, so forward the one port Node talks to instead.
+        # Pane traffic is all chromium and never comes through this.
+        if ! curl -s --max-time 2 -o /dev/null "http://127.0.0.1:${port}/swe-swe-auth/login"; then
+            python3 "$SCRIPT_DIR/e2e-apex-forwarder.py" "$port" "$host_ip" &
+            forwarder_pid=$!
+            for _ in $(seq 1 20); do
+                curl -s --max-time 1 -o /dev/null "http://127.0.0.1:${port}/swe-swe-auth/login" && break
+                sleep 0.5
+            done
+        fi
+    fi
+
     local rc=0
     PORT="$port" \
     SWE_SWE_PASSWORD="$password" \
-    E2E_BASE_URL="${scheme}://${host_ip}:${port}" \
+    E2E_BASE_URL="${scheme}://${base_host}:${port}" \
+    E2E_RESOLVE_IP="${host_ip}" \
     SWE_PUBLIC_HOSTNAME="${SWE_PUBLIC_HOSTNAME:-}" \
     CHROMIUM_BIN="${CHROMIUM_BIN:-}" \
         npx playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}" || rc=$?
+
+    [[ -n "$forwarder_pid" ]] && kill "$forwarder_pid" 2>/dev/null
 
     if [[ "$rc" -ne 0 ]]; then
         echo "=== e2e-${mode}: FAILED (exit $rc) ==="

@@ -362,6 +362,20 @@ test-e2e:
 # agent-browser drives Playwright MCP end-to-end (agent -> CDP -> screenshot).
 # Excluded from `test-e2e` (slow + provider-flaky); run on demand / nightly.
 # E2E_LLM=1 makes playwright.config.js run ONLY agent-browser.spec.js.
+# Wildcard host-demux: brings the stack up with SWE_PUBLIC_HOSTNAME=lvh.me
+# (every name under lvh.me is a real public record for 127.0.0.1) and sends
+# real requests to {port}.lvh.me. Its own target because the apex changes what
+# the WHOLE stack advertises -- tunnel.spec.js asserts the no-apex shape and
+# would fail if this ran inside the default pass.
+#
+# tunnel.spec.js is included deliberately: in this mode it asserts the
+# subdomain branch, which the default run never reaches.
+test-e2e-wildcard:
+	SWE_PUBLIC_HOSTNAME=lvh.me ./scripts/e2e-up.sh simple
+	SWE_PUBLIC_HOSTNAME=lvh.me ./scripts/e2e-test.sh simple public-hostname.spec.js tunnel.spec.js \
+		|| (./scripts/e2e-down.sh simple; exit 1)
+	./scripts/e2e-down.sh simple
+
 test-e2e-llm:
 	./scripts/e2e-up.sh simple
 	E2E_LLM=1 ./scripts/e2e-test.sh simple $(E2E_ARGS) || (./scripts/e2e-down.sh simple; exit 1)
@@ -416,7 +430,7 @@ test-e2e-agent-view-remote-tunnel-image:
 # (the fast unit gate). Mirrors the /swe-swe:test-full-e2e slash command.
 # Run before releases. Prerequisites run left-to-right and stop at the first
 # failure, so a late agent-view failure still means the earlier tiers passed.
-test-full-e2e: test test-e2e test-e2e-dockerless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
+test-full-e2e: test test-e2e test-e2e-wildcard test-e2e-dockerless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
 	@echo "✓ full e2e suite passed (unit + container e2e + dockerless + agent-view-remote)"
 
 # --- Manual tunnel-mode test ---

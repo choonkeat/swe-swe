@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { openSessionViaPost } from './_helpers/sessions.js';
 
 const PUBLIC_HOSTNAME = process.env.SWE_PUBLIC_HOSTNAME || '';
+const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
 
 // Auth cookie comes from the suite-wide storageState (see playwright.config.js
 // + global-setup.js); no per-test login is needed.
@@ -72,15 +73,25 @@ test.describe('tunnel-mode URL templating', () => {
         } else {
             // Subdomain mode.
             expect(status.publicHostname).toBe(PUBLIC_HOSTNAME);
-            // Preview URL is "{protocol}//{previewPort}.{publicHostname}" --
-            // raw target port (no proxyPortOffset).
+            // The subdomain names the PROXY port, not the raw target port.
+            // Reaching an app has to mean reaching its proxy -- that is the
+            // listener that checks the login cookie, and the only band the
+            // demuxer's allowlist opens (public_hostname_demux.go). The raw
+            // port behind it is deliberately unroutable.
+            //
+            // The listener's own port is part of the address too. Dropping it
+            // sent the browser to :80, where nothing is listening; the
+            // buildSubdomainOrigin fix put it back. Both halves of that are
+            // asserted here because this branch is the only thing watching
+            // them -- see public-hostname.spec.js for the live request.
+            const apex = PUBLIC_HOSTNAME.replace(/\./g, '\\.');
             const expected = new RegExp(
-                `^https?://${status.previewPort}\\.${PUBLIC_HOSTNAME.replace(/\./g, '\\.')}$`,
+                `^https?://${status.previewProxyPort}\\.${apex}(:\\d+)?$`,
             );
             expect(status.previewBaseUrl).toMatch(expected);
-            // Crucially: the proxyPort offset must NOT appear in the URL.
-            if (status.previewProxyPort) {
-                expect(status.previewBaseUrl).not.toContain(String(status.previewProxyPort));
+            const pagePort = new URL(BASE_URL).port;
+            if (pagePort) {
+                expect(status.previewBaseUrl).toContain(`:${pagePort}`);
             }
         }
     });

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
+import { wildcardResolverArgs } from './resolver-args.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseURL = process.env.E2E_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -13,6 +14,8 @@ const storageStatePath = path.join(__dirname, '.auth', 'state.json');
 // slow + provider-flaky, so it is excluded by default and opted into with
 // E2E_LLM=1 (`make test-e2e-llm`), which runs ONLY the capstone.
 const runLLM = !!process.env.E2E_LLM;
+
+const resolverArgs = await wildcardResolverArgs(baseURL);
 
 export default defineConfig({
   testDir: './tests',
@@ -47,7 +50,7 @@ export default defineConfig({
       // Default to the system chromium; CHROMIUM_BIN overrides it when that
       // build is broken on the host (see scripts/e2e-test.sh + global-setup.js).
       executablePath: process.env.CHROMIUM_BIN || '/usr/bin/chromium',
-      args: ['--no-sandbox', '--disable-gpu'],
+      args: ['--no-sandbox', '--disable-gpu', ...resolverArgs],
     },
   },
   projects: [
