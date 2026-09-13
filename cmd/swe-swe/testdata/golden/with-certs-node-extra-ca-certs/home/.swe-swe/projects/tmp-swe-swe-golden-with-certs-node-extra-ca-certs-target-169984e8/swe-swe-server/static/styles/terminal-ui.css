@@ -1187,6 +1187,33 @@ terminal-ui.embedded-in-iframe .mobile-only {
     line-height: 1.5;
 }
 
+/* The waiting line: muted, so the card reads as "not ready yet" rather than
+   as a statement about the session. */
+.settings-panel__end-checking {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary, #9ca3af);
+}
+
+.settings-panel__end-spinner {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: settings-panel-end-spin 0.7s linear infinite;
+}
+
+@keyframes settings-panel-end-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .settings-panel__end-spinner { animation-duration: 2.4s; }
+}
+
 .settings-panel__end-confirm-actions {
     display: flex;
     flex-direction: column;

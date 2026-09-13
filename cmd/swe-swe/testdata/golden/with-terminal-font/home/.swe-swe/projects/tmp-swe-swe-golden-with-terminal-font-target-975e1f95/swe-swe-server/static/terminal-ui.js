@@ -1019,6 +1019,12 @@ class TerminalUI extends HTMLElement {
                                 <p class="settings-panel__end-confirm-body" id="settings-end-generic-note">Closes the workspace, terminates the agent, and clears in-memory credentials. Repository changes on disk are unaffected.</p>
                                 <!-- Shown only when this session has an uncommitted chat log -->
                                 <p class="settings-panel__end-confirm-body" id="settings-end-chatlog-note" hidden>Uncommitted chat log: <code id="settings-end-logname"></code></p>
+                                <!-- Held while we ask whether there is an uncommitted chat log.
+                                     Showing the plain "Yes, end session" first and swapping it for
+                                     the three-way choice on arrival meant a fast click ended the
+                                     session on the wrong answer, silently skipping the commit
+                                     offer. No button is live until we know. -->
+                                <p class="settings-panel__end-confirm-body settings-panel__end-checking" id="settings-end-checking" hidden><span class="settings-panel__end-spinner" aria-hidden="true"></span>Checking for an uncommitted chat log...</p>
                                 <!-- Stacked rows, not a button row: four buttons
                                      side by side in a 340px card wrapped every
                                      label onto three or four lines. Each choice
@@ -2884,6 +2890,7 @@ class TerminalUI extends HTMLElement {
         const endCancel = panel.querySelector('#settings-end-cancel');
         const endYes = panel.querySelector('#settings-end-confirm-yes');
         const endChatlogNote = panel.querySelector('#settings-end-chatlog-note');
+        const endChecking = panel.querySelector('#settings-end-checking');
         const endGenericNote = panel.querySelector('#settings-end-generic-note');
         const endLogName = panel.querySelector('#settings-end-logname');
         const endDispositionBtns = [
@@ -2917,30 +2924,60 @@ class TerminalUI extends HTMLElement {
             });
         };
 
+        // Only Cancel is live while the answer is in flight; the card names
+        // what it is waiting for.
+        const showEndChecking = () => {
+            if (endChecking) { endChecking.removeAttribute('hidden'); }
+            if (endGenericNote) { endGenericNote.setAttribute('hidden', ''); }
+            if (endChatlogNote) { endChatlogNote.setAttribute('hidden', ''); }
+            if (endYes) { endYes.setAttribute('hidden', ''); }
+            endDispositionBtns.forEach((b) => b.setAttribute('hidden', ''));
+        };
+        // The plain confirm: no log worth a decision, or we could not find out.
+        const showEndPlain = () => {
+            if (endChecking) { endChecking.setAttribute('hidden', ''); }
+            if (endChatlogNote) { endChatlogNote.setAttribute('hidden', ''); }
+            if (endGenericNote) { endGenericNote.removeAttribute('hidden'); }
+            if (endYes) { endYes.removeAttribute('hidden'); }
+            endDispositionBtns.forEach((b) => b.setAttribute('hidden', ''));
+        };
+        const showEndDispositions = (info) => {
+            if (endLogName) {
+                endLogName.textContent = (info.path || '').split('/').pop() +
+                    (info.titled ? '' : '  (untitled)');
+            }
+            if (endChecking) { endChecking.setAttribute('hidden', ''); }
+            if (endGenericNote) { endGenericNote.setAttribute('hidden', ''); }
+            if (endYes) { endYes.setAttribute('hidden', ''); }
+            if (endChatlogNote) { endChatlogNote.removeAttribute('hidden'); }
+            endDispositionBtns.forEach((b) => b.removeAttribute('hidden'));
+        };
+
         if (endLink && endConfirm) {
             endLink.addEventListener('click', () => {
-                // Show the plain confirm immediately (no blocking on the fetch),
-                // then upgrade to the three-way choice if a log turns up.
-                if (endChatlogNote) { endChatlogNote.setAttribute('hidden', ''); }
-                if (endGenericNote) { endGenericNote.removeAttribute('hidden'); }
-                if (endYes) { endYes.removeAttribute('hidden'); }
-                endDispositionBtns.forEach((b) => b.setAttribute('hidden', ''));
-                endConfirm.removeAttribute('hidden');
-
                 const uuid = this.sessionUUID;
-                if (!uuid) { return; }
+                endConfirm.removeAttribute('hidden');
+                if (!uuid) { showEndPlain(); return; }
+                showEndChecking();
+
+                // A hung fetch never rejects, and a card with nothing but
+                // Cancel would trap the user, so the wait is bounded: after
+                // 4s we offer the plain confirm and let a late answer upgrade
+                // it, exactly as before.
+                let settled = false;
+                const fallback = setTimeout(() => {
+                    if (settled) { return; }
+                    settled = true;
+                    showEndPlain();
+                }, 4000);
                 fetchChatLogStatus(uuid).then((info) => {
-                    if (!(info && info.enabled && info.exists && !info.committed)) {
-                        return; // no uncommitted log -- keep the plain confirm
-                    }
-                    if (endLogName) {
-                        endLogName.textContent = (info.path || '').split('/').pop() +
-                            (info.titled ? '' : '  (untitled)');
-                    }
-                    if (endChatlogNote) { endChatlogNote.removeAttribute('hidden'); }
-                    if (endGenericNote) { endGenericNote.setAttribute('hidden', ''); }
-                    if (endYes) { endYes.setAttribute('hidden', ''); }
-                    endDispositionBtns.forEach((b) => b.removeAttribute('hidden'));
+                    clearTimeout(fallback);
+                    const hasLog = !!(info && info.enabled && info.exists && !info.committed);
+                    // A late answer still corrects the fallback upwards, but
+                    // never drags a decided card back to the plain confirm.
+                    if (settled && !hasLog) { return; }
+                    settled = true;
+                    if (hasLog) { showEndDispositions(info); } else { showEndPlain(); }
                 });
             });
         }
