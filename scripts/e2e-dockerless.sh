@@ -13,6 +13,14 @@
 #
 # Usage: ./scripts/e2e-dockerless.sh
 #
+# E2E_WITHOUT_MCP=1 inits with --without-mcp and asserts the MCP-less
+# contract instead: no .mcp.json, the `mcp` + `mcp-cli-proxy` binaries in the
+# payload, a per-session proxy fleet on short unix sockets, the `mcp` CLI
+# reaching a live server through one, and the steering block in the session's
+# CLAUDE.local.md. This is the mode for a host whose agent ignores MCP config,
+# so "the agent can still call a tool" is the only claim that matters and the
+# only one asserted end to end.
+#
 # E2E_POISON_NODE=1 additionally masks node/npx from the SERVER process's
 # PATH (exit-127 shims) and hard-asserts the node-free contract: md-serve
 # (Files tab backend) must start and serve via swe-npx, and the .mcp.json
@@ -29,6 +37,11 @@ UUID="e2e00000-0000-4000-8000-000000000001"
 CLI="$WORKSPACE_DIR/dist/swe-swe.$(go env GOOS)-$(go env GOARCH)"
 SERVER_PID=""
 FAILS=0
+E2E_WITHOUT_MCP="${E2E_WITHOUT_MCP:-}"
+# Socket root the server will use: $TMPDIR/swe-swe-<uid>/mcp (mcpLessSocketRoot).
+# Deliberately short -- unix socket paths cap at 108 bytes, and the metadata-dir
+# path that seemed the natural home blew straight past it.
+MCP_SOCK_ROOT="${TMPDIR:-/tmp}/swe-swe-$(id -u)/mcp"
 
 pass() { echo "  [PASS] $1"; }
 warn() { echo "  [WARN] $1"; }
@@ -53,7 +66,9 @@ mkdir -p "$TEST_DIR/proj" "$HOME_DIR"
 PROJ="$TEST_DIR/proj"
 ( cd "$PROJ" && git init -q && git config user.email e2e@test.local && git config user.name e2e \
     && printf '# e2e\nhello dockerless\n' > README.md && git add -A && git commit -qm init )
-HOME="$HOME_DIR" "$CLI" init --dockerless --project-directory "$PROJ" >/dev/null
+INIT_ARGS=(init --dockerless --project-directory "$PROJ")
+[ -n "$E2E_WITHOUT_MCP" ] && INIT_ARGS+=(--without-mcp)
+HOME="$HOME_DIR" "$CLI" "${INIT_ARGS[@]}" > "$TEST_DIR/init.log" || { echo "init failed"; tail -20 "$TEST_DIR/init.log"; exit 1; }
 SWEDIR="$(ls -d "$HOME_DIR"/.swe-swe/projects/*/ | head -1)"
 echo "  metadata dir: $SWEDIR"
 
@@ -67,8 +82,24 @@ for n in xdg-open open x-www-browser www-browser sensible-browser; do
 done
 [ -z "$(for n in xdg-open open x-www-browser www-browser sensible-browser; do [ "$(readlink "$SWEDIR/bin/$n")" = swe-swe-open ] || echo x; done)" ] && pass "xdg-open/open/... symlinks present"
 [ "$(cat "$SWEDIR/mode")" = "dockerless" ] && pass "mode marker = dockerless" || fail "mode marker wrong/missing"
-grep -q '"mcpServers"' "$PROJ/.mcp.json" && grep -q 'swe-swe-agent-chat' "$PROJ/.mcp.json" \
-    && pass "project .mcp.json has MCP servers" || fail ".mcp.json missing/incomplete"
+if [ -n "$E2E_WITHOUT_MCP" ]; then
+    # The whole point of the mode: the agent is never handed MCP config,
+    # because on these hosts it would ignore it (or refuse to boot with it).
+    [ ! -e "$PROJ/.mcp.json" ] && pass "no .mcp.json written (MCP-less)" \
+        || fail ".mcp.json exists in MCP-less mode: $(head -c 120 "$PROJ/.mcp.json")"
+    grep -q 'MCP-less mode' "$TEST_DIR/init.log" && pass "init announces MCP-less mode" \
+        || fail "init did not announce MCP-less mode"
+    # The fleet is useless without both halves of the CLI pair in the payload.
+    for b in mcp mcp-cli-proxy; do
+        [ -x "$SWEDIR/bin/$b" ] && pass "binary $b dumped + executable" \
+            || fail "binary $b missing/not executable (MCP-less needs it)"
+    done
+    grep -q '"withoutMCP": *true' "$SWEDIR/init.json" && pass "init.json records withoutMCP" \
+        || fail "init.json does not record withoutMCP"
+else
+    grep -q '"mcpServers"' "$PROJ/.mcp.json" && grep -q 'swe-swe-agent-chat' "$PROJ/.mcp.json" \
+        && pass "project .mcp.json has MCP servers" || fail ".mcp.json missing/incomplete"
+fi
 
 echo "=== Phase 4: boot the dumped server (no Docker) ==="
 # E2E_POISON_NODE=1: mask node/npx from the server's PATH with exit-127
@@ -107,6 +138,14 @@ for _ in $(seq 1 60); do
     sleep 1
 done
 [ "$ready" = 1 ] && pass "server serves homepage (200)" || { fail "server never became ready"; tail -20 "$TEST_DIR/up.log"; }
+
+if [ -n "$E2E_WITHOUT_MCP" ]; then
+    # `swe-swe up` must recognise the mode from the saved init config and turn
+    # it on for the server (SWE_MCP_LESS); without that the fleet never starts
+    # and the agent has neither MCP config nor a CLI to fall back to.
+    grep -q 'MCP-less mode' "$TEST_DIR/up.log" && pass "up announces MCP-less mode" \
+        || { fail "up did not announce MCP-less mode"; head -20 "$TEST_DIR/up.log"; }
+fi
 
 echo "=== Phase 5: assert tab-serving endpoints ==="
 # Homepage identifies as swe-swe.
@@ -167,9 +206,15 @@ echo "=== Phase 6: Playwright live-tab coverage ==="
 if [ "${E2E_SKIP_PLAYWRIGHT:-}" = "1" ]; then
     warn "Playwright live-tab suite skipped (E2E_SKIP_PLAYWRIGHT=1)"
 else
+    PW_SPECS=(dockerless-tabs.spec.js)
+    # The MCP-less assertions have to run while a session is alive (the fleet's
+    # sockets are removed on teardown), so they live in a spec, not here.
+    [ -n "$E2E_WITHOUT_MCP" ] && PW_SPECS+=(dockerless-mcpless.spec.js)
     if ( cd "$WORKSPACE_DIR/e2e" && npm install --silent 2>/dev/null \
             && E2E_DOCKERLESS=1 E2E_BASE_URL="http://127.0.0.1:$E2E_PORT" \
-               npx playwright test dockerless-tabs.spec.js ); then
+               E2E_WITHOUT_MCP="$E2E_WITHOUT_MCP" \
+               E2E_SWE_BIN_DIR="$SWEDIR/bin" E2E_PROJECT_DIR="$PROJ" \
+               npx playwright test "${PW_SPECS[@]}" ); then
         pass "Playwright live-tab suite passed"
     else
         fail "Playwright live-tab suite failed"

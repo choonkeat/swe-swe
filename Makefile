@@ -394,6 +394,13 @@ test-e2e-dockerless:
 test-e2e-dockerless-smoke:
 	E2E_SKIP_PLAYWRIGHT=1 ./scripts/e2e-dockerless.sh
 
+# MCP-less dockerless (`--without-mcp`): no .mcp.json anywhere, and a live
+# session's tools reached through the bundled `mcp` CLI over the server-launched
+# proxy fleet's unix sockets. Needs chromium (the fleet only starts on a real
+# session websocket), so it is not part of the smoke tier.
+test-e2e-dockerless-mcpless:
+	E2E_WITHOUT_MCP=1 ./scripts/e2e-dockerless.sh
+
 # Agent View over a REMOTE browser-backend: allocation API, CDP forwarder,
 # VNC proxy, vnc-ready, noVNC canvas, and chromium's localhost resolving back
 # to the swe-swe host. Binary tier runs the dumped server directly (needs the
@@ -430,7 +437,7 @@ test-e2e-agent-view-remote-tunnel-image:
 # (the fast unit gate). Mirrors the /swe-swe:test-full-e2e slash command.
 # Run before releases. Prerequisites run left-to-right and stop at the first
 # failure, so a late agent-view failure still means the earlier tiers passed.
-test-full-e2e: test test-e2e test-e2e-wildcard test-e2e-dockerless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
+test-full-e2e: test test-e2e test-e2e-wildcard test-e2e-dockerless test-e2e-dockerless-mcpless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
 	@echo "✓ full e2e suite passed (unit + container e2e + dockerless + agent-view-remote)"
 
 # --- Manual tunnel-mode test ---
