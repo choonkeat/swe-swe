@@ -1,6 +1,6 @@
 # Wildcard host-demux: one port, no tunnel
 
-**Status**: phases 1-3 done 2026-09-10, merged. Break 5 re-tested 2026-09-12 and found FALSE -- the mode now works in every runtime, PROVEN live through Traefik in a compose stack. Phase 4 (docs) pending.
+**Status**: phases 1-3 done 2026-09-10, merged. Break 5 re-tested 2026-09-12 and found FALSE -- the mode now works in every runtime, PROVEN live through Traefik in a compose stack. Phase 4 (docs) done 2026-09-13. Complete.
 
 ## Goal
 
@@ -187,10 +187,16 @@ use today. Phase 1 is plain http, or an admin-supplied wildcard certificate.
    Note for phase 4: the preview pane worked with NO `SWE_PREVIEW_REACH_DOMAIN`
    set, which narrows open question 2 -- the reach domain is only needed for
    viewing several apps at once, not for the mode to work.
-4. **Docs.** `docs/dockerless.md` (a third option beside co-located and tunnel),
-   `docs/tunnel-explained.md` (when you do NOT need a tunnel), and an ADR
-   recording that ADR-0043's rejection was re-examined and why this shape
-   differs. CHANGELOG: one sentence.
+4. **Docs.** DONE 2026-09-13.
+   - `docs/dockerless.md`: a "Reaching it from a browser" section with the
+     three shapes, ordered by how much work they are.
+   - `docs/tunnel-explained.md`: "When you do NOT need a tunnel", placed before
+     the setup instructions so nobody builds a tunnel server they did not need.
+   - `docs/adr/0046-wildcard-host-demux.md`, recording that ADR-0043's break 5
+     was re-tested and half of it is false. The ADR index was missing 043-045
+     as well; all four rows added.
+   - `docs/configuration.md`: the env table row.
+   - CHANGELOG: one sentence.
 
 ## Compose-mode proof, 2026-09-12
 

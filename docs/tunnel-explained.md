@@ -27,6 +27,36 @@ authenticates clients by Ed25519 pubkey.
 For background, see `tasks/2026-04-29-tunnel-subprocess-pivot.md`
 (swe-swe side) and the `swe-swe-tunnel` repo for the wire protocol.
 
+## When you do NOT need a tunnel
+
+Before setting any of this up, check whether your box already has what the
+tunnel would give it. The tunnel's real job is supplying **wildcard
+subdomains**: `{port}.{unique}-tunnel.<suffix>`, so every per-session port is
+reachable through one public address.
+
+If `anything.<your box's hostname>` already reaches your box, you have that
+already, and swe-swe can do the demuxing itself on its own listener:
+
+```sh
+swe-swe up --public-hostname=example.com     # env: SWE_PUBLIC_HOSTNAME
+```
+
+No tunnel server to run, no key to authorize, no once-per-boot browser steps.
+See [dockerless.md](dockerless.md#reaching-it-from-a-browser) and
+[ADR-0046](adr/0046-wildcard-host-demux.md). It is plain http: swe-swe-server
+never terminates TLS, so a padlocked address needs a wildcard certificate on
+whatever does.
+
+The tunnel is still the answer when:
+
+- the box is reachable on one fixed port and subdomains of it are **not**
+  routed to the box (the usual sandbox / PaaS shape), or
+- the box has no inbound reachability at all and can only dial outward, or
+- you want TLS terminated for you, which the tunnel server does.
+
+`--public-hostname` and `--tunnel-server-url` are mutually exclusive: both
+decide the public hostname this server advertises.
+
 ## Two sides: client (this doc) vs server (the admin)
 
 There are two halves, and these docs cover only the **client** half --

@@ -236,3 +236,62 @@ the session keeps running -- Agent View pages fail until the automatic
 reconnect (capped backoff) restores it. `SWE_AGENT_VIEW_LOCALHOST` /
 `SWE_AGENT_VIEW_LOOPBACK_DOMAINS` are resolver-rule knobs and are ignored
 in tunnel mode.
+
+## Reaching it from a browser
+
+Three shapes, in order of how much work they are. `swe-swe up` with nothing
+extra is the first one.
+
+### Option 1 -- every port is reachable (default)
+
+Your own laptop, a machine on your network, or a private network such as
+Tailscale. Each session gets its own port for the app preview and they all just
+work. Nothing to configure.
+
+### Option 2 -- one fixed port, with wildcard subdomains
+
+For a box you reach on exactly one port, where `anything.<its hostname>` also
+reaches it. Then swe-swe serves every pane through that ONE port, naming the
+internal port in the leftmost label -- what tunnel mode does, minus the tunnel:
+
+```
+http://1977.example.com:1977/    the swe-swe UI
+http://23000.example.com:1977/   that session's app preview
+http://27000.example.com:1977/   that session's Agent View
+```
+
+```sh
+swe-swe up --public-hostname=example.com     # env: SWE_PUBLIC_HOSTNAME
+```
+
+The connection port never changes; only the leftmost label does, and it names
+the local port to reach. Running locally, `lvh.me` already behaves this way
+(`anything.lvh.me` resolves to `127.0.0.1`), which is handy for trying it.
+
+Checking whether your box qualifies: in a browser **on the machine you will be
+using**, open `anything.<the box's hostname>`. If it reaches the box, it does.
+
+This works with Docker too -- see [ADR-0046](adr/0046-wildcard-host-demux.md)
+for why that took a re-test to establish. Under compose it also collapses the
+~100 published per-session ports into the one.
+
+Two things to know:
+
+1. **Plain http.** swe-swe-server never terminates TLS. For a padlock,
+   whatever does terminate it in front needs a certificate covering every
+   subdomain, and a normal single-name certificate will not do.
+2. **Mutually exclusive with tunnel mode**, because both decide the public
+   hostname. If a stale `SWE_TUNNEL_SERVER_URL` is sitting in the box's
+   environment, an explicit `--public-hostname` on the command line wins and
+   says so in the log.
+
+Only swe-swe's own per-session proxy ports are routable this way
+(`proxyPortOffset` plus each configured range). Any other port is a 404, logged
+once, so a public hostname cannot become a door into everything else on the
+box.
+
+### Option 3 -- one fixed port, no wildcard subdomains
+
+A tunnel is then the only route: see [tunnel-explained.md](tunnel-explained.md).
+It supplies the wildcard subdomains option 2 needs, at the cost of a tunnel
+server you have to run.
