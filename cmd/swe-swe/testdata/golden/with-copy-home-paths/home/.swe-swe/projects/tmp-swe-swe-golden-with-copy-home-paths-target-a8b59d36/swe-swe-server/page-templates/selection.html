@@ -647,18 +647,56 @@
         /* The panes toggle parts with the hidden attribute; the display rules
            above must not resurrect them. */
         .settings-env [hidden] { display: none !important; }
-        /* Tunnel status strip at the top of the homepage */
-        .tunnel-strip {
-            padding: 6px 12px;
-            font: 12px/1.4 Menlo, Monaco, "Courier New", monospace;
-            text-align: center;
-            color: #fff;
+        /* Tunnel status dot on the settings gear. Absent entirely until a
+           tunnel is configured, so a box without one gains no chrome. The
+           public URL itself lives in the Settings tunnel pane below. */
+        .header__settings-dot {
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            box-shadow: 0 0 0 2px var(--bg-primary);
         }
-        .tunnel-strip a { color: inherit; font-weight: 600; }
-        .tunnel-strip--connecting { background: #1e3a8a; }
-        .tunnel-strip--reconnecting { background: #92400e; }
-        .tunnel-strip--connected { background: #166534; }
-        .tunnel-strip--error, .tunnel-strip--fatal, .tunnel-strip--disconnected { background: #991b1b; }
+        .header__settings-dot--connected { background: #22c55e; }
+        .header__settings-dot--connecting,
+        .header__settings-dot--reconnecting { background: #f59e0b; }
+        .header__settings-dot--error,
+        .header__settings-dot--fatal,
+        .header__settings-dot--disconnected { background: #ef4444; }
+        /* Retrying pulses; a still amber dot reads the same as a stuck one. */
+        @keyframes tunnel-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .header__settings-dot--connecting,
+        .header__settings-dot--reconnecting {
+            animation: tunnel-dot-pulse 1.6s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .header__settings-dot { animation: none !important; }
+        }
+        /* Public address row inside the Settings tunnel pane */
+        .tunnel-url {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .tunnel-url__state {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .tunnel-url__link {
+            font: 12px/1.4 Menlo, Monaco, "Courier New", monospace;
+            color: var(--accent-primary);
+            word-break: break-all;
+        }
+        .tunnel-url__detail {
+            flex-basis: 100%;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
         /* Shut down server button in the settings dialog */
         .settings-shutdown-btn {
             display: block;
@@ -1519,6 +1557,7 @@
         /* Settings button in header */
         .header__settings {
             margin-left: auto;
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1961,7 +2000,13 @@
             </div>
             <div class="dialog__field">
                 <label class="dialog__label">Tunnel secrets</label>
-                <p class="settings-env__hint">Server process only. <strong>Never given to sessions.</strong> Applying starts (or restarts) the swe-swe-tunnel client; the strip at the top of the page shows its progress and the public URL.</p>
+                <p class="settings-env__hint">Server process only. <strong>Never given to sessions.</strong> Applying starts (or restarts) the swe-swe-tunnel client; the dot on the settings gear shows its state, and the public address appears here.</p>
+                <div class="tunnel-url" id="server-tunnel-url" hidden>
+                    <span class="tunnel-url__state" id="server-tunnel-state"></span>
+                    <a class="tunnel-url__link" id="server-tunnel-link" href="#" target="_blank" rel="noopener"></a>
+                    <button type="button" class="settings-env__btn" id="server-tunnel-copy" hidden>Copy</button>
+                    <span class="tunnel-url__detail" id="server-tunnel-detail" hidden></span>
+                </div>
                 <div class="settings-env" id="server-tunnel-pane" data-kind="tunnel">
                     <div class="settings-env__saved" hidden>
                         <span class="settings-env__saved-text"></span>

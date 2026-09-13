@@ -116,9 +116,11 @@ SWE_TUNNEL_UNIQUE=my-box
 SWE_TUNNEL_IDENTITY_KEY=<base64 -w0 < identity.key>
 ```
 
-Apply: the strip at the top of the page shows the tunnel connecting, then
-the stable `https://1977.my-box-tunnel.<suffix>/` link -- the same URL on
-every rebuild, since it depends only on the unique. Switch to it; every
+Apply: the dot on the settings gear turns amber while the tunnel
+connects and green once it is up; the stable
+`https://1977.my-box-tunnel.<suffix>/` link then appears in the same
+Settings pane with a Copy button -- the same URL on every rebuild, since
+it depends only on the unique. Switch to it; every
 pane works there. The secrets never leave the server process, and no
 session inherits them. The **Session environment** pane next to it is the
 place for values sessions should inherit. See

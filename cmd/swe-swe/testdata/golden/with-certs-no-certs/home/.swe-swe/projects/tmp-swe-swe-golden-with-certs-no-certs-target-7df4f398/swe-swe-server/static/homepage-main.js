@@ -484,7 +484,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     unique: kv.SWE_TUNNEL_UNIQUE || '',
                     identityKey: kv.SWE_TUNNEL_IDENTITY_KEY || '',
                 }).then(function(data) {
-                    return 'Applied. Tunnel connecting to ' + data.serverUrl + ' as ' + data.unique + '; watch the strip at the top.';
+                    return 'Applied. Tunnel connecting to ' + data.serverUrl + ' as ' + data.unique + '; watch the dot on the settings gear.';
                 });
             },
         },
@@ -588,54 +588,98 @@ document.addEventListener('DOMContentLoaded', function() {
     var panes = Array.prototype.slice.call(document.querySelectorAll('.settings-env'));
     panes.sort(function(a) { return a.dataset.kind === 'tunnel' ? -1 : 1; }).forEach(wirePane);
 
-    // Tunnel status strip: polled, in-flow above the header so the public
-    // URL is a real link. Hidden until a tunnel has been configured.
-    var strip = null;
+    // Tunnel status: a dot on the settings gear, plus the public address in
+    // the Settings tunnel pane. No dot at all until a tunnel is configured,
+    // so a box without one carries no permanent banner.
+    var dot = null;
     var lastKey = '';
-    function renderStrip(st) {
-        var app = document.querySelector('.app');
-        if (!app) return;
+    var GEAR_TITLE = 'Settings';
+
+    // One sentence per state, used for both the dot's tooltip and the line
+    // above the address in Settings.
+    function describe(st) {
+        var state = st.state || 'connecting';
+        var reason = st.reason ? ' (' + st.reason + ')' : '';
+        if (state === 'connected') return 'Tunnel connected';
+        if (state === 'reconnecting') {
+            var secs = st.retryAfterMs ? Math.ceil(st.retryAfterMs / 1000) : 0;
+            return 'Tunnel reconnecting to ' + st.serverUrl + reason + (secs ? ' in ' + secs + 's' : '');
+        }
+        if (state === 'error' || state === 'fatal' || state === 'disconnected') {
+            return 'Tunnel ' + state + reason + '. Fix the Tunnel secrets below and Apply again.';
+        }
+        return 'Tunnel connecting to ' + st.serverUrl + ' as ' + st.unique + reason + '...';
+    }
+
+    function renderDot(st) {
+        var gear = document.getElementById('settings-btn');
+        if (!gear) return;
         if (!st || !st.configured) {
-            if (strip) { strip.remove(); strip = null; }
-            lastKey = '';
+            if (dot) { dot.remove(); dot = null; }
+            gear.title = GEAR_TITLE;
             return;
         }
         var state = st.state || 'connecting';
-        var key = [state, st.url, st.reason, st.retryAfterMs, st.serverUrl].join('|');
+        if (!dot) {
+            dot = document.createElement('span');
+            dot.id = 'server-tunnel-dot';
+            gear.appendChild(dot);
+        }
+        dot.className = 'header__settings-dot header__settings-dot--' + state;
+        var words = describe(st);
+        // Both the dot and the gear carry the words: the dot is a 9px target
+        // and easy to miss, so the whole button answers on hover too.
+        dot.title = words;
+        gear.title = GEAR_TITLE + ' - ' + words;
+    }
+
+    function renderTunnelPane(st) {
+        var row = document.getElementById('server-tunnel-url');
+        if (!row) return;
+        if (!st || !st.configured) { row.hidden = true; return; }
+        row.hidden = false;
+        var stateEl = document.getElementById('server-tunnel-state');
+        var link = document.getElementById('server-tunnel-link');
+        var copy = document.getElementById('server-tunnel-copy');
+        var detail = document.getElementById('server-tunnel-detail');
+        var connected = (st.state === 'connected') && !!st.url;
+        stateEl.textContent = connected ? 'Connected:' : describe(st);
+        link.hidden = !connected;
+        copy.hidden = !connected;
+        detail.hidden = connected;
+        if (connected) {
+            link.href = st.url;
+            link.textContent = st.url;
+            copy.dataset.url = st.url;
+        } else {
+            detail.textContent = 'The public address appears here once the tunnel connects.';
+        }
+    }
+
+    var copyBtn = document.getElementById('server-tunnel-copy');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+            var url = copyBtn.dataset.url || '';
+            if (!url || !navigator.clipboard) return;
+            navigator.clipboard.writeText(url).then(function() {
+                copyBtn.textContent = 'Copied';
+                setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+            }).catch(function() {});
+        });
+    }
+
+    function renderTunnel(st) {
+        var key = st ? [st.configured, st.state, st.url, st.reason, st.retryAfterMs, st.serverUrl].join('|') : '';
         if (key === lastKey) return;
         lastKey = key;
-        if (!strip) {
-            strip = document.createElement('div');
-            strip.id = 'server-tunnel-strip';
-            app.insertBefore(strip, app.firstChild);
-        }
-        strip.className = 'tunnel-strip tunnel-strip--' + state;
-        while (strip.firstChild) strip.removeChild(strip.firstChild);
-        var text;
-        if (state === 'connected' && st.url) {
-            strip.appendChild(document.createTextNode('Tunnel open: '));
-            var a = document.createElement('a');
-            a.href = st.url;
-            a.textContent = st.url;
-            strip.appendChild(a);
-            return;
-        }
-        var reason = st.reason ? ' (' + st.reason + ')' : '';
-        if (state === 'reconnecting') {
-            var secs = st.retryAfterMs ? Math.ceil(st.retryAfterMs / 1000) : 0;
-            text = 'Tunnel reconnecting to ' + st.serverUrl + reason + (secs ? ' in ' + secs + 's' : '');
-        } else if (state === 'error' || state === 'fatal' || state === 'disconnected') {
-            text = 'Tunnel ' + state + reason + '. Fix the Tunnel secrets in Settings and Apply again.';
-        } else {
-            text = 'Tunnel connecting to ' + st.serverUrl + ' as ' + st.unique + reason + '...';
-        }
-        strip.textContent = text;
+        renderDot(st);
+        renderTunnelPane(st);
     }
     function pollTunnel() {
         if (document.hidden) return;
         fetch('/api/server/tunnel', { headers: { 'Accept': 'application/json' } })
             .then(function(r) { return r.ok ? r.json() : null; })
-            .then(renderStrip)
+            .then(renderTunnel)
             .catch(function() {});
     }
     pollTunnel();
