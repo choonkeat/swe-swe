@@ -1166,7 +1166,7 @@ class TerminalUI extends HTMLElement {
                                 <iframe class="terminal-ui__agent-chat-iframe"
                                         src="about:blank"
                                         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-                                        allow="microphone; autoplay; speech-synthesis">
+                                        allow="microphone; autoplay; speech-synthesis; clipboard-write">
                                 </iframe>
                             </div>
                         </div>
@@ -1205,7 +1205,7 @@ class TerminalUI extends HTMLElement {
                                         <span class="terminal-ui__iframe-placeholder-text">Connecting to files...</span>
                                     </div>
                                 </div>
-                                <iframe class="terminal-ui__iframe" data-pane="files" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+                                <iframe class="terminal-ui__iframe" data-pane="files" src="" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads" allow="clipboard-write"></iframe>
                             </div>
                         </div>
 
