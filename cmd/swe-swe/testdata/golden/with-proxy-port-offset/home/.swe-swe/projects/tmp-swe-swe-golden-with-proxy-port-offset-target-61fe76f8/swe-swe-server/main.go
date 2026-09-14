@@ -9735,6 +9735,7 @@ func killProcessesOnPorts(ports []int) {
 // mcpSessionInfo is the list_sessions row.
 type mcpSessionInfo struct {
 	UUID          string `json:"uuid"`
+	Address       string `json:"address"`
 	Name          string `json:"name"`
 	Assistant     string `json:"assistant"`
 	ClientCount   int    `json:"clientCount"`
@@ -9761,6 +9762,7 @@ func listSessionsSnapshot() []mcpSessionInfo {
 		sess.mu.RLock()
 		result = append(result, mcpSessionInfo{
 			UUID:          sess.UUID,
+			Address:       sessionAddress(sess.UUID),
 			Name:          sess.Name,
 			Assistant:     sess.Assistant,
 			ClientCount:   len(sess.wsClients),
@@ -9817,7 +9819,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	// list_sessions
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_sessions",
-		Description: "List all active agent sessions. busy=true means the agent is mid-work on an unresolved tool call (ending or forking it would truncate in-flight work); busy absent means unknown (agent has no tail classifier or no session id captured). ending=true means the session is being torn down: it can no longer be joined and will vanish from this list once cleanup finishes. recordingUUID feeds /api/fork/<recordingUUID>, which keeps working after the session ends -- post those as resume links before a planned shutdown.",
+		Description: "List all active agent sessions on this box. address is the session's fully qualified <unique>/<uuid> (bare uuid when this box has no tunnel unique); pass it to any session-addressed tool. busy=true means the agent is mid-work on an unresolved tool call (ending or forking it would truncate in-flight work); busy absent means unknown (agent has no tail classifier or no session id captured). ending=true means the session is being torn down: it can no longer be joined and will vanish from this list once cleanup finishes. recordingUUID feeds /api/fork/<recordingUUID>, which keeps working after the session ends -- post those as resume links before a planned shutdown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		data, _ := json.Marshal(listSessionsSnapshot())
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
@@ -9879,7 +9881,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 
 	// end_session
 	type endSessionArgs struct {
-		UUID string `json:"uuid,omitempty" jsonschema:"Session UUID to terminate. Omit to end the calling session."`
+		UUID string `json:"uuid,omitempty" jsonschema:"Session address (<unique>/<uuid> or bare uuid) to terminate. Omit to end the calling session."`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "end_session",
@@ -9893,6 +9895,12 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			if target == "" {
 				return nil, nil, fmt.Errorf("uuid is required: the calling session could not be identified")
 			}
+		} else {
+			resolved, err := resolveLocalSession(target)
+			if err != nil {
+				return nil, nil, err
+			}
+			target = resolved
 		}
 		text, err := endSessionTool(target)
 		if err != nil {
@@ -9921,7 +9929,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	// set_session_name
 	type setSessionNameArgs struct {
 		Name string `json:"name" jsonschema:"required,New display name; allowed chars: letters digits space - _ / . @ (max 256); recommended format: {short task title} {owner}/{repo}@{branch}"`
-		UUID string `json:"uuid,omitempty" jsonschema:"Session UUID to rename; defaults to the calling session"`
+		UUID string `json:"uuid,omitempty" jsonschema:"Session address (<unique>/<uuid> or bare uuid) to rename; defaults to the calling session"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "set_session_name",
@@ -9933,6 +9941,12 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		targetUUID := args.UUID
 		if targetUUID == "" {
 			targetUUID = callerSessionFromContext(ctx)
+		} else {
+			resolved, err := resolveLocalSession(targetUUID)
+			if err != nil {
+				return nil, nil, err
+			}
+			targetUUID = resolved
 		}
 		if targetUUID == "" {
 			return nil, nil, fmt.Errorf("no uuid provided and missing calling session identity")
@@ -9956,15 +9970,19 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 
 	// get_session_output
 	type getOutputArgs struct {
-		UUID string `json:"uuid" jsonschema:"Session UUID"`
+		UUID string `json:"uuid" jsonschema:"Session address: <unique>/<uuid> or bare uuid (this box)"`
 		Mode string `json:"mode,omitempty" jsonschema:"Output mode: screen (default) or scrollback"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_session_output",
 		Description: "Read terminal output from a session (screen = current visible state, scrollback = full history)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getOutputArgs) (*mcp.CallToolResult, any, error) {
+		targetUUID, err := resolveLocalSession(args.UUID)
+		if err != nil {
+			return nil, nil, err
+		}
 		sessionsMu.RLock()
-		sess, exists := sessions[args.UUID]
+		sess, exists := sessions[targetUUID]
 		sessionsMu.RUnlock()
 		if !exists {
 			return nil, nil, fmt.Errorf("session not found")
@@ -10005,15 +10023,19 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 
 	// send_session_input
 	type sendInputArgs struct {
-		UUID string `json:"uuid" jsonschema:"Session UUID"`
+		UUID string `json:"uuid" jsonschema:"Session address: <unique>/<uuid> or bare uuid (this box)"`
 		Text string `json:"text" jsonschema:"Text to write to the session PTY"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "send_session_input",
 		Description: "Write text to a session's terminal (PTY)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendInputArgs) (*mcp.CallToolResult, any, error) {
+		targetUUID, err := resolveLocalSession(args.UUID)
+		if err != nil {
+			return nil, nil, err
+		}
 		sessionsMu.RLock()
-		sess, exists := sessions[args.UUID]
+		sess, exists := sessions[targetUUID]
 		sessionsMu.RUnlock()
 		if !exists {
 			return nil, nil, fmt.Errorf("session not found")
@@ -10221,15 +10243,19 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 
 	// send_chat_message -- proxy to agent-chat orchestrator
 	type sendChatArgs struct {
-		UUID string `json:"uuid" jsonschema:"Session UUID"`
+		UUID string `json:"uuid" jsonschema:"Session address: <unique>/<uuid> or bare uuid (this box)"`
 		Text string `json:"text" jsonschema:"Message text to send"`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "send_chat_message",
-		Description: "Send a message to a session's agent chat (as if a user sent it from the browser)",
+		Description: "Send a message to a session's agent chat (as if a user sent it from the browser). The server appends '(via send_chat_message from <unique>/<uuid>)' naming YOUR session, so the receiver can reply by calling send_chat_message with that address.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendChatArgs) (*mcp.CallToolResult, any, error) {
+		targetUUID, err := resolveLocalSession(args.UUID)
+		if err != nil {
+			return nil, nil, err
+		}
 		sessionsMu.RLock()
-		sess, exists := sessions[args.UUID]
+		sess, exists := sessions[targetUUID]
 		sessionsMu.RUnlock()
 		if !exists {
 			return nil, nil, fmt.Errorf("session not found")
@@ -10237,7 +10263,10 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if sess.AgentChatPort == 0 {
 			return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
 		}
-		result, err := callAgentChatOrchestrator(sess.AgentChatPort, "send_chat_message", map[string]string{"text": args.Text})
+		// Server-stamped signoff: the receiving agent learns which session to
+		// reply to, from the caller's auth-key identity rather than agent text.
+		text := args.Text + chatSignoff("send_chat_message", callerSessionFromContext(ctx))
+		result, err := orchestratorCall(sess.AgentChatPort, "send_chat_message", map[string]string{"text": text})
 		if err != nil {
 			return nil, nil, fmt.Errorf("agent chat error: %w", err)
 		}
@@ -10249,15 +10278,19 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 
 	// get_chat_history -- proxy to agent-chat orchestrator
 	type getChatArgs struct {
-		UUID   string `json:"uuid" jsonschema:"Session UUID"`
+		UUID   string `json:"uuid" jsonschema:"Session address: <unique>/<uuid> or bare uuid (this box)"`
 		Cursor int64  `json:"cursor,omitempty" jsonschema:"Return events with seq > cursor. 0 returns all."`
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_chat_history",
 		Description: "Get chat event history from a session's agent chat",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getChatArgs) (*mcp.CallToolResult, any, error) {
+		targetUUID, err := resolveLocalSession(args.UUID)
+		if err != nil {
+			return nil, nil, err
+		}
 		sessionsMu.RLock()
-		sess, exists := sessions[args.UUID]
+		sess, exists := sessions[targetUUID]
 		sessionsMu.RUnlock()
 		if exists && sess.AgentChatPort != 0 {
 			result, err := callAgentChatOrchestrator(sess.AgentChatPort, "get_chat_history", map[string]int64{"cursor": args.Cursor})
@@ -10269,7 +10302,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		// Fallback: read chat events from the ended recording's .events.jsonl.
 		// This lets get_chat_history work for sessions shown in list_recordings
 		// (hasChat: true) after they've ended.
-		path := findChatEventsFile(args.UUID)
+		path := findChatEventsFile(targetUUID)
 		if path == "" {
 			if exists {
 				return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
