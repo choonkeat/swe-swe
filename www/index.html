@@ -291,6 +291,23 @@ code { font-family: var(--mono); color: var(--text-primary); }
 .toggle button:last-child { border-right: none; }
 .toggle button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
 
+/* The password line under the script. */
+.pw-line { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; margin-top: 0.75rem; }
+.pw-line p { font-size: 0.85rem; color: var(--text-secondary); margin: 0; }
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--font-family);
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+.link-btn:hover { color: var(--text-primary); }
+
 .steps ol { padding-left: 1.25rem; }
 .steps li { padding: 0.35rem 0; color: var(--text-secondary); font-size: 0.9rem; }
 
@@ -593,7 +610,13 @@ code { font-family: var(--mono); color: var(--text-primary); }
     </div>
 
     <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code id="script-out"></code></pre></div>
-    <p class="lede" id="script-note" style="margin-top:0.75rem;margin-bottom:0;"></p>
+
+    <div class="pw-line">
+      <p>Password made at random in your browser, sent nowhere. Keep the copy you paste.</p>
+      <button type="button" class="link-btn" id="new-password">Give me another one</button>
+    </div>
+
+    <p class="lede" id="script-note" style="margin-top:0.5rem;margin-bottom:0;"></p>
 
     <div id="other-machine" hidden style="margin-top:1.75rem;">
       <h2 style="font-size:1.1rem;font-weight:600;margin-bottom:0.35rem;">And on the different machine, the one with the browser</h2>
@@ -710,6 +733,33 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   var el = function(id) { return document.getElementById(id); };
 
+  // ---------- Password ----------
+  // Letters and digits only, so the value needs no shell quoting however it is
+  // pasted. Made here in the browser; it never leaves the page.
+  var PW_ALPHABET = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var PW_LENGTH = 24;
+
+  function newPassword() {
+    var out = '';
+    var bytes = new Uint8Array(PW_LENGTH);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (var j = 0; j < PW_LENGTH; j++) bytes[j] = Math.floor(Math.random() * 256);
+    }
+    // Rejecting the tail of the byte range keeps every character equally
+    // likely; 256 is not a multiple of the alphabet length.
+    var limit = 256 - (256 % PW_ALPHABET.length);
+    for (var i = 0; i < PW_LENGTH; i++) {
+      var b = bytes[i];
+      while (b >= limit) b = Math.floor(Math.random() * 256);
+      out += PW_ALPHABET.charAt(b % PW_ALPHABET.length);
+    }
+    return out;
+  }
+
+  state.password = newPassword();
+
   function hostRuntime() { return state.have === 'agents'; }
   function blocked() { return state.have === 'none'; }
 
@@ -747,7 +797,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   function envPairs() {
     var e = [];
-    e.push("SWE_SWE_PASSWORD='pick-one'");
+    e.push("SWE_SWE_PASSWORD='" + state.password + "'");
     e.push('SWE_PORT=1977');
     if (agentViewOff()) e.push('SWE_AGENT_VIEW=off');
     if (agentViewRemote()) {
@@ -765,8 +815,8 @@ code { font-family: var(--mono); color: var(--text-primary); }
   function plainScript() {
     return [
       NPX_ALIAS,
-      'cd /path/to/project',
-      'swe-swe up',
+      '# cd /path/to/project',
+      "SWE_SWE_PASSWORD='" + state.password + "' swe-swe up",
       '',
       '# then open http://localhost:1977'
     ].join('\n');
@@ -786,7 +836,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
     var lines = firstLines();
     if (installsBrowserTools()) lines.push(APT_LINE);
     lines.push('');
-    lines.push('cd /path/to/project');
+    lines.push('# cd /path/to/project');
     var flags = initFlags();
     lines.push('swe-swe init' + (flags ? ' ' + flags : ''));
     lines.push('');
@@ -799,7 +849,9 @@ code { font-family: var(--mono); color: var(--text-primary); }
     lines.push('#!/bin/sh');
     lines.push('set -eu');
     lines.push('');
-    lines.push(': "${SWE_SWE_PASSWORD:?set a password first}"');
+    // Whatever the machine already has wins; the generated one is only the
+    // fallback, so re-running the script does not change a working password.
+    lines.push('SWE_SWE_PASSWORD="${SWE_SWE_PASSWORD:-' + state.password + '}"');
     lines.push('PROJECT_DIR="${PROJECT_DIR:-$HOME/proj}"');
     lines.push('LOG="$HOME/swe-swe-up.log"');
     lines.push('');
@@ -954,6 +1006,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
     Array.prototype.forEach.call(this.querySelectorAll('button'), function(x) {
       x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
     });
+    render();
+  });
+
+  el('new-password').addEventListener('click', function() {
+    state.password = newPassword();
     render();
   });
 
