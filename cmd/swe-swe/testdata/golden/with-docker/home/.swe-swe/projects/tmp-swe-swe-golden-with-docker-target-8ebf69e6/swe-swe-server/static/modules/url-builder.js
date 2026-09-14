@@ -361,3 +361,28 @@ export function parseLogicalInput(raw, suffix) {
     if (label === null) return null;
     return { logicalHost: host, port, label, pathSuffix };
 }
+
+/**
+ * Build the Files-pane URL for one path inside the workspace.
+ *
+ * md-serve renders a source file two ways: the bare path streams the raw
+ * bytes, and `?pretty=1` returns the highlighted page. Its own directory
+ * listing links files with `?pretty=1`, so a chat link that omits it lands
+ * somewhere the user cannot reach by navigating. Directories, images and
+ * markdown ignore the flag -- verified live against md-serve -- so it is
+ * appended unconditionally rather than guessing which kind of entry this is
+ * (agent-chat sends the path alone, with no such hint).
+ *
+ * A path that already carries a query keeps it; only `pretty` is forced.
+ *
+ * @param {string} filesBase - Files pane base URL, no trailing slash
+ * @param {string} path - Workspace-relative path, leading slashes optional
+ * @returns {string} URL that matches what the Files tab shows for that path
+ */
+export function buildFilesPathUrl(filesBase, path) {
+    const rel = String(path == null ? '' : path).replace(/^\/+/, '');
+    const [pathname, ...queryParts] = rel.split('?');
+    const params = new URLSearchParams(queryParts.join('?'));
+    params.set('pretty', '1');
+    return `${filesBase}/${pathname}?${params.toString()}`;
+}

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -656,4 +656,60 @@ test('buildFilesUrl builds the same-origin path form', () => {
 
 test('buildFilesUrl returns null without a session uuid', () => {
     assert.strictEqual(buildFilesUrl('http://localhost:1977', ''), null);
+});
+
+// A chat file link must land on the same page navigating the Files tab shows.
+// md-serve's own listing links source files with ?pretty=1; the bare path
+// streams raw bytes instead.
+test('buildFilesPathUrl adds pretty=1 so a source file renders, not downloads', () => {
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', 'cmd/main.go'),
+        '/proxy/u/files/cmd/main.go?pretty=1'
+    );
+});
+
+test('buildFilesPathUrl strips the leading slash agent-chat may send', () => {
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', '/cmd/main.go'),
+        '/proxy/u/files/cmd/main.go?pretty=1'
+    );
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', '///cmd/main.go'),
+        '/proxy/u/files/cmd/main.go?pretty=1'
+    );
+});
+
+// Directories, images and markdown ignore the flag, so no file-vs-directory
+// guess is needed -- agent-chat sends the path with no such hint.
+test('buildFilesPathUrl keeps a directory path intact, trailing slash and all', () => {
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', 'agent-chats/'),
+        '/proxy/u/files/agent-chats/?pretty=1'
+    );
+});
+
+test('buildFilesPathUrl preserves an existing query and only forces pretty', () => {
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', 'a.js?theme=dark'),
+        '/proxy/u/files/a.js?theme=dark&pretty=1'
+    );
+});
+
+test('buildFilesPathUrl overrides a pretty the caller already set', () => {
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', 'a.js?pretty=0'),
+        '/proxy/u/files/a.js?pretty=1'
+    );
+});
+
+test('buildFilesPathUrl tolerates a missing path', () => {
+    assert.strictEqual(buildFilesPathUrl('/proxy/u/files', ''), '/proxy/u/files/?pretty=1');
+    assert.strictEqual(buildFilesPathUrl('/proxy/u/files', null), '/proxy/u/files/?pretty=1');
+});
+
+test('buildFilesPathUrl works on a cross-origin files base', () => {
+    assert.strictEqual(
+        buildFilesPathUrl('http://localhost:29000', 'README.md'),
+        'http://localhost:29000/README.md?pretty=1'
+    );
 });

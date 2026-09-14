@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
@@ -5479,7 +5479,7 @@ class TerminalUI extends HTMLElement {
                         delete this._iframeSupervisors['files'];
                     }
                     this._paneLoaded.add('files');
-                    this.setIframeUrl(filesBase + '/' + String(e.data.path).replace(/^\/+/, ''), 'files');
+                    this.setIframeUrl(buildFilesPathUrl(filesBase, e.data.path), 'files');
                 }
             }
         });
