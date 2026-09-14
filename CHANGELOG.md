@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## v2.38.0 - The Setup Page & the Restricted Box
 
 ### Features
 
