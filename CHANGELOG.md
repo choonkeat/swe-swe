@@ -16,12 +16,27 @@
 
 - **The whiteboard MCP server is gone**: `swe-swe-whiteboard` is no longer registered for any agent (the chat canvas is agent-chat's own `draw` tool and is unaffected), so each session starts one process fewer and the upgrade path removes the stale user-scope registration.
 
+- **The website's setup page writes the start-up script for you**: five questions about what the box has -- Docker, Node, a bundled MCP config, the browser tools, and how many ports your browser can reach -- each with a check command that prints its own verdict, and every answer lengthens the script rather than shortening it, so someone who ticks nothing still gets today's four laptop lines; the reachability question routes a wildcard-DNS box to `--public-hostname` and everything else to the tunnel and its once-per-boot browser steps, with both limits of the wildcard route printed rather than hidden.
+
+- **Two more bundled slash commands**: `/swe-swe:mockup-lo-fi` breadboards an idea then draws a deliberately rough greyscale wireframe into `mockups/lo-fi/`, handing back the path as a Files-tab link; `/swe-swe:screenshot-before-after` stitches BEFORE | AFTER | DIFF into one image per impacted screen with a real pixel diff and a changed-pixel percentage, then audits which other users of the changed component moved with it.
+
+- **The chat and files panes can use the system clipboard**: agent-chat's "Copy as markdown" reaches for `navigator.clipboard.writeText` first, and the embedding page had never delegated `clipboard-write` to either iframe, so every copy fell through to the deprecated `execCommand` path; both panes now delegate it, with the old path left in place for plain-http deployments and older agent-chat builds.
+
 ### Fixes
 
 - **The session header carries the same settings gear as the homepage**: it drew a bare text glyph and never showed the tunnel's state, because the two pages each had their own button; both now render one shared `<settings-gear>` component.
 
 - **The Stop hook guard now recognises `mcp swe-swe-agent-chat send_message`**: it only matched the short `agent-chat` name, so every MCP-less turn ended with a spurious "no user-visible message" nudge.
 
+- **Ending a session waits for the chat-log answer instead of guessing**: the in-session End dialog showed the plain "Yes, end session" button the instant it opened and only swapped in the three chat-log choices when the status fetch returned, so a quick click ended the session on the guess and silently skipped the recommended commit-the-log path; the card now opens on a bounded waiting state (4s, then the plain confirm rather than a Cancel-only trap) with every other action hidden until the answer lands, and the spinner itself now disappears when it does -- an author `display: flex` had been outranking the `hidden` attribute, leaving "Checking for an uncommitted chat log..." on screen forever under a card that had already decided.
+
+- **A chat log committed from a worktree counts as committed**: the End dialog asked `git ls-files --error-unmatch`, which reads only the calling tree's index, so the standard export-into-a-branch flow -- commit the log inside a throwaway worktree, then `git worktree remove`, which deletes the checkout and keeps the branch -- came back "never committed" and both End dialogs went on offering to commit an already-committed log with no way to reach the plain confirm; the probe now asks the object store (`git rev-list --all`), which sees the local branch and its remote-tracking ref alike.
+
+- **The tab popout tooltip no longer outlives its tab**: it hid only on the tab's own `mouseleave`, so clicking a tab, closing one or any status-driven re-render replaced the hovered button with no leave event and the tooltip hung over nothing, and a touch tap never fired one at all; it now hides before every tab-bar rebuild, on press, key, scroll, window blur or tab hide, with a 250ms watchdog for an anchor that is gone or no longer hovered, and touch never shows it.
+
+- **The homepage Settings dialog is wide enough for its own fields**: the two new textareas were squeezed into the old 400px cap, now 640px.
+
+- **`swe-swe build --no-cache` completes again**: the image fetched the Docker Compose plugin from a fixed release URL that GitHub now answers with HTTP 500 on both architectures, failing every rebuild; the pin moves to v2.39.1, the same major generation the running stack already uses.
 
 - **Saved git credentials survive ending a session**: The session-start auto-restore looked up only the workspace's `origin` remote host, so a token saved under any other host was held by the browser and never sent; consent was a `confirm()` that a dismissal (or Chrome's "prevent additional dialogs") silently disabled for good; and a plain-http LAN address disabled auto-restore with nothing on screen to say so -- every stored host now rides in one message, consent is a persistent "Remember on this device" tick box in the credential panes, and a refusal explains itself where the user is looking.
 
