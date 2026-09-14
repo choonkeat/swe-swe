@@ -220,8 +220,158 @@ function rebaseRelativeURLs(root, mdPath) {
   }
 }
 
+// --- "Copy as markdown" ---
+// Each bubble keeps the markdown it was rendered from, and a "⋯" button hands
+// that source back to the clipboard. Two routes, because neither covers every
+// place this page is opened:
+//
+//   1. navigator.clipboard.writeText — only exists in a secure context (https
+//      or localhost), and inside a cross-origin iframe it additionally needs
+//      the host page to grant `clipboard-write` via Permissions Policy. The
+//      swe-swe Files tab does NOT grant it today, so writeText() rejects there.
+//   2. document.execCommand('copy') on an off-screen textarea — deprecated but
+//      universally implemented, works on plain http, and is NOT gated by
+//      Permissions Policy. It only needs a user gesture, which a menu click is.
+//
+// Feature-detecting (1) is no help: its presence says nothing about whether the
+// embedding page permits it. So we always offer the action and let the attempt
+// decide.
+function copyTextToClipboard(text, onResult) {
+  function fallback() {
+    let ok = false;
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    // Off-screen but focusable — display:none would make the copy a no-op.
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    try {
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    ta.remove();
+    if (onResult) onResult(ok);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => { if (onResult) onResult(true); }, fallback);
+    return;
+  }
+  fallback();
+}
+
+function showCopyToast(ok) {
+  let t = document.getElementById('copy-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'copy-toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = ok ? 'Copied as markdown' : 'Copy failed';
+  t.classList.toggle('failed', !ok);
+  t.classList.add('show');
+  clearTimeout(t.hideTimer);
+  t.hideTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+let openBubbleMenu = null;
+
+function closeBubbleMenu() {
+  if (openBubbleMenu) {
+    openBubbleMenu.remove();
+    openBubbleMenu = null;
+  }
+}
+
+// Fixed, just below its button, clamped to the viewport; flipped above when it
+// would run off the bottom.
+function positionMenuBelow(menu, btn) {
+  const r = btn.getBoundingClientRect();
+  const mr = menu.getBoundingClientRect();
+  let top = r.bottom + 6;
+  let left = r.left;
+  if (left + mr.width > window.innerWidth - 8) left = window.innerWidth - 8 - mr.width;
+  if (left < 8) left = 8;
+  if (top + mr.height > window.innerHeight - 8) top = r.top - 6 - mr.height;
+  if (top < 8) top = 8;
+  menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+}
+
+const ICON_DOTS = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v1"/></svg>';
+
+// Give a rendered bubble its "⋯" menu button. `md` is the markdown it came
+// from — what Copy hands back, rather than a reconstruction of the rendered
+// HTML. The button is markup only: the single delegated listener below drives
+// every button and every row in the log, so a long chat costs one listener, not
+// one per bubble.
+function addBubbleMenu(bubble, md) {
+  bubble.dataset.md = md;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'bubble-menu-btn';
+  btn.title = 'More actions';
+  btn.setAttribute('aria-haspopup', 'true');
+  btn.innerHTML = ICON_DOTS;
+  bubble.appendChild(btn);
+}
+
+function openBubbleMenuFor(btn) {
+  const bubble = btn.closest('.bubble');
+  if (!bubble) return;
+  const menu = document.createElement('div');
+  menu.className = 'bubble-menu';
+  menu.ownerBtn = btn;
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.dataset.action = 'copy';
+  item.innerHTML = '<span class="bubble-menu-ic">' + ICON_COPY + '</span><span>Copy as markdown</span>';
+  menu.appendChild(item);
+  document.body.appendChild(menu);
+  positionMenuBelow(menu, btn);
+  openBubbleMenu = menu;
+}
+
+// ONE click listener for every bubble menu in the log: a chosen row, a "⋯"
+// button (toggle), or anywhere else (dismiss).
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!t || !t.closest) { closeBubbleMenu(); return; }
+
+  const row = t.closest('.bubble-menu button[data-action]');
+  if (row) {
+    const owner = openBubbleMenu && openBubbleMenu.ownerBtn;
+    const bubble = owner && owner.closest('.bubble');
+    closeBubbleMenu();
+    if (bubble && row.dataset.action === 'copy') {
+      copyTextToClipboard(bubble.dataset.md || bubble.innerText, showCopyToast);
+    }
+    return;
+  }
+  // A click on the menu's own chrome should neither act nor dismiss.
+  if (t.closest('.bubble-menu')) return;
+
+  const btn = t.closest('.bubble-menu-btn');
+  if (btn) {
+    const wasOpenForThis = openBubbleMenu && openBubbleMenu.ownerBtn === btn;
+    closeBubbleMenu();
+    if (!wasOpenForThis) openBubbleMenuFor(btn);
+    return;
+  }
+
+  closeBubbleMenu();
+});
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeBubbleMenu(); });
+
 async function loadChat(mdPath, container) {
   container = container || document.querySelector('.chat');
+  closeBubbleMenu();
   container.innerHTML = '';
   try {
     // Ask for raw markdown via Accept content-negotiation. md-serve
@@ -258,6 +408,7 @@ async function loadChat(mdPath, container) {
       bubble.className = 'bubble ' + turn.role;
       bubble.innerHTML = marked.parse(turn.body);
       rebaseRelativeURLs(bubble, mdPath);
+      addBubbleMenu(bubble, turn.body);
       container.appendChild(bubble);
       if (turn.replies && turn.replies.length) {
         const fr = document.createElement('div');

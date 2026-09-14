@@ -53,6 +53,8 @@ body {
   font-size: 0.9rem;
   line-height: 1.45;
   word-wrap: break-word;
+  /* Anchors the "⋯" button every bubble carries. */
+  position: relative;
 }
 
 .bubble.agent {
@@ -101,7 +103,11 @@ body {
   margin-top: 0;
 }
 
-.bubble p:last-child {
+/* The "⋯" button is appended after the rendered markdown, so the closing
+   paragraph is no longer :last-child — match it through the button too, or
+   every bubble gains a stray 0.3rem of trailing space. */
+.bubble p:last-child,
+.bubble p:has(+ .bubble-menu-btn) {
   margin-bottom: 0;
 }
 
@@ -462,4 +468,120 @@ body.archive .chat > .bubble.system {
   body.archive .chat {
     overflow: visible;
   }
+}
+
+/* --- Per-bubble "⋯" menu (Copy as markdown) --- */
+
+/* Sits in the gutter beside the bubble: right for agent/system, mirrored to the
+   left for the right-aligned user bubbles. Faintly visible at rest so it stays
+   reachable on touch devices, fully opaque on hover/focus. */
+.bubble-menu-btn {
+  position: absolute;
+  right: -32px;
+  bottom: 4px;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid #666;
+  border-radius: 50%;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bubble.user .bubble-menu-btn {
+  right: auto;
+  left: -32px;
+}
+
+.bubble:hover .bubble-menu-btn,
+.bubble-menu-btn:hover,
+.bubble-menu-btn:focus {
+  opacity: 1;
+  color: #999;
+  border-color: #999;
+}
+
+.bubble-menu-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* The floating menu (appended to <body>, positioned in JS). */
+.bubble-menu {
+  position: fixed;
+  min-width: 190px;
+  background: #16213e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.bubble-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  background: transparent;
+  border: none;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bubble-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bubble-menu-ic {
+  display: inline-flex;
+  width: 18px;
+  justify-content: center;
+  opacity: 0.85;
+}
+
+.bubble-menu-ic svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Brief confirmation after a copy — the menu closes on click, so the item
+   itself can't report back. */
+#copy-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translate(-50%, 8px);
+  padding: 0.45rem 0.9rem;
+  border-radius: 16px;
+  background: #16213e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 1100;
+}
+
+#copy-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+#copy-toast.failed {
+  color: #fca5a5;
+  border-color: #fca5a5;
 }
