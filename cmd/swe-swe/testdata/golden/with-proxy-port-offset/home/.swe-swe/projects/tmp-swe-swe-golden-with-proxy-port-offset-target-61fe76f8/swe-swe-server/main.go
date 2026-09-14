@@ -5823,6 +5823,32 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 			"/proxy/"+sess.UUID+"/agentchat",
 			agentChatProxyHandler(acTarget),
 		))
+
+		// Files proxy route (same-origin, path-based). The per-port listener
+		// below is preferred when the browser can reach it, but on a box with
+		// a single reachable port it cannot -- and unlike preview/agent-chat
+		// the Files pane had no path form to fall back to, so it loaded the
+		// unreachable port and sat on the browser's own error page forever.
+		//
+		// agentproxy (not a bare StripPrefix + reverse proxy) because md-serve
+		// emits root-absolute references -- "/_md-serve-assets/..." for its
+		// stylesheet, redirects to "/dir/" for directories -- which have to be
+		// re-prefixed on the way out. NoInject: md-serve renders whole pages
+		// and the Files pane has no debug shell, so the injected script and
+		// its WebSocket would be dead weight.
+		filesPathTarget := &url.URL{Scheme: "http", Host: fmt.Sprintf("localhost:%d", sess.FilesPort)}
+		filesPathProxy, err := agentproxy.New(agentproxy.Config{
+			BasePath:    "/proxy/" + sess.UUID + "/files",
+			Target:      filesPathTarget,
+			ToolPrefix:  "files",
+			ThemeCookie: "swe-swe-theme",
+			NoInject:    true,
+		})
+		if err != nil {
+			log.Printf("Warning: failed to create files path proxy for session %s: %v", sess.UUID, err)
+		} else {
+			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesPathProxy)
+		}
 		sess.PreviewProxy = previewProxy
 		sess.SessionMux = sessMux
 

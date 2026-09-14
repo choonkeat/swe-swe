@@ -1,7 +1,8 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
+import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -457,7 +458,15 @@ class TerminalUI extends HTMLElement {
         this.agentChatPort = null;
         this.sessionUUID = null;
         // Port-based proxy mode state
-        this._proxyMode = null; // null = undecided, 'port' = per-port, 'path' = path-based
+        this._proxyMode = null; // null = undecided, 'subdomain' | 'port' | 'path'
+        this._acProxyMode = null;
+        this._filesProxyMode = null;
+        // Files resolves its base once and caches it; the other two panes
+        // resolve on every (re)load because the preview target can change.
+        this._filesResolvedBase = null;
+        this._filesBaseResolving = null;
+        // One shared reachability probe for all three panes.
+        this._proxyProbe = makeProbe();
         this.previewProxyPort = null;
         this.agentChatProxyPort = null;
         this.filesProxyPort = null;
@@ -2183,9 +2192,10 @@ class TerminalUI extends HTMLElement {
                     // agent-chat target -- tunnel mode demuxes
                     // {agentChatProxyPort}.{publicHostname} -> 127.0.0.1:{agentChatProxyPort}
                     // inside the container; legacy mode hits the same port via Traefik.
-                    const acPortUrl = this.effectivePublicHostname
+                    const acSubdomainUrl = this.effectivePublicHostname
                         ? buildSubdomainAgentChatUrl(window.location, this.agentChatProxyPort, this.effectivePublicHostname)
-                        : buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
+                        : null;
+                    const acPortUrl = buildPortBasedAgentChatUrl(window.location, this.agentChatProxyPort);
                     if (acPathUrl) {
                         this._agentChatProbeController = new AbortController();
                         // Phase 1: probe path-based URL to wait for proxy handler to be up
@@ -2195,25 +2205,20 @@ class TerminalUI extends HTMLElement {
                             isReady: (resp) => resp.ok && resp.headers.has('X-Agent-Reverse-Proxy'),
                             signal: this._agentChatProbeController.signal,
                         }).then(() => {
-                            // Phase 2: quick probe port-based URL to determine mode.
-                            // Uses /__probe__ which bypasses ForwardAuth in Traefik -- avoids
-                            // Safari's stricter cross-port CORS+credentials blocking.
-                            let chosenUrl = acPathUrl;
-                            if (acPortUrl) {
-                                return fetch(acPortUrl + '/__probe__', { method: 'GET', mode: 'cors' })
-                                    .then(resp => {
-                                        if (resp.headers.has('X-Agent-Reverse-Proxy')) {
-                                            chosenUrl = acPortUrl;
-                                            this._acProxyMode = 'port';
-                                        } else {
-                                            this._acProxyMode = 'path';
-                                        }
-                                    })
-                                    .catch(() => { this._acProxyMode = 'path'; })
-                                    .then(() => chosenUrl);
-                            }
-                            this._acProxyMode = 'path';
-                            return chosenUrl;
+                            // Phase 2: pick the form this browser can reach --
+                            // subdomain, then port, then the same-origin path
+                            // (see modules/proxy-base.js). The probe hits
+                            // /__probe__, which bypasses ForwardAuth in Traefik
+                            // and avoids Safari's stricter cross-port
+                            // CORS+credentials blocking.
+                            return resolveProxyBase(proxyCandidates({
+                                subdomainBase: acSubdomainUrl,
+                                portBase: acPortUrl,
+                                pathBase: acPathUrl,
+                            }), this._proxyProbe).then((chosen) => {
+                                this._acProxyMode = chosen ? chosen.mode : 'path';
+                                return chosen ? chosen.base : acPathUrl;
+                            });
                         }).then((chosenUrl) => {
                             this._agentChatAvailable = true;
                             this._agentChatProbing = false;
@@ -2332,6 +2337,9 @@ class TerminalUI extends HTMLElement {
                 // _loadPaneIfNeeded('files') returned early (deferred) without
                 // marking it loaded; re-kick now so the iframe src gets set and
                 // the "Connecting to files..." placeholder clears.
+                // Probe which of the three Files forms this browser can
+                // actually reach, before anything needs the answer.
+                if (this.filesProxyPort) this._resolveFilesBase();
                 if (this.filesProxyPort && this._slotForPane('files') && !this._paneLoaded.has('files')) {
                     this._loadPaneIfNeeded('files');
                 }
@@ -6026,14 +6034,39 @@ class TerminalUI extends HTMLElement {
         this._kickPaneSupervisor(paneId);
     }
 
-    // Origin of the per-session md-serve that backs the Files pane, or null
-    // until filesProxyPort arrives on the WS Status message. Tunnel mode
-    // demuxes {filesProxyPort}.{publicHostname}; legacy mode hits the
-    // auth-proxy port directly.
+    // Base URL of the per-session md-serve that backs the Files pane.
+    //
+    // Three forms exist (subdomain / port / same-origin path); which ones are
+    // reachable depends on the box, so _resolveFilesBase() probes them once and
+    // caches the winner. Until that settles -- and on any box where nothing but
+    // this page's own port answers -- the same-origin path form is used, which
+    // is the one form that cannot be unreachable.
     _filesBaseUrl() {
-        return this.effectivePublicHostname
-            ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
-            : buildPortBasedFilesUrl(window.location, this.filesProxyPort);
+        return this._filesResolvedBase || buildFilesUrl(getBaseUrl(window.location), this.uuid);
+    }
+
+    // Probe the faster cross-origin forms once and remember the winner. Runs as
+    // soon as filesProxyPort arrives; callers never await it, because
+    // _filesBaseUrl() already has a correct answer while it is in flight.
+    _resolveFilesBase() {
+        if (this._filesResolvedBase) return null;
+        // Return the in-flight promise rather than nothing, so a second caller
+        // waits for the same answer instead of racing ahead on the fallback.
+        if (this._filesBaseResolving) return this._filesBaseResolving;
+        const candidates = proxyCandidates({
+            subdomainBase: this.effectivePublicHostname
+                ? buildSubdomainFilesUrl(window.location, this.filesProxyPort, this.effectivePublicHostname)
+                : null,
+            portBase: buildPortBasedFilesUrl(window.location, this.filesProxyPort),
+            pathBase: buildFilesUrl(getBaseUrl(window.location), this.uuid),
+        });
+        this._filesBaseResolving = resolveProxyBase(candidates, this._proxyProbe).then((chosen) => {
+            this._filesBaseResolving = null;
+            if (!chosen) return;
+            this._filesProxyMode = chosen.mode;
+            this._filesResolvedBase = chosen.base;
+        });
+        return this._filesBaseResolving;
     }
 
     // Re-tapping the already-active Files tab navigates the pane back to its
@@ -6183,13 +6216,20 @@ class TerminalUI extends HTMLElement {
                 this.setPreviewURL(null);
                 break;
             case 'files': {
-                // Cross-origin only -- md-serve emits root-relative links, so a
-                // path prefix would break navigation. Tunnel mode demuxes
-                // {filesProxyPort}.{publicHostname} -> 127.0.0.1:{filesProxyPort};
-                // legacy mode hits the same auth-proxy port directly.
+                // Which of the three forms is reachable is decided once by
+                // _resolveFilesBase(); until it answers, _filesBaseUrl() gives
+                // the same-origin path form, which always works. Wait for the
+                // answer when the port is known, so a box where the port IS
+                // reachable still gets the faster cross-origin form rather than
+                // whichever one happened to win the race.
+                if (this.filesProxyPort && !this._filesResolvedBase) {
+                    const pending = this._resolveFilesBase();
+                    if (pending) {
+                        pending.then(() => this._loadPaneIfNeeded('files'));
+                        return;
+                    }
+                }
                 const filesUrl = this._filesBaseUrl();
-                // Defer if the proxy port hasn't arrived yet -- the WS Status
-                // handler re-kicks us once filesProxyPort flips from null.
                 if (!filesUrl) return;
                 if (this._filesReady) {
                     this._paneLoaded.add('files');
@@ -6220,7 +6260,11 @@ class TerminalUI extends HTMLElement {
                         this._filesProbing = false;
                         if (this._slotForPane('files')) {
                             this._paneLoaded.add('files');
-                            this.setIframeUrl(filesUrl + '/', 'files');
+                            // Re-read rather than reuse the URL captured above:
+                            // md-serve's cold start outlasts the reachability
+                            // probe, so by now the port form may have won and
+                            // the captured path form would be stale.
+                            this.setIframeUrl(this._filesBaseUrl() + '/', 'files');
                         }
                     }).catch(() => {
                         this._filesProbing = false;
@@ -7619,51 +7663,34 @@ class TerminalUI extends HTMLElement {
             this._previewWaiting = true;
 
             // Two-phase probe:
-            // Phase 1: Probe path-based URL (same-origin) to wait for the
-            //          proxy handler to be up. We always probe path-based
-            //          even when the iframe will load via subdomain, because
-            //          path-based shares the page's origin and cookie.
-            // Phase 2: Legacy port-based mode probe -- skipped entirely in
-            //          tunnel mode since `base` is already the subdomain URL.
+            // Phase 1: wait for the path-based handler to be up. Always
+            //          path-based: it shares the page's origin and cookie, so
+            //          it answers even when no other form is reachable.
+            // Phase 2: pick the form this browser can actually reach --
+            //          subdomain, then port, then the same-origin path as the
+            //          guaranteed fallback (see modules/proxy-base.js).
+            //          The subdomain is probed rather than assumed: a box
+            //          configured for wildcard subdomains whose DNS does not
+            //          actually resolve used to load it blind and leave the
+            //          pane on the browser's "refused to connect" page.
             this._previewProbeController = new AbortController();
-            // portBasedBase is the legacy "host:port" URL; meaningless when
-            // window.location.hostname already encodes the port via subdomain
-            // (tunnel mode), so we set it to null in that case to skip the probe.
-            const portBasedBase = subdomainBase
-                ? null
-                : buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
+            const portBasedBase = buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
             probeUntilReady(probeBase + '/', {
                 method: 'GET',
                 maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
                 isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
                 signal: this._previewProbeController.signal,
-            }).then(() => {
-                if (subdomainBase) {
-                    // Tunnel mode: iframe already targets the subdomain URL.
-                    this._proxyMode = 'subdomain';
-                    return;
-                }
-                // Legacy: try port-based if available.
-                // Uses /__probe__ which bypasses ForwardAuth in Traefik -- avoids
-                // Safari's stricter cross-port CORS+credentials blocking.
-                if (portBasedBase && this._proxyMode !== 'path') {
-                    return fetch(portBasedBase + '/__probe__', { method: 'GET', mode: 'cors' })
-                        .then(resp => {
-                            if (resp.headers.has('X-Agent-Reverse-Proxy')) {
-                                this._proxyMode = 'port';
-                            } else {
-                                this._proxyMode = 'path';
-                            }
-                        })
-                        .catch(() => { this._proxyMode = 'path'; });
-                }
-                if (!this._proxyMode) this._proxyMode = 'path';
-            }).then(() => {
+            }).then(() => resolveProxyBase(proxyCandidates({
+                subdomainBase: subdomainBase,
+                portBase: portBasedBase,
+                pathBase: probeBase,
+            }), this._proxyProbe)).then((chosen) => {
+                this._proxyMode = chosen ? chosen.mode : 'path';
                 // Compute final iframe src based on chosen mode
                 let finalBase = base;
                 let finalIframeSrc = iframeSrc;
-                if (this._proxyMode === 'port' && portBasedBase) {
-                    finalBase = portBasedBase;
+                if (chosen && chosen.base !== base) {
+                    finalBase = chosen.base;
                     finalIframeSrc = finalBase + '/__agent-reverse-proxy-debug__/shell?path=' + encodeURIComponent(path);
                     this._lastUrlChangeUrl = finalBase + path;
                 }

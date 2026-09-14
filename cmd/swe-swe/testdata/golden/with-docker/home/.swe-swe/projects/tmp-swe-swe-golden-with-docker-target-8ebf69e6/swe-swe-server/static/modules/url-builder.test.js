@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -644,4 +644,16 @@ test('themeCookieDomain returns publicHostname when loaded via a {port}.{publicH
 
 test('themeCookieDomain empty for a lookalike suffix without a dot boundary', () => {
     assert.strictEqual(themeCookieDomain({ hostname: 'evilabc-tunnel.example.com' }, 'abc-tunnel.example.com'), '');
+});
+
+// buildFilesUrl tests
+test('buildFilesUrl builds the same-origin path form', () => {
+    assert.strictEqual(
+        buildFilesUrl('http://localhost:1977', 'abc-123'),
+        'http://localhost:1977/proxy/abc-123/files'
+    );
+});
+
+test('buildFilesUrl returns null without a session uuid', () => {
+    assert.strictEqual(buildFilesUrl('http://localhost:1977', ''), null);
 });

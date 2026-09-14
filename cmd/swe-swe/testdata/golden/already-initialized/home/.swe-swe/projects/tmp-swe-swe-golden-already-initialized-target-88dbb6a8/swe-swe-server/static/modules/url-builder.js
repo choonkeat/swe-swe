@@ -70,6 +70,18 @@ export function buildAgentChatUrl(baseUrl, sessionUUID) {
 }
 
 /**
+ * Build the files URL (path-based, same origin). This is the form that works
+ * on a box where only the port serving this page is reachable.
+ * @param {string} baseUrl - The base URL of swe-swe-server
+ * @param {string} sessionUUID - Session UUID
+ * @returns {string|null} Files proxy URL, or null if no sessionUUID
+ */
+export function buildFilesUrl(baseUrl, sessionUUID) {
+    if (!sessionUUID) return null;
+    return `${baseUrl}/proxy/${sessionUUID}/files`;
+}
+
+/**
  * Build the port-based preview URL (cross-origin, per-port).
  * @param {{protocol: string, hostname: string}} location - Location-like object
  * @param {number|null} previewProxyPort - The per-session preview proxy port
