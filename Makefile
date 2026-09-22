@@ -579,6 +579,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=tunnel-mode-unique FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-unique myproject123"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-mtls FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-local-ports FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-local-ports"
+	@$(MAKE) _golden-variant NAME=single-port FLAGS="--single-port"
 	@$(MAKE) _golden-certs-no-certs
 	@$(MAKE) _golden-certs-node-extra-ca-certs
 	@$(MAKE) _golden-certs-ssl-cert-file

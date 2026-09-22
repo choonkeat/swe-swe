@@ -781,6 +781,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"tunnel-mode-unique", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-unique", "myproject123"}},
 		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
 		{"tunnel-mode-local-ports", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-local-ports"}},
+		{"single-port", []string{"--single-port"}},
 	}
 
 	for _, v := range variants {
@@ -1758,6 +1759,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"TunnelUnique":        true,
 		"TunnelClientCert":    true,
 		"TunnelLocalPorts":    true,
+		"SinglePort":          true,
 		"Runtime":             true,
 		"WithoutMCP":          true,
 	}

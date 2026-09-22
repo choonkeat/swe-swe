@@ -362,6 +362,11 @@ type InitConfig struct {
 	TunnelUnique     string `json:"tunnelUnique,omitempty"`
 	TunnelClientCert string `json:"tunnelClientCert,omitempty"`
 	TunnelLocalPorts bool   `json:"tunnelLocalPorts,omitempty"`
+	// SinglePort records that this box is reachable on SWE_PORT and nothing
+	// else. The generated compose then publishes only that port and defaults
+	// SWE_SINGLE_PORT=1, so swe-swe-server binds no per-session proxy
+	// listeners and every pane is served from the one listener.
+	SinglePort bool `json:"singlePort,omitempty"`
 	CLIVersion       string `json:"cliVersion,omitempty"`
 }
 
@@ -825,6 +830,16 @@ func handleInit() {
 			"so the machine running 'swe-swe up' can reach the containers "+
 			"directly (e.g. curl localhost:1977). Host-loopback only; no "+
 			"network exposure beyond the tunnel.")
+	singlePort := fs.Bool("single-port", false,
+		"This box is reachable on SWE_PORT and nothing else. The generated "+
+			"compose publishes only that port -- no preview / agent-chat / "+
+			"vnc / files / public ranges -- and defaults SWE_SINGLE_PORT=1, "+
+			"so swe-swe-server binds no per-session proxy listeners and "+
+			"serves every pane from the one listener at /proxy/{uuid}/... "+
+			"with no reachability probe. Nothing is lost but the separate "+
+			"no-login address for your app, which is a second address by "+
+			"definition. Cannot be combined with --tunnel-server-url, which "+
+			"reaches the panes through those very ports.")
 	previousInitFlags := fs.String("previous-init-flags", "", "How to handle existing init config: 'reuse' or 'ignore'")
 	askFlag := fs.String("ask", "", "Interactive init; optional value overrides metadata directory")
 	metadataDirFlag := fs.String("metadata-dir", "", "Override metadata directory (default: auto-derived in ~/.swe-swe/projects/)")
@@ -1113,6 +1128,9 @@ func handleInit() {
 		if !explicitFlags["tunnel-local-ports"] {
 			*tunnelLocalPorts = savedConfig.TunnelLocalPorts
 		}
+		if !explicitFlags["single-port"] {
+			*singlePort = savedConfig.SinglePort
+		}
 		if !explicitFlags["without-mcp"] {
 			*withoutMCP = savedConfig.WithoutMCP
 		}
@@ -1182,6 +1200,7 @@ func handleInit() {
 		TunnelUnique:        *tunnelUnique,
 		TunnelClientCert:    *tunnelClientCert,
 		TunnelLocalPorts:    *tunnelLocalPorts,
+		SinglePort:          *singlePort,
 	}
 
 	// Re-parse SSL from config.SSL in case reuse overwrote sslFlag
