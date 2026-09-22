@@ -1,7 +1,10 @@
 # `--single-port`: stop opening the per-session proxy ports at all
 
 **Date**: 2026-09-22
-**Status**: phase 1 DONE; phases 2-4 pending
+**Status**: DONE (all four phases, 2026-09-23). Each phase records its
+deviations under its own heading; the two that outlive this task are
+`swe-swe init --single-port` (stop compose publishing the port ranges) and the
+`filesPort` signal the frontend now depends on.
 **Follows**: `tasks/2026-09-22-path-based-agent-view-and-single-port-option.md`
 (DONE -- every pane, including the live Agent View, now has a same-origin path
 form and finds it by probing).
