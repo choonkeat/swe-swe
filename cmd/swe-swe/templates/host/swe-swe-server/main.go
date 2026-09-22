@@ -5814,9 +5814,16 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		previewProxy.RegisterTools(mcpSrv)
 		previewProxy.RegisterResources(mcpSrv)
 
+		// One VNC reverse proxy instance, shared by the same-origin path route
+		// registered just below and the per-port listener further down.
+		vncReverseProxy := newVNCReverseProxy(sess, vncPort)
+
 		sessMux := http.NewServeMux()
 		sessMux.Handle("/proxy/"+sess.UUID+"/preview/mcp", previewProxy.MCPHandler(mcpSrv))
 		sessMux.Handle("/proxy/"+sess.UUID+"/preview/", previewProxy)
+		// Agent View (noVNC) route, same-origin and path-based -- the fallback
+		// for a box where only the main port is reachable.
+		registerVNCPathRoute(sessMux, sess, vncReverseProxy)
 		// Agent chat proxy route (same-origin, path-based)
 		acTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", acPort))
 		sessMux.Handle("/proxy/"+sess.UUID+"/agentchat/", http.StripPrefix(
@@ -5896,26 +5903,10 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		// HTTP + WebSocket upgrade to localhost:vncPort (websockify on
 		// 7000-7019). httputil.ReverseProxy supports WS upgrade since Go
 		// 1.12, so /websockify, /vnc_lite.html, and the noVNC static assets
-		// all flow through the same handler. Auth-wrapped exactly like
-		// preview/agent-chat above; in legacy/Traefik mode that wrap is a
-		// no-op since SWE_SWE_PASSWORD is empty.
-		vncTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", vncPort))
-		vncReverseProxy := httputil.NewSingleHostReverseProxy(vncTarget)
-		// websockify presents itself with its own Host; rewriting the Host
-		// header to match the target avoids virtual-host filters and CORS
-		// quirks if websockify ever adds them. The target is resolved per
-		// request so a remote browser-backend (sess.RemoteVNCTarget, set on
-		// browser/start) redirects here without rebuilding the proxy; local
-		// mode keeps targeting localhost:vncPort.
-		vncReverseProxy.Director = func(req *http.Request) {
-			host := vncTarget.Host
-			if sess.RemoteVNCTarget != "" {
-				host = sess.RemoteVNCTarget
-			}
-			req.URL.Scheme = "http"
-			req.URL.Host = host
-			req.Host = host
-		}
+		// all flow through the same handler. The proxy instance is the one
+		// built above and shared with the same-origin path route. Auth-wrapped
+		// exactly like preview/agent-chat above; in legacy/Traefik mode that
+		// wrap is a no-op since SWE_SWE_PASSWORD is empty.
 		vncPP := vncProxyPort(vncPort)
 		vncHandler := requireAuthCookie(authPassword, func(scope string) bool {
 			return scopeOwnsProxyPort(scope, vncPP, func(s *Session) int { return vncProxyPort(s.VNCPort) })
@@ -5983,6 +5974,54 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sess.UUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
+}
+
+// newVNCReverseProxy builds the per-session reverse proxy that fronts
+// websockify (noVNC) for the Agent View pane. One instance serves BOTH forms
+// the pane can be reached through -- the per-port listener (vncProxyPort) and
+// the same-origin path route below -- so the Director's RemoteVNCTarget branch
+// and the keepalive wrap apply identically to both.
+//
+// websockify presents itself with its own Host; rewriting the Host header to
+// match the target avoids virtual-host filters and CORS quirks if websockify
+// ever adds them. The target is resolved per request so a remote
+// browser-backend (sess.RemoteVNCTarget, set on browser/start) redirects here
+// without rebuilding the proxy; local mode keeps targeting localhost:vncPort.
+func newVNCReverseProxy(sess *Session, vncPort int) *httputil.ReverseProxy {
+	vncTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", vncPort))
+	rp := httputil.NewSingleHostReverseProxy(vncTarget)
+	rp.Director = func(req *http.Request) {
+		host := vncTarget.Host
+		if sess.RemoteVNCTarget != "" {
+			host = sess.RemoteVNCTarget
+		}
+		req.URL.Scheme = "http"
+		req.URL.Host = host
+		req.Host = host
+	}
+	return rp
+}
+
+// vncPathPrefix is the same-origin route prefix for a session's Agent View,
+// matching /proxy/{uuid}/preview, /agentchat and /files.
+func vncPathPrefix(uuid string) string { return "/proxy/" + uuid + "/vnc" }
+
+// registerVNCPathRoute mounts the Agent View on the MAIN listener at
+// /proxy/{uuid}/vnc/, so a box reachable on exactly one port -- no wildcard
+// DNS, no tunnel -- can still show the live view. Until this existed, Agent
+// View was the only pane with no path form: the iframe loaded
+// {hostname}:{vncProxyPort} and, when that port was unreachable, sat on the
+// browser's own "refused to connect" page forever.
+//
+// No body rewriting: vnc_lite.html references its assets relatively
+// (./core/..., ./vendor/...) and is told where its WebSocket lives by noVNC's
+// own path= query param, so StripPrefix alone is enough.
+//
+// Auth is the main listener's authMiddleware, which already scopes
+// /proxy/{uuid}/... to the session's own guests (see scopedPathAllowed).
+func registerVNCPathRoute(mux *http.ServeMux, sess *Session, vncProxy http.Handler) {
+	prefix := vncPathPrefix(sess.UUID)
+	mux.Handle(prefix+"/", http.StripPrefix(prefix, remoteBrowserVNCKeepalive(sess, vncProxy)))
 }
 
 func handleProxyRoute(w http.ResponseWriter, r *http.Request) {

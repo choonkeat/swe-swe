@@ -3,13 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // TestSessionPerPortServerShutdown -- mirrors Session.Close()'s shutdown
@@ -217,5 +222,132 @@ func TestVNCAuthWrapAllowsWebSocketUpgradeWithCookie(t *testing.T) {
 
 	if !upstreamReached {
 		t.Errorf("WS upgrade with cookie: upstream NOT reached (auth wrap rejected valid cookie)")
+	}
+}
+
+// TestVNCSameOriginPathRoute -- the live Agent View must also be reachable
+// from the MAIN listener at /proxy/{uuid}/vnc/, so a box with exactly one
+// reachable port (no wildcard DNS, no tunnel) can still show it. Preview,
+// Agent Chat and Files already have this same-origin path form; Agent View was
+// the last pane that could only be reached on its own port.
+//
+// Exercises the full production chain: authMiddleware -> handleProxyRoute ->
+// Session.SessionMux -> the VNC reverse proxy, covering the noVNC page, the
+// websockify upgrade, and both auth gates.
+func TestVNCSameOriginPathRoute(t *testing.T) {
+	const secret = "vnc-path-secret"
+	const uuid = "vnc-path-sess"
+	const pageBody = "novnc-page"
+	const echoPrefix = "echo:"
+
+	// Stand-in for websockify: serves the noVNC page and echoes on the socket.
+	wsUpgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	websockify := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/vnc_lite.html":
+			w.Write([]byte(pageBody))
+		case "/websockify":
+			conn, err := wsUpgrader.Upgrade(w, r, nil)
+			if err != nil {
+				t.Logf("websockify double upgrade error: %v", err)
+				return
+			}
+			defer conn.Close()
+			for {
+				mt, msg, err := conn.ReadMessage()
+				if err != nil {
+					return
+				}
+				if err := conn.WriteMessage(mt, append([]byte(echoPrefix), msg...)); err != nil {
+					return
+				}
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer websockify.Close()
+
+	wsURL, _ := url.Parse(websockify.URL)
+	vncPort, err := strconv.Atoi(wsURL.Port())
+	if err != nil {
+		t.Fatalf("parse websockify port from %q: %v", websockify.URL, err)
+	}
+
+	sess := &Session{Assistant: "claude"}
+	registerTestSession(t, uuid, sess)
+	sessMux := http.NewServeMux()
+	registerVNCPathRoute(sessMux, sess, newVNCReverseProxy(sess, vncPort))
+	sess.SessionMux = sessMux
+
+	srv := httptest.NewServer(authMiddleware(http.HandlerFunc(handleProxyRoute), secret))
+	defer srv.Close()
+
+	base := srv.URL + "/proxy/" + uuid + "/vnc"
+	// Do not follow the login redirect: we want to see the redirect itself.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	get := func(path string, cookie *http.Cookie) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("GET", base+path, nil)
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		return resp
+	}
+
+	fullCookie := &http.Cookie{Name: authCookieName, Value: authSignCookie(secret)}
+
+	// a. The noVNC page is served through the path form.
+	resp := get("/vnc_lite.html", fullCookie)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /vnc_lite.html: got %d, want 200", resp.StatusCode)
+	}
+	if string(body) != pageBody {
+		t.Errorf("GET /vnc_lite.html: body %q, want %q", string(body), pageBody)
+	}
+
+	// b. The websockify upgrade round-trips through the path form.
+	dialer := websocket.Dialer{}
+	hdr := http.Header{"Cookie": []string{fullCookie.Name + "=" + fullCookie.Value}}
+	conn, dialResp, err := dialer.Dial("ws"+strings.TrimPrefix(base, "http")+"/websockify", hdr)
+	if err != nil {
+		t.Fatalf("websockify dial through path route failed: %v (resp=%v)", err, dialResp)
+	}
+	defer conn.Close()
+	if err := conn.WriteMessage(websocket.TextMessage, []byte("rfb")); err != nil {
+		t.Fatalf("websockify write: %v", err)
+	}
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("websockify read: %v", err)
+	}
+	if want := echoPrefix + "rfb"; string(msg) != want {
+		t.Errorf("websockify echo = %q, want %q", string(msg), want)
+	}
+
+	// c. No cookie: refused on both the page and the upgrade.
+	resp = get("/vnc_lite.html", nil)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Errorf("GET /vnc_lite.html with no cookie: got 200 -- auth bypass on the path route")
+	}
+	if _, _, err := dialer.Dial("ws"+strings.TrimPrefix(base, "http")+"/websockify", nil); err == nil {
+		t.Errorf("websockify upgrade with no cookie succeeded -- auth bypass on the upgrade path")
+	}
+
+	// d. A guest shared a DIFFERENT session must not reach this one.
+	guest := &http.Cookie{Name: authCookieName, Value: authSignScopedCookie(secret, "some-other-session")}
+	resp = get("/vnc_lite.html", guest)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("GET /vnc_lite.html as a guest of another session: got %d, want 403", resp.StatusCode)
 	}
 }
