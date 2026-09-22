@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## v2.39.0 - One Port Is Enough
+
+### Features
+
+- **A box reachable on only one port gets every pane**: Files and Agent View gained same-origin `/proxy/{uuid}/files/` and `/proxy/{uuid}/vnc/` routes, so Preview, Agent Chat, Files and Agent View all fall back from subdomain to port to path through one shared resolver instead of sitting on "refused to connect".
+
+- **`swe-swe init --single-port` publishes one port and nothing else**: the generated compose drops every per-session port range and defaults `SWE_SINGLE_PORT=1`, the server stops opening those ports, and the setup page offers a matching "one fixed port, nothing else" answer.
+
+- **The setup page hands you a password instead of asking for one**: it is generated in the browser, shared by every block on the page and re-rollable, and a machine that already has a password keeps it.
+
+- **Sessions have a `<unique>/<uuid>` address and `send_chat_message` is signed by the server**: `list_sessions` shows each address, and the receiving agent sees which session sent a message, which no agent can fake.
+
+- **Every chat-log viewer bubble has a "Copy as markdown" action.**
+
+### Fixes
+
+- **The Files and Agent View ports now require the password**: the generated compose published md-serve and x11vnc directly instead of the password-checking proxy in front of them, so anyone who could reach those ports saw the workspace files and the agent's screen.
+
+- **A new session no longer inherits a leftover process on its ports**: session start now clears listeners left behind by ended sessions, skips ports anything else holds (including IPv6-only listeners it used to miss), and ending a session now also frees the Files port.
+
+- **The Files pane refreshes on its own behind the path proxy**: its once-a-second change check sent the `/proxy/...` prefix to md-serve, which answered "not found" every time.
+
+- **A file link tapped in chat opens the same highlighted view as browsing to it in Files**, not the raw source.
+
 ## v2.38.0 - The Setup Page & the Restricted Box
 
 ### Features
