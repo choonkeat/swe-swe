@@ -1,5 +1,5 @@
-// Single-reachable-port boxes: Preview, Agent Chat and Files must all fall
-// back to their same-origin path form.
+// Single-reachable-port boxes: Preview, Agent Chat, Files AND the live Agent
+// View must all fall back to their same-origin path form.
 //
 // Simulated by refusing, at the browser, every connection to this host on any
 // port but the one that served the page -- which is exactly what a VPS with a
@@ -7,7 +7,8 @@
 // resolver (static/modules/proxy-base.js) the Files pane had no path form at
 // all: it loaded its unreachable port and sat on the browser's own "refused to
 // connect" page, which still fires `load`, so the retry supervisor re-requested
-// the same dead port forever.
+// the same dead port forever. Agent View was the last pane in that state; it is
+// now served from /proxy/{uuid}/vnc/ on the main listener too.
 
 import { test, expect } from './_helpers/reaper.js';
 import { endSessions, openSessionViaPost } from './_helpers/sessions.js';
@@ -87,6 +88,72 @@ test.describe('single reachable port', () => {
     // The file-link origin handed to agent-chat has to be reachable too,
     // otherwise workspace links open onto a dead port.
     expect(modes.chatSrc).toContain(encodeURIComponent(`${BASE_URL}/proxy/${uuid}/files/`));
+  });
+
+  test('Agent View falls back to the same-origin path and noVNC connects', async ({ page, context }) => {
+    test.setTimeout(300_000);
+    await onlyMainPortReachable(context);
+
+    // A shell session: the lazy browser start is triggered from the PTY, the
+    // same curl mcp-lazy-init fires on first playwright-MCP use.
+    const uuid = await openSessionViaPost(page, { assistant: 'shell', session: 'chat' });
+    testSessions.push(uuid);
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 40_000 });
+    await page.waitForFunction(
+      () => window.terminalUI && window.terminalUI.vncProxyPort,
+      null,
+      { timeout: 60_000 }
+    );
+
+    await page.locator('.terminal-ui__terminal').first().click();
+    await page.keyboard.type(
+      'curl -s -X POST "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY"; echo');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(
+      () => window.terminalUI.browserStarted === true,
+      null,
+      { timeout: 180_000 }
+    );
+
+    // websockify answers before we judge the viewer.
+    await expect.poll(async () => page.evaluate(async (u) => {
+      const r = await fetch(`/api/session/${u}/vnc-ready`);
+      return r.status;
+    }, uuid), { timeout: 120_000, intervals: [1000] }).toBe(200);
+
+    // Every port but this page's is refused, so the resolver must land on the
+    // path form. Before /proxy/{uuid}/vnc/ existed there was nothing to land on.
+    await page.waitForFunction(
+      () => window.terminalUI && window.terminalUI._browserViewResolvedBase,
+      null,
+      { timeout: 120_000 }
+    );
+    const resolved = await page.evaluate(() => ({
+      mode: window.terminalUI._browserViewProxyMode,
+      base: window.terminalUI._browserViewResolvedBase,
+    }));
+    expect(resolved.mode).toBe('path');
+    expect(resolved.base).toBe(`${BASE_URL}/proxy/${uuid}/vnc`);
+
+    await page.evaluate(() => {
+      const ui = window.terminalUI;
+      const slot = ui._slotForPane('browser');
+      if (slot) ui.setActiveInSlot(slot, 'browser', { persist: false });
+      ui._loadPaneIfNeeded('browser');
+    });
+
+    const src = await page.waitForFunction(() => {
+      const iframe = window.terminalUI.querySelector('.terminal-ui__iframe[data-pane="browser"]');
+      const s = iframe && iframe.getAttribute('src');
+      return s && s.includes('vnc_lite.html') ? s : null;
+    }, null, { timeout: 60_000 }).then(h => h.jsonValue());
+    expect(src).toContain(`/proxy/${uuid}/vnc/vnc_lite.html`);
+    expect(src).toContain(`path=proxy/${uuid}/vnc/websockify`);
+
+    // A canvas only appears once RFB has negotiated over the proxied
+    // websockify -- i.e. the path route carried the WebSocket, not just the page.
+    const vncFrame = page.frameLocator('.terminal-ui__iframe[data-pane="browser"]');
+    await expect(vncFrame.locator('canvas').first()).toBeVisible({ timeout: 120_000 });
   });
 
   test('the Files path route serves md-serve with its links re-prefixed', async ({ page, context }) => {

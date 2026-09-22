@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
@@ -461,10 +461,18 @@ class TerminalUI extends HTMLElement {
         this._proxyMode = null; // null = undecided, 'subdomain' | 'port' | 'path'
         this._acProxyMode = null;
         this._filesProxyMode = null;
+        this._browserViewProxyMode = null;
         // Files resolves its base once and caches it; the other two panes
         // resolve on every (re)load because the preview target can change.
         this._filesResolvedBase = null;
         this._filesBaseResolving = null;
+        // Agent View resolves once and caches too: the VNC port never moves
+        // for the life of a session.
+        this._browserViewResolvedBase = null;
+        this._browserViewBaseResolving = null;
+        // Set once the probe round has run, win or lose, so a pane waiting on
+        // the answer cannot re-arm it forever.
+        this._browserViewBaseTried = false;
         // One shared reachability probe for all three panes.
         this._proxyProbe = makeProbe();
         this.previewProxyPort = null;
@@ -2340,6 +2348,9 @@ class TerminalUI extends HTMLElement {
                 // Probe which of the three Files forms this browser can
                 // actually reach, before anything needs the answer.
                 if (this.filesProxyPort) this._resolveFilesBase();
+                // Same for Agent View: decide subdomain vs port vs path once,
+                // before anything needs the answer.
+                if (this.vncProxyPort) this._resolveBrowserViewBase();
                 if (this.filesProxyPort && this._slotForPane('files') && !this._paneLoaded.has('files')) {
                     this._loadPaneIfNeeded('files');
                 }
@@ -4217,6 +4228,9 @@ class TerminalUI extends HTMLElement {
                     url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
                     break;
                 case 'browser':
+                    // No-op once decided; arms the probe round if the pane is
+                    // opened before the status message that normally starts it.
+                    this._resolveBrowserViewBase();
                     url = this.getBrowserViewUrl();
                     if (url && !this._browserViewReady) {
                         // Probe VNC readiness via same-origin endpoint to get real status codes.
@@ -6280,6 +6294,19 @@ class TerminalUI extends HTMLElement {
                 break;
             }
             case 'browser': {
+                // Which of the three forms is reachable is decided once by
+                // _resolveBrowserViewBase(); until it answers,
+                // getBrowserViewUrl() gives the same-origin path form, which
+                // always works. Wait for the answer when the port is known, so
+                // a box where the port IS reachable still gets the faster
+                // cross-origin form rather than whichever won the race.
+                if (this.vncProxyPort && !this._browserViewResolvedBase) {
+                    const pendingVnc = this._resolveBrowserViewBase();
+                    if (pendingVnc) {
+                        pendingVnc.then(() => this._loadPaneIfNeeded('browser'));
+                        return;
+                    }
+                }
                 const url = this.getBrowserViewUrl();
                 if (!url) return;
                 if (this._browserViewReady) {
@@ -7005,24 +7032,69 @@ class TerminalUI extends HTMLElement {
         });
     }
 
+    // URL of the noVNC viewer for this session's Agent View.
+    //
+    // Three forms exist (subdomain / port / same-origin path), exactly as for
+    // Files; _resolveBrowserViewBase() probes them once and caches the winner.
+    // Until that settles -- and on any box where nothing but this page's own
+    // port answers -- the same-origin path form is used, which is the one form
+    // that cannot be unreachable. Before that path form existed, Agent View was
+    // the only pane with no fallback: on a single-port box the iframe loaded
+    // {hostname}:{vncProxyPort} and sat on the browser's own "refused to
+    // connect" page forever.
+    //
+    // Synchronous, because three callers (the services list, the panel switch
+    // and panePopoutUrl) need an answer at click time.
     getBrowserViewUrl() {
+        // No VNC port means this session has no Agent View backend at all --
+        // a different thing from a port the browser cannot reach. Callers
+        // treat null as "no such service", so keep returning it.
         if (!this.vncProxyPort) return null;
         const loc = window.location;
-        // noVNC's vnc_lite.html with query params to configure WebSocket connection
         const v = new URL(import.meta.url).searchParams.get('v') || '';
-        const vQs = v ? '&v=' + v : '';
-        // Tunnel mode: page loads via {vncProxyPort}.{publicHostname} subdomain.
-        // vnc_lite.html falls back to window.location.hostname / port when host=
-        // and port= query params are missing, so we omit them and let it derive
-        // the right wss target from its own page origin.
-        if (this.effectivePublicHostname) {
-            const origin = buildSubdomainOrigin(loc, this.vncProxyPort, this.effectivePublicHostname);
-            return `${origin}/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true${vQs}`;
+        if (this._browserViewResolvedBase) {
+            return buildVNCViewerUrl({
+                base: this._browserViewResolvedBase,
+                mode: this._browserViewProxyMode,
+                location: loc,
+                sessionUUID: this.uuid,
+                vncProxyPort: this.vncProxyPort,
+                v,
+            });
         }
-        // Legacy port-based mode: same hostname, different port. Pass host=
-        // and port= explicitly so noVNC dials the correct WebSocket regardless
-        // of how the iframe parses its own location.
-        return `${loc.protocol}//${loc.hostname}:${this.vncProxyPort}/vnc_lite.html?host=${loc.hostname}&port=${this.vncProxyPort}&reconnect=true&resize=scale&autoconnect=true${vQs}`;
+        return buildVNCViewerUrl({
+            base: buildVNCUrl(getBaseUrl(loc), this.uuid),
+            mode: 'path',
+            location: loc,
+            sessionUUID: this.uuid,
+            v,
+        });
+    }
+
+    // Probe the faster cross-origin forms once and remember the winner. Runs as
+    // soon as vncProxyPort arrives; callers never await it, because
+    // getBrowserViewUrl() already has a correct answer while it is in flight.
+    _resolveBrowserViewBase() {
+        if (this._browserViewResolvedBase || this._browserViewBaseTried) return null;
+        if (!this.vncProxyPort) return null;
+        // Return the in-flight promise rather than nothing, so a second caller
+        // waits for the same answer instead of racing ahead on the fallback.
+        if (this._browserViewBaseResolving) return this._browserViewBaseResolving;
+        const candidates = proxyCandidates({
+            subdomainBase: this.effectivePublicHostname
+                ? buildSubdomainVNCUrl(window.location, this.vncProxyPort, this.effectivePublicHostname)
+                : null,
+            portBase: buildPortBasedVNCUrl(window.location, this.vncProxyPort),
+            pathBase: buildVNCUrl(getBaseUrl(window.location), this.uuid),
+        });
+        this._browserViewBaseResolving = resolveProxyBase(candidates, this._proxyProbe).then((chosen) => {
+            this._browserViewBaseResolving = null;
+            this._browserViewBaseTried = true;
+            if (!chosen) return;
+            this._browserViewProxyMode = chosen.mode;
+            this._browserViewResolvedBase = chosen.base;
+        });
+        return this._browserViewBaseResolving;
     }
 
     getPreviewBaseUrl() {

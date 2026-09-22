@@ -386,3 +386,77 @@ export function buildFilesPathUrl(filesBase, path) {
     params.set('pretty', '1');
     return `${filesBase}/${pathname}?${params.toString()}`;
 }
+
+/**
+ * Build the same-origin path base for the Agent View (noVNC), mirroring
+ * buildFilesUrl. This is the form that always works: it rides the very
+ * connection that served the page, so it needs no extra port and no wildcard
+ * DNS. swe-swe-server serves it from the main listener (registerVNCPathRoute).
+ * @param {string} baseUrl - The base URL of swe-swe-server
+ * @param {string} sessionUUID - Session UUID
+ * @returns {string|null} Agent View base URL, or null if no sessionUUID
+ */
+export function buildVNCUrl(baseUrl, sessionUUID) {
+    if (!sessionUUID) return null;
+    return `${baseUrl}/proxy/${sessionUUID}/vnc`;
+}
+
+/**
+ * Build the port-based Agent View base (cross-origin, per-port).
+ * @param {{protocol: string, hostname: string}} location - Location-like object
+ * @param {number|null} vncProxyPort - The per-session VNC proxy port
+ * @returns {string|null} Port-based Agent View base, or null if no port
+ */
+export function buildPortBasedVNCUrl(location, vncProxyPort) {
+    if (!vncProxyPort) return null;
+    return `${location.protocol}//${location.hostname}:${vncProxyPort}`;
+}
+
+/**
+ * Build the subdomain-based Agent View base for tunnel mode. Same shape as
+ * buildSubdomainPreviewUrl but for the VNC proxy port.
+ * @param {{protocol: string, port?: string}} location - Location-like object (protocol + port)
+ * @param {number|null} targetPort - The per-session VNC proxy port
+ * @param {string} publicHostname - Public hostname (e.g. "abc-tunnel.example.com")
+ * @returns {string|null} Subdomain Agent View base, or null if either input is missing
+ */
+export function buildSubdomainVNCUrl(location, targetPort, publicHostname) {
+    if (!targetPort || !publicHostname) return null;
+    return buildSubdomainOrigin(location, targetPort, publicHostname);
+}
+
+/**
+ * Turn a resolved Agent View base into the noVNC viewer URL.
+ *
+ * The query string differs per form because noVNC works out its own WebSocket
+ * target from the page it is loaded in:
+ *
+ *   subdomain  the iframe origin IS the VNC origin, so host/port are omitted
+ *              and noVNC derives both correctly.
+ *   port       same hostname, different port: pass host= and port= explicitly
+ *              so noVNC dials the right one however it parses its location.
+ *   path       the iframe origin is the main page's, which is right for the
+ *              WebSocket too -- but the socket does not live at the origin
+ *              root, so path= points noVNC at the session's route.
+ *
+ * @param {object} opts
+ * @param {string|null} opts.base - resolved base (no trailing slash)
+ * @param {string} opts.mode - 'subdomain' | 'port' | 'path'
+ * @param {{hostname: string}} [opts.location] - Location-like object
+ * @param {string} [opts.sessionUUID] - Session UUID (path form only)
+ * @param {number|null} [opts.vncProxyPort] - VNC proxy port (port form only)
+ * @param {string} [opts.v] - cache-busting build stamp
+ * @returns {string|null} noVNC viewer URL, or null without a base
+ */
+export function buildVNCViewerUrl({ base, mode, location, sessionUUID, vncProxyPort, v }) {
+    if (!base) return null;
+    const common = 'reconnect=true&resize=scale&autoconnect=true';
+    const vQs = v ? '&v=' + v : '';
+    if (mode === 'path') {
+        return `${base}/vnc_lite.html?path=proxy/${sessionUUID}/vnc/websockify&${common}${vQs}`;
+    }
+    if (mode === 'port') {
+        return `${base}/vnc_lite.html?host=${location.hostname}&port=${vncProxyPort}&${common}${vQs}`;
+    }
+    return `${base}/vnc_lite.html?${common}${vQs}`;
+}

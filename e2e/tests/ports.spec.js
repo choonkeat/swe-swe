@@ -120,4 +120,41 @@ test.describe('Port Connectivity', () => {
     console.log(`Files proxy port ${filesResp.port}: ok=${filesResp.ok}, status=${filesResp.status}, type=${filesResp.type}`);
     expect(filesResp.ok).toBe(true);
   });
+
+  // Non-regression for the single-port fallback (proxy-fallback.spec.js): on an
+  // ordinary box, where every port IS reachable, Agent View must still choose
+  // its own port. The path form is same-origin with the terminal page, so
+  // silently preferring it would give up the pane's origin isolation.
+  //
+  // The VNC listener's /__probe__ is answered by corsWrapper before any auth or
+  // forwarding, so this needs no browser/start and no MCP_AUTH_KEY.
+  test('Agent View prefers its own port when that port is reachable', async ({ page }) => {
+    const ports = await createChatSessionAndGetPorts(page);
+    expect(ports.vncProxyPort).toBeTruthy();
+
+    // The marker header is what makes the port form detectable at all.
+    const url = new URL(BASE_URL);
+    const probe = await page.evaluate(async (probeUrl) => {
+      try {
+        const r = await fetch(probeUrl, { mode: 'cors', signal: AbortSignal.timeout(5000) });
+        return { status: r.status, marker: r.headers.get('X-Agent-Reverse-Proxy') };
+      } catch (e) {
+        return { status: 0, marker: null, error: e.message };
+      }
+    }, `${url.protocol}//${url.hostname}:${ports.vncProxyPort}/__probe__`);
+    expect(probe.status).toBe(200);
+    expect(probe.marker).toBe('1');
+
+    await page.waitForFunction(
+      () => window.terminalUI && window.terminalUI._browserViewResolvedBase,
+      null,
+      { timeout: 60_000 }
+    );
+    const resolved = await page.evaluate(() => ({
+      mode: window.terminalUI._browserViewProxyMode,
+      base: window.terminalUI._browserViewResolvedBase,
+    }));
+    expect(resolved.mode).toBe('port');
+    expect(resolved.base).toBe(`${url.protocol}//${url.hostname}:${ports.vncProxyPort}`);
+  });
 });

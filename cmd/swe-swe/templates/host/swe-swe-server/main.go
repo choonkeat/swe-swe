@@ -5908,9 +5908,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		// exactly like preview/agent-chat above; in legacy/Traefik mode that
 		// wrap is a no-op since SWE_SWE_PASSWORD is empty.
 		vncPP := vncProxyPort(vncPort)
-		vncHandler := requireAuthCookie(authPassword, func(scope string) bool {
-			return scopeOwnsProxyPort(scope, vncPP, func(s *Session) int { return vncProxyPort(s.VNCPort) })
-		}, remoteBrowserVNCKeepalive(sess, vncReverseProxy))
+		vncHandler := newVNCPortHandler(sess, vncPP, vncReverseProxy, authPassword)
 		sess.trackProxyServer(
 			startProxyListener("vnc", sess.UUID, fmt.Sprintf(":%d", vncPP), vncHandler),
 			func(s *Session, srv *http.Server) { s.VNCProxyServer = srv })
@@ -6000,6 +5998,18 @@ func newVNCReverseProxy(sess *Session, vncPort int) *httputil.ReverseProxy {
 		req.Host = host
 	}
 	return rp
+}
+
+// newVNCPortHandler wraps the shared VNC reverse proxy for the per-port
+// listener at vncProxyPort. corsWrapper outside requireAuthCookie, exactly as
+// preview/agent-chat/files are wrapped: it answers the /__probe__ reachability
+// check without credentials, which is what lets the browser tell a working VNC
+// port from a blocked one and prefer this (cross-origin, isolated) form over
+// the same-origin path form.
+func newVNCPortHandler(sess *Session, vncPP int, vncProxy http.Handler, authPassword string) http.Handler {
+	return corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+		return scopeOwnsProxyPort(scope, vncPP, func(s *Session) int { return vncProxyPort(s.VNCPort) })
+	}, remoteBrowserVNCKeepalive(sess, vncProxy)))
 }
 
 // vncPathPrefix is the same-origin route prefix for a session's Agent View,

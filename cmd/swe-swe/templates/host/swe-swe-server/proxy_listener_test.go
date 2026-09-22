@@ -351,3 +351,42 @@ func TestVNCSameOriginPathRoute(t *testing.T) {
 		t.Errorf("GET /vnc_lite.html as a guest of another session: got %d, want 403", resp.StatusCode)
 	}
 }
+
+// TestVNCPortListenerAnswersProbe -- the per-port VNC listener must answer the
+// same /__probe__ reachability check preview/agent-chat/files answer. Without
+// it the browser cannot tell a working VNC port from a blocked one, so the
+// port candidate would always lose and Agent View would fall through to the
+// (slower, same-origin) path form even on a box where the port works.
+//
+// Built through newVNCPortHandler -- the same call main.go makes -- so the
+// wrap cannot drift out from under this test.
+func TestVNCPortListenerAnswersProbe(t *testing.T) {
+	upstreamHits := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	wsURL, _ := url.Parse(upstream.URL)
+	vncPort, err := strconv.Atoi(wsURL.Port())
+	if err != nil {
+		t.Fatalf("parse upstream port from %q: %v", upstream.URL, err)
+	}
+
+	sess := &Session{UUID: "vnc-probe-sess", Assistant: "claude"}
+	handler := newVNCPortHandler(sess, vncProxyPort(vncPort), newVNCReverseProxy(sess, vncPort), "vnc-secret")
+
+	req := httptest.NewRequest("GET", "/__probe__", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("/__probe__ on the VNC listener: got %d, want 200", rr.Code)
+	}
+	if rr.Header().Get("X-Agent-Reverse-Proxy") == "" {
+		t.Errorf("/__probe__ on the VNC listener: missing X-Agent-Reverse-Proxy marker -- the port form is undetectable, so Agent View can never pick it")
+	}
+	if upstreamHits != 0 {
+		t.Errorf("/__probe__ reached websockify (%d hits); it must short-circuit", upstreamHits)
+	}
+}

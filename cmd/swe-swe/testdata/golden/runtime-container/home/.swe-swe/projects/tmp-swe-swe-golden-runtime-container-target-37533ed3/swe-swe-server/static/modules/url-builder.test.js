@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -712,4 +712,104 @@ test('buildFilesPathUrl works on a cross-origin files base', () => {
         buildFilesPathUrl('http://localhost:29000', 'README.md'),
         'http://localhost:29000/README.md?pretty=1'
     );
+});
+
+
+// Agent View (noVNC) URL builders. The pane has the same three forms as
+// Preview/Agent Chat/Files -- subdomain, port, same-origin path -- and the
+// path form is what makes a single-reachable-port box usable.
+
+test('buildVNCUrl builds the same-origin path form', () => {
+    assert.strictEqual(
+        buildVNCUrl('http://localhost:1977', 'abc-123'),
+        'http://localhost:1977/proxy/abc-123/vnc'
+    );
+});
+
+test('buildVNCUrl returns null without a session uuid', () => {
+    assert.strictEqual(buildVNCUrl('http://localhost:1977', ''), null);
+    assert.strictEqual(buildVNCUrl('http://localhost:1977', null), null);
+});
+
+test('buildPortBasedVNCUrl builds the cross-origin port form', () => {
+    assert.strictEqual(
+        buildPortBasedVNCUrl({ protocol: 'http:', hostname: 'box.local' }, 27000),
+        'http://box.local:27000'
+    );
+});
+
+test('buildPortBasedVNCUrl returns null without a port', () => {
+    assert.strictEqual(buildPortBasedVNCUrl({ protocol: 'http:', hostname: 'box.local' }, null), null);
+});
+
+test('buildSubdomainVNCUrl builds the wildcard-subdomain form', () => {
+    assert.strictEqual(
+        buildSubdomainVNCUrl({ protocol: 'https:', port: '' }, 27000, 'abc-tunnel.example.com'),
+        'https://27000.abc-tunnel.example.com'
+    );
+});
+
+test('buildSubdomainVNCUrl returns null when either input is missing', () => {
+    assert.strictEqual(buildSubdomainVNCUrl({ protocol: 'https:', port: '' }, 27000, ''), null);
+    assert.strictEqual(buildSubdomainVNCUrl({ protocol: 'https:', port: '' }, null, 'x.example.com'), null);
+});
+
+// buildVNCViewerUrl turns a resolved base into the noVNC page URL. The query
+// string differs per form because noVNC derives its WebSocket target from its
+// own page location unless told otherwise.
+
+test('buildVNCViewerUrl (subdomain) lets noVNC derive host and port from its own origin', () => {
+    assert.strictEqual(
+        buildVNCViewerUrl({
+            base: 'https://27000.abc-tunnel.example.com',
+            mode: 'subdomain',
+            location: { hostname: 'abc-tunnel.example.com' },
+            sessionUUID: 'abc-123',
+            vncProxyPort: 27000,
+        }),
+        'https://27000.abc-tunnel.example.com/vnc_lite.html?reconnect=true&resize=scale&autoconnect=true'
+    );
+});
+
+test('buildVNCViewerUrl (port) pins host and port explicitly', () => {
+    assert.strictEqual(
+        buildVNCViewerUrl({
+            base: 'http://box.local:27000',
+            mode: 'port',
+            location: { hostname: 'box.local' },
+            sessionUUID: 'abc-123',
+            vncProxyPort: 27000,
+        }),
+        'http://box.local:27000/vnc_lite.html?host=box.local&port=27000&reconnect=true&resize=scale&autoconnect=true'
+    );
+});
+
+test('buildVNCViewerUrl (path) points noVNC at the same-origin websockify route', () => {
+    assert.strictEqual(
+        buildVNCViewerUrl({
+            base: 'http://localhost:1977/proxy/abc-123/vnc',
+            mode: 'path',
+            location: { hostname: 'localhost' },
+            sessionUUID: 'abc-123',
+            vncProxyPort: 27000,
+        }),
+        'http://localhost:1977/proxy/abc-123/vnc/vnc_lite.html?path=proxy/abc-123/vnc/websockify&reconnect=true&resize=scale&autoconnect=true'
+    );
+});
+
+test('buildVNCViewerUrl appends the cache-busting v when given one', () => {
+    assert.strictEqual(
+        buildVNCViewerUrl({
+            base: 'http://localhost:1977/proxy/abc-123/vnc',
+            mode: 'path',
+            location: { hostname: 'localhost' },
+            sessionUUID: 'abc-123',
+            v: '2.35.1',
+        }),
+        'http://localhost:1977/proxy/abc-123/vnc/vnc_lite.html?path=proxy/abc-123/vnc/websockify&reconnect=true&resize=scale&autoconnect=true&v=2.35.1'
+    );
+});
+
+test('buildVNCViewerUrl returns null without a base', () => {
+    assert.strictEqual(buildVNCViewerUrl({ base: null, mode: 'path', sessionUUID: 'abc-123' }), null);
 });
