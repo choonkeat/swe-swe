@@ -1198,12 +1198,9 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"workDir":            workDir,
 		"previewPort":        s.PreviewPort,
 		"agentChatPort":      agentChatPort,
-		"previewProxyPort":   previewProxyPort(s.PreviewPort),
 		"publicPort":         s.PublicPort,
 		"cdpPort":            s.CDPPort,
 		"vncPort":            s.VNCPort,
-		"vncProxyPort":       vncProxyPort(s.VNCPort),
-		"filesProxyPort":     filesProxyPort(s.FilesPort),
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":     s.BrowserStarted,
@@ -1215,8 +1212,18 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"previewVhostSuffix":     previewVhostSuffix(),
 		"previewReachCandidates": previewReachCandidates(),
 	}
-	if agentChatPort != 0 {
-		status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
+	// The cross-origin proxy ports. Omitted entirely in single-port mode,
+	// because an advertised port is a port the frontend probes and then waits
+	// out before falling back: every pane's port candidate is built from the
+	// number here, and a missing one sends it straight to the same-origin path
+	// form. Nothing binds them in that mode either (see single_port.go).
+	if !singlePortMode {
+		status["previewProxyPort"] = previewProxyPort(s.PreviewPort)
+		status["vncProxyPort"] = vncProxyPort(s.VNCPort)
+		status["filesProxyPort"] = filesProxyPort(s.FilesPort)
+		if agentChatPort != 0 {
+			status["agentChatProxyPort"] = agentChatProxyPort(agentChatPort)
+		}
 	}
 	// tunnelStatus rides along when the tunnel supervisor has
 	// observed at least one event. State="" means no supervisor or
@@ -2205,6 +2212,15 @@ func main() {
 			"exclusive with -tunnel-server-url. Plain http: a TLS-terminating "+
 			"proxy in front needs a wildcard certificate of its own. "+
 			"Env: SWE_PUBLIC_HOSTNAME.")
+	singlePort := flag.Bool("single-port", false,
+		"This box is reachable on this server's listening port and nothing "+
+			"else. Skips binding the per-session proxy ports (preview, "+
+			"agent chat, Agent View, files) entirely and stops advertising "+
+			"them, so every pane goes straight to its same-origin "+
+			"/proxy/{uuid}/... route with no reachability probe and no "+
+			"wait. Mutually exclusive with -public-hostname and "+
+			"-tunnel-server-url, both of which reach the panes through "+
+			"those very ports. Env: SWE_SINGLE_PORT.")
 	tunnelUnique := flag.String("tunnel-unique", "",
 		"Bare unique label for the tunnel registration (server appends "+
 			"-tunnel suffix). Optional; empty falls through to whatever "+
@@ -2361,6 +2377,17 @@ func main() {
 	}
 	if publicHostnameDecided.DropTunnel {
 		resolvedTunnelServerURL = ""
+	}
+	// Single-port mode: refuse the combinations that would start cleanly and
+	// then serve nothing, before any listener is bound. Checked against what
+	// the two settings above actually SETTLED on -- a hostname or a tunnel URL
+	// that was already discarded is not a conflict.
+	singlePortMode = resolveSinglePort(*singlePort, flagPassed("single-port"), os.LookupEnv)
+	if err := singlePortConflicts(singlePortMode, publicHostnameDecided.Hostname, resolvedTunnelServerURL); err != nil {
+		log.Fatalf("swe-swe-server: %v", err)
+	}
+	if singlePortMode {
+		log.Printf("Single-port mode: per-session proxy ports are not bound; every pane is served from this listener at /proxy/{uuid}/...")
 	}
 	if publicHostnameDecided.Hostname != "" {
 		configuredPublicHostname = publicHostnameDecided.Hostname
@@ -5859,75 +5886,19 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		sess.PreviewProxy = previewProxy
 		sess.SessionMux = sessMux
 
-		// Start per-port listeners for port-based proxy mode.
-		// Port-based proxy uses empty BasePath (no URL rewriting) and shares
-		// the same DebugHub so MCP tools and debug WebSockets work in both modes.
-		// Preview host-demux: the port-based listener is what browsers hit at
-		// <reach>:proxyPort, so it carries the vhost ResolveTarget +
-		// CookieDomainRewrite hooks (see preview_vhost.go / ADR-0045). The
-		// path-based previewProxy above stays same-origin and unhooked.
-		portPreviewProxy, _ := agentproxy.New(agentproxy.Config{
-			Target:      previewTarget,
-			ToolPrefix:  "preview",
-			ThemeCookie: "swe-swe-theme",
-			Hub:         sharedHub,
-			ResolveTarget: func(inboundHost string) (*url.URL, string, bool) {
-				return previewResolveTarget(inboundHost, sess)
-			},
-			CookieDomainRewrite: previewCookieDomainRewrite,
+		// Per-session proxy LISTENERS, one per pane, on the cross-origin port
+		// bands. Skipped entirely in single-port mode (the guard is inside),
+		// where the same-origin path routes registered above are the whole
+		// story.
+		startPerSessionProxyListeners(perSessionProxyDeps{
+			Session:       sess,
+			PreviewTarget: previewTarget,
+			PreviewPort:   previewPort,
+			AgentChatPort: acPort,
+			VNCPort:       vncPort,
+			VNCProxy:      vncReverseProxy,
+			Hub:           sharedHub,
 		})
-		// Tunnel mode safety: tunneld dials the per-port listeners directly
-		// without Traefik's ForwardAuth in front. Wrap each per-port handler
-		// in requireAuthCookie so the apex login cookie is validated before
-		// any traffic reaches the upstream. No-op when SWE_SWE_PASSWORD is
-		// empty (legacy compose mode where Traefik handles auth externally).
-		authPassword := os.Getenv("SWE_SWE_PASSWORD")
-
-		previewPP := previewProxyPort(previewPort)
-		previewHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
-			return scopeOwnsProxyPort(scope, previewPP, func(s *Session) int { return previewProxyPort(s.PreviewPort) })
-		}, previewVhostPinHandler(sess, portPreviewProxy)))
-		sess.trackProxyServer(
-			startProxyListener("preview", sess.UUID, fmt.Sprintf(":%d", previewPP), previewHandler),
-			func(s *Session, srv *http.Server) { s.PreviewProxyServer = srv })
-
-		acPP := agentChatProxyPort(acPort)
-		acHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
-			return scopeOwnsProxyPort(scope, acPP, func(s *Session) int { return agentChatProxyPort(s.AgentChatPort) })
-		}, agentChatProxyHandler(acTarget)))
-		sess.trackProxyServer(
-			startProxyListener("agent chat", sess.UUID, fmt.Sprintf(":%d", acPP), acHandler),
-			func(s *Session, srv *http.Server) { s.AgentChatProxyServer = srv })
-
-		// VNC proxy at vncProxyPort (default 27000-27019). Reverse-proxies
-		// HTTP + WebSocket upgrade to localhost:vncPort (websockify on
-		// 7000-7019). httputil.ReverseProxy supports WS upgrade since Go
-		// 1.12, so /websockify, /vnc_lite.html, and the noVNC static assets
-		// all flow through the same handler. The proxy instance is the one
-		// built above and shared with the same-origin path route. Auth-wrapped
-		// exactly like preview/agent-chat above; in legacy/Traefik mode that
-		// wrap is a no-op since SWE_SWE_PASSWORD is empty.
-		vncPP := vncProxyPort(vncPort)
-		vncHandler := newVNCPortHandler(sess, vncPP, vncReverseProxy, authPassword)
-		sess.trackProxyServer(
-			startProxyListener("vnc", sess.UUID, fmt.Sprintf(":%d", vncPP), vncHandler),
-			func(s *Session, srv *http.Server) { s.VNCProxyServer = srv })
-
-		// Files proxy at filesProxyPort (default 29000-29019). Plain
-		// reverse-proxy to the per-session md-serve on localhost:FilesPort
-		// (9000-9019); md-serve renders full pages, so no DebugHub/inject.js
-		// machinery is needed. Auth-wrapped exactly like preview/agent-chat
-		// above; in legacy/Traefik mode that wrap is a no-op since
-		// SWE_SWE_PASSWORD is empty.
-		filesTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", sess.FilesPort))
-		filesReverseProxy := httputil.NewSingleHostReverseProxy(filesTarget)
-		filesPP := filesProxyPort(sess.FilesPort)
-		filesHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
-			return scopeOwnsProxyPort(scope, filesPP, func(s *Session) int { return filesProxyPort(s.FilesPort) })
-		}, filesReverseProxy))
-		sess.trackProxyServer(
-			startProxyListener("files", sess.UUID, fmt.Sprintf(":%d", filesPP), filesHandler),
-			func(s *Session, srv *http.Server) { s.FilesProxyServer = srv })
 
 		// Public port: Traefik routes directly to the app (no swe-swe-server proxy needed)
 	}
@@ -5972,6 +5943,120 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 
 	log.Printf("Created new session: %s (assistant=%s, pid=%d, recording=%s)", sess.UUID, cfg.Name, cmd.Process.Pid, recordingUUID)
 	return sess, true, nil // new session
+}
+
+// perSessionProxyDeps carries what the per-session proxy LISTENERS need. It
+// exists so they can be skipped as one unit in single-port mode, separately
+// from the same-origin path routes on the main listener, which are registered
+// unconditionally -- they ARE single-port mode.
+type perSessionProxyDeps struct {
+	Session       *Session
+	PreviewTarget *url.URL
+	PreviewPort   int
+	AgentChatPort int
+	VNCPort       int
+	// VNCProxy is the instance shared with the same-origin path route, so the
+	// remote-backend Director and the keepalive wrap apply to both forms.
+	// Nil builds a fresh one (tests).
+	VNCProxy *httputil.ReverseProxy
+	// Hub is shared with the path-based preview proxy so MCP tools and debug
+	// WebSockets work whichever form the browser reached.
+	Hub *agentproxy.DebugHub
+}
+
+// startPerSessionProxyListeners binds this session's four cross-origin proxy
+// ports (preview, agent chat, VNC, files) and records each server on the
+// session so Close() can shut it down. Called only when singlePortMode is off.
+func startPerSessionProxyListeners(d perSessionProxyDeps) {
+	sess := d.Session
+	// Single-port mode: the operator has stated these ports cannot be reached
+	// from anywhere, so binding them would leave 80 listeners per box that
+	// nothing can ever reach. Every pane rides the same-origin path routes on
+	// the main listener instead -- those are registered unconditionally, they
+	// ARE single-port mode. See single_port.go.
+	if singlePortMode {
+		log.Printf("Single-port mode: session %s serves every pane from the main listener; no per-port proxy listeners bound", sess.UUID)
+		return
+	}
+	previewPort, acPort, vncPort := d.PreviewPort, d.AgentChatPort, d.VNCPort
+	previewTarget := d.PreviewTarget
+	sharedHub := d.Hub
+	vncReverseProxy := d.VNCProxy
+	if vncReverseProxy == nil {
+		vncReverseProxy = newVNCReverseProxy(sess, vncPort)
+	}
+	// Same upstream the path-based agent-chat route targets; the port form
+	// just skips the StripPrefix.
+	acTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", acPort))
+	// Start per-port listeners for port-based proxy mode.
+	// Port-based proxy uses empty BasePath (no URL rewriting) and shares
+	// the same DebugHub so MCP tools and debug WebSockets work in both modes.
+	// Preview host-demux: the port-based listener is what browsers hit at
+	// <reach>:proxyPort, so it carries the vhost ResolveTarget +
+	// CookieDomainRewrite hooks (see preview_vhost.go / ADR-0045). The
+	// path-based previewProxy above stays same-origin and unhooked.
+	portPreviewProxy, _ := agentproxy.New(agentproxy.Config{
+		Target:      previewTarget,
+		ToolPrefix:  "preview",
+		ThemeCookie: "swe-swe-theme",
+		Hub:         sharedHub,
+		ResolveTarget: func(inboundHost string) (*url.URL, string, bool) {
+			return previewResolveTarget(inboundHost, sess)
+		},
+		CookieDomainRewrite: previewCookieDomainRewrite,
+	})
+	// Tunnel mode safety: tunneld dials the per-port listeners directly
+	// without Traefik's ForwardAuth in front. Wrap each per-port handler
+	// in requireAuthCookie so the apex login cookie is validated before
+	// any traffic reaches the upstream. No-op when SWE_SWE_PASSWORD is
+	// empty (legacy compose mode where Traefik handles auth externally).
+	authPassword := os.Getenv("SWE_SWE_PASSWORD")
+
+	previewPP := previewProxyPort(previewPort)
+	previewHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+		return scopeOwnsProxyPort(scope, previewPP, func(s *Session) int { return previewProxyPort(s.PreviewPort) })
+	}, previewVhostPinHandler(sess, portPreviewProxy)))
+	sess.trackProxyServer(
+		startProxyListener("preview", sess.UUID, fmt.Sprintf(":%d", previewPP), previewHandler),
+		func(s *Session, srv *http.Server) { s.PreviewProxyServer = srv })
+
+	acPP := agentChatProxyPort(acPort)
+	acHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+		return scopeOwnsProxyPort(scope, acPP, func(s *Session) int { return agentChatProxyPort(s.AgentChatPort) })
+	}, agentChatProxyHandler(acTarget)))
+	sess.trackProxyServer(
+		startProxyListener("agent chat", sess.UUID, fmt.Sprintf(":%d", acPP), acHandler),
+		func(s *Session, srv *http.Server) { s.AgentChatProxyServer = srv })
+
+	// VNC proxy at vncProxyPort (default 27000-27019). Reverse-proxies
+	// HTTP + WebSocket upgrade to localhost:vncPort (websockify on
+	// 7000-7019). httputil.ReverseProxy supports WS upgrade since Go
+	// 1.12, so /websockify, /vnc_lite.html, and the noVNC static assets
+	// all flow through the same handler. The proxy instance is the one
+	// built above and shared with the same-origin path route. Auth-wrapped
+	// exactly like preview/agent-chat above; in legacy/Traefik mode that
+	// wrap is a no-op since SWE_SWE_PASSWORD is empty.
+	vncPP := vncProxyPort(vncPort)
+	vncHandler := newVNCPortHandler(sess, vncPP, vncReverseProxy, authPassword)
+	sess.trackProxyServer(
+		startProxyListener("vnc", sess.UUID, fmt.Sprintf(":%d", vncPP), vncHandler),
+		func(s *Session, srv *http.Server) { s.VNCProxyServer = srv })
+
+	// Files proxy at filesProxyPort (default 29000-29019). Plain
+	// reverse-proxy to the per-session md-serve on localhost:FilesPort
+	// (9000-9019); md-serve renders full pages, so no DebugHub/inject.js
+	// machinery is needed. Auth-wrapped exactly like preview/agent-chat
+	// above; in legacy/Traefik mode that wrap is a no-op since
+	// SWE_SWE_PASSWORD is empty.
+	filesTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", sess.FilesPort))
+	filesReverseProxy := httputil.NewSingleHostReverseProxy(filesTarget)
+	filesPP := filesProxyPort(sess.FilesPort)
+	filesHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
+		return scopeOwnsProxyPort(scope, filesPP, func(s *Session) int { return filesProxyPort(s.FilesPort) })
+	}, filesReverseProxy))
+	sess.trackProxyServer(
+		startProxyListener("files", sess.UUID, fmt.Sprintf(":%d", filesPP), filesHandler),
+		func(s *Session, srv *http.Server) { s.FilesProxyServer = srv })
 }
 
 // newVNCReverseProxy builds the per-session reverse proxy that fronts

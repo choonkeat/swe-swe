@@ -1,7 +1,7 @@
 # `--single-port`: stop opening the per-session proxy ports at all
 
 **Date**: 2026-09-22
-**Status**: planned, not started
+**Status**: phase 1 DONE; phases 2-4 pending
 **Follows**: `tasks/2026-09-22-path-based-agent-view-and-single-port-option.md`
 (DONE -- every pane, including the live Agent View, now has a same-origin path
 form and finds it by probing).
@@ -68,7 +68,37 @@ discovery.
 
 ---
 
-## Phase 1 -- Server: `-single-port` / `SWE_SINGLE_PORT`
+## Phase 1 -- Server: `-single-port` / `SWE_SINGLE_PORT` -- DONE
+
+**Landed**: `single_port.go` (the setting, the env precedence, the conflict
+check), `single_port_test.go`, and in `main.go` the `-single-port` flag, the
+boot-time conflict fail-fast, the omitted proxy-port keys in the status
+payload, and `startPerSessionProxyListeners` -- the four listeners extracted
+into one function that returns early in single-port mode.
+
+### Deviations from the plan below
+
+1. **Step 4 (skip the public port allocation) was dropped: there is nothing to
+   skip.** `publicPortFromPreview` DERIVES 5000+n from the preview port; no
+   allocator reserves it and `startProxyListener` never binds it. It reaches
+   the session only as the `PUBLIC_PORT` env var (an app may bind it) and the
+   status payload's `publicPort`, which the frontend uses solely for the
+   end-session "something is still running" check. Both stay.
+2. **The `if !singlePortMode` guard lives INSIDE
+   `startPerSessionProxyListeners`, not at the call site.** Same one branch,
+   but it is the seam the test drives, so "binds nothing" is asserted against
+   the function every caller uses rather than against a condition only
+   `getOrCreateSession` contains.
+3. **Under docker-compose the host ports are still published.** `init.go`
+   writes the `23000-23019` / `24000-24019` / `27000-27019` / `29000-29019` /
+   `5000-5019` ranges into the compose `ports:` block at init time, so
+   docker-proxy binds them on the host whatever the server does. In that
+   runtime the flag removes the in-container listeners (the host ports then
+   refuse), and the probe-skip and path-form benefits are unchanged; the
+   "80 externally-bound listeners become 0" claim holds fully only for
+   `--runtime=host`. Making compose omit those lines is a Phase 3 decision.
+
+### Steps (as planned)
 
 **Achieves**: in single-port mode no per-session proxy listener is bound, the
 status payload advertises no proxy ports, and an incompatible combination fails
