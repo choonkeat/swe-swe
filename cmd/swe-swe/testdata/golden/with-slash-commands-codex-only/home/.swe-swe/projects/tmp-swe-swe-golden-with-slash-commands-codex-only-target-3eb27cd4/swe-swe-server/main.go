@@ -5258,7 +5258,8 @@ func stopSessionMdServe(sess *Session) {
 }
 
 // findAvailablePortQuintuple finds a preview port and its derived agent chat,
-// public, CDP, and VNC ports that are not already allocated to an existing session.
+// public, CDP, and VNC ports that are not already allocated to an existing
+// session and that nothing is listening on (see clearSessionPorts).
 // Must be called while holding sessionsMu.
 // Returns (previewPort, agentChatPort, publicPort, cdpPort, vncPort, error).
 func findAvailablePortQuintuple() (int, int, int, int, int, error) {
@@ -5283,6 +5284,11 @@ func findAvailablePortQuintuple() (int, int, int, int, int, error) {
 			cdpPort += remoteCDPProxyOffset
 		}
 		vncPort := vncPortFromPreview(port)
+		// Nothing may already be listening on the slot: kill leftovers from
+		// ended sessions, skip the slot if anything else holds a port.
+		if !clearSessionPorts([]int{port, acPort, pubPort, cdpPort, vncPort, filesPortFromPreview(port)}) {
+			continue
+		}
 		return port, acPort, pubPort, cdpPort, vncPort, nil
 	}
 	return 0, 0, 0, 0, 0, fmt.Errorf("no available port quintuple in preview range %d-%d", previewPortStart, previewPortEnd)
@@ -8547,9 +8553,9 @@ func endSessionByUUID(sessionUUID string) error {
 	sessionsMu.Unlock()
 
 	// Collect all session ports for port-based cleanup after tree kill
-	sessionPorts := []int{session.PreviewPort, session.AgentChatPort, session.PublicPort, session.CDPPort, session.VNCPort}
+	sessionPorts := []int{session.PreviewPort, session.AgentChatPort, session.PublicPort, session.CDPPort, session.VNCPort, session.FilesPort}
 	for _, child := range childSessions {
-		sessionPorts = append(sessionPorts, child.PreviewPort, child.AgentChatPort, child.PublicPort, child.CDPPort, child.VNCPort)
+		sessionPorts = append(sessionPorts, child.PreviewPort, child.AgentChatPort, child.PublicPort, child.CDPPort, child.VNCPort, child.FilesPort)
 	}
 
 	// End child sessions first
@@ -9777,15 +9783,13 @@ func handleFilesReadyAPI(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ready":true}`))
 }
 
-// killProcessesOnPorts finds and kills any processes listening on the given
-// ports by parsing /proc/net/tcp. This is a last-resort cleanup for processes
-// that escaped both process group signals and /proc descendant tracking.
-func killProcessesOnPorts(ports []int) {
-	if len(ports) == 0 {
-		return
-	}
-
-	// Build a set of target ports (hex-encoded, as they appear in /proc/net/tcp)
+// listenersOnPorts returns, for each process listening on one of the given
+// ports, the ports it holds. It reads both /proc/net/tcp and /proc/net/tcp6:
+// Node and most dev servers bind "::" (dual-stack), which only shows up in
+// tcp6, so an IPv4-only scan misses exactly the processes most likely to
+// linger. Our own pid is included -- callers decide what that means. Returns
+// nil where /proc is unavailable (macOS dockerless).
+func listenersOnPorts(ports []int) map[int][]int {
 	targetPorts := make(map[int]bool)
 	for _, p := range ports {
 		if p != 0 {
@@ -9793,60 +9797,61 @@ func killProcessesOnPorts(ports []int) {
 		}
 	}
 	if len(targetPorts) == 0 {
-		return
+		return nil
 	}
 
-	// Parse /proc/net/tcp to find inodes of sockets listening on our ports.
+	// Find inodes of sockets listening on our ports.
 	// Format: sl local_address rem_address st tx_queue rx_queue ... inode
 	// State 0A = LISTEN
-	data, err := os.ReadFile("/proc/net/tcp")
-	if err != nil {
-		return
-	}
-
 	targetInodes := make(map[string]int) // inode string -> port
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 10 {
-			continue
-		}
-		// State must be LISTEN (0A)
-		if fields[3] != "0A" {
-			continue
-		}
-		// Parse port from local_address (format: hex_ip:hex_port)
-		addrParts := strings.SplitN(fields[1], ":", 2)
-		if len(addrParts) != 2 {
-			continue
-		}
-		port, err := strconv.ParseInt(addrParts[1], 16, 32)
+	for _, table := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		data, err := os.ReadFile(table)
 		if err != nil {
 			continue
 		}
-		if targetPorts[int(port)] {
-			targetInodes[fields[9]] = int(port)
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 10 {
+				continue
+			}
+			if fields[3] != "0A" {
+				continue
+			}
+			// local_address is hex_ip:hex_port (the ip is longer in tcp6)
+			colon := strings.LastIndex(fields[1], ":")
+			if colon < 0 {
+				continue
+			}
+			port, err := strconv.ParseInt(fields[1][colon+1:], 16, 32)
+			if err != nil {
+				continue
+			}
+			if targetPorts[int(port)] {
+				targetInodes[fields[9]] = int(port)
+			}
 		}
 	}
-
 	if len(targetInodes) == 0 {
-		return
+		return nil
 	}
 
 	// Scan /proc to find PIDs holding these socket inodes
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return
+		return nil
 	}
+	holders := make(map[int][]int)
 	for _, entry := range entries {
 		pid, err := strconv.Atoi(entry.Name())
-		if err != nil || pid == os.Getpid() {
-			continue // skip non-PID entries and our own process
+		if err != nil {
+			continue
 		}
 		fdDir := fmt.Sprintf("/proc/%d/fd", pid)
 		fds, err := os.ReadDir(fdDir)
 		if err != nil {
 			continue
 		}
+		seen := make(map[int]bool)
 		for _, fd := range fds {
 			link, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
 			if err != nil {
@@ -9857,15 +9862,106 @@ func killProcessesOnPorts(ports []int) {
 				continue
 			}
 			inode := link[len("socket:[") : len(link)-1]
-			if port, ok := targetInodes[inode]; ok {
-				log.Printf("[KILL] killProcessesOnPorts: sending SIGKILL to pid %d on port %d (server pid=%d)", pid, port, os.Getpid())
-				if err := syscall.Kill(pid, syscall.SIGKILL); err == nil {
-					log.Printf("Killed lingering process %d on port %d (session port cleanup)", pid, port)
-				}
-				break // one kill per PID is enough
+			if port, ok := targetInodes[inode]; ok && !seen[port] {
+				seen[port] = true
+				holders[pid] = append(holders[pid], port)
 			}
 		}
 	}
+	return holders
+}
+
+// processName returns /proc/<pid>/comm for log lines, or "?".
+func processName(pid int) string {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+	if err != nil {
+		return "?"
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// killProcessesOnPorts finds and kills any processes listening on the given
+// ports. This is a last-resort cleanup for processes that escaped both
+// process group signals and /proc descendant tracking.
+func killProcessesOnPorts(ports []int) {
+	for pid, held := range listenersOnPorts(ports) {
+		if pid == os.Getpid() {
+			continue
+		}
+		log.Printf("[KILL] killProcessesOnPorts: sending SIGKILL to pid %d (%s) on ports %v (server pid=%d)", pid, processName(pid), held, os.Getpid())
+		if err := syscall.Kill(pid, syscall.SIGKILL); err == nil {
+			log.Printf("Killed lingering process %d on ports %v (session port cleanup)", pid, held)
+		}
+	}
+}
+
+// isLeftoverFromEndedSession reports whether pid was started under this
+// server but no live session owns it any more: its parent chain reaches us
+// (we are a subreaper, so orphans of ended sessions are reparented here) and
+// no ancestor is registered to a session still in the sessions map. Anything
+// else -- the user's own programs in dockerless mode, a live session's app
+// that hardcodes a port -- is not ours to kill.
+// Must be called while holding sessionsMu.
+func isLeftoverFromEndedSession(pid int) bool {
+	self := os.Getpid()
+	if pid == self {
+		return false
+	}
+	for steps := 0; pid > 1 && steps < 64; steps++ {
+		pidToSidMu.RLock()
+		sid, ok := pidToSid[pid]
+		pidToSidMu.RUnlock()
+		if ok {
+			if _, live := sessions[sid]; live {
+				return false
+			}
+		}
+		data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
+		if err != nil {
+			return false
+		}
+		next := parsePPid(data)
+		if next == self {
+			return true
+		}
+		if next == 0 || next == pid {
+			return false
+		}
+		pid = next
+	}
+	return false
+}
+
+// clearSessionPorts makes sure nothing is listening on a candidate session's
+// ports. Leftovers from ended sessions are killed; anything else holding a
+// port (including this server itself) makes the slot unusable. Returns true
+// when every port is free. Must be called while holding sessionsMu.
+func clearSessionPorts(ports []int) bool {
+	holders := listenersOnPorts(ports)
+	if len(holders) == 0 {
+		return true
+	}
+	for pid, held := range holders {
+		if !isLeftoverFromEndedSession(pid) {
+			log.Printf("Port slot skipped: pid %d (%s) holds ports %v and is not a leftover from an ended session", pid, processName(pid), held)
+			return false
+		}
+	}
+	for pid, held := range holders {
+		log.Printf("[KILL] clearSessionPorts: sending SIGKILL to leftover pid %d (%s) on ports %v (server pid=%d)", pid, processName(pid), held, os.Getpid())
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			log.Printf("Failed to kill leftover pid %d: %v", pid, err)
+		}
+	}
+	// A killed process releases its sockets as it exits; give it a moment.
+	for i := 0; i < 20; i++ {
+		if len(listenersOnPorts(ports)) == 0 {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	log.Printf("Port slot skipped: ports %v still held after killing leftovers", ports)
+	return false
 }
 
 // --- MCP Orchestration Tools ---
