@@ -3,6 +3,7 @@ import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
+import { agentViewKnown, filesPaneKnown } from './modules/pane-availability.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -478,6 +479,9 @@ class TerminalUI extends HTMLElement {
         this.previewProxyPort = null;
         this.agentChatProxyPort = null;
         this.filesProxyPort = null;
+        // The real md-serve port (not its proxy): the signal that this
+        // session HAS a Files pane, in every mode.
+        this.filesPort = null;
         this.publicPort = null;
         this.cdpPort = null;
         this.vncPort = null;
@@ -2105,6 +2109,7 @@ class TerminalUI extends HTMLElement {
                 const prevPreviewProxyPort = this.previewProxyPort;
                 const prevVncProxyPort = this.vncProxyPort;
                 const prevFilesProxyPort = this.filesProxyPort;
+                const prevFilesPort = this.filesPort;
                 const prevPublicHostname = this.publicHostname;
                 this.previewPort = msg.previewPort || null;
                 this.updateUrlBarPrefix();
@@ -2113,6 +2118,10 @@ class TerminalUI extends HTMLElement {
                 this.previewProxyPort = msg.previewProxyPort || null;
                 this.agentChatProxyPort = msg.agentChatProxyPort || null;
                 this.filesProxyPort = msg.filesProxyPort || null;
+                // The real md-serve port. Unlike filesProxyPort it is
+                // advertised in every mode, so it is what says the Files pane
+                // exists (see modules/pane-availability.js).
+                this.filesPort = msg.filesPort || null;
                 this.publicPort = msg.publicPort || null;
                 this.cdpPort = msg.cdpPort || null;
                 this.vncPort = msg.vncPort || null;
@@ -2142,16 +2151,18 @@ class TerminalUI extends HTMLElement {
                 // and tooltip appear without waiting for an unrelated event.
                 if ((!prevPreviewProxyPort) !== (!this.previewProxyPort)
                     || (!prevVncProxyPort) !== (!this.vncProxyPort)
-                    || (!prevFilesProxyPort) !== (!this.filesProxyPort)) {
+                    || (!prevFilesProxyPort) !== (!this.filesProxyPort)
+                    || (!prevFilesPort) !== (!this.filesPort)) {
                     this._rerenderSlotTabs();
                     // Toggle the Files mobile-nav option in step with its
-                    // availability (filesProxyPort), mirroring how Agent View
-                    // toggles its option. switchMobileNav below then shows the
+                    // availability, mirroring how Agent View toggles its
+                    // option. switchMobileNav below then shows the
                     // popout button when Files is the selected pane.
                     const filesOpt = this.querySelector('.terminal-ui__mobile-nav-select option[value="files"]');
                     if (filesOpt) {
-                        filesOpt.hidden = !this.filesProxyPort;
-                        filesOpt.disabled = !this.filesProxyPort;
+                        const filesKnown = filesPaneKnown({ filesPort: this.filesPort, uuid: this.uuid });
+                        filesOpt.hidden = !filesKnown;
+                        filesOpt.disabled = !filesKnown;
                     }
                     const sel = this.querySelector('.terminal-ui__mobile-nav-select');
                     if (sel) this.switchMobileNav(sel.value);
@@ -2169,6 +2180,11 @@ class TerminalUI extends HTMLElement {
                 this.agentViewAvailable = msg.agentViewAvailable !== false;
                 if (prevAgentViewAvailable !== this.agentViewAvailable) {
                     this.setAgentViewTabVisible(this.agentViewAvailable);
+                    // This flag, not vncProxyPort, is now what makes the pane
+                    // "known" (see modules/pane-availability.js), so the tab
+                    // bar has to be rebuilt when it flips -- in single-port
+                    // mode it is the ONLY thing that ever flips for Agent View.
+                    this._rerenderSlotTabs();
                 }
                 // Browser (CDP chrome) just came online -- show the Agent View
                 // tab and auto-add it to its preset-defined home slot (same
@@ -2340,18 +2356,20 @@ class TerminalUI extends HTMLElement {
                         this.setPreviewURL(currentTarget);
                     }
                 }
-                // Load files once filesProxyPort arrives. If the user dragged
-                // the Files tab into a slot before the port was known,
+                // Load files once the pane is known to exist. If the user
+                // dragged the Files tab into a slot before that,
                 // _loadPaneIfNeeded('files') returned early (deferred) without
                 // marking it loaded; re-kick now so the iframe src gets set and
                 // the "Connecting to files..." placeholder clears.
                 // Probe which of the three Files forms this browser can
-                // actually reach, before anything needs the answer.
+                // actually reach, before anything needs the answer. Only worth
+                // doing when there IS a cross-origin form to probe: without a
+                // proxy port the path form wins uncontested.
                 if (this.filesProxyPort) this._resolveFilesBase();
                 // Same for Agent View: decide subdomain vs port vs path once,
                 // before anything needs the answer.
                 if (this.vncProxyPort) this._resolveBrowserViewBase();
-                if (this.filesProxyPort && this._slotForPane('files') && !this._paneLoaded.has('files')) {
+                if (filesPaneKnown({ filesPort: this.filesPort, uuid: this.uuid }) && this._slotForPane('files') && !this._paneLoaded.has('files')) {
                     this._loadPaneIfNeeded('files');
                 }
                 // YOLO mode state
@@ -6810,8 +6828,8 @@ class TerminalUI extends HTMLElement {
 
         (state.tabs || []).forEach(paneId => {
             // Panes that aren't known yet (agent-chat before/without its
-            // probe, files before filesProxyPort arrives, Agent View before
-            // VNC) don't get a tab -- they stay in state.tabs and appear
+            // probe, files before filesPort arrives, Agent View before the
+            // backend says it is available) don't get a tab -- they stay in state.tabs and appear
             // when availability flips; the WS status / probe handlers call
             // _rerenderSlotTabs on those transitions. This matters since
             // agent-chat and files ship in the classic preset defaults: a
@@ -6940,8 +6958,11 @@ class TerminalUI extends HTMLElement {
     // probed. agent-terminal / preview / shell are always known.
     _isPaneKnown(paneId) {
         if (paneId === 'agent-chat') return this._agentChatAvailable || !!this._agentChatProbing || !!this._agentChatPending;
-        if (paneId === 'browser') return !!this.vncProxyPort && this.agentViewAvailable !== false;
-        if (paneId === 'files') return !!this.filesProxyPort;
+        // Existence, not reachability: a pane gated on its PROXY port would
+        // vanish in single-port mode, where no proxy port is advertised at all
+        // (see modules/pane-availability.js).
+        if (paneId === 'browser') return agentViewKnown({ agentViewAvailable: this.agentViewAvailable, uuid: this.uuid });
+        if (paneId === 'files') return filesPaneKnown({ filesPort: this.filesPort, uuid: this.uuid });
         return true;
     }
 
@@ -7046,10 +7067,11 @@ class TerminalUI extends HTMLElement {
     // Synchronous, because three callers (the services list, the panel switch
     // and panePopoutUrl) need an answer at click time.
     getBrowserViewUrl() {
-        // No VNC port means this session has no Agent View backend at all --
-        // a different thing from a port the browser cannot reach. Callers
-        // treat null as "no such service", so keep returning it.
-        if (!this.vncProxyPort) return null;
+        // "No such service" is a different thing from "a port this browser
+        // cannot reach", and callers treat null as the former -- so ask the
+        // backend's own availability signal, not the proxy port, which
+        // single-port mode never advertises.
+        if (!agentViewKnown({ agentViewAvailable: this.agentViewAvailable, uuid: this.uuid })) return null;
         const loc = window.location;
         const v = new URL(import.meta.url).searchParams.get('v') || '';
         if (this._browserViewResolvedBase) {

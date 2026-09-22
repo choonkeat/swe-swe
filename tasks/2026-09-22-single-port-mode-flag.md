@@ -157,7 +157,35 @@ at boot rather than half-working.
 
 ---
 
-## Phase 2 -- Frontend: Agent View stops using its port as an existence check
+## Phase 2 -- Frontend: panes stop using their proxy port as an existence check -- DONE
+
+**Landed**: `static/modules/pane-availability.js` + its test (`agentViewKnown`,
+`filesPaneKnown`), the `filesPort` key in the status payload, the terminal-ui
+gates rewired onto both helpers, and a probe-count assertion in
+`proxy-base.test.js`.
+
+### Deviations from the plan below
+
+1. **Files needed the same fix, and the plan said it did not.** "Files needs no
+   frontend change at all" was checked against its URL builders, which do cope
+   with a missing port -- but `_isPaneKnown('files')` is `!!this.filesProxyPort`,
+   and so are the mobile-nav option and the WS handler's load kick. In
+   single-port mode the Files TAB would have disappeared exactly as Agent View
+   would. Its existence signal is the new `filesPort` (the real md-serve port,
+   advertised in every mode), which the server did not previously send.
+2. **The helpers live in a new `pane-availability.js`, not in
+   `url-builder.js`.** Neither is a URL builder, and `url-builder.test.js` is
+   already two files long.
+3. **`agentViewKnown` requires `agentViewAvailable === true`, not
+   `!== false`.** Undefined means no status frame has arrived, and the old
+   `vncProxyPort` co-gate was what kept the tab hidden until then; without it,
+   `!== false` would flash the tab on every page load.
+4. **Step 3's "headline" assertion was already true.** `resolveProxyBase`
+   marks the path form `trusted` and never probes it, so a path-only candidate
+   list already cost zero probes. The test is now written down rather than
+   assumed -- it was the one thing nothing asserted.
+
+### Steps (as planned)
 
 **Achieves**: with no proxy ports advertised, all four panes resolve to the
 path form immediately and no probe is issued at all.

@@ -1201,6 +1201,10 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"publicPort":         s.PublicPort,
 		"cdpPort":            s.CDPPort,
 		"vncPort":            s.VNCPort,
+		// The real md-serve port. Advertised in every mode, unlike
+		// filesProxyPort below, so the frontend can tell "this session has a
+		// Files pane" from "this browser can reach its proxy port".
+		"filesPort": s.FilesPort,
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":     s.BrowserStarted,

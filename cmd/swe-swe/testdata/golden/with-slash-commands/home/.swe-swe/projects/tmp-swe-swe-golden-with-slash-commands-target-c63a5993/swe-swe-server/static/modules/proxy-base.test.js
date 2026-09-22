@@ -108,6 +108,21 @@ test('returns null when even the path base is missing', async () => {
     assert.strictEqual(got, null);
 });
 
+// Single-port mode advertises no proxy ports, so both cross-origin candidates
+// are absent and only the path form is left. The promise of that mode is that
+// the pane appears with no wait at all -- and a probe on a DROP firewall costs
+// PROBE_TIMEOUT (5s) per pane, four panes deep. So: zero probes, not "a probe
+// that fails fast".
+test('with only the path form left, nothing is probed at all', async () => {
+    const seen = [];
+    const got = await resolveProxyBase(
+        proxyCandidates({ subdomainBase: null, portBase: null, pathBase: 'PATH' }),
+        fakeProbe([], seen)
+    );
+    assert.deepStrictEqual(got, { mode: 'path', base: 'PATH' });
+    assert.deepStrictEqual(seen, [], 'no probe was issued, so there is nothing to wait out');
+});
+
 test('tolerates an empty or absent candidate list', async () => {
     assert.strictEqual(await resolveProxyBase([], fakeProbe([])), null);
     assert.strictEqual(await resolveProxyBase(undefined, fakeProbe([])), null);
