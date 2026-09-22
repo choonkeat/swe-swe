@@ -227,7 +227,29 @@ path form immediately and no probe is issued at all.
 
 ---
 
-## Phase 3 -- `swe-swe init` passthrough + the setup page hands out the flag
+## Phase 3 -- `swe-swe init` passthrough + the setup page hands out the flag -- DONE
+
+**Landed**: `SWE_SINGLE_PORT=${SWE_SINGLE_PORT:-}` in both compose templates
+(`init.go`'s inline one and `templates/host/docker-compose.yml`), the setup
+page's `oneport` answer now emitting `SWE_SINGLE_PORT=1`, and the setup-page
+tests rewritten first.
+
+### Deviations from the plan below
+
+1. **The host-native runtime needed no change.** `dockerlessServerInvocation`
+   passes `os.Environ()` straight through, so `SWE_SINGLE_PORT=1 swe-swe up`
+   already reaches the server there.
+2. **Compose still publishes the port ranges** -- they are written into
+   `ports:` at init time and cannot be conditioned on a runtime variable. The
+   comment beside the new env line says so. Whether `swe-swe init` should grow
+   its own `--single-port` that omits those lines is the open question from
+   Phase 1's deviation 3.
+3. **`oneport` is no longer `ordinary()`**, so its script grew the `swe-swe
+   init` line and the env block. The old test asserted it was byte-identical to
+   `anyport`; it now asserts the flag is there, that `anyport` does NOT have
+   it, and that init comes first.
+
+### Steps (as planned)
 
 **Achieves**: `SWE_SINGLE_PORT=1 swe-swe up` reaches the server in every
 runtime, and the setup page's `oneport` answer produces it.

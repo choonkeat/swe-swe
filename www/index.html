@@ -578,6 +578,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
             <div class="consequence">
               <b>Works:</b> the terminal, Agent Chat, Files, the app preview and the live Agent View, all served from the one address you opened.<br>
               <b>Not available:</b> the separate web address for your app that other people can open without logging in. That is a second address by nature.<br>
+              <b>Also:</b> the per-session ports the other answers rely on are not opened at all, so there is nothing extra listening on this machine and no pane waits to find that out.<br>
               <b>One caveat:</b> every pane shares the page's address, so a web page opened in the Files pane can reach into the page around it.
             </div>
           </div>
@@ -799,16 +800,13 @@ code { font-family: var(--mono); color: var(--text-primary); }
   function wildcardRoute() { return state.reach === 'wildcard'; }
   function needsTunnel() { return state.reach === 'tunnel'; }
 
-  // Two answers need nothing added to the script: every port reachable, and
-  // exactly one port reachable. The second works because swe-swe falls back to
-  // a same-origin path for every pane -- preview, chat, files and the live
-  // Agent View -- so there is no flag to set.
-  function noExtraConfig() { return state.reach === 'anyport' || state.reach === 'oneport'; }
   function onePortOnly() { return state.reach === 'oneport'; }
 
   // "Ordinary" means a laptop with Docker and nothing to configure, which is
-  // what the home page already documents.
-  function ordinary() { return state.have === 'docker' && noExtraConfig(); }
+  // what the home page already documents. One fixed port is NOT ordinary any
+  // more: swe-swe would find the same-origin route by itself, but being told
+  // is what stops it opening the per-session proxy ports and probing them.
+  function ordinary() { return state.have === 'docker' && state.reach === 'anyport'; }
 
   // ---------- Script generation ----------
   var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
@@ -834,6 +832,9 @@ code { font-family: var(--mono); color: var(--text-primary); }
     if (wildcardRoute()) {
       e.push('SWE_PUBLIC_HOSTNAME=' + (state.wildcardDomain.trim() || 'the-box.example.com'));
     }
+    // Told, rather than discovered: swe-swe then opens no per-session proxy
+    // ports at all, and no pane waits on a reachability check first.
+    if (onePortOnly()) e.push('SWE_SINGLE_PORT=1');
     return e;
   }
 
@@ -987,9 +988,8 @@ code { font-family: var(--mono); color: var(--text-primary); }
     el('oneport-yes').hidden = !onePortOnly();
 
     // The one-port route rides the same-origin fallback for every pane, which
-    // is newer than the version the rest of this page needs -- so it keeps the
-    // note even though its script is the ordinary one.
-    el('version-note').hidden = ordinary() && !onePortOnly();
+    // is newer than the version the rest of this page needs.
+    el('version-note').hidden = ordinary();
     el('version-note-text').textContent = onePortOnly()
       ? 'Needs swe-swe 2.39.0 or newer.'
       : 'Needs swe-swe 2.38.0 or newer.';

@@ -1621,6 +1621,13 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       # hostname} on the ONE published port, so a box whose *.domain DNS
       # points at it needs no tunnel. Empty = off (the default).
       - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME:-}
+      # One reachable port and nothing else: bind no per-session proxy ports,
+      # advertise none, and serve every pane from this one listener with no
+      # reachability probe. Empty = off (the default). Note that the port
+      # ranges published above are written at init time, so docker still
+      # forwards them on the host; setting this stops anything inside the
+      # container from listening on them.
+      - SWE_SINGLE_PORT=${SWE_SINGLE_PORT:-}
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
       - PORT=${PORT:-}%s

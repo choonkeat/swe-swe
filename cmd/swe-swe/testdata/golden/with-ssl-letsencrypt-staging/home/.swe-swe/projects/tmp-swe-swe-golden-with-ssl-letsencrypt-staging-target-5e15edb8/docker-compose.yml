@@ -2157,6 +2157,13 @@ services:
       # hostname} on the ONE published port, so a box whose *.domain DNS
       # points at it needs no tunnel. Empty = off (the default).
       - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME:-}
+      # One reachable port and nothing else: bind no per-session proxy ports,
+      # advertise none, and serve every pane from this one listener with no
+      # reachability probe. Empty = off (the default). Note that the port
+      # ranges published above are written at init time, so docker still
+      # forwards them on the host; setting this stops anything inside the
+      # container from listening on them.
+      - SWE_SINGLE_PORT=${SWE_SINGLE_PORT:-}
       # Container-internal port range for Chrome DevTools Protocol (per-session)
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       # Container-internal port range for VNC browser view (per-session)
