@@ -564,6 +564,27 @@ code { font-family: var(--mono); color: var(--text-primary); }
       </div>
 
       <div class="radio-row">
+        <input type="radio" name="reach" id="reach-oneport" value="oneport">
+        <div>
+          <label class="r-label" for="reach-oneport">one fixed port, nothing else</label>
+          <div class="q-note">A rented server with a single port open, or a work network that blocks the rest. No wildcard, no tunnel, nothing to set up.</div>
+          <details class="how">
+            <summary>how do I check?</summary>
+            <div class="how-body">
+              <p class="q-note">From the browser you will actually use, try opening this machine on a second port &mdash; any port other than the one you reach it on. If that fails, pick this one.</p>
+            </div>
+          </details>
+          <div id="oneport-yes" hidden>
+            <div class="consequence">
+              <b>Works:</b> the terminal, Agent Chat, Files, the app preview and the live Agent View, all served from the one address you opened.<br>
+              <b>Not available:</b> the separate web address for your app that other people can open without logging in. That is a second address by nature.<br>
+              <b>One caveat:</b> every pane shares the page's address, so a web page opened in the Files pane can reach into the page around it.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="radio-row">
         <input type="radio" name="reach" id="reach-tailscale" value="tailscale">
         <div>
           <label class="r-label" for="reach-tailscale">Tailscale</label>
@@ -581,7 +602,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
         <input type="radio" name="reach" id="reach-tunnel" value="tunnel">
         <div>
           <label class="r-label" for="reach-tunnel">swe-swe-tunnel</label>
-          <div class="q-note">For a machine reachable on one fixed port and nothing else. It gives you wildcard subdomains of its own hostname and hands your ports back on those.</div>
+          <div class="q-note">The same machine as above, when you do want the parts that need their own address. It gives you wildcard subdomains of its own hostname and hands your ports back on those.</div>
           <details class="how">
             <summary>what do I need?</summary>
             <div class="how-body">
@@ -605,7 +626,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
     </div>
 
     <div class="warn" id="version-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
-      <p>Needs swe-swe 2.38.0 or newer.</p>
+      <p id="version-note-text">Needs swe-swe 2.38.0 or newer.</p>
     </div>
 
     <div class="code-block"><button class="copy-btn" type="button" aria-label="Copy">Copy</button><pre><code id="script-out"></code></pre></div>
@@ -778,9 +799,16 @@ code { font-family: var(--mono); color: var(--text-primary); }
   function wildcardRoute() { return state.reach === 'wildcard'; }
   function needsTunnel() { return state.reach === 'tunnel'; }
 
-  // "Ordinary" means a laptop with Docker and every port reachable, which is
+  // Two answers need nothing added to the script: every port reachable, and
+  // exactly one port reachable. The second works because swe-swe falls back to
+  // a same-origin path for every pane -- preview, chat, files and the live
+  // Agent View -- so there is no flag to set.
+  function noExtraConfig() { return state.reach === 'anyport' || state.reach === 'oneport'; }
+  function onePortOnly() { return state.reach === 'oneport'; }
+
+  // "Ordinary" means a laptop with Docker and nothing to configure, which is
   // what the home page already documents.
-  function ordinary() { return state.have === 'docker' && state.reach === 'anyport'; }
+  function ordinary() { return state.have === 'docker' && noExtraConfig(); }
 
   // ---------- Script generation ----------
   var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
@@ -956,8 +984,15 @@ code { font-family: var(--mono); color: var(--text-primary); }
     }
 
     el('wildcard-yes').hidden = state.reach !== 'wildcard';
+    el('oneport-yes').hidden = !onePortOnly();
 
-    el('version-note').hidden = ordinary();
+    // The one-port route rides the same-origin fallback for every pane, which
+    // is newer than the version the rest of this page needs -- so it keeps the
+    // note even though its script is the ordinary one.
+    el('version-note').hidden = ordinary() && !onePortOnly();
+    el('version-note-text').textContent = onePortOnly()
+      ? 'Needs swe-swe 2.39.0 or newer.'
+      : 'Needs swe-swe 2.38.0 or newer.';
     el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
     el('script-note').textContent = scriptNote();
     el('other-machine').hidden = !agentViewRemote();
