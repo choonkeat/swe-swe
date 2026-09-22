@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Tear down e2e test environment(s).
 #
-# Usage: ./scripts/e2e-down.sh [simple|compose]
+# Usage: ./scripts/e2e-down.sh [simple|compose|docker|single-port]
 #
 # If mode given, tears down that mode only.
 # If no mode given, tears down all running e2e environments.
@@ -34,14 +34,14 @@ teardown_mode() {
 }
 
 if [[ -n "$MODE" ]]; then
-    if [[ "$MODE" != "simple" && "$MODE" != "compose" && "$MODE" != "docker" ]]; then
-        echo "Usage: $0 [simple|compose|docker]"
+    if [[ "$MODE" != "simple" && "$MODE" != "compose" && "$MODE" != "docker" && "$MODE" != "single-port" ]]; then
+        echo "Usage: $0 [simple|compose|docker|single-port]"
         exit 1
     fi
     teardown_mode "$MODE"
 else
     # Tear down all
-    for m in simple compose docker; do
+    for m in simple compose docker single-port; do
         teardown_mode "$m"
     done
 fi

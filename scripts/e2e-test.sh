@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Run Playwright e2e tests against running e2e environment(s).
 #
-# Usage: ./scripts/e2e-test.sh [simple|compose|docker] [playwright-args...]
+# Usage: ./scripts/e2e-test.sh [simple|compose|docker|single-port] [playwright-args...]
 #
 # If mode given, tests that mode only.
 # If no mode given, tests all running e2e environments.
@@ -63,7 +63,7 @@ resolve_chromium() {
 }
 
 # If first arg is a known mode, shift it off; otherwise test all
-if [[ "$MODE" == "simple" || "$MODE" == "compose" || "$MODE" == "docker" ]]; then
+if [[ "$MODE" == "simple" || "$MODE" == "compose" || "$MODE" == "docker" || "$MODE" == "single-port" ]]; then
     shift
     PLAYWRIGHT_ARGS=("$@")
 else
@@ -127,7 +127,19 @@ test_mode() {
         fi
     fi
 
+    # Single-port tier: the specs that test DISCOVERY, or that need the
+    # per-port listeners, skip themselves on this. The new single-port.spec.js
+    # is the one that needs it set.
+    local single_port=""
+    if [[ "$mode" == "single-port" ]]; then
+        single_port=1
+    fi
+
     local rc=0
+    E2E_SINGLE_PORT="$single_port" \
+    E2E_PREVIEW_PORTS="$(grep "^PREVIEW_PORTS=" "$state_file" | cut -d= -f2-)" \
+    E2E_AGENT_CHAT_PORTS="$(grep "^AGENT_CHAT_PORTS=" "$state_file" | cut -d= -f2-)" \
+    E2E_VNC_PORTS="$(grep "^VNC_PORTS=" "$state_file" | cut -d= -f2-)" \
     PORT="$port" \
     SWE_SWE_PASSWORD="$password" \
     E2E_BASE_URL="${scheme}://${base_host}:${port}" \
@@ -158,7 +170,7 @@ FAILED=0
 if [[ -n "$MODE" ]]; then
     test_mode "$MODE" || FAILED=1
 else
-    for m in simple compose docker; do
+    for m in simple compose docker single-port; do
         test_mode "$m" || FAILED=1
     done
 fi

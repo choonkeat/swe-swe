@@ -6829,7 +6829,8 @@ class TerminalUI extends HTMLElement {
         (state.tabs || []).forEach(paneId => {
             // Panes that aren't known yet (agent-chat before/without its
             // probe, files before filesPort arrives, Agent View before the
-            // backend says it is available) don't get a tab -- they stay in state.tabs and appear
+            // backend says it is available) don't get a tab -- they stay in
+            // state.tabs and appear
             // when availability flips; the WS status / probe handlers call
             // _rerenderSlotTabs on those transitions. This matters since
             // agent-chat and files ship in the classic preset defaults: a

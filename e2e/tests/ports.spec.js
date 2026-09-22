@@ -63,6 +63,9 @@ async function fetchPortWithRetry(page, port, path, maxRetries) {
 // Single test that verifies all proxy ports from one session.
 // Uses one login + one session to avoid Traefik rate limiting in compose mode.
 test.describe('Port Connectivity', () => {
+  // Single-port mode advertises no proxy ports and binds none, which is the
+  // whole point of it; single-port.spec.js asserts that instead.
+  test.skip(!!process.env.E2E_SINGLE_PORT, 'no per-session proxy ports exist in single-port mode');
   test('preview, VNC, agent chat, and files proxy ports respond', async ({ page }) => {
     const ports = await createChatSessionAndGetPorts(page);
 

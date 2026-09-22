@@ -661,6 +661,11 @@ test.describe('terminal-ui tab switching', () => {
   });
 
   test('Files tab: present by default, activating it loads md-serve at filesProxyPort', async ({ page }) => {
+    // Every assertion below is about the cross-origin PORT form: the iframe
+    // src carrying :filesProxyPort, and md-serve answering on it. Single-port
+    // mode has no such port by design; single-port.spec.js asserts the pane is
+    // present and lands on its path form there instead.
+    test.skip(!!process.env.E2E_SINGLE_PORT, 'no filesProxyPort exists in single-port mode');
     // The Files pane (per-session md-serve) ships in the classic preset
     // defaults (left slot, alongside Agent Chat). Its tab only renders once
     // the WS Status payload delivers filesProxyPort (unknown panes are

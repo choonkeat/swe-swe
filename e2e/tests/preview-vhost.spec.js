@@ -22,6 +22,7 @@ const APP_PORT_B = parseInt(process.env.E2E_VHOST_APP_PORT_B || '15000', 10);
 
 test.describe('Preview host-demux', () => {
   test.skip(!REACH, 'set E2E_VHOST_REACH (+ fixtures) to run browser-level vhost e2e');
+  test.skip(!!process.env.E2E_SINGLE_PORT, 'the preview vhost is addressed through the per-port listener, which single-port mode does not bind');
 
   async function sessionPorts(page) {
     // assistant:'shell' -- this suite asserts on the preview proxy (host-demux /

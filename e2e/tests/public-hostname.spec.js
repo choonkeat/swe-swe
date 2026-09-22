@@ -55,6 +55,9 @@ async function waitForPane(page, url, label) {
 
 test.describe('wildcard host-demux serves {port}.{apex} on the main listener', () => {
   test.skip(APEX === '', 'needs SWE_PUBLIC_HOSTNAME (run `make test-e2e-wildcard`)');
+  // Wildcard mode routes {proxyPort}.{apex} to the per-port listeners, so the
+  // server refuses to start with both settings at once.
+  test.skip(!!process.env.E2E_SINGLE_PORT, 'wildcard mode and single-port mode are mutually exclusive');
 
   test('the panes answer on their subdomains, and nothing else does', async ({ page }) => {
     // Two panes, each with its own cold start, plus a dozen navigations.

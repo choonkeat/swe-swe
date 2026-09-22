@@ -277,7 +277,28 @@ runtime, and the setup page's `oneport` answer produces it.
 
 ---
 
-## Phase 4 -- e2e: a single-port tier
+## Phase 4 -- e2e: a single-port tier -- DONE
+
+**Landed**: `single-port` as a fourth mode in `e2e-up.sh` / `e2e-test.sh` /
+`e2e-down.sh` (port 9790, bands at +400), `make e2e-up-single-port` and
+`make test-e2e-single-port`, `E2E_SINGLE_PORT` skips on the four specs that are
+meaningless there, `e2e/tests/single-port.spec.js`, and the tier folded into
+`make test-full-e2e`.
+
+### Deviations from the plan below
+
+1. **The override uses `ports: !override`** to publish only the main port.
+   Without it docker-proxy would still accept a connection on 23400 and only
+   then find nothing inside -- which blunts the one assertion this tier exists
+   to make. It is also the honest recipe for a real single-port box, where
+   compose's generated `ports:` block is written at init time and cannot be
+   conditioned on a runtime variable.
+2. **The spec reads the bands from the environment** (`E2E_PREVIEW_PORTS` and
+   friends, exported by `e2e-test.sh` from the state file) rather than
+   hard-coding 23400, so moving the tier's ranges does not silently turn the
+   assertion into a test of an empty port.
+
+### Steps (as planned)
 
 **Achieves**: the whole default suite runs against an instance that was TOLD it
 has one port, plus the one assertion the browser-side test cannot make.

@@ -32,6 +32,10 @@ async function onlyMainPortReachable(context) {
 let testSessions = [];
 
 test.describe('single reachable port', () => {
+  // This spec is about swe-swe DISCOVERING the path form with nothing
+  // configured -- which is what almost every user is in. With the flag set
+  // there is nothing to discover, so it would be testing the flag instead.
+  test.skip(!!process.env.E2E_SINGLE_PORT, 'this proves discovery; single-port mode turns discovery off');
   test.beforeEach(async () => {
     testSessions = [];
   });

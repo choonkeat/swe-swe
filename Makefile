@@ -1,4 +1,4 @@
-.PHONY: build test test-js test-www test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-test e2e-down tunnel-up-manual tunnel-down-manual
+.PHONY: build test test-js test-www test-cli test-mcp-lazy-init test-mcp-cli-proxy check-mcp-cli-proxy-sync sync-mcp-cli-proxy test-mcp check-mcp-sync sync-mcp test-server test-git-sign-swe-swe test-swe-npx test-prctx check-prctx-sync sync-prctx test-swe-run check-swe-run-sync sync-swe-run test-e2e test-e2e-single-port test-e2e-llm test-full-e2e clean swe-swe-init swe-swe-test swe-swe-run swe-swe-stop swe-swe-clean golden-update deploy/digitalocean check-gomod-sync build-platforms publish publish-dry bump docs ascii-check ascii-fix e2e-up-simple e2e-up-compose e2e-up-single-port e2e-test e2e-down tunnel-up-manual tunnel-down-manual
 
 build: build-cli
 
@@ -345,6 +345,9 @@ e2e-up-simple:
 e2e-up-compose:
 	./scripts/e2e-up.sh compose
 
+e2e-up-single-port:
+	./scripts/e2e-up.sh single-port
+
 e2e-test:
 	./scripts/e2e-test.sh $(E2E_ARGS)
 
@@ -381,6 +384,16 @@ test-e2e-wildcard:
 	SWE_PUBLIC_HOSTNAME=lvh.me ./scripts/e2e-test.sh simple public-hostname.spec.js tunnel.spec.js \
 		|| (./scripts/e2e-down.sh simple; exit 1)
 	./scripts/e2e-down.sh simple
+
+# Single-port tier: an instance TOLD it has one reachable port
+# (SWE_SINGLE_PORT=1), with the proxy bands not even published by docker. Runs
+# the whole default suite -- the specs that are meaningless there skip
+# themselves on E2E_SINGLE_PORT -- plus single-port.spec.js, which asserts the
+# proxy ports answer nothing at all.
+test-e2e-single-port:
+	./scripts/e2e-up.sh single-port
+	./scripts/e2e-test.sh single-port $(E2E_ARGS) || (./scripts/e2e-down.sh single-port; exit 1)
+	./scripts/e2e-down.sh single-port
 
 test-e2e-llm:
 	./scripts/e2e-up.sh simple
@@ -443,7 +456,7 @@ test-e2e-agent-view-remote-tunnel-image:
 # (the fast unit gate). Mirrors the /swe-swe:test-full-e2e slash command.
 # Run before releases. Prerequisites run left-to-right and stop at the first
 # failure, so a late agent-view failure still means the earlier tiers passed.
-test-full-e2e: test test-e2e test-e2e-wildcard test-e2e-dockerless test-e2e-dockerless-mcpless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
+test-full-e2e: test test-e2e test-e2e-single-port test-e2e-wildcard test-e2e-dockerless test-e2e-dockerless-mcpless test-e2e-agent-view-remote test-e2e-agent-view-remote-command test-e2e-agent-view-remote-tunnel
 	@echo "✓ full e2e suite passed (unit + container e2e + dockerless + agent-view-remote)"
 
 # --- Manual tunnel-mode test ---

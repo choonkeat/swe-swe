@@ -3,15 +3,17 @@ set -euo pipefail
 
 # Bring up an e2e test environment in the specified mode.
 #
-# Usage: ./scripts/e2e-up.sh <simple|compose|docker>
+# Usage: ./scripts/e2e-up.sh <simple|compose|docker|single-port>
 #
-# simple  - dockerfile-only mode (no Traefik), port 9780
-# compose - Traefik compose mode, port 9770
-# docker  - with Docker socket access (--with-docker), port 9760
+# simple      - dockerfile-only mode (no Traefik), port 9780
+# compose     - Traefik compose mode, port 9770
+# docker      - with Docker socket access (--with-docker), port 9760
+# single-port - dockerfile-only, TOLD it has one port (SWE_SINGLE_PORT=1),
+#               port 9790, and nothing else published
 
 MODE="${1:-}"
-if [[ "$MODE" != "simple" && "$MODE" != "compose" && "$MODE" != "docker" ]]; then
-    echo "Usage: $0 <simple|compose|docker>"
+if [[ "$MODE" != "simple" && "$MODE" != "compose" && "$MODE" != "docker" && "$MODE" != "single-port" ]]; then
+    echo "Usage: $0 <simple|compose|docker|single-port>"
     exit 1
 fi
 
@@ -37,6 +39,18 @@ if [[ "$MODE" == "simple" ]]; then
     PUBLIC_PORTS="5200-5229"
     CDP_PORTS="6200-6229"
     VNC_PORTS="7200-7229"
+    INIT_EXTRA_FLAGS=""
+elif [[ "$MODE" == "single-port" ]]; then
+    # Same shape as simple, one band further out, plus SWE_SINGLE_PORT=1.
+    # The whole point is that NOTHING in these ranges is ever bound -- they
+    # are reserved so a stray listener would collide loudly rather than
+    # quietly answer a test that expects silence.
+    E2E_PORT=${E2E_PORT:-9790}
+    PREVIEW_PORTS="3400-3429"
+    AGENT_CHAT_PORTS="4400-4429"
+    PUBLIC_PORTS="5400-5429"
+    CDP_PORTS="6400-6429"
+    VNC_PORTS="7400-7429"
     INIT_EXTRA_FLAGS=""
 elif [[ "$MODE" == "docker" ]]; then
     E2E_PORT=9760
@@ -174,7 +188,32 @@ fi
 # (which the live swe-swe-server does), it would override the .env file.
 # An explicit `- SWE_FOO=bar` line in the override env list wins over the
 # substitution form in the base, regardless of what the shell exports.
-if [[ "$MODE" == "simple" ]]; then
+if [[ "$MODE" == "single-port" ]]; then
+    # ports: !override replaces the generated list instead of adding to it, so
+    # the proxy bands are not published at all. Without it docker-proxy would
+    # still accept a connection on 23400 and only then discover nothing is
+    # listening inside -- which is precisely the difference single-port mode
+    # exists to make, and the assertion single-port.spec.js makes.
+    cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
+# Auto-generated for sibling-container e2e testing (single-port mode)
+services:
+  swe-swe:
+    ports: !override
+      - "${E2E_PORT}:${E2E_PORT}"
+    environment:
+      - SWE_SWE_PASSWORD=${E2E_PASSWORD}
+      - SWE_SINGLE_PORT=1
+      - SWE_PREVIEW_PORTS=${PREVIEW_PORTS}
+      - SWE_AGENT_CHAT_PORTS=${AGENT_CHAT_PORTS}
+      - SWE_PUBLIC_PORTS=${PUBLIC_PORTS}
+      - SWE_CDP_PORTS=${CDP_PORTS}
+      - SWE_VNC_PORTS=${VNC_PORTS}
+    volumes:
+      - ${HOST_TEST_STACK_DIR}:/workspace
+      - ${HOST_TEST_STACK_DIR}/.swe-swe/worktrees:/worktrees
+      - ${HOST_PROJECT_PATH}home:/home/app
+EOF
+elif [[ "$MODE" == "simple" ]]; then
     cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
 # Auto-generated for sibling-container e2e testing (simple mode)
 services:
@@ -345,6 +384,10 @@ PASSWORD=$E2E_PASSWORD
 PROJECT_PATH=$PROJECT_PATH
 HOST_IP=$HOST_IP
 SCHEME=$SCHEME
+PREVIEW_PORTS=$PREVIEW_PORTS
+AGENT_CHAT_PORTS=$AGENT_CHAT_PORTS
+VNC_PORTS=$VNC_PORTS
+PROXY_PORT_OFFSET=20000
 EOF
 
 echo "=== e2e-up complete: ${MODE} mode running at ${SCHEME}://${HOST_IP}:${E2E_PORT}/ ==="
