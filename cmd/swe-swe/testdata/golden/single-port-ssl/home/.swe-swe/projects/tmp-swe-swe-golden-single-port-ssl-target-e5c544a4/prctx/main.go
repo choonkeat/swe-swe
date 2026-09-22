@@ -1,0 +1,566 @@
+// Command prctx is a standalone, provider-agnostic helper for working a GitHub
+// PR or GitLab MR locally: pull the review (diff lives in the worktree via git;
+// comments come here), stage replies/comments/resolves, then flush them back
+// upstream. Verdicts (approve/reject) are separate atomic commands.
+//
+// It knows nothing about swe-swe; swe-swe only supplies the token (via env,
+// from the credentials modal) and thin slash commands that shell out.
+//
+// Boundaries:
+//   - The CLI never runs git write commands. `git push` is your separate step.
+//   - It only READS git (HEAD sha) to warn about unpushed local commits before
+//     flush.
+package main
+
+import (
+	"fmt"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "prctx: "+err.Error())
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	args = extractTokenEnv(args)
+	if len(args) == 0 {
+		usage()
+		return fmt.Errorf("no command given")
+	}
+	cmd, rest := args[0], args[1:]
+	switch cmd {
+	case "fetch":
+		return cmdFetch(rest)
+	case "show":
+		return cmdShow(rest)
+	case "reply":
+		return cmdReply(rest)
+	case "comment":
+		return cmdComment(rest)
+	case "resolve":
+		return cmdResolve(rest)
+	case "drop":
+		return cmdDrop(rest)
+	case "flush":
+		return cmdFlush(rest)
+	case "approve":
+		return cmdVerdict(rest, true)
+	case "reject":
+		return cmdVerdict(rest, false)
+	case "-h", "--help", "help":
+		usage()
+		return nil
+	default:
+		usage()
+		return fmt.Errorf("unknown command %q", cmd)
+	}
+}
+
+func usage() {
+	fmt.Fprint(os.Stderr, `prctx - review a GitHub PR / GitLab MR from the terminal
+
+Use it to read the review comments on a PR/MR, answer them, and post the answers
+back. Everything you stage is local until you flush, so drafting is always safe.
+The diff itself is NOT here -- read that with git (the branch is in your
+worktree); prctx carries the conversation.
+
+Typical session -- copy this shape:
+
+  prctx fetch https://github.com/o/r/pull/42   # 1. pull threads, prints them
+  prctx show --json                            # 2. machine-readable, for deciding
+  prctx reply $ID "Fixed in abc1234."          # 3. stage answers (nothing sent)
+  prctx resolve $ID                            #    stage "mark resolved"
+  prctx comment src/main.go:88 "Leaks here."   #    stage a NEW comment
+  prctx show                                   # 4. review what you staged
+  prctx flush                                  # 5. post it all upstream
+  prctx approve --body "LGTM"                  # 6. optional verdict
+
+$ID above is a thread id copied verbatim from fetch/show output.
+
+Read:
+  prctx fetch <pr-url|number>          pull review threads into local state, then show
+  prctx show [<pr>] [--json]           render current threads + what you staged
+
+Stage (local only, nothing is sent until flush):
+  prctx reply [<pr>] <thread-id> <body>        answer an existing thread
+  prctx comment [<pr>] <file>:<line> <body>    start a new thread on a line
+  prctx resolve [<pr>] <thread-id>             mark a thread resolved
+  prctx drop [<pr>] <thread-id|draft-id>       unstage a reply/resolve/comment
+
+Send:
+  prctx flush [<pr>] [--force]         post staged replies/comments/resolves
+  prctx approve [<pr>] [--body <text>] set verdict: approve
+  prctx reject  [<pr>] [--body <text>] set verdict: request changes
+
+Arguments:
+  <pr>          a PR/MR url, or a bare number resolved against the git "origin"
+                remote. Omit it entirely to use the last-fetched PR.
+  <thread-id>   the opaque id on a "## thread <id>" line from fetch/show (also
+                threads[].id in --json). Provider-native and long -- copy it,
+                do not retype it.
+  <draft-id>    the "d<N>" id printed when a comment is staged (d1, d2, ...),
+                also shown in the "## staged new comments" section.
+  <body>        quote it. Remaining words are joined with spaces, so an unquoted
+                body still works, but shell metacharacters will not survive.
+  <file>:<line> path relative to the repo root, line number in the NEW file.
+
+Notes for agents:
+  - Nothing reaches the server until flush / approve / reject. reply, comment,
+    resolve and drop are pure local staging -- they need no token, and you can
+    re-run them freely to correct yourself before flushing.
+  - Prefer "show --json": threads[].id, .path, .line, .body, .pending_reply,
+    .pending_resolve, and drafts[] are the fields worth reading.
+  - fetch is re-runnable and preserves anything you staged but did not flush.
+  - flush is idempotent -- an already-posted reply is stamped and skipped, so a
+    retry after a partial failure will not double-post.
+  - flush refuses when your local HEAD has moved since fetch, because comments
+    anchor to the fetched state, not your local edits. Push, re-fetch, and
+    re-stage -- or pass --force if you know the anchors still hold.
+  - prctx never writes to git. "git push" is always your own separate step.
+  - State lives in $XDG_STATE_HOME/prctx (default ~/.local/state/prctx), keyed
+    by host and repo, so several PRs can be in flight at once.
+
+Global flags:
+  --token-env NAME   read the token from env var NAME instead of the provider
+                     default (GITHUB_TOKEN/GH_TOKEN, GITLAB_TOKEN). May appear
+                     before or after the command.
+
+Env & token permissions:
+  GITHUB_TOKEN (or GH_TOKEN) for GitHub:
+    - fine-grained PAT: "Pull requests: Read and write" (+ "Contents: Read").
+      Read-only (fetch/show) works with just "Read".
+    - classic PAT: "repo" scope (or "public_repo" for public repos only).
+  GITLAB_TOKEN for GitLab:
+    - "api" scope (read + write). "read_api" is enough for fetch/show only.
+  Staging (reply/comment/resolve/drop) is local and needs no token;
+  only flush/approve/reject write to the server.
+
+Self-hosted / custom domains:
+  Any domain works. A full PR/MR url is self-describing (/pull/ vs
+  /-/merge_requests/), as are hosts named github.* or gitlab.*. For anything
+  else -- e.g. bare numbers against https://git.corp.example -- declare it:
+    PRCTX_GITHUB_HOSTS=git.corp.example,code.corp.example
+    PRCTX_GITLAB_HOSTS=scm.corp.example
+  API roots default to <host>/api/v3 + <host>/api/graphql (GitHub Enterprise)
+  and <host>/api/v4 (GitLab). Override if your install differs:
+    PRCTX_GITHUB_API_BASE=https://git.corp.example/api/v3
+    PRCTX_GITHUB_GRAPHQL_URL=https://git.corp.example/api/graphql
+    PRCTX_GITLAB_API_BASE=https://scm.corp.example/gitlab/api/v4
+`)
+}
+
+// providerFor selects the adapter for a ref. Any domain works -- github.com and
+// gitlab.com are only the defaults. Resolution order, most explicit first:
+//
+//  1. PRCTX_GITHUB_HOSTS / PRCTX_GITLAB_HOSTS -- comma-separated host lists.
+//  2. The URL shape the ref was parsed from (/pull/ vs /-/merge_requests/).
+//  3. Host-name heuristics for the well-known and conventionally-named hosts.
+//
+// A bare-number ref on a self-hosted host with an unconventional name reaches
+// neither 2 nor 3, which is exactly what the env vars are for.
+func providerFor(ref PRRef) (Provider, error) {
+	switch {
+	case hostListed(os.Getenv("PRCTX_GITHUB_HOSTS"), ref.Host):
+		return githubProvider{}, nil
+	case hostListed(os.Getenv("PRCTX_GITLAB_HOSTS"), ref.Host):
+		return gitlabProvider{}, nil
+	}
+	switch ref.Kind {
+	case kindGitHub:
+		return githubProvider{}, nil
+	case kindGitLab:
+		return gitlabProvider{}, nil
+	}
+	switch {
+	case ref.Host == "github.com" || strings.HasPrefix(ref.Host, "github."):
+		return githubProvider{}, nil
+	case ref.Host == "gitlab.com" || strings.HasPrefix(ref.Host, "gitlab."):
+		return gitlabProvider{}, nil
+	}
+	return nil, fmt.Errorf("cannot tell whether %q is GitHub or GitLab -- "+
+		"set PRCTX_GITHUB_HOSTS=%s or PRCTX_GITLAB_HOSTS=%s (comma-separated), "+
+		"or pass the full PR/MR url instead of a bare number", ref.Host, ref.Host, ref.Host)
+}
+
+// hostListed reports whether host appears in a comma-separated env var value.
+// Matching is case-insensitive and tolerates spaces and a scheme prefix, so
+// both "git.corp.example" and "https://git.corp.example" are accepted.
+func hostListed(list, host string) bool {
+	if list == "" || host == "" {
+		return false
+	}
+	host = strings.ToLower(host)
+	for _, entry := range strings.Split(list, ",") {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		entry = strings.TrimPrefix(strings.TrimPrefix(entry, "https://"), "http://")
+		entry = strings.TrimSuffix(entry, "/")
+		if entry != "" && entry == host {
+			return true
+		}
+	}
+	return false
+}
+
+// tokenEnvOverride names the env var prctx reads the API token from, set by the
+// global --token-env flag. It takes precedence over the provider defaults
+// (GITHUB_TOKEN/GH_TOKEN, GITLAB_TOKEN).
+var tokenEnvOverride string
+
+// extractTokenEnv pulls the global "--token-env NAME" / "--token-env=NAME" flag
+// out of args -- it may appear anywhere, before or after the command -- and
+// records it in tokenEnvOverride. The remaining args are returned for dispatch.
+func extractTokenEnv(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--token-env":
+			if i+1 < len(args) {
+				tokenEnvOverride = strings.TrimSpace(args[i+1])
+				i++
+			}
+		case strings.HasPrefix(a, "--token-env="):
+			tokenEnvOverride = strings.TrimSpace(strings.TrimPrefix(a, "--token-env="))
+		default:
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// lookupToken returns the first non-empty, trimmed value among the --token-env
+// override (when set) followed by the provider's default env names. The second
+// return value is a "/"-joined list of the names consulted, for error messages;
+// it is empty on success.
+func lookupToken(defaults ...string) (token, tried string) {
+	names := defaults
+	if tokenEnvOverride != "" {
+		names = append([]string{tokenEnvOverride}, defaults...)
+	}
+	for _, n := range names {
+		if v := strings.TrimSpace(os.Getenv(n)); v != "" {
+			return v, ""
+		}
+	}
+	return "", strings.Join(names, " / ")
+}
+
+var reDigits = regexp.MustCompile(`^\d+$`)
+
+// isRefToken reports whether arg looks like a PR ref (url or bare number) as
+// opposed to a thread id (PRRT_...), file:line, or draft id (d1).
+func isRefToken(arg string) bool {
+	return reURL.MatchString(arg) || reDigits.MatchString(arg)
+}
+
+// splitRef resolves the optional leading <pr> argument. If present it is parsed
+// and recorded as current; otherwise the last-fetched ref is used. Returns the
+// ref and the remaining (non-ref) args.
+func splitRef(args []string) (PRRef, []string, error) {
+	if len(args) > 0 && isRefToken(args[0]) {
+		ref, err := parseRef(args[0])
+		if err != nil {
+			return PRRef{}, nil, err
+		}
+		_ = saveCurrent(ref)
+		return ref, args[1:], nil
+	}
+	ref, err := loadCurrent()
+	return ref, args, err
+}
+
+func cmdFetch(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: prctx fetch <pr-url|number>")
+	}
+	ref, err := parseRef(args[0])
+	if err != nil {
+		return err
+	}
+	prov, err := providerFor(ref)
+	if err != nil {
+		return err
+	}
+	rev, err := prov.Fetch(ref)
+	if err != nil {
+		return err
+	}
+
+	// Preserve any locally staged drafts/replies across a re-fetch.
+	s := &State{Ref: ref}
+	if prior, err := loadState(ref); err == nil {
+		s.Drafts = prior.Drafts
+		mergePending(rev.Threads, prior.Threads)
+	}
+	s.Branch = rev.Branch
+	s.BaseSHA = rev.BaseSHA
+	s.StartSHA = rev.StartSHA
+	s.HeadAtFetch = rev.HeadSHA
+	s.Threads = rev.Threads
+	s.Notes = rev.Notes
+
+	if err := saveState(s); err != nil {
+		return err
+	}
+	if err := saveCurrent(ref); err != nil {
+		return err
+	}
+	render(os.Stdout, s)
+	return nil
+}
+
+// mergePending carries staged-but-not-flushed reply/resolve drafts from prior
+// state onto freshly fetched threads (matched by thread ID).
+func mergePending(fresh, prior []Thread) {
+	by := map[string]Thread{}
+	for _, t := range prior {
+		by[t.ID] = t
+	}
+	for i := range fresh {
+		if p, ok := by[fresh[i].ID]; ok {
+			fresh[i].PendingReply = p.PendingReply
+			fresh[i].PendingResolve = p.PendingResolve
+			fresh[i].PostedReplyID = p.PostedReplyID
+		}
+	}
+}
+
+func cmdShow(args []string) error {
+	asJSON := false
+	rest := args[:0:0]
+	for _, a := range args {
+		if a == "--json" {
+			asJSON = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	ref, _, err := splitRef(rest)
+	if err != nil {
+		return err
+	}
+	s, err := loadState(ref)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		return renderJSON(os.Stdout, s)
+	}
+	render(os.Stdout, s)
+	return nil
+}
+
+func cmdReply(args []string) error {
+	ref, rest, err := splitRef(args)
+	if err != nil {
+		return err
+	}
+	if len(rest) < 2 {
+		return fmt.Errorf("usage: prctx reply [<pr>] <thread-id> <body>")
+	}
+	threadID := rest[0]
+	body := strings.Join(rest[1:], " ")
+	s, err := loadState(ref)
+	if err != nil {
+		return err
+	}
+	t := findThread(s, threadID)
+	if t == nil {
+		return fmt.Errorf("no thread %q in local state (run `prctx show`)", threadID)
+	}
+	t.PendingReply = body
+	if err := saveState(s); err != nil {
+		return err
+	}
+	fmt.Printf("staged reply to thread %s\n", threadID)
+	return nil
+}
+
+func cmdComment(args []string) error {
+	ref, rest, err := splitRef(args)
+	if err != nil {
+		return err
+	}
+	if len(rest) < 2 {
+		return fmt.Errorf("usage: prctx comment [<pr>] <file>:<line> <body>")
+	}
+	path, line, err := parseFileLine(rest[0])
+	if err != nil {
+		return err
+	}
+	body := strings.Join(rest[1:], " ")
+	s, err := loadState(ref)
+	if err != nil {
+		return err
+	}
+	d := Draft{ID: nextDraftID(s), Path: path, Line: line, Body: body}
+	s.Drafts = append(s.Drafts, d)
+	if err := saveState(s); err != nil {
+		return err
+	}
+	fmt.Printf("staged comment %s -> %s:%d\n", d.ID, path, line)
+	return nil
+}
+
+func cmdResolve(args []string) error {
+	ref, rest, err := splitRef(args)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: prctx resolve [<pr>] <thread-id>")
+	}
+	s, err := loadState(ref)
+	if err != nil {
+		return err
+	}
+	t := findThread(s, rest[0])
+	if t == nil {
+		return fmt.Errorf("no thread %q in local state", rest[0])
+	}
+	t.PendingResolve = true
+	if err := saveState(s); err != nil {
+		return err
+	}
+	fmt.Printf("staged resolve for thread %s\n", rest[0])
+	return nil
+}
+
+func cmdDrop(args []string) error {
+	ref, rest, err := splitRef(args)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: prctx drop [<pr>] <thread-id|draft-id>")
+	}
+	id := rest[0]
+	s, err := loadState(ref)
+	if err != nil {
+		return err
+	}
+	if t := findThread(s, id); t != nil {
+		t.PendingReply = ""
+		t.PendingResolve = false
+		if err := saveState(s); err != nil {
+			return err
+		}
+		fmt.Printf("dropped staged reply/resolve on thread %s\n", id)
+		return nil
+	}
+	for i, d := range s.Drafts {
+		if d.ID == id {
+			s.Drafts = append(s.Drafts[:i], s.Drafts[i+1:]...)
+			if err := saveState(s); err != nil {
+				return err
+			}
+			fmt.Printf("dropped draft %s\n", id)
+			return nil
+		}
+	}
+	return fmt.Errorf("no thread or draft %q in local state", id)
+}
+
+func cmdFlush(args []string) error {
+	force := false
+	rest := args[:0:0]
+	for _, a := range args {
+		if a == "--force" {
+			force = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	ref, rest, err := splitRef(rest)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 0 {
+		return fmt.Errorf("usage: prctx flush [<pr>] [--force]")
+	}
+	prov, err := providerFor(ref)
+	if err != nil {
+		return err
+	}
+	s, err := loadState(ref)
+	if err != nil {
+		return err
+	}
+	return flush(os.Stdout, prov, s, force)
+}
+
+func cmdVerdict(args []string, approve bool) error {
+	var body string
+	rest := args[:0:0]
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--body" && i+1 < len(args) {
+			body = args[i+1]
+			i++
+			continue
+		}
+		rest = append(rest, args[i])
+	}
+	ref, rest, err := splitRef(rest)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 0 {
+		return fmt.Errorf("unexpected arguments: %v", rest)
+	}
+	prov, err := providerFor(ref)
+	if err != nil {
+		return err
+	}
+	if approve {
+		if err := prov.Approve(ref, body); err != nil {
+			return err
+		}
+		fmt.Printf("approved %s/%s#%d\n", ref.Owner, ref.Repo, ref.Number)
+		return nil
+	}
+	if err := prov.Reject(ref, body); err != nil {
+		return err
+	}
+	fmt.Printf("requested changes on %s/%s#%d\n", ref.Owner, ref.Repo, ref.Number)
+	return nil
+}
+
+func findThread(s *State, id string) *Thread {
+	for i := range s.Threads {
+		if s.Threads[i].ID == id {
+			return &s.Threads[i]
+		}
+	}
+	return nil
+}
+
+// parseFileLine splits "path/to/file:123" into ("path/to/file", 123).
+func parseFileLine(arg string) (string, int, error) {
+	i := strings.LastIndex(arg, ":")
+	if i < 0 {
+		return "", 0, fmt.Errorf("expected <file>:<line>, got %q", arg)
+	}
+	line, err := strconv.Atoi(arg[i+1:])
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid line number in %q: %w", arg, err)
+	}
+	return arg[:i], line, nil
+}
+
+// nextDraftID returns the next free draft id (d1, d2, ...).
+func nextDraftID(s *State) string {
+	max := 0
+	for _, d := range s.Drafts {
+		if strings.HasPrefix(d.ID, "d") {
+			if n, err := strconv.Atoi(d.ID[1:]); err == nil && n > max {
+				max = n
+			}
+		}
+	}
+	return "d" + strconv.Itoa(max+1)
+}

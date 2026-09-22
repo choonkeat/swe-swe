@@ -1,0 +1,157 @@
+services:
+  traefik:
+    image: traefik:v2.11
+    command:
+      - "--api=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=${PROJECT_NAME}_swe-network"
+      # Only discover containers with matching project label (enables multi-project isolation)
+      - "--providers.docker.constraints=Label(`swe.project`,`${PROJECT_NAME}`)"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--log.level=WARN"
+      - "--entrypoints.websecure.address=:7443"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=60s"
+      # Preview proxy entrypoints (per-session)
+      # Agent chat proxy entrypoints (per-session)
+      # Public proxy entrypoints (per-session, no auth)
+      # VNC proxy entrypoints (per-session browser view)
+      # Files proxy entrypoints (per-session md-serve view)
+    ports:
+      - "${SWE_PORT:-1977}:7443"
+      # Preview proxy ports (per-session)
+      # Agent chat proxy ports (per-session)
+      # Public proxy ports (per-session, no auth)
+      # VNC proxy ports (per-session browser view)
+      # Files proxy ports (per-session md-serve view)
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik-dynamic.yml:/etc/traefik/dynamic.yml:ro"
+      - "${HOME}/.swe-swe/tls:/etc/traefik/tls:ro"
+    labels:
+      # Project label for multi-instance isolation
+      - "swe.project=${PROJECT_NAME}"
+    environment:
+      # SWE_PORT is referenced by traefik-dynamic.yml's forwardauth address
+      # via {{ env "SWE_PORT" }} so the auth check follows the swe-swe-server bind.
+      - SWE_PORT=${SWE_PORT:-1977}
+    networks:
+      - swe-network
+    depends_on:
+      - swe-swe
+    restart: unless-stopped
+
+  swe-swe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      - "swe.project=${PROJECT_NAME}"
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.priority=10"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.middlewares=forwardauth@file"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-swe.service=${PROJECT_NAME}-swe-swe"
+      - "traefik.http.services.${PROJECT_NAME}-swe-swe.loadbalancer.server.port=${SWE_PORT:-1977}"
+      # Auth login/verify routes — no ForwardAuth (otherwise redirect loop)
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.rule=PathPrefix(`/swe-swe-auth`)"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.priority=200"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.middlewares=login-ratelimit@file"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.tls=true"
+      - "traefik.http.routers.${PROJECT_NAME}-swe-auth.service=${PROJECT_NAME}-swe-swe"
+      # Preview proxy routing (per-session)
+      # Agent chat proxy routing (per-session)
+      # Public proxy routing (per-session, no auth)
+      # VNC proxy routing (per-session browser view)
+      # Files proxy routing (per-session md-serve view)
+    volumes:
+      # Mount project directory to /workspace
+      - ${WORKSPACE_DIR:-.}:/workspace
+      # Mount worktrees to /worktrees for cleaner agent path separation
+      - ${WORKSPACE_DIR:-.}/.swe-swe/worktrees:/worktrees
+      # Mount external repos directory for persistence across container rebuilds
+      - ${WORKSPACE_DIR:-.}/.swe-swe/repos:/repos
+      # Mount persistent home for auth/config storage
+      - ./home:/home/app
+      # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects).
+      # Sub-mount layered on top of ./home:/home/app so the host's $HOME/.swe-swe/proxy
+      # is visible inside the container regardless of which project the daemon ran from.
+      - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
+      # Enterprise certificates (if certs/ directory exists with certificates)
+      - ./certs:/swe-swe/certs:ro
+      # SSL certificate for download endpoint (self-signed only)
+      - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
+      # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
+      - type: tmpfs
+        target: /workspace/.swe-swe/uploads
+        tmpfs:
+          size: 100M
+          mode: 0777
+    working_dir: /workspace
+    networks:
+      - swe-network
+    environment:
+      # Internal swe-swe-server bind port. Used by entrypoint.sh to compute
+      # SWE_SERVER_PORT for in-container shims, and by swe-swe-server itself
+      # when the bind is left to env (resolveListenAddr uses SWE_PORT).
+      - SWE_PORT=${SWE_PORT:-1977}
+      # Auth password (activates embedded auth middleware)
+      - SWE_SWE_PASSWORD=${SWE_SWE_PASSWORD:-changeme}
+      # SWE_COOKIE_SECURE is no longer set here: swe-swe-server now derives
+      # the cookie Secure flag from X-Forwarded-Proto per request (Traefik
+      # sets it to https; direct HTTP hits on the backend -- e.g. LAN access
+      # to the bare container port -- correctly get a non-Secure cookie).
+      # Pass through API keys from host environment (set as env vars or in .env file)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Enterprise certificates (if configured during swe-swe init)
+      - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-}
+      # App preview proxy target port (for split-pane iframe)
+      - SWE_PREVIEW_TARGET_PORT=${SWE_PREVIEW_TARGET_PORT:-3000}
+      # Container-internal app port range for preview sessions
+      - SWE_PREVIEW_PORTS=${SWE_PREVIEW_PORTS:-3000-3019}
+      # Container-internal app port range for agent chat sessions
+      - SWE_AGENT_CHAT_PORTS=${SWE_AGENT_CHAT_PORTS:-4000-4019}
+      # Container-internal app port range for public (no-auth) sessions
+      - SWE_PUBLIC_PORTS=${SWE_PUBLIC_PORTS:-5000-5019}
+      # Wildcard host-demux: serve every per-port pane as {port}.{this
+      # hostname} on the ONE published port, so a box whose *.domain DNS
+      # points at it needs no tunnel. Empty = off (the default).
+      - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME:-}
+      # One reachable port and nothing else: bind no per-session proxy ports,
+      # advertise none, and serve every pane from this one listener with no
+      # reachability probe. Empty = off (the default). swe-swe init
+      # --single-port publishes no extra ports above and defaults this to 1;
+      # without it the ranges above are still forwarded by docker, and setting
+      # this only stops anything inside the container from listening on them.
+      - SWE_SINGLE_PORT=${SWE_SINGLE_PORT:-}
+      # Container-internal port range for Chrome DevTools Protocol (per-session)
+      - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
+      # Container-internal port range for VNC browser view (per-session)
+      - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
+      # Agent View backend: local (in-container display stack) | off (hide
+      # the tab) | <backend-url> (offload to a swe-swe/browser-backend
+      # container, e.g. http://host.docker.internal:9333)
+      - SWE_AGENT_VIEW=${SWE_AGENT_VIEW:-local}
+      # With a backend URL: set to 1 to reverse-tunnel loopback page traffic
+      # over an outbound WebSocket (chromium on the backend hits its own
+      # loopback; this box needs no inbound reachability from the backend)
+      - SWE_AGENT_VIEW_TUNNEL=${SWE_AGENT_VIEW_TUNNEL:-}
+      # Shared secret for the browser-backend allocation API
+      - SWE_BROWSER_BACKEND_TOKEN=${SWE_BROWSER_BACKEND_TOKEN:-}
+      # PaaS-style public port (triggers landing/health server on this port
+      # when set and different from SWE_PORT)
+      - PORT=${PORT:-}
+    restart: unless-stopped
+
+networks:
+  swe-network:
+    driver: bridge

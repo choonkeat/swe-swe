@@ -1160,6 +1160,16 @@ func handleInit() {
 		os.Exit(1)
 	}
 
+	// Single-port mode and tunnel mode contradict each other: tunneld reaches
+	// every pane by dialing this box's per-session proxy listeners, and
+	// --single-port is the instruction not to open them. swe-swe-server
+	// refuses the same pair at boot; refusing it here means the operator finds
+	// out before a project is generated around it.
+	if *singlePort && *tunnelServerURL != "" {
+		fmt.Fprintln(os.Stderr, "Error: --single-port cannot be combined with --tunnel-server-url: the tunnel reaches every pane through this box's per-session proxy ports, and --single-port is the instruction not to open them. Drop one of the two")
+		os.Exit(1)
+	}
+
 	// Host runtime is host-native: refuse early on an unsupported CLI platform
 	// before writing anything, since the embedded binaries are not portable.
 	if *dockerless {
@@ -1514,6 +1524,17 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 		fmt.Printf("Slash commands: %s -> /tmp/slash-commands/%s\n", repo.URL, repo.Alias)
 	}
 
+	// Which per-session ports the generated files PUBLISH (compose port
+	// mappings, Traefik entrypoints and routes). Single-port mode publishes
+	// none: the box is reachable on SWE_PORT and nothing else, and
+	// swe-swe-server binds no per-session proxy listener to forward to.
+	// The container-internal ranges are untouched -- they still name the real
+	// preview / agent-chat / VNC / files servers, which do run.
+	publishedPreviewPorts, publishedPublicPorts := previewPortsRange, publicPortsRange
+	if config.SinglePort {
+		publishedPreviewPorts, publishedPublicPorts = nil, nil
+	}
+
 	for _, hostFile := range hostFiles {
 		content, err := assets.ReadFile(hostFile)
 		if err != nil {
@@ -1576,9 +1597,15 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 				if config.withDockerSocket() {
 					dockerVolume = "\n      - /var/run/docker.sock:/var/run/docker.sock"
 				}
-				// Build port mappings for browser-accessible proxy ports
+				// Build port mappings for browser-accessible proxy ports.
+				// Single-port mode publishes none of them: the box is
+				// reachable on SWE_PORT and nothing else, so forwarding 100
+				// host ports to listeners the server will not even bind is
+				// pure noise -- and a forwarded port ACCEPTS a connection
+				// before discovering nothing is behind it, which is exactly
+				// what the mode exists to avoid.
 				var extraPorts string
-				if len(previewPortsRange) > 0 {
+				if len(previewPortsRange) > 0 && !config.SinglePort {
 					ppo := config.ProxyPortOffset
 					firstPreview := previewPortsRange[0]
 					lastPreview := previewPortsRange[len(previewPortsRange)-1]
@@ -1602,10 +1629,17 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo), vncProxyPort(firstVNC, ppo), vncProxyPort(lastVNC, ppo))
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", filesProxyPort(firstFiles, ppo), filesProxyPort(lastFiles, ppo), filesProxyPort(firstFiles, ppo), filesProxyPort(lastFiles, ppo))
 				}
-				if len(publicPortsRange) > 0 {
+				if len(publicPortsRange) > 0 && !config.SinglePort {
 					firstPub := publicPortsRange[0]
 					lastPub := publicPortsRange[len(publicPortsRange)-1]
 					extraPorts += fmt.Sprintf("\n      - \"%d-%d:%d-%d\"", firstPub, lastPub, firstPub, lastPub)
+				}
+				// `swe-swe init --single-port` bakes the setting in as the
+				// default, so `swe-swe up` needs no environment at all; an
+				// explicit SWE_SINGLE_PORT= in the shell still wins.
+				singlePortDefault := ""
+				if config.SinglePort {
+					singlePortDefault = "1"
 				}
 				content = []byte(fmt.Sprintf(`services:
   swe-swe:
@@ -1642,24 +1676,24 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - SWE_PUBLIC_HOSTNAME=${SWE_PUBLIC_HOSTNAME:-}
       # One reachable port and nothing else: bind no per-session proxy ports,
       # advertise none, and serve every pane from this one listener with no
-      # reachability probe. Empty = off (the default). Note that the port
-      # ranges published above are written at init time, so docker still
-      # forwards them on the host; setting this stops anything inside the
-      # container from listening on them.
-      - SWE_SINGLE_PORT=${SWE_SINGLE_PORT:-}
+      # reachability probe. Empty = off (the default). swe-swe init
+      # --single-port publishes no extra ports above and defaults this to 1;
+      # without it the ranges above are still forwarded by docker, and setting
+      # this only stops anything inside the container from listening on them.
+      - SWE_SINGLE_PORT=${SWE_SINGLE_PORT:-%s}
       - SWE_CDP_PORTS=${SWE_CDP_PORTS:-6000-6019}
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
       - PORT=${PORT:-}%s
     restart: unless-stopped
-`, extraPorts, reposDirValue, certVolume, dockerVolume, certEnvVars))
+`, extraPorts, reposDirValue, certVolume, dockerVolume, singlePortDefault, certEnvVars))
 			} else {
-				content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
+				content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, publishedPreviewPorts, publishedPublicPorts, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
 			}
 		}
 
 		// Process traefik-dynamic.yml template with SSL conditional sections
 		if hostFile == "templates/host/traefik-dynamic.yml" {
-			content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, previewPortsRange, publicPortsRange, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
+			content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, publishedPreviewPorts, publishedPublicPorts, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))
 		}
 
 		// Process entrypoint.sh template with conditional sections

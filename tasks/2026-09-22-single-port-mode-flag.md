@@ -1,10 +1,8 @@
 # `--single-port`: stop opening the per-session proxy ports at all
 
 **Date**: 2026-09-22
-**Status**: DONE (all four phases, 2026-09-23). Each phase records its
-deviations under its own heading; the two that outlive this task are
-`swe-swe init --single-port` (stop compose publishing the port ranges) and the
-`filesPort` signal the frontend now depends on.
+**Status**: DONE (four phases plus a fifth added on the day, 2026-09-23). Each
+phase records its deviations under its own heading.
 **Follows**: `tasks/2026-09-22-path-based-agent-view-and-single-port-option.md`
 (DONE -- every pane, including the live Agent View, now has a same-origin path
 form and finds it by probing).
@@ -342,3 +340,28 @@ has one port, plus the one assertion the browser-side test cannot make.
   websockify, CDP) bind loopback-only in this mode. Worth doing, but it is a
   different blast radius and belongs in its own change.
 - A `--single-port` equivalent for the browser-backend box.
+
+---
+
+## Phase 5 (added 2026-09-23, after the four above) -- `swe-swe init --single-port`
+
+Phase 1's deviation 3 and Phase 3's deviation 2 both ended at the same wall:
+compose's `ports:` block is written at init time, so a runtime setting cannot
+stop docker forwarding the ranges. The operator asked for the init flag, so:
+
+1. `swe-swe init --single-port` records `singlePort: true` in init.json,
+   survives `--previous-init-flags=reuse`, and is refused alongside
+   `--tunnel-server-url` (the same pair swe-swe-server refuses at boot).
+2. The generated compose publishes only `SWE_PORT` -- no preview / agent-chat /
+   vnc / files / public ranges -- and defaults `SWE_SINGLE_PORT=1`, so
+   `swe-swe up` needs no environment at all. Under Traefik (an `--ssl` init)
+   the per-port entrypoints and routes are dropped with them.
+3. The host runtime has no compose to bake it into, so `swe-swe up` reads
+   init.json and passes `-single-port` to the server itself.
+4. The setup page's `oneport` answer now puts `--single-port` on the init line
+   and no longer sets a run-time variable.
+
+Two golden variants cover it: `single-port` (dockerfile-only) and
+`single-port-ssl` (Traefik). `--runtime=host` has no golden because
+TestGoldenFiles reads a Dockerfile and a compose file, which that runtime does
+not produce; `TestDockerlessServerInvocationSinglePort` covers it instead.

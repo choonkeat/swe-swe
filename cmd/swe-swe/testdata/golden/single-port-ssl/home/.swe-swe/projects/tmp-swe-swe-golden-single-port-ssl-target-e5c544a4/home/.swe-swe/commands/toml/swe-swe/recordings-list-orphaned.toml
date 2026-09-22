@@ -1,0 +1,96 @@
+description = "List orphaned (ended, not-active) swe-swe session recordings that can be resumed"
+
+prompt = '''
+
+List orphaned session recordings -- recordings on disk whose session is no longer
+live (e.g. ended normally, or the server rebooted out from under them). For each,
+show its id plus enough context (name, summary, last messages) to decide whether to
+resume it with `/swe-swe:recordings-resume <id>`. Then ALSO list the currently-live
+sessions below, marked `live`, for a complete picture.
+
+## Background (how this works)
+
+- Recordings live in `/workspace/.swe-swe/recordings/`. Each root session has files
+  `session-<recordingUUID>.{log,timing,input,metadata.json}` and, for chat sessions,
+  a chat log `session-<recordingUUID>-<chatUUID>.events.jsonl`.
+- The recording UUID is DISTINCT from the live session UUID, so do not try to match
+  them by id.
+- The `mcp__swe-swe__list_recordings` tool already returns ONLY ended recordings --
+  the server excludes anything currently active. So its results ARE the orphaned set.
+- `session-<recordingUUID>.metadata.json` holds the resume recipe: `agent_binary`,
+  `agent_session_id`, `work_dir`, `branch_name`, `extra_args`, `session_mode`,
+  `name`, and (when cached) `summary_line`. A non-empty `agent_session_id` means the
+  recording can be resumed EXACTLY (`--resume <id>`); empty means only a fuzzy
+  `--continue` would be possible.
+
+## Steps
+
+### 1. Get the ended recordings
+
+Call `mcp__swe-swe__list_recordings` with `limit` 30 (raise if the user asked for
+more). This returns `[{uuid, name, agent, endedAt, hasChat}, ...]`.
+
+If it returns empty, tell the user there are no orphaned recordings and stop.
+
+### 2. Enrich each from metadata + chat tail (use bash/jq, NOT get_chat_history)
+
+Do this in ONE bash pass so the output stays compact -- `get_chat_history` returns
+the full transcript and is too verbose for a listing. For each `uuid` from step 1,
+read its root metadata and the tail of its chat log:
+
+```bash
+REC=/workspace/.swe-swe/recordings
+for u in <uuid1> <uuid2> ...; do
+  meta="$REC/session-$u.metadata.json"
+  echo "=== $u ==="
+  jq -r '"name="+(.name//"")+"\nagent="+(.agent_binary//.agent//"")+"\nmode="+(.session_mode//"")+"\nbranch="+(.branch_name//"")+"\nworkdir="+(.work_dir//"")+"\nasid="+(.agent_session_id//"")+"\nsummary="+(.summary_line//"")' "$meta" 2>/dev/null
+  # last up-to-3 chat bubbles, text truncated
+  chat=$(ls -1 "$REC/session-$u-"*.events.jsonl 2>/dev/null | head -1)
+  if [ -n "$chat" ]; then
+    jq -rc 'select(.type=="userMessage" or .type=="agentMessage") | .type[0:1]+": "+((.text//"")|gsub("\n";" ")[0:140])' "$chat" 2>/dev/null | tail -3
+  fi
+done
+```
+
+(`u:` prefix = user message, `a:` = agent message.)
+
+### 3. Also fetch the LIVE sessions
+
+Call `mcp__swe-swe__list_sessions`. These are currently-active sessions (NOT orphaned)
+-- the user wants them listed too, below the orphaned set, clearly marked `live`. Each
+has `{uuid, name, assistant, clientCount, duration, workDir, branchName}`. Note: a live
+session's `uuid` is the SESSION id (distinct from a recording id), and it is already
+running -- so the action for these is "open", not "resume/fork".
+
+### 4. Present two tables
+
+**Table A -- Orphaned recordings** (ended, resumable), most-recent first
+(`list_recordings` is already newest-first). Columns: short id (first 8 chars), name,
+agent, ended, resumable, a **resume link**, and a context cell (prefer `summary`, else
+last agent snippet).
+
+- "resumable" = `yes (exact)` when `asid` is non-empty, else `continue-only` (a fuzzy
+  `--continue`, not a pinned resume).
+- "resume link" = a markdown link to the fork endpoint for that recording, using the
+  FULL uuid: `[resume](/api/fork/<full-uuid>)`. Clicking forks the recording into a
+  fresh live session with chat history restored. (The chat iframe is handed the parent
+  window URL via `parent_url`, so a root-relative link resolves against the swe-swe
+  page, not the chat iframe's own origin.)
+
+**Table B -- Live sessions** (sorted below Table A, each marked `live`). Columns: short
+uuid, name, assistant, duration, clients (`clientCount`), workDir, and a **fork link**.
+These are active, so the action is **fork** (branch a copy), not resume:
+
+- "fork link" = `[fork](/api/fork/<full-session-uuid>)`. `/api/fork` resolves live
+  sessions in-memory, so the live session's own uuid works directly. Clicking branches
+  the running conversation into a NEW live session from its last chat reply; the
+  original session keeps running untouched. (If the source agent is mid-tool-call at
+  click time, fork returns 409 -- just retry once it's idle.)
+- The user can also just open a live one directly at `/session/<uuid>`.
+
+End with hints:
+- ``Resume an orphaned one with `/swe-swe:recordings-resume <id>`.``
+- ``Fork a live one with its `[fork]` link (or `/swe-swe:recordings-resume <uuid>`); open it directly at `/session/<uuid>`.``
+
+Keep it to the two tables + the hints. Do not dump full transcripts.
+'''

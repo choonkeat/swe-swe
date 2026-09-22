@@ -167,7 +167,7 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 // per session (the `mcp` + `mcp-cli-proxy` binaries resolve via that same
 // PATH entry). Pure
 // for testability; the actual exec lives in handleDockerlessCommand.
-func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig, mcpLess bool) (bin string, args, env []string) {
+func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig, mcpLess bool, singlePort bool) (bin string, args, env []string) {
 	binDir := filepath.Join(sweDir, "bin")
 	bin = filepath.Join(binDir, "swe-swe-server")
 	// Host-native paths: the project is the workspace; the dumped sweDir is
@@ -181,6 +181,14 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, 
 		"-worktrees", filepath.Join(sweDir, "worktrees"),
 		"-repos", filepath.Join(sweDir, "repos"),
 		"-bind", "127.0.0.1:" + port,
+	}
+	// Single-port mode: there is no compose file here to bake the setting
+	// into, so `swe-swe up` carries what `swe-swe init --single-port` recorded.
+	// The server then binds no per-session proxy listener and serves every
+	// pane from this one, which is the whole of the mode on a host-native box
+	// (nothing was publishing ports in the first place).
+	if singlePort {
+		args = append(args, "-single-port")
 	}
 	// Tunnel mode (no Docker): point the server at the embedded tunnel client
 	// dumped into bin/ and pass through the saved tunnel config.
@@ -287,6 +295,16 @@ func loadDockerlessTunnelConfig(sweDir string) tunnelConfig {
 
 // loadDockerlessMCPLess reports whether the dockerless project was initialized
 // with --without-mcp. Missing/unreadable config = native MCP (false).
+// loadDockerlessSinglePort reads back what `swe-swe init --single-port`
+// recorded, so `swe-swe up` -- a separate process -- passes it on.
+func loadDockerlessSinglePort(sweDir string) bool {
+	cfg, err := loadInitConfig(sweDir)
+	if err != nil {
+		return false
+	}
+	return cfg.SinglePort
+}
+
 func loadDockerlessMCPLess(sweDir string) bool {
 	cfg, err := loadInitConfig(sweDir)
 	if err != nil {
@@ -314,12 +332,16 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 		port := dockerlessPort(os.Getenv)
 		tunnel := loadDockerlessTunnelConfig(sweDir)
 		mcpLess := loadDockerlessMCPLess(sweDir)
-		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel, mcpLess)
+		singlePort := loadDockerlessSinglePort(sweDir)
+		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel, mcpLess, singlePort)
 		if tunnel.serverURL != "" {
 			fmt.Printf("Tunnel mode: connecting via %s\n", tunnel.serverURL)
 		}
 		if mcpLess {
 			fmt.Println("MCP-less mode: agents reach tools through the `mcp` CLI (server-launched proxy fleet)")
+		}
+		if singlePort {
+			fmt.Println("Single-port mode: every pane is served from this one listener; no per-session proxy ports are opened")
 		}
 		if _, err := os.Stat(bin); err != nil {
 			log.Fatalf("dockerless server not found at %s -- re-run `swe-swe init --dockerless`: %v", bin, err)

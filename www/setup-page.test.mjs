@@ -152,15 +152,15 @@ test('tunnel: the once-per-boot browser steps appear', async (t) => {
 // once the plain script. It now hands out SWE_SINGLE_PORT=1, which is the
 // difference between finding the route and being told: nothing binds the
 // per-session proxy ports, and no pane waits out a reachability probe first.
-test('oneport: hands out SWE_SINGLE_PORT=1, which anyport does not', async (t) => {
+test('oneport: hands out --single-port, which anyport does not', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     const anyport = await snapshot(page);
-    assert.ok(!anyport.script.includes('SWE_SINGLE_PORT'), 'a box where every port works must not be told otherwise');
+    assert.ok(!anyport.script.includes('--single-port'), 'a box where every port works must not be told otherwise');
 
     await pick(page, 'oneport');
     const s = await snapshot(page);
-    assert.match(s.script, /SWE_SINGLE_PORT=1/);
+    assert.match(s.script, /swe-swe init --single-port/);
     assert.strictEqual(s.oneport, true, 'the consequence box must be shown');
     assert.strictEqual(s.wildcard, false);
     assert.strictEqual(s.tunnelSteps, false);
@@ -170,14 +170,17 @@ test('oneport: hands out SWE_SINGLE_PORT=1, which anyport does not', async (t) =
 // The setting only reaches the server through `swe-swe up`, and on a box that
 // was never initialised there is nothing for it to reach. So the answer has to
 // carry the init line too, which the plain laptop script does not have.
-test('oneport: the script initialises the project before it sets the flag', async (t) => {
+// The flag belongs to init, not to the run: it decides what the generated
+// setup forwards. Setting it at run time would leave a hundred ports
+// forwarded to listeners that are no longer there.
+test('oneport: the flag is on the init line, not the run line', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     await pick(page, 'oneport');
     const s = await snapshot(page);
-    assert.match(s.script, /swe-swe init/);
-    assert.ok(s.script.indexOf('swe-swe init') < s.script.indexOf('SWE_SINGLE_PORT=1'),
-        'init comes before the run that carries the flag');
+    const initLine = s.script.split('\n').find((l) => l.includes('swe-swe init'));
+    assert.ok(initLine && initLine.includes('--single-port'), `init line carries the flag, got: ${initLine}`);
+    assert.ok(!s.script.includes('SWE_SINGLE_PORT='), 'no run-time variable is needed once init knows');
     await page.close();
 });
 
@@ -188,7 +191,7 @@ test('oneport: the consequence box names what is lost, not just what works', asy
     const text = await page.evaluate(() => document.getElementById('oneport-yes').textContent);
     assert.match(text, /Agent View/, 'the live Agent View is the pane this answer turns on');
     assert.match(text, /without logging in|no-login|login-free/i, 'the public app address is the thing you give up');
-    assert.match(text, /not (opened|bound)|never opened/i, 'the flag is what stops the extra ports being opened at all');
+    assert.match(text, /neither forwarded nor opened|not (opened|bound)/i, 'the flag is what stops the extra ports existing at all');
     await page.close();
 });
 
@@ -198,7 +201,7 @@ test('oneport on a host-native box: the flag rides along there too', async (t) =
     await page.click('#have-agents');
     await pick(page, 'oneport');
     const s = await snapshot(page);
-    assert.match(s.script, /SWE_SINGLE_PORT=1/);
+    assert.match(s.script, /--single-port/);
     assert.match(s.script, /--runtime=host/, 'the host-native init flag is still there');
     await page.close();
 });

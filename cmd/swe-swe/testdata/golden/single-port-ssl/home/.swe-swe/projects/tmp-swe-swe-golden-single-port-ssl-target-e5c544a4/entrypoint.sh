@@ -1,0 +1,423 @@
+#!/bin/bash
+set -e
+trap 'echo -e "\n\033[0;31m✗ Entrypoint failed at line $LINENO (exit code $?)\033[0m" >&2' ERR
+
+# Container Entrypoint
+# Configures MCP servers and agent tools, then starts swe-swe-server.
+# In DOCKER mode, runs as root for socket permissions, then drops to app user.
+# In non-DOCKER mode, runs directly as app user.
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+
+
+
+# Create OpenCode MCP configuration
+# OpenCode uses a different schema: type="local" and command as array
+mkdir -p /home/app/.config/opencode
+cat > /home/app/.config/opencode/opencode.json << 'EOF'
+{
+  "mcp": {
+    "swe-swe": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"
+      ]
+    },
+    "swe-swe-agent-chat": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"
+      ]
+    },
+    "swe-swe-playwright": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
+      ]
+    },
+    "swe-swe-preview": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
+      ]
+    }
+  }
+}
+EOF
+
+echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
+
+# Create Codex MCP configuration (TOML format)
+# Codex sandboxes MCP child processes and only forwards env vars listed in
+# `env_vars` -- so we cannot use the `sh -c "exec swe-npx ... $VAR"` wrapper
+# that the other agents use, since $VAR would expand to empty inside the
+# sandbox. Instead we run swe-npx (or mcp-lazy-init) directly and let Codex
+# substitute $VAR references in args from the declared env_vars whitelist.
+mkdir -p /home/app/.codex
+cat > /home/app/.codex/config.toml << 'EOF'
+[mcp_servers.swe-swe-agent-chat]
+command = "swe-npx"
+args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme", "--welcome-replies", "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned", "--autocomplete-triggers", "/=slash-command", "--autocomplete-url", "http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"]
+# AGENT_CHAT_EVENT_LOG (chat history / recordings) and AGENT_CHAT_EXPORT_DIR
+# (streaming chat-log export, which chatlog_close needs) are read by
+# agent-chat itself, so they have to be on the whitelist or Codex sessions
+# silently lose both.
+env_vars = ["AGENT_CHAT_PORT", "AGENT_CHAT_EVENT_LOG", "AGENT_CHAT_EXPORT_DIR", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
+
+[mcp_servers.swe-swe-playwright]
+command = "mcp-lazy-init"
+args = ["--init-method", "POST", "--init-url", "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY", "--", "npx", "-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:$BROWSER_CDP_PORT"]
+env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY", "BROWSER_CDP_PORT"]
+
+[mcp_servers.swe-swe-preview]
+command = "swe-npx"
+args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"]
+env_vars = ["SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
+
+[mcp_servers.swe-swe]
+command = "swe-npx"
+args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
+env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
+EOF
+
+echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
+
+# Create Gemini MCP configuration
+mkdir -p /home/app/.gemini
+cat > /home/app/.gemini/settings.json << 'EOF'
+{
+  "mcpServers": {
+    "swe-swe": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"
+      ]
+    },
+    "swe-swe-agent-chat": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"
+      ]
+    },
+    "swe-swe-playwright": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
+      ]
+    },
+    "swe-swe-preview": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
+      ]
+    }
+  }
+}
+EOF
+
+echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
+
+# Create Goose MCP configuration (YAML format)
+mkdir -p /home/app/.config/goose
+cat > /home/app/.config/goose/config.yaml << 'EOF'
+extensions:
+  swe-swe-agent-chat:
+    type: stdio
+    cmd: sh
+    args:
+      - "-c"
+      - "exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"
+  swe-swe-playwright:
+    type: stdio
+    cmd: sh
+    args:
+      - "-c"
+      - "exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT"
+  swe-swe-preview:
+    type: stdio
+    cmd: sh
+    args:
+      - "-c"
+      - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
+  swe-swe:
+    type: stdio
+    cmd: sh
+    args:
+      - "-c"
+      - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"
+EOF
+
+echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
+# Wrapper: auto-run 'goose configure' if no provider is configured
+mkdir -p /home/app/.swe-swe/bin
+cat > /home/app/.swe-swe/bin/goose << 'GOOSE_WRAPPER'
+#!/bin/bash
+GOOSE=/usr/local/bin/goose
+$GOOSE "$@" || ($GOOSE configure && $GOOSE "$@")
+GOOSE_WRAPPER
+chmod +x /home/app/.swe-swe/bin/goose
+echo -e "${GREEN}[ok] Created Goose wrapper script${NC}"
+
+# Create Claude MCP configuration (user scope = cross-project)
+# Uses claude mcp add which writes to ~/.claude.json
+# Always re-create to pick up any flag changes (e.g. --autocomplete-triggers)
+claude_mcp_setup() {
+  unset CLAUDECODE
+  claude mcp remove --scope user swe-swe-agent-chat 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-playwright 2>/dev/null || true
+  claude mcp remove --scope user swe-swe-preview 2>/dev/null || true
+  claude mcp remove --scope user swe-swe 2>/dev/null || true
+  # swe-swe-whiteboard was retired; keep removing it so an upgraded user
+  # scope does not carry a dead registration forward.
+  claude mcp remove --scope user swe-swe-whiteboard 2>/dev/null || true
+  claude mcp add --scope user --transport stdio swe-swe-agent-chat -- sh -c 'exec swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe-playwright -- sh -c 'exec mcp-lazy-init --init-method POST --init-url http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY -- npx -y @playwright/mcp@latest --cdp-endpoint http://localhost:$BROWSER_CDP_PORT'
+  claude mcp add --scope user --transport stdio swe-swe-preview -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY'
+  claude mcp add --scope user --transport stdio swe-swe -- sh -c 'exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY'
+}
+claude_mcp_setup
+echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
+
+# Guard the built-in AskUserQuestion tool. Its multiple-choice menu renders
+# only in the local terminal TUI, which is invisible to a user talking through
+# the web chat UI (agent-chat) -- calling it there hangs the agent forever on
+# input the user can never give. This PreToolUse hook blocks the tool (exit 2,
+# which feeds stderr back to the agent so it switches to the send_message MCP
+# tool). The guard script self-exempts sessions with no agent-chat channel
+# (terminal TUI, plain claude runs) and honors AGENT_CHAT_DISABLE=1, which
+# swe-swe-server also sets for non-chat (terminal) sessions where the TUI IS
+# the user surface. Fail-safe is block: a wrongly shown menu hard-hangs the
+# agent, a wrongly blocked one just nudges it to send_message. Hooks are
+# snapshotted at session start, so the env vars (read at tool-call time) are
+# the per-session knob; these files are static.
+#
+# Artifact guard (same shape, different reason): the built-in Artifact tool
+# publishes a page to claude.ai. A swe-swe session already has its own viewer,
+# so the block spells out the local route instead: write the page to
+# mockups/, serve that dir on the session's $PORT, and hand the user a
+# http://localhost:$PORT/... link -- the chat UI intercepts localhost links and
+# loads them in the App Preview pane. Keeps workspace content on-box and on the
+# surface the user is actually looking at. Same agent-chat gating;
+# SWE_ALLOW_ARTIFACTS=1 opts out.
+#
+# Stop guard (same philosophy at turn-end): in an agent-chat session plain
+# response text is invisible, so a turn that ends without any user-visible
+# send looks like a crash. The Stop hook blocks the FIRST silent stop of a
+# turn (exit 2 feeds the instruction back to the agent); stop_hook_active
+# guarantees the second attempt always passes, so it can never loop.
+#
+# Both script bodies are single-sourced from cmd/swe-swe/hook-scripts/
+# (injected at init time); dockerless init writes the same files.
+mkdir -p /home/app/.claude/hooks
+cat > /home/app/.claude/hooks/swe-swe-stop-guard.sh << 'STOPGUARDEOF'
+#!/bin/sh
+# swe-swe Stop guard: in agent-chat sessions every turn must end with a
+# user-visible message (send_message / send_progress / draw / send_verbal_*).
+# Exit 2 blocks the stop once per turn; stderr becomes the agent's instruction.
+[ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
+# Enforce only where this session actually has an agent-chat channel.
+if [ -n "$SWE_MCP_DIR" ]; then
+  [ -S "$SWE_MCP_DIR/swe-swe-agent-chat.sock" ] || exit 0
+else
+  [ -n "$AGENT_CHAT_PORT" ] || exit 0
+fi
+command -v jq >/dev/null 2>&1 || exit 0
+input=$(cat)
+# One nudge per turn: when this stop was already blocked once, let it pass.
+[ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false')" = "true" ] && exit 0
+tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
+[ -n "$tp" ] && [ -f "$tp" ] || exit 0
+# Slice the transcript from the last GENUINE user message. A typed message is
+# a type:user line that is not a tool_result. An agent-chat reply arrives as a
+# tool_result carrying "User said:"/"User responded:" and also starts a turn --
+# without that anchor, back-to-back chat replies share one turn start and an
+# earlier send covers the newer turn.
+n=$(awk '/"type":"user"/ {
+  if (!/"tool_result"/ || /User said:|User responded:/) last = NR
+} END { if (last) print last }' "$tp")
+[ -n "$n" ] || exit 0
+turn=$(tail -n +"$n" "$tp")
+# A user-visible send already happened this turn. Read the transcript as
+# structured records, not text: only a real tool_use counts, so log text that
+# merely names the tool cannot spoof it. Malformed lines are skipped, not fatal.
+sent=$(printf '%s\n' "$turn" | jq -r -R '
+  fromjson? // empty
+  | select(.type == "assistant")
+  | .message.content[]?
+  | select(.type == "tool_use")
+  | select(
+      (.name | test("agent[-_]chat__(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)$"))
+      or (.name == "Bash"
+          and ((.input.command // "")
+               | test("(^|[;&|]|\\n)[ \t]*(mcp[ \t]+)?(swe-swe-)?agent-chat[ \t]+(send_message|send_progress|send_verbal_reply|send_verbal_progress|draw)([ \t]|$)")))
+    )
+  | "sent"' 2>/dev/null | head -n 1)
+[ -n "$sent" ] && exit 0
+# A check_messages that found an empty queue is an allowed silent turn.
+# (Escaped-JSON gap between the words is 5 chars: \":\" -- allow slack.)
+printf '%s' "$turn" | grep -q 'queue.\{0,8\}empty' && exit 0
+echo 'BLOCKED: this turn ends with no user-visible message, and the user sees only agent-chat -- your TUI responses are invisible to them. Deliver your result now via send_message (or send_progress for a non-blocking status if work continues). Note: this Stop hook is active unless AGENT_CHAT_DISABLE=1 is set.' >&2
+exit 2
+STOPGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-stop-guard.sh
+cat > /home/app/.claude/hooks/swe-swe-ask-guard.sh << 'ASKGUARDEOF'
+#!/bin/sh
+# swe-swe AskUserQuestion guard: the built-in question tool's menu renders
+# only in the local terminal TUI. In an agent-chat session the user may never
+# see it, and the agent hangs forever on input that cannot arrive -- block it
+# and point at send_message. Sessions without an agent-chat channel (terminal
+# TUI, plain claude runs) are exempt, as is AGENT_CHAT_DISABLE=1.
+[ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
+# Enforce only where this session actually has an agent-chat channel.
+if [ -n "$SWE_MCP_DIR" ]; then
+  [ -S "$SWE_MCP_DIR/swe-swe-agent-chat.sock" ] || exit 0
+else
+  [ -n "$AGENT_CHAT_PORT" ] || exit 0
+fi
+echo 'BLOCKED: do not use the built-in AskUserQuestion tool -- its menu renders only in the local TUI, which the user may not see (e.g. an agent-chat session). Ask via the agent-chat send_message tool instead (question -> text, primary option -> first_quick_reply, rest -> more_quick_replies). To allow the built-in tool, set AGENT_CHAT_DISABLE=1.' >&2
+exit 2
+ASKGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-ask-guard.sh
+cat > /home/app/.claude/hooks/swe-swe-artifact-guard.sh << 'ARTIFACTGUARDEOF'
+#!/bin/sh
+# swe-swe Artifact guard: the built-in Artifact tool publishes a page to
+# claude.ai -- an external surface the swe-swe user is not looking at. A
+# swe-swe session already has its own viewer: write the HTML into the
+# workspace, serve it on $PORT, and hand the user a localhost link, which the
+# chat UI intercepts and loads in the App Preview pane. Blocking here (exit 2
+# feeds stderr back to the agent) redirects it there instead of shipping
+# workspace content off-box. Sessions without an agent-chat channel (terminal
+# TUI, plain claude runs) are exempt, as is AGENT_CHAT_DISABLE=1 or
+# SWE_ALLOW_ARTIFACTS=1.
+[ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
+[ "$SWE_ALLOW_ARTIFACTS" = "1" ] && exit 0
+# Enforce only where this session actually has an agent-chat channel.
+if [ -n "$SWE_MCP_DIR" ]; then
+  [ -S "$SWE_MCP_DIR/swe-swe-agent-chat.sock" ] || exit 0
+else
+  [ -n "$AGENT_CHAT_PORT" ] || exit 0
+fi
+cat >&2 <<'GUARDEOF'
+BLOCKED: do not use the built-in Artifact tool -- it publishes to claude.ai, which is not this user's surface and sends workspace content off-box. This session has its own viewer. Instead:
+
+1. Write the page to `mockups/<name>.html` in the workspace (create `mockups/` if needed).
+2. Serve that directory on the session's $PORT with whatever static server suits the project (background it, or add a Procfile entry -- see /swe-swe:procfile).
+3. Give the user a clickable link in your send_message text: `http://localhost:$PORT/<name>.html` with $PORT substituted for the real number. The chat UI intercepts localhost links and opens them in the App Preview pane.
+
+To allow the built-in tool, set SWE_ALLOW_ARTIFACTS=1.
+GUARDEOF
+exit 2
+ARTIFACTGUARDEOF
+chmod +x /home/app/.claude/hooks/swe-swe-artifact-guard.sh
+CLAUDE_SETTINGS=/home/app/.claude/settings.json
+cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/app/.claude/hooks/swe-swe-ask-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Artifact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/app/.claude/hooks/swe-swe-artifact-guard.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/app/.claude/hooks/swe-swe-stop-guard.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+SETTINGSEOF
+if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+  # Merge idempotently into existing settings: drop any prior AskUserQuestion
+  # or Artifact matcher and any prior swe-swe-stop-guard Stop entry, append
+  # ours, preserve every other key and hook entry.
+  TMP_SETTINGS=$(mktemp)
+  if jq --slurpfile add /tmp/swe-claude-settings.json \
+       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion" and .matcher != "Artifact"))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
+       "$CLAUDE_SETTINGS" > "$TMP_SETTINGS" 2>/dev/null; then
+    mv "$TMP_SETTINGS" "$CLAUDE_SETTINGS"
+  else
+    # Existing file was not valid JSON; overwrite with our fragment.
+    rm -f "$TMP_SETTINGS"
+    cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
+  fi
+elif [ -s "$CLAUDE_SETTINGS" ]; then
+  # File exists but jq is unavailable: do not risk clobbering it.
+  echo -e "${YELLOW}[warn] jq unavailable; left existing ~/.claude/settings.json untouched (AskUserQuestion/Artifact guards not installed)${NC}"
+else
+  cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
+fi
+rm -f /tmp/swe-claude-settings.json
+
+echo -e "${GREEN}[ok] Installed AskUserQuestion + Artifact + silent-stop guard hooks${NC}"
+
+# Install Pi mcp-bridge extension into the global Pi config dir so every
+# session in every workspace gets the swe-swe / agent-chat / playwright /
+# preview MCPs without per-workspace setup. Pi prefers a
+# project-local .pi/extensions/ override, so /workspace can still drop a
+# custom mcp-bridge.ts to hack on it.
+mkdir -p /home/app/.pi/agent/extensions
+cp /tmp/pi-mcp-bridge.ts /home/app/.pi/agent/extensions/mcp-bridge.ts
+
+echo -e "${GREEN}[ok] Installed Pi mcp-bridge extension${NC}"
+
+# Resolve internal server port. SWE_PORT is set by both compose (via the
+# swe-swe service environment block) and dockerfile-only mode (via ENV in
+# the generated Dockerfile), so the default is the same in either mode.
+SWE_SERVER_PORT="${SWE_PORT:-1977}"
+export SWE_SERVER_PORT
+
+# Create open/xdg-open shims that route URLs to the Preview pane
+mkdir -p /home/app/.swe-swe/bin
+cat > /home/app/.swe-swe/bin/swe-swe-open << 'SHIM'
+#!/bin/sh
+URL="${1:-}"
+[ -z "$URL" ] && exit 0
+curl -sf "http://localhost:$SWE_SERVER_PORT/proxy/${SESSION_UUID}/preview/__agent-reverse-proxy-debug__/open?url=$(printf '%s' "$URL" | jq -sRr @uri)&key=$MCP_AUTH_KEY" >/dev/null 2>&1 &
+echo "-> Preview: $URL" >&2
+SHIM
+chmod +x /home/app/.swe-swe/bin/swe-swe-open
+for name in xdg-open open x-www-browser www-browser sensible-browser; do
+    ln -sf swe-swe-open /home/app/.swe-swe/bin/$name
+done
+echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
+
+# Execute the original command directly (already running as app user)
+# Use sh -c to expand shell variables in CMD arguments (e.g. ${SWE_PORT:-1977})
+cd /workspace
+exec sh -c "$*"

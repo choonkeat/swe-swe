@@ -782,6 +782,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"tunnel-mode-mtls", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-client-cert", "/etc/swe-swe-tunnel/client.crt"}},
 		{"tunnel-mode-local-ports", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-local-ports"}},
 		{"single-port", []string{"--single-port"}},
+		{"single-port-ssl", []string{"--single-port", "--ssl", "selfsign"}},
 	}
 
 	for _, v := range variants {

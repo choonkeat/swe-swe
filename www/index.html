@@ -578,7 +578,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
             <div class="consequence">
               <b>Works:</b> the terminal, Agent Chat, Files, the app preview and the live Agent View, all served from the one address you opened.<br>
               <b>Not available:</b> the separate web address for your app that other people can open without logging in. That is a second address by nature.<br>
-              <b>Also:</b> the per-session ports the other answers rely on are not opened at all, so there is nothing extra listening on this machine and no pane waits to find that out.<br>
+              <b>Also:</b> the per-session ports the other answers rely on are neither forwarded nor opened, so there is nothing extra listening on this machine and no pane waits to find that out.<br>
               <b>One caveat:</b> every pane shares the page's address, so a web page opened in the Files pane can reach into the page around it.
             </div>
           </div>
@@ -817,6 +817,9 @@ code { font-family: var(--mono); color: var(--text-primary); }
     var f = [];
     if (hostRuntime()) f.push('--runtime=host');
     if (withoutMCP()) f.push('--without-mcp');
+    // One fixed port is decided at init, not at run time: it is what stops
+    // the generated setup forwarding a hundred ports nothing listens on.
+    if (onePortOnly()) f.push('--single-port');
     return f.join(' ');
   }
 
@@ -832,9 +835,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
     if (wildcardRoute()) {
       e.push('SWE_PUBLIC_HOSTNAME=' + (state.wildcardDomain.trim() || 'the-box.example.com'));
     }
-    // Told, rather than discovered: swe-swe then opens no per-session proxy
-    // ports at all, and no pane waits on a reachability check first.
-    if (onePortOnly()) e.push('SWE_SINGLE_PORT=1');
     return e;
   }
 
