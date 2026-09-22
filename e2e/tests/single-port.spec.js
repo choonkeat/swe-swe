@@ -144,15 +144,32 @@ test.describe('single-port mode', () => {
     testSessions.push(uuid);
     await page.locator('.terminal-ui__terminal').waitFor({ timeout: 40_000 });
 
-    await page.locator('.terminal-ui__terminal').first().click();
-    await page.keyboard.type(
-      'curl -s -X POST "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY"; echo');
-    await page.keyboard.press('Enter');
+    // Wait for the first status frame before touching the terminal: the PTY
+    // is spawned with the session, and a line typed before the shell has a
+    // prompt is simply lost. proxy-fallback.spec.js gets this wait for free by
+    // waiting on vncProxyPort, which does not exist here -- so ask for the
+    // signal that does, and then retype until the command actually lands.
     await page.waitForFunction(
-      () => window.terminalUI.browserStarted === true,
+      () => window.terminalUI && window.terminalUI.agentViewAvailable === true,
       null,
-      { timeout: 180_000 }
+      { timeout: 60_000 }
     );
+    await page.locator('.terminal-ui__terminal').first().click();
+    await expect.poll(async () => {
+      await page.keyboard.type(
+        'curl -s -X POST "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/browser/start?key=$MCP_AUTH_KEY"; echo');
+      await page.keyboard.press('Enter');
+      try {
+        await page.waitForFunction(
+          () => window.terminalUI.browserStarted === true,
+          null,
+          { timeout: 45_000 }
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    }, { timeout: 200_000, intervals: [1000] }).toBe(true);
 
     await expect.poll(async () => page.evaluate(async (u) => {
       const r = await fetch(`/api/session/${u}/vnc-ready`);

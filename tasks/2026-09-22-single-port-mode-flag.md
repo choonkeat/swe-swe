@@ -365,3 +365,15 @@ Two golden variants cover it: `single-port` (dockerfile-only) and
 `single-port-ssl` (Traefik). `--runtime=host` has no golden because
 TestGoldenFiles reads a Dockerfile and a compose file, which that runtime does
 not produce; `TestDockerlessServerInvocationSinglePort` covers it instead.
+
+The e2e tier now brings itself up with `--single-port` instead of a
+hand-written `ports: !override`, so what it tests is the product's own output:
+the generated compose publishes 9790 alone (verified live), and the three
+single-port specs pass against it.
+
+One test bug fell out of that: the Agent View spec typed its `browser/start`
+line into the PTY as soon as the terminal element appeared. proxy-fallback.js
+gets a wait for free by first waiting on `vncProxyPort`, which does not exist
+here, so the line was typed before the shell had a prompt and was simply lost
+-- a 3-minute timeout that looked like a product failure twice. It now waits
+for the first status frame and retypes until the command lands.

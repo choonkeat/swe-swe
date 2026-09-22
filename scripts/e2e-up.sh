@@ -51,7 +51,11 @@ elif [[ "$MODE" == "single-port" ]]; then
     PUBLIC_PORTS="5400-5429"
     CDP_PORTS="6400-6429"
     VNC_PORTS="7400-7429"
-    INIT_EXTRA_FLAGS=""
+    # The product's own answer: `swe-swe init --single-port` generates a
+    # compose that publishes SWE_PORT alone and defaults SWE_SINGLE_PORT=1.
+    # Testing that is the point -- a hand-written override would prove only
+    # that the override works.
+    INIT_EXTRA_FLAGS="--single-port"
 elif [[ "$MODE" == "docker" ]]; then
     E2E_PORT=9760
     PREVIEW_PORTS="3300-3329"
@@ -189,17 +193,17 @@ fi
 # An explicit `- SWE_FOO=bar` line in the override env list wins over the
 # substitution form in the base, regardless of what the shell exports.
 if [[ "$MODE" == "single-port" ]]; then
-    # ports: !override replaces the generated list instead of adding to it, so
-    # the proxy bands are not published at all. Without it docker-proxy would
-    # still accept a connection on 23400 and only then discover nothing is
-    # listening inside -- which is precisely the difference single-port mode
-    # exists to make, and the assertion single-port.spec.js makes.
+    # No ports: override here on purpose. `swe-swe init --single-port` already
+    # generated a compose that publishes SWE_PORT alone; overriding the list
+    # would hide a regression in exactly the thing this tier tests. The env
+    # pins below are the same defensive ones every mode uses (a dev shell
+    # exporting SWE_PREVIEW_PORTS would otherwise win), plus SWE_SINGLE_PORT=1
+    # -- which the generated compose already defaults to, so it is belt and
+    # braces, not the mechanism.
     cat > "${PROJECT_PATH}docker-compose.override.yml" <<EOF
 # Auto-generated for sibling-container e2e testing (single-port mode)
 services:
   swe-swe:
-    ports: !override
-      - "${E2E_PORT}:${E2E_PORT}"
     environment:
       - SWE_SWE_PASSWORD=${E2E_PASSWORD}
       - SWE_SINGLE_PORT=1
