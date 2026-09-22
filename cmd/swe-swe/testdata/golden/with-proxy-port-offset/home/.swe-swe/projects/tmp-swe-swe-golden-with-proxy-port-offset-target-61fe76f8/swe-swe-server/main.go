@@ -5891,7 +5891,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		if err != nil {
 			log.Printf("Warning: failed to create files path proxy for session %s: %v", sess.UUID, err)
 		} else {
-			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesPathProxy)
+			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesLivereloadPathFix("/proxy/"+sess.UUID+"/files", filesPathProxy))
 		}
 		sess.PreviewProxy = previewProxy
 		sess.SessionMux = sessMux
