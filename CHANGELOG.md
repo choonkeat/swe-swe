@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## v2.39.2 - Panes on a One-Address Box
+## v2.40.0 - Panes on a One-Address Box
 
 ### Features
 
@@ -20,6 +20,7 @@
 - **Images uploaded in Agent Chat display again in single-port mode**: the chat's `/uploads/...` addresses are now sent on to the chat panel that holds the file.
 - **Files lists a folder that holds an index.html instead of showing that page**: an agent's ad-hoc web app no longer takes over the Files tab.
 - **Preview shows your app, even behind a gateway like Cloudflare**: the page now watches for the app and reloads the panel, and no longer waits on a "not running yet" page or a swe-swe marker that the gateway can replace or drop.
+- **prctx keeps staged drafts per branch**: drafts and the current pull request were shared by every session on the machine, so `prctx flush` on one branch could post another branch's drafts; they are now kept per local git branch.
 
 ## v2.39.1 - Panes Behind a Login Gateway
 
