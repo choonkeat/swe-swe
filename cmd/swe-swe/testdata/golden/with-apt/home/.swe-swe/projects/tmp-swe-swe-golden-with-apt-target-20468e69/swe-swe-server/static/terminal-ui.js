@@ -7602,7 +7602,13 @@ class TerminalUI extends HTMLElement {
                 }
                 const cameUp = up && this._previewAppUp === false;
                 this._previewAppUp = up;
-                if (cameUp) {
+                if (up && this._previewProbeGaveUp) {
+                    // The pane stopped waiting before the app answered: load
+                    // it now rather than leave it white.
+                    this._previewProbeGaveUp = false;
+                    const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
+                    this.setPreviewURL(currentTarget);
+                } else if (cameUp) {
                     // Give the proxy's own page a moment to reload itself
                     // first; only step in if the pane still is not the app.
                     // Unreadable (cross-origin) panes are left alone unless
@@ -7828,12 +7834,19 @@ class TerminalUI extends HTMLElement {
             //          actually resolve used to load it blind and leave the
             //          pane on the browser's "refused to connect" page.
             this._previewProbeController = new AbortController();
+            this._previewProbeGaveUp = false;
+            const probeSignal = this._previewProbeController.signal;
             const portBasedBase = buildPortBasedPreviewUrl(window.location, this.previewProxyPort);
             probeUntilReady(probeBase + '/', {
                 method: 'GET',
                 maxAttempts: 10, baseDelay: 2000, maxDelay: 30000,
-                isReady: (resp) => resp.headers.has('X-Agent-Reverse-Proxy'),
-                signal: this._previewProbeController.signal,
+                // The marker header says the proxy answered, even with its
+                // own "start your app" page. A plain success says the same:
+                // something in front of the box (seen behind Cloudflare) can
+                // drop headers it does not know, and waiting on the marker
+                // alone left the pane white with the app running.
+                isReady: (resp) => resp.ok || resp.headers.has('X-Agent-Reverse-Proxy'),
+                signal: probeSignal,
             }).then(() => resolveProxyBase(proxyCandidates({
                 subdomainBase: subdomainBase,
                 portBase: portBasedBase,
@@ -7861,7 +7874,10 @@ class TerminalUI extends HTMLElement {
                     }
                 };
             }).catch(() => {
-                // Exhausted or aborted -- leave placeholder visible
+                // Exhausted or aborted -- leave placeholder visible. Exhausted
+                // is remembered, so the app watch reloads the pane once the
+                // app answers instead of leaving it for good.
+                if (!probeSignal.aborted) this._previewProbeGaveUp = true;
             });
         }
     }
