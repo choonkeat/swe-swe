@@ -887,6 +887,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
     // One fixed port is decided at init, not at run time: it is what stops
     // the generated setup forwarding a hundred ports nothing listens on.
     if (onePortOnly()) f.push('--single-port');
+    // Last, so the script can be run again and again: a second plain init
+    // stops at "Project already initialized". "ignore" means these answers
+    // replace the saved ones -- and, unlike "reuse", it also works the first
+    // time, when nothing is saved yet.
+    f.push('--previous-init-flags=ignore');
     return f.join(' ');
   }
 

@@ -349,3 +349,23 @@ test('oneport is described as the one web address you were given, not as a port'
     assert.match(note, /https:\/\//, 'shows what such an address looks like');
     await page.close();
 });
+
+// Running the page's script a second time used to stop at "Project already
+// initialized", and the box silently kept its old setup. The init line has to
+// work on the first run and every run after, with the page's answers winning:
+// "ignore" (use the flags given, over any saved ones) does both, where
+// "reuse" fails on a project that was never set up.
+test('the init line can be run again and again', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await pick(page, 'oneport');
+    let s = await snapshot(page);
+    let initLine = s.script.split('\n').find((l) => l.includes('swe-swe init'));
+    assert.match(initLine, /--previous-init-flags=ignore/, initLine);
+    assert.match(initLine, /--single-port/, 'the answers still ride along');
+    await page.click('#run-mode button[data-mode="startup"]');
+    s = await snapshot(page);
+    initLine = s.script.split('\n').find((l) => l.includes('swe-swe init'));
+    assert.match(initLine, /--previous-init-flags=ignore/, initLine);
+    await page.close();
+});
