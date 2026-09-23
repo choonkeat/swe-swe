@@ -211,6 +211,56 @@ test.describe('single-port: reported pane problems', () => {
     }, { message: 'Preview pane never showed the app', timeout: 90_000, intervals: [2000] }).toBe(true);
   });
 
+  // Follow-up to problem 2, seen live behind Cloudflare: the app was already
+  // running, the "open in new tab" address showed it, yet the pane stayed
+  // white. Before loading anything the pane waits for swe-swe's marker header
+  // (X-Agent-Reverse-Proxy) on the preview reply. Something in front of the
+  // box that drops headers it does not know leaves that wait unanswered: the
+  // pane gives up after 10 tries and never loads. The stand-in drops the
+  // marker from every reply.
+  test('Preview shows an already-running app behind a gateway that drops swe-swe\'s marker header', async ({ page, context }) => {
+    test.setTimeout(300_000);
+    const gateway = async (route) => {
+      const response = await route.fetch({ maxRedirects: 0 });
+      const headers = { ...response.headers() };
+      delete headers['x-agent-reverse-proxy'];
+      await route.fulfill({ response, headers });
+    };
+    await context.route('**/proxy/**', (route) => gateway(route).catch(() => {}));
+
+    // Start the app first, on the port the session is about to get: open
+    // the session, start the app, then reload so the pane's first look
+    // already finds it running.
+    const uuid = await openClassicSession(page);
+    testSessions.push(uuid);
+    const { port, workDir } = await page.evaluate(() => ({
+      port: window.terminalUI.previewPort,
+      workDir: window.terminalUI.workDir,
+    }));
+    const appDir = `${workDir}/.e2e-adhoc-app-${port}`;
+    execSync(`docker exec -u app ${containerName()} mkdir -p ${appDir}`);
+    cleanups.push(() => execSync(`docker exec ${containerName()} rm -rf ${appDir}`));
+    cleanups.push(startAdhocApp(appDir, port));
+    await expect.poll(async () => page.evaluate(async (u) => {
+      const r = await fetch(`/proxy/${u}/preview/`);
+      return r.status === 200 && (await r.text()).includes('ADHOC-WEBAPP-MARKER');
+    }, uuid), { timeout: 30_000, intervals: [1000] }).toBe(true);
+    await page.reload();
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 40_000 });
+
+    await clickPaneTab(page, 'preview');
+    await expect.poll(async () => {
+      for (const f of page.frames()) {
+        if (!f.url().includes(`/proxy/${uuid}/preview/`)) continue;
+        try {
+          const text = await f.evaluate(() => document.body ? document.body.innerText : '');
+          if (text.includes(APP_MARKER)) return true;
+        } catch {}
+      }
+      return false;
+    }, { message: 'Preview pane never showed the running app', timeout: 90_000, intervals: [2000] }).toBe(true);
+  });
+
   // Problem 3. md-serve, which backs the Files pane, answers a folder that
   // holds an index.html with that page rather than the folder listing. An
   // agent asked for an ad-hoc web app typically writes index.html into the
