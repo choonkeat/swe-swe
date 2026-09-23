@@ -6,10 +6,14 @@
 
 - **The setup page keeps your answers in its address and offers a pre-release**: a reload or a shared link brings the same answers back (never the password), and a "Pre-release" choice installs `swe-swe@next`, also through the plain download with `SWE_SWE_TAG=next`.
 
+- **A stopped Agent Chat restarts itself without Docker**: when chat stops answering, the end-of-turn check has swe-swe restart it and tells the agent to resend, and the agent can also call `restart_agent_chat`.
+
 - **A "Check" button on the Preview bar**: it shows what the Preview tab loaded and what the network did to its replies, for browsers with no developer console such as an iPad.
 
 ### Fixes
 
+- **The Terminal tab displays behind a login gateway**: the session page it shows now allows being shown inside swe-swe's own page, so a gateway's blanket "never show inside another page" rule no longer blanks it.
+- **The setup page's script can be run again**: its init line ends with `--previous-init-flags=ignore`, so a second run applies the page's answers instead of stopping at "Project already initialized".
 - **`swe-swe up` runs the server that came with your install**: without Docker it kept running the copy saved at first `swe-swe init`, so upgrades never reached the running server.
 - **Browsers pick up new swe-swe page code after an upgrade**: every no-Docker build calls itself "dev", so browsers kept reusing their saved copies of the old code.
 - **Previewed apps keep their own inline scripts**: since 2.39.1 every previewed page was sent a policy that blocked scripts written inside the page, which most hot-reload setups rely on.
