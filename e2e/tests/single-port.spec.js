@@ -198,4 +198,46 @@ test.describe('single-port mode', () => {
     const vncFrame = page.frameLocator('.terminal-ui__iframe[data-pane="browser"]');
     await expect(vncFrame.locator('canvas').first()).toBeVisible({ timeout: 120_000 });
   });
+
+  // A front proxy that stamps "X-Frame-Options: deny" on every response that
+  // lacks one -- seen live behind a Cloudflare Access gateway -- blanked every
+  // pane, because in this mode each pane is a same-origin /proxy/{uuid}/...
+  // page inside an iframe. Nothing above could see it: they check which URL a
+  // pane resolved to, never whether the browser agreed to show it. Stand the
+  // gateway up in the browser and require the frames to actually load.
+  test('panes load behind a front proxy that adds X-Frame-Options: deny when absent', async ({ page, context }) => {
+    await context.route('**/proxy/**', async (route) => {
+      if (route.request().resourceType() !== 'document') return route.continue();
+      const response = await route.fetch({ maxRedirects: 0 });
+      const headers = response.headers();
+      if (!('x-frame-options' in headers)) headers['x-frame-options'] = 'deny';
+      if (!('content-security-policy' in headers)) headers['content-security-policy'] = "script-src 'self';";
+      await route.fulfill({ response, headers });
+    });
+
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
+    testSessions.push(uuid);
+    await page.locator('.terminal-ui__terminal').waitFor({ timeout: 40_000 });
+
+    await page.waitForFunction(
+      () => window.terminalUI && window.terminalUI._acProxyMode,
+      null,
+      { timeout: 120_000 }
+    );
+    await page.evaluate(() => {
+      const ui = window.terminalUI;
+      const slot = ui._slotForPane('files');
+      if (slot) ui.setActiveInSlot(slot, 'files', { persist: false });
+      ui._loadPaneIfNeeded('files');
+    });
+
+    // A frame the browser refused sits on chrome-error://chromewebdata/, so
+    // the pane's own URL showing up as a frame is the proof it was displayed.
+    for (const pane of ['agentchat', 'files']) {
+      await expect.poll(
+        () => page.frames().some((f) => f.url().includes(`/proxy/${uuid}/${pane}/`)),
+        { message: `${pane} pane never displayed behind the deny-stamping proxy`, timeout: 120_000, intervals: [1000] }
+      ).toBe(true);
+    }
+  });
 });
