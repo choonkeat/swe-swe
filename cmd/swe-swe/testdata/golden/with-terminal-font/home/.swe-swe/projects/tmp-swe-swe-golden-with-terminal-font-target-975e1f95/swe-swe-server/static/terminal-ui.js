@@ -7579,6 +7579,64 @@ class TerminalUI extends HTMLElement {
         if (placeholder) placeholder.classList.add('hidden');
     }
 
+    // Watch the user's app on $PORT and reload the Preview pane when it comes
+    // up. The proxy's own "start your app" page reloads itself, and the pane's
+    // readiness probe waits for the proxy -- but that page is served with
+    // status 502, and a gateway in front (Cloudflare) can swap a 502 page for
+    // its own: no marker header for the probe, which gives up after 10 tries,
+    // and no script to reload. The app then ran with the pane stuck on the
+    // placeholder or the gateway's page until the user reloaded by hand.
+    _startPreviewAppWatch() {
+        if (this._previewAppWatchStarted) return;
+        this._previewAppWatchStarted = true;
+        const tick = async () => {
+            if (this.sessionUUID && this._paneLoaded.has('preview')) {
+                let up;
+                try {
+                    const r = await fetch(`${getBaseUrl(window.location)}/api/session/${this.sessionUUID}/preview-ready`,
+                        { credentials: 'include', cache: 'no-store' });
+                    up = r.ok;
+                } catch {
+                    // Network blip: no news, keep the last state.
+                    up = this._previewAppUp === true;
+                }
+                const cameUp = up && this._previewAppUp === false;
+                this._previewAppUp = up;
+                if (cameUp) {
+                    // Give the proxy's own page a moment to reload itself
+                    // first; only step in if the pane still is not the app.
+                    // Unreadable (cross-origin) panes are left alone unless
+                    // still on the placeholder: a dev server restarting on
+                    // every save would otherwise reset the page each time.
+                    setTimeout(() => {
+                        const showsApp = this._previewInnerShowsApp();
+                        if (showsApp === false || (showsApp === null && this._previewWaiting)) {
+                            const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
+                            this.setPreviewURL(currentTarget);
+                        }
+                    }, 4000);
+                }
+            }
+            setTimeout(tick, 3000);
+        };
+        tick();
+    }
+
+    // Whether the Preview pane's inner frame holds a proxied app page: those
+    // carry the proxy's injected debug script, which the proxy's own "start
+    // your app" page and a gateway's error page do not. null when it cannot be
+    // read (cross-origin port/subdomain forms, or nothing loaded yet).
+    _previewInnerShowsApp() {
+        try {
+            const shell = this._iframeFor('preview')?.contentWindow;
+            const inner = shell && shell.document.getElementById('inner');
+            if (!inner || !inner.contentWindow) return null;
+            return !!inner.contentWindow.__arpDebugDebugInit;
+        } catch {
+            return null;
+        }
+    }
+
     /**
      * Reload the preview iframe (used when proxy comes up after being down).
      */
@@ -7721,6 +7779,7 @@ class TerminalUI extends HTMLElement {
         this.updateVhostModeIndicator();
         const probeBase = buildPreviewUrl(getBaseUrl(window.location), this.sessionUUID);
         if (!probeBase) return;
+        this._startPreviewAppWatch();
         const subdomainBase = (this.effectivePublicHostname && this.previewProxyPort)
             ? buildSubdomainPreviewUrl(window.location, this.previewProxyPort, this.effectivePublicHostname)
             : null;

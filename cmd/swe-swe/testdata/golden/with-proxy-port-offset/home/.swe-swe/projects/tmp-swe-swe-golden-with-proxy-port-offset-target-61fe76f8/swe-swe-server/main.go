@@ -563,6 +563,7 @@ type Session struct {
 	CDPPort        int    // Chrome DevTools Protocol port for this session
 	VNCPort        int    // VNC port for browser view for this session
 	FilesPort      int    // Files (md-serve) port for this session
+	MdServeDir     string // Folder the md-serve on FilesPort serves (a child session shares its parent's)
 	BrowserPIDs    []int         // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string        // Per-session Chromium user data directory
 	BrowserProcs   *browserProcs // Full handle incl. the CDP forwarder server
@@ -2822,6 +2823,12 @@ func main() {
 			return
 		}
 
+		// An Agent Chat attachment asked for from inside a path-form chat pane.
+		if target, ok := agentChatUploadRedirect(r); ok {
+			http.Redirect(w, r, target, http.StatusFound)
+			return
+		}
+
 		// WebSocket path: handle WebSocket connection
 		if strings.HasPrefix(r.URL.Path, "/ws/") {
 			sessionUUID := strings.TrimPrefix(r.URL.Path, "/ws/")
@@ -2963,6 +2970,12 @@ func main() {
 		// Files (md-serve) readiness probe -- same rationale as vnc-ready.
 		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/files-ready") {
 			handleFilesReadyAPI(w, r)
+			return
+		}
+
+		// The user's app on $PORT -- lets the Preview pane reload when it starts.
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/preview-ready") {
+			handlePreviewReadyAPI(w, r)
 			return
 		}
 
@@ -5806,6 +5819,12 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		},
 	}
 	sessions[p.UUID] = sess
+	// The Files pane's md-serve serves this session's folder -- or, for a
+	// child session, which shares its parent's md-serve, the parent's.
+	sess.MdServeDir = sess.WorkDir
+	if parentSess, ok := sessions[p.ParentUUID]; ok && p.ParentUUID != "" && parentSess.MdServeDir != "" {
+		sess.MdServeDir = parentSess.MdServeDir
+	}
 
 	// Inherit git credentials/signing from the authenticated calling session
 	// (MCP create_session). Done after the session is registered so the
@@ -5891,7 +5910,8 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		if err != nil {
 			log.Printf("Warning: failed to create files path proxy for session %s: %v", sess.UUID, err)
 		} else {
-			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesLivereloadPathFix("/proxy/"+sess.UUID+"/files", filesPathProxy))
+			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesLivereloadPathFix("/proxy/"+sess.UUID+"/files",
+				filesDirListingFix("/proxy/"+sess.UUID+"/files", sess.MdServeDir, filesPathProxy)))
 		}
 		sess.PreviewProxy = previewProxy
 		sess.SessionMux = sessMux
@@ -6063,7 +6083,7 @@ func startPerSessionProxyListeners(d perSessionProxyDeps) {
 	filesPP := filesProxyPort(sess.FilesPort)
 	filesHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
 		return scopeOwnsProxyPort(scope, filesPP, func(s *Session) int { return filesProxyPort(s.FilesPort) })
-	}, filesReverseProxy))
+	}, filesDirListingFix("", sess.MdServeDir, filesReverseProxy)))
 	sess.trackProxyServer(
 		startProxyListener("files", sess.UUID, fmt.Sprintf(":%d", filesPP), filesHandler),
 		func(s *Session, srv *http.Server) { s.FilesProxyServer = srv })
@@ -9752,13 +9772,30 @@ var vncReadyClient = &http.Client{Timeout: 1500 * time.Millisecond}
 // and defer loading its iframe until md-serve has finished its (slow, npx
 // @latest) cold start -- otherwise the pane renders blank until a manual reload.
 func handleFilesReadyAPI(w http.ResponseWriter, r *http.Request) {
+	handlePortReadyAPI(w, r, "/files-ready", "Files", func(s *Session) int { return s.FilesPort })
+}
+
+// handlePreviewReadyAPI handles GET /api/session/{uuid}/preview-ready
+// Returns 200 if the user's app is listening on the session's PreviewPort
+// (its $PORT), 503 otherwise. The Preview pane polls it to reload itself when
+// the app comes up. The proxy's own "start your app" page reloads itself too,
+// but it is served with status 502, and a gateway in front (Cloudflare) can
+// swap a 502 page for its own, which never reloads.
+func handlePreviewReadyAPI(w http.ResponseWriter, r *http.Request) {
+	handlePortReadyAPI(w, r, "/preview-ready", "Preview", func(s *Session) int { return s.PreviewPort })
+}
+
+// handlePortReadyAPI answers GET /api/session/{uuid}{suffix}: 200
+// {"ready":true} when something listens on the session's port, 503
+// {"ready":false} when not.
+func handlePortReadyAPI(w http.ResponseWriter, r *http.Request, suffix, what string, portOf func(*Session) int) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	path := strings.TrimPrefix(r.URL.Path, "/api/session/")
-	sessionUUID := strings.TrimSuffix(path, "/files-ready")
+	sessionUUID := strings.TrimSuffix(path, suffix)
 
 	if sessionUUID == "" {
 		http.Error(w, "Missing session UUID", http.StatusBadRequest)
@@ -9773,13 +9810,14 @@ func handleFilesReadyAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if sess.FilesPort == 0 {
-		http.Error(w, "Files not configured", http.StatusServiceUnavailable)
+	port := portOf(sess)
+	if port == 0 {
+		http.Error(w, what+" not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	// TCP connect to md-serve to check if it's listening yet.
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", sess.FilesPort), 500*time.Millisecond)
+	// TCP connect to check if it's listening yet.
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), 500*time.Millisecond)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
