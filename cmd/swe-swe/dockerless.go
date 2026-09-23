@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -343,6 +344,13 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 		if singlePort {
 			fmt.Println("Single-port mode: every pane is served from this one listener; no per-session proxy ports are opened")
 		}
+		// Run the server this swe-swe carries, not whichever one init
+		// dumped back when the project was set up.
+		if n, err := refreshDockerlessBinaries(filepath.Dir(bin), runtime.GOOS, runtime.GOARCH); err != nil {
+			log.Printf("Warning: could not update the host-native binaries in %s: %v", filepath.Dir(bin), err)
+		} else if n > 0 {
+			fmt.Printf("Updated %d host-native binaries in %s to this swe-swe's versions\n", n, filepath.Dir(bin))
+		}
 		if _, err := os.Stat(bin); err != nil {
 			log.Fatalf("dockerless server not found at %s -- re-run `swe-swe init --dockerless`: %v", bin, err)
 		}
@@ -481,6 +489,46 @@ func writeDockerlessHooks(projectDir, sweDir string) error {
 		return fmt.Errorf("marshal settings.local.json: %w", err)
 	}
 	return os.WriteFile(settingsPath, append(data, '\n'), 0o644)
+}
+
+// refreshDockerlessBinaries brings the binaries `swe-swe init` dumped into
+// destDir in line with the ones this swe-swe carries, rewriting only those
+// that differ or are missing, and returns how many it rewrote.
+//
+// `swe-swe up` runs the dumped server, and init is the only thing that dumped
+// it. Installing a newer swe-swe and re-running init stops at "Project
+// already initialized", so a box kept serving the release it was first set
+// up with while every upgrade looked installed. Each file is written beside
+// the old one and renamed over it, so a server still running from the old
+// file is not disturbed.
+func refreshDockerlessBinaries(destDir, goos, goarch string) (int, error) {
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return 0, fmt.Errorf("create %s: %w", destDir, err)
+	}
+	srcDir := dockerlessPayloadBinDir(goos, goarch)
+	n := 0
+	for _, name := range dockerlessBinaries {
+		data, err := dockerlessPayload.ReadFile(filepath.Join(srcDir, name))
+		if err != nil {
+			return n, fmt.Errorf("read embedded %s: %w", name, err)
+		}
+		dst := filepath.Join(destDir, name)
+		if cur, err := os.ReadFile(dst); err == nil && bytes.Equal(cur, data) {
+			continue
+		}
+		tmp := dst + ".new"
+		if err := os.WriteFile(tmp, data, 0755); err != nil {
+			return n, fmt.Errorf("write %s: %w", tmp, err)
+		}
+		if err := os.Chmod(tmp, 0755); err != nil {
+			return n, fmt.Errorf("chmod %s: %w", tmp, err)
+		}
+		if err := os.Rename(tmp, dst); err != nil {
+			return n, fmt.Errorf("replace %s: %w", dst, err)
+		}
+		n++
+	}
+	return n, nil
 }
 
 // extractDockerlessBinaries writes the embedded static-Linux binaries for the

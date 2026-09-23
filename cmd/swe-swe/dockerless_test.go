@@ -491,3 +491,44 @@ func removeClaudeMCPConfigForTest(dir string) (bool, error) {
 	removed, err := removeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"claude"})
 	return len(removed) > 0, err
 }
+
+// TestRefreshDockerlessBinaries -- `swe-swe up` used to run whatever server
+// `swe-swe init` dumped, forever. Installing a newer swe-swe and re-running
+// init stops at "Project already initialized", so a box kept serving the
+// first release it was set up with while every upgrade looked installed. `up`
+// now brings the dumped binaries in line with the ones this swe-swe carries.
+func TestRefreshDockerlessBinaries(t *testing.T) {
+	dest := t.TempDir()
+	if err := extractDockerlessBinaries(dest, runtime.GOOS, runtime.GOARCH); err != nil {
+		t.Fatalf("extractDockerlessBinaries: %v", err)
+	}
+
+	// Nothing stale: nothing rewritten.
+	n, err := refreshDockerlessBinaries(dest, runtime.GOOS, runtime.GOARCH)
+	if err != nil || n != 0 {
+		t.Fatalf("fresh dir: refreshed %d (err %v), want 0", n, err)
+	}
+
+	// A server left behind by an older release.
+	stale := filepath.Join(dest, "swe-swe-server")
+	if err := os.WriteFile(stale, []byte("old server"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(dest, "swe-run"))
+
+	n, err = refreshDockerlessBinaries(dest, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		t.Fatalf("refreshDockerlessBinaries: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("refreshed %d binaries, want 2 (the stale server and the missing swe-run)", n)
+	}
+	want, _ := dockerlessPayload.ReadFile(filepath.Join(dockerlessPayloadBinDir(runtime.GOOS, runtime.GOARCH), "swe-swe-server"))
+	got, _ := os.ReadFile(stale)
+	if string(got) != string(want) {
+		t.Errorf("swe-swe-server was not replaced with the embedded one")
+	}
+	if info, err := os.Stat(stale); err != nil || info.Mode().Perm()&0111 == 0 {
+		t.Errorf("swe-swe-server not executable after refresh: %v %v", info, err)
+	}
+}
