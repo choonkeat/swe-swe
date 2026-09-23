@@ -10,7 +10,7 @@
 
 - **Images uploaded in Agent Chat display again in single-port mode**: the chat's `/uploads/...` addresses are now sent on to the chat panel that holds the file.
 - **Files lists a folder that holds an index.html instead of showing that page**: an agent's ad-hoc web app no longer takes over the Files tab.
-- **Preview shows your app once it starts, even behind a gateway like Cloudflare**: the page now watches for the app and reloads the panel, where before it waited on a "not running yet" page the gateway could replace.
+- **Preview shows your app, even behind a gateway like Cloudflare**: the page now watches for the app and reloads the panel, and no longer waits on a "not running yet" page or a swe-swe marker that the gateway can replace or drop.
 
 ## v2.39.1 - Panes Behind a Login Gateway
 
