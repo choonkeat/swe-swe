@@ -11,6 +11,7 @@ import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueC
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
 import { getStatusBarClasses, renderStatusInfo, renderServiceLinks, renderCustomLinks, renderAssistantLink } from './modules/status-renderer.js';
 import { IframeLoadSupervisor } from './modules/iframe-load-supervisor.js';
+import { collectPreviewCheck } from './modules/preview-check.js';
 import { REASON as AUTOSEND_REASON, isAutoSendSafe, orderedCredHosts, pickPaneHost, planAutoSend, autoRestoreHint } from './modules/cred-autosend.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
 
@@ -1205,6 +1206,7 @@ class TerminalUI extends HTMLElement {
                                 </div>
                                 <span class="terminal-ui__iframe-vhost-mode" hidden title="Preview reach mode"></span>
                                 <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-go" title="Go">→</button>
+                                <button class="terminal-ui__iframe-nav-btn terminal-ui__iframe-check" title="Check what the Preview tab loaded">Check</button>
                             </div>
                             <div class="terminal-ui__iframe-slot" data-pane="preview">
                                 <div class="terminal-ui__iframe-placeholder">
@@ -7269,6 +7271,23 @@ class TerminalUI extends HTMLElement {
 
         // Setup iframe navigation buttons
         const homeBtn = this.querySelector('.terminal-ui__iframe-home');
+        // "Check": a plain-text report of what the Preview tab loaded and
+        // what the network did to its replies -- for a browser with no
+        // developer console (an iPad), where a white pane is otherwise a
+        // dead end. Reads only; changes nothing.
+        const checkBtn = this.querySelector('.terminal-ui__iframe-check');
+        if (checkBtn) {
+            checkBtn.addEventListener('click', async () => {
+                const lines = await collectPreviewCheck({
+                    pane: this._iframeFor('preview'),
+                    ui: this,
+                    fetchImpl: (...a) => fetch(...a),
+                    userAgent: navigator.userAgent,
+                });
+                alert(lines.join('\n'));
+            });
+        }
+
         const refreshBtn = this.querySelector('.terminal-ui__iframe-refresh');
 
         // Diagnostic: log WS state + time since last server message on each
