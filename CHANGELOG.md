@@ -6,8 +6,11 @@
 
 - **The setup page keeps your answers in its address and offers a pre-release**: a reload or a shared link brings the same answers back (never the password), and a "Pre-release" choice installs `swe-swe@next`, also through the plain download with `SWE_SWE_TAG=next`.
 
+- **A "Check" button on the Preview bar**: it shows what the Preview tab loaded and what the network did to its replies, for browsers with no developer console such as an iPad.
+
 ### Fixes
 
+- **Previewed apps keep their own inline scripts**: since 2.39.1 every previewed page was sent a policy that blocked scripts written inside the page, which most hot-reload setups rely on.
 - **Images uploaded in Agent Chat display again in single-port mode**: the chat's `/uploads/...` addresses are now sent on to the chat panel that holds the file.
 - **Files lists a folder that holds an index.html instead of showing that page**: an agent's ad-hoc web app no longer takes over the Files tab.
 - **Preview shows your app, even behind a gateway like Cloudflare**: the page now watches for the app and reloads the panel, and no longer waits on a "not running yet" page or a swe-swe marker that the gateway can replace or drop.
