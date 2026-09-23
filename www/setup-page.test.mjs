@@ -206,91 +206,74 @@ test('oneport on a host-native box: the flag rides along there too', async (t) =
     await page.close();
 });
 
-// "Latest code on GitHub" builds swe-swe from the main branch instead of
-// fetching the published release, so a fix can be tried before it is released.
+// "Pre-release" installs the version published under npm's "next" label
+// instead of the release, so a fix can be tried before it is released.
+// Everyone else keeps getting the release.
 async function pickSource(page, source) {
     await page.click(`#source-mode button[data-source="${source}"]`);
 }
 
-test('release is the default: the published package, no build from GitHub', async (t) => {
+test('release is the default: the published release', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     await pick(page, 'oneport');
     const s = await snapshot(page);
-    assert.match(s.script, /npx -y swe-swe/);
-    assert.ok(!s.script.includes('git clone'), 'nothing is built by default');
+    assert.match(s.script, /npx -y swe-swe'/);
+    assert.ok(!s.script.includes('@next'), 'no pre-release by default');
     assert.strictEqual(s.versionNote, true);
+    const nextNote = await page.evaluate(() => !document.getElementById('next-note').hidden);
+    assert.strictEqual(nextNote, false);
     await page.close();
 });
 
-test('latest code on GitHub with Docker: Docker builds swe-swe from main', async (t) => {
+test('pre-release with Node: npx asks for swe-swe@next', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     await pick(page, 'oneport');
-    await pickSource(page, 'head');
+    await pickSource(page, 'next');
     const s = await snapshot(page);
-    assert.ok(!s.script.includes('npx -y swe-swe'), 'the published package is not used');
-    assert.match(s.script, /docker run [\s\S]*golang:/, 'the build runs inside a Go image');
-    assert.match(s.script, /git clone [^\n]*https:\/\/github\.com\/choonkeat\/swe-swe/);
-    assert.match(s.script, /go build [^\n]*\.\/cmd\/swe-swe/);
+    assert.match(s.script, /alias swe-swe='npx -y swe-swe@next'/);
     assert.match(s.script, /swe-swe init --single-port/, 'the answers still shape the rest');
-    assert.strictEqual(s.versionNote, false, 'main is always new enough');
-    const headNote = await page.evaluate(() => !document.getElementById('head-note').hidden);
-    assert.strictEqual(headNote, true, 'says what "latest code" means');
+    assert.strictEqual(s.versionNote, false, 'the pre-release is always new enough');
+    const nextNote = await page.evaluate(() => !document.getElementById('next-note').hidden);
+    assert.strictEqual(nextNote, true, 'says what "pre-release" means');
     await page.close();
 });
 
-test('latest code on GitHub on the ordinary laptop path still builds from main', async (t) => {
+test('pre-release on the ordinary laptop path', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
-    await pickSource(page, 'head');
+    await pickSource(page, 'next');
     const s = await snapshot(page);
-    assert.ok(!s.script.includes('npx -y swe-swe'));
-    assert.match(s.script, /go build/);
+    assert.match(s.script, /npx -y swe-swe@next/);
     assert.match(s.script, /swe-swe up/);
     await page.close();
 });
 
-test('latest code on GitHub without Docker: built with the local Go', async (t) => {
+test('pre-release without Node, and in a start-up script: the download asks for next', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     await page.click('#have-agents');
-    await pickSource(page, 'head');
-    const s = await snapshot(page);
-    assert.ok(!s.script.includes('docker run'), 'no Docker on this path');
-    assert.ok(!s.script.includes('install.sh'), 'the published download is not used');
-    assert.match(s.script, /git clone [^\n]*choonkeat\/swe-swe/);
-    assert.match(s.script, /go build [^\n]*\.\/cmd\/swe-swe/);
-    const note = await page.evaluate(() => document.getElementById('head-note').textContent);
-    assert.match(note, /Go 1\.2\d/, 'names the Go it needs');
-    await page.close();
-});
-
-test('latest code on GitHub in a start-up script: no published download either', async (t) => {
-    if (skipReason) return t.skip(skipReason);
-    const page = await openPage();
-    await pickSource(page, 'head');
+    await page.uncheck('#c-node');
+    await pickSource(page, 'next');
+    let s = await snapshot(page);
+    assert.match(s.script, /install\.sh \| SWE_SWE_TAG=next sh/);
     await page.click('#run-mode button[data-mode="startup"]');
-    const s = await snapshot(page);
-    assert.ok(!s.script.includes('install.sh'));
-    assert.match(s.script, /go build/);
+    s = await snapshot(page);
+    assert.match(s.script, /install\.sh \| SWE_SWE_TAG=next sh/);
     assert.match(s.script, /nohup swe-swe up/);
     await page.close();
 });
 
-// A personal git setting (url."git@github.com:".insteadOf) turns the https
-// address into ssh, and the clone fails with "Permission denied (publickey)"
-// on a box with no GitHub key. The clone must not read those settings.
-test('latest code on GitHub: the clone ignores personal git settings', async (t) => {
+test('an address naming an unknown source falls back to the release', async (t) => {
     if (skipReason) return t.skip(skipReason);
-    const page = await openPage();
-    for (const have of ['docker', 'agents']) {
-        await page.click(`#have-${have}`);
-        await pickSource(page, 'head');
-        const s = await snapshot(page);
-        const clone = s.script.split('\n').find((l) => l.includes('git clone'));
-        assert.match(clone, /GIT_CONFIG_GLOBAL=\/dev\/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 git clone/, `${have}: ${clone}`);
-    }
+    const page = await browser.newPage();
+    await page.goto(base + '#source=head', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!document.getElementById('script-out').textContent);
+    const s = await snapshot(page);
+    assert.match(s.script, /npx -y swe-swe'/);
+    const pressed = await page.evaluate(() => document.querySelector('#source-mode button[aria-pressed="true"]').getAttribute('data-source'));
+    assert.strictEqual(pressed, 'release');
     await page.close();
 });
 
@@ -308,7 +291,7 @@ test('answers survive a reload through the # part of the address', async (t) => 
     await page.fill('#c-browser-addr', 'http://browser-box:9333');
     await page.check('#c-browser-noinbound');
     await pick(page, 'oneport');
-    await pickSource(page, 'head');
+    await pickSource(page, 'next');
     await page.click('#run-mode button[data-mode="startup"]');
 
     const pw = await page.evaluate(() => {
@@ -341,7 +324,7 @@ test('answers survive a reload through the # part of the address', async (t) => 
     }));
     assert.deepStrictEqual(controls, {
         have: true, codex: 'true', node: false, tools: false, fallback: 'remote',
-        addr: 'http://browser-box:9333', noinbound: true, reach: true, source: 'head', mode: 'startup',
+        addr: 'http://browser-box:9333', noinbound: true, reach: true, source: 'next', mode: 'startup',
     });
     await page.close();
 });
@@ -350,30 +333,6 @@ test('the untouched page keeps a bare address', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     assert.strictEqual(await page.evaluate(() => location.hash), '');
-    await page.close();
-});
-
-// Behind a network that inspects secure connections with its own certificate,
-// the clone failed with "SSL certificate verification failed: certificate
-// signer not trusted". That certificate is usually handed to tools through
-// NODE_EXTRA_CA_CERTS or SSL_CERT_FILE; the build lines must pass it on to
-// git and Go -- into the Docker build too, which sees none of the machine's
-// files unless they are mounted.
-test('latest code on GitHub: trusts the certificates in NODE_EXTRA_CA_CERTS / SSL_CERT_FILE', async (t) => {
-    if (skipReason) return t.skip(skipReason);
-    const page = await openPage();
-
-    await pickSource(page, 'head');
-    let s = (await snapshot(page)).script;
-    assert.match(s, /\$\{NODE_EXTRA_CA_CERTS:\+-v "\$NODE_EXTRA_CA_CERTS:[^"]+"\}/, 'Docker: the file is mounted when set');
-    assert.match(s, /\$\{SSL_CERT_FILE:\+-v "\$SSL_CERT_FILE:[^"]+"\}/, 'Docker: the file is mounted when set');
-    assert.match(s, />> \/etc\/ssl\/certs\/ca-certificates\.crt/, 'Docker: added to what git and Go trust inside the build');
-
-    await page.click('#have-agents');
-    s = (await snapshot(page)).script;
-    assert.match(s, /NODE_EXTRA_CA_CERTS/);
-    assert.match(s, /SSL_CERT_FILE/);
-    assert.match(s, /GIT_SSL_CAINFO=/, 'git reads its own variable, not SSL_CERT_FILE');
     await page.close();
 });
 

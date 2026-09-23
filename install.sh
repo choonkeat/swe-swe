@@ -3,9 +3,14 @@ set -eu
 
 # swe-swe installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh
+#
+# SWE_SWE_TAG picks which published version to install, by its npm label:
+# "latest" (the default, the release) or "next" (the pre-release):
+#   curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | SWE_SWE_TAG=next sh
 
 PACKAGE_NAME="swe-swe"
 BIN_NAME="swe-swe"
+TAG="${SWE_SWE_TAG:-latest}"
 
 main() {
   detect_platform
@@ -43,13 +48,19 @@ detect_platform() {
 }
 
 fetch_latest_version() {
-  echo "Fetching latest version..."
-  VERSION=$(curl -fsSL "https://registry.npmjs.org/${PACKAGE_NAME}/latest" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  case "$TAG" in
+    *[!A-Za-z0-9._-]*|"")
+      echo "Error: SWE_SWE_TAG must be an npm label such as latest or next, got: $TAG" >&2
+      exit 1
+      ;;
+  esac
+  echo "Fetching ${TAG} version..."
+  VERSION=$(curl -fsSL "https://registry.npmjs.org/${PACKAGE_NAME}/${TAG}" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
   if [ -z "$VERSION" ]; then
-    echo "Error: Could not determine latest version" >&2
+    echo "Error: Could not determine ${TAG} version" >&2
     exit 1
   fi
-  echo "Latest version: ${VERSION}"
+  echo "${TAG} version: ${VERSION}"
 }
 
 download_and_install() {

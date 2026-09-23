@@ -628,11 +628,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
     <div class="toggle" id="source-mode" style="margin-bottom:0.75rem;">
       <button type="button" data-source="release" aria-pressed="true">Published release</button>
-      <button type="button" data-source="head" aria-pressed="false">Latest code on GitHub</button>
+      <button type="button" data-source="next" aria-pressed="false">Pre-release</button>
     </div>
 
-    <div class="warn" id="head-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
-      <p id="head-note-text"></p>
+    <div class="warn" id="next-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
+      <p>A test version, published ahead of the release so a fix can be tried early. Only people who pick this get it; everyone else stays on the release.</p>
     </div>
 
     <div class="warn" id="version-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
@@ -800,6 +800,9 @@ code { font-family: var(--mono); color: var(--text-primary); }
       else if (Array.isArray(DEFAULTS[k])) state[k] = v ? v.split(',') : [];
       else state[k] = v;
     });
+    // An address saved before a choice was renamed or removed must not leave
+    // the page on a choice it no longer has.
+    if (['release', 'next'].indexOf(state.source) === -1) state.source = DEFAULTS.source;
   }
 
   function writeHash() {
@@ -865,54 +868,17 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // is what stops it opening the per-session proxy ports and probing them.
   function ordinary() { return state.have === 'docker' && state.reach === 'anyport'; }
 
-  // "Latest code on GitHub": build swe-swe from the main branch rather than
-  // fetch the published release, to try a fix before it is released.
-  function fromHead() { return state.source === 'head'; }
+  // "Pre-release": the version published under npm's "next" label, ahead of
+  // the release, to try a fix early. Nobody gets it without asking for it.
+  function fromNext() { return state.source === 'next'; }
 
   // ---------- Script generation ----------
-  var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
-  var NPX_ALIAS = "alias swe-swe='npx -y swe-swe'";
+  function installSh() {
+    return 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | ' +
+      (fromNext() ? 'SWE_SWE_TAG=next sh' : 'sh');
+  }
+  function npxAlias() { return "alias swe-swe='npx -y swe-swe" + (fromNext() ? '@next' : '') + "'"; }
   var APT_LINE = 'sudo apt-get install -y chromium xvfb x11vnc novnc websockify';
-
-  // Building from main. The commit goes into the binary so `swe-swe -version`
-  // says which one it is.
-  var HEAD_REPO = 'https://github.com/choonkeat/swe-swe';
-  var HEAD_GO_BUILD = 'go build -ldflags "-X main.GitCommit=$(git rev-parse --short HEAD)"';
-  // Clone with the machine's own git settings switched off -- the user and
-  // system files, and any passed in through GIT_CONFIG_COUNT variables. A
-  // common one (url."git@github.com:".insteadOf) turns the https address into
-  // ssh, which fails with "Permission denied (publickey)" without a GitHub key.
-  var HEAD_CLONE = 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 git clone -q --depth 1 ' + HEAD_REPO;
-  // A network that inspects secure connections signs them with its own
-  // certificate, and git and Go refuse it ("certificate signer not trusted")
-  // unless told to trust it. Tools usually get that certificate through
-  // NODE_EXTRA_CA_CERTS or SSL_CERT_FILE, so whichever is set is added to
-  // what git and Go trust -- on top of the usual list, not instead of it.
-  //
-  // With Docker, a Go image does the build, so nothing else is needed. The
-  // binary is built for this machine (a Mac too), not for the Linux image.
-  // The build sees none of this machine's files, so the certificate files
-  // are mounted in and appended to the image's list.
-  var HEAD_DOCKER_LINES = [
-    'mkdir -p "$HOME/.local/bin"',
-    'docker run --rm -v "$HOME/.local/bin:/out" \\',
-    '  ${NODE_EXTRA_CA_CERTS:+-v "$NODE_EXTRA_CA_CERTS:/extra-ca/node.pem:ro"} ${SSL_CERT_FILE:+-v "$SSL_CERT_FILE:/extra-ca/ssl.pem:ro"} \\',
-    '  -e CGO_ENABLED=0 -e GOOS="$(uname -s | tr A-Z a-z)" -e GOARCH="$(uname -m | sed \'s/x86_64/amd64/;s/aarch64/arm64/\')" \\',
-    "  golang:1.24 sh -c 'for f in /extra-ca/*.pem; do [ -f \"$f\" ] && cat \"$f\" >> /etc/ssl/certs/ca-certificates.crt; done; " +
-      HEAD_CLONE + " /src && cd /src && " + HEAD_GO_BUILD + " -o /out/swe-swe ./cmd/swe-swe'",
-    'export PATH="$HOME/.local/bin:$PATH"'
-  ];
-  // Without Docker, the machine's own Go does it. git is pointed at the
-  // combined list with GIT_SSL_CAINFO (it does not read SSL_CERT_FILE), Go
-  // with SSL_CERT_FILE.
-  var HEAD_GO_LINES = [
-    'mkdir -p "$HOME/.local/bin"',
-    'cat /etc/ssl/certs/ca-certificates.crt ${NODE_EXTRA_CA_CERTS:+"$NODE_EXTRA_CA_CERTS"} ${SSL_CERT_FILE:+"$SSL_CERT_FILE"} > /tmp/swe-swe-ca.pem',
-    'rm -rf /tmp/swe-swe-src && GIT_SSL_CAINFO=/tmp/swe-swe-ca.pem ' + HEAD_CLONE + ' /tmp/swe-swe-src',
-    '(cd /tmp/swe-swe-src && SSL_CERT_FILE=/tmp/swe-swe-ca.pem ' + HEAD_GO_BUILD + ' -o "$HOME/.local/bin/swe-swe" ./cmd/swe-swe)',
-    'export PATH="$HOME/.local/bin:$PATH"'
-  ];
-  function headLines() { return state.have === 'docker' ? HEAD_DOCKER_LINES.slice() : HEAD_GO_LINES.slice(); }
 
   function initFlags() {
     var f = [];
@@ -943,7 +909,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // the home page's instructions.
   function plainScript() {
     return [
-      NPX_ALIAS,
+      npxAlias(),
       '# cd /path/to/project',
       "SWE_SWE_PASSWORD='" + state.password + "' swe-swe up",
       '',
@@ -952,17 +918,16 @@ code { font-family: var(--mono); color: var(--text-primary); }
   }
 
   function firstLines() {
-    if (fromHead()) return headLines();
     // With Docker we assume the usual Node one-liner; the Node question is
     // only asked on the host-native path.
     if (hostRuntime() && !state.node) {
-      return [INSTALL_SH, 'export PATH="$HOME/.local/bin:$PATH"'];
+      return [installSh(), 'export PATH="$HOME/.local/bin:$PATH"'];
     }
-    return [NPX_ALIAS];
+    return [npxAlias()];
   }
 
   function handScript() {
-    if (ordinary() && !fromHead()) return plainScript();
+    if (ordinary()) return plainScript();
     var lines = firstLines();
     if (installsBrowserTools()) lines.push(APT_LINE);
     lines.push('');
@@ -987,12 +952,8 @@ code { font-family: var(--mono); color: var(--text-primary); }
     lines.push('');
     // A start-up script runs with no terminal and no alias, so it always uses
     // the plain download rather than the Node one-liner.
-    if (fromHead()) {
-      headLines().forEach(function(l) { lines.push(l); });
-    } else {
-      lines.push(INSTALL_SH);
-      lines.push('export PATH="$HOME/.local/bin:$PATH"');
-    }
+    lines.push(installSh());
+    lines.push('export PATH="$HOME/.local/bin:$PATH"');
     if (installsBrowserTools()) lines.push(APT_LINE);
     lines.push('');
     lines.push('mkdir -p "$PROJECT_DIR"');
@@ -1013,7 +974,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   function otherMachineScript() {
     return [
-      INSTALL_SH,
+      installSh(),
       'export PATH="$HOME/.local/bin:$PATH"',
       APT_LINE,
       '',
@@ -1025,7 +986,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
     if (state.runMode === 'startup') {
       return 'Always included without asking: the port number spelled out, the most basic shell syntax, and starting in the background with a log file. There is no terminal to keep open on a machine like this.';
     }
-    if (ordinary() && !fromHead()) return 'Everything left as it is, so these are the ordinary instructions.';
+    if (ordinary()) return 'Everything left as it is, so these are the ordinary instructions.';
     return 'Stays in front of you; Ctrl-C stops it.';
   }
 
@@ -1095,11 +1056,8 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
     // The one-port route rides the same-origin fallback for every pane, which
     // is newer than the version the rest of this page needs.
-    el('version-note').hidden = ordinary() || fromHead();
-    el('head-note').hidden = !fromHead();
-    el('head-note-text').textContent = state.have === 'docker'
-      ? 'Unreleased code from the main branch on GitHub, for trying a fix before it is released. Docker builds it first, about 2 minutes. Run it again to pick up newer code.'
-      : 'Unreleased code from the main branch on GitHub, for trying a fix before it is released. It is built first, about 2 minutes, and needs git and Go 1.23 or newer on this machine. Run it again to pick up newer code.';
+    el('version-note').hidden = ordinary() || fromNext();
+    el('next-note').hidden = !fromNext();
     el('version-note-text').textContent = onePortOnly()
       ? 'Needs swe-swe 2.39.0 or newer.'
       : 'Needs swe-swe 2.38.0 or newer.';
