@@ -2549,7 +2549,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	staticHandler := http.FileServer(http.FS(staticContent))
+	staticHandler := noCacheStatic(http.FileServer(http.FS(staticContent)))
 
 	// Handler for terminal-ui.js with template substitution (dev mode compatibility)
 	http.HandleFunc("/terminal-ui.js", func(w http.ResponseWriter, r *http.Request) {
@@ -2562,6 +2562,8 @@ func main() {
 		result := strings.ReplaceAll(string(content), "{{TERMINAL_FONT_SIZE}}", "14")
 		result = strings.ReplaceAll(result, "{{TERMINAL_FONT_FAMILY}}", "Monaco, Menlo, Consolas, monospace")
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		// Same reason as noCacheStatic: ?v= is "dev" on every no-Docker build.
+		w.Header().Set("Cache-Control", "no-cache")
 		w.Write([]byte(result))
 	})
 
