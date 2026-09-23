@@ -831,19 +831,24 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // says which one it is.
   var HEAD_REPO = 'https://github.com/choonkeat/swe-swe';
   var HEAD_GO_BUILD = 'go build -ldflags "-X main.GitCommit=$(git rev-parse --short HEAD)"';
+  // Clone with the machine's own git settings switched off -- the user and
+  // system files, and any passed in through GIT_CONFIG_COUNT variables. A
+  // common one (url."git@github.com:".insteadOf) turns the https address into
+  // ssh, which fails with "Permission denied (publickey)" without a GitHub key.
+  var HEAD_CLONE = 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 git clone -q --depth 1 ' + HEAD_REPO;
   // With Docker, a Go image does the build, so nothing else is needed. The
   // binary is built for this machine (a Mac too), not for the Linux image.
   var HEAD_DOCKER_LINES = [
     'mkdir -p "$HOME/.local/bin"',
     'docker run --rm -v "$HOME/.local/bin:/out" -e CGO_ENABLED=0 \\',
     '  -e GOOS="$(uname -s | tr A-Z a-z)" -e GOARCH="$(uname -m | sed \'s/x86_64/amd64/;s/aarch64/arm64/\')" \\',
-    "  golang:1.24 sh -c 'git clone -q --depth 1 " + HEAD_REPO + " /src && cd /src && " + HEAD_GO_BUILD + " -o /out/swe-swe ./cmd/swe-swe'",
+    "  golang:1.24 sh -c '" + HEAD_CLONE + " /src && cd /src && " + HEAD_GO_BUILD + " -o /out/swe-swe ./cmd/swe-swe'",
     'export PATH="$HOME/.local/bin:$PATH"'
   ];
   // Without Docker, the machine's own Go does it.
   var HEAD_GO_LINES = [
     'mkdir -p "$HOME/.local/bin"',
-    'rm -rf /tmp/swe-swe-src && git clone -q --depth 1 ' + HEAD_REPO + ' /tmp/swe-swe-src',
+    'rm -rf /tmp/swe-swe-src && ' + HEAD_CLONE + ' /tmp/swe-swe-src',
     '(cd /tmp/swe-swe-src && ' + HEAD_GO_BUILD + ' -o "$HOME/.local/bin/swe-swe" ./cmd/swe-swe)',
     'export PATH="$HOME/.local/bin:$PATH"'
   ];

@@ -277,3 +277,19 @@ test('latest code on GitHub in a start-up script: no published download either',
     assert.match(s.script, /nohup swe-swe up/);
     await page.close();
 });
+
+// A personal git setting (url."git@github.com:".insteadOf) turns the https
+// address into ssh, and the clone fails with "Permission denied (publickey)"
+// on a box with no GitHub key. The clone must not read those settings.
+test('latest code on GitHub: the clone ignores personal git settings', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    for (const have of ['docker', 'agents']) {
+        await page.click(`#have-${have}`);
+        await pickSource(page, 'head');
+        const s = await snapshot(page);
+        const clone = s.script.split('\n').find((l) => l.includes('git clone'));
+        assert.match(clone, /GIT_CONFIG_GLOBAL=\/dev\/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 git clone/, `${have}: ${clone}`);
+    }
+    await page.close();
+});
