@@ -293,3 +293,62 @@ test('latest code on GitHub: the clone ignores personal git settings', async (t)
     }
     await page.close();
 });
+
+// Every answer is kept in the address after "#", so a reload (or a copied
+// link) comes back with the same answers and the same script. The password
+// is not: an address ends up in history and in links people share.
+test('answers survive a reload through the # part of the address', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await page.click('#have-agents');
+    await page.click('.pill[data-agent="codex"]');
+    await page.uncheck('#c-node');
+    await page.uncheck('#c-browsertools');
+    await page.check('input[name="browser-fallback"][value="remote"]');
+    await page.fill('#c-browser-addr', 'http://browser-box:9333');
+    await page.check('#c-browser-noinbound');
+    await pick(page, 'oneport');
+    await pickSource(page, 'head');
+    await page.click('#run-mode button[data-mode="startup"]');
+
+    const pw = await page.evaluate(() => {
+        const m = document.getElementById('script-out').textContent.match(/SWE_SWE_PASSWORD:-([A-Za-z0-9]+)/);
+        return m && m[1];
+    });
+    const mask = (s) => s.split(pw).join('PASSWORD');
+    const before = mask((await snapshot(page)).script);
+    const hash = await page.evaluate(() => location.hash);
+    assert.ok(hash.length > 1, 'the answers are in the address');
+    assert.ok(!hash.includes(pw), 'the password is not in the address');
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => !!document.getElementById('script-out').textContent);
+    const after = await page.evaluate(() => document.getElementById('script-out').textContent);
+    assert.strictEqual(after.replace(/SWE_SWE_PASSWORD:-[A-Za-z0-9]+/, 'SWE_SWE_PASSWORD:-PASSWORD'), before);
+
+    // ...and the questions show those answers, not the defaults.
+    const controls = await page.evaluate(() => ({
+        have: document.getElementById('have-agents').checked,
+        codex: document.querySelector('.pill[data-agent="codex"]').getAttribute('aria-pressed'),
+        node: document.getElementById('c-node').checked,
+        tools: document.getElementById('c-browsertools').checked,
+        fallback: document.querySelector('input[name="browser-fallback"]:checked').value,
+        addr: document.getElementById('c-browser-addr').value,
+        noinbound: document.getElementById('c-browser-noinbound').checked,
+        reach: document.getElementById('reach-oneport').checked,
+        source: document.querySelector('#source-mode button[aria-pressed="true"]').getAttribute('data-source'),
+        mode: document.querySelector('#run-mode button[aria-pressed="true"]').getAttribute('data-mode'),
+    }));
+    assert.deepStrictEqual(controls, {
+        have: true, codex: 'true', node: false, tools: false, fallback: 'remote',
+        addr: 'http://browser-box:9333', noinbound: true, reach: true, source: 'head', mode: 'startup',
+    });
+    await page.close();
+});
+
+test('the untouched page keeps a bare address', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    assert.strictEqual(await page.evaluate(() => location.hash), '');
+    await page.close();
+});
