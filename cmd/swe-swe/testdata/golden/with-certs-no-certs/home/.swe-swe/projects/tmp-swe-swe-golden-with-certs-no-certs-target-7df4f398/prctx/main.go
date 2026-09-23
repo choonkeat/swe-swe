@@ -124,7 +124,9 @@ Notes for agents:
     re-stage -- or pass --force if you know the anchors still hold.
   - prctx never writes to git. "git push" is always your own separate step.
   - State lives in $XDG_STATE_HOME/prctx (default ~/.local/state/prctx), keyed
-    by host and repo, so several PRs can be in flight at once.
+    by host and repo, so several PRs can be in flight at once. Inside a git
+    repo, staged drafts and the current PR are kept per local branch: another
+    branch (another session) never sees or flushes them.
 
 Global flags:
   --token-env NAME   read the token from env var NAME instead of the provider
