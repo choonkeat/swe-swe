@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.39.1 - Panes Behind a Login Gateway
+
+### Fixes
+
+- **Agent Chat, Files and Preview no longer go blank behind a login gateway that forbids framing**: in single-port mode those pages now explicitly allow being shown inside swe-swe's own page, overriding the gateway's blanket "never show inside another page" rule.
+
 ## v2.39.0 - One Port Is Enough
 
 ### Features
