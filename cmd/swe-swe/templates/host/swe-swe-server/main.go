@@ -3068,6 +3068,8 @@ func main() {
 			}
 
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			// The Terminal pane shows a session page inside a frame.
+			stampSameOriginFraming(w.Header())
 			uuidShort := sessionUUID
 			if len(sessionUUID) >= 5 {
 				uuidShort = sessionUUID[:5]

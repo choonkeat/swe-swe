@@ -33,7 +33,16 @@ func (w *sameOriginFrameWriter) stamp() {
 		return
 	}
 	w.stamped = true
-	h := w.ResponseWriter.Header()
+	stampSameOriginFraming(w.ResponseWriter.Header())
+}
+
+// stampSameOriginFraming marks a response as "may be shown in a frame on this
+// same site, and nowhere else". Used for /proxy/ panes (via
+// sameOriginFrameWriter) and for the session page, which the Terminal pane
+// shows inside a frame (/session/{shell uuid}?assistant=shell) -- a page with
+// no X-Frame-Options of its own gets "deny" added by a gateway such as
+// Cloudflare Access, and the Terminal tab stays blank.
+func stampSameOriginFraming(h http.Header) {
 	h.Set("X-Frame-Options", "SAMEORIGIN")
 	h.Add("Content-Security-Policy", "frame-ancestors 'self'")
 }

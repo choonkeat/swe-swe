@@ -261,6 +261,53 @@ test.describe('single-port: reported pane problems', () => {
     }, { message: 'Preview pane never showed the running app', timeout: 90_000, intervals: [2000] }).toBe(true);
   });
 
+  // The Terminal tab shows a second swe-swe session page (/session/{shell
+  // uuid}?assistant=shell) inside the pane. That page is not under /proxy/,
+  // so the same-origin framing stamp never reached it, and behind a gateway
+  // that adds "X-Frame-Options: deny" to any page lacking one (Cloudflare
+  // Access) the tab stayed blank.
+  test('the Terminal tab displays behind a gateway that adds X-Frame-Options: deny when absent', async ({ page, context }) => {
+    const gateway = async (route) => {
+      // Only pages shown inside a frame: X-Frame-Options means nothing to the
+      // top-level page, and a fulfilled top-level page loses its network
+      // origin in Chromium, which then blocks its own stylesheets.
+      if (route.request().resourceType() !== 'document' || !route.request().frame().parentFrame()) return route.continue();
+      const response = await route.fetch({ maxRedirects: 0 });
+      const headers = response.headers();
+      // The body comes back already decoded; passing the original encoding
+      // headers on would make the browser decode it a second time.
+      delete headers['content-encoding'];
+      delete headers['content-length'];
+      delete headers['transfer-encoding'];
+      if (!('x-frame-options' in headers)) headers['x-frame-options'] = 'deny';
+      await route.fulfill({ response, headers });
+    };
+    await context.route('**/session/**', (route) => gateway(route).catch(() => {}));
+
+    await page.addInitScript(([key]) => {
+      try {
+        localStorage.setItem(key, JSON.stringify({
+          preset: 'classic',
+          activeBySlot: {
+            a: { tabs: ['agent-chat', 'files'], active: 'agent-chat' },
+            b: { tabs: ['agent-terminal', 'preview', 'shell'], active: 'agent-terminal' },
+          },
+        }));
+      } catch {}
+    }, [LAYOUT_STATE_KEY]);
+    const uuid = await openSessionViaPost(page, { assistant: 'opencode', session: 'chat' });
+    testSessions.push(uuid);
+    await page.locator('.terminal-ui__terminal').first().waitFor({ timeout: 40_000 });
+    await clickPaneTab(page, 'shell');
+
+    // A frame the browser refused sits on chrome-error://chromewebdata/;
+    // the shell session page showing up as a frame is the proof it displayed.
+    await expect.poll(
+      () => page.frames().some((f) => /\/session\/[0-9a-f-]{36}\?[^#]*assistant=shell/.test(f.url())),
+      { message: 'Terminal tab never displayed behind the deny-stamping gateway', timeout: 90_000, intervals: [1000] }
+    ).toBe(true);
+  });
+
   // Problem 3. md-serve, which backs the Files pane, answers a folder that
   // holds an index.html with that page rather than the folder listing. An
   // agent asked for an ad-hoc web app typically writes index.html into the
