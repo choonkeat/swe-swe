@@ -3,7 +3,7 @@ import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
-import { agentViewKnown, filesPaneKnown } from './modules/pane-availability.js';
+import { agentViewKnown, filesPaneKnown, shouldAutoAddPreview } from './modules/pane-availability.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -2357,6 +2357,11 @@ class TerminalUI extends HTMLElement {
                         const currentTarget = this.querySelector('.terminal-ui__iframe-url-input')?.value?.trim() || null;
                         this.setPreviewURL(currentTarget);
                     }
+                }
+                // Watch for the user's app even while Preview is not in the
+                // layout, so its tab can appear the first time the app answers.
+                if (this.previewPort && this.sessionUUID) {
+                    this._startPreviewAppWatch();
                 }
                 // Load files once the pane is known to exist. If the user
                 // dragged the Files tab into a slot before that,
@@ -7605,11 +7610,16 @@ class TerminalUI extends HTMLElement {
     // its own: no marker header for the probe, which gives up after 10 tries,
     // and no script to reload. The app then ran with the pane stuck on the
     // placeholder or the gateway's page until the user reloaded by hand.
+    //
+    // The watch also runs while Preview is NOT in the layout, until the first
+    // time the app answers: then the Preview tab is added (without switching
+    // to it), the way Agent View appears when the agent's browser starts.
     _startPreviewAppWatch() {
         if (this._previewAppWatchStarted) return;
         this._previewAppWatchStarted = true;
         const tick = async () => {
-            if (this.sessionUUID && this._paneLoaded.has('preview')) {
+            const loaded = this._paneLoaded.has('preview');
+            if (this.sessionUUID && (loaded || !this._previewAutoAdded)) {
                 let up;
                 try {
                     const r = await fetch(`${getBaseUrl(window.location)}/api/session/${this.sessionUUID}/preview-ready`,
@@ -7621,7 +7631,15 @@ class TerminalUI extends HTMLElement {
                 }
                 const cameUp = up && this._previewAppUp === false;
                 this._previewAppUp = up;
-                if (up && this._previewProbeGaveUp) {
+                const embedded = this.classList.contains('embedded-in-iframe');
+                if (shouldAutoAddPreview({ appUp: up, inLayout: !!this._slotForPane('preview'),
+                                           alreadyAdded: this._previewAutoAdded, embedded })) {
+                    this._previewAutoAdded = true;
+                    this.autoAddPaneToHome('preview', { activate: false });
+                }
+                if (!loaded) {
+                    // Nothing on screen to reload yet.
+                } else if (up && this._previewProbeGaveUp) {
                     // The pane stopped waiting before the app answered: load
                     // it now rather than leave it white.
                     this._previewProbeGaveUp = false;

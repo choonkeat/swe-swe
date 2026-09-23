@@ -46,3 +46,22 @@ export function agentViewKnown({ agentViewAvailable, uuid } = {}) {
 export function filesPaneKnown({ filesPort, uuid } = {}) {
     return !!filesPort && !!uuid;
 }
+
+/**
+ * Should the Preview tab be added to the layout on its own?
+ *
+ * Yes the first time the user's app answers on $PORT while Preview is not in
+ * the layout -- the same spirit as Agent View appearing when the agent's
+ * browser starts. Only once per page: if the user closes Preview after that,
+ * it stays closed. Never inside the embedded (iframe-in-iframe) view.
+ *
+ * @param {object} [state]
+ * @param {boolean} [state.appUp] the app answered on $PORT
+ * @param {boolean} [state.inLayout] Preview already sits in some slot
+ * @param {boolean} [state.alreadyAdded] this page already did it once
+ * @param {boolean} [state.embedded] page is embedded in another page's iframe
+ * @returns {boolean}
+ */
+export function shouldAutoAddPreview({ appUp, inLayout, alreadyAdded, embedded } = {}) {
+    return appUp === true && !inLayout && !alreadyAdded && !embedded;
+}

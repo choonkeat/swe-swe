@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { agentViewKnown, filesPaneKnown } from './pane-availability.js';
+import { agentViewKnown, filesPaneKnown, shouldAutoAddPreview } from './pane-availability.js';
 
 // Single-port mode advertises no proxy ports at all, so a pane whose EXISTENCE
 // is read off its proxy port disappears instead of falling back to its
@@ -56,4 +56,29 @@ test('filesPaneKnown: false with no session uuid', () => {
 
 test('filesPaneKnown: tolerates no argument', () => {
     assert.strictEqual(filesPaneKnown(), false);
+});
+
+// Preview appears on its own the first time the user's app answers on $PORT,
+// the way Agent View appears when the agent's browser starts.
+test('shouldAutoAddPreview: app answers and Preview is not in the layout', () => {
+    assert.strictEqual(shouldAutoAddPreview({ appUp: true }), true);
+});
+
+test('shouldAutoAddPreview: nothing while the app is down or unknown', () => {
+    assert.strictEqual(shouldAutoAddPreview({ appUp: false }), false);
+    assert.strictEqual(shouldAutoAddPreview({}), false);
+});
+
+test('shouldAutoAddPreview: nothing when Preview is already in the layout', () => {
+    assert.strictEqual(shouldAutoAddPreview({ appUp: true, inLayout: true }), false);
+});
+
+// Once per page: a user who closes Preview after it appeared keeps it closed,
+// even when a dev server restarts and the app comes up again.
+test('shouldAutoAddPreview: only once per page', () => {
+    assert.strictEqual(shouldAutoAddPreview({ appUp: true, alreadyAdded: true }), false);
+});
+
+test('shouldAutoAddPreview: never inside the embedded view', () => {
+    assert.strictEqual(shouldAutoAddPreview({ appUp: true, embedded: true }), false);
 });
