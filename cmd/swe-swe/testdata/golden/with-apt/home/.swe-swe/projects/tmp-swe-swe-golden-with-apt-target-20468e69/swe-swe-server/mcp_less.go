@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 )
 
 // mcpCliProxyBin is the proxy daemon binary; a package var so tests can point it
@@ -99,61 +104,239 @@ func mcpLessProxySpecs(sessionMode string) []proxySpec {
 	return specs
 }
 
+// mcpLessFleet is one session's set of MCP-less helpers (one mcp-cli-proxy
+// per MCP server). It keeps what it needs to start any of them again: a
+// helper that stops is not restarted by anything else on a no-Docker box,
+// where there is no container restart behind it, and its leftover socket
+// keeps the agent believing the server is still there.
+type mcpLessFleet struct {
+	sessionMode string
+	socketDir   string
+	env         []string
+	workDir     string
+
+	mu       sync.Mutex
+	procs    map[string]*exec.Cmd
+	restarts map[string][]time.Time
+}
+
+// A helper can be restarted at most mcpLessRestartLimit times per
+// mcpLessRestartWindow, so one that keeps crashing cannot loop forever.
+const (
+	mcpLessRestartLimit  = 3
+	mcpLessRestartWindow = 10 * time.Minute
+)
+
+var (
+	errMcpLessRestartLimit = errors.New("restarted too often; try again later")
+	errMcpLessUnknownProxy = errors.New("no such MCP-less helper in this session")
+)
+
+func newMcpLessFleet(sessionMode, socketDir string, env []string, workDir string) *mcpLessFleet {
+	return &mcpLessFleet{
+		sessionMode: sessionMode,
+		socketDir:   socketDir,
+		env:         env,
+		workDir:     workDir,
+		procs:       map[string]*exec.Cmd{},
+		restarts:    map[string][]time.Time{},
+	}
+}
+
+func (f *mcpLessFleet) spec(name string) (proxySpec, bool) {
+	for _, s := range mcpLessProxySpecs(f.sessionMode) {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return proxySpec{}, false
+}
+
+// launchAll starts every helper for the session. Best-effort: a helper that
+// fails to start is logged and skipped, so one bad server never blocks the rest.
+func (f *mcpLessFleet) launchAll() error {
+	if err := os.MkdirAll(f.socketDir, 0o755); err != nil {
+		return fmt.Errorf("mcp-less socket dir %s: %w", f.socketDir, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, spec := range mcpLessProxySpecs(f.sessionMode) {
+		f.startLocked(spec)
+	}
+	return nil
+}
+
+// startLocked starts one helper and tracks it. Caller holds f.mu.
+func (f *mcpLessFleet) startLocked(spec proxySpec) {
+	sock := filepath.Join(f.socketDir, spec.socketName())
+	// A socket left by a helper that stopped would make the new one's bind
+	// fail -- and keeps the agent believing the old one is still there.
+	os.Remove(sock)
+	args := []string{"--name", spec.Name, "--socket", sock}
+	if len(spec.BlockingTools) > 0 {
+		args = append(args, "--blocking-tools", strings.Join(spec.BlockingTools, ","))
+	}
+	args = append(args, "--")
+	args = append(args, spec.Argv...)
+	cmd := exec.Command(mcpCliProxyBin, args...)
+	cmd.Env = f.env
+	cmd.Dir = f.workDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Own process group, so stopping a helper also stops the server it runs
+	// (agent-chat, ...) instead of leaving it behind holding its port -- the
+	// group outlives a helper that died, so a restart still reaches it.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		log.Printf("mcp-less: failed to start proxy %s: %v", spec.Name, err)
+		return
+	}
+	pid := cmd.Process.Pid
+	log.Printf("mcp-less: started proxy %s (pid %d) socket %s", spec.Name, pid, sock)
+	trackPid(pid)
+	f.procs[spec.Name] = cmd
+	// No silent Wait (coding rule): reap and log name+pid+exit.
+	go func(name string, c *exec.Cmd, pid int) {
+		err := c.Wait()
+		log.Printf("mcp-less: proxy %s (pid %d) exited: %v", name, pid, err)
+		untrackPid(pid)
+	}(spec.Name, cmd, pid)
+}
+
+func killProxyGroup(c *exec.Cmd) {
+	if c == nil || c.Process == nil {
+		return
+	}
+	syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+	c.Process.Kill()
+}
+
+// restart stops one helper (if it is still running) and starts it again.
+func (f *mcpLessFleet) restart(name string, now time.Time) error {
+	spec, ok := f.spec(name)
+	if !ok {
+		return errMcpLessUnknownProxy
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	recent := f.restarts[name][:0]
+	for _, t := range f.restarts[name] {
+		if now.Sub(t) < mcpLessRestartWindow {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= mcpLessRestartLimit {
+		f.restarts[name] = recent
+		return errMcpLessRestartLimit
+	}
+	f.restarts[name] = append(recent, now)
+	log.Printf("mcp-less: restarting proxy %s", name)
+	killProxyGroup(f.procs[name])
+	delete(f.procs, name)
+	f.startLocked(spec)
+	return nil
+}
+
+// proc returns the tracked helper process for name (nil if none).
+func (f *mcpLessFleet) proc(name string) *exec.Cmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.procs[name]
+}
+
+func (f *mcpLessFleet) cmds() []*exec.Cmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*exec.Cmd
+	for _, spec := range mcpLessProxySpecs(f.sessionMode) {
+		if c := f.procs[spec.Name]; c != nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// stop kills every helper and what it runs.
+func (f *mcpLessFleet) stop() {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for name, c := range f.procs {
+		killProxyGroup(c)
+		delete(f.procs, name)
+	}
+}
+
 // launchMcpLessFleet starts one mcp-cli-proxy per spec for a session, dropping
 // each server's socket into socketDir (created if missing) and giving every
 // child the session env so the `sh -c exec` shells expand the per-session vars.
 // Every proxy runs with the session's workDir as cwd -- in native-MCP mode the
 // agent spawns these servers from its own cwd, and cwd-dependent tools
 // (agent-chat filepath autocomplete, export_chat_md's ./agent-chats) rely on
-// that. It returns the started commands for teardown. Best-effort: a proxy that
-// fails to start is logged and skipped (agent-chat health is surfaced
-// separately), so one bad server never blocks the rest.
+// that. It returns the started commands for teardown.
 func launchMcpLessFleet(sessionMode, socketDir string, env []string, workDir string) ([]*exec.Cmd, error) {
-	if err := os.MkdirAll(socketDir, 0o755); err != nil {
-		return nil, fmt.Errorf("mcp-less socket dir %s: %w", socketDir, err)
+	f := newMcpLessFleet(sessionMode, socketDir, env, workDir)
+	if err := f.launchAll(); err != nil {
+		return nil, err
 	}
-	var cmds []*exec.Cmd
-	for _, spec := range mcpLessProxySpecs(sessionMode) {
-		sock := filepath.Join(socketDir, spec.socketName())
-		args := []string{"--name", spec.Name, "--socket", sock}
-		if len(spec.BlockingTools) > 0 {
-			args = append(args, "--blocking-tools", strings.Join(spec.BlockingTools, ","))
-		}
-		args = append(args, "--")
-		args = append(args, spec.Argv...)
-		cmd := exec.Command(mcpCliProxyBin, args...)
-		cmd.Env = env
-		cmd.Dir = workDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
-			log.Printf("mcp-less: failed to start proxy %s: %v", spec.Name, err)
-			continue
-		}
-		pid := cmd.Process.Pid
-		log.Printf("mcp-less: started proxy %s (pid %d) socket %s", spec.Name, pid, sock)
-		trackPid(pid)
-		cmds = append(cmds, cmd)
-		// No silent Wait (coding rule): reap and log name+pid+exit. The proxy
-		// self-restarts its own child; we do not restart the proxy process here
-		// (container restart is the backstop) -- but we always record its exit.
-		go func(name string, c *exec.Cmd, pid int) {
-			err := c.Wait()
-			log.Printf("mcp-less: proxy %s (pid %d) exited: %v", name, pid, err)
-			untrackPid(pid)
-		}(spec.Name, cmd, pid)
-	}
-	return cmds, nil
+	return f.cmds(), nil
 }
 
-// stopMcpLessFleet kills every proxy in the fleet. The per-proxy reaper
-// goroutine started in launchMcpLessFleet logs each exit and untracks its pid.
+// stopMcpLessFleet kills every proxy in the list and what each one runs.
 func stopMcpLessFleet(cmds []*exec.Cmd) {
 	for _, c := range cmds {
-		if c != nil && c.Process != nil {
-			c.Process.Kill()
-		}
+		killProxyGroup(c)
 	}
+}
+
+// handleMcpLessRestartAPI handles
+// POST /api/session/{uuid}/mcp-less/restart?name={helper}&key={MCP_AUTH_KEY}.
+// Authorized by the session's own MCP key, like /browser/start: it is called
+// from inside the session (the Stop hook, which has no browser cookie).
+func handleMcpLessRestartAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sessionUUID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/session/"), "/mcp-less/restart")
+	if !sessionKeyMatchesPath(r, sessionUUID) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	sessionsMu.RLock()
+	sess := sessions[sessionUUID]
+	sessionsMu.RUnlock()
+	if sess == nil {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+	if err := restartSessionMcpLessProxy(sess, r.URL.Query().Get("name")); err != nil {
+		switch {
+		case errors.Is(err, errMcpLessNoFleet):
+			http.Error(w, err.Error(), http.StatusConflict)
+		case errors.Is(err, errMcpLessUnknownProxy):
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case errors.Is(err, errMcpLessRestartLimit):
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"restarted":true}`))
+}
+
+var errMcpLessNoFleet = errors.New("this session has no MCP-less helpers")
+
+// restartSessionMcpLessProxy restarts one of a session's MCP-less helpers.
+func restartSessionMcpLessProxy(sess *Session, name string) error {
+	if sess.McpLessFleet == nil {
+		return errMcpLessNoFleet
+	}
+	return sess.McpLessFleet.restart(name, time.Now())
 }
 
 // MCP-less agent steering. With no native MCP client the agent has no tool
@@ -184,6 +367,8 @@ Talk to the user through agent-chat -- it is the ONLY channel the user sees:
 - ` + "`send_message`" + ` BLOCKS until the user replies; the reply is RETURNED as the
   command's stdout. Never background it; end every turn on it.
 - Non-blocking status: ` + "`mcp swe-swe-agent-chat send_progress --text \"...\"`" + `.
+- If an agent-chat command fails as unavailable (socket gone, connection
+  refused, server restarting), run ` + "`mcp swe-swe restart_agent_chat`" + `, then resend.
 
 Once the task at hand is clear (and when it changes), name this session so the
 user can tell sessions apart: see ` + "`mcp swe-swe set_session_name -h`" + `.

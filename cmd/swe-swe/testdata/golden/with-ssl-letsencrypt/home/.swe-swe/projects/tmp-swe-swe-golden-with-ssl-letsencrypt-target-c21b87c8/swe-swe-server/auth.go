@@ -730,6 +730,7 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 			strings.HasPrefix(path, "/ssl/") ||
 			path == "/mcp" ||
 			(strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/browser/start")) ||
+			(strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/mcp-less/restart")) ||
 			strings.HasPrefix(path, "/api/autocomplete/") {
 			next.ServeHTTP(w, r)
 			return

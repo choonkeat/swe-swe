@@ -606,9 +606,10 @@ type Session struct {
 	// Agent Chat sidecar (nil for terminal-only sessions)
 	AgentChatCmd    *exec.Cmd
 	agentChatCancel context.CancelFunc // cancels sessionCtx (stops sidecar watcher)
-	// MCP-less mode: the mcp-cli-proxy processes swe-swe-server launched for this
-	// session (nil in native-MCP mode). Killed on session teardown.
-	McpLessProxies []*exec.Cmd
+	// MCP-less mode: the mcp-cli-proxy helpers swe-swe-server launched for this
+	// session (nil in native-MCP mode). Stopped on session teardown; one can be
+	// restarted on its own (see mcpLessFleet.restart).
+	McpLessFleet *mcpLessFleet
 	SessionMode     string             // "terminal" or "chat"
 	ChatLogPath     string             // AGENT_CHAT_EVENT_LOG path for this session (chat mode only)
 	AgentSessionID  string             // agent-side conversation id (e.g. Claude .jsonl stem); captured at spawn for /api/fork
@@ -1434,7 +1435,7 @@ func (s *Session) Close() {
 	// MCP-less mode: kill this session's mcp-cli-proxy fleet. These are children
 	// of swe-swe-server (not the agent's process group), so killSessionProcessGroup
 	// below does not reach them -- stop them explicitly.
-	stopMcpLessFleet(s.McpLessProxies)
+	s.McpLessFleet.stop()
 
 	// Shut down per-port proxy servers
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -2954,6 +2955,13 @@ func main() {
 		//   POST /api/fork/{source-uuid} -> fork + 302 /session/{new-uuid}
 		if strings.HasPrefix(r.URL.Path, "/api/fork/") {
 			handleSessionForkAPI(w, r)
+			return
+		}
+
+		// Restart one of a session's MCP-less helpers (the Stop hook calls this
+		// when agent-chat stops answering; key-authorized like browser/start).
+		if strings.HasPrefix(r.URL.Path, "/api/session/") && strings.HasSuffix(r.URL.Path, "/mcp-less/restart") {
+			handleMcpLessRestartAPI(w, r)
 			return
 		}
 
@@ -5726,14 +5734,13 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// this session's socket dir via SWE_MCP_DIR. The agent boots with NO MCP
 	// config (the entrypoint skips it in mcp-less mode) and reaches every tool
 	// through `mcp <server> <tool>` over these sockets.
-	var mcpLessProxies []*exec.Cmd
+	var mcpLessFleet *mcpLessFleet
 	if mcpLessEnabled() {
 		mcpSockDir := filepath.Join(mcpLessSocketRoot(), p.UUID)
 		env = append(env, "SWE_MCP_DIR="+mcpSockDir)
-		var fleetErr error
-		mcpLessProxies, fleetErr = launchMcpLessFleet(p.SessionMode, mcpSockDir, env, workDir)
-		if fleetErr != nil {
-			log.Printf("Session %s: mcp-less fleet launch failed: %v", p.UUID, fleetErr)
+		mcpLessFleet = newMcpLessFleet(p.SessionMode, mcpSockDir, env, workDir)
+		if err := mcpLessFleet.launchAll(); err != nil {
+			log.Printf("Session %s: mcp-less fleet launch failed: %v", p.UUID, err)
 		}
 	}
 
@@ -5800,7 +5807,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		yoloMode:        detectYoloMode(shellCmdToUse), // Detect initial YOLO mode from startup command
 		AgentChatCmd:    agentChatCmd,
 		agentChatCancel: sessionCancel,
-		McpLessProxies:  mcpLessProxies,
+		McpLessFleet:    mcpLessFleet,
 		SessionMode:     p.SessionMode,
 		ChatLogPath:     chatLogPath,
 		AgentSessionID:  agentSessionID,
@@ -10094,6 +10101,27 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			err = fmt.Errorf("AddTool panicked: %v", r)
 		}
 	}()
+
+	// restart_agent_chat (MCP-less mode only: natively the agent's own MCP
+	// client owns agent-chat and restarts it itself).
+	if mcpLessEnabled() {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "restart_agent_chat",
+			Description: "Restart this session's agent-chat helper when `mcp swe-swe-agent-chat ...` fails (socket unavailable, connection refused, server restarting/unavailable). Starts a fresh helper for the calling session only; at most 3 restarts per 10 minutes. After it succeeds, resend your message -- and ask the user to resend anything they sent in the last few minutes, which may not have arrived.",
+		}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			caller := callerSessionFromContext(ctx)
+			sessionsMu.RLock()
+			sess := sessions[caller]
+			sessionsMu.RUnlock()
+			if sess == nil {
+				return nil, nil, fmt.Errorf("calling session %q not found", caller)
+			}
+			if err := restartSessionMcpLessProxy(sess, "swe-swe-agent-chat"); err != nil {
+				return nil, nil, err
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "agent-chat restarted. Resend your message with `mcp swe-swe-agent-chat send_message ...`, and ask the user to resend anything from the last few minutes."}}}, nil, nil
+		})
+	}
 
 	// list_sessions
 	mcp.AddTool(server, &mcp.Tool{

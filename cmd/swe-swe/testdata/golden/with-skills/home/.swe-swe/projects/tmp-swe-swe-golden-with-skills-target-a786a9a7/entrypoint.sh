@@ -300,6 +300,27 @@ sent=$(printf '%s\n' "$turn" | jq -r -R '
 # A check_messages that found an empty queue is an allowed silent turn.
 # (Escaped-JSON gap between the words is 5 chars: \":\" -- allow slack.)
 printf '%s' "$turn" | grep -q 'queue.\{0,8\}empty' && exit 0
+# MCP-less: the socket file outlives a helper that stopped, so ask whether
+# agent-chat actually answers before ordering the agent to use it. If it does
+# not, have swe-swe restart this session's helper and tell the agent to
+# resend; if even that fails, let the turn end -- blocking on a chat nobody
+# can reach only loops.
+chat_answers() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 10 mcp swe-swe-agent-chat >/dev/null 2>&1
+  else
+    mcp swe-swe-agent-chat >/dev/null 2>&1
+  fi
+}
+if [ -n "$SWE_MCP_DIR" ] && ! chat_answers; then
+  if curl -fsS -m 30 -X POST \
+      "http://localhost:$SWE_SERVER_PORT/api/session/$SESSION_UUID/mcp-less/restart?name=swe-swe-agent-chat&key=$MCP_AUTH_KEY" \
+      >/dev/null 2>&1; then
+    echo 'BLOCKED: agent-chat was not answering, so swe-swe has just restarted it. Deliver your result now via `mcp swe-swe-agent-chat send_message` (or send_progress if work continues), and ask the user to resend anything they sent in the last few minutes -- it may not have arrived.' >&2
+    exit 2
+  fi
+  exit 0
+fi
 echo 'BLOCKED: this turn ends with no user-visible message, and the user sees only agent-chat -- your TUI responses are invisible to them. Deliver your result now via send_message (or send_progress for a non-blocking status if work continues). Note: this Stop hook is active unless AGENT_CHAT_DISABLE=1 is set.' >&2
 exit 2
 STOPGUARDEOF
