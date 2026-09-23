@@ -376,3 +376,17 @@ test('latest code on GitHub: trusts the certificates in NODE_EXTRA_CA_CERTS / SS
     assert.match(s, /GIT_SSL_CAINFO=/, 'git reads its own variable, not SSL_CERT_FILE');
     await page.close();
 });
+
+// Someone on a hosted box only ever gets a web address; "one fixed port" is
+// a word they do not have. The answer has to be recognisable from what they
+// were given.
+test('oneport is described as the one web address you were given, not as a port', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    const label = await page.evaluate(() => document.querySelector('label[for="reach-oneport"]').textContent);
+    const note = await page.evaluate(() => document.querySelector('label[for="reach-oneport"]').parentElement.querySelector('.q-note').textContent);
+    assert.ok(!/port/i.test(label), `label should not lean on "port": ${label}`);
+    assert.match(label, /web address/i);
+    assert.match(note, /https:\/\//, 'shows what such an address looks like');
+    await page.close();
+});

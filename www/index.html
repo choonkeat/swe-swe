@@ -566,12 +566,12 @@ code { font-family: var(--mono); color: var(--text-primary); }
       <div class="radio-row">
         <input type="radio" name="reach" id="reach-oneport" value="oneport">
         <div>
-          <label class="r-label" for="reach-oneport">one fixed port, nothing else</label>
-          <div class="q-note">A rented server with a single port open, or a work network that blocks the rest. No wildcard, no tunnel, nothing to set up.</div>
+          <label class="r-label" for="reach-oneport">just the one web address I was given</label>
+          <div class="q-note">You open it at a single address, like <code>https://my-box.example.com</code>, and nothing else on that machine opens. Usual for a hosting service, a rented server with one way in, or a work network that blocks the rest. Nothing to set up.</div>
           <details class="how">
             <summary>how do I check?</summary>
             <div class="how-body">
-              <p class="q-note">From the browser you will actually use, try opening this machine on a second port &mdash; any port other than the one you reach it on. If that fails, pick this one.</p>
+              <p class="q-note">If all you were handed is one address to open, pick this one. To be sure, add <code>:8080</code> to the end of that address (after the name, before any <code>/</code>) and try to open it in the browser you will actually use. If it does not open, pick this one.</p>
             </div>
           </details>
           <div id="oneport-yes" hidden>
