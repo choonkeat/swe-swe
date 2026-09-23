@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v2.39.2 - Panes on a One-Address Box
+
+### Features
+
+- **The setup page keeps your answers in its address and offers a pre-release**: a reload or a shared link brings the same answers back (never the password), and a "Pre-release" choice installs `swe-swe@next`, also through the plain download with `SWE_SWE_TAG=next`.
+
+### Fixes
+
+- **Images uploaded in Agent Chat display again in single-port mode**: the chat's `/uploads/...` addresses are now sent on to the chat panel that holds the file.
+- **Files lists a folder that holds an index.html instead of showing that page**: an agent's ad-hoc web app no longer takes over the Files tab.
+- **Preview shows your app once it starts, even behind a gateway like Cloudflare**: the page now watches for the app and reloads the panel, where before it waited on a "not running yet" page the gateway could replace.
+
 ## v2.39.1 - Panes Behind a Login Gateway
 
 ### Fixes
