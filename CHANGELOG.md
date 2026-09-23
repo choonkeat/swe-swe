@@ -10,6 +10,8 @@
 
 ### Fixes
 
+- **`swe-swe up` runs the server that came with your install**: without Docker it kept running the copy saved at first `swe-swe init`, so upgrades never reached the running server.
+- **Browsers pick up new swe-swe page code after an upgrade**: every no-Docker build calls itself "dev", so browsers kept reusing their saved copies of the old code.
 - **Previewed apps keep their own inline scripts**: since 2.39.1 every previewed page was sent a policy that blocked scripts written inside the page, which most hot-reload setups rely on.
 - **Images uploaded in Agent Chat display again in single-port mode**: the chat's `/uploads/...` addresses are now sent on to the chat panel that holds the file.
 - **Files lists a folder that holds an index.html instead of showing that page**: an agent's ad-hoc web app no longer takes over the Files tab.
