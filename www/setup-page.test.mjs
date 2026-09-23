@@ -352,3 +352,27 @@ test('the untouched page keeps a bare address', async (t) => {
     assert.strictEqual(await page.evaluate(() => location.hash), '');
     await page.close();
 });
+
+// Behind a network that inspects secure connections with its own certificate,
+// the clone failed with "SSL certificate verification failed: certificate
+// signer not trusted". That certificate is usually handed to tools through
+// NODE_EXTRA_CA_CERTS or SSL_CERT_FILE; the build lines must pass it on to
+// git and Go -- into the Docker build too, which sees none of the machine's
+// files unless they are mounted.
+test('latest code on GitHub: trusts the certificates in NODE_EXTRA_CA_CERTS / SSL_CERT_FILE', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+
+    await pickSource(page, 'head');
+    let s = (await snapshot(page)).script;
+    assert.match(s, /\$\{NODE_EXTRA_CA_CERTS:\+-v "\$NODE_EXTRA_CA_CERTS:[^"]+"\}/, 'Docker: the file is mounted when set');
+    assert.match(s, /\$\{SSL_CERT_FILE:\+-v "\$SSL_CERT_FILE:[^"]+"\}/, 'Docker: the file is mounted when set');
+    assert.match(s, />> \/etc\/ssl\/certs\/ca-certificates\.crt/, 'Docker: added to what git and Go trust inside the build');
+
+    await page.click('#have-agents');
+    s = (await snapshot(page)).script;
+    assert.match(s, /NODE_EXTRA_CA_CERTS/);
+    assert.match(s, /SSL_CERT_FILE/);
+    assert.match(s, /GIT_SSL_CAINFO=/, 'git reads its own variable, not SSL_CERT_FILE');
+    await page.close();
+});

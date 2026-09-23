@@ -883,20 +883,33 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // common one (url."git@github.com:".insteadOf) turns the https address into
   // ssh, which fails with "Permission denied (publickey)" without a GitHub key.
   var HEAD_CLONE = 'GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=0 git clone -q --depth 1 ' + HEAD_REPO;
+  // A network that inspects secure connections signs them with its own
+  // certificate, and git and Go refuse it ("certificate signer not trusted")
+  // unless told to trust it. Tools usually get that certificate through
+  // NODE_EXTRA_CA_CERTS or SSL_CERT_FILE, so whichever is set is added to
+  // what git and Go trust -- on top of the usual list, not instead of it.
+  //
   // With Docker, a Go image does the build, so nothing else is needed. The
   // binary is built for this machine (a Mac too), not for the Linux image.
+  // The build sees none of this machine's files, so the certificate files
+  // are mounted in and appended to the image's list.
   var HEAD_DOCKER_LINES = [
     'mkdir -p "$HOME/.local/bin"',
-    'docker run --rm -v "$HOME/.local/bin:/out" -e CGO_ENABLED=0 \\',
-    '  -e GOOS="$(uname -s | tr A-Z a-z)" -e GOARCH="$(uname -m | sed \'s/x86_64/amd64/;s/aarch64/arm64/\')" \\',
-    "  golang:1.24 sh -c '" + HEAD_CLONE + " /src && cd /src && " + HEAD_GO_BUILD + " -o /out/swe-swe ./cmd/swe-swe'",
+    'docker run --rm -v "$HOME/.local/bin:/out" \\',
+    '  ${NODE_EXTRA_CA_CERTS:+-v "$NODE_EXTRA_CA_CERTS:/extra-ca/node.pem:ro"} ${SSL_CERT_FILE:+-v "$SSL_CERT_FILE:/extra-ca/ssl.pem:ro"} \\',
+    '  -e CGO_ENABLED=0 -e GOOS="$(uname -s | tr A-Z a-z)" -e GOARCH="$(uname -m | sed \'s/x86_64/amd64/;s/aarch64/arm64/\')" \\',
+    "  golang:1.24 sh -c 'for f in /extra-ca/*.pem; do [ -f \"$f\" ] && cat \"$f\" >> /etc/ssl/certs/ca-certificates.crt; done; " +
+      HEAD_CLONE + " /src && cd /src && " + HEAD_GO_BUILD + " -o /out/swe-swe ./cmd/swe-swe'",
     'export PATH="$HOME/.local/bin:$PATH"'
   ];
-  // Without Docker, the machine's own Go does it.
+  // Without Docker, the machine's own Go does it. git is pointed at the
+  // combined list with GIT_SSL_CAINFO (it does not read SSL_CERT_FILE), Go
+  // with SSL_CERT_FILE.
   var HEAD_GO_LINES = [
     'mkdir -p "$HOME/.local/bin"',
-    'rm -rf /tmp/swe-swe-src && ' + HEAD_CLONE + ' /tmp/swe-swe-src',
-    '(cd /tmp/swe-swe-src && ' + HEAD_GO_BUILD + ' -o "$HOME/.local/bin/swe-swe" ./cmd/swe-swe)',
+    'cat /etc/ssl/certs/ca-certificates.crt ${NODE_EXTRA_CA_CERTS:+"$NODE_EXTRA_CA_CERTS"} ${SSL_CERT_FILE:+"$SSL_CERT_FILE"} > /tmp/swe-swe-ca.pem',
+    'rm -rf /tmp/swe-swe-src && GIT_SSL_CAINFO=/tmp/swe-swe-ca.pem ' + HEAD_CLONE + ' /tmp/swe-swe-src',
+    '(cd /tmp/swe-swe-src && SSL_CERT_FILE=/tmp/swe-swe-ca.pem ' + HEAD_GO_BUILD + ' -o "$HOME/.local/bin/swe-swe" ./cmd/swe-swe)',
     'export PATH="$HOME/.local/bin:$PATH"'
   ];
   function headLines() { return state.have === 'docker' ? HEAD_DOCKER_LINES.slice() : HEAD_GO_LINES.slice(); }
