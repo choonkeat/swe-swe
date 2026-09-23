@@ -205,3 +205,75 @@ test('oneport on a host-native box: the flag rides along there too', async (t) =
     assert.match(s.script, /--runtime=host/, 'the host-native init flag is still there');
     await page.close();
 });
+
+// "Latest code on GitHub" builds swe-swe from the main branch instead of
+// fetching the published release, so a fix can be tried before it is released.
+async function pickSource(page, source) {
+    await page.click(`#source-mode button[data-source="${source}"]`);
+}
+
+test('release is the default: the published package, no build from GitHub', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await pick(page, 'oneport');
+    const s = await snapshot(page);
+    assert.match(s.script, /npx -y swe-swe/);
+    assert.ok(!s.script.includes('git clone'), 'nothing is built by default');
+    assert.strictEqual(s.versionNote, true);
+    await page.close();
+});
+
+test('latest code on GitHub with Docker: Docker builds swe-swe from main', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await pick(page, 'oneport');
+    await pickSource(page, 'head');
+    const s = await snapshot(page);
+    assert.ok(!s.script.includes('npx -y swe-swe'), 'the published package is not used');
+    assert.match(s.script, /docker run [\s\S]*golang:/, 'the build runs inside a Go image');
+    assert.match(s.script, /git clone [^\n]*https:\/\/github\.com\/choonkeat\/swe-swe/);
+    assert.match(s.script, /go build [^\n]*\.\/cmd\/swe-swe/);
+    assert.match(s.script, /swe-swe init --single-port/, 'the answers still shape the rest');
+    assert.strictEqual(s.versionNote, false, 'main is always new enough');
+    const headNote = await page.evaluate(() => !document.getElementById('head-note').hidden);
+    assert.strictEqual(headNote, true, 'says what "latest code" means');
+    await page.close();
+});
+
+test('latest code on GitHub on the ordinary laptop path still builds from main', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await pickSource(page, 'head');
+    const s = await snapshot(page);
+    assert.ok(!s.script.includes('npx -y swe-swe'));
+    assert.match(s.script, /go build/);
+    assert.match(s.script, /swe-swe up/);
+    await page.close();
+});
+
+test('latest code on GitHub without Docker: built with the local Go', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await page.click('#have-agents');
+    await pickSource(page, 'head');
+    const s = await snapshot(page);
+    assert.ok(!s.script.includes('docker run'), 'no Docker on this path');
+    assert.ok(!s.script.includes('install.sh'), 'the published download is not used');
+    assert.match(s.script, /git clone [^\n]*choonkeat\/swe-swe/);
+    assert.match(s.script, /go build [^\n]*\.\/cmd\/swe-swe/);
+    const note = await page.evaluate(() => document.getElementById('head-note').textContent);
+    assert.match(note, /Go 1\.2\d/, 'names the Go it needs');
+    await page.close();
+});
+
+test('latest code on GitHub in a start-up script: no published download either', async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const page = await openPage();
+    await pickSource(page, 'head');
+    await page.click('#run-mode button[data-mode="startup"]');
+    const s = await snapshot(page);
+    assert.ok(!s.script.includes('install.sh'));
+    assert.match(s.script, /go build/);
+    assert.match(s.script, /nohup swe-swe up/);
+    await page.close();
+});

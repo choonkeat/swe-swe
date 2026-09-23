@@ -626,6 +626,15 @@ code { font-family: var(--mono); color: var(--text-primary); }
       </div>
     </div>
 
+    <div class="toggle" id="source-mode" style="margin-bottom:0.75rem;">
+      <button type="button" data-source="release" aria-pressed="true">Published release</button>
+      <button type="button" data-source="head" aria-pressed="false">Latest code on GitHub</button>
+    </div>
+
+    <div class="warn" id="head-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
+      <p id="head-note-text"></p>
+    </div>
+
     <div class="warn" id="version-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
       <p id="version-note-text">Needs swe-swe 2.38.0 or newer.</p>
     </div>
@@ -749,7 +758,8 @@ code { font-family: var(--mono); color: var(--text-primary); }
     mcpOk: true,
     reach: 'anyport',
     wildcardDomain: '',
-    runMode: 'hand'
+    runMode: 'hand',
+    source: 'release'
   };
 
   var el = function(id) { return document.getElementById(id); };
@@ -808,10 +818,36 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // is what stops it opening the per-session proxy ports and probing them.
   function ordinary() { return state.have === 'docker' && state.reach === 'anyport'; }
 
+  // "Latest code on GitHub": build swe-swe from the main branch rather than
+  // fetch the published release, to try a fix before it is released.
+  function fromHead() { return state.source === 'head'; }
+
   // ---------- Script generation ----------
   var INSTALL_SH = 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
   var NPX_ALIAS = "alias swe-swe='npx -y swe-swe'";
   var APT_LINE = 'sudo apt-get install -y chromium xvfb x11vnc novnc websockify';
+
+  // Building from main. The commit goes into the binary so `swe-swe -version`
+  // says which one it is.
+  var HEAD_REPO = 'https://github.com/choonkeat/swe-swe';
+  var HEAD_GO_BUILD = 'go build -ldflags "-X main.GitCommit=$(git rev-parse --short HEAD)"';
+  // With Docker, a Go image does the build, so nothing else is needed. The
+  // binary is built for this machine (a Mac too), not for the Linux image.
+  var HEAD_DOCKER_LINES = [
+    'mkdir -p "$HOME/.local/bin"',
+    'docker run --rm -v "$HOME/.local/bin:/out" -e CGO_ENABLED=0 \\',
+    '  -e GOOS="$(uname -s | tr A-Z a-z)" -e GOARCH="$(uname -m | sed \'s/x86_64/amd64/;s/aarch64/arm64/\')" \\',
+    "  golang:1.24 sh -c 'git clone -q --depth 1 " + HEAD_REPO + " /src && cd /src && " + HEAD_GO_BUILD + " -o /out/swe-swe ./cmd/swe-swe'",
+    'export PATH="$HOME/.local/bin:$PATH"'
+  ];
+  // Without Docker, the machine's own Go does it.
+  var HEAD_GO_LINES = [
+    'mkdir -p "$HOME/.local/bin"',
+    'rm -rf /tmp/swe-swe-src && git clone -q --depth 1 ' + HEAD_REPO + ' /tmp/swe-swe-src',
+    '(cd /tmp/swe-swe-src && ' + HEAD_GO_BUILD + ' -o "$HOME/.local/bin/swe-swe" ./cmd/swe-swe)',
+    'export PATH="$HOME/.local/bin:$PATH"'
+  ];
+  function headLines() { return state.have === 'docker' ? HEAD_DOCKER_LINES.slice() : HEAD_GO_LINES.slice(); }
 
   function initFlags() {
     var f = [];
@@ -851,6 +887,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   }
 
   function firstLines() {
+    if (fromHead()) return headLines();
     // With Docker we assume the usual Node one-liner; the Node question is
     // only asked on the host-native path.
     if (hostRuntime() && !state.node) {
@@ -860,7 +897,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   }
 
   function handScript() {
-    if (ordinary()) return plainScript();
+    if (ordinary() && !fromHead()) return plainScript();
     var lines = firstLines();
     if (installsBrowserTools()) lines.push(APT_LINE);
     lines.push('');
@@ -885,8 +922,12 @@ code { font-family: var(--mono); color: var(--text-primary); }
     lines.push('');
     // A start-up script runs with no terminal and no alias, so it always uses
     // the plain download rather than the Node one-liner.
-    lines.push(INSTALL_SH);
-    lines.push('export PATH="$HOME/.local/bin:$PATH"');
+    if (fromHead()) {
+      headLines().forEach(function(l) { lines.push(l); });
+    } else {
+      lines.push(INSTALL_SH);
+      lines.push('export PATH="$HOME/.local/bin:$PATH"');
+    }
     if (installsBrowserTools()) lines.push(APT_LINE);
     lines.push('');
     lines.push('mkdir -p "$PROJECT_DIR"');
@@ -919,7 +960,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
     if (state.runMode === 'startup') {
       return 'Always included without asking: the port number spelled out, the most basic shell syntax, and starting in the background with a log file. There is no terminal to keep open on a machine like this.';
     }
-    if (ordinary()) return 'Everything left as it is, so these are the ordinary instructions.';
+    if (ordinary() && !fromHead()) return 'Everything left as it is, so these are the ordinary instructions.';
     return 'Stays in front of you; Ctrl-C stops it.';
   }
 
@@ -989,7 +1030,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
     // The one-port route rides the same-origin fallback for every pane, which
     // is newer than the version the rest of this page needs.
-    el('version-note').hidden = ordinary();
+    el('version-note').hidden = ordinary() || fromHead();
+    el('head-note').hidden = !fromHead();
+    el('head-note-text').textContent = state.have === 'docker'
+      ? 'Unreleased code from the main branch on GitHub, for trying a fix before it is released. Docker builds it first, about 2 minutes. Run it again to pick up newer code.'
+      : 'Unreleased code from the main branch on GitHub, for trying a fix before it is released. It is built first, about 2 minutes, and needs git and Go 1.23 or newer on this machine. Run it again to pick up newer code.';
     el('version-note-text').textContent = onePortOnly()
       ? 'Needs swe-swe 2.39.0 or newer.'
       : 'Needs swe-swe 2.38.0 or newer.';
@@ -1037,6 +1082,16 @@ code { font-family: var(--mono); color: var(--text-primary); }
     var b = e.target.closest('button');
     if (!b) return;
     state.runMode = b.getAttribute('data-mode');
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x) {
+      x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+    });
+    render();
+  });
+
+  document.getElementById('source-mode').addEventListener('click', function(e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    state.source = b.getAttribute('data-source');
     Array.prototype.forEach.call(this.querySelectorAll('button'), function(x) {
       x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
     });
