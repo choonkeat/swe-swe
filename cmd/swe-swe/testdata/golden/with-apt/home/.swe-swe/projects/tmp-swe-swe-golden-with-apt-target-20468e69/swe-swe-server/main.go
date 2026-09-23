@@ -6166,16 +6166,9 @@ func handleProxyRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Everything under /proxy/{uuid}/ is shown in a pane iframe on this same
-	// origin, so say so. A front proxy that adds "X-Frame-Options: deny" to
-	// any response lacking one (a Cloudflare Access gateway does) would
-	// otherwise blank every pane in single-port mode. Our own SAMEORIGIN stops
-	// it adding deny; frame-ancestors 'self' wins even if it adds deny anyway,
-	// since browsers ignore X-Frame-Options when frame-ancestors is present.
-	// Set before the proxies run: they strip upstream X-Frame-Options and Add
-	// (not Set) upstream CSP, so both of these survive.
-	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-	w.Header().Add("Content-Security-Policy", "frame-ancestors 'self'")
-	sess.SessionMux.ServeHTTP(w, r)
+	// origin, so every response says so -- see sameOriginFrameWriter for why
+	// that happens as the headers go out rather than here.
+	sess.SessionMux.ServeHTTP(&sameOriginFrameWriter{ResponseWriter: w}, r)
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string) {
