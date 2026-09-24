@@ -123,7 +123,6 @@
 
     <script type="module" crossorigin="anonymous">
         import RFB from './core/rfb.js';
-        import { clientToElement } from './core/util/element.js';
 
         let rfb;
         let desktopName;
@@ -216,78 +215,6 @@
         // scaling off left a remote screen bigger than the pane cut off, with
         // no way to reach its bottom/right edges on a touch screen.
         setMode('interact');
-
-        installTouchScroll(rfb);
-
-        // Touch screens: a one-finger swipe scrolls the page, like any other
-        // web page. Stock noVNC turns it into a left-button drag (selects text)
-        // and only scrolls on a two-finger swipe. Taps and long-press are left
-        // to noVNC.
-        //
-        // Reaches into noVNC 1.3 internals (_eventHandlers, _canvas,
-        // _handleMouseButton, _fakeMouseMove); if a different noVNC lacks
-        // them, leave stock behaviour alone.
-        function installTouchScroll(rfb) {
-            // px of finger travel per wheel notch, as noVNC's two-finger swipe.
-            // A notch already moves the remote page ~2x that far; smaller steps
-            // overshoot the finger badly.
-            const SCROLL_STEP = 50;
-            const handlers = rfb._eventHandlers;
-            const canvas = rfb._canvas;
-            if (!handlers || typeof handlers.handleGesture !== 'function' || !canvas ||
-                typeof rfb._handleMouseButton !== 'function' ||
-                typeof rfb._fakeMouseMove !== 'function') {
-                return;
-            }
-            const stock = handlers.handleGesture;
-            let anchor = null;
-
-            function wheel(x, y, bmask) {
-                rfb._handleMouseButton(x, y, true, bmask);
-                rfb._handleMouseButton(x, y, false, bmask);
-            }
-
-            function onGesture(ev) {
-                const d = ev.detail;
-                if (rfb.viewOnly || (d.type !== 'drag' && d.type !== 'twodrag')) {
-                    return stock(ev);
-                }
-                if (ev.type === 'gesturestart') {
-                    anchor = {
-                        pos: clientToElement(d.clientX, d.clientY, canvas),
-                        clientX: d.clientX, clientY: d.clientY,
-                        lastX: 0, lastY: 0,
-                    };
-                    rfb._fakeMouseMove(ev, anchor.pos.x, anchor.pos.y);
-                    return;
-                }
-                if (ev.type === 'gestureend' || !anchor) {
-                    anchor = null;
-                    return;
-                }
-                // drag reports the finger position; twodrag reports travel.
-                const moveX = d.type === 'drag' ? d.clientX - anchor.clientX : d.magnitudeX;
-                const moveY = d.type === 'drag' ? d.clientY - anchor.clientY : d.magnitudeY;
-                const { x, y } = anchor.pos;
-                // Wheel over the spot the swipe started, same buttons as noVNC:
-                // 0x8 up, 0x10 down, 0x20 left, 0x40 right (content follows finger).
-                rfb._fakeMouseMove(ev, x, y);
-                while (moveY - anchor.lastY > SCROLL_STEP) { wheel(x, y, 0x8); anchor.lastY += SCROLL_STEP; }
-                while (moveY - anchor.lastY < -SCROLL_STEP) { wheel(x, y, 0x10); anchor.lastY -= SCROLL_STEP; }
-                while (moveX - anchor.lastX > SCROLL_STEP) { wheel(x, y, 0x20); anchor.lastX += SCROLL_STEP; }
-                while (moveX - anchor.lastX < -SCROLL_STEP) { wheel(x, y, 0x40); anchor.lastX -= SCROLL_STEP; }
-            }
-
-            // Swap the listener in place. Re-adding under the same reference is
-            // a no-op, so this holds whether or not noVNC attached it yet.
-            for (const t of ['gesturestart', 'gesturemove', 'gestureend']) {
-                canvas.removeEventListener(t, stock);
-            }
-            handlers.handleGesture = onGesture;
-            for (const t of ['gesturestart', 'gesturemove', 'gestureend']) {
-                canvas.addEventListener(t, onGesture);
-            }
-        }
     </script>
 </head>
 
