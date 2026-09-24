@@ -6,6 +6,11 @@ restart-loop redeploy us (any death of our container makes its foreground
 
 Steps:
 
+0. If `.swe-swe/refresh-browser-backend.sh` exists, run it first
+   (`bash .swe-swe/refresh-browser-backend.sh`). The browser backend lives
+   outside the compose project, so the loop's rebuild never touches it;
+   without this, Agent View keeps serving an old page. Stop and report if
+   it fails.
 1. Identify our own container: `SELF=$(hostname)` (the in-container
    hostname IS our container id).
 2. List everything: `docker ps -a --format '{{.ID}} {{.Names}} {{.Status}}'`.

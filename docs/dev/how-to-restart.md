@@ -22,6 +22,9 @@ From inside the swe-swe container (with Docker socket access), run these command
 make test
 
 # 1. Re-init (builds binary + rebuilds Docker images with latest templates)
+#    On a box with a standalone swe-swe-browser-backend container, pre-restart.sh
+#    also runs .swe-swe/refresh-browser-backend.sh: compose never rebuilds that
+#    container, so Agent View's page would otherwise lag behind source.
 bash .swe-swe/pre-restart.sh
 
 # 2. Stop any test containers
