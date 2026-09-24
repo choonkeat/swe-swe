@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.40.1 - Preview Shows Up On Its Own
+
+### Features
+
+- **The Preview tab appears the first time your app answers**: when the app you are building starts responding, Preview is added to the screen without stealing focus, the same way Agent View appears when the agent's browser starts.
+
 ## v2.40.0 - Panes on a One-Address Box
 
 ### Features
