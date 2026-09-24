@@ -6134,6 +6134,15 @@ func newVNCReverseProxy(sess *Session, vncPort int) *httputil.ReverseProxy {
 		req.URL.Host = host
 		req.Host = host
 	}
+	// The viewer page comes from websockify, which sends no Cache-Control, so
+	// Safari kept a stale vnc_lite.html for days: a fixed viewer on a rebuilt
+	// browser-backend never reached the pane. Make browsers revalidate it.
+	rp.ModifyResponse = func(resp *http.Response) error {
+		if strings.HasSuffix(resp.Request.URL.Path, "/vnc_lite.html") {
+			resp.Header.Set("Cache-Control", "no-cache")
+		}
+		return nil
+	}
 	return rp
 }
 
