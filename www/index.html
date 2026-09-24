@@ -912,8 +912,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   }
 
   function scriptNote() {
-    if (ordinary()) return 'Everything left as it is, so these are the ordinary instructions.';
-    return 'Stays in front of you; Ctrl-C stops it.';
+    return ordinary() ? 'Everything left as it is, so these are the ordinary instructions.' : '';
   }
 
   // ---------- Rendering ----------
@@ -988,6 +987,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
       : 'Needs swe-swe 2.38.0 or newer.';
     el('script-out').textContent = handScript();
     el('script-note').textContent = scriptNote();
+    el('script-note').hidden = !scriptNote();
     el('other-machine').hidden = !agentViewRemote();
     if (agentViewRemote()) el('other-machine-script').textContent = otherMachineScript();
     el('tunnel-steps').hidden = blocked() || !needsTunnel();
