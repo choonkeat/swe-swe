@@ -1182,6 +1182,13 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 	if workDir == "" {
 		workDir, _ = os.Getwd()
 	}
+	// Asked once per payload; the missing list only means anything when
+	// that is the reason.
+	agentViewReason := agentViewUnavailableReason()
+	agentViewMissing := []string{}
+	if agentViewReason == "missing" {
+		agentViewMissing = missingBrowserPrograms()
+	}
 	// Only expose agentChatPort for chat sessions; terminal sessions
 	// should never probe or show the Agent Chat tab.
 	var agentChatPort int
@@ -1210,7 +1217,11 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":     s.BrowserStarted,
-		"agentViewAvailable": agentViewAvailable(),
+		"agentViewAvailable": agentViewReason == "",
+		// Why the tab cannot work ("off" / "missing"; "" when it can), and
+		// for "missing", which programs to install.
+		"agentViewReason":    agentViewReason,
+		"agentViewMissing":   agentViewMissing,
 		"publicHostname":     getLiveTunnelHostname(),
 		// Preview host-demux (ADR-0045): the logical vhost suffix rewritten onto
 		// upstream Hosts, and the ordered reach-domain candidates the frontend

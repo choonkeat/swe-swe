@@ -39,10 +39,17 @@ var browserBackendToken = ""
 var lookPath = exec.LookPath
 
 // browserStackAvailable reports whether the local display stack is installed.
-// chromium ships under two common binary names; either satisfies it.
 func browserStackAvailable() bool {
+	return len(missingBrowserPrograms()) == 0
+}
+
+// missingBrowserPrograms names the display-stack programs not on PATH, in a
+// fixed order, so the Agent View tab can say exactly what to install.
+// chromium ships under two common binary names; either satisfies it.
+func missingBrowserPrograms() []string {
+	var missing []string
 	if _, err := lookPath("Xvfb"); err != nil {
-		return false
+		missing = append(missing, "Xvfb")
 	}
 	chromiumOK := false
 	for _, name := range []string{"chromium", "chromium-browser"} {
@@ -52,15 +59,14 @@ func browserStackAvailable() bool {
 		}
 	}
 	if !chromiumOK {
-		return false
+		missing = append(missing, "chromium")
 	}
-	if _, err := lookPath("x11vnc"); err != nil {
-		return false
+	for _, name := range []string{"x11vnc", "websockify"} {
+		if _, err := lookPath(name); err != nil {
+			missing = append(missing, name)
+		}
 	}
-	if _, err := lookPath("websockify"); err != nil {
-		return false
-	}
-	return true
+	return missing
 }
 
 // agentViewRemote reports whether the configured backend is a remote URL.
@@ -70,16 +76,25 @@ func agentViewRemote() bool {
 }
 
 // agentViewAvailable reports whether the Agent View tab can be served, so the
-// UI can hide it instead of showing a broken "Starting browser..." placeholder.
-// Remote mode trusts the backend; local mode requires the stack on this host.
+// UI does not show a broken "Starting browser..." placeholder.
 func agentViewAvailable() bool {
+	return agentViewUnavailableReason() == ""
+}
+
+// agentViewUnavailableReason says why the Agent View tab cannot be served, so
+// the UI can explain it: "" (available), "off" (switched off) or "missing"
+// (local mode without the display stack; see missingBrowserPrograms).
+// Remote mode trusts the backend.
+func agentViewUnavailableReason() string {
 	switch {
 	case agentViewBackend == "off" || agentViewBackend == "":
-		return false
+		return "off"
 	case agentViewRemote():
-		return true
-	default: // local
-		return browserStackAvailable()
+		return ""
+	case !browserStackAvailable(): // local
+		return "missing"
+	default:
+		return ""
 	}
 }
 

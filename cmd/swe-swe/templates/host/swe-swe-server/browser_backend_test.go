@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -85,5 +86,55 @@ func TestResolveAgentViewBackend(t *testing.T) {
 	resolveAgentViewBackend("local", true)
 	if agentViewBackend != "local" {
 		t.Errorf("flag passed should ignore env -> %q, want local", agentViewBackend)
+	}
+}
+
+// When the tab cannot work, the UI explains why instead of hiding it, so the
+// server must tell "switched off" from "programs missing" and name exactly
+// which programs are missing (chromium counts once, under either name).
+func TestAgentViewUnavailableReason(t *testing.T) {
+	origLook, origBackend := lookPath, agentViewBackend
+	defer func() { lookPath, agentViewBackend = origLook, origBackend }()
+
+	without := func(absent ...string) func(string) (string, error) {
+		return func(n string) (string, error) {
+			for _, a := range absent {
+				if n == a {
+					return "", exec.ErrNotFound
+				}
+			}
+			return "/usr/bin/" + n, nil
+		}
+	}
+
+	cases := []struct {
+		name        string
+		backend     string
+		absent      []string
+		wantReason  string
+		wantMissing string
+	}{
+		{"local, all present", "local", nil, "", ""},
+		{"off", "off", nil, "off", ""},
+		{"off wins over missing programs", "off", []string{"Xvfb"}, "off", ""},
+		{"remote ignores the local stack", "http://box:9333", []string{"Xvfb", "chromium", "chromium-browser"}, "", ""},
+		{"one missing", "local", []string{"x11vnc"}, "missing", "x11vnc"},
+		{"chromium-browser alone is enough", "local", []string{"chromium"}, "", ""},
+		{"no chromium under either name", "local", []string{"chromium", "chromium-browser", "websockify"}, "missing", "chromium,websockify"},
+		{"all missing, in a fixed order", "local", []string{"websockify", "x11vnc", "chromium", "chromium-browser", "Xvfb"}, "missing", "Xvfb,chromium,x11vnc,websockify"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lookPath, agentViewBackend = without(c.absent...), c.backend
+			if got := agentViewUnavailableReason(); got != c.wantReason {
+				t.Errorf("reason = %q, want %q", got, c.wantReason)
+			}
+			if got := strings.Join(missingBrowserPrograms(), ","); c.backend == "local" && got != c.wantMissing {
+				t.Errorf("missing = %q, want %q", got, c.wantMissing)
+			}
+			if got, want := agentViewAvailable(), c.wantReason == ""; got != want {
+				t.Errorf("agentViewAvailable = %v, want %v (must agree with the reason)", got, want)
+			}
+		})
 	}
 }
