@@ -3,7 +3,7 @@ import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
-import { agentViewKnown, filesPaneKnown, previewRevealAction } from './modules/pane-availability.js';
+import { agentViewKnown, agentViewLive, agentViewUnavailablePath, filesPaneKnown, previewRevealAction } from './modules/pane-availability.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -2174,14 +2174,19 @@ class TerminalUI extends HTMLElement {
                 this._renderTunnelStatusBanner(prevTunnelStatus, this.tunnelStatus);
                 // Agent View availability: the server reports whether the
                 // display stack (local) or remote backend can serve the tab.
-                // When false (e.g. a lean dockerless host with no chromium),
-                // hide the tab and stop offering it in the slot "+" menu;
-                // the other tabs are unaffected. Undefined (older servers) is
-                // treated as available for backward compatibility.
+                // When false it also says why (agentViewReason "off" /
+                // "missing"), and the tab stays to show a page explaining
+                // that; with no reason (older servers) the tab is hidden.
+                // Undefined availability (older servers still) is treated as
+                // available for backward compatibility.
+                const prevAgentViewKnown = this._isPaneKnown('browser');
                 const prevAgentViewAvailable = this.agentViewAvailable;
                 this.agentViewAvailable = msg.agentViewAvailable !== false;
-                if (prevAgentViewAvailable !== this.agentViewAvailable) {
-                    this.setAgentViewTabVisible(this.agentViewAvailable);
+                this.agentViewReason = msg.agentViewReason || '';
+                this.agentViewMissing = Array.isArray(msg.agentViewMissing) ? msg.agentViewMissing : [];
+                if (prevAgentViewAvailable !== this.agentViewAvailable ||
+                    prevAgentViewKnown !== this._isPaneKnown('browser')) {
+                    this.setAgentViewTabVisible(this._isPaneKnown('browser'));
                     // This flag, not vncProxyPort, is now what makes the pane
                     // "known" (see modules/pane-availability.js), so the tab
                     // bar has to be rebuilt when it flips -- in single-port
@@ -4253,6 +4258,8 @@ class TerminalUI extends HTMLElement {
                     url = buildShellUrl({ baseUrl, shellUUID, parentUUID: this.uuid, debug: this.debugMode });
                     break;
                 case 'browser':
+                    url = this._agentViewUnavailableUrl();
+                    if (url) break;
                     // No-op once decided; arms the probe round if the pane is
                     // opened before the status message that normally starts it.
                     this._resolveBrowserViewBase();
@@ -6319,6 +6326,12 @@ class TerminalUI extends HTMLElement {
                 break;
             }
             case 'browser': {
+                const unavailableUrl = this._agentViewUnavailableUrl();
+                if (unavailableUrl) {
+                    this._paneLoaded.add('browser');
+                    this.setIframeUrl(unavailableUrl, 'browser');
+                    return;
+                }
                 // Which of the three forms is reachable is decided once by
                 // _resolveBrowserViewBase(); until it answers,
                 // getBrowserViewUrl() gives the same-origin path form, which
@@ -6969,7 +6982,7 @@ class TerminalUI extends HTMLElement {
         // Existence, not reachability: a pane gated on its PROXY port would
         // vanish in single-port mode, where no proxy port is advertised at all
         // (see modules/pane-availability.js).
-        if (paneId === 'browser') return agentViewKnown({ agentViewAvailable: this.agentViewAvailable, uuid: this.uuid });
+        if (paneId === 'browser') return agentViewKnown({ agentViewAvailable: this.agentViewAvailable, agentViewReason: this.agentViewReason, uuid: this.uuid });
         if (paneId === 'files') return filesPaneKnown({ filesPort: this.filesPort, uuid: this.uuid });
         return true;
     }
@@ -7079,7 +7092,9 @@ class TerminalUI extends HTMLElement {
         // cannot reach", and callers treat null as the former -- so ask the
         // backend's own availability signal, not the proxy port, which
         // single-port mode never advertises.
-        if (!agentViewKnown({ agentViewAvailable: this.agentViewAvailable, uuid: this.uuid })) return null;
+        // The explanation page shown when Agent View is unavailable is not a
+        // viewer either: _agentViewUnavailableUrl() hands that out.
+        if (!agentViewLive({ agentViewAvailable: this.agentViewAvailable, uuid: this.uuid })) return null;
         const loc = window.location;
         const v = new URL(import.meta.url).searchParams.get('v') || '';
         if (this._browserViewResolvedBase) {
@@ -7125,6 +7140,18 @@ class TerminalUI extends HTMLElement {
             this._browserViewResolvedBase = chosen.base;
         });
         return this._browserViewBaseResolving;
+    }
+
+    // The page explaining why Agent View is unavailable (switched off, or the
+    // browser programs are missing), or null when Agent View is live. Never
+    // starts a browser: there is none to start.
+    _agentViewUnavailableUrl() {
+        if (this.agentViewAvailable !== false || !this.uuid) return null;
+        const path = agentViewUnavailablePath({
+            agentViewReason: this.agentViewReason,
+            agentViewMissing: this.agentViewMissing,
+        });
+        return path ? `${getBaseUrl(window.location)}/${path}` : null;
     }
 
     getPreviewBaseUrl() {

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { agentViewKnown, filesPaneKnown, previewRevealAction } from './pane-availability.js';
+import { agentViewKnown, agentViewLive, agentViewUnavailablePath, filesPaneKnown, previewRevealAction } from './pane-availability.js';
 
 // Single-port mode advertises no proxy ports at all, so a pane whose EXISTENCE
 // is read off its proxy port disappears instead of falling back to its
@@ -36,6 +36,49 @@ test('agentViewKnown: false with no session uuid', () => {
 
 test('agentViewKnown: tolerates no argument', () => {
     assert.strictEqual(agentViewKnown(), false);
+});
+
+// When Agent View cannot work, the tab stays and explains why instead of
+// vanishing -- people who skipped the browser at setup never learned what
+// they gave up.
+test('agentViewKnown: true when the server says why it is unavailable', () => {
+    assert.strictEqual(agentViewKnown({ agentViewAvailable: false, agentViewReason: 'off', uuid: 'abc' }), true);
+    assert.strictEqual(agentViewKnown({ agentViewAvailable: false, agentViewReason: 'missing', uuid: 'abc' }), true);
+});
+
+// Older servers send no reason: keep hiding the tab as before.
+test('agentViewKnown: false when unavailable with no reason', () => {
+    assert.strictEqual(agentViewKnown({ agentViewAvailable: false, agentViewReason: '', uuid: 'abc' }), false);
+    assert.strictEqual(agentViewKnown({ agentViewAvailable: false, agentViewReason: 'bogus', uuid: 'abc' }), false);
+});
+
+test('agentViewKnown: a reason still needs the session uuid', () => {
+    assert.strictEqual(agentViewKnown({ agentViewAvailable: false, agentViewReason: 'off' }), false);
+});
+
+// The live viewer URL must not be built for a tab that only explains.
+test('agentViewLive: only when the backend says it is available', () => {
+    assert.strictEqual(agentViewLive({ agentViewAvailable: true, uuid: 'abc' }), true);
+    assert.strictEqual(agentViewLive({ agentViewAvailable: false, agentViewReason: 'off', uuid: 'abc' }), false);
+    assert.strictEqual(agentViewLive({ agentViewAvailable: true }), false);
+    assert.strictEqual(agentViewLive(), false);
+});
+
+test('agentViewUnavailablePath: switched off', () => {
+    assert.strictEqual(agentViewUnavailablePath({ agentViewReason: 'off' }), 'agent-view-unavailable.html?reason=off');
+});
+
+test('agentViewUnavailablePath: missing programs are listed', () => {
+    assert.strictEqual(
+        agentViewUnavailablePath({ agentViewReason: 'missing', agentViewMissing: ['chromium', 'x11vnc'] }),
+        'agent-view-unavailable.html?reason=missing&missing=chromium%2Cx11vnc',
+    );
+    assert.strictEqual(agentViewUnavailablePath({ agentViewReason: 'missing', agentViewMissing: [] }), 'agent-view-unavailable.html?reason=missing');
+});
+
+test('agentViewUnavailablePath: null when live or no reason', () => {
+    assert.strictEqual(agentViewUnavailablePath({ agentViewReason: '' }), null);
+    assert.strictEqual(agentViewUnavailablePath(), null);
 });
 
 // Files is the other pane whose tab was gated on a proxy port. Its existence

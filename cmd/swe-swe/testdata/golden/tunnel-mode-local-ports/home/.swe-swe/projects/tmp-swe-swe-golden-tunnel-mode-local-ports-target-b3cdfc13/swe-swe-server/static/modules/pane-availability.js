@@ -9,17 +9,18 @@
  * single_port.go), so a pane gated that way vanishes from the tab bar instead
  * of falling back to its path form.
  *
- * Existence therefore comes from a signal of its own -- agentViewAvailable for
- * Agent View, the real md-serve port for Files -- and reachability stays with
+ * Existence therefore comes from a signal of its own -- agentViewAvailable /
+ * agentViewReason for Agent View, the real md-serve port for Files -- and reachability stays with
  * the probe.
  *
  * @module pane-availability
  */
 
 /**
- * Agent View exists when the backend says a browser can be started for this
- * session (agentViewAvailable, broadcast on every status frame) and we know
- * the session uuid, which the same-origin path form /proxy/{uuid}/vnc/ needs.
+ * A live Agent View exists when the backend says a browser can be started for
+ * this session (agentViewAvailable, broadcast on every status frame) and we
+ * know the session uuid, which the same-origin path form /proxy/{uuid}/vnc/
+ * needs.
  *
  * Undefined means no status frame has arrived yet: unknown, not present.
  * Announcing a tab and then withdrawing it reads as a glitch.
@@ -29,8 +30,44 @@
  * @param {string} [state.uuid]
  * @returns {boolean}
  */
-export function agentViewKnown({ agentViewAvailable, uuid } = {}) {
+export function agentViewLive({ agentViewAvailable, uuid } = {}) {
     return agentViewAvailable === true && !!uuid;
+}
+
+/**
+ * The Agent View TAB exists when the view is live, or when the server says
+ * why it is not ("off": switched off at setup, "missing": the browser
+ * programs are not installed). The tab then shows a page that explains the
+ * reason instead of disappearing, so people learn what they gave up.
+ *
+ * @param {object} [state]
+ * @param {boolean} [state.agentViewAvailable]
+ * @param {string} [state.agentViewReason] "" / "off" / "missing"
+ * @param {string} [state.uuid]
+ * @returns {boolean}
+ */
+export function agentViewKnown({ agentViewAvailable, agentViewReason, uuid } = {}) {
+    if (!uuid) return false;
+    return agentViewAvailable === true || agentViewUnavailablePath({ agentViewReason }) !== null;
+}
+
+/**
+ * The page that explains why Agent View is unavailable, relative to the
+ * server root, or null when there is no reason to show (live, or an older
+ * server that sends no reason).
+ *
+ * @param {object} [state]
+ * @param {string} [state.agentViewReason] "" / "off" / "missing"
+ * @param {string[]} [state.agentViewMissing] programs not installed
+ * @returns {string|null}
+ */
+export function agentViewUnavailablePath({ agentViewReason, agentViewMissing } = {}) {
+    if (agentViewReason !== 'off' && agentViewReason !== 'missing') return null;
+    const params = new URLSearchParams({ reason: agentViewReason });
+    if (agentViewReason === 'missing' && Array.isArray(agentViewMissing) && agentViewMissing.length) {
+        params.set('missing', agentViewMissing.join(','));
+    }
+    return `agent-view-unavailable.html?${params}`;
 }
 
 /**
