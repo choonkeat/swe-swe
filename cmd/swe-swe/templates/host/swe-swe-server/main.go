@@ -568,6 +568,11 @@ type Session struct {
 	BrowserDataDir string        // Per-session Chromium user data directory
 	BrowserProcs   *browserProcs // Full handle incl. the CDP forwarder server
 	BrowserStarted bool   // Whether browser processes have been started
+	// agentViewStartFailed: the last browser/start for this session failed
+	// (e.g. the remote backend was unreachable). Reported to the tab as an
+	// agentViewReason so it stops saying "Starting browser..." forever.
+	// Guarded by mu; cleared by the next successful start.
+	agentViewStartFailed bool
 	// RemoteBrowserID is the session id returned by a remote browser-backend
 	// (empty in local mode); set when -agent-view points at a backend URL.
 	RemoteBrowserID string
@@ -1182,13 +1187,7 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 	if workDir == "" {
 		workDir, _ = os.Getwd()
 	}
-	// Asked once per payload; the missing list only means anything when
-	// that is the reason.
-	agentViewReason := agentViewUnavailableReason()
-	agentViewMissing := []string{}
-	if agentViewReason == "missing" {
-		agentViewMissing = missingBrowserPrograms()
-	}
+	agentViewReason, agentViewMissing, agentViewAddress := s.agentViewStatus()
 	// Only expose agentChatPort for chat sessions; terminal sessions
 	// should never probe or show the Agent Chat tab.
 	var agentChatPort int
@@ -1217,11 +1216,16 @@ func (s *Session) buildStatusPayload(viewers int, rows, cols uint16) map[string]
 		"yoloMode":           s.yoloMode,
 		"yoloSupported":      s.AssistantConfig.YoloRestartCmd != "",
 		"browserStarted":     s.BrowserStarted,
-		"agentViewAvailable": agentViewReason == "",
-		// Why the tab cannot work ("off" / "missing"; "" when it can), and
-		// for "missing", which programs to install.
+		// Whether Agent View is configured to work here at all. A failed
+		// start ("unreachable" / "failed" below) leaves it true: the tab
+		// exists, the browser just is not up.
+		"agentViewAvailable": agentViewReason == "" || agentViewReason == "unreachable" || agentViewReason == "failed",
+		// Why the tab cannot work ("off" / "missing" / "unreachable" /
+		// "failed"; "" when it can), for "missing" which programs to
+		// install, and for "unreachable" the backend address it tried.
 		"agentViewReason":    agentViewReason,
 		"agentViewMissing":   agentViewMissing,
+		"agentViewAddress":   agentViewAddress,
 		"publicHostname":     getLiveTunnelHostname(),
 		// Preview host-demux (ADR-0045): the logical vhost suffix rewritten onto
 		// upstream Hosts, and the ordered reach-domain candidates the frontend
@@ -9708,8 +9712,13 @@ func handleBrowserStartAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status, err := startSessionAgentView(sess)
+	sess.mu.Lock()
+	sess.agentViewStartFailed = err != nil
+	sess.mu.Unlock()
 	if err != nil {
 		log.Printf("Failed to start Agent View for session %s: %v", sessionUUID, err)
+		// Tell the tab, or it keeps saying "Starting browser...".
+		sess.BroadcastStatus()
 		http.Error(w, fmt.Sprintf("Failed to start browser: %v", err), http.StatusInternalServerError)
 		return
 	}

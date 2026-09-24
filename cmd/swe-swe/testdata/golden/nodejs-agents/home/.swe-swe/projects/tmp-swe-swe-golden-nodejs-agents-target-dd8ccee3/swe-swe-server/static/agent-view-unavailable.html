@@ -129,7 +129,7 @@
 <body>
 <main>
     <section>
-        <h1>Agent View isn't available here</h1>
+        <h1 id="title">Agent View isn't available here</h1>
         <p class="muted">Agent View is a live browser your agent controls, so you can watch it test your app.</p>
     </section>
 
@@ -157,6 +157,18 @@
                 <b id="setup-title">Use another machine</b>: <span id="setup-text">the browser can run on a different machine.</span>
                 <a href="https://swe-swe.netlify.app/" target="_blank" rel="noopener">Open setup steps</a>
             </li>
+            <li id="opt-retry" hidden>
+                <b>Try again</b>: ask your agent to open a web page. It tries to start the browser each time.
+            </li>
+            <li id="opt-check-machine" hidden>
+                <b>Check the browser machine is running</b>, and that this machine can reach it.
+            </li>
+            <li id="opt-check-address" hidden>
+                <b>Check the address</b>: it is the SWE_AGENT_VIEW setting swe-swe was started with.
+            </li>
+            <li id="opt-restart" hidden>
+                <b>Restart swe-swe</b> if it keeps happening.
+            </li>
             <li id="opt-off">
                 <b>Leave it off</b>: everything else keeps working (Agent Chat, Terminal, Preview and Files).
             </li>
@@ -176,7 +188,29 @@
 
         var why = document.getElementById('why');
         var options = document.getElementById('options');
-        if (reason === 'off') {
+        var show = function (ids) {
+            [].forEach.call(options.children, function (li) {
+                li.hidden = ids.indexOf(li.id) === -1;
+            });
+            // In the order given.
+            ids.forEach(function (id) { options.appendChild(document.getElementById(id)); });
+        };
+        // host:port as the server reports it; anything else is not echoed.
+        var address = params.get('address') || '';
+        if (!/^[A-Za-z0-9.\-]+(:[0-9]+)?$|^\[[0-9A-Fa-f:.]+\](:[0-9]+)?$/.test(address)) address = '';
+        if (reason === 'unreachable' || reason === 'failed') {
+            document.getElementById('title').textContent = "Agent View couldn't start";
+            document.querySelector('#options').previousElementSibling.textContent = 'What to try';
+        }
+        if (reason === 'unreachable') {
+            why.textContent = address
+                ? "Can't reach the browser machine at " + address + '.'
+                : "Can't reach the browser machine.";
+            show(['opt-check-machine', 'opt-check-address', 'opt-retry']);
+        } else if (reason === 'failed') {
+            why.textContent = "The browser on this machine didn't start.";
+            show(['opt-retry', 'opt-restart']);
+        } else if (reason === 'off') {
             why.textContent = 'It was switched off when swe-swe was set up.';
             // Installing alone does not switch it back on; the setup steps do.
             document.getElementById('opt-install').hidden = true;

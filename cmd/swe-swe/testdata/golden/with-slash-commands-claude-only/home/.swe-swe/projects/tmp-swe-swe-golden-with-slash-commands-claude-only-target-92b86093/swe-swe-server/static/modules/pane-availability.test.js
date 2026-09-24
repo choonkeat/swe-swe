@@ -76,6 +76,23 @@ test('agentViewUnavailablePath: missing programs are listed', () => {
     assert.strictEqual(agentViewUnavailablePath({ agentViewReason: 'missing', agentViewMissing: [] }), 'agent-view-unavailable.html?reason=missing');
 });
 
+// A failed start is shown too, instead of "Starting browser..." forever.
+test('agentViewUnavailablePath: unreachable backend carries its address', () => {
+    assert.strictEqual(
+        agentViewUnavailablePath({ agentViewReason: 'unreachable', agentViewAddress: 'box:9333' }),
+        'agent-view-unavailable.html?reason=unreachable&address=box%3A9333',
+    );
+    assert.strictEqual(agentViewUnavailablePath({ agentViewReason: 'unreachable' }), 'agent-view-unavailable.html?reason=unreachable');
+});
+
+test('agentViewUnavailablePath: local start failed', () => {
+    assert.strictEqual(agentViewUnavailablePath({ agentViewReason: 'failed', agentViewAddress: 'ignored:1' }), 'agent-view-unavailable.html?reason=failed');
+});
+
+test('agentViewKnown: a failed start keeps the tab', () => {
+    assert.strictEqual(agentViewKnown({ agentViewAvailable: true, agentViewReason: 'unreachable', uuid: 'abc' }), true);
+});
+
 test('agentViewUnavailablePath: null when live or no reason', () => {
     assert.strictEqual(agentViewUnavailablePath({ agentViewReason: '' }), null);
     assert.strictEqual(agentViewUnavailablePath(), null);

@@ -98,6 +98,32 @@ func agentViewUnavailableReason() string {
 	}
 }
 
+// agentViewStatus reports, for this session's status frame, why the Agent
+// View tab cannot show a browser:
+//
+//	"off"         -- switched off (-agent-view off)
+//	"missing"     -- local mode without the display stack; missing lists them
+//	"unreachable" -- remote mode, and the last start failed; address is the
+//	                 backend host it tried
+//	"failed"      -- local mode, and the last start failed
+//	""            -- nothing wrong (the browser may simply not be started yet)
+//
+// Caller holds s.mu.
+func (s *Session) agentViewStatus() (reason string, missing []string, address string) {
+	missing = []string{}
+	reason = agentViewUnavailableReason()
+	switch {
+	case reason == "missing":
+		missing = missingBrowserPrograms()
+	case reason == "" && s.agentViewStartFailed && agentViewRemote():
+		reason = "unreachable"
+		address = agentViewBackendAddress()
+	case reason == "" && s.agentViewStartFailed:
+		reason = "failed"
+	}
+	return reason, missing, address
+}
+
 // resolveAgentViewBackend applies flag -> env -> default. Called from main()
 // after flag.Parse(). flagWasSet mirrors flagPassed("agent-view").
 func resolveAgentViewBackend(flagVal string, flagWasSet bool) {

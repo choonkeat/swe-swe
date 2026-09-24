@@ -37,12 +37,12 @@ export function agentViewLive({ agentViewAvailable, uuid } = {}) {
 /**
  * The Agent View TAB exists when the view is live, or when the server says
  * why it is not ("off": switched off at setup, "missing": the browser
- * programs are not installed). The tab then shows a page that explains the
+ * programs are not installed, or a failed start). The tab then shows a page that explains the
  * reason instead of disappearing, so people learn what they gave up.
  *
  * @param {object} [state]
  * @param {boolean} [state.agentViewAvailable]
- * @param {string} [state.agentViewReason] "" / "off" / "missing"
+ * @param {string} [state.agentViewReason] see agentViewUnavailablePath
  * @param {string} [state.uuid]
  * @returns {boolean}
  */
@@ -51,21 +51,31 @@ export function agentViewKnown({ agentViewAvailable, agentViewReason, uuid } = {
     return agentViewAvailable === true || agentViewUnavailablePath({ agentViewReason }) !== null;
 }
 
+const AGENT_VIEW_REASONS = ['off', 'missing', 'unreachable', 'failed'];
+
 /**
  * The page that explains why Agent View is unavailable, relative to the
- * server root, or null when there is no reason to show (live, or an older
- * server that sends no reason).
+ * server root, or null when there is no reason to show (live, not started
+ * yet, or an older server that sends no reason).
+ *
+ * "off" / "missing": Agent View cannot work here at all. "unreachable" /
+ * "failed": the last attempt to start the browser failed (remote backend
+ * not answering, or the local browser did not come up).
  *
  * @param {object} [state]
- * @param {string} [state.agentViewReason] "" / "off" / "missing"
+ * @param {string} [state.agentViewReason] "" / "off" / "missing" / "unreachable" / "failed"
  * @param {string[]} [state.agentViewMissing] programs not installed
+ * @param {string} [state.agentViewAddress] backend host:port, for "unreachable"
  * @returns {string|null}
  */
-export function agentViewUnavailablePath({ agentViewReason, agentViewMissing } = {}) {
-    if (agentViewReason !== 'off' && agentViewReason !== 'missing') return null;
+export function agentViewUnavailablePath({ agentViewReason, agentViewMissing, agentViewAddress } = {}) {
+    if (!AGENT_VIEW_REASONS.includes(agentViewReason)) return null;
     const params = new URLSearchParams({ reason: agentViewReason });
     if (agentViewReason === 'missing' && Array.isArray(agentViewMissing) && agentViewMissing.length) {
         params.set('missing', agentViewMissing.join(','));
+    }
+    if (agentViewReason === 'unreachable' && agentViewAddress) {
+        params.set('address', agentViewAddress);
     }
     return `agent-view-unavailable.html?${params}`;
 }

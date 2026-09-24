@@ -1,7 +1,7 @@
 # Agent View tab: explain why it is unavailable instead of hiding it
 
 **Date**: 2026-09-24
-**Status**: Phases 1-2 DONE (46a727292, 46550b009); phase 3 DROPPED; phase 4 open (optional)
+**Status**: Phases 1-2 DONE (46a727292, 46550b009); phase 3 DROPPED; phase 4 DONE
 **Sketch**: `mockups/lo-fi/2026-09/24-agent-view-unavailable-tab-page.html`
 (committed 1173afbf7), example image `mockups/lo-fi/2026-09/24-agent-view-example.png`.
 

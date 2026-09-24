@@ -206,6 +206,16 @@ func remoteHostFor(backendURL, advertised string) string {
 	return "localhost"
 }
 
+// agentViewBackendAddress is the remote backend's host:port for display
+// (no scheme, path or credentials), or "" when it does not parse.
+func agentViewBackendAddress() string {
+	u, err := url.Parse(agentViewBackend)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
 // startRemoteAgentView allocates a remote browser and wires the session's CDP +
 // VNC to it. Matches the startSessionAgentView dispatch signature.
 func startRemoteAgentView(sess *Session) (string, error) {

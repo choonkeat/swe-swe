@@ -161,7 +161,7 @@ func TestSinglePortStatusPayloadOmitsProxyPorts(t *testing.T) {
 	t.Run("single-port mode keeps the real target ports and the availability signal", func(t *testing.T) {
 		withSinglePortMode(t, true)
 		payload := newSession().buildStatusPayload(0, 24, 80)
-		for _, k := range []string{"previewPort", "cdpPort", "vncPort", "filesPort", "agentChatPort", "agentViewAvailable", "agentViewReason", "agentViewMissing"} {
+		for _, k := range []string{"previewPort", "cdpPort", "vncPort", "filesPort", "agentChatPort", "agentViewAvailable", "agentViewReason", "agentViewMissing", "agentViewAddress"} {
 			if _, ok := payload[k]; !ok {
 				t.Errorf("single-port mode must still carry %s", k)
 			}

@@ -138,3 +138,38 @@ func TestAgentViewUnavailableReason(t *testing.T) {
 		})
 	}
 }
+
+// A failed browser/start must reach the tab as a reason, or it says
+// "Starting browser..." forever. Remote failures name the backend address
+// (host:port only -- never the scheme's credentials); local ones cannot.
+func TestSessionAgentViewStatusAfterFailedStart(t *testing.T) {
+	origLook, origBackend := lookPath, agentViewBackend
+	defer func() { lookPath, agentViewBackend = origLook, origBackend }()
+	lookPath = func(n string) (string, error) { return "/usr/bin/" + n, nil }
+
+	cases := []struct {
+		name        string
+		backend     string
+		failed      bool
+		wantReason  string
+		wantAddress string
+	}{
+		{"remote, not started yet", "http://box:9333", false, "", ""},
+		{"remote, start failed", "http://user:pw@box:9333/path", true, "unreachable", "box:9333"},
+		{"local, start failed", "local", true, "failed", ""},
+		{"off wins over a failed start", "off", true, "off", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			agentViewBackend = c.backend
+			s := &Session{agentViewStartFailed: c.failed}
+			reason, missing, address := s.agentViewStatus()
+			if reason != c.wantReason || address != c.wantAddress {
+				t.Errorf("status = (%q, %q), want (%q, %q)", reason, address, c.wantReason, c.wantAddress)
+			}
+			if missing == nil {
+				t.Error("missing must be an empty list, not null, in the JSON")
+			}
+		})
+	}
+}

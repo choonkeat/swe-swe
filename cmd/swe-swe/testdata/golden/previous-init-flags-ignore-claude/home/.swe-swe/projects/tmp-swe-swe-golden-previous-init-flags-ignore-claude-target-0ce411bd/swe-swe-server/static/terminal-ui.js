@@ -2184,6 +2184,19 @@ class TerminalUI extends HTMLElement {
                 this.agentViewAvailable = msg.agentViewAvailable !== false;
                 this.agentViewReason = msg.agentViewReason || '';
                 this.agentViewMissing = Array.isArray(msg.agentViewMissing) ? msg.agentViewMissing : [];
+                this.agentViewAddress = msg.agentViewAddress || '';
+                // A start that failed (or recovered) changes what the pane
+                // should show -- the explanation page or the live browser --
+                // so reload it if it is on screen or already loaded.
+                const agentViewPageUrl = this._agentViewUnavailableUrl();
+                if (agentViewPageUrl !== this._agentViewPageUrl) {
+                    const hadPage = this._agentViewPageUrl !== undefined;
+                    this._agentViewPageUrl = agentViewPageUrl;
+                    if (hadPage && this._slotForPane('browser')) {
+                        this._paneLoaded.delete('browser');
+                        this._loadPaneIfNeeded('browser');
+                    }
+                }
                 if (prevAgentViewAvailable !== this.agentViewAvailable ||
                     prevAgentViewKnown !== this._isPaneKnown('browser')) {
                     this.setAgentViewTabVisible(this._isPaneKnown('browser'));
@@ -4288,6 +4301,7 @@ class TerminalUI extends HTMLElement {
                                 }
                             }).catch(() => {
                                 this._browserViewProbing = false;
+                                this._browserViewGaveUp();
                             });
                         }
                         this.updateActiveTabIndicator();
@@ -6376,6 +6390,7 @@ class TerminalUI extends HTMLElement {
                         }
                     }).catch(() => {
                         this._browserViewProbing = false;
+                        this._browserViewGaveUp();
                     });
                 }
                 break;
@@ -7142,14 +7157,25 @@ class TerminalUI extends HTMLElement {
         return this._browserViewBaseResolving;
     }
 
-    // The page explaining why Agent View is unavailable (switched off, or the
-    // browser programs are missing), or null when Agent View is live. Never
-    // starts a browser: there is none to start.
+    // The readiness probe ran out of attempts with no failure reported: the
+    // browser was simply never started (it starts on the agent's first
+    // browser use). Say so instead of "Starting browser..." forever.
+    _browserViewGaveUp() {
+        if (this._browserViewReady || this._agentViewUnavailableUrl()) return;
+        const placeholder = this._placeholderFor('browser');
+        const text = placeholder && placeholder.querySelector('.terminal-ui__iframe-placeholder-text');
+        if (text) text.textContent = 'No browser yet. It starts when your agent first opens a web page.';
+    }
+
+    // The page explaining why Agent View is unavailable (switched off, the
+    // browser programs are missing, or the last start failed), or null when
+    // there is nothing wrong. Never starts a browser.
     _agentViewUnavailableUrl() {
-        if (this.agentViewAvailable !== false || !this.uuid) return null;
+        if (!this.uuid) return null;
         const path = agentViewUnavailablePath({
             agentViewReason: this.agentViewReason,
             agentViewMissing: this.agentViewMissing,
+            agentViewAddress: this.agentViewAddress,
         });
         return path ? `${getBaseUrl(window.location)}/${path}` : null;
     }
@@ -7187,7 +7213,7 @@ class TerminalUI extends HTMLElement {
                 return base ? base + '/' : null;
             }
             case 'browser':
-                return this.getBrowserViewUrl();
+                return this._agentViewUnavailableUrl() || this.getBrowserViewUrl();
             case 'files': {
                 const filesUrl = this._filesBaseUrl();
                 return filesUrl ? filesUrl + '/' : null;
