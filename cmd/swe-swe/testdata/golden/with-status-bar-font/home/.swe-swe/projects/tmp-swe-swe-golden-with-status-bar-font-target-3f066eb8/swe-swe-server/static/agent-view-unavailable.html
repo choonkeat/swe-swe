@@ -23,7 +23,6 @@
            "something is not working here" rather than a feature page. */
         :root {
             --bg: #1c1d1f;
-            --card: #232426;
             --border: #3a3b3e;
             --text: #b8babd;
             --heading: #cfd1d4;
@@ -34,7 +33,6 @@
         }
         [data-theme="light"] {
             --bg: #f2f2f3;
-            --card: #eaeaeb;
             --border: #d4d4d6;
             --text: #55575b;
             --heading: #3d3f43;
@@ -86,22 +84,18 @@
             filter: grayscale(1);
             opacity: 0.55;
         }
-        .box {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px 16px;
+        ul {
+            margin: 0;
+            padding-left: 20px;
         }
-        .options {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
+        li + li {
+            margin-top: 8px;
         }
         .code {
             display: flex;
             gap: 8px;
             align-items: flex-start;
-            margin: 8px 0;
+            margin: 6px 0 0;
         }
         .code code {
             flex: 1;
@@ -114,17 +108,18 @@
             font-size: 12px;
             overflow-wrap: anywhere;
         }
-        button, .btn {
+        button {
             background: var(--btn-bg);
             color: var(--btn-text);
             border: 1px solid var(--border);
             border-radius: 4px;
-            padding: 6px 12px;
+            padding: 5px 10px;
             font: inherit;
             font-size: 13px;
             cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
+        }
+        a {
+            color: var(--heading);
         }
         [hidden] {
             display: none !important;
@@ -140,38 +135,32 @@
 
     <img class="example" src="images/agent-view-example.png" alt="Example: Agent View showing a web page in the agent's browser" width="720" height="325">
 
-    <section class="box">
-        <h2 id="why-title"></h2>
-        <p id="why-text"></p>
-    </section>
-
-    <section class="box">
-        <h2>Your agent can't use a browser either</h2>
-        <p>The same browser is the one your agent drives. Without it, your agent cannot open web pages to test your app.</p>
+    <section>
+        <h2>Why</h2>
+        <ul>
+            <li id="why"></li>
+            <li>Your agent can't use a browser either, so it cannot open web pages to test your app.</li>
+        </ul>
     </section>
 
     <section>
         <h2>How to get it</h2>
-        <div class="options" id="options">
-            <div class="box" id="opt-install">
-                <h2>Install them here</h2>
-                <p>Run this on the machine swe-swe runs on:</p>
+        <ul id="options">
+            <li id="opt-install">
+                <b>Install them here</b> (Debian and Ubuntu), then restart swe-swe:
                 <div class="code">
                     <code id="install-line">sudo apt-get install -y chromium xvfb x11vnc novnc websockify</code>
                     <button type="button" id="copy-btn">Copy</button>
                 </div>
-                <p class="muted">This line is for Debian and Ubuntu. Then restart swe-swe.</p>
-            </div>
-            <div class="box" id="opt-setup">
-                <h2 id="setup-title">Use another machine</h2>
-                <p id="setup-text">The browser can run on a different machine. The setup page walks you through it.</p>
-                <p style="margin-top:10px;"><a class="btn" href="https://swe-swe.netlify.app/" target="_blank" rel="noopener">Open setup steps</a></p>
-            </div>
-            <div class="box" id="opt-off">
-                <h2>Leave it off</h2>
-                <p>Everything else keeps working: Agent Chat, Terminal, Preview and Files.</p>
-            </div>
-        </div>
+            </li>
+            <li id="opt-setup">
+                <b id="setup-title">Use another machine</b>: <span id="setup-text">the browser can run on a different machine.</span>
+                <a href="https://swe-swe.netlify.app/" target="_blank" rel="noopener">Open setup steps</a>
+            </li>
+            <li id="opt-off">
+                <b>Leave it off</b>: everything else keeps working (Agent Chat, Terminal, Preview and Files).
+            </li>
+        </ul>
     </section>
 </main>
 <script>
@@ -185,23 +174,20 @@
             return known.indexOf(p) !== -1;
         });
 
-        var title = document.getElementById('why-title');
-        var text = document.getElementById('why-text');
+        var why = document.getElementById('why');
         var options = document.getElementById('options');
         if (reason === 'off') {
-            title.textContent = 'It was switched off when swe-swe was set up';
-            text.textContent = 'This machine was set up without a browser for Agent View.';
+            why.textContent = 'It was switched off when swe-swe was set up.';
             // Installing alone does not switch it back on; the setup steps do.
             document.getElementById('opt-install').hidden = true;
             document.getElementById('setup-title').textContent = 'Switch it on';
             document.getElementById('setup-text').textContent =
-                'Run the setup steps again and keep the browser programs ticked.';
+                'run the setup steps again and keep the browser programs ticked.';
             options.insertBefore(document.getElementById('opt-off'), options.firstChild);
         } else {
-            title.textContent = missing.length
-                ? 'These programs are missing: ' + missing.join(', ')
-                : 'Some programs it needs are missing';
-            text.textContent = 'Agent View needs them on the machine swe-swe runs on.';
+            why.textContent = missing.length
+                ? 'These programs are missing on this machine: ' + missing.join(', ') + '.'
+                : 'Some programs it needs are missing on this machine.';
         }
 
         var copyBtn = document.getElementById('copy-btn');
