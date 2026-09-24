@@ -1,7 +1,7 @@
 # Agent View tab: explain why it is unavailable instead of hiding it
 
 **Date**: 2026-09-24
-**Status**: Phases 1-2 DONE (46a727292, phase 2 commit); phases 3-4 open
+**Status**: Phases 1-2 DONE (46a727292, 46550b009); phase 3 DROPPED; phase 4 open (optional)
 **Sketch**: `mockups/lo-fi/2026-09/24-agent-view-unavailable-tab-page.html`
 (committed 1173afbf7), example image `mockups/lo-fi/2026-09/24-agent-view-example.png`.
 
@@ -18,7 +18,6 @@ a page that says:
 3. Why it is missing HERE (one of the cases below).
 4. That the agent cannot use a browser either.
 5. How to get it: install here / use another machine / leave it off.
-6. A "Hide this tab" button.
 
 ## Cases
 
@@ -69,11 +68,10 @@ Verify: `make test`, `make build golden-update` (template change), then test
 container + MCP browser: session with `SWE_AGENT_VIEW=off` shows case A; a
 container with chromium removed shows case B with the right list.
 
-## Phase 3: "Hide this tab"
+## Phase 3: "Hide this tab" -- DROPPED (2026-09-24)
 
-1. Button posts a message to the parent frame; parent stores
-   `swe-swe-hide-agent-view=1` in localStorage (try/catch) and removes the tab.
-2. Way back: a "Show Agent View tab" toggle in Session Settings.
+Not needed: the slot tab bar already has [x] to close a tab and [+] to add
+one back, so no page-specific button or Session Settings toggle.
 
 ## Phase 4 (optional): case C, other machine unreachable
 
