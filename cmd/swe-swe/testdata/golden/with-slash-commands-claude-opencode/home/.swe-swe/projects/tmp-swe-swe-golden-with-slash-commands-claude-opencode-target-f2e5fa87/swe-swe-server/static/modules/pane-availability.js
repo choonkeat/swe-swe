@@ -48,20 +48,24 @@ export function filesPaneKnown({ filesPort, uuid } = {}) {
 }
 
 /**
- * Should the Preview tab be added to the layout on its own?
+ * What to do with the Preview tab when the user's app answers on $PORT.
  *
- * Yes the first time the user's app answers on $PORT while Preview is not in
- * the layout -- the same spirit as Agent View appearing when the agent's
- * browser starts. Only once per page: if the user closes Preview after that,
- * it stays closed. Never inside the embedded (iframe-in-iframe) view.
+ * The first time the app answers, Preview is brought to the front: added to
+ * its home slot if it is not in the layout, or switched to if it sits behind
+ * another tab -- the same spirit as Agent View appearing when the agent's
+ * browser starts. Only once per page: if the user switches away after that,
+ * it stays that way. Never inside the embedded (iframe-in-iframe) view.
  *
  * @param {object} [state]
  * @param {boolean} [state.appUp] the app answered on $PORT
  * @param {boolean} [state.inLayout] Preview already sits in some slot
- * @param {boolean} [state.alreadyAdded] this page already did it once
+ * @param {boolean} [state.showing] Preview is the active tab of its slot
+ * @param {boolean} [state.alreadyDone] this page already did it once
  * @param {boolean} [state.embedded] page is embedded in another page's iframe
- * @returns {boolean}
+ * @returns {'add'|'switch'|null}
  */
-export function shouldAutoAddPreview({ appUp, inLayout, alreadyAdded, embedded } = {}) {
-    return appUp === true && !inLayout && !alreadyAdded && !embedded;
+export function previewRevealAction({ appUp, inLayout, showing, alreadyDone, embedded } = {}) {
+    if (appUp !== true || alreadyDone || embedded) return null;
+    if (!inLayout) return 'add';
+    return showing ? null : 'switch';
 }

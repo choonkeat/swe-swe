@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { agentViewKnown, filesPaneKnown, shouldAutoAddPreview } from './pane-availability.js';
+import { agentViewKnown, filesPaneKnown, previewRevealAction } from './pane-availability.js';
 
 // Single-port mode advertises no proxy ports at all, so a pane whose EXISTENCE
 // is read off its proxy port disappears instead of falling back to its
@@ -58,27 +58,33 @@ test('filesPaneKnown: tolerates no argument', () => {
     assert.strictEqual(filesPaneKnown(), false);
 });
 
-// Preview appears on its own the first time the user's app answers on $PORT,
+/// The first time the user's app answers on $PORT, Preview comes to the front,
 // the way Agent View appears when the agent's browser starts.
-test('shouldAutoAddPreview: app answers and Preview is not in the layout', () => {
-    assert.strictEqual(shouldAutoAddPreview({ appUp: true }), true);
+test('previewRevealAction: adds Preview when it is not in the layout', () => {
+    assert.strictEqual(previewRevealAction({ appUp: true }), 'add');
 });
 
-test('shouldAutoAddPreview: nothing while the app is down or unknown', () => {
-    assert.strictEqual(shouldAutoAddPreview({ appUp: false }), false);
-    assert.strictEqual(shouldAutoAddPreview({}), false);
+test('previewRevealAction: switches to Preview when it sits behind another tab', () => {
+    assert.strictEqual(previewRevealAction({ appUp: true, inLayout: true, showing: false }), 'switch');
 });
 
-test('shouldAutoAddPreview: nothing when Preview is already in the layout', () => {
-    assert.strictEqual(shouldAutoAddPreview({ appUp: true, inLayout: true }), false);
+test('previewRevealAction: nothing when Preview is already showing', () => {
+    assert.strictEqual(previewRevealAction({ appUp: true, inLayout: true, showing: true }), null);
 });
 
-// Once per page: a user who closes Preview after it appeared keeps it closed,
+test('previewRevealAction: nothing while the app is down or unknown', () => {
+    assert.strictEqual(previewRevealAction({ appUp: false }), null);
+    assert.strictEqual(previewRevealAction({}), null);
+});
+
+// Once per page: a user who switches away from Preview keeps it that way,
 // even when a dev server restarts and the app comes up again.
-test('shouldAutoAddPreview: only once per page', () => {
-    assert.strictEqual(shouldAutoAddPreview({ appUp: true, alreadyAdded: true }), false);
+test('previewRevealAction: only once per page', () => {
+    assert.strictEqual(previewRevealAction({ appUp: true, alreadyDone: true }), null);
+    assert.strictEqual(previewRevealAction({ appUp: true, inLayout: true, alreadyDone: true }), null);
 });
 
-test('shouldAutoAddPreview: never inside the embedded view', () => {
-    assert.strictEqual(shouldAutoAddPreview({ appUp: true, embedded: true }), false);
+test('previewRevealAction: never inside the embedded view', () => {
+    assert.strictEqual(previewRevealAction({ appUp: true, embedded: true }), null);
+    assert.strictEqual(previewRevealAction({ appUp: true, inLayout: true, embedded: true }), null);
 });

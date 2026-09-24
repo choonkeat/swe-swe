@@ -3,7 +3,7 @@ import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
 import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
-import { agentViewKnown, filesPaneKnown, shouldAutoAddPreview } from './modules/pane-availability.js';
+import { agentViewKnown, filesPaneKnown, previewRevealAction } from './modules/pane-availability.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
 import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
@@ -2359,7 +2359,7 @@ class TerminalUI extends HTMLElement {
                     }
                 }
                 // Watch for the user's app even while Preview is not in the
-                // layout, so its tab can appear the first time the app answers.
+                // layout, so Preview can come to the front the first time the app answers.
                 if (this.previewPort && this.sessionUUID) {
                     this._startPreviewAppWatch();
                 }
@@ -7611,9 +7611,10 @@ class TerminalUI extends HTMLElement {
     // and no script to reload. The app then ran with the pane stuck on the
     // placeholder or the gateway's page until the user reloaded by hand.
     //
-    // The watch also runs while Preview is NOT in the layout, until the first
-    // time the app answers: then the Preview tab is added (without switching
-    // to it), the way Agent View appears when the agent's browser starts.
+    // The watch also runs while Preview is not loaded, until the first time
+    // the app answers: then Preview is brought to the front once -- added to
+    // the layout, or switched to if it sits behind another tab -- the way
+    // Agent View appears when the agent's browser starts.
     _startPreviewAppWatch() {
         if (this._previewAppWatchStarted) return;
         this._previewAppWatchStarted = true;
@@ -7632,10 +7633,16 @@ class TerminalUI extends HTMLElement {
                 const cameUp = up && this._previewAppUp === false;
                 this._previewAppUp = up;
                 const embedded = this.classList.contains('embedded-in-iframe');
-                if (shouldAutoAddPreview({ appUp: up, inLayout: !!this._slotForPane('preview'),
-                                           alreadyAdded: this._previewAutoAdded, embedded })) {
-                    this._previewAutoAdded = true;
-                    this.autoAddPaneToHome('preview', { activate: false });
+                const slot = this._slotForPane('preview');
+                const action = previewRevealAction({ appUp: up, inLayout: !!slot,
+                    showing: !!slot && this.activeBySlot[slot]?.active === 'preview',
+                    alreadyDone: this._previewAutoAdded, embedded });
+                if (action) this._previewAutoAdded = true;
+                if (action === 'add') {
+                    this.autoAddPaneToHome('preview', { activate: true });
+                } else if (action === 'switch') {
+                    // Not saved: the next page load keeps the user's own layout.
+                    this.setActiveInSlot(slot, 'preview', { persist: false });
                 }
                 if (!loaded) {
                     // Nothing on screen to reload yet.
