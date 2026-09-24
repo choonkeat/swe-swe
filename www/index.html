@@ -235,21 +235,22 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .code-block .copy-btn {
   position: absolute;
   top: 6px; right: 6px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
+  background: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  padding: 4px 8px;
+  padding: 5px 12px;
   cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
   font-family: var(--font-family);
-  transition: color 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.code-block .copy-btn:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.code-block .copy-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 /* Keep the first line clear of the Copy button, which floats over the block. */
-.code-block pre { padding-right: 4.75rem; }
+.code-block pre { padding-right: 5.5rem; }
 
 pre {
   background: var(--bg-primary);
@@ -271,25 +272,6 @@ pre {
 code { font-family: var(--mono); color: var(--text-primary); }
 
 .verdict-cmd pre { font-size: 0.72rem; line-height: 1.55; }
-
-/* Output */
-.output-head { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 0.85rem; }
-
-.toggle { display: inline-flex; border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; }
-
-.toggle button {
-  background: var(--bg-primary);
-  border: none;
-  border-right: 1px solid var(--border-primary);
-  color: var(--text-secondary);
-  font-family: var(--font-family);
-  font-size: 0.8rem;
-  padding: 6px 14px;
-  cursor: pointer;
-}
-
-.toggle button:last-child { border-right: none; }
-.toggle button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
 
 /* The password line under the script. */
 .pw-line { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; margin-top: 0.75rem; }
@@ -371,7 +353,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   <!-- ============ Q1: WHAT THE MACHINE HAS ============ -->
   <section class="section">
     <h2>My machine running swe-swe will have</h2>
-    <p class="lede">Tell the page what your machine <b>has</b> and it writes your start-up script. Leave everything as it is and you get the ordinary four lines. Pick one. Every check below prints its own answer, so you never have to interpret a wall of output.</p>
+    <p class="lede">Tell the page what your machine <b>has</b> and it writes the commands to run. Leave everything as it is and you get the ordinary four lines. Pick one. Every check below prints its own answer, so you never have to interpret a wall of output.</p>
     <div class="card">
 
       <div class="radio-row">
@@ -618,22 +600,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
   <!-- ============ OUTPUT ============ -->
   <section class="section" id="output">
-    <div class="output-head">
-      <h2 style="margin:0;">Run this</h2>
-      <div class="toggle" id="run-mode">
-        <button type="button" data-mode="hand" aria-pressed="true">Run it by hand</button>
-        <button type="button" data-mode="startup" aria-pressed="false">Save as a start-up script</button>
-      </div>
-    </div>
-
-    <div class="toggle" id="source-mode" style="margin-bottom:0.75rem;">
-      <button type="button" data-source="release" aria-pressed="true">Published release</button>
-      <button type="button" data-source="next" aria-pressed="false">Pre-release</button>
-    </div>
-
-    <div class="warn" id="next-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
-      <p>A test version, published ahead of the release so a fix can be tried early. Only people who pick this get it; everyone else stays on the release.</p>
-    </div>
+    <h2 style="margin-bottom:0.85rem;">Run this</h2>
 
     <div class="warn" id="version-note" hidden style="margin-top:0;margin-bottom:0.75rem;">
       <p id="version-note-text">Needs swe-swe 2.38.0 or newer.</p>
@@ -757,9 +724,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
     browserNoInbound: false,
     mcpOk: true,
     reach: 'anyport',
-    wildcardDomain: '',
-    runMode: 'hand',
-    source: 'release'
+    wildcardDomain: ''
   };
 
 
@@ -772,7 +737,7 @@ code { font-family: var(--mono); color: var(--text-primary); }
   var HASH_FIELDS = {
     have: 'have', agents: 'agents', node: 'node', browserTools: 'tools',
     browserFallback: 'fallback', browserAddr: 'addr', browserNoInbound: 'noinbound',
-    mcpOk: 'mcp', reach: 'reach', wildcardDomain: 'domain', runMode: 'mode', source: 'source'
+    mcpOk: 'mcp', reach: 'reach', wildcardDomain: 'domain'
   };
   var DEFAULTS = JSON.parse(JSON.stringify(state));
 
@@ -800,9 +765,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
       else if (Array.isArray(DEFAULTS[k])) state[k] = v ? v.split(',') : [];
       else state[k] = v;
     });
-    // An address saved before a choice was renamed or removed must not leave
-    // the page on a choice it no longer has.
-    if (['release', 'next'].indexOf(state.source) === -1) state.source = DEFAULTS.source;
   }
 
   function writeHash() {
@@ -868,16 +830,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
   // is what stops it opening the per-session proxy ports and probing them.
   function ordinary() { return state.have === 'docker' && state.reach === 'anyport'; }
 
-  // "Pre-release": the version published under npm's "next" label, ahead of
-  // the release, to try a fix early. Nobody gets it without asking for it.
-  function fromNext() { return state.source === 'next'; }
-
   // ---------- Script generation ----------
   function installSh() {
-    return 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | ' +
-      (fromNext() ? 'SWE_SWE_TAG=next sh' : 'sh');
+    return 'curl -fsSL https://raw.githubusercontent.com/choonkeat/swe-swe/main/install.sh | sh';
   }
-  function npxAlias() { return "alias swe-swe='npx -y swe-swe" + (fromNext() ? '@next' : '') + "'"; }
+  function npxAlias() { return "alias swe-swe='npx -y swe-swe'"; }
   var APT_LINE = 'sudo apt-get install -y chromium xvfb x11vnc novnc websockify';
 
   function initFlags() {
@@ -944,39 +901,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
     return lines.join('\n');
   }
 
-  function startupScript() {
-    var lines = [];
-    lines.push('#!/bin/sh');
-    lines.push('set -eu');
-    lines.push('');
-    // Whatever the machine already has wins; the generated one is only the
-    // fallback, so re-running the script does not change a working password.
-    lines.push('SWE_SWE_PASSWORD="${SWE_SWE_PASSWORD:-' + state.password + '}"');
-    lines.push('PROJECT_DIR="${PROJECT_DIR:-$HOME/proj}"');
-    lines.push('LOG="$HOME/swe-swe-up.log"');
-    lines.push('');
-    // A start-up script runs with no terminal and no alias, so it always uses
-    // the plain download rather than the Node one-liner.
-    lines.push(installSh());
-    lines.push('export PATH="$HOME/.local/bin:$PATH"');
-    if (installsBrowserTools()) lines.push(APT_LINE);
-    lines.push('');
-    lines.push('mkdir -p "$PROJECT_DIR"');
-    lines.push('cd "$PROJECT_DIR"');
-    lines.push('[ -d .git ] || git init -q');
-    lines.push('');
-    var flags = initFlags();
-    lines.push('swe-swe init' + (flags ? ' ' + flags : ''));
-    lines.push('');
-    lines.push('export SWE_SWE_PASSWORD');
-    envPairs().filter(function(p) { return p.indexOf('SWE_SWE_PASSWORD') !== 0; })
-      .forEach(function(p) { lines.push('export ' + p); });
-    lines.push('');
-    lines.push('nohup swe-swe up >"$LOG" 2>&1 &');
-    lines.push('echo "started; log: $LOG"');
-    return lines.join('\n');
-  }
-
   function otherMachineScript() {
     return [
       installSh(),
@@ -988,9 +912,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
   }
 
   function scriptNote() {
-    if (state.runMode === 'startup') {
-      return 'Always included without asking: the port number spelled out, the most basic shell syntax, and starting in the background with a log file. There is no terminal to keep open on a machine like this.';
-    }
     if (ordinary()) return 'Everything left as it is, so these are the ordinary instructions.';
     return 'Stays in front of you; Ctrl-C stops it.';
   }
@@ -1061,12 +982,11 @@ code { font-family: var(--mono); color: var(--text-primary); }
 
     // The one-port route rides the same-origin fallback for every pane, which
     // is newer than the version the rest of this page needs.
-    el('version-note').hidden = ordinary() || fromNext();
-    el('next-note').hidden = !fromNext();
+    el('version-note').hidden = ordinary();
     el('version-note-text').textContent = onePortOnly()
       ? 'Needs swe-swe 2.39.0 or newer.'
       : 'Needs swe-swe 2.38.0 or newer.';
-    el('script-out').textContent = state.runMode === 'startup' ? startupScript() : handScript();
+    el('script-out').textContent = handScript();
     el('script-note').textContent = scriptNote();
     el('other-machine').hidden = !agentViewRemote();
     if (agentViewRemote()) el('other-machine-script').textContent = otherMachineScript();
@@ -1081,11 +1001,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
       var r = document.querySelector('input[name="' + name + '"][value="' + value + '"]');
       if (r) r.checked = true;
     }
-    function pressIn(groupId, attr, value) {
-      Array.prototype.forEach.call(el(groupId).querySelectorAll('button'), function(b) {
-        b.setAttribute('aria-pressed', b.getAttribute(attr) === value ? 'true' : 'false');
-      });
-    }
     checkRadio('have', state.have);
     checkRadio('browser-fallback', state.browserFallback);
     checkRadio('reach', state.reach);
@@ -1098,8 +1013,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
     el('c-browser-noinbound').checked = state.browserNoInbound;
     el('c-browser-addr').value = state.browserAddr;
     el('c-wildcard-domain').value = state.wildcardDomain;
-    pressIn('run-mode', 'data-mode', state.runMode);
-    pressIn('source-mode', 'data-source', state.source);
   }
 
   // ---------- Wiring ----------
@@ -1133,26 +1046,6 @@ code { font-family: var(--mono); color: var(--text-primary); }
   });
   Array.prototype.forEach.call(document.querySelectorAll('input[name="reach"]'), function(r) {
     r.addEventListener('change', function() { if (this.checked) { state.reach = this.value; render(); } });
-  });
-
-  document.getElementById('run-mode').addEventListener('click', function(e) {
-    var b = e.target.closest('button');
-    if (!b) return;
-    state.runMode = b.getAttribute('data-mode');
-    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x) {
-      x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
-    });
-    render();
-  });
-
-  document.getElementById('source-mode').addEventListener('click', function(e) {
-    var b = e.target.closest('button');
-    if (!b) return;
-    state.source = b.getAttribute('data-source');
-    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x) {
-      x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
-    });
-    render();
   });
 
   el('new-password').addEventListener('click', function() {

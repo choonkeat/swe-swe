@@ -206,74 +206,30 @@ test('oneport on a host-native box: the flag rides along there too', async (t) =
     await page.close();
 });
 
-// "Pre-release" installs the version published under npm's "next" label
-// instead of the release, so a fix can be tried before it is released.
-// Everyone else keeps getting the release.
-async function pickSource(page, source) {
-    await page.click(`#source-mode button[data-source="${source}"]`);
-}
-
-test('release is the default: the published release', async (t) => {
+// There is one kind of script and one version: the published release,
+// run by hand. Neither used to be a given -- the page offered a start-up
+// script and a pre-release.
+test('the script is the published release, run by hand', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await openPage();
     await pick(page, 'oneport');
     const s = await snapshot(page);
     assert.match(s.script, /npx -y swe-swe'/);
-    assert.ok(!s.script.includes('@next'), 'no pre-release by default');
-    assert.strictEqual(s.versionNote, true);
-    const nextNote = await page.evaluate(() => !document.getElementById('next-note').hidden);
-    assert.strictEqual(nextNote, false);
+    assert.ok(!s.script.includes('@next'), 'no pre-release');
+    assert.ok(!s.script.includes('nohup'), 'no start-up script');
+    const gone = await page.evaluate(() => !document.getElementById('run-mode') && !document.getElementById('source-mode'));
+    assert.strictEqual(gone, true, 'no choice left to make');
     await page.close();
 });
 
-test('pre-release with Node: npx asks for swe-swe@next', async (t) => {
-    if (skipReason) return t.skip(skipReason);
-    const page = await openPage();
-    await pick(page, 'oneport');
-    await pickSource(page, 'next');
-    const s = await snapshot(page);
-    assert.match(s.script, /alias swe-swe='npx -y swe-swe@next'/);
-    assert.match(s.script, /swe-swe init --single-port/, 'the answers still shape the rest');
-    assert.strictEqual(s.versionNote, false, 'the pre-release is always new enough');
-    const nextNote = await page.evaluate(() => !document.getElementById('next-note').hidden);
-    assert.strictEqual(nextNote, true, 'says what "pre-release" means');
-    await page.close();
-});
-
-test('pre-release on the ordinary laptop path', async (t) => {
-    if (skipReason) return t.skip(skipReason);
-    const page = await openPage();
-    await pickSource(page, 'next');
-    const s = await snapshot(page);
-    assert.match(s.script, /npx -y swe-swe@next/);
-    assert.match(s.script, /swe-swe up/);
-    await page.close();
-});
-
-test('pre-release without Node, and in a start-up script: the download asks for next', async (t) => {
-    if (skipReason) return t.skip(skipReason);
-    const page = await openPage();
-    await page.click('#have-agents');
-    await page.uncheck('#c-node');
-    await pickSource(page, 'next');
-    let s = await snapshot(page);
-    assert.match(s.script, /install\.sh \| SWE_SWE_TAG=next sh/);
-    await page.click('#run-mode button[data-mode="startup"]');
-    s = await snapshot(page);
-    assert.match(s.script, /install\.sh \| SWE_SWE_TAG=next sh/);
-    assert.match(s.script, /nohup swe-swe up/);
-    await page.close();
-});
-
-test('an address naming an unknown source falls back to the release', async (t) => {
+test('an old address asking for a pre-release start-up script still gets the release, by hand', async (t) => {
     if (skipReason) return t.skip(skipReason);
     const page = await browser.newPage();
-    await page.goto(base + '#source=head', { waitUntil: 'domcontentloaded' });
+    await page.goto(base + '#source=next&mode=startup', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!document.getElementById('script-out').textContent);
     const s = await snapshot(page);
     assert.match(s.script, /npx -y swe-swe'/);
-    const pressed = await page.evaluate(() => document.querySelector('#source-mode button[aria-pressed="true"]').getAttribute('data-source'));
-    assert.strictEqual(pressed, 'release');
+    assert.ok(!s.script.includes('nohup'));
     await page.close();
 });
 
@@ -291,11 +247,9 @@ test('answers survive a reload through the # part of the address', async (t) => 
     await page.fill('#c-browser-addr', 'http://browser-box:9333');
     await page.check('#c-browser-noinbound');
     await pick(page, 'oneport');
-    await pickSource(page, 'next');
-    await page.click('#run-mode button[data-mode="startup"]');
 
     const pw = await page.evaluate(() => {
-        const m = document.getElementById('script-out').textContent.match(/SWE_SWE_PASSWORD:-([A-Za-z0-9]+)/);
+        const m = document.getElementById('script-out').textContent.match(/SWE_SWE_PASSWORD='([A-Za-z0-9]+)'/);
         return m && m[1];
     });
     const mask = (s) => s.split(pw).join('PASSWORD');
@@ -307,7 +261,7 @@ test('answers survive a reload through the # part of the address', async (t) => 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!document.getElementById('script-out').textContent);
     const after = await page.evaluate(() => document.getElementById('script-out').textContent);
-    assert.strictEqual(after.replace(/SWE_SWE_PASSWORD:-[A-Za-z0-9]+/, 'SWE_SWE_PASSWORD:-PASSWORD'), before);
+    assert.strictEqual(after.replace(/SWE_SWE_PASSWORD='[A-Za-z0-9]+'/, "SWE_SWE_PASSWORD='PASSWORD'"), before);
 
     // ...and the questions show those answers, not the defaults.
     const controls = await page.evaluate(() => ({
@@ -319,12 +273,10 @@ test('answers survive a reload through the # part of the address', async (t) => 
         addr: document.getElementById('c-browser-addr').value,
         noinbound: document.getElementById('c-browser-noinbound').checked,
         reach: document.getElementById('reach-oneport').checked,
-        source: document.querySelector('#source-mode button[aria-pressed="true"]').getAttribute('data-source'),
-        mode: document.querySelector('#run-mode button[aria-pressed="true"]').getAttribute('data-mode'),
     }));
     assert.deepStrictEqual(controls, {
         have: true, codex: 'true', node: false, tools: false, fallback: 'remote',
-        addr: 'http://browser-box:9333', noinbound: true, reach: true, source: 'next', mode: 'startup',
+        addr: 'http://browser-box:9333', noinbound: true, reach: true,
     });
     await page.close();
 });
@@ -363,9 +315,5 @@ test('the init line can be run again and again', async (t) => {
     let initLine = s.script.split('\n').find((l) => l.includes('swe-swe init'));
     assert.match(initLine, /--previous-init-flags=ignore/, initLine);
     assert.match(initLine, /--single-port/, 'the answers still ride along');
-    await page.click('#run-mode button[data-mode="startup"]');
-    s = await snapshot(page);
-    initLine = s.script.split('\n').find((l) => l.includes('swe-swe init'));
-    assert.match(initLine, /--previous-init-flags=ignore/, initLine);
     await page.close();
 });
