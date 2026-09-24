@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - Agent View unavailable page</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* sketch-local layout only */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:0;}
+  .tab{border:1px solid var(--line);border-bottom:0;border-radius:3px 3px 0 0;padding:6px 12px;font-size:13px;background:#fff;color:var(--grey);}
+  .tab.on{color:var(--ink);font-weight:600;}
+  .pane{border:1px solid var(--line);border-top:0;background:#fff;padding:18px;}
+  .stack > * + *{margin-top:14px;}
+  .shot{height:170px;border:1px dashed var(--line);background:var(--grey-lite);display:flex;align-items:center;justify-content:center;color:var(--grey);font-size:12px;}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+  .code{border:1px dashed var(--line);padding:8px;font-size:12px;color:var(--grey);font-family:monospace;}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  h2{font-size:15px;margin:36px 0 10px;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Agent View unavailable page</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only. What the Agent View tab shows when it cannot work, instead of the tab disappearing.</p>
+
+  <!-- ===== main sketch: "programs missing" version ===== -->
+  <div class="tabs">
+    <div class="tab">Agent Chat</div>
+    <div class="tab">Terminal</div>
+    <div class="tab">Preview</div>
+    <div class="tab on">Agent View</div>
+    <div class="tab">Files</div>
+  </div>
+  <div class="pane stack">
+
+    <div>
+      <div class="label">1. What it is</div>
+      <div class="title">Agent View isn't available on this machine</div>
+      <div class="scribble long"></div>
+      <div class="note">One sentence: a live browser your agent controls, so you can watch it test your app.</div>
+    </div>
+
+    <div>
+      <div class="label">2. Example</div>
+      <img src="24-agent-view-example.png" alt="Example: Agent View working" style="width:100%;display:block;border:1px dashed var(--line);filter:grayscale(1);">
+      <div class="note">Cropped from www/images/swe-swe-screenshot.png (tab row cut off). Greyscale here only; the real page shows it in colour.</div>
+    </div>
+
+    <div class="box">
+      <div class="label">3. Why it's missing (changes per case, see below)</div>
+      <div class="title">These programs are missing: chromium, x11vnc</div>
+      <div class="scribble mid"></div>
+    </div>
+
+    <div class="box">
+      <div class="label">4. Also affected</div>
+      <div class="title">Your agent can't use a browser either</div>
+      <div class="scribble mid"></div>
+    </div>
+
+    <div>
+      <div class="label">5. How to get it</div>
+      <div class="cols" style="margin-top:8px;">
+        <div class="box">
+          <div class="title">Install them here</div>
+          <div class="code">[ the one install line to copy ]</div>
+          <div class="scribble short"></div>
+          <div class="note">then restart swe-swe</div>
+          <div style="margin-top:10px;"><span class="btn filled">Copy</span></div>
+        </div>
+        <div class="box">
+          <div class="title">Use another machine</div>
+          <div class="scribble long"></div>
+          <div class="scribble short"></div>
+          <div style="margin-top:10px;"><span class="btn">Open setup steps &rarr;</span></div>
+        </div>
+        <div class="box">
+          <div class="title">Leave it off</div>
+          <div class="scribble long"></div>
+          <div class="note">Everything else keeps working.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="border-top:1px solid var(--grey-lite);padding-top:12px;">
+      <div class="note">Don't need it?</div>
+      <span class="btn">Hide this tab</span>
+    </div>
+  </div>
+  <p class="note">"Hide this tab" is remembered in this browser only. Some way back is needed (e.g. in Session Settings).</p>
+
+  <!-- ===== the three "why" versions ===== -->
+  <h2>Box 3 changes per case (the rest of the page stays the same)</h2>
+  <div class="cols">
+    <div class="box">
+      <div class="label">Case A -- switched off</div>
+      <div class="title">You switched it off during setup</div>
+      <div class="scribble mid"></div>
+      <div class="note">Option "Leave it off" shows first.</div>
+    </div>
+    <div class="box">
+      <div class="label">Case B -- programs missing</div>
+      <div class="title">These programs are missing: [list]</div>
+      <div class="scribble mid"></div>
+      <div class="note">Option "Install them here" shows first. (Drawn above.)</div>
+    </div>
+    <div class="box">
+      <div class="label">Case C -- other machine unreachable</div>
+      <div class="title">Can't reach the browser machine at [address]</div>
+      <div class="scribble mid"></div>
+      <div class="note">Options become: check it's running / check the address. Today this case shows "Starting browser..." forever.</div>
+    </div>
+  </div>
+
+  <!-- ===== flow ===== -->
+  <h2>What leads where</h2>
+  <div class="flow">
+    <div class="box node"><div class="title" style="margin:0;">Click Agent View tab</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="diamond"><span>Works?</span></div>
+    <div class="arrow">&rarr;</div>
+    <div class="box node"><div class="title" style="margin:0;">No: this page (case A/B/C)</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="box node"><div class="title" style="margin:0;">Pick an option, or hide tab</div></div>
+  </div>
+  <div class="branches">
+    <span>Yes &rarr; live browser, as today</span>
+    <span>Install + restart &rarr; tab works next time</span>
+    <span>Hide &rarr; tab gone in this browser</span>
+  </div>
+</div>
+</body>
+</html>
