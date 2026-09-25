@@ -453,7 +453,6 @@ test.describe('new-session dialog', () => {
 
     const sections = page.locator('#branch-cards-sections .branch-cards__section');
     await expect(sections).toHaveText([
-      'On this box (3)',
       'Leftover folders (1)',
       'Online only: origin (1)',
       'Online only: upstream (1)',
@@ -463,11 +462,23 @@ test.describe('new-session dialog', () => {
     await expect(page.locator('#branch-cards-sections button.branch-card:disabled'))
       .toContainText(`${CARDS_WORKTREES}/stray`);
 
-    // Keyboard: from the workspace card, down goes to "+ New", then the
-    // first branch card; Enter picks it.
+    // Order: workspace, the branches, leftovers, online groups, then
+    // "+ New" last.
+    const order = await page.evaluate(() => {
+      const cards = document.getElementById('branch-cards');
+      const newCard = document.getElementById('branch-new-card');
+      const sections = document.getElementById('branch-cards-sections');
+      return {
+        branchesBeforeNew: !!(sections.compareDocumentPosition(newCard) & Node.DOCUMENT_POSITION_FOLLOWING),
+        firstAfterWorkspace: sections.querySelector('.branch-card__name').textContent,
+        lastChild: cards.lastElementChild.previousElementSibling.id,
+      };
+    });
+    expect(order).toEqual({ branchesBeforeNew: true, firstAfterWorkspace: 'feat-a', lastChild: 'branch-new-card' });
+
+    // Keyboard: from the workspace card, down goes straight to the first
+    // branch card; Enter picks it.
     await ws.focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(page.locator('#new-session-branch')).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(branchCard(page, 'feat-a')).toBeFocused();
     await page.keyboard.press('Enter');

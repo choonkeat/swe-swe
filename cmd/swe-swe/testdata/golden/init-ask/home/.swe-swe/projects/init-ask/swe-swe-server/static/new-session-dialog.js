@@ -813,12 +813,9 @@
             !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
 
         var frag = document.createDocumentFragment();
+        // Branches on this box follow the workspace card directly, with no
+        // heading: the workspace is on this box too.
         if (g.local.length) {
-            var live = g.local.filter(function(c) {
-                var s = states[bc.localKey(c.name)];
-                return !s || (s.state !== 'deleted' && s.state !== 'undoing');
-            }).length;
-            frag.appendChild(sectionTitle('On this box (' + live + ')'));
             g.local.forEach(function(c) {
                 var key = bc.localKey(c.name);
                 frag.appendChild(makeBranchCard(c.name, {
@@ -984,7 +981,14 @@
             // new branch); without, the plain box carries the name as before.
             branchInput.value = prefill.branch;
             dialogState.selectedBranch = prefill.branch;
-            if (dialogState.cardsOn) onBranchTyped();
+            if (dialogState.cardsOn) {
+                onBranchTyped();
+                // "+ New" sits below every branch card; show what Start will use.
+                var p = dialogState.branchPick;
+                if (p && (p.kind === 'new' || p.kind === 'blocked') && branchNewCard.scrollIntoView) {
+                    branchNewCard.scrollIntoView({ block: 'nearest' });
+                }
+            }
         } else if (prefill.branchHint) {
             // Plain shared-checkout recording: no worktree branch, so the field
             // stays blank (reproducing the shared checkout). Surface the branch
