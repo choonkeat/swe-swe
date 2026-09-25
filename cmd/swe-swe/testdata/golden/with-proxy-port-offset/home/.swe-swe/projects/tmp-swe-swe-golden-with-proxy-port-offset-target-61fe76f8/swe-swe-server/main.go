@@ -4627,6 +4627,31 @@ func resolveWorkingDirectory(repoPath, branchName string) string {
 	return filepath.Join(filepath.Dir(repoPath), "worktrees", dirName)
 }
 
+// remoteTrackingRef returns the remote-tracking ref ("upstream/fix-x") a new
+// local branchName should track, or "" when no remote has it. Checking only
+// origin used to turn a branch that lives only on another remote -- which the
+// dialog lists -- into a fresh, empty branch cut from the current HEAD, so the
+// agent started without any of that branch's work. Order: preferredRemote
+// (the remote the user typed), then origin, then the rest as `git remote`
+// lists them.
+func remoteTrackingRef(repoPath, branchName, preferredRemote string) string {
+	remotes := []string{}
+	if preferredRemote != "" {
+		remotes = append(remotes, preferredRemote)
+	}
+	remotes = append(remotes, "origin")
+	if out, err := exec.Command("git", "-C", repoPath, "remote").Output(); err == nil {
+		remotes = append(remotes, strings.Fields(string(out))...)
+	}
+	for _, remote := range remotes {
+		ref := "refs/remotes/" + remote + "/" + branchName
+		if exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "--quiet", ref).Run() == nil {
+			return remote + "/" + branchName
+		}
+	}
+	return ""
+}
+
 // stripRemotePrefix turns a remote-tracking ref name like "origin/main" into
 // the local branch the user meant ("main").
 //
@@ -4665,7 +4690,13 @@ func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 		return repoPath, nil
 	}
 
+	requested := branchName
 	branchName = stripRemotePrefix(repoPath, branchName)
+	// A typed "upstream/fix-x" names the remote to track; keep that choice.
+	preferredRemote := ""
+	if branchName != requested {
+		preferredRemote = strings.TrimSuffix(requested, "/"+branchName)
+	}
 
 	// If the requested branch is already the one checked out in this repo, run
 	// directly in the repo instead of `git worktree add`-ing a branch git
@@ -4699,16 +4730,15 @@ func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 	localCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", branchName)
 	localExists := localCmd.Run() == nil
 
-	// Check if remote branch exists
-	remoteCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "origin/"+branchName)
-	remoteExists := remoteCmd.Run() == nil
+	// Check if any remote has the branch (not just origin)
+	remoteRef := remoteTrackingRef(repoPath, branchName, preferredRemote)
 
 	if localExists {
 		log.Printf("Attaching worktree to existing local branch %s in %s", branchName, repoPath)
 		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", worktreePath, branchName)
-	} else if remoteExists {
-		log.Printf("Creating worktree tracking remote branch origin/%s in %s", branchName, repoPath)
-		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "--track", "-b", branchName, worktreePath, "origin/"+branchName)
+	} else if remoteRef != "" {
+		log.Printf("Creating worktree tracking remote branch %s in %s", remoteRef, repoPath)
+		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "--track", "-b", branchName, worktreePath, remoteRef)
 	} else {
 		log.Printf("Creating new worktree with fresh branch %s in %s", branchName, repoPath)
 		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "-b", branchName, worktreePath)

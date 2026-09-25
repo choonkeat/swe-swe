@@ -1330,6 +1330,87 @@ func TestCreateWorktreeInRepo_AttachLocalBranch(t *testing.T) {
 	}
 }
 
+// A branch the dialog lists as online-only may live on a remote other than
+// origin. Checking only origin used to start the session on a fresh, empty
+// branch cut from HEAD -- the agent got none of that branch's work.
+func TestCreateWorktreeInRepo_TracksNonOriginRemote(t *testing.T) {
+	// newRepo makes a repo whose remote-tracking refs point at commits that
+	// exist nowhere else, so the worktree's HEAD shows which one was used.
+	newRepo := func(t *testing.T, refs ...string) (string, map[string]string) {
+		t.Helper()
+		repoDir := filepath.Join(t.TempDir(), "workspace")
+		git := func(args ...string) string {
+			t.Helper()
+			cmd := exec.Command("git", append([]string{"-C", repoDir}, args...)...)
+			cmd.Env = append(os.Environ(),
+				"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+				"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+		if err := os.MkdirAll(repoDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		git("init", "-q", "-b", "main")
+		git("commit", "-q", "--allow-empty", "-m", "init")
+		shas := map[string]string{}
+		for _, ref := range refs {
+			remote, _, _ := strings.Cut(ref, "/")
+			if exec.Command("git", "-C", repoDir, "remote", "get-url", remote).Run() != nil {
+				git("remote", "add", remote, "https://example.invalid/"+remote+".git")
+			}
+			sha := git("commit-tree", "-m", ref, "-p", "HEAD", "HEAD^{tree}")
+			git("update-ref", "refs/remotes/"+ref, sha)
+			shas[ref] = sha
+		}
+		return repoDir, shas
+	}
+	headOf := func(t *testing.T, dir string) string {
+		t.Helper()
+		out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+		if err != nil {
+			t.Fatalf("rev-parse HEAD in %s: %v", dir, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	t.Run("branch only on upstream", func(t *testing.T) {
+		repoDir, shas := newRepo(t, "upstream/fix-x")
+		dir, err := createWorktreeInRepo(repoDir, "fix-x")
+		if err != nil {
+			t.Fatalf("createWorktreeInRepo: %v", err)
+		}
+		if got := headOf(t, dir); got != shas["upstream/fix-x"] {
+			t.Errorf("worktree HEAD = %s, want upstream/fix-x %s", got, shas["upstream/fix-x"])
+		}
+	})
+
+	t.Run("typed upstream/ wins over origin", func(t *testing.T) {
+		repoDir, shas := newRepo(t, "origin/fix-x", "upstream/fix-x")
+		dir, err := createWorktreeInRepo(repoDir, "upstream/fix-x")
+		if err != nil {
+			t.Fatalf("createWorktreeInRepo: %v", err)
+		}
+		if got := headOf(t, dir); got != shas["upstream/fix-x"] {
+			t.Errorf("worktree HEAD = %s, want upstream/fix-x %s", got, shas["upstream/fix-x"])
+		}
+	})
+
+	t.Run("bare name prefers origin", func(t *testing.T) {
+		repoDir, shas := newRepo(t, "origin/fix-x", "upstream/fix-x")
+		dir, err := createWorktreeInRepo(repoDir, "fix-x")
+		if err != nil {
+			t.Fatalf("createWorktreeInRepo: %v", err)
+		}
+		if got := headOf(t, dir); got != shas["origin/fix-x"] {
+			t.Errorf("worktree HEAD = %s, want origin/fix-x %s", got, shas["origin/fix-x"])
+		}
+	})
+}
+
 func TestHandleWorktreeCheckAPI(t *testing.T) {
 	// Save original worktreeDir and restore after test
 	originalWorktreeDir := worktreeDir
