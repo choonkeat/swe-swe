@@ -42,7 +42,7 @@ func commitOn(t *testing.T, dir, msg string) {
 
 func checkOne(t *testing.T, repo, branch string, git branchCheckGit, live map[string]bool) branchCheck {
 	t.Helper()
-	checks, err := checkBranches(repo, git, live, branch)
+	checks, err := checkBranches(context.Background(), repo, git, live, branch)
 	if err != nil {
 		t.Fatalf("checkBranches(%s): %v", branch, err)
 	}
@@ -103,6 +103,64 @@ func TestFolderEditCount(t *testing.T) {
 	writeFile(t, filepath.Join(folder, "ignored.txt"), "x\n")
 	if c := checkOne(t, repo, "w", defaultBranchCheckGit, nil); c.FolderEdits != 2 {
 		t.Errorf("plus an ignored file: %+v, want still 2", c)
+	}
+}
+
+// A single-branch check sizes the folder, ignored files included; checking
+// every branch does not (too slow across many folders).
+func TestBranchCheckFolderSize(t *testing.T) {
+	repo, container := newCheckRepo(t)
+	folder := filepath.Join(container, "w")
+	gitT(t, repo, "worktree", "add", "-q", "-b", "w", folder)
+	c := checkOne(t, repo, "w", defaultBranchCheckGit, nil)
+	if c.FolderBytes == nil {
+		t.Fatalf("%+v, want a folder size", c)
+	}
+	before := *c.FolderBytes
+	writeFile(t, filepath.Join(folder, "ignored.txt"), strings.Repeat("x", 1000))
+	c = checkOne(t, repo, "w", defaultBranchCheckGit, nil)
+	if c.FolderBytes == nil || *c.FolderBytes != before+1000 {
+		t.Errorf("after 1000 ignored bytes: %+v, want %d", c, before+1000)
+	}
+
+	if c := checkOne(t, repo, "main", defaultBranchCheckGit, nil); c.FolderBytes != nil {
+		t.Errorf("no folder of its own: %+v, want no size", c)
+	}
+	all, err := checkBranches(context.Background(), repo, defaultBranchCheckGit, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range all {
+		if c.FolderBytes != nil {
+			t.Errorf("check-all %s: %+v, want no size", c.Branch, c)
+		}
+	}
+}
+
+// Ending the caller's ctx (the user picked another card) stops the check
+// without waiting for branchCheckTimeout.
+func TestBranchCheckStopsWhenCallerGivesUp(t *testing.T) {
+	repo, container := newCheckRepo(t)
+	gitT(t, repo, "worktree", "add", "-q", "-b", "w", filepath.Join(container, "w"))
+	stuck := func(ctx context.Context, dir string, args ...string) ([]byte, error) {
+		if args[0] == "status" {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return defaultBranchCheckGit(ctx, dir, args...)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	checks, err := checkBranches(ctx, repo, stuck, nil, "w")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checks[0].CanTell {
+		t.Errorf("%+v, want can't tell", checks[0])
+	}
+	if time.Since(start) > branchCheckTimeout/2 {
+		t.Errorf("took %v, the caller's cancel did not stop it", time.Since(start))
 	}
 }
 
@@ -167,7 +225,7 @@ func TestBranchCheckAllRunsFoldersConcurrently(t *testing.T) {
 		return defaultBranchCheckGit(ctx, dir, args...)
 	}
 	start := time.Now()
-	checks, err := checkBranches(repo, slow, nil, "")
+	checks, err := checkBranches(context.Background(), repo, slow, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

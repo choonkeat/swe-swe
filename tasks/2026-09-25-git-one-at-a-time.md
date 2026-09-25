@@ -1,7 +1,7 @@
 # Branch cards stop overloading the box; git runs one command at a time
 
 **Date**: 2026-09-25
-**Status**: PLANNED, not started
+**Status**: Phase A DONE (branch feat/branch-list-only); B-E not started
 **Estimate**: about 2.5 days (A: 0.5, B: 0.5, C+D: 1.5)
 
 ## Why
@@ -141,7 +141,17 @@ Runs in `make test`.
 5. Picked card shows the result + Delete; Delete calls branch-delete as today.
 6. node tests for the card states; `make test`.
 
+Phase A result: dialog open makes no branch-check or fetch request (e2e
+asserts it); picking a card sends one branch-check, a new pick aborts the old
+one; 18/18 new-session-dialog e2e pass. The background refresh was removed
+with its e2e tests (token-in-body, mid-typing, slow-refresh-vs-Start), so
+until Phase B the online sections show whatever was last downloaded.
+
 ## Phase B: online sections fetch on expand + new-name check (~0.5 day)
+
+0. Carry the saved HTTPS token in each per-section fetch POST body (never the
+   URL), and re-add an e2e test for it: Phase A removed the old one along with
+   the background refresh.
 
 1. Expanding an online section -> POST fetch for that one remote, 10 s,
    in-flight sharing per remote; "Fetching..." / "[Retry]" in the section.

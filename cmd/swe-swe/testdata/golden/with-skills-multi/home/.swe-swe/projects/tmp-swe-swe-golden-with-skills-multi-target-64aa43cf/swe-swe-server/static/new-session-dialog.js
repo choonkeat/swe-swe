@@ -94,23 +94,23 @@
         initSha: '',
         // Host of the selected repo's HTTPS remote (from /api/repo/prepare or
         // /api/repo/branches). Empty for SSH/local remotes. Used to look up
-        // the saved PAT the background branch refresh needs -- the server has
-        // no session, so no credentials of its own.
+        // a saved PAT for this repo's remote.
         remoteHost: '',
-        // In-flight background branch refresh, so it can be abandoned the
-        // moment it stops mattering (dialog closed, repo switched, session
-        // created). A slow fetch must never hold the user up.
-        branchRefreshAbort: null,
         // Branch cards: the last /api/repo/branches reply, the picked card
-        // (see static/modules/branch-cards.js for the pick shapes), the
-        // branch-check-all results by branch name, and which online groups
-        // the user has opened. cardsOn is false for a reply without cards.
+        // (see static/modules/branch-cards.js for the pick shapes), and which
+        // online groups the user has opened. cardsOn is false for a reply
+        // without cards.
         cardsOn: false,
         branchData: null,
         branchPick: null,
         branchBlocked: '',
-        branchChecks: {},
         openRemotes: {},
+        // What deleting the picked card would lose: {branch, state:
+        // 'checking' | 'done' | 'failed', check}. Only the picked card is
+        // ever checked; opening the dialog checks nothing. pickCheckAbort
+        // drops the in-flight check when another card is picked.
+        pickCheck: null,
+        pickCheckAbort: null,
         // Delete flow per card, keyed by branchCards.localKey/leftoverKey
         // (and 'workspace:' for Switch back). Lives until the dialog closes,
         // which is how long an Undo strip stays.
@@ -220,7 +220,6 @@
         dialogState.branchData = null;
         dialogState.branchPick = null;
         dialogState.branchBlocked = '';
-        dialogState.branchChecks = {};
         dialogState.openRemotes = {};
         dialogState.cardStates = {};
 
@@ -253,9 +252,9 @@
         dialogState.initSha = '';
         dialogState.remoteHost = '';
         dialogState.prefillName = '';
-        // Whatever repo the in-flight refresh was for, it is not the one the
+        // Whatever repo the in-flight check was for, it is not the one the
         // user is now looking at.
-        abortBranchRefresh();
+        abortPickCheck();
         if (extraArgsInput) extraArgsInput.value = '';
 
         // Reset color picker
@@ -574,7 +573,69 @@
         dialogState.selectedBranch = window.branchCards.branchValueFor(pick);
         dialogState.branchBlocked = pick && pick.kind === 'blocked' ? pick.reason : '';
         applyBranchBlockToStart();
+        startPickCheck();
         renderBranchCards();
+    }
+
+    function abortPickCheck() {
+        if (dialogState.pickCheckAbort) {
+            dialogState.pickCheckAbort.abort();
+            dialogState.pickCheckAbort = null;
+        }
+    }
+
+    function localCard(name) {
+        var cards = (dialogState.branchData && dialogState.branchData.cards) || [];
+        for (var i = 0; i < cards.length; i++) {
+            if (cards[i].kind === 'local' && cards[i].name === name) return cards[i];
+        }
+        return null;
+    }
+
+    // Ask the server what deleting the picked card would lose: 2 git
+    // commands for that one branch, plus its folder size. Picking another
+    // card aborts the request, which stops its git commands on the server.
+    // Re-picking the same card keeps the answer it already has.
+    function startPickCheck() {
+        var pick = dialogState.branchPick;
+        var card = pick && pick.kind === 'local' ? localCard(pick.name) : null;
+        if (!window.branchCards.needsPickCheck(card)) {
+            abortPickCheck();
+            dialogState.pickCheck = null;
+            return;
+        }
+        if (dialogState.pickCheck && dialogState.pickCheck.branch === card.name) return;
+        abortPickCheck();
+        var repoPath = dialogState.repoPath;
+        var branch = card.name;
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        dialogState.pickCheckAbort = controller;
+        dialogState.pickCheck = { branch: branch, state: 'checking', check: null };
+        var mine = function() {
+            return dialogState.repoPath === repoPath && dialogState.pickCheck && dialogState.pickCheck.branch === branch;
+        };
+        fetch('/api/repo/branch-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: repoPath, branch: branch }),
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function(response) { return response.ok ? response.json() : null; })
+            .then(function(check) {
+                if (!mine()) return;
+                dialogState.pickCheck = check
+                    ? { branch: branch, state: 'done', check: check }
+                    : { branch: branch, state: 'failed', check: null };
+                renderBranchCards();
+            })
+            .catch(function() {
+                if (!mine()) return;
+                dialogState.pickCheck = { branch: branch, state: 'failed', check: null };
+                renderBranchCards();
+            })
+            .finally(function() {
+                if (dialogState.pickCheckAbort === controller) dialogState.pickCheckAbort = null;
+            });
     }
 
     function cardKey(pick) {
@@ -597,9 +658,10 @@
 
     // One card: a row holding the pick button, then optionally an [x] and a
     // line below (confirm, reason, Undo). `opts`: pick (null = not
-    // pickable), tags, x ({key, reason} -- reason set = greyed), action
-    // (a button such as "Switch back to main"), stateKey, unsaved (badge
-    // number, 0 for none).
+    // pickable), tags, x ({reason, onDelete, onConfirm} -- reason set =
+    // greyed; leftover folders), del ({reason, onDelete, onConfirm}; a local
+    // branch, whose Delete shows only once picked), action (a button such as
+    // "Switch back to main"), stateKey.
     function makeBranchCard(label, opts) {
         opts = opts || {};
         var bc = window.branchCards;
@@ -638,14 +700,8 @@
         (opts.tags || []).forEach(function(t) {
             main.appendChild(el('span', 'branch-card__tag', t));
         });
-        if (st && st.state === 'checking') main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'checking...'));
-        if (st && st.state === 'deleting') main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
-        if (opts.unsaved) {
-            // Round badge: saved changes that exist only on this branch.
-            var count = el('span', 'branch-card__count', String(opts.unsaved));
-            count.title = opts.unsaved + ' saved change(s) exist only on this branch';
-            count.setAttribute('aria-label', count.title);
-            main.appendChild(count);
+        if (st && (st.state === 'checking' || st.state === 'deleting')) {
+            main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
         }
         row.appendChild(main);
 
@@ -669,17 +725,42 @@
             row.appendChild(x);
         }
 
+        var del = opts.x || opts.del;
         if (st && st.state === 'confirm') {
             // Sketch screen B: confirm inside the card.
             var line = el('div', 'branch-card__line branch-card__line--confirm');
             line.appendChild(el('span', 'branch-card__line-text', 'Delete ' + label + '? ' + st.reason));
             line.appendChild(smallButton('Keep', '', function() { setCardState(opts.stateKey, { type: 'keep' }); }));
-            line.appendChild(smallButton('Delete anyway', 'branch-card__btn--danger', function() { opts.x.onConfirm(); }));
+            line.appendChild(smallButton('Delete anyway', 'branch-card__btn--danger', function() { del.onConfirm(); }));
             row.appendChild(line);
         } else if (st && (st.state === 'why' || st.state === 'failed')) {
             row.appendChild(el('div', 'branch-card__line' + (st.state === 'failed' ? ' branch-card__line--error' : ''), st.reason));
         }
+        // A failed delete keeps its error above a fresh Delete to retry.
+        if (opts.del && picked && !bc.isBusy(st) && !(st && st.state === 'confirm')) {
+            row.appendChild(pickCheckLine(label, opts.del));
+        }
         return row;
+    }
+
+    // The picked branch's line: why it can't be deleted, or what deleting
+    // it would lose (once the check answers) and a Delete button.
+    function pickCheckLine(label, del) {
+        if (del.reason) return el('div', 'branch-card__line', del.reason);
+        var pc = dialogState.pickCheck;
+        var line = el('div', 'branch-card__line');
+        if (!pc || pc.state === 'checking') {
+            line.appendChild(el('span', 'branch-card__line-text', 'Checking what deleting would lose...'));
+        } else {
+            var summary = pc.state === 'done'
+                ? window.branchCards.checkSummary(pc.check)
+                : { text: "Couldn't check what would be lost.", risky: true };
+            line.appendChild(el('span', 'branch-card__line-text', summary.text));
+        }
+        var b = smallButton('Delete', 'branch-card__btn--danger', function() { del.onDelete(); });
+        b.setAttribute('aria-label', 'Delete ' + label);
+        line.appendChild(b);
+        return line;
     }
 
     function sectionTitle(text) {
@@ -704,9 +785,9 @@
         });
     }
 
-    // Tap [x] (confirmed=false) or "Delete anyway" (confirmed=true). The
-    // server re-checks every time: a tag shown when the dialog opened may be
-    // stale because an agent saved new work since.
+    // Tap Delete / a leftover's [x] (confirmed=false) or "Delete anyway"
+    // (confirmed=true). The server re-checks every time: what the picked
+    // card showed may be stale because an agent saved new work since.
     function deleteCard(key, endpoint, body, confirmed) {
         var repoPath = dialogState.repoPath;
         setCardState(key, { type: confirmed ? 'confirm' : 'tap' });
@@ -727,7 +808,9 @@
                     if (pick && pick.kind === 'local' && pick.name === body.branch) {
                         pickBranchCard({ kind: 'workspace' });
                     }
-                    delete dialogState.branchChecks[body.branch];
+                    if (dialogState.pickCheck && dialogState.pickCheck.branch === body.branch) {
+                        dialogState.pickCheck = null;
+                    }
                 }
             })
             .catch(function() {
@@ -811,7 +894,7 @@
                 if (busy || g.workspace.inUse) action.disabled = true;
                 if (g.workspace.inUse) action.title = 'A live session is using the workspace.';
             }
-            var wsTags = bc.cardTags(g.workspace, null, data);
+            var wsTags = bc.cardTags(g.workspace, data);
             if (g.workspace.inUse) wsTags.push('in use');
             branchWorkspaceSlot.appendChild(makeBranchCard('Workspace as it is', {
                 pick: { kind: 'workspace' }, tags: wsTags, action: action, stateKey: 'workspace:'
@@ -828,10 +911,9 @@
                 var key = bc.localKey(c.name);
                 frag.appendChild(makeBranchCard(c.name, {
                     pick: { kind: 'local', name: c.name },
-                    tags: bc.cardTags(c, null, data),
-                    unsaved: bc.unsavedCount(c, dialogState.branchChecks[c.name]),
+                    tags: bc.cardTags(c, data),
                     stateKey: key,
-                    x: {
+                    del: {
                         reason: c.deletable ? '' : (c.noDeleteReason || "This branch can't be deleted here."),
                         onDelete: function() { deleteCard(key, '/api/repo/branch-delete', { branch: c.name }, false); },
                         onConfirm: function() { deleteCard(key, '/api/repo/branch-delete', { branch: c.name }, true); }
@@ -876,7 +958,7 @@
                 // No [x]: deleting an online copy would affect everyone else.
                 details.appendChild(makeBranchCard(c.name, {
                     pick: { kind: 'online', remote: group.remote, name: c.name },
-                    tags: bc.cardTags(c, null, data)
+                    tags: bc.cardTags(c, data)
                 }));
             });
             frag.appendChild(details);
@@ -905,78 +987,6 @@
             e.preventDefault();
             next.focus();
         }
-    }
-
-    // Fill the unsaved-count badges once the dialog is up. Best effort: a failure
-    // just leaves the cards without them.
-    function checkAllBranches(repoPath) {
-        fetch('/api/repo/branch-check-all', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: repoPath })
-        })
-            .then(function(response) { return response.ok ? response.json() : null; })
-            .then(function(data) {
-                if (!data || dialogState.repoPath !== repoPath) return;
-                var byName = {};
-                (data.checks || []).forEach(function(c) { byName[c.branch] = c; });
-                dialogState.branchChecks = byName;
-                renderBranchCards();
-            })
-            .catch(function() {});
-    }
-
-    // Abandon an in-flight branch refresh. Called whenever its result stops
-    // mattering (dialog closed, repo switched, session created) so a slow
-    // fetch can never hold the user up; the cached list stays on screen.
-    function abortBranchRefresh() {
-        if (dialogState.branchRefreshAbort) {
-            dialogState.branchRefreshAbort.abort();
-            dialogState.branchRefreshAbort = null;
-        }
-    }
-
-    // Freshen remote refs (git fetch) without blocking the dialog, then
-    // update the branch list. Best-effort: errors are ignored, and a result
-    // that arrives after the user switched repos is dropped.
-    //
-    // POST, not GET, because a private HTTPS remote needs the saved token: the
-    // server runs this fetch outside any session and so holds no credentials
-    // of its own. The token goes in the body -- never the query string, which
-    // access logs would keep.
-    function refreshBranchesInBackground(repoPath) {
-        abortBranchRefresh();
-        var controller = typeof AbortController === 'function' ? new AbortController() : null;
-        dialogState.branchRefreshAbort = controller;
-
-        var body = { path: repoPath, fetch: true };
-        var creds = readCloneCreds(dialogState.remoteHost);
-        if (creds && creds.token) {
-            body.credHost = dialogState.remoteHost;
-            body.credUsername = creds.username || 'x-access-token';
-            body.credToken = creds.token;
-        }
-
-        fetch('/api/repo/branches', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: controller ? controller.signal : undefined
-        })
-            .then(function(response) {
-                return response.ok ? response.json() : null;
-            })
-            .then(function(branchData) {
-                if (!branchData) return;
-                if (dialogState.repoPath !== repoPath) return;
-                populateBranches(branchData);
-            })
-            .catch(function() {})
-            .finally(function() {
-                if (dialogState.branchRefreshAbort === controller) {
-                    dialogState.branchRefreshAbort = null;
-                }
-            });
     }
 
     // Apply the settings a recording's "+ New" button carried over, once the
@@ -1208,8 +1218,10 @@
                 enableAgentOnly();
                 applyPendingPrefill();
             } else {
-                // List branches from local refs (instant) so the dialog is
-                // usable right away; freshen remote refs in the background.
+                // List branches from local refs only: 4 git commands however
+                // many branches there are. No per-branch checks and no
+                // background download -- together those ran ~180 git commands
+                // per open on a large repo and exhausted the box's open files.
                 return fetch('/api/repo/branches?path=' + encodeURIComponent(data.path))
                     .then(function(response) {
                         if (!response.ok) {
@@ -1222,13 +1234,6 @@
                         populateBranches(branchData);
                         enableBranchAndAgent();
                         applyPendingPrefill();
-                        if (dialogState.cardsOn) checkAllBranches(data.path);
-                        // A fresh clone already has all refs local, so the
-                        // background &fetch=1 call is redundant (and would be a
-                        // second credentialed remote call). Skip it.
-                        if (data.hasRemote && !data.justCloned) {
-                            refreshBranchesInBackground(data.path);
-                        }
                     });
             }
         })
@@ -1489,9 +1494,9 @@
         onBranchTyped();
         if (dialogState.branchBlocked) { showError(dialogState.branchBlocked); return; }
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
-        // The session is being created: a still-running branch refresh has
-        // nothing left to update, and must not compete with the create call.
-        abortBranchRefresh();
+        // The session is being created: a still-running check has nothing
+        // left to update, and must not compete with the create call.
+        abortPickCheck();
         // Record this repo as most-recently-used so it sorts to the top of the
         // Where dropdown next time (per-device recency). repoPath is the
         // resolved local path, matching the dynamic option's value.

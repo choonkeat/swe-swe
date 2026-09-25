@@ -103,7 +103,7 @@ func deleteBranch(repo, branch string, confirmed bool, live map[string]bool) (br
 		return branchDeleteResult{}, branchRefusal(card.NoDeleteReason)
 	}
 
-	checks, err := checkBranches(repo, defaultBranchCheckGit, live, branch)
+	checks, err := checkBranches(context.Background(), repo, defaultBranchCheckGit, live, branch)
 	if err != nil {
 		return branchDeleteResult{}, err
 	}
@@ -251,7 +251,7 @@ func switchToDefault(repo string, live map[string]bool) (string, error) {
 	// (untracked) files as they are, and refuses by itself if one would be
 	// overwritten. Counting them made every workspace that ever ran a
 	// session (which leaves new files behind) unswitchable.
-	if n, ok := countGit(defaultBranchCheckGit, repo, []string{"status", "--porcelain", "--untracked-files=no"}, func(out string) (int, error) {
+	if n, ok := countGit(context.Background(), defaultBranchCheckGit, repo, []string{"status", "--porcelain", "--untracked-files=no"}, func(out string) (int, error) {
 		return len(strings.FieldsFunc(out, func(r rune) bool { return r == '\n' })), nil
 	}); !ok || n > 0 {
 		return "", branchRefusal("The workspace has unsaved edits.")
