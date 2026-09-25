@@ -1,7 +1,7 @@
 # Branch cards in the New Session dialog
 
 **Date**: 2026-09-25
-**Status**: PLANNED (full scope chosen over medium/small)
+**Status**: DONE on branch feat/branch-cards (phases 1-6), not merged
 **Sketch**: `mockups/lo-fi/2026-09/24-new-session-branch-cards.html` (417474675),
 decision table at the bottom of the sketch.
 **Discussion**: `agent-chats/2026-09-24-07-branch-cards-in-new-session-dialog.md`
@@ -219,3 +219,34 @@ within 0.1 s of today's time and tags within 0.5 s.
 
 No regression: `test-full-e2e` passes; starting a session from each card kind
 works in the container, including an upstream-only branch.
+
+## Results (2026-09-25)
+
+Commits on feat/branch-cards: c1b85ecc5 (phase 1), 20577f565 (2), 702c19ac0
+(3), 97d4b7f49 (4), ab93c9076 (5), b60b0fbe7 (card order), plus the phase 6
+commit that adds this section.
+
+Changes made along the way, beyond the plan:
+- switch-default ignores untracked files (checkout keeps them); counting them
+  refused the switch after any session had run in the workspace.
+- Card order: Workspace, branches (no "On this box" heading), Leftover
+  folders, Online only groups, then "+ New branch" last.
+- "N unsaved" shows only on cards with a working [x]; a repo with no remote
+  otherwise tagged its default branch.
+- Online-only groups show the remote name only (no host, e.g. github.com).
+
+Phase 6 live walk (e2e simple container, scripted Playwright, no retries):
+25/25 rows matched -- every decision-table row, each [x] flow (plain + Undo,
+saved work + confirm + Undo restores the sha, folder clean + Undo restores
+folder, folder with edits = "can't be undone" and no Undo, odd name,
+leftover), Switch back, starting a session from each card kind (workspace,
+local, origin-only tracks origin/<b>, upstream-only tracks upstream/<b>, new),
+and 390 px width with no horizontal scroll.
+
+Timing, same repo (27 local branches + 4 folders), median of 7 opens, from
+picking Where to the branch field being ready:
+- before (d4bd24306): 50 ms
+- after: 112 ms, all 30+ cards drawn in the same frame (+62 ms; target was
+  within 100 ms)
+- "N unsaved" tags (branch-check-all, 31 branches): 136 ms after that
+  (target 500 ms); one [x] re-check: 31 ms

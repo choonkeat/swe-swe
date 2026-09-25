@@ -19,6 +19,8 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -128,5 +130,22 @@ func runBranchFetchOnce(repoPath, credHost, credUsername, credToken string) ([]b
 	if err != nil && ctx.Err() != nil {
 		return out, errBranchFetchTimeout
 	}
+	if err == nil {
+		saveOriginHead(ctx, repoPath, credHost, credUsername, credToken)
+	}
 	return out, err
+}
+
+// saveOriginHead asks origin which branch is its default and saves it as
+// refs/remotes/origin/HEAD, so the branch cards (branch_cards.go) know the
+// default offline instead of guessing. Same deadline and credentials as the
+// fetch; best effort -- a failure only leaves the guess in place.
+func saveOriginHead(ctx context.Context, repoPath, credHost, credUsername, credToken string) {
+	if exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Run() != nil {
+		return // no origin; nothing to ask
+	}
+	if out, err := runGitWithTransientCredContext(ctx, credHost, credUsername, credToken,
+		"-C", repoPath, "remote", "set-head", "origin", "--auto"); err != nil {
+		log.Printf("Saving origin's default branch failed for %s (keeping the guess): %v, output: %s", repoPath, err, string(out))
+	}
 }

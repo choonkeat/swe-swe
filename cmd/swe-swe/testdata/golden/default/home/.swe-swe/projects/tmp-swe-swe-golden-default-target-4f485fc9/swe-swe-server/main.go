@@ -2891,6 +2891,34 @@ func main() {
 			return
 		}
 
+		// Branch card checks: what deleting a branch would lose
+		if r.URL.Path == "/api/repo/branch-check" {
+			handleBranchCheckAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/branch-check-all" {
+			handleBranchCheckAllAPI(w, r)
+			return
+		}
+
+		// Branch card writes: delete, undo, leftover folder, switch back
+		if r.URL.Path == "/api/repo/branch-delete" {
+			handleBranchDeleteAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/branch-undo" {
+			handleBranchUndoAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/leftover-remove" {
+			handleLeftoverRemoveAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/switch-default" {
+			handleSwitchDefaultAPI(w, r)
+			return
+		}
+
 		// Autocomplete API endpoint (for agent-chat slash command completion)
 		if strings.HasPrefix(r.URL.Path, "/api/autocomplete/") {
 			handleAutocompleteAPI(w, r)
@@ -4582,6 +4610,17 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if remoteHost != "" {
 		branchesResponse["remoteHost"] = remoteHost
+	}
+	// Branch cards (instant facts only). Additive: "branches" above stays for
+	// clients that don't know cards; a failure here just omits them.
+	if cards, err := branchCardsFor(repoPath); err != nil {
+		log.Printf("Branch cards failed for %s: %v", repoPath, err)
+	} else {
+		branchesResponse["cards"] = cards.Cards
+		branchesResponse["leftovers"] = cards.Leftovers
+		branchesResponse["remotes"] = cards.Remotes
+		branchesResponse["defaultBranch"] = cards.DefaultBranch
+		branchesResponse["defaultGuessed"] = cards.DefaultGuessed
 	}
 	if warning != "" {
 		branchesResponse["warning"] = warning
