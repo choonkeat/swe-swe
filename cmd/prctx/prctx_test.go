@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -296,5 +299,35 @@ func TestMapThreads(t *testing.T) {
 	// Line falls back to OriginalLine when Line is 0.
 	if threads[1].Line != 5 {
 		t.Errorf("thread 1 line = %d, want 5 (from OriginalLine)", threads[1].Line)
+	}
+}
+
+// A GitLab 401/403 explains the scope needed, and names the Settings HTTPS
+// token only when that fallback is the token actually in use.
+func TestGitLabPermHint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"insufficient_scope"}`))
+	}))
+	defer srv.Close()
+	t.Setenv("PRCTX_GITLAB_API_BASE", srv.URL)
+	tokenEnvOverride = ""
+	ref := PRRef{Host: "gitlab.example.com", Owner: "o", Repo: "r"}
+
+	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("SWE_SWE_GITLAB_HTTPS_TOKEN", "git-only")
+	_, err := (gitlabProvider{}).do(ref, "GET", "/x", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `"api" scope`) || !strings.Contains(err.Error(), "SWE_SWE_GITLAB_HTTPS_TOKEN") {
+		t.Errorf("fallback token err = %v, want api-scope hint naming SWE_SWE_GITLAB_HTTPS_TOKEN", err)
+	}
+
+	t.Setenv("GITLAB_TOKEN", "mine")
+	_, err = (gitlabProvider{}).do(ref, "GET", "/x", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `"api" scope`) || strings.Contains(err.Error(), "SWE_SWE_GITLAB_HTTPS_TOKEN") {
+		t.Errorf("own token err = %v, want api-scope hint without the fallback note", err)
+	}
+
+	if h := glPermHint(http.StatusNotFound); h != "" {
+		t.Errorf("glPermHint(404) = %q, want none", h)
 	}
 }

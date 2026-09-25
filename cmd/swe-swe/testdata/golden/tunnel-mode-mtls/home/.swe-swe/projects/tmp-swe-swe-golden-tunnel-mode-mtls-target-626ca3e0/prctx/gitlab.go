@@ -26,6 +26,21 @@ func (gitlabProvider) apiBase(host string) string {
 	return "https://" + host + "/api/v4"
 }
 
+// glPermHint appends a token-permission tip when GitLab refuses the token
+// (401 invalid/expired, 403 e.g. "insufficient_scope"). It names the fallback
+// SWE_SWE_GITLAB_HTTPS_TOKEN when that is where the token came from, since a
+// token saved for git over HTTPS is often scoped for git only.
+func glPermHint(status int) string {
+	if status != http.StatusUnauthorized && status != http.StatusForbidden {
+		return ""
+	}
+	hint := "\nhint: GitLab refused this token. prctx needs the \"api\" scope (\"read_api\" is enough for fetch/show only)."
+	if t, _ := lookupToken("GITLAB_TOKEN"); t == "" && strings.TrimSpace(os.Getenv("SWE_SWE_GITLAB_HTTPS_TOKEN")) != "" {
+		hint += " This token is SWE_SWE_GITLAB_HTTPS_TOKEN, the git HTTPS token from Settings, which may be scoped for git only; set GITLAB_TOKEN to an api-scoped token."
+	}
+	return hint + " See `prctx` (no args) for the full list."
+}
+
 func (gitlabProvider) token() (string, error) {
 	t, tried := lookupToken("GITLAB_TOKEN", "SWE_SWE_GITLAB_HTTPS_TOKEN")
 	if t == "" {
@@ -70,7 +85,7 @@ func (p gitlabProvider) do(ref PRRef, method, path string, in, out interface{}) 
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp, fmt.Errorf("%s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(body)))
+		return resp, fmt.Errorf("%s %s: %s: %s%s", method, path, resp.Status, strings.TrimSpace(string(body)), glPermHint(resp.StatusCode))
 	}
 	if out != nil {
 		if err := json.Unmarshal(body, out); err != nil {
