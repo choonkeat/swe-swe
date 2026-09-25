@@ -116,12 +116,15 @@
         <div class="card"><span class="name">+ New branch</span><span class="input" style="min-width:90px">name</span></div>
 
         <div class="label sec">On this box (6)</div>
-        <div class="card"><span class="name">browser-backend</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">browser-backend</span><span class="tag">has folder</span><span class="x">&#10005;</span></div>
         <div class="card"><span class="name">chatlog/mr-export</span><span class="x">&#10005;</span></div>
-        <div class="card"><span class="name">feat/cross-box</span><span class="tag">in use</span><span class="x off">&#10005;</span></div>
+        <div class="card"><span class="name">feat/cross-box</span><span class="tag">has folder</span><span class="tag">in use</span><span class="x off">&#10005;</span></div>
         <div class="card"><span class="name">origin/typo-fix</span><span class="tag">odd name</span><span class="x">&#10005;</span></div>
         <div class="card"><span class="name">docs/wildcard-host</span><span class="x">&#10005;</span></div>
         <div class="card"><span class="name">feat/browser-cmd</span><span class="x">&#10005;</span></div>
+
+        <div class="label sec">Leftover folders (1)</div>
+        <div class="card"><span class="name">/worktrees/preview-per-session</span><span class="tag">no branch</span><span class="x">&#10005;</span></div>
 
         <div class="label sec">Online only: origin, github.com (5) &rarr;</div>
         <div class="label sec">Online only: upstream, gitlab.com (3) &rarr;</div>
@@ -136,6 +139,8 @@
       </div>
       <p class="note">No "show more": every branch on this box is a card. 30 branches = 30 cards and the agents get pushed far down. That scroll IS the nudge.</p>
       <p class="note">"Workspace as it is" replaces the blank field, and says which branch that really is. That branch never gets its own card below.</p>
+      <p class="note">"has folder" = the branch is open for editing in its own folder (git calls it a worktree). Still one card: the folder belongs to it.</p>
+      <p class="note">"Leftover folders" = folders whose branch is gone. Only the files remain on disk. &#10005; removes the folder.</p>
       <p class="note">"odd name" = a branch on this box whose name starts with the name of any online copy (origin/, upstream/, ...), so it looks like an online one.</p>
     </div>
 
@@ -154,6 +159,8 @@
       </div>
       <p class="note">Every tap re-checks first ("checking..."). Nothing to lose &rarr; straight to C. Something to lose &rarr; confirm inside the card.</p>
       <p class="note">Greyed &#10005;: tap shows one line why.</p>
+      <p class="note">"has folder" card: the delete removes the folder first, then the branch. If the folder can't be removed, the branch is left alone.</p>
+      <p class="note">If the folder has edits that were never saved, the confirm says "can't be undone", and C shows no Undo.</p>
     </div>
 
     <!-- C: after delete -->
@@ -165,6 +172,7 @@
         <div class="card"><span class="name">chatlog/mr-export</span><span class="x">&#10005;</span></div>
         <div class="card"><span class="name">feat/cross-box</span><span class="tag">in use</span><span class="x off">&#10005;</span></div>
       </div>
+      <p class="note">Undo brings back the branch at its last saved point, and its folder if it had one.</p>
       <p class="note">Undo stays until the dialog closes. Deletes only this box's copy, never the online one.</p>
     </div>
 
@@ -188,18 +196,58 @@
       <p class="note">Rule: this field only ever makes something NEW. Type an existing name and it jumps to that card instead.</p>
     </div>
 
+    <!-- E: workspace is not on the default branch -->
+    <div class="phone">
+      <span class="label">E. Workspace is not on main</span>
+      <div class="box">
+        <div class="label">Branch</div>
+        <div class="card picked" style="flex-wrap:wrap">
+          <span class="name">&#10003; Workspace as it is</span><span class="tag">on: feat/x</span><span class="tag">not main</span>
+          <div class="row" style="width:100%;margin-top:6px"><span class="btn small">Switch back to main</span></div>
+        </div>
+        <div class="card"><span class="name">+ New branch</span><span class="input" style="min-width:90px">name</span></div>
+
+        <div class="label sec">On this box (6)</div>
+        <div class="card"><span class="name">main</span><span class="tag">default</span></div>
+        <div class="card"><span class="name">browser-backend</span><span class="tag">has folder</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">chatlog/mr-export</span><span class="x">&#10005;</span></div>
+      </div>
+      <p class="note">Happens when an agent switched the workspace to another branch and left it there.</p>
+      <p class="note">The default branch never gets &#10005;, even when it has no folder.</p>
+      <p class="note">"Switch back to main" works only when no live session uses the workspace and nothing there is unsaved. Otherwise it's greyed, with one line why.</p>
+      <p class="note">Default branch: asked of the online copy on the refresh that already runs after the dialog opens, then remembered on this box. Until it's known: guess main, else master, and neither gets &#10005;.</p>
+    </div>
+
   </div>
 
-  <h2 style="font-size:15px;margin-top:30px">What the &#10005; does</h2>
+  <h2 style="font-size:15px;margin-top:30px">Decision table: every branch case</h2>
+  <p class="note">Speed, measured on a box with 11 branches and 4 folders.
+    <b>Instant</b> = under 0.01 s, read from this box, ready when the dialog opens.
+    <b>Soon</b> = 0.07-0.2 s, the tag fills in just after the card appears.
+    <b>Background</b> = asks the online copy, about 3 s, never blocks the dialog, gives up after 20 s.</p>
+
+  <h3 style="font-size:13px;margin:16px 0 0">Branches on this box</h3>
   <table>
-    <tr><th>Card</th><th>&#10005; does</th></tr>
-    <tr><td>Workspace as it is</td><td>no &#10005;</td></tr>
-    <tr><td>On this box, nothing to lose</td><td>check, delete, Undo strip</td></tr>
-    <tr><td>On this box, unsaved changes</td><td>check, confirm in card, delete</td></tr>
-    <tr><td>in use (a live session works in it)</td><td>greyed -- end that session first</td></tr>
-    <tr><td>odd name (starts with origin/, upstream/, ...)</td><td>same as "on this box"; the tag is the nudge</td></tr>
-    <tr><td>Online only</td><td>no &#10005; -- would affect everyone else</td></tr>
+    <tr><th>Case</th><th>Card shows</th><th>&#10005; does</th><th>Undo</th><th>Known after</th></tr>
+    <tr><td>Nothing to lose</td><td>plain card</td><td>quick re-check, then delete</td><td>yes</td><td>instant</td></tr>
+    <tr><td>Saved work that's in no other place (not in main, not online)</td><td>"N unsaved"</td><td>confirm in card, then delete</td><td>yes -- the saved work comes back</td><td>soon (0.07 s, all branches together)</td></tr>
+    <tr><td>Has folder, no unsaved edits</td><td>"has folder"</td><td>remove folder, then branch</td><td>yes -- both come back</td><td>instant; edit check soon (0.1-0.2 s per folder)</td></tr>
+    <tr><td>Has folder, with unsaved edits</td><td>"has folder"</td><td>confirm "can't be undone"</td><td>no</td><td>soon (0.1-0.2 s per folder)</td></tr>
+    <tr><td>A live session is using it</td><td>"in use"</td><td>greyed, one line why</td><td>-</td><td>instant (the server already knows)</td></tr>
+    <tr><td>Odd name (starts with origin/, upstream/, ...)</td><td>"odd name"</td><td>same as the matching row above</td><td>same</td><td>instant</td></tr>
   </table>
+
+  <h3 style="font-size:13px;margin:16px 0 0">Special cards</h3>
+  <table>
+    <tr><th>Case</th><th>Card shows</th><th>&#10005; does</th><th>Known after</th></tr>
+    <tr><td>Workspace as it is</td><td>"on: &lt;branch&gt;"</td><td>no &#10005;</td><td>instant</td></tr>
+    <tr><td>Default branch, answer saved on this box</td><td>"default"</td><td>no &#10005;, ever</td><td>instant</td></tr>
+    <tr><td>Default branch, not saved yet (first time, or offline)</td><td>guess main, else master</td><td>no &#10005; on either</td><td>background; the real answer is saved for next time</td></tr>
+    <tr><td>Workspace not on the default branch</td><td>"not main" + "Switch back" button</td><td>button greyed if a session uses it or edits are unsaved</td><td>instant; the edit check runs on tap</td></tr>
+    <tr><td>Leftover folder (its branch is gone)</td><td>"no branch"</td><td>always confirm, then remove the folder; no Undo (no other copy of its files exists)</td><td>instant</td></tr>
+    <tr><td>Online only</td><td>one collapsed group per online copy</td><td>no &#10005; -- would affect everyone else</td><td>instant; the background refresh adds new ones</td></tr>
+  </table>
+  <p class="note">Every tap on &#10005; re-checks first (0.1-0.2 s): an agent may have saved new work since the dialog opened, so an old tag can't be trusted for a delete.</p>
 </div>
 </body>
 </html>
