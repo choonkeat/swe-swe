@@ -900,6 +900,8 @@
                 pick: { kind: 'workspace' }, tags: wsTags, action: action, stateKey: 'workspace:'
             }));
         }
+        var tip = bc.cleanupTip(g);
+        if (tip) branchWorkspaceSlot.appendChild(el('div', 'branch-cards__tip', tip));
         branchNewCard.classList.toggle('branch-card--picked',
             !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
 

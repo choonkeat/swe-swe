@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { groupCards, cardTags, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
+import { groupCards, cardTags, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
 
 // A /api/repo/branches reply shaped like screen A of the sketch.
 function reply(overrides) {
@@ -53,6 +53,19 @@ test('cardTags: one tag per decision-table row', () => {
     assert.deepStrictEqual(cardTags({ kind: 'local', name: 'origin/x', oddName: true, deletable: true }, d), ['odd name']);
     assert.deepStrictEqual(cardTags({ kind: 'local', name: 'main', default: true }, d), ['default']);
     assert.deepStrictEqual(cardTags({ kind: 'online', name: 'foo', remote: 'origin' }, d), ['online only']);
+});
+
+test('cleanupTip: shows once branches plus leftover folders reach the minimum', () => {
+    const g = (local, leftovers) => ({
+        workspace: null, online: [],
+        local: Array.from({ length: local }, (_, i) => ({ kind: 'local', name: 'b' + i })),
+        leftovers: Array.from({ length: leftovers }, (_, i) => ({ folder: '/w/f' + i })),
+    });
+    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 0)), '');
+    assert.strictEqual(cleanupTip(null), '');
+    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 1)),
+        CLEANUP_TIP_MIN + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent: ' +
+        '"Let\'s discuss what worktrees & branches we can clean up".');
 });
 
 test('needsPickCheck: only deletable local branches cost a check', () => {

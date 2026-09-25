@@ -357,6 +357,20 @@ test.describe('new-session dialog', () => {
     await expect(page.locator('.branch-card__count')).toHaveCount(0);
   });
 
+  test('many branches show a tip to ask the agent to clean up', async ({ page }) => {
+    await openCardsRepo(page);
+    await expect(page.locator('.branch-cards__tip')).toHaveCount(0);
+    inCards('for i in 1 2 3 4 5 6; do git branch tip-$i; done');
+    try {
+      await openCardsRepo(page);
+      const tip = page.locator('#branch-card-workspace-slot .branch-cards__tip');
+      await expect(tip).toContainText('10 branches and folders here.');
+      await expect(tip).toContainText('"Let\'s discuss what worktrees & branches we can clean up"');
+    } finally {
+      inCards('for i in 1 2 3 4 5 6; do git branch -D tip-$i; done 2>/dev/null; true');
+    }
+  });
+
   // Only the card the user stops on is checked; picking another drops the
   // check still running.
   test('picking a card checks that branch only; picking another drops it', async ({ page }) => {
