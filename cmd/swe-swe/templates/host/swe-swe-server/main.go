@@ -2891,6 +2891,16 @@ func main() {
 			return
 		}
 
+		// Branch card checks: what deleting a branch would lose
+		if r.URL.Path == "/api/repo/branch-check" {
+			handleBranchCheckAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/branch-check-all" {
+			handleBranchCheckAllAPI(w, r)
+			return
+		}
+
 		// Autocomplete API endpoint (for agent-chat slash command completion)
 		if strings.HasPrefix(r.URL.Path, "/api/autocomplete/") {
 			handleAutocompleteAPI(w, r)
