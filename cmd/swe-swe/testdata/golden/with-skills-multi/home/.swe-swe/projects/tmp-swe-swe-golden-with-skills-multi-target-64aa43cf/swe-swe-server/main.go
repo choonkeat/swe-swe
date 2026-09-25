@@ -4618,6 +4618,7 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	} else {
 		branchesResponse["cards"] = cards.Cards
 		branchesResponse["leftovers"] = cards.Leftovers
+		branchesResponse["remotes"] = cards.Remotes
 		branchesResponse["defaultBranch"] = cards.DefaultBranch
 		branchesResponse["defaultGuessed"] = cards.DefaultGuessed
 	}

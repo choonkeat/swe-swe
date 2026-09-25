@@ -384,6 +384,7 @@ func TestRepoBranchesAPIReturnsCards(t *testing.T) {
 		Branches       []string         `json:"branches"`
 		Cards          []branchCard     `json:"cards"`
 		Leftovers      []leftoverFolder `json:"leftovers"`
+		Remotes        []string         `json:"remotes"`
 		DefaultBranch  string           `json:"defaultBranch"`
 		DefaultGuessed bool             `json:"defaultGuessed"`
 	}
@@ -396,6 +397,9 @@ func TestRepoBranchesAPIReturnsCards(t *testing.T) {
 	res := branchCardsResult{Cards: resp.Cards}
 	mustCard(t, res, "workspace", "", "main")
 	mustCard(t, res, "local", "", "feat")
+	if resp.Remotes == nil {
+		t.Errorf("remotes should be an empty list, not missing")
+	}
 	if resp.Leftovers == nil {
 		t.Errorf("leftovers should be an empty list, not missing")
 	}

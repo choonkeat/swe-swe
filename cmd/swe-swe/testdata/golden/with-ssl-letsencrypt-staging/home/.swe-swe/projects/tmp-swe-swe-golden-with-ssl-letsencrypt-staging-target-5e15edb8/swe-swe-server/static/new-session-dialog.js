@@ -29,7 +29,13 @@
     var newSessionColorClear = document.getElementById('new-session-color-clear');
     var envHint = document.getElementById('new-session-env-hint');
     var whereCombo = document.getElementById('where-combo');
-    var branchCombo = document.getElementById('branch-combo');
+    var branchLabel = document.getElementById('branch-label');
+    var branchCardsEl = document.getElementById('branch-cards');
+    var branchWorkspaceSlot = document.getElementById('branch-card-workspace-slot');
+    var branchNewCard = document.getElementById('branch-new-card');
+    var branchNewPlus = document.getElementById('branch-new-plus');
+    var branchCardsMsg = document.getElementById('branch-cards-msg');
+    var branchCardsSections = document.getElementById('branch-cards-sections');
     var extraArgsInput = document.getElementById('new-session-extra-args');
 
     // Derive a short "org/repo" label from a git remote URL for the Where
@@ -52,12 +58,10 @@
     // any prefill overrides it so reset can restore it. A recording's "+ New"
     // swaps in a branch-specific hint (see applyPendingPrefill).
     var DEFAULT_BRANCH_PLACEHOLDER = branchInput ? branchInput.placeholder : '';
+    var BRANCH_LABEL = branchLabel ? branchLabel.textContent : '';
+    var NEW_BRANCH_PLACEHOLDER = 'New branch name';
     function setBranchPlaceholder(text) {
         if (branchInput) branchInput.placeholder = text;
-        // The combo-box mirrors its placeholder attribute onto the visible
-        // input at runtime, so set it there too (the raw input is hidden once
-        // the combo upgrades it).
-        if (branchCombo) branchCombo.setAttribute('placeholder', text);
     }
 
     // Clone-credential UI (three-state: TRANSPARENT / FRESH / REJECTED).
@@ -97,6 +101,16 @@
         // moment it stops mattering (dialog closed, repo switched, session
         // created). A slow fetch must never hold the user up.
         branchRefreshAbort: null,
+        // Branch cards: the last /api/repo/branches reply, the picked card
+        // (see static/modules/branch-cards.js for the pick shapes), the
+        // branch-check-all results by branch name, and which online groups
+        // the user has opened. cardsOn is false for a reply without cards.
+        cardsOn: false,
+        branchData: null,
+        branchPick: null,
+        branchBlocked: '',
+        branchChecks: {},
+        openRemotes: {},
         // Settings carried over from a recording's "+ New" button, applied
         // once the prefilled repo finishes preparing. Cleared if the user
         // switches the Where selection before that happens.
@@ -198,11 +212,12 @@
         branchInput.disabled = true;
         branchList.innerHTML = '';
         setBranchPlaceholder(DEFAULT_BRANCH_PLACEHOLDER);
-        if (branchCombo) {
-            branchCombo.value = '';
-            branchCombo.setOptions([]);
-            branchCombo.setAttribute('disabled', '');
-        }
+        setCardsMode(false);
+        dialogState.branchData = null;
+        dialogState.branchPick = null;
+        dialogState.branchBlocked = '';
+        dialogState.branchChecks = {};
+        dialogState.openRemotes = {};
 
         // Reset error/loading
         errorDiv.textContent = '';
@@ -298,7 +313,6 @@
     function enableBranchAndAgent() {
         // Enable branch input
         branchInput.disabled = false;
-        if (branchCombo) branchCombo.removeAttribute('disabled');
 
         // Enable agent selection
         var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
@@ -320,6 +334,7 @@
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
                     startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+                    applyBranchBlockToStart();
                 }
             }
         }
@@ -350,6 +365,7 @@
                     preSelectedLabel.classList.add('dialog__agent--selected');
                     dialogState.selectedAgent = dialogState.preSelectedAgent;
                     startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+                    applyBranchBlockToStart();
                 }
             }
         }
@@ -442,10 +458,10 @@
             });
     }
 
-    // Fill the branch datalist/combo from a /api/repo/branches payload.
-    // setOptions preserves the combo's typed value, its filter and its
-    // keyboard highlight, so a refresh landing mid-typing never redirects the
-    // user to a different branch.
+    // Fill the branch cards (or, for a reply without cards, the plain branch
+    // box's datalist) from a /api/repo/branches payload. A refresh landing
+    // mid-typing keeps the typed text and re-reads what it picks, so it never
+    // moves the user off what they chose.
     function populateBranches(branchData) {
         dialogState.initSha = branchData.init_sha || '';
         if (branchData.remoteHost) dialogState.remoteHost = branchData.remoteHost;
@@ -456,7 +472,17 @@
             option.value = branch;
             branchList.appendChild(option);
         });
-        if (branchCombo) branchCombo.setOptions(branches);
+        var cardsOn = !!(window.branchCards && window.branchCards.groupCards(branchData));
+        setCardsMode(cardsOn);
+        if (cardsOn) {
+            dialogState.branchData = branchData;
+            if (branchInput.value.trim()) {
+                onBranchTyped();
+            } else {
+                if (!dialogState.branchPick) dialogState.branchPick = { kind: 'workspace' };
+                syncBranchPick();
+            }
+        }
         if (branchData.warning) {
             warningDiv.textContent = branchData.warning;
             warningDiv.style.display = 'block';
@@ -466,6 +492,225 @@
             warningDiv.textContent = '';
             warningDiv.style.display = 'none';
         }
+    }
+
+    // --- Branch cards (tasks/2026-09-25-branch-cards.md) ---
+    // Pure rules live in static/modules/branch-cards.js (window.branchCards);
+    // this part only draws them and keeps dialogState.selectedBranch -- the
+    // value Start sends -- in step with the picked card.
+
+    function setCardsMode(on) {
+        dialogState.cardsOn = on;
+        branchCardsEl.classList.toggle('branch-cards--on', on);
+        branchNewPlus.hidden = !on;
+        if (branchLabel) branchLabel.textContent = on ? 'Branch' : BRANCH_LABEL;
+        if (on) {
+            // "+ New branch" only makes new branches; existing ones are cards.
+            branchInput.removeAttribute('list');
+            if (branchInput.placeholder === DEFAULT_BRANCH_PLACEHOLDER) setBranchPlaceholder(NEW_BRANCH_PLACEHOLDER);
+        } else {
+            branchInput.setAttribute('list', 'branch-list');
+            if (branchInput.placeholder === NEW_BRANCH_PLACEHOLDER) setBranchPlaceholder(DEFAULT_BRANCH_PLACEHOLDER);
+            branchWorkspaceSlot.innerHTML = '';
+            branchCardsSections.innerHTML = '';
+            setBranchCardsMsg('', false);
+            branchNewCard.classList.remove('branch-card--picked');
+        }
+    }
+
+    function setBranchCardsMsg(text, blocked) {
+        branchCardsMsg.textContent = text;
+        branchCardsMsg.classList.toggle('branch-cards__msg--blocked', !!blocked);
+    }
+
+    // Start stays greyed while "+ New" holds a name that can't be used.
+    function applyBranchBlockToStart() {
+        if (dialogState.branchBlocked) {
+            startTerminalBtn.disabled = true; startChatBtn.disabled = true;
+        } else if (dialogState.selectedAgent) {
+            startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+        }
+    }
+
+    // Read "+ New branch" (or, without cards, the plain branch box).
+    function onBranchTyped() {
+        if (!dialogState.cardsOn) {
+            dialogState.selectedBranch = branchInput.value.trim();
+            return;
+        }
+        var r = window.branchCards.resolveTyped(branchInput.value, dialogState.branchData);
+        if (!r.pick) {
+            // Emptied the box: back to the card that was picked before typing.
+            if (!dialogState.branchPick || dialogState.branchPick.kind === 'new' || dialogState.branchPick.kind === 'blocked') {
+                dialogState.branchPick = { kind: 'workspace' };
+            }
+            setBranchCardsMsg('', false);
+        } else if (r.pick.kind === 'blocked') {
+            dialogState.branchPick = r.pick;
+            setBranchCardsMsg(r.pick.reason, true);
+        } else {
+            dialogState.branchPick = r.pick;
+            setBranchCardsMsg(r.message, false);
+            if (r.pick.kind === 'online') dialogState.openRemotes[r.pick.remote] = true;
+        }
+        syncBranchPick();
+    }
+
+    function pickBranchCard(pick) {
+        dialogState.branchPick = pick;
+        branchInput.value = '';
+        setBranchCardsMsg('', false);
+        syncBranchPick();
+    }
+
+    function syncBranchPick() {
+        var pick = dialogState.branchPick;
+        dialogState.selectedBranch = window.branchCards.branchValueFor(pick);
+        dialogState.branchBlocked = pick && pick.kind === 'blocked' ? pick.reason : '';
+        applyBranchBlockToStart();
+        renderBranchCards();
+    }
+
+    function cardKey(pick) {
+        return pick.kind + ':' + (pick.remote || '') + ':' + (pick.name || '');
+    }
+
+    function makeBranchCard(card, pick, label, opts) {
+        opts = opts || {};
+        var picked = !!pick && window.branchCards.samePick(pick, opts.pick);
+        var el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'branch-card' + (picked ? ' branch-card--picked' : '');
+        el.setAttribute('aria-pressed', picked ? 'true' : 'false');
+        if (opts.pick) el.dataset.key = cardKey(opts.pick);
+        if (opts.disabled) el.disabled = true;
+        var check = document.createElement('span');
+        check.className = 'branch-card__check';
+        check.textContent = picked ? '\u2713' : '';
+        el.appendChild(check);
+        var name = document.createElement('span');
+        name.className = 'branch-card__name';
+        name.textContent = label;
+        el.appendChild(name);
+        (opts.tags || []).forEach(function(t) {
+            var tag = document.createElement('span');
+            tag.className = 'branch-card__tag';
+            tag.textContent = t;
+            el.appendChild(tag);
+        });
+        if (opts.pick && !opts.disabled) {
+            el.addEventListener('click', function() { pickBranchCard(opts.pick); });
+        }
+        return el;
+    }
+
+    function sectionTitle(text) {
+        var el = document.createElement('div');
+        el.className = 'branch-cards__section';
+        el.textContent = text;
+        return el;
+    }
+
+    function renderBranchCards() {
+        if (!dialogState.cardsOn) return;
+        var bc = window.branchCards;
+        var data = dialogState.branchData;
+        var g = bc.groupCards(data);
+        var pick = dialogState.branchPick;
+        // Re-drawing replaces the buttons; keep keyboard focus where it was.
+        var focusedKey = document.activeElement && document.activeElement.dataset
+            ? document.activeElement.dataset.key : '';
+
+        branchWorkspaceSlot.innerHTML = '';
+        if (g.workspace) {
+            var wsPick = { kind: 'workspace' };
+            branchWorkspaceSlot.appendChild(makeBranchCard(g.workspace, pick, 'Workspace as it is', {
+                pick: wsPick, tags: bc.cardTags(g.workspace, null, data)
+            }));
+        }
+        branchNewCard.classList.toggle('branch-card--picked',
+            !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
+
+        var frag = document.createDocumentFragment();
+        if (g.local.length) {
+            frag.appendChild(sectionTitle('On this box (' + g.local.length + ')'));
+            g.local.forEach(function(c) {
+                frag.appendChild(makeBranchCard(c, pick, c.name, {
+                    pick: { kind: 'local', name: c.name },
+                    tags: bc.cardTags(c, dialogState.branchChecks[c.name], data)
+                }));
+            });
+        }
+        if (g.leftovers.length) {
+            frag.appendChild(sectionTitle('Leftover folders (' + g.leftovers.length + ')'));
+            g.leftovers.forEach(function(l) {
+                frag.appendChild(makeBranchCard(null, null, l.folder, {
+                    disabled: true, tags: ['no branch'].concat(l.inUse ? ['in use'] : [])
+                }));
+            });
+        }
+        g.online.forEach(function(group) {
+            var details = document.createElement('details');
+            details.className = 'branch-cards__online';
+            details.open = !!dialogState.openRemotes[group.remote];
+            details.addEventListener('toggle', function() {
+                dialogState.openRemotes[group.remote] = details.open;
+            });
+            var summary = document.createElement('summary');
+            summary.className = 'branch-cards__section';
+            summary.textContent = 'Online only: ' + group.remote + ' (' + group.cards.length + ')';
+            details.appendChild(summary);
+            group.cards.forEach(function(c) {
+                details.appendChild(makeBranchCard(c, pick, c.name, {
+                    pick: { kind: 'online', remote: group.remote, name: c.name },
+                    tags: bc.cardTags(c, null, data)
+                }));
+            });
+            frag.appendChild(details);
+        });
+        branchCardsSections.innerHTML = '';
+        branchCardsSections.appendChild(frag);
+
+        if (focusedKey) {
+            var again = branchCardsEl.querySelector('[data-key="' + CSS.escape(focusedKey) + '"]');
+            if (again) again.focus();
+        }
+    }
+
+    // Arrow keys move between cards (and "+ New"); Enter/Space pick a card,
+    // which buttons do natively.
+    function onBranchCardsKeydown(e) {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        if (!dialogState.cardsOn) return;
+        var items = Array.prototype.filter.call(
+            branchCardsEl.querySelectorAll('button.branch-card:not(:disabled), #new-session-branch, summary'),
+            function(el) { return el.offsetParent !== null; });
+        var i = items.indexOf(document.activeElement);
+        if (i === -1) return;
+        var next = items[i + (e.key === 'ArrowDown' ? 1 : -1)];
+        if (next) {
+            e.preventDefault();
+            next.focus();
+        }
+    }
+
+    // Fill "N unsaved" tags once the dialog is up. Best effort: a failure
+    // just leaves the cards without them.
+    function checkAllBranches(repoPath) {
+        fetch('/api/repo/branch-check-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: repoPath })
+        })
+            .then(function(response) { return response.ok ? response.json() : null; })
+            .then(function(data) {
+                if (!data || dialogState.repoPath !== repoPath) return;
+                var byName = {};
+                (data.checks || []).forEach(function(c) { byName[c.branch] = c; });
+                dialogState.branchChecks = byName;
+                renderBranchCards();
+            })
+            .catch(function() {});
     }
 
     // Abandon an in-flight branch refresh. Called whenever its result stops
@@ -528,9 +773,11 @@
         if (!prefill) return;
         dialogState.pendingPrefill = null;
         if (prefill.branch) {
+            // With cards, the typed-name rules pick the matching card (or a
+            // new branch); without, the plain box carries the name as before.
             branchInput.value = prefill.branch;
-            if (branchCombo) branchCombo.value = prefill.branch;
             dialogState.selectedBranch = prefill.branch;
+            if (dialogState.cardsOn) onBranchTyped();
         } else if (prefill.branchHint) {
             // Plain shared-checkout recording: no worktree branch, so the field
             // stays blank (reproducing the shared checkout). Surface the branch
@@ -755,6 +1002,7 @@
                         populateBranches(branchData);
                         enableBranchAndAgent();
                         applyPendingPrefill();
+                        if (dialogState.cardsOn) checkAllBranches(data.path);
                         // A fresh clone already has all refs local, so the
                         // background &fetch=1 call is redundant (and would be a
                         // second credentialed remote call). Skip it.
@@ -916,10 +1164,11 @@
         }
     });
 
-    // Branch change: update selectedBranch
-    branchInput.addEventListener('change', function() {
-        dialogState.selectedBranch = branchInput.value.trim();
-    });
+    // Typing into the branch box: with cards it is "+ New branch" and the
+    // typed-name rules decide what it picks; without, it is the branch.
+    branchInput.addEventListener('input', onBranchTyped);
+    branchInput.addEventListener('change', onBranchTyped);
+    if (branchCardsEl) branchCardsEl.addEventListener('keydown', onBranchCardsKeydown);
 
     // Focusing the branch combo used to collapse every field below it (Agent,
     // Extra CLI flags, env hint, Start buttons) so the user could not press
@@ -949,6 +1198,7 @@
             radio.checked = true;
             dialogState.selectedAgent = radio.value;
             startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+            applyBranchBlockToStart();
             updateStartHint();
         }
     }
@@ -1014,12 +1264,10 @@
     // longer materializes a session (no-ghost-session invariant), so the
     // staged intent is what grants permission to create.
     function startSession(sessionMode) {
-        // The branch combo is free-entry: typed text only becomes its value on
-        // close. Commit it here so a user who types a branch and hits Start in
-        // one motion still sends the branch they typed.
-        if (branchCombo && typeof branchCombo.commit === 'function') {
-            branchCombo.commit();
-        }
+        // Read the branch box once more, so text typed and followed straight
+        // by Start is what gets sent.
+        onBranchTyped();
+        if (dialogState.branchBlocked) { showError(dialogState.branchBlocked); return; }
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
         // The session is being created: a still-running branch refresh has
         // nothing left to update, and must not compete with the create call.

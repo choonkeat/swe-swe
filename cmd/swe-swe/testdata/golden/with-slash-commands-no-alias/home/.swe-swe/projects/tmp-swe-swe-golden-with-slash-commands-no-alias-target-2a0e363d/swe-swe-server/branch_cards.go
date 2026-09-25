@@ -69,6 +69,7 @@ type leftoverFolder struct {
 type branchCardsResult struct {
 	Cards          []branchCard     `json:"cards"`
 	Leftovers      []leftoverFolder `json:"leftovers"`
+	Remotes        []string         `json:"remotes"`
 	DefaultBranch  string           `json:"defaultBranch"`
 	DefaultGuessed bool             `json:"defaultGuessed"`
 }
@@ -90,7 +91,7 @@ func buildBranchCards(f branchFacts) branchCardsResult {
 		localSet[b] = true
 	}
 
-	res := branchCardsResult{Cards: []branchCard{}, Leftovers: []leftoverFolder{}}
+	res := branchCardsResult{Cards: []branchCard{}, Leftovers: []leftoverFolder{}, Remotes: append([]string{}, f.Remotes...)}
 	res.DefaultBranch = f.OriginHead
 	if res.DefaultBranch == "" {
 		res.DefaultGuessed = true
