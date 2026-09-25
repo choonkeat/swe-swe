@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - Branch cards in New Session</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* --- sketch-local additions (still greyscale, still plain) --- */
+  .frames{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;}
+  .phone{width:300px;}
+  .phone > .label{margin-bottom:6px;display:block;}
+  .sec{margin:14px 0 6px;}
+  .card{border:1px solid var(--line);border-radius:3px;background:#fff;padding:8px 10px;margin:6px 0;
+        display:flex;align-items:center;gap:8px;font-size:13px;}
+  .card .name{flex:1;}
+  .card .x{border:1px solid var(--line);border-radius:3px;width:22px;height:22px;
+           display:flex;align-items:center;justify-content:center;font-size:12px;color:#555;}
+  .card .x.off{border-style:dashed;color:#bbb;}
+  .tag{font-size:10px;border:1px solid var(--line);border-radius:9px;padding:1px 6px;color:#555;white-space:nowrap;}
+  .card.picked{border:2px solid var(--ink);}
+  .card.confirm{flex-wrap:wrap;background:var(--grey-lite);}
+  .card.confirm .row{width:100%;display:flex;gap:6px;margin-top:6px;}
+  .small{padding:4px 10px;font-size:12px;}
+  .more{font-size:12px;color:#555;text-align:center;margin:4px 0;}
+  .strip{border:1px dashed var(--line);border-radius:3px;padding:6px 10px;font-size:12px;
+         display:flex;justify-content:space-between;margin:6px 0;}
+  .agents{display:flex;gap:6px;}
+  .agents .card{flex:1;justify-content:center;}
+  table{border-collapse:collapse;font-size:12px;margin-top:10px;width:100%;max-width:1000px;}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;background:#fff;}
+  th{background:var(--grey-lite);font-weight:600;}
+  @media (max-width:700px){ .phone{width:100%;} }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>Branch cards in New Session</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only.</p>
+
+  <div class="frames">
+
+    <!-- A: default -->
+    <div class="phone">
+      <span class="label">A. Dialog opens</span>
+      <div class="box">
+        <div class="title">New Session</div>
+        <div class="label">Where</div>
+        <div class="input">Default workspace</div>
+
+        <div class="label sec">Branch</div>
+        <div class="card picked"><span class="name">&#10003; Workspace as it is</span><span class="tag">on: main</span></div>
+        <div class="card"><span class="name">+ New branch</span><span class="input" style="min-width:90px">name</span></div>
+
+        <div class="label sec">On this box (6)</div>
+        <div class="card"><span class="name">browser-backend</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">chatlog/mr-export</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">feat/cross-box</span><span class="tag">in use</span><span class="x off">&#10005;</span></div>
+        <div class="card"><span class="name">origin/typo-fix</span><span class="tag">odd name</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">docs/wildcard-host</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">feat/browser-cmd</span><span class="x">&#10005;</span></div>
+
+        <div class="label sec">Online only: origin, github.com (5) &rarr;</div>
+        <div class="label sec">Online only: upstream, gitlab.com (3) &rarr;</div>
+        <div class="note">one collapsed group per online copy the repo knows about; tap to list. No &#10005; on these.</div>
+
+        <div class="label sec">Agent</div>
+        <div class="agents">
+          <div class="card">Claude</div><div class="card">Codex</div>
+          <div class="card">OpenCode</div><div class="card">Pi</div>
+        </div>
+        <div style="margin-top:12px"><div class="btn filled" style="width:100%">Start</div></div>
+      </div>
+      <p class="note">No "show more": every branch on this box is a card. 30 branches = 30 cards and the agents get pushed far down. That scroll IS the nudge.</p>
+      <p class="note">"Workspace as it is" replaces the blank field, and says which branch that really is. That branch never gets its own card below.</p>
+      <p class="note">"odd name" = a branch on this box whose name starts with the name of any online copy (origin/, upstream/, ...), so it looks like an online one.</p>
+    </div>
+
+    <!-- B: tap x -->
+    <div class="phone">
+      <span class="label">B. Tap &#10005;</span>
+      <div class="box">
+        <div class="label">On this box (6)</div>
+        <div class="card"><span class="name">browser-backend</span><span class="tag">checking...</span><span class="x off">&#10005;</span></div>
+        <div class="card confirm">
+          <span class="name">Delete chatlog/mr-export?</span>
+          <div class="note" style="width:100%">3 changes are not saved anywhere else and will be lost.</div>
+          <div class="row"><span class="btn small">Keep</span><span class="btn small">Delete anyway</span></div>
+        </div>
+        <div class="card"><span class="name">feat/cross-box</span><span class="tag">in use</span><span class="x off">&#10005;</span></div>
+      </div>
+      <p class="note">Every tap re-checks first ("checking..."). Nothing to lose &rarr; straight to C. Something to lose &rarr; confirm inside the card.</p>
+      <p class="note">Greyed &#10005;: tap shows one line why.</p>
+    </div>
+
+    <!-- C: after delete -->
+    <div class="phone">
+      <span class="label">C. Right after delete</span>
+      <div class="box">
+        <div class="label">On this box (5)</div>
+        <div class="strip"><span>Deleted browser-backend</span><span><b>Undo</b></span></div>
+        <div class="card"><span class="name">chatlog/mr-export</span><span class="x">&#10005;</span></div>
+        <div class="card"><span class="name">feat/cross-box</span><span class="tag">in use</span><span class="x off">&#10005;</span></div>
+      </div>
+      <p class="note">Undo stays until the dialog closes. Deletes only this box's copy, never the online one.</p>
+    </div>
+
+    <!-- D: typing into + New branch -->
+    <div class="phone">
+      <span class="label">D. Typing into + New branch</span>
+      <div class="box">
+        <div class="card"><span class="name">+ New branch</span><span class="input" style="min-width:90px;color:#141414">main</span></div>
+        <div class="note">&rarr; "main" is the workspace as it is. Picked that card for you.</div>
+        <div class="card picked"><span class="name">&#10003; Workspace as it is</span><span class="tag">on: main</span></div>
+      </div>
+      <div class="box" style="margin-top:10px">
+        <div class="card"><span class="name">+ New branch</span><span class="input" style="min-width:90px;color:#141414">origin/foo</span></div>
+        <div class="note">&rarr; "foo" is already online. Picked it for you.</div>
+        <div class="card picked"><span class="name">&#10003; foo</span><span class="tag">online only</span></div>
+      </div>
+      <div class="box" style="margin-top:10px">
+        <div class="card"><span class="name">+ New branch</span><span class="input" style="min-width:90px;color:#141414">origin/bar</span></div>
+        <div class="note">&#10005; Names can't start with origin/ or upstream/ (this repo's online copies). Start is disabled.</div>
+      </div>
+      <p class="note">Rule: this field only ever makes something NEW. Type an existing name and it jumps to that card instead.</p>
+    </div>
+
+  </div>
+
+  <h2 style="font-size:15px;margin-top:30px">What the &#10005; does</h2>
+  <table>
+    <tr><th>Card</th><th>&#10005; does</th></tr>
+    <tr><td>Workspace as it is</td><td>no &#10005;</td></tr>
+    <tr><td>On this box, nothing to lose</td><td>check, delete, Undo strip</td></tr>
+    <tr><td>On this box, unsaved changes</td><td>check, confirm in card, delete</td></tr>
+    <tr><td>in use (a live session works in it)</td><td>greyed -- end that session first</td></tr>
+    <tr><td>odd name (starts with origin/, upstream/, ...)</td><td>same as "on this box"; the tag is the nudge</td></tr>
+    <tr><td>Online only</td><td>no &#10005; -- would affect everyone else</td></tr>
+  </table>
+</div>
+</body>
+</html>
