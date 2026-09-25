@@ -136,3 +136,64 @@ test('samePick compares kind, remote and name', () => {
     assert.ok(!samePick({ kind: 'online', remote: 'origin', name: 'x' }, { kind: 'online', remote: 'upstream', name: 'x' }));
     assert.ok(!samePick(null, { kind: 'workspace' }));
 });
+
+import { cardStateAfter, isBusy, withoutDeleted, localKey } from './branch-cards.js';
+
+test('delete flow: nothing to lose goes straight to deleted with Undo', () => {
+    let s = cardStateAfter(null, { type: 'tap' });
+    assert.strictEqual(s.state, 'checking');
+    s = cardStateAfter(s, { type: 'server', res: { deleted: true, undoable: true, undo: { branch: 'x', sha: 'a' } } });
+    assert.deepStrictEqual(s, { state: 'deleted', undo: { branch: 'x', sha: 'a' }, undoable: true });
+    s = cardStateAfter(s, { type: 'undo' });
+    assert.strictEqual(s.state, 'undoing');
+    assert.strictEqual(cardStateAfter(s, { type: 'undone' }).state, 'ready');
+});
+
+test('delete flow: something to lose asks inside the card; Keep goes back', () => {
+    let s = cardStateAfter({ state: 'checking' }, { type: 'server', res: { needsConfirm: true, reason: '3 saved', undoable: true } });
+    assert.deepStrictEqual(s, { state: 'confirm', reason: '3 saved', undoable: true });
+    assert.strictEqual(cardStateAfter(s, { type: 'keep' }).state, 'ready');
+    s = cardStateAfter(s, { type: 'confirm' });
+    assert.strictEqual(s.state, 'deleting');
+    s = cardStateAfter(s, { type: 'server', res: { deleted: true, undoable: false, undo: { branch: 'x', sha: 'a' } } });
+    assert.strictEqual(s.state, 'deleted');
+    assert.strictEqual(s.undoable, false);
+    assert.strictEqual(cardStateAfter(s, { type: 'undo' }).state, 'deleted', 'no Undo when it can\'t be undone');
+});
+
+test('delete flow: a server refusal shows its reason; tapping again retries', () => {
+    const s = cardStateAfter({ state: 'checking' }, { type: 'refused', reason: 'A live session is using this branch.' });
+    assert.deepStrictEqual(s, { state: 'failed', reason: 'A live session is using this branch.' });
+    assert.strictEqual(cardStateAfter(s, { type: 'tap' }).state, 'checking');
+});
+
+test('delete flow: double-tap guard while checking, deleting or undoing', () => {
+    for (const state of ['checking', 'deleting', 'undoing']) {
+        const s = { state };
+        assert.ok(isBusy(s));
+        for (const type of ['tap', 'why', 'keep', 'confirm', 'undo']) {
+            assert.strictEqual(cardStateAfter(s, { type }), s, state + ' ignores ' + type);
+        }
+    }
+    assert.ok(!isBusy({ state: 'ready' }));
+    assert.ok(!isBusy(null));
+});
+
+test('delete flow: greyed [x] toggles its one-line reason', () => {
+    const s = cardStateAfter(null, { type: 'why', reason: 'This is the default branch.' });
+    assert.deepStrictEqual(s, { state: 'why', reason: 'This is the default branch.' });
+    assert.strictEqual(cardStateAfter(s, { type: 'why', reason: 'x' }).state, 'ready');
+});
+
+test('delete flow: a refused Undo stays deleted and says why', () => {
+    const s = cardStateAfter({ state: 'undoing', undo: { branch: 'x' }, undoable: true }, { type: 'refused', reason: 'A branch with that name exists again.' });
+    assert.strictEqual(s.state, 'deleted');
+    assert.strictEqual(s.reason, 'A branch with that name exists again.');
+});
+
+test('withoutDeleted: a deleted branch no longer counts as existing', () => {
+    const data = { cards: [{ kind: 'local', name: 'a' }, { kind: 'local', name: 'b' }] };
+    const out = withoutDeleted(data, { [localKey('a')]: { state: 'deleted' } });
+    assert.deepStrictEqual(out.cards.map((c) => c.name), ['b']);
+    assert.strictEqual(resolveTyped('a', out).pick.kind, 'new');
+});

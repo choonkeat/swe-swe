@@ -221,6 +221,9 @@ func TestSwitchToDefault(t *testing.T) {
 	wantRefusal(t, err, "unsaved edits")
 	gitT(t, repo, "checkout", "--", "a.txt")
 
+	// New files a session left behind don't block it; checkout keeps them.
+	writeFile(t, filepath.Join(repo, "left-behind.txt"), "x\n")
+
 	other := filepath.Join(container, "m")
 	gitT(t, repo, "worktree", "add", "-q", other, "main")
 	_, err = switchToDefault(repo, nil)
@@ -233,6 +236,9 @@ func TestSwitchToDefault(t *testing.T) {
 	}
 	if got := gitT(t, repo, "symbolic-ref", "--short", "HEAD"); got != "main" {
 		t.Errorf("workspace on %s, want main", got)
+	}
+	if !dirExists(filepath.Join(repo, "left-behind.txt")) {
+		t.Errorf("the new file was lost by the switch")
 	}
 }
 

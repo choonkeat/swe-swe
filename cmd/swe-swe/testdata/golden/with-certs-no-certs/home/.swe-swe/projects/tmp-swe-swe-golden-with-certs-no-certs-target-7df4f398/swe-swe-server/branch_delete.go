@@ -247,7 +247,11 @@ func switchToDefault(repo string, live map[string]bool) (string, error) {
 			return "", branchRefusal(def + " is open in another folder: " + wt.Path)
 		}
 	}
-	if n, ok := countGit(defaultBranchCheckGit, repo, []string{"status", "--porcelain"}, func(out string) (int, error) {
+	// Only changes to tracked files block the switch: checkout keeps new
+	// (untracked) files as they are, and refuses by itself if one would be
+	// overwritten. Counting them made every workspace that ever ran a
+	// session (which leaves new files behind) unswitchable.
+	if n, ok := countGit(defaultBranchCheckGit, repo, []string{"status", "--porcelain", "--untracked-files=no"}, func(out string) (int, error) {
 		return len(strings.FieldsFunc(out, func(r rune) bool { return r == '\n' })), nil
 	}); !ok || n > 0 {
 		return "", branchRefusal("The workspace has unsaved edits.")

@@ -111,6 +111,10 @@
         branchBlocked: '',
         branchChecks: {},
         openRemotes: {},
+        // Delete flow per card, keyed by branchCards.localKey/leftoverKey
+        // (and 'workspace:' for Switch back). Lives until the dialog closes,
+        // which is how long an Undo strip stays.
+        cardStates: {},
         // Settings carried over from a recording's "+ New" button, applied
         // once the prefilled repo finishes preparing. Cleared if the user
         // switches the Where selection before that happens.
@@ -218,6 +222,7 @@
         dialogState.branchBlocked = '';
         dialogState.branchChecks = {};
         dialogState.openRemotes = {};
+        dialogState.cardStates = {};
 
         // Reset error/loading
         errorDiv.textContent = '';
@@ -538,7 +543,8 @@
             dialogState.selectedBranch = branchInput.value.trim();
             return;
         }
-        var r = window.branchCards.resolveTyped(branchInput.value, dialogState.branchData);
+        var bc = window.branchCards;
+        var r = bc.resolveTyped(branchInput.value, bc.withoutDeleted(dialogState.branchData, dialogState.cardStates));
         if (!r.pick) {
             // Emptied the box: back to the card that was picked before typing.
             if (!dialogState.branchPick || dialogState.branchPick.kind === 'new' || dialogState.branchPick.kind === 'blocked') {
@@ -575,40 +581,203 @@
         return pick.kind + ':' + (pick.remote || '') + ':' + (pick.name || '');
     }
 
-    function makeBranchCard(card, pick, label, opts) {
+    function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function smallButton(label, className, onClick) {
+        var b = el('button', 'branch-card__btn' + (className ? ' ' + className : ''), label);
+        b.type = 'button';
+        b.addEventListener('click', onClick);
+        return b;
+    }
+
+    // One card: a row holding the pick button, then optionally an [x] and a
+    // line below (confirm, reason, Undo). `opts`: pick (null = not
+    // pickable), tags, x ({key, reason} -- reason set = greyed), action
+    // (a button such as "Switch back to main"), stateKey.
+    function makeBranchCard(label, opts) {
         opts = opts || {};
-        var picked = !!pick && window.branchCards.samePick(pick, opts.pick);
-        var el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'branch-card' + (picked ? ' branch-card--picked' : '');
-        el.setAttribute('aria-pressed', picked ? 'true' : 'false');
-        if (opts.pick) el.dataset.key = cardKey(opts.pick);
-        if (opts.disabled) el.disabled = true;
-        var check = document.createElement('span');
-        check.className = 'branch-card__check';
-        check.textContent = picked ? '\u2713' : '';
-        el.appendChild(check);
-        var name = document.createElement('span');
-        name.className = 'branch-card__name';
-        name.textContent = label;
-        el.appendChild(name);
-        (opts.tags || []).forEach(function(t) {
-            var tag = document.createElement('span');
-            tag.className = 'branch-card__tag';
-            tag.textContent = t;
-            el.appendChild(tag);
-        });
-        if (opts.pick && !opts.disabled) {
-            el.addEventListener('click', function() { pickBranchCard(opts.pick); });
+        var bc = window.branchCards;
+        var pick = dialogState.branchPick;
+        var st = opts.stateKey ? dialogState.cardStates[opts.stateKey] : null;
+        var picked = !!opts.pick && bc.samePick(pick, opts.pick);
+
+        var row = el('div', 'branch-card-row' + (picked ? ' branch-card-row--picked' : ''));
+        if (st && (st.state === 'deleted' || st.state === 'undoing')) {
+            // Sketch screen C: the card becomes an Undo strip until the dialog closes.
+            row.className = 'branch-card-row branch-card-row--deleted';
+            row.appendChild(el('span', 'branch-card__name', 'Deleted ' + label));
+            if (st.undoable) {
+                var undo = smallButton(st.state === 'undoing' ? 'Undoing...' : 'Undo', '', function() { undoCardDelete(opts.stateKey); });
+                undo.disabled = st.state === 'undoing';
+                row.appendChild(undo);
+            } else {
+                row.appendChild(el('span', 'branch-card__tag', "can't be undone"));
+            }
+            if (st.reason) row.appendChild(el('div', 'branch-card__line branch-card__line--error', st.reason));
+            return row;
         }
-        return el;
+
+        var main = el('button', 'branch-card' + (picked ? ' branch-card--picked' : ''));
+        main.type = 'button';
+        main.setAttribute('aria-pressed', picked ? 'true' : 'false');
+        if (opts.pick) {
+            main.dataset.key = cardKey(opts.pick);
+            main.addEventListener('click', function() { pickBranchCard(opts.pick); });
+        } else {
+            main.disabled = true;
+        }
+        if (bc.isBusy(st)) main.disabled = true;
+        main.appendChild(el('span', 'branch-card__check', picked ? '\u2713' : ''));
+        main.appendChild(el('span', 'branch-card__name', label));
+        (opts.tags || []).forEach(function(t) {
+            main.appendChild(el('span', 'branch-card__tag', t));
+        });
+        if (st && st.state === 'checking') main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'checking...'));
+        if (st && st.state === 'deleting') main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
+        row.appendChild(main);
+
+        if (opts.action) row.appendChild(opts.action);
+
+        if (opts.x) {
+            var x = el('button', 'branch-card__x' + (opts.x.reason ? ' branch-card__x--off' : ''), '\u2715');
+            x.type = 'button';
+            x.setAttribute('aria-label', (opts.x.reason ? 'Why ' + label + ' cannot be deleted' : 'Delete ' + label));
+            x.dataset.key = 'x:' + opts.stateKey;
+            if (opts.x.reason) {
+                // Greyed but still tappable: the tap shows why. Not
+                // aria-disabled, since it does do something.
+                x.addEventListener('click', function() {
+                    setCardState(opts.stateKey, { type: 'why', reason: opts.x.reason });
+                });
+            } else {
+                x.disabled = bc.isBusy(st) || (st && st.state === 'confirm');
+                x.addEventListener('click', function() { opts.x.onDelete(); });
+            }
+            row.appendChild(x);
+        }
+
+        if (st && st.state === 'confirm') {
+            // Sketch screen B: confirm inside the card.
+            var line = el('div', 'branch-card__line branch-card__line--confirm');
+            line.appendChild(el('span', 'branch-card__line-text', 'Delete ' + label + '? ' + st.reason));
+            line.appendChild(smallButton('Keep', '', function() { setCardState(opts.stateKey, { type: 'keep' }); }));
+            line.appendChild(smallButton('Delete anyway', 'branch-card__btn--danger', function() { opts.x.onConfirm(); }));
+            row.appendChild(line);
+        } else if (st && (st.state === 'why' || st.state === 'failed')) {
+            row.appendChild(el('div', 'branch-card__line' + (st.state === 'failed' ? ' branch-card__line--error' : ''), st.reason));
+        }
+        return row;
     }
 
     function sectionTitle(text) {
-        var el = document.createElement('div');
-        el.className = 'branch-cards__section';
-        el.textContent = text;
-        return el;
+        return el('div', 'branch-cards__section', text);
+    }
+
+    function setCardState(key, event) {
+        dialogState.cardStates[key] = window.branchCards.cardStateAfter(dialogState.cardStates[key], event);
+        renderBranchCards();
+    }
+
+    // POST a branch-card write; resolves {ok, status, body}.
+    function postBranchWrite(path, body) {
+        return fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(function(response) {
+            return response.json().catch(function() { return {}; }).then(function(json) {
+                return { ok: response.ok, status: response.status, body: json || {} };
+            });
+        });
+    }
+
+    // Tap [x] (confirmed=false) or "Delete anyway" (confirmed=true). The
+    // server re-checks every time: a tag shown when the dialog opened may be
+    // stale because an agent saved new work since.
+    function deleteCard(key, endpoint, body, confirmed) {
+        var repoPath = dialogState.repoPath;
+        setCardState(key, { type: confirmed ? 'confirm' : 'tap' });
+        body.path = repoPath;
+        body.confirmed = confirmed;
+        postBranchWrite(endpoint, body)
+            .then(function(r) {
+                if (dialogState.repoPath !== repoPath) return;
+                if (!r.ok) {
+                    setCardState(key, { type: 'refused', reason: r.body.error || 'Could not delete.' });
+                    return;
+                }
+                setCardState(key, { type: 'server', res: r.body });
+                var st = dialogState.cardStates[key];
+                if (st.state === 'deleted' && body.branch) {
+                    // Deleting the picked card puts the pick back on the workspace.
+                    var pick = dialogState.branchPick;
+                    if (pick && pick.kind === 'local' && pick.name === body.branch) {
+                        pickBranchCard({ kind: 'workspace' });
+                    }
+                    delete dialogState.branchChecks[body.branch];
+                }
+            })
+            .catch(function() {
+                if (dialogState.repoPath !== repoPath) return;
+                setCardState(key, { type: 'refused', reason: 'Could not reach the server.' });
+            });
+    }
+
+    function undoCardDelete(key) {
+        var st = dialogState.cardStates[key];
+        if (!st || !st.undo) return;
+        var repoPath = dialogState.repoPath;
+        setCardState(key, { type: 'undo' });
+        var body = { path: repoPath, branch: st.undo.branch, sha: st.undo.sha, folder: st.undo.folder || '' };
+        postBranchWrite('/api/repo/branch-undo', body)
+            .then(function(r) {
+                if (dialogState.repoPath !== repoPath) return;
+                if (!r.ok) {
+                    setCardState(key, { type: 'refused', reason: r.body.error || 'Could not undo.' });
+                    return;
+                }
+                setCardState(key, { type: 'undone' });
+            })
+            .catch(function() {
+                if (dialogState.repoPath !== repoPath) return;
+                setCardState(key, { type: 'refused', reason: 'Could not reach the server.' });
+            });
+    }
+
+    // Sketch screen E: put the workspace back on the default branch, then
+    // re-list branches (the old branch becomes a card, main stops being one).
+    function switchWorkspaceBack() {
+        var repoPath = dialogState.repoPath;
+        var key = 'workspace:';
+        if (window.branchCards.isBusy(dialogState.cardStates[key])) return;
+        dialogState.cardStates[key] = { state: 'checking' };
+        renderBranchCards();
+        postBranchWrite('/api/repo/switch-default', { path: repoPath })
+            .then(function(r) {
+                if (dialogState.repoPath !== repoPath) return;
+                if (!r.ok) {
+                    dialogState.cardStates[key] = { state: 'failed', reason: r.body.error || 'Could not switch.' };
+                    renderBranchCards();
+                    return;
+                }
+                return fetch('/api/repo/branches?path=' + encodeURIComponent(repoPath))
+                    .then(function(response) { return response.ok ? response.json() : null; })
+                    .then(function(branchData) {
+                        delete dialogState.cardStates[key];
+                        if (branchData && dialogState.repoPath === repoPath) populateBranches(branchData);
+                        else renderBranchCards();
+                    });
+            })
+            .catch(function() {
+                if (dialogState.repoPath !== repoPath) return;
+                dialogState.cardStates[key] = { state: 'failed', reason: 'Could not reach the server.' };
+                renderBranchCards();
+            });
     }
 
     function renderBranchCards() {
@@ -617,15 +786,27 @@
         var data = dialogState.branchData;
         var g = bc.groupCards(data);
         var pick = dialogState.branchPick;
+        var states = dialogState.cardStates;
         // Re-drawing replaces the buttons; keep keyboard focus where it was.
         var focusedKey = document.activeElement && document.activeElement.dataset
             ? document.activeElement.dataset.key : '';
 
         branchWorkspaceSlot.innerHTML = '';
         if (g.workspace) {
-            var wsPick = { kind: 'workspace' };
-            branchWorkspaceSlot.appendChild(makeBranchCard(g.workspace, pick, 'Workspace as it is', {
-                pick: wsPick, tags: bc.cardTags(g.workspace, null, data)
+            var action = null;
+            if (g.workspace.notDefault) {
+                var wsState = states['workspace:'];
+                var busy = bc.isBusy(wsState);
+                action = smallButton(busy ? 'Switching...' : 'Switch back to ' + (data.defaultBranch || 'main'), 'branch-card__btn--switch', switchWorkspaceBack);
+                // Greyed when a live session uses the workspace; the unsaved
+                // edits check runs on the server when tapped.
+                if (busy || g.workspace.inUse) action.disabled = true;
+                if (g.workspace.inUse) action.title = 'A live session is using the workspace.';
+            }
+            var wsTags = bc.cardTags(g.workspace, null, data);
+            if (g.workspace.inUse) wsTags.push('in use');
+            branchWorkspaceSlot.appendChild(makeBranchCard('Workspace as it is', {
+                pick: { kind: 'workspace' }, tags: wsTags, action: action, stateKey: 'workspace:'
             }));
         }
         branchNewCard.classList.toggle('branch-card--picked',
@@ -633,19 +814,45 @@
 
         var frag = document.createDocumentFragment();
         if (g.local.length) {
-            frag.appendChild(sectionTitle('On this box (' + g.local.length + ')'));
+            var live = g.local.filter(function(c) {
+                var s = states[bc.localKey(c.name)];
+                return !s || (s.state !== 'deleted' && s.state !== 'undoing');
+            }).length;
+            frag.appendChild(sectionTitle('On this box (' + live + ')'));
             g.local.forEach(function(c) {
-                frag.appendChild(makeBranchCard(c, pick, c.name, {
+                var key = bc.localKey(c.name);
+                frag.appendChild(makeBranchCard(c.name, {
                     pick: { kind: 'local', name: c.name },
-                    tags: bc.cardTags(c, dialogState.branchChecks[c.name], data)
+                    tags: bc.cardTags(c, dialogState.branchChecks[c.name], data),
+                    stateKey: key,
+                    x: {
+                        reason: c.deletable ? '' : (c.noDeleteReason || "This branch can't be deleted here."),
+                        onDelete: function() { deleteCard(key, '/api/repo/branch-delete', { branch: c.name }, false); },
+                        onConfirm: function() { deleteCard(key, '/api/repo/branch-delete', { branch: c.name }, true); }
+                    }
                 }));
             });
         }
         if (g.leftovers.length) {
             frag.appendChild(sectionTitle('Leftover folders (' + g.leftovers.length + ')'));
             g.leftovers.forEach(function(l) {
-                frag.appendChild(makeBranchCard(null, null, l.folder, {
-                    disabled: true, tags: ['no branch'].concat(l.inUse ? ['in use'] : [])
+                var key = bc.leftoverKey(l.folder);
+                var tags = ['no branch'].concat(l.inUse ? ['in use'] : []);
+                var st = states[key];
+                if (st && st.state === 'deleted') {
+                    var gone = el('div', 'branch-card-row branch-card-row--deleted');
+                    gone.appendChild(el('span', 'branch-card__name', 'Removed ' + l.folder));
+                    frag.appendChild(gone);
+                    return;
+                }
+                frag.appendChild(makeBranchCard(l.folder, {
+                    tags: tags,
+                    stateKey: key,
+                    x: {
+                        reason: l.inUse ? 'A live session is using this folder.' : '',
+                        onDelete: function() { deleteCard(key, '/api/repo/leftover-remove', { folder: l.folder }, false); },
+                        onConfirm: function() { deleteCard(key, '/api/repo/leftover-remove', { folder: l.folder }, true); }
+                    }
                 }));
             });
         }
@@ -656,12 +863,12 @@
             details.addEventListener('toggle', function() {
                 dialogState.openRemotes[group.remote] = details.open;
             });
-            var summary = document.createElement('summary');
-            summary.className = 'branch-cards__section';
-            summary.textContent = 'Online only: ' + group.remote + ' (' + group.cards.length + ')';
+            var summary = el('summary', 'branch-cards__section',
+                'Online only: ' + group.remote + ' (' + group.cards.length + ')');
             details.appendChild(summary);
             group.cards.forEach(function(c) {
-                details.appendChild(makeBranchCard(c, pick, c.name, {
+                // No [x]: deleting an online copy would affect everyone else.
+                details.appendChild(makeBranchCard(c.name, {
                     pick: { kind: 'online', remote: group.remote, name: c.name },
                     tags: bc.cardTags(c, null, data)
                 }));

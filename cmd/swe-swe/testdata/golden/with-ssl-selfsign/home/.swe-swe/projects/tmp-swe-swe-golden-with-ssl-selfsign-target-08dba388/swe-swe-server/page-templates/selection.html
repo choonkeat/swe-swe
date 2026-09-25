@@ -1270,8 +1270,113 @@
         .branch-cards__online[open] > summary {
             margin-bottom: 6px;
         }
-        .branch-cards__online > .branch-card + .branch-card {
+        .branch-cards__online > .branch-card-row + .branch-card-row {
             margin-top: 6px;
+        }
+        /* A card row: the pick button, then an [x] or an action, then an
+           optional line below (confirm, reason). The row draws the border. */
+        .branch-card-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0 6px;
+            min-width: 0;
+            padding-right: 6px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+        }
+        .branch-card-row:hover {
+            border-color: var(--accent-30);
+        }
+        .branch-card-row--picked,
+        .branch-card-row--picked:hover {
+            border-color: var(--accent-primary);
+            background: var(--accent-10);
+        }
+        .branch-card-row > .branch-card {
+            flex: 1 1 0;
+            width: auto;
+            border: 0;
+            background: none;
+        }
+        .branch-card-row > button.branch-card:focus-visible {
+            outline: 2px solid var(--accent-primary);
+            outline-offset: -2px;
+        }
+        .branch-card-row--deleted {
+            justify-content: space-between;
+            padding: 6px 6px 6px 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            background: none;
+            border-style: dashed;
+        }
+        .branch-card__x {
+            flex: 0 0 auto;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            background: none;
+            border: 1px solid var(--border-secondary);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .branch-card__x:hover:not(:disabled):not(.branch-card__x--off) {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+        .branch-card__x:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+        .branch-card__x--off {
+            border-style: dashed;
+            opacity: 0.5;
+        }
+        .branch-card__btn {
+            padding: 4px 10px;
+            font: inherit;
+            font-size: 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-secondary);
+            border-radius: 6px;
+            color: var(--text-bright);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .branch-card__btn:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+        .branch-card__btn--danger {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+        .branch-card__line {
+            flex: 1 0 100%;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            padding: 0 6px 8px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .branch-card__line-text {
+            flex: 1 1 12em;
+            min-width: 0;
+        }
+        .branch-card__line--error {
+            color: #ef4444;
+        }
+        .branch-card__tag--busy {
+            font-style: italic;
+            border-style: dashed;
         }
         .dialog__footer {
             display: flex;
@@ -1792,10 +1897,15 @@
                 width: 44px;
                 height: 44px;
             }
+            .branch-card__x {
+                width: 44px;
+                height: 44px;
+            }
             .dialog__next,
             .dialog__start,
             .dialog__agent,
             .branch-card,
+            .branch-card__btn,
             .dialog__advanced-summary,
             .color-picker__reset,
             .settings-logout-btn,

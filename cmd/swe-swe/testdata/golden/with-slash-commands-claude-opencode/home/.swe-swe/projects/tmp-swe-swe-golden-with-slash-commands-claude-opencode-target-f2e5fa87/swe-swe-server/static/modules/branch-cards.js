@@ -133,3 +133,73 @@ export function samePick(a, b) {
     if (!a || !b) return false;
     return a.kind === b.kind && (a.name || '') === (b.name || '') && (a.remote || '') === (b.remote || '');
 }
+
+/**
+ * Delete flow for one card (sketch screens B and C). States:
+ *   ready     -- nothing going on
+ *   why       -- a greyed [x] was tapped; `reason` says why it can't go
+ *   checking  -- [x] tapped; the server re-checks (and deletes if nothing
+ *                would be lost)
+ *   confirm   -- something would be lost; `reason`, `undoable` from server
+ *   deleting  -- "Delete anyway" tapped
+ *   deleted   -- gone; `undo` note and `undoable` for the Undo strip
+ *   undoing   -- Undo tapped
+ *   failed    -- the server said no; `reason`
+ * Events: tap, why, server (a branch-delete / leftover-remove reply),
+ * refused, keep, confirm, undo, undone.
+ * Busy states ignore every tap, which is the double-tap guard.
+ */
+export function isBusy(s) {
+    return !!s && (s.state === 'checking' || s.state === 'deleting' || s.state === 'undoing');
+}
+
+export function cardStateAfter(prev, event) {
+    const s = prev || { state: 'ready' };
+    if (isBusy(s) && event.type !== 'server' && event.type !== 'refused' && event.type !== 'undone') return s;
+    switch (event.type) {
+        case 'tap':
+            return s.state === 'confirm' || s.state === 'deleted' ? s : { state: 'checking' };
+        case 'why':
+            return s.state === 'why' ? { state: 'ready' } : { state: 'why', reason: event.reason };
+        case 'server': {
+            if (s.state !== 'checking' && s.state !== 'deleting') return s;
+            const r = event.res || {};
+            if (r.deleted) return { state: 'deleted', undo: r.undo || null, undoable: !!r.undoable && !!r.undo };
+            if (r.needsConfirm) return { state: 'confirm', reason: r.reason || '', undoable: !!r.undoable };
+            return { state: 'failed', reason: 'Unexpected reply from the server.' };
+        }
+        case 'refused':
+            if (s.state === 'undoing') return Object.assign({}, s, { state: 'deleted', reason: event.reason });
+            return { state: 'failed', reason: event.reason };
+        case 'keep':
+            return s.state === 'confirm' ? { state: 'ready' } : s;
+        case 'confirm':
+            return s.state === 'confirm' ? { state: 'deleting' } : s;
+        case 'undo':
+            return s.state === 'deleted' && s.undoable ? Object.assign({}, s, { state: 'undoing', reason: '' }) : s;
+        case 'undone':
+            return s.state === 'undoing' ? { state: 'ready' } : s;
+        default:
+            return s;
+    }
+}
+
+/**
+ * The reply with deleted cards taken out, so typing a deleted branch's name
+ * into "+ New" makes it new again instead of picking a card that is gone.
+ * `states` maps cardKey -> state.
+ */
+export function withoutDeleted(data, states) {
+    if (!data || !Array.isArray(data.cards)) return data;
+    const gone = (c) => c.kind === 'local' && states[localKey(c.name)] &&
+        (states[localKey(c.name)].state === 'deleted' || states[localKey(c.name)].state === 'undoing');
+    return Object.assign({}, data, { cards: data.cards.filter((c) => !gone(c)) });
+}
+
+export function localKey(name) {
+    return 'local:' + name;
+}
+
+export function leftoverKey(folder) {
+    return 'leftover:' + folder;
+}
