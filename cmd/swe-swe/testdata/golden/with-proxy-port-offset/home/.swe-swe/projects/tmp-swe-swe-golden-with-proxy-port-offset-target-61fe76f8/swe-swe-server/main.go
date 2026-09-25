@@ -4583,6 +4583,16 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	if remoteHost != "" {
 		branchesResponse["remoteHost"] = remoteHost
 	}
+	// Branch cards (instant facts only). Additive: "branches" above stays for
+	// clients that don't know cards; a failure here just omits them.
+	if cards, err := branchCardsFor(repoPath); err != nil {
+		log.Printf("Branch cards failed for %s: %v", repoPath, err)
+	} else {
+		branchesResponse["cards"] = cards.Cards
+		branchesResponse["leftovers"] = cards.Leftovers
+		branchesResponse["defaultBranch"] = cards.DefaultBranch
+		branchesResponse["defaultGuessed"] = cards.DefaultGuessed
+	}
 	if warning != "" {
 		branchesResponse["warning"] = warning
 	}
