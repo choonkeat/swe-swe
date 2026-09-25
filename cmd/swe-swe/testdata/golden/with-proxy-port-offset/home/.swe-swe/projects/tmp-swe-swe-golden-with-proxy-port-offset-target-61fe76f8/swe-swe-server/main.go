@@ -2901,6 +2901,24 @@ func main() {
 			return
 		}
 
+		// Branch card writes: delete, undo, leftover folder, switch back
+		if r.URL.Path == "/api/repo/branch-delete" {
+			handleBranchDeleteAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/branch-undo" {
+			handleBranchUndoAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/leftover-remove" {
+			handleLeftoverRemoveAPI(w, r)
+			return
+		}
+		if r.URL.Path == "/api/repo/switch-default" {
+			handleSwitchDefaultAPI(w, r)
+			return
+		}
+
 		// Autocomplete API endpoint (for agent-chat slash command completion)
 		if strings.HasPrefix(r.URL.Path, "/api/autocomplete/") {
 			handleAutocompleteAPI(w, r)
