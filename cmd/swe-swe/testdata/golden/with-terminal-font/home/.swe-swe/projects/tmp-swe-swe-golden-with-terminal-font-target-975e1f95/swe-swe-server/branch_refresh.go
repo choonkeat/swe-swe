@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -78,7 +79,47 @@ func branchRefreshWarning(output string, err error, host string) string {
 // branchFetchTimeout; a cut-off fetch returns errBranchFetchTimeout so the
 // caller can word the warning accordingly. Fetch only -- this endpoint never
 // touches the working tree.
+//
+// Concurrent calls for the same repo share one `git fetch`: two fetches racing
+// on the same refs make the loser fail with "cannot lock ref ... is at X but
+// expected Y" whenever the remote has new commits, which the dialog showed as
+// "Unable to fetch latest changes". Two overlap easily -- aborting the
+// browser's request does not stop the server's fetch, so reopening the dialog
+// or re-picking the repo starts a second one.
 func runBranchFetch(repoPath, credHost, credUsername, credToken string) ([]byte, error) {
+	branchFetchMu.Lock()
+	if call, ok := branchFetchInFlight[repoPath]; ok {
+		branchFetchMu.Unlock()
+		<-call.done
+		return call.out, call.err
+	}
+	call := &branchFetchCall{done: make(chan struct{})}
+	branchFetchInFlight[repoPath] = call
+	branchFetchMu.Unlock()
+
+	call.out, call.err = runBranchFetchOnce(repoPath, credHost, credUsername, credToken)
+
+	branchFetchMu.Lock()
+	delete(branchFetchInFlight, repoPath)
+	branchFetchMu.Unlock()
+	close(call.done)
+	return call.out, call.err
+}
+
+// branchFetchCall is one in-flight runBranchFetch; out and err are set before
+// done is closed.
+type branchFetchCall struct {
+	done chan struct{}
+	out  []byte
+	err  error
+}
+
+var (
+	branchFetchMu       sync.Mutex
+	branchFetchInFlight = map[string]*branchFetchCall{}
+)
+
+func runBranchFetchOnce(repoPath, credHost, credUsername, credToken string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), branchFetchTimeout)
 	defer cancel()
 

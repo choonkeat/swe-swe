@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -231,4 +232,70 @@ func TestBranchRefreshTimeoutWarning(t *testing.T) {
 	if !strings.Contains(strings.ToLower(got), "timed out") {
 		t.Errorf("expected a timeout warning, got %q", got)
 	}
+}
+
+// Two refreshes of the same repo at once must both succeed. Unshared, the two
+// `git fetch`es race on the same refs and the loser fails with "cannot lock
+// ref" whenever the remote has new commits -- the dialog's "Unable to fetch
+// latest changes".
+func TestBranchRefreshConcurrentFetchesShareOne(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	clone := filepath.Join(root, "clone")
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	git(src, "init", "-q", "-b", "main")
+	git(src, "commit", "-q", "--allow-empty", "-m", "init")
+	for i := 0; i < 30; i++ {
+		git(src, "branch", "b"+strconv.Itoa(i))
+	}
+	git(root, "clone", "-q", src, clone)
+
+	for round := 0; round < 3; round++ {
+		// New commits on every branch, so each fetch has refs to update.
+		for i := 0; i < 30; i++ {
+			git(src, "update-ref", "refs/heads/b"+strconv.Itoa(i),
+				mustGitOutput(t, src, "commit-tree", "-m", "r"+strconv.Itoa(round), "-p", "b"+strconv.Itoa(i), "HEAD^{tree}"))
+		}
+
+		errs := make(chan error, 2)
+		for n := 0; n < 2; n++ {
+			go func() {
+				out, err := runBranchFetch(clone, "", "", "")
+				if err != nil {
+					err = fmt.Errorf("%v: %s", err, out)
+				}
+				errs <- err
+			}()
+		}
+		for n := 0; n < 2; n++ {
+			if err := <-errs; err != nil {
+				t.Fatalf("round %d: concurrent refresh failed: %v", round, err)
+			}
+		}
+	}
+}
+
+func mustGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
 }
