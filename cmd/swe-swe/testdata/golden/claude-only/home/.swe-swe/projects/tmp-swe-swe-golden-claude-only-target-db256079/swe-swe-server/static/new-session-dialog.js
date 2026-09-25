@@ -598,7 +598,8 @@
     // One card: a row holding the pick button, then optionally an [x] and a
     // line below (confirm, reason, Undo). `opts`: pick (null = not
     // pickable), tags, x ({key, reason} -- reason set = greyed), action
-    // (a button such as "Switch back to main"), stateKey.
+    // (a button such as "Switch back to main"), stateKey, unsaved (badge
+    // number, 0 for none).
     function makeBranchCard(label, opts) {
         opts = opts || {};
         var bc = window.branchCards;
@@ -639,6 +640,13 @@
         });
         if (st && st.state === 'checking') main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'checking...'));
         if (st && st.state === 'deleting') main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
+        if (opts.unsaved) {
+            // Round badge: saved changes that exist only on this branch.
+            var count = el('span', 'branch-card__count', String(opts.unsaved));
+            count.title = opts.unsaved + ' saved change(s) exist only on this branch';
+            count.setAttribute('aria-label', count.title);
+            main.appendChild(count);
+        }
         row.appendChild(main);
 
         if (opts.action) row.appendChild(opts.action);
@@ -820,7 +828,8 @@
                 var key = bc.localKey(c.name);
                 frag.appendChild(makeBranchCard(c.name, {
                     pick: { kind: 'local', name: c.name },
-                    tags: bc.cardTags(c, dialogState.branchChecks[c.name], data),
+                    tags: bc.cardTags(c, null, data),
+                    unsaved: bc.unsavedCount(c, dialogState.branchChecks[c.name]),
                     stateKey: key,
                     x: {
                         reason: c.deletable ? '' : (c.noDeleteReason || "This branch can't be deleted here."),
@@ -898,7 +907,7 @@
         }
     }
 
-    // Fill "N unsaved" tags once the dialog is up. Best effort: a failure
+    // Fill the unsaved-count badges once the dialog is up. Best effort: a failure
     // just leaves the cards without them.
     function checkAllBranches(repoPath) {
         fetch('/api/repo/branch-check-all', {

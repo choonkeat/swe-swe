@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { groupCards, cardTags, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
+import { groupCards, cardTags, unsavedCount, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
 
 // A /api/repo/branches reply shaped like screen A of the sketch.
 function reply(overrides) {
@@ -48,21 +48,22 @@ test('groupCards: no cards in the reply (older server) returns null', () => {
 test('cardTags: one tag per decision-table row', () => {
     const d = reply();
     assert.deepStrictEqual(cardTags({ kind: 'local', name: 'plain', deletable: true }, null, d), []);
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', deletable: true }, null, d), ['has folder']);
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', inUse: true }, null, d), ['has folder', 'in use']);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', deletable: true }, null, d), []);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', inUse: true }, null, d), ['in use']);
     assert.deepStrictEqual(cardTags({ kind: 'local', name: 'origin/x', oddName: true, deletable: true }, null, d), ['odd name']);
     assert.deepStrictEqual(cardTags({ kind: 'local', name: 'main', default: true }, null, d), ['default']);
     assert.deepStrictEqual(cardTags({ kind: 'online', name: 'foo', remote: 'origin' }, null, d), ['online only']);
 });
 
-test('cardTags: "N unsaved" fills in from the check', () => {
-    const d = reply();
+test('unsavedCount: the badge number fills in from the check', () => {
     const c = { kind: 'local', name: 'x', deletable: true };
-    assert.deepStrictEqual(cardTags(c, { unsavedCommits: 3, canTell: true }, d), ['3 unsaved']);
-    assert.deepStrictEqual(cardTags(c, { unsavedCommits: 0, canTell: true }, d), []);
+    assert.strictEqual(unsavedCount(c, { unsavedCommits: 3, canTell: true }), 3);
+    assert.strictEqual(unsavedCount(c, { unsavedCommits: 0, canTell: true }), 0);
+    assert.strictEqual(unsavedCount(c, { unsavedCommits: 3, canTell: false }), 0);
+    assert.strictEqual(unsavedCount(c, null), 0);
     // Only cards with a working [x]: the default branch never shows it.
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'main', default: true, deletable: false },
-        { unsavedCommits: 1, canTell: true }, d), ['default']);
+    assert.strictEqual(unsavedCount({ kind: 'local', name: 'main', default: true, deletable: false },
+        { unsavedCommits: 1, canTell: true }), 0);
 });
 
 test('cardTags: workspace shows its branch, and "not main" when off the default', () => {

@@ -457,7 +457,6 @@ test.describe('new-session dialog', () => {
       'Online only: origin (1)',
       'Online only: upstream (1)',
     ]);
-    await expect(branchCard(page, 'feat-b')).toContainText('has folder');
     await expect(branchCard(page, 'origin/typo')).toContainText('odd name');
     await expect(page.locator('#branch-cards-sections button.branch-card:disabled'))
       .toContainText(`${CARDS_WORKTREES}/stray`);
@@ -577,7 +576,7 @@ test.describe('new-session dialog', () => {
   test('[x] on a branch with a folder removes the folder and the branch', async ({ page }) => {
     inCards(`git worktree add -q -b del-folder ${CARDS_WORKTREES}/del-folder`);
     await openCardsRepo(page);
-    await expect(branchCard(page, 'del-folder')).toContainText('has folder');
+    await expect(branchCard(page, 'del-folder')).toBeVisible();
     await cardRow(page, 'del-folder').locator('.branch-card__x').click();
     await expect(page.locator('.branch-card-row--deleted', { hasText: 'Deleted del-folder' })).toBeVisible();
     expect(cardsPathExists(`${CARDS_WORKTREES}/del-folder`)).toBe(false);
@@ -588,7 +587,7 @@ test.describe('new-session dialog', () => {
     inCards('git checkout -q -b del-lose && git commit -q --allow-empty -m only-here && git checkout -q main');
     try {
       await openCardsRepo(page);
-      await expect(branchCard(page, 'del-lose')).toContainText('1 unsaved');
+      await expect(branchCard(page, 'del-lose').locator('.branch-card__count')).toHaveText('1');
       const row = cardRow(page, 'del-lose');
       await row.locator('.branch-card__x').click();
       const confirm = row.locator('.branch-card__line--confirm');
