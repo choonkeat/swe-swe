@@ -56,7 +56,10 @@ export function cardTags(card, check, data) {
     if (card.folder) tags.push('has folder');
     if (card.inUse) tags.push('in use');
     if (card.oddName) tags.push('odd name');
-    if (check && check.canTell && check.unsavedCommits > 0) tags.push(check.unsavedCommits + ' unsaved');
+    // "N unsaved" warns about what an [x] would lose, so only cards with a
+    // working [x] show it (a repo with no online copy would otherwise tag
+    // its default branch, which can never be deleted here).
+    if (card.deletable && check && check.canTell && check.unsavedCommits > 0) tags.push(check.unsavedCommits + ' unsaved');
     return tags;
 }
 

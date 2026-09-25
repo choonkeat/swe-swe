@@ -60,6 +60,9 @@ test('cardTags: "N unsaved" fills in from the check', () => {
     const c = { kind: 'local', name: 'x', deletable: true };
     assert.deepStrictEqual(cardTags(c, { unsavedCommits: 3, canTell: true }, d), ['3 unsaved']);
     assert.deepStrictEqual(cardTags(c, { unsavedCommits: 0, canTell: true }, d), []);
+    // Only cards with a working [x]: the default branch never shows it.
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'main', default: true, deletable: false },
+        { unsavedCommits: 1, canTell: true }, d), ['default']);
 });
 
 test('cardTags: workspace shows its branch, and "not main" when off the default', () => {
