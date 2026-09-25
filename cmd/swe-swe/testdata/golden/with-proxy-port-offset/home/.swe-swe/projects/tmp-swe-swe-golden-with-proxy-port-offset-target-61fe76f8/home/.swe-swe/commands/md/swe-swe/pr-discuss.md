@@ -15,12 +15,15 @@ last-fetched one.
 
 ## Auth
 
-`prctx` reads `GH_TOKEN` (GitHub) / `GITLAB_TOKEN` (GitLab) from the env. In a
-swe-swe session these are exported automatically from the token you saved in
-Settings > Credentials > Git HTTPS for github.com / gitlab.com. If a call fails
-with "GITHUB_TOKEN is not set" (or the GitLab equivalent), tell the user to save
-the host token in that panel and reopen the session (env is injected at session
-start).
+`prctx` reads `GITHUB_TOKEN` / `GH_TOKEN` (GitHub) or `GITLAB_TOKEN` (GitLab)
+from the env, and falls back to `SWE_SWE_GITHUB_HTTPS_TOKEN` /
+`SWE_SWE_GITLAB_HTTPS_TOKEN`: swe-swe's copy of the token saved in Settings >
+Credentials > Git HTTPS for github.com / gitlab.com / gitlab.* (exported at
+session start). That token may be scoped for git only; the API needs more
+(GitLab: `api`, or `read_api` to only read). If a call fails with "is not set"
+or is refused, tell the user to set `GITHUB_TOKEN` / `GITLAB_TOKEN` to an
+API-scoped token in Settings > Environment variables and reopen the session
+(env is injected at session start).
 
 If the token lives under a different env var name -- common when a self-hosted
 instance has its own PAT alongside a github.com one -- pass the name instead of
@@ -31,9 +34,8 @@ prctx --token-env GITLAB_DEDICATED_TOKEN fetch <mr-url>
 ```
 
 `--token-env NAME` is global: it may appear before or after the subcommand, and
-takes precedence over `GITHUB_TOKEN`/`GH_TOKEN` and `GITLAB_TOKEN`. If NAME is
-empty prctx falls back to those defaults, and the "is not set" error names every
-var it consulted.
+takes precedence over all of the defaults above. If NAME is empty prctx falls
+back to those defaults, and the "is not set" error names every var it consulted.
 
 ## Self-hosted / custom domains
 

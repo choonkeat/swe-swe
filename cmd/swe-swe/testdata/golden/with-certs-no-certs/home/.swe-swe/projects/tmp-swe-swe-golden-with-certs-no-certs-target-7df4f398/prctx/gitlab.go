@@ -27,7 +27,7 @@ func (gitlabProvider) apiBase(host string) string {
 }
 
 func (gitlabProvider) token() (string, error) {
-	t, tried := lookupToken("GITLAB_TOKEN")
+	t, tried := lookupToken("GITLAB_TOKEN", "SWE_SWE_GITLAB_HTTPS_TOKEN")
 	if t == "" {
 		return "", fmt.Errorf("%s is not set", tried)
 	}

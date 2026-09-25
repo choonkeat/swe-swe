@@ -10,11 +10,13 @@ git `origin` remote). If empty, ask which PR/MR, or use the last-fetched one.
 
 ## Auth
 
-`prctx` reads `GH_TOKEN` (GitHub) / `GITLAB_TOKEN` (GitLab) from the env. In a
-swe-swe session these are exported automatically from the token saved in
-Settings > Credentials > Git HTTPS for github.com / gitlab.com. If a call fails
-with a "token is not set" error, tell the user to save the host token in that
-panel and reopen the session (env is injected at session start).
+`prctx` reads `GITHUB_TOKEN` / `GH_TOKEN` (GitHub) or `GITLAB_TOKEN` (GitLab)
+from the env, and falls back to `SWE_SWE_GITHUB_HTTPS_TOKEN` /
+`SWE_SWE_GITLAB_HTTPS_TOKEN`: swe-swe's copy of the token saved in Settings >
+Credentials > Git HTTPS (exported at session start). That token may be scoped
+for git only. If a call fails with "is not set" or is refused, tell the user to
+set `GITHUB_TOKEN` / `GITLAB_TOKEN` to an API-scoped token in Settings >
+Environment variables and reopen the session.
 
 ## Workflow
 

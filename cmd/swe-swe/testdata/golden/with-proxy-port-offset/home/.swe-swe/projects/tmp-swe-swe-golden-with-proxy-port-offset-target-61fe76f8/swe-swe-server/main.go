@@ -822,7 +822,7 @@ type SessionEnvParams struct {
 func buildSessionEnv(p SessionEnvParams) []string {
 	// SWE_TUNNEL_IDENTITY_KEY is the server's own secret (tunnel_runtime.go)
 	// and must never reach an agent, whichever way it arrived.
-	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN", "SWE_TUNNEL_IDENTITY_KEY")
+	env := filterEnv(os.Environ(), "TERM", "PORT", "BROWSER", "PATH", "COLORFGBG", "AGENT_CHAT_PORT", "AGENT_CHAT_DISABLE", "PUBLIC_PORT", "BROWSER_CDP_PORT", "BROWSER_VNC_PORT", "GH_TOKEN", "GITLAB_TOKEN", "SWE_SWE_GITHUB_HTTPS_TOKEN", "SWE_SWE_GITLAB_HTTPS_TOKEN", "SWE_TUNNEL_IDENTITY_KEY")
 	env = append(env,
 		"TERM=xterm-256color",
 		fmt.Sprintf("PORT=%d", p.PreviewPort),
@@ -865,15 +865,16 @@ func buildSessionEnv(p SessionEnvParams) []string {
 	} else {
 		env = append(env, "COLORFGBG=15;0") // light-on-dark
 	}
-	// Surface the session's stored per-host HTTPS tokens under the conventional
-	// CLI env var names (github.com -> GH_TOKEN, gitlab.com/gitlab.* ->
-	// GITLAB_TOKEN) so tools like prctx pick them up without re-entry. Env is
-	// materialized at spawn, so a token saved mid-session reaches the NEXT
-	// session (or the next PTY restart), not the running process. Placed before
-	// the .swe-swe/env load so a user-defined GH_TOKEN/GITLAB_TOKEN wins.
+	// Surface the session's stored per-host HTTPS tokens under swe-swe-only
+	// env var names (github.com -> SWE_SWE_GITHUB_HTTPS_TOKEN, gitlab.com/
+	// gitlab.* -> SWE_SWE_GITLAB_HTTPS_TOKEN) so prctx can fall back to them
+	// without re-entry. Not GH_TOKEN/GITLAB_TOKEN: third-party CLIs read those,
+	// and the user must stay free to set their own. Env is materialized at
+	// spawn, so a token saved mid-session reaches the NEXT session (or the next
+	// PTY restart), not the running process.
 	env = append(env, sessionTokenEnv(p.SID)...)
 	// Repo env vars saved via the Settings panel (in-memory, per session).
-	// Reserved keys (PATH, GH_TOKEN, GIT_CONFIG_*, ports...) are dropped so
+	// Reserved keys (PATH, SWE_SWE_*_TOKEN, GIT_CONFIG_*, ports...) dropped so
 	// the textarea can't break the credential broker or proxies. Placed
 	// before the .swe-swe/env file load so the checked-in file wins any
 	// collision. $VAR expands against the session env built above.

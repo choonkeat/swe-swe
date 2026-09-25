@@ -161,14 +161,14 @@ test.describe('per-repo environment variables UI', () => {
     await openSettings(page);
     await switchSettingsTab(page, 'env');
 
-    await page.locator('#settings-env-vars').fill('PATH=/evil\nGH_TOKEN=stolen\nAPP_ENV=prod\n');
+    await page.locator('#settings-env-vars').fill('PATH=/evil\nSWE_SWE_GITHUB_HTTPS_TOKEN=stolen\nAPP_ENV=prod\n');
     await page.click('#settings-env-save');
     await waitForUi(page, () => window.terminalUI && window.terminalUI._envStored === true);
 
     const dropped = page.locator('#settings-env-dropped');
     await expect(dropped).toBeVisible();
     await expect(dropped).toContainText('PATH');
-    await expect(dropped).toContainText('GH_TOKEN');
+    await expect(dropped).toContainText('SWE_SWE_GITHUB_HTTPS_TOKEN');
     // The kept var counts toward the badge; the reserved ones do not.
     await expect(page.locator('#settings-nav-badge-env')).toHaveText('1');
   });

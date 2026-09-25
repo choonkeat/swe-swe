@@ -130,16 +130,19 @@ Notes for agents:
 
 Global flags:
   --token-env NAME   read the token from env var NAME instead of the provider
-                     default (GITHUB_TOKEN/GH_TOKEN, GITLAB_TOKEN). May appear
-                     before or after the command.
+                     defaults (see below). May appear before or after the
+                     command.
 
 Env & token permissions:
-  GITHUB_TOKEN (or GH_TOKEN) for GitHub:
+  GITHUB_TOKEN (or GH_TOKEN, then SWE_SWE_GITHUB_HTTPS_TOKEN) for GitHub:
     - fine-grained PAT: "Pull requests: Read and write" (+ "Contents: Read").
       Read-only (fetch/show) works with just "Read".
     - classic PAT: "repo" scope (or "public_repo" for public repos only).
-  GITLAB_TOKEN for GitLab:
+  GITLAB_TOKEN (then SWE_SWE_GITLAB_HTTPS_TOKEN) for GitLab:
     - "api" scope (read + write). "read_api" is enough for fetch/show only.
+  SWE_SWE_*_HTTPS_TOKEN is swe-swe's copy of the git HTTPS token saved in
+  Settings. A git-only token (e.g. GitLab read/write_repository) is refused
+  by the API; set GITHUB_TOKEN / GITLAB_TOKEN to a token with the scopes above.
   Staging (reply/comment/resolve/drop) is local and needs no token;
   only flush/approve/reject write to the server.
 
@@ -211,7 +214,8 @@ func hostListed(list, host string) bool {
 
 // tokenEnvOverride names the env var prctx reads the API token from, set by the
 // global --token-env flag. It takes precedence over the provider defaults
-// (GITHUB_TOKEN/GH_TOKEN, GITLAB_TOKEN).
+// (GITHUB_TOKEN/GH_TOKEN/SWE_SWE_GITHUB_HTTPS_TOKEN,
+// GITLAB_TOKEN/SWE_SWE_GITLAB_HTTPS_TOKEN).
 var tokenEnvOverride string
 
 // extractTokenEnv pulls the global "--token-env NAME" / "--token-env=NAME" flag

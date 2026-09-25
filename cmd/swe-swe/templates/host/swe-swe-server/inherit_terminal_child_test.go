@@ -25,7 +25,7 @@ import (
 //	main.go ~5215: inheritSessionCredentials(parent, ...) // AFTER, rewrites gitconfig
 //
 // That ordering asymmetry is load-bearing and is asserted below (step 6): repo
-// env vars are baked into the frozen process env, but the GH_TOKEN/GITLAB_TOKEN
+// env vars are baked into the frozen process env, but the SWE_SWE_*_HTTPS_TOKEN
 // convenience vars are not -- git-over-HTTPS still works because the credential
 // helper resolves the child SID at git-run time, not at spawn.
 func TestTerminalChildInheritsParentSettings(t *testing.T) {
@@ -108,17 +108,17 @@ func TestTerminalChildInheritsParentSettings(t *testing.T) {
 	}
 
 	// 6) Ordering caveat, pinned so a future refactor can't silently regress it:
-	//    credentials inherit AFTER buildSessionEnv, so GH_TOKEN is NOT baked into
-	//    the frozen spawn-time env. git-over-HTTPS still works (credential helper
-	//    resolves at runtime), but a bare `gh`/`prctx` reading GH_TOKEN would not
+	//    credentials inherit AFTER buildSessionEnv, so SWE_SWE_GITHUB_HTTPS_TOKEN is NOT baked
+	//    into the frozen spawn-time env. git-over-HTTPS still works (credential helper
+	//    resolves at runtime), but `prctx` falling back to that var would not
 	//    see it at spawn. The token IS mappable once creds are inherited -- a
 	//    rebuilt env carries it -- proving the only gap is spawn-time freezing.
-	if _, ok := envValue(childEnv, "GH_TOKEN"); ok {
-		t.Errorf("GH_TOKEN unexpectedly baked into the spawn-time env; the inherit ordering changed -- revisit this caveat and whether credentials should inherit before buildSessionEnv")
+	if _, ok := envValue(childEnv, "SWE_SWE_GITHUB_HTTPS_TOKEN"); ok {
+		t.Errorf("SWE_SWE_GITHUB_HTTPS_TOKEN unexpectedly baked into the spawn-time env; the inherit ordering changed -- revisit this caveat and whether credentials should inherit before buildSessionEnv")
 	}
 	rebuilt := buildSessionEnv(SessionEnvParams{SID: child, WorkDir: workDir, SessionMode: "terminal"})
-	if v, ok := envValue(rebuilt, "GH_TOKEN"); !ok || v != "ghp_parent" {
-		t.Errorf("GH_TOKEN after inheritance = %q (present=%v), want ghp_parent mapped from the inherited credential", v, ok)
+	if v, ok := envValue(rebuilt, "SWE_SWE_GITHUB_HTTPS_TOKEN"); !ok || v != "ghp_parent" {
+		t.Errorf("SWE_SWE_GITHUB_HTTPS_TOKEN after inheritance = %q (present=%v), want ghp_parent mapped from the inherited credential", v, ok)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestTerminalChildNoParentInheritsNothing(t *testing.T) {
 	if _, ok := getCredential(child, "github.com"); ok {
 		t.Error("session with no parent inherited a credential")
 	}
-	if v, ok := envValue(env, "GH_TOKEN"); ok {
-		t.Errorf("session with no parent has GH_TOKEN = %q, want none", v)
+	if v, ok := envValue(env, "SWE_SWE_GITHUB_HTTPS_TOKEN"); ok {
+		t.Errorf("session with no parent has SWE_SWE_GITHUB_HTTPS_TOKEN = %q, want none", v)
 	}
 }

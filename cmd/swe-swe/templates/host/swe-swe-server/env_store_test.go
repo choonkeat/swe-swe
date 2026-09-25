@@ -37,17 +37,22 @@ func TestSessionEnvVars_ExpandsAndKeeps(t *testing.T) {
 func TestSessionEnvVars_DropsReservedKeys(t *testing.T) {
 	sid := "sid-reserved"
 	defer clearSessionEnv(sid)
-	setSessionEnv(sid, "PATH=/evil\nGH_TOKEN=stolen\nGIT_CONFIG_COUNT=99\nAPP_ENV=prod\nWHERE=$PATH\n")
+	setSessionEnv(sid, "PATH=/evil\nSWE_SWE_GITHUB_HTTPS_TOKEN=stolen\nGH_TOKEN=mine\nGIT_CONFIG_COUNT=99\nAPP_ENV=prod\nWHERE=$PATH\n")
 
 	kept, dropped := sessionEnvVars(sid, envLookup([]string{"PATH=/real/session/path"}))
 
-	for _, k := range []string{"PATH", "GH_TOKEN", "GIT_CONFIG_COUNT"} {
+	for _, k := range []string{"PATH", "SWE_SWE_GITHUB_HTTPS_TOKEN", "GIT_CONFIG_COUNT"} {
 		if _, ok := envValue(kept, k); ok {
 			t.Errorf("reserved key %s must not appear in kept env", k)
 		}
 		if !strSliceHas(dropped, k) {
 			t.Errorf("reserved key %s must be reported in dropped, got %v", k, dropped)
 		}
+	}
+	// GH_TOKEN/GITLAB_TOKEN are the user's to set (swe-swe's own copy lives
+	// under SWE_SWE_*_HTTPS_TOKEN), so they must pass through.
+	if v, ok := envValue(kept, "GH_TOKEN"); !ok || v != "mine" {
+		t.Errorf("user GH_TOKEN = %q (present=%v), want mine", v, ok)
 	}
 	if v, ok := envValue(kept, "APP_ENV"); !ok || v != "prod" {
 		t.Errorf("non-reserved APP_ENV = %q (present=%v), want prod", v, ok)

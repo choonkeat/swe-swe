@@ -158,12 +158,17 @@ func inheritSessionCredentials(parentUUID, childUUID, childWorkDir string) {
 	log.Printf("Session %s inherited git credentials/signing from parent %s", childUUID, parentUUID)
 }
 
-// sessionTokenEnv maps a session's stored per-host HTTPS tokens onto the
-// conventional CLI env var names so tools like prctx can authenticate without
-// the user re-entering anything:
+// sessionTokenEnv exposes a session's stored per-host HTTPS tokens under
+// swe-swe-only env var names so prctx can fall back to them without the user
+// re-entering anything:
 //
-//	github.com            -> GH_TOKEN
-//	gitlab.com, gitlab.*  -> GITLAB_TOKEN
+//	github.com            -> SWE_SWE_GITHUB_HTTPS_TOKEN
+//	gitlab.com, gitlab.*  -> SWE_SWE_GITLAB_HTTPS_TOKEN
+//
+// The names are deliberately NOT the conventional GH_TOKEN/GITLAB_TOKEN: those
+// are read by third-party CLIs (gh, glab, ...) that would silently pick up a
+// token scoped for git only, and claiming them would stop the user from setting
+// their own. prctx reads GITHUB_TOKEN/GH_TOKEN/GITLAB_TOKEN first, then these.
 //
 // Only hosts with a non-empty token contribute. When multiple hosts map to the
 // same env var (e.g. gitlab.com plus a self-hosted gitlab.*), the last one
@@ -181,9 +186,9 @@ func sessionTokenEnv(sid string) []string {
 		}
 		switch {
 		case host == "github.com":
-			out = append(out, "GH_TOKEN="+c.Token)
+			out = append(out, "SWE_SWE_GITHUB_HTTPS_TOKEN="+c.Token)
 		case host == "gitlab.com" || strings.HasPrefix(host, "gitlab."):
-			out = append(out, "GITLAB_TOKEN="+c.Token)
+			out = append(out, "SWE_SWE_GITLAB_HTTPS_TOKEN="+c.Token)
 		}
 	}
 	return out

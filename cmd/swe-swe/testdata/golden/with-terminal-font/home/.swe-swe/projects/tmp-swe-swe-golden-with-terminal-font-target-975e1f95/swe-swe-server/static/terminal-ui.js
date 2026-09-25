@@ -908,7 +908,7 @@ class TerminalUI extends HTMLElement {
                                 <section class="settings-panel__pane" data-pane="git" role="tabpanel" hidden>
                                     <h3 class="settings-panel__pane-title">Git HTTPS credentials</h3>
                                     <p class="settings-panel__pane-sub">In-memory on the server only. Never written to disk; cleared when this session ends.</p>
-                                    <p class="settings-panel__pane-sub">Tokens for github.com and gitlab.com are also exported as GH_TOKEN / GITLAB_TOKEN to newly opened sessions (for CLI tools like prctx); the current session is unaffected.</p>
+                                    <p class="settings-panel__pane-sub">Tokens for github.com and gitlab.com are also exported as SWE_SWE_GITHUB_HTTPS_TOKEN / SWE_SWE_GITLAB_HTTPS_TOKEN to newly opened sessions; prctx falls back to them when GITHUB_TOKEN / GH_TOKEN / GITLAB_TOKEN is unset. The current session is unaffected.</p>
                                     <div class="settings-panel__field-row">
                                         <label class="settings-panel__label" for="settings-cred-host">Host</label>
                                         <input type="text" id="settings-cred-host" class="settings-panel__input" placeholder="github.com">
@@ -994,7 +994,7 @@ class TerminalUI extends HTMLElement {
                                         <button class="settings-panel__btn settings-panel__btn--secondary" id="settings-env-forget" type="button" hidden>Forget on this device</button>
                                         <button class="settings-panel__btn settings-panel__btn--primary" id="settings-env-save" type="button">Save env vars</button>
                                     </div>
-                                    <p class="settings-panel__hint settings-panel__hint--inline">Parsed like <code>.swe-swe/env</code>, but that checked-in file wins on collisions. Reserved keys (PATH, GH_TOKEN, GIT_CONFIG_*, ports&hellip;) are ignored so the credential broker keeps working.</p>
+                                    <p class="settings-panel__hint settings-panel__hint--inline">Parsed like <code>.swe-swe/env</code>, but that checked-in file wins on collisions. Reserved keys (PATH, SWE_SWE_*_HTTPS_TOKEN, GIT_CONFIG_*, ports&hellip;) are ignored so the credential broker keeps working.</p>
                                 </section>
 
                                 <!-- SHARE SESSION -->
@@ -3239,7 +3239,7 @@ class TerminalUI extends HTMLElement {
             'PATH', 'HOME', 'TERM', 'PORT', 'BROWSER',
             'AGENT_CHAT_PORT', 'AGENT_CHAT_DISABLE', 'PUBLIC_PORT',
             'BROWSER_CDP_PORT', 'BROWSER_VNC_PORT', 'COLORFGBG',
-            'GH_TOKEN', 'GITLAB_TOKEN',
+            'SWE_SWE_GITHUB_HTTPS_TOKEN', 'SWE_SWE_GITLAB_HTTPS_TOKEN',
             'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL',
         ]);
     }

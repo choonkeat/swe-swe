@@ -164,26 +164,40 @@ func TestLookupTokenOverride(t *testing.T) {
 		t.Errorf("gitlab token = %q, want default-tok", got)
 	}
 
-	// Nothing set anywhere: the error lists every name tried, override first.
+	// GITLAB_TOKEN unset: fall back to swe-swe's copy of the HTTPS token.
 	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("SWE_SWE_GITLAB_HTTPS_TOKEN", "https-tok")
+	if got, _ := (gitlabProvider{}).token(); got != "https-tok" {
+		t.Errorf("gitlab token = %q, want https-tok", got)
+	}
+
+	// Nothing set anywhere: the error lists every name tried, override first.
+	t.Setenv("SWE_SWE_GITLAB_HTTPS_TOKEN", "")
 	_, err := (gitlabProvider{}).token()
-	if err == nil || err.Error() != "ABSENT_TOK / GITLAB_TOKEN is not set" {
-		t.Errorf("err = %v, want \"ABSENT_TOK / GITLAB_TOKEN is not set\"", err)
+	if err == nil || err.Error() != "ABSENT_TOK / GITLAB_TOKEN / SWE_SWE_GITLAB_HTTPS_TOKEN is not set" {
+		t.Errorf("err = %v, want \"ABSENT_TOK / GITLAB_TOKEN / SWE_SWE_GITLAB_HTTPS_TOKEN is not set\"", err)
 	}
 }
 
-// Without an override, the GitHub error still names both default vars.
+// Without an override, GitHub reads GITHUB_TOKEN, GH_TOKEN, then swe-swe's
+// HTTPS-token copy, and the error names all three.
 func TestLookupTokenDefaults(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("SWE_SWE_GITHUB_HTTPS_TOKEN", "https-tok")
 	t.Setenv("GH_TOKEN", "gh-tok")
 	tokenEnvOverride = ""
 	if got, _ := (githubProvider{}).token(); got != "gh-tok" {
 		t.Errorf("github token = %q, want gh-tok", got)
 	}
+	// GH_TOKEN unset: fall back to swe-swe's copy of the HTTPS token.
 	t.Setenv("GH_TOKEN", "")
+	if got, _ := (githubProvider{}).token(); got != "https-tok" {
+		t.Errorf("github token = %q, want https-tok", got)
+	}
+	t.Setenv("SWE_SWE_GITHUB_HTTPS_TOKEN", "")
 	_, err := (githubProvider{}).token()
-	if err == nil || err.Error() != "GITHUB_TOKEN / GH_TOKEN is not set" {
-		t.Errorf("err = %v, want \"GITHUB_TOKEN / GH_TOKEN is not set\"", err)
+	if err == nil || err.Error() != "GITHUB_TOKEN / GH_TOKEN / SWE_SWE_GITHUB_HTTPS_TOKEN is not set" {
+		t.Errorf("err = %v, want \"GITHUB_TOKEN / GH_TOKEN / SWE_SWE_GITHUB_HTTPS_TOKEN is not set\"", err)
 	}
 }
 
