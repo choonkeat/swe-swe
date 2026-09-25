@@ -695,7 +695,6 @@
             main.disabled = true;
         }
         if (bc.isBusy(st)) main.disabled = true;
-        main.appendChild(el('span', 'branch-card__check', picked ? '\u2713' : ''));
         main.appendChild(el('span', 'branch-card__name', label));
         (opts.tags || []).forEach(function(t) {
             main.appendChild(el('span', 'branch-card__tag', t));

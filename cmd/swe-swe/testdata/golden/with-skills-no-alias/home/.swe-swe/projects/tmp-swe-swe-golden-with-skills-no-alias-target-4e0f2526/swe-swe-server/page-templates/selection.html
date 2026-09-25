@@ -1219,6 +1219,8 @@
             border-color: var(--accent-primary);
             outline: none;
         }
+        /* Picked = accent border + tint (no tick: it cost a column on
+           every card and wrapped long branch names sooner). */
         .branch-card--picked {
             border-color: var(--accent-primary);
             background: var(--accent-10);
@@ -1226,10 +1228,6 @@
         .branch-card:disabled {
             cursor: default;
             opacity: 0.7;
-        }
-        .branch-card__check {
-            width: 1em;
-            color: var(--accent-primary);
         }
         .branch-card__name {
             flex: 1 1 auto;
