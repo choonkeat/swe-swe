@@ -889,7 +889,10 @@
         (opts.tags || []).forEach(function(t) {
             main.appendChild(el('span', 'branch-card__tag', t));
         });
-        if (st && (st.state === 'checking' || st.state === 'deleting')) {
+        // A leftover folder has no open line, so its busy state is a tag. A
+        // branch card stays open instead (see deletingLine), so the cards
+        // below don't jump.
+        if (!opts.del && st && (st.state === 'checking' || st.state === 'deleting')) {
             main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
         }
         row.appendChild(main);
@@ -925,11 +928,27 @@
         } else if (st && (st.state === 'why' || st.state === 'failed')) {
             row.appendChild(el('div', 'branch-card__line' + (st.state === 'failed' ? ' branch-card__line--error' : ''), st.reason));
         }
-        // A failed delete keeps its error above a fresh Delete to retry.
-        if (opts.del && picked && !bc.isBusy(st) && !(st && st.state === 'confirm')) {
+        if (opts.del && bc.isBusy(st)) {
+            // Stays open until the delete finishes, even once another card
+            // is picked.
+            row.appendChild(deletingLine(label));
+        } else if (opts.del && picked && !(st && st.state === 'confirm')) {
+            // A failed delete keeps its error above a fresh Delete to retry.
             row.appendChild(pickCheckLine(label, opts.del));
         }
         return row;
+    }
+
+    // A branch card while its delete runs: same size as the open card, with
+    // the button greyed so it can't be pressed twice.
+    function deletingLine(label) {
+        var line = el('div', 'branch-card__line');
+        line.appendChild(el('span', 'branch-card__line-text', 'Deleting folder...'));
+        var b = smallButton('Deleting...', 'branch-card__btn--danger', function() {});
+        b.disabled = true;
+        b.setAttribute('aria-label', 'Deleting ' + label);
+        line.appendChild(b);
+        return line;
     }
 
     // The picked branch's line: why it can't be deleted, or what deleting
@@ -1090,7 +1109,12 @@
             }));
         }
         var tip = bc.cleanupTip(g);
-        if (tip) branchWorkspaceSlot.appendChild(el('div', 'branch-cards__tip', tip));
+        if (tip) {
+            var tipEl = el('div', 'branch-cards__tip');
+            tipEl.appendChild(el('div', 'branch-cards__tip-text', tip.text));
+            tipEl.appendChild(el('div', 'branch-cards__tip-prompt', tip.prompt));
+            branchWorkspaceSlot.appendChild(tipEl);
+        }
         branchNewCard.classList.toggle('branch-card--picked',
             !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
 

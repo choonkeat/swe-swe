@@ -63,13 +63,17 @@ export const CLEANUP_TIP_MIN = 10;
 /**
  * The tip under the workspace card when there is a lot to clean up: deleting
  * one card at a time is slow, and an agent can weigh them all at once.
- * `g` is groupCards() output; '' when there are fewer than CLEANUP_TIP_MIN.
+ * `g` is groupCards() output. Returns {text, prompt} -- the prompt is shown
+ * on its own, highlighted, so it stands out -- or null when there are fewer
+ * than CLEANUP_TIP_MIN.
  */
 export function cleanupTip(g) {
     const n = g ? g.local.length + g.leftovers.length : 0;
-    if (n < CLEANUP_TIP_MIN) return '';
-    return n + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent: ' +
-        '"Let\'s discuss what worktrees & branches we can clean up".';
+    if (n < CLEANUP_TIP_MIN) return null;
+    return {
+        text: n + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent:',
+        prompt: 'Let\'s discuss what worktrees & branches we can clean up',
+    };
 }
 
 /**
