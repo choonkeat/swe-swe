@@ -377,13 +377,13 @@ test.describe('new-session dialog', () => {
       await openCardsRepo(page);
       const tip = page.locator('#branch-card-workspace-slot .branch-cards__tip');
       await expect(tip).toContainText('10 branches and folders here.');
-      await expect(tip.locator('.branch-cards__tip-prompt-text')).toHaveText("Let's discuss what worktrees & branches we can clean up");
+      await expect(tip.locator('.branch-cards__tip-prompt-text')).toHaveText("Discuss: which worktrees & branches can we clean up?");
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
       const copy = tip.getByRole('button', { name: 'Copy the clean-up prompt' });
       await copy.click();
       await expect(copy).toHaveText('Copied');
       const copied = await page.evaluate(() => navigator.clipboard ? navigator.clipboard.readText().catch(() => null) : null);
-      if (copied !== null) expect(copied).toBe("Let's discuss what worktrees & branches we can clean up");
+      if (copied !== null) expect(copied).toBe("Discuss: which worktrees & branches can we clean up?");
     } finally {
       inCards('for i in 1 2 3 4 5 6; do git branch -D tip-$i; done 2>/dev/null; true');
     }

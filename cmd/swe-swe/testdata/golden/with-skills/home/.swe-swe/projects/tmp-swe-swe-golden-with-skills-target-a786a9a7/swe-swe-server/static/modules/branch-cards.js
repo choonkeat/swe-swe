@@ -72,7 +72,7 @@ export function cleanupTip(g) {
     if (n < CLEANUP_TIP_MIN) return null;
     return {
         text: n + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent:',
-        prompt: 'Let\'s discuss what worktrees & branches we can clean up',
+        prompt: 'Discuss: which worktrees & branches can we clean up?',
     };
 }
 

@@ -72,7 +72,7 @@ test('cleanupTip: shows once branches plus leftover folders reach the minimum', 
     assert.strictEqual(cleanupTip(null), null);
     assert.deepStrictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 1)), {
         text: CLEANUP_TIP_MIN + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent:',
-        prompt: 'Let\'s discuss what worktrees & branches we can clean up',
+        prompt: 'Discuss: which worktrees & branches can we clean up?',
     });
 });
 
