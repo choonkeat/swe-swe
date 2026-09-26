@@ -39,11 +39,8 @@ export function groupCards(data) {
     return g;
 }
 
-/**
- * The small tags a card shows. `check` is this branch's entry from
- * /api/repo/branch-check-all (or null until it arrives).
- */
-export function cardTags(card, check, data) {
+/** The small tags a card shows. */
+export function cardTags(card, data) {
     const tags = [];
     const def = (data && data.defaultBranch) || 'main';
     if (card.kind === 'workspace') {
@@ -58,15 +55,65 @@ export function cardTags(card, check, data) {
     return tags;
 }
 
+/** How many local branches and leftover folders make the cleanup tip show. */
+export const CLEANUP_TIP_MIN = 10;
+
 /**
- * The number in a card's round badge: saved changes that exist only on this
- * branch, 0 for no badge. It warns about what an [x] would lose, so only
- * cards with a working [x] show it (a repo with no online copy would
- * otherwise badge its default branch, which can never be deleted here).
+ * The tip under the workspace card when there is a lot to clean up: deleting
+ * one card at a time is slow, and an agent can weigh them all at once.
+ * `g` is groupCards() output; '' when there are fewer than CLEANUP_TIP_MIN.
  */
-export function unsavedCount(card, check) {
-    if (card.deletable && check && check.canTell && check.unsavedCommits > 0) return check.unsavedCommits;
-    return 0;
+export function cleanupTip(g) {
+    const n = g ? g.local.length + g.leftovers.length : 0;
+    if (n < CLEANUP_TIP_MIN) return '';
+    return n + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent: ' +
+        '"Let\'s discuss what worktrees & branches we can clean up".';
+}
+
+/**
+ * Whether picking this card should ask the server what deleting it would
+ * lose. Only local branches that can be deleted: the rest have no Delete,
+ * so checking them would be git work for nothing.
+ */
+export function needsPickCheck(card) {
+    return !!card && card.kind === 'local' && !!card.deletable;
+}
+
+/** "1.2 GB" style size, for the picked card's line. */
+export function formatBytes(n) {
+    if (!(n >= 0)) return '';
+    const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let v = n;
+    while (v >= 1000 && i < units.length - 1) {
+        v /= 1000;
+        i++;
+    }
+    return (i === 0 ? String(v) : v.toFixed(v < 10 ? 1 : 0)) + ' ' + units[i];
+}
+
+/**
+ * The line a picked card shows once /api/repo/branch-check answers: what
+ * deleting would lose, then the folder size when known. `risky` is true when
+ * something would be lost or the check couldn't tell.
+ */
+export function checkSummary(check) {
+    if (!check) return { text: '', risky: false };
+    const parts = [];
+    let risky = false;
+    if (!check.canTell) {
+        parts.push("Couldn't check what would be lost.");
+        risky = true;
+    } else {
+        const n = check.unsavedCommits || 0;
+        const e = check.folderEdits || 0;
+        if (n > 0) parts.push(n + (n === 1 ? ' saved change exists' : ' saved changes exist') + ' only here.');
+        if (e > 0) parts.push(e + (e === 1 ? ' unsaved edit' : ' unsaved edits') + ' in its folder.');
+        if (n > 0 || e > 0) risky = true;
+        else parts.push('Nothing to lose.');
+    }
+    if (typeof check.folderBytes === 'number') parts.push('Folder is ' + formatBytes(check.folderBytes) + '.');
+    return { text: parts.join(' '), risky };
 }
 
 /**
@@ -147,8 +194,9 @@ export function samePick(a, b) {
  * Delete flow for one card (sketch screens B and C). States:
  *   ready     -- nothing going on
  *   why       -- a greyed [x] was tapped; `reason` says why it can't go
- *   checking  -- [x] tapped; the server re-checks (and deletes if nothing
- *                would be lost)
+ *   checking  -- Delete (or a leftover's [x]) tapped; the server re-checks
+ *                and deletes if nothing would be lost. Shown as "deleting...",
+ *                since that is what takes the time
  *   confirm   -- something would be lost; `reason`, `undoable` from server
  *   deleting  -- "Delete anyway" tapped
  *   deleted   -- gone; `undo` note and `undoable` for the Undo strip

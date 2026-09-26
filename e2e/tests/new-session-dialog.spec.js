@@ -4,10 +4,9 @@ import crypto from 'crypto';
 import { endSessions, openSessionViaPost } from './_helpers/sessions.js';
 
 // New Session dialog behavior:
-//   1. The dialog becomes interactive from local git refs alone -- the
-//      remote `git fetch` runs in the background (via
-//      /api/repo/branches?fetch=1) and its failure soft-fails into a
-//      warning without ever disabling the dialog.
+//   1. Opening the dialog only lists branches from local git refs: no
+//      download from the remote and no per-branch checks. Picking a branch
+//      card checks that one branch and offers Delete.
 //   2. A recording's "+ New" button opens the dialog PRE-FILLED with the
 //      recording's settings (assistant, repo, branch, name, extra args)
 //      instead of creating a session directly.
@@ -180,7 +179,7 @@ function branchCard(page, name) {
   });
 }
 
-// The whole card row (pick button, [x], confirm line) for branch `name`.
+// The whole card row (pick button, Delete line, confirm line) for branch `name`.
 function cardRow(page, name) {
   const exact = new RegExp(`^${name.replace(/[/.]/g, '\\$&')}$`);
   return page.locator('#branch-cards-sections .branch-card-row', {
@@ -225,6 +224,12 @@ async function waitUntilInUse(page, kind, name) {
 // Remove a branch and its folder even if a just-ended session still sits in it.
 function dropCardsBranch(name) {
   inCards(`git worktree remove --force --force ${CARDS_WORKTREES}/${name} 2>/dev/null; rm -rf ${CARDS_WORKTREES}/${name}; git worktree prune; git branch -D ${name} 2>/dev/null; true`);
+}
+
+// Pick a local branch card, then press its Delete.
+async function pickAndDelete(page, name) {
+  await branchCard(page, name).click();
+  await cardRow(page, name).getByRole('button', { name: 'Delete ' + name, exact: true }).click();
 }
 
 async function openCardsRepo(page) {
@@ -331,114 +336,73 @@ test.describe('new-session dialog', () => {
     }
   });
 
-  test('dialog is interactive before the remote fetch completes (external repo)', async ({ page }) => {
-    // Hold the background fetch=1 request so the test can PROVE the dialog
-    // enabled itself while the remote fetch was still in flight.
-    let releaseFetch;
-    const held = new Promise((resolve) => { releaseFetch = resolve; });
-    let fetchStarted = false;
-    await page.route('**/api/repo/branches*', async (route) => {
-      // The refreshing call is the POST (it carries the saved HTTPS token in
-      // its body); the instant no-fetch listing is the GET.
-      if (route.request().method() === 'POST') {
-        fetchStarted = true;
-        await held;
+  // A large repo exhausted a box's open files just by opening this dialog:
+  // it downloaded from the remote and checked every branch (~180 git
+  // commands). Opening now only lists branches.
+  test('opening the dialog neither downloads nor checks branches', async ({ page }) => {
+    const calls = [];
+    page.on('request', (req) => {
+      const u = req.url();
+      if (u.includes('/api/repo/branch-check') || (u.includes('/api/repo/branches') && req.method() === 'POST')) {
+        calls.push(req.method() + ' ' + u);
       }
-      await route.continue();
     });
-
-    await openDialog(page);
-    await selectWhere(page, EXTERNAL_REPO);
-
-    // Branch + agent selection enable from local refs alone.
-    await expect(page.locator('#new-session-branch')).toBeEnabled({ timeout: 10_000 });
-    await expect(page.locator('.dialog__agent--disabled')).toHaveCount(0);
-
-    // Local branches are already shown as cards and no warning is shown --
-    // prepare itself no longer fetches.
-    await expect(page.locator('#branch-card-workspace-slot .branch-card'))
-      .toContainText('on: main');
-    await expect(page.locator('#new-session-warning')).toBeHidden();
-
-    // The background refresh did start (the repo has a remote)...
-    await expect.poll(() => fetchStarted, { timeout: 10_000 }).toBe(true);
-
-    // ...and when it completes against the unreachable remote it soft-fails
-    // into a warning, with the dialog still enabled.
-    releaseFetch();
-    await expect(page.locator('#new-session-warning')).toHaveText(
-      /Using cached branches/, { timeout: 15_000 }
-    );
-    await expect(page.locator('#new-session-branch')).toBeEnabled();
-  });
-
-  // The server runs the refresh outside any session, so it owns no
-  // credentials: a private HTTPS remote used to fail every refresh with
-  // "Using cached branches" even though git worked fine inside a session. The
-  // browser holds the token (same localStorage entry Settings > Git writes),
-  // so it hands it over on the refresh POST -- in the body, never the URL.
-  test('the branch refresh carries the saved HTTPS token for the repo host', async ({ page }) => {
-    await page.goto('/');
-    await page.evaluate(([host, bag]) => {
-      localStorage.setItem('swe-swe-creds:' + host, JSON.stringify(bag));
-    }, [HTTPS_HOST, { username: 'e2e-user', token: 'e2e-secret-token' }]);
-
-    const posts = [];
-    await page.route('**/api/repo/branches*', async (route) => {
-      const req = route.request();
-      if (req.method() === 'POST') {
-        posts.push({ url: req.url(), body: JSON.parse(req.postData() || '{}') });
-      }
-      await route.continue();
-    });
-
-    await openDialog(page);
-    await selectWhere(page, HTTPS_REPO);
-    await expect(page.locator('#new-session-branch')).toBeEnabled({ timeout: 10_000 });
-
-    await expect.poll(() => posts.length, { timeout: 15_000 }).toBeGreaterThan(0);
-    const post = posts[posts.length - 1];
-    expect(post.body.path).toBe(HTTPS_REPO);
-    expect(post.body.fetch).toBe(true);
-    expect(post.body.credHost).toBe(HTTPS_HOST);
-    expect(post.body.credUsername).toBe('e2e-user');
-    expect(post.body.credToken).toBe('e2e-secret-token');
-    // The token must never ride in the URL, where access logs would keep it.
-    expect(post.url).not.toContain('e2e-secret-token');
-
-    // The unreachable host still soft-fails into a warning, dialog usable.
-    await expect(page.locator('#new-session-warning')).toHaveText(
-      /Using cached branches/, { timeout: 20_000 }
-    );
-    await expect(page.locator('#new-session-branch')).toBeEnabled();
-
-    await page.evaluate((host) => localStorage.removeItem('swe-swe-creds:' + host), HTTPS_HOST);
-  });
-
-  // A refresh landing mid-typing must not move the user: the text typed into
-  // "+ New branch" stays, and so does what it picked.
-  test('a background branch refresh does not disturb the branch box', async ({ page }) => {
-    let releaseFetch;
-    const held = new Promise((resolve) => { releaseFetch = resolve; });
-    await page.route('**/api/repo/branches*', async (route) => {
-      if (route.request().method() === 'POST') await held;
-      await route.continue();
-    });
-
     await openCardsRepo(page);
-    await page.fill('#new-session-branch', 'my-new-idea');
-    await expect(page.locator('#branch-new-card')).toHaveClass(/branch-card--picked/);
+    await expect(branchCard(page, 'feat-a')).toBeVisible();
+    await expect(page.locator('.dialog__agent--disabled')).toHaveCount(0);
+    await page.waitForTimeout(1000);
+    expect(calls).toEqual([]);
+    // No [x] and no count badges on branch cards.
+    await expect(cardRow(page, 'feat-a').locator('.branch-card__x')).toHaveCount(0);
+    await expect(page.locator('.branch-card__count')).toHaveCount(0);
+  });
 
-    const refreshed = page.waitForResponse((r) =>
-      r.url().includes('/api/repo/branches') && r.request().method() === 'POST');
-    releaseFetch();
-    await refreshed;
-    // Let the refresh re-draw the cards.
-    await page.waitForTimeout(300);
+  test('many branches show a tip to ask the agent to clean up', async ({ page }) => {
+    await openCardsRepo(page);
+    await expect(page.locator('.branch-cards__tip')).toHaveCount(0);
+    inCards('for i in 1 2 3 4 5 6; do git branch tip-$i; done');
+    try {
+      await openCardsRepo(page);
+      const tip = page.locator('#branch-card-workspace-slot .branch-cards__tip');
+      await expect(tip).toContainText('10 branches and folders here.');
+      await expect(tip).toContainText('"Let\'s discuss what worktrees & branches we can clean up"');
+    } finally {
+      inCards('for i in 1 2 3 4 5 6; do git branch -D tip-$i; done 2>/dev/null; true');
+    }
+  });
 
-    expect(await page.locator('#new-session-branch').inputValue()).toBe('my-new-idea');
-    await expect(page.locator('#branch-new-card')).toHaveClass(/branch-card--picked/);
-    await expect(page.locator('#branch-card-workspace-slot .branch-card')).toHaveAttribute('aria-pressed', 'false');
+  // Only the card the user stops on is checked; picking another drops the
+  // check still running.
+  test('picking a card checks that branch only; picking another drops it', async ({ page }) => {
+    inCards(`git worktree add -q -b pick-sized ${CARDS_WORKTREES}/pick-sized && head -c 2000000 /dev/zero > ${CARDS_WORKTREES}/pick-sized/big.bin`);
+    const checks = [];
+    let releaseFirst;
+    const held = new Promise((resolve) => { releaseFirst = resolve; });
+    await page.route('**/api/repo/branch-check', async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      checks.push(body.branch);
+      if (checks.length === 1) await held;
+      await route.continue().catch(() => {});
+    });
+    try {
+      await openCardsRepo(page);
+      await branchCard(page, 'feat-a').click();
+      await expect(cardRow(page, 'feat-a')).toContainText('Checking what deleting would lose...');
+      await branchCard(page, 'pick-sized').click();
+      const row = cardRow(page, 'pick-sized');
+      // big.bin is a new file, so it counts as an unsaved edit.
+      await expect(row).toContainText('1 unsaved edit in its folder.');
+      await expect(row).toContainText(/Folder is 2\.\d MB\./);
+      await expect(row.getByRole('button', { name: 'Delete pick-sized', exact: true })).toBeVisible();
+      releaseFirst();
+      await page.waitForTimeout(300);
+      // The dropped check never draws on the card that is no longer picked.
+      await expect(cardRow(page, 'feat-a').locator('.branch-card__line')).toHaveCount(0);
+      expect(checks).toEqual(['feat-a', 'pick-sized']);
+    } finally {
+      releaseFirst();
+      inCards(`git worktree remove --force ${CARDS_WORKTREES}/pick-sized 2>/dev/null; git branch -D pick-sized 2>/dev/null; true`);
+    }
   });
 
   // Sketch screen A: one card per branch, grouped, tagged; picking a card and
@@ -545,13 +509,13 @@ test.describe('new-session dialog', () => {
   });
 
 
-  // --- Phase 5: [x], confirm, Undo, Switch back (sketch screens B, C, E) ---
+  // --- Pick, Delete, confirm, Undo, Switch back (sketch screens B, C, E) ---
 
-  test('[x] deletes a plain branch; Undo brings it back and it can still start a session', async ({ page }) => {
+  test('Delete removes a plain branch; Undo brings it back and it can still start a session', async ({ page }) => {
     inCards('git branch del-plain');
     try {
       await openCardsRepo(page);
-      await cardRow(page, 'del-plain').locator('.branch-card__x').click();
+      await pickAndDelete(page, 'del-plain');
       const strip = page.locator('.branch-card-row--deleted', { hasText: 'Deleted del-plain' });
       await expect(strip).toBeVisible();
       expect(cardsBranchExists('del-plain')).toBe(false);
@@ -573,11 +537,11 @@ test.describe('new-session dialog', () => {
     }
   });
 
-  test('[x] on a branch with a folder removes the folder and the branch', async ({ page }) => {
+  test('Delete on a branch with a folder removes the folder and the branch', async ({ page }) => {
     inCards(`git worktree add -q -b del-folder ${CARDS_WORKTREES}/del-folder`);
     await openCardsRepo(page);
     await expect(branchCard(page, 'del-folder')).toBeVisible();
-    await cardRow(page, 'del-folder').locator('.branch-card__x').click();
+    await pickAndDelete(page, 'del-folder');
     await expect(page.locator('.branch-card-row--deleted', { hasText: 'Deleted del-folder' })).toBeVisible();
     expect(cardsPathExists(`${CARDS_WORKTREES}/del-folder`)).toBe(false);
     expect(cardsBranchExists('del-folder')).toBe(false);
@@ -587,9 +551,10 @@ test.describe('new-session dialog', () => {
     inCards('git checkout -q -b del-lose && git commit -q --allow-empty -m only-here && git checkout -q main');
     try {
       await openCardsRepo(page);
-      await expect(branchCard(page, 'del-lose').locator('.branch-card__count')).toHaveText('1');
+      await branchCard(page, 'del-lose').click();
       const row = cardRow(page, 'del-lose');
-      await row.locator('.branch-card__x').click();
+      await expect(row).toContainText('1 saved change exists only here.');
+      await row.getByRole('button', { name: 'Delete del-lose', exact: true }).click();
       const confirm = row.locator('.branch-card__line--confirm');
       await expect(confirm).toContainText('1 saved change(s) exist only on this branch.');
 
@@ -597,7 +562,7 @@ test.describe('new-session dialog', () => {
       await expect(confirm).toHaveCount(0);
       expect(cardsBranchExists('del-lose')).toBe(true);
 
-      await row.locator('.branch-card__x').click();
+      await row.getByRole('button', { name: 'Delete del-lose', exact: true }).click();
       await row.locator('.branch-card__line--confirm').getByRole('button', { name: 'Delete anyway' }).click();
       const strip = page.locator('.branch-card-row--deleted', { hasText: 'Deleted del-lose' });
       await expect(strip.getByRole('button', { name: 'Undo' })).toBeVisible();
@@ -607,7 +572,7 @@ test.describe('new-session dialog', () => {
     }
   });
 
-  test('a branch in use by a live session has a greyed [x] that says why', async ({ page }) => {
+  test('picking a branch in use by a live session says why it has no Delete', async ({ page }) => {
     const uuid = await openSessionViaPost(page, { branch: 'busy-x', pwd: CARDS_REPO });
     testSessions.push(uuid);
     try {
@@ -615,9 +580,9 @@ test.describe('new-session dialog', () => {
       await openCardsRepo(page);
       const row = cardRow(page, 'busy-x');
       await expect(branchCard(page, 'busy-x')).toContainText('in use');
-      await expect(row.locator('.branch-card__x')).toHaveClass(/branch-card__x--off/);
-      await row.locator('.branch-card__x').click();
+      await branchCard(page, 'busy-x').click();
       await expect(row.locator('.branch-card__line')).toHaveText('A live session is using this branch.');
+      await expect(row.getByRole('button', { name: 'Delete busy-x', exact: true })).toHaveCount(0);
       expect(cardsBranchExists('busy-x')).toBe(true);
     } finally {
       await endSessions(page, testSessions.splice(0));
@@ -666,7 +631,7 @@ test.describe('new-session dialog', () => {
     }
   });
 
-  test('a slow delete shows "checking..." and the dialog stays usable', async ({ page }) => {
+  test('a slow delete shows "deleting..." and the dialog stays usable', async ({ page }) => {
     inCards('git branch del-slow');
     let release;
     const held = new Promise((resolve) => { release = resolve; });
@@ -677,10 +642,10 @@ test.describe('new-session dialog', () => {
     try {
       await openCardsRepo(page);
       const row = cardRow(page, 'del-slow');
-      await row.locator('.branch-card__x').click();
-      await expect(row).toContainText('checking...');
-      // Double-tap guard: the [x] can't be pressed again meanwhile.
-      await expect(row.locator('.branch-card__x')).toBeDisabled();
+      await pickAndDelete(page, 'del-slow');
+      await expect(row).toContainText('deleting...');
+      // Double-tap guard: no Delete to press again meanwhile.
+      await expect(row.getByRole('button', { name: 'Delete del-slow', exact: true })).toHaveCount(0);
       // The rest of the dialog still works.
       await branchCard(page, 'feat-a').click();
       await expect(branchCard(page, 'feat-a')).toHaveAttribute('aria-pressed', 'true');
@@ -696,38 +661,9 @@ test.describe('new-session dialog', () => {
   test('deleting the picked card puts the pick back on the workspace', async ({ page }) => {
     inCards('git branch del-picked');
     await openCardsRepo(page);
-    await branchCard(page, 'del-picked').click();
-    await expect(branchCard(page, 'del-picked')).toHaveAttribute('aria-pressed', 'true');
-    await cardRow(page, 'del-picked').locator('.branch-card__x').click();
+    await pickAndDelete(page, 'del-picked');
     await expect(page.locator('.branch-card-row--deleted', { hasText: 'Deleted del-picked' })).toBeVisible();
     await expect(page.locator('#branch-card-workspace-slot .branch-card')).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  // A slow refresh must never gate session creation: Start works while the
-  // fetch is still in flight, and the abandoned request cannot come back and
-  // change anything.
-  test('a slow branch refresh does not block Start', async ({ page }) => {
-    let releaseFetch;
-    const held = new Promise((resolve) => { releaseFetch = resolve; });
-    await page.route('**/api/repo/branches*', async (route) => {
-      if (route.request().method() === 'POST') await held;
-      await route.continue();
-    });
-
-    await openDialog(page);
-    await selectWhere(page, 'workspace');
-    await expect(page.locator('#new-session-branch')).toBeEnabled({ timeout: 10_000 });
-
-    // Pick an agent and start while the refresh is still held open. Agent
-    // Chat is the only Start the dialog exposes (Agent Terminal is hidden).
-    await page.locator('.dialog__agent').first().click();
-    await expect(page.locator('#new-session-start-chat')).toBeEnabled({ timeout: 10_000 });
-    await page.click('#new-session-start-chat');
-
-    await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
-    testSessions.push(new URL(page.url()).pathname.split('/')[2]);
-
-    releaseFetch();
   });
 
   test('default workspace prepares without a warning and lists branches', async ({ page }) => {

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { groupCards, cardTags, unsavedCount, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
+import { groupCards, cardTags, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
 
 // A /api/repo/branches reply shaped like screen A of the sketch.
 function reply(overrides) {
@@ -47,30 +47,64 @@ test('groupCards: no cards in the reply (older server) returns null', () => {
 
 test('cardTags: one tag per decision-table row', () => {
     const d = reply();
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'plain', deletable: true }, null, d), []);
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', deletable: true }, null, d), []);
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', inUse: true }, null, d), ['in use']);
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'origin/x', oddName: true, deletable: true }, null, d), ['odd name']);
-    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'main', default: true }, null, d), ['default']);
-    assert.deepStrictEqual(cardTags({ kind: 'online', name: 'foo', remote: 'origin' }, null, d), ['online only']);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'plain', deletable: true }, d), []);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', deletable: true }, d), []);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'x', folder: '/w/x', inUse: true }, d), ['in use']);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'origin/x', oddName: true, deletable: true }, d), ['odd name']);
+    assert.deepStrictEqual(cardTags({ kind: 'local', name: 'main', default: true }, d), ['default']);
+    assert.deepStrictEqual(cardTags({ kind: 'online', name: 'foo', remote: 'origin' }, d), ['online only']);
 });
 
-test('unsavedCount: the badge number fills in from the check', () => {
-    const c = { kind: 'local', name: 'x', deletable: true };
-    assert.strictEqual(unsavedCount(c, { unsavedCommits: 3, canTell: true }), 3);
-    assert.strictEqual(unsavedCount(c, { unsavedCommits: 0, canTell: true }), 0);
-    assert.strictEqual(unsavedCount(c, { unsavedCommits: 3, canTell: false }), 0);
-    assert.strictEqual(unsavedCount(c, null), 0);
-    // Only cards with a working [x]: the default branch never shows it.
-    assert.strictEqual(unsavedCount({ kind: 'local', name: 'main', default: true, deletable: false },
-        { unsavedCommits: 1, canTell: true }), 0);
+test('cleanupTip: shows once branches plus leftover folders reach the minimum', () => {
+    const g = (local, leftovers) => ({
+        workspace: null, online: [],
+        local: Array.from({ length: local }, (_, i) => ({ kind: 'local', name: 'b' + i })),
+        leftovers: Array.from({ length: leftovers }, (_, i) => ({ folder: '/w/f' + i })),
+    });
+    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 0)), '');
+    assert.strictEqual(cleanupTip(null), '');
+    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 1)),
+        CLEANUP_TIP_MIN + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent: ' +
+        '"Let\'s discuss what worktrees & branches we can clean up".');
+});
+
+test('needsPickCheck: only deletable local branches cost a check', () => {
+    assert.strictEqual(needsPickCheck({ kind: 'local', name: 'x', deletable: true }), true);
+    assert.strictEqual(needsPickCheck({ kind: 'local', name: 'main', default: true, deletable: false }), false);
+    assert.strictEqual(needsPickCheck({ kind: 'online', name: 'x', remote: 'origin' }), false);
+    assert.strictEqual(needsPickCheck({ kind: 'workspace', name: 'main' }), false);
+    assert.strictEqual(needsPickCheck(null), false);
+});
+
+test('formatBytes: short sizes for the picked card', () => {
+    assert.strictEqual(formatBytes(0), '0 bytes');
+    assert.strictEqual(formatBytes(999), '999 bytes');
+    assert.strictEqual(formatBytes(1500), '1.5 KB');
+    assert.strictEqual(formatBytes(1200000000), '1.2 GB');
+    assert.strictEqual(formatBytes(250000000), '250 MB');
+    assert.strictEqual(formatBytes(undefined), '');
+});
+
+test('checkSummary: what deleting would lose, then the folder size', () => {
+    assert.deepStrictEqual(checkSummary({ canTell: true, unsavedCommits: 0, folderEdits: 0 }),
+        { text: 'Nothing to lose.', risky: false });
+    assert.deepStrictEqual(checkSummary({ canTell: true, unsavedCommits: 3, folderEdits: 0, folderBytes: 1200000000 }),
+        { text: '3 saved changes exist only here. Folder is 1.2 GB.', risky: true });
+    assert.deepStrictEqual(checkSummary({ canTell: true, unsavedCommits: 1, folderEdits: 1 }),
+        { text: '1 saved change exists only here. 1 unsaved edit in its folder.', risky: true });
+    assert.deepStrictEqual(checkSummary({ canTell: true, unsavedCommits: 0, folderEdits: 2, folderBytes: 0 }),
+        { text: '2 unsaved edits in its folder. Folder is 0 bytes.', risky: true });
+    // Can't tell counts as risky, whatever the numbers say.
+    assert.deepStrictEqual(checkSummary({ canTell: false, unsavedCommits: 0, folderEdits: 0 }),
+        { text: "Couldn't check what would be lost.", risky: true });
+    assert.deepStrictEqual(checkSummary(null), { text: '', risky: false });
 });
 
 test('cardTags: workspace shows its branch, and "not main" when off the default', () => {
     const d = reply();
-    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'main' }, null, d), ['on: main']);
-    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'feat/x', notDefault: true }, null, d), ['on: feat/x', 'not main']);
-    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: '', notDefault: true }, null, d), ['on: no branch', 'not main']);
+    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'main' }, d), ['on: main']);
+    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'feat/x', notDefault: true }, d), ['on: feat/x', 'not main']);
+    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: '', notDefault: true }, d), ['on: no branch', 'not main']);
 });
 
 // Screen D: "+ New branch" only makes something new.

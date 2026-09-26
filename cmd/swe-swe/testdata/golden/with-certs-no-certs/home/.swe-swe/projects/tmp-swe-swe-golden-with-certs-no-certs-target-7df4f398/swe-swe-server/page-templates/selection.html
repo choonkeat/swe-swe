@@ -1219,6 +1219,8 @@
             border-color: var(--accent-primary);
             outline: none;
         }
+        /* Picked = accent border + tint (no tick: it cost a column on
+           every card and wrapped long branch names sooner). */
         .branch-card--picked {
             border-color: var(--accent-primary);
             background: var(--accent-10);
@@ -1226,10 +1228,6 @@
         .branch-card:disabled {
             cursor: default;
             opacity: 0.7;
-        }
-        .branch-card__check {
-            width: 1em;
-            color: var(--accent-primary);
         }
         .branch-card__name {
             flex: 1 1 auto;
@@ -1244,18 +1242,10 @@
             color: var(--text-secondary);
             white-space: nowrap;
         }
-        .branch-card__count {
-            min-width: 20px;
-            height: 20px;
-            padding: 0 6px;
-            box-sizing: border-box;
-            border-radius: 10px;
-            background: var(--accent-primary);
-            color: #fff;
-            font-size: 11px;
-            font-weight: 600;
-            line-height: 20px;
-            text-align: center;
+        .branch-cards__tip {
+            padding: 6px 12px 2px;
+            font-size: 12px;
+            color: var(--text-secondary);
         }
         /* "+ New branch": the plain branch box until cards arrive. */
         .branch-card--new {
