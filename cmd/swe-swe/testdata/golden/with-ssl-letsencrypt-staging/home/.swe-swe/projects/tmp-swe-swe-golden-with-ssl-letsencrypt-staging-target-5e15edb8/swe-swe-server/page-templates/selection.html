@@ -2286,8 +2286,7 @@
                 </div>
 
                 <div class="sessions-list">
-                    {{range .Agents}}
-                    {{range .Sessions}}
+                    {{range .ActiveSessions}}
                     <div class="session-card{{if .Ending}} session-card--ending{{else if .EndRequested}} session-card--committing{{end}}" data-session-uuid="{{.UUID}}">
                         <div class="session-card__top">
                             <div class="session-card__info">
@@ -2340,7 +2339,6 @@
                             <button class="btn-end" data-action="end-session" data-uuid="{{.UUID}}" data-public-port="{{.PublicPort}}">End</button>
                         </div>
                     </div>
-                    {{end}}
                     {{end}}
                 </div>
             </section>

@@ -406,7 +406,7 @@ func formatDuration(d time.Duration) string {
 // AgentWithSessions groups an assistant with its active sessions
 type AgentWithSessions struct {
 	Assistant AssistantConfig
-	Sessions  []SessionInfo // sorted by CreatedAt desc (most recent first)
+	Sessions  []SessionInfo
 }
 
 // RecordingMetadata stores information about a terminal recording session
@@ -2715,13 +2715,6 @@ func main() {
 				}
 			}
 
-			// Sort sessions within each assistant by CreatedAt desc (most recent first)
-			for assistant := range sessionsByAssistant {
-				sort.Slice(sessionsByAssistant[assistant], func(i, j int) bool {
-					return sessionsByAssistant[assistant][i].CreatedAt.After(sessionsByAssistant[assistant][j].CreatedAt)
-				})
-			}
-
 			// Load recordings (sorted by timestamp) for the page-level recordings list.
 			recordings := loadEndedRecordings()
 
@@ -2766,8 +2759,10 @@ func main() {
 				}
 			}
 
-			// Build AgentWithSessions for all available assistants (homepage only)
+			// Build AgentWithSessions for all available assistants (homepage only),
+			// and one flat list of their sessions, most recent first regardless of agent.
 			agents := make([]AgentWithSessions, 0, len(availableAssistants))
+			var activeSessions []SessionInfo
 			for _, assistant := range availableAssistants {
 				// Skip non-homepage assistants (like shell)
 				if !assistant.Homepage {
@@ -2777,7 +2772,11 @@ func main() {
 					Assistant: assistant,
 					Sessions:  sessionsByAssistant[assistant.Binary], // nil if no sessions
 				})
+				activeSessions = append(activeSessions, sessionsByAssistant[assistant.Binary]...)
 			}
+			sort.SliceStable(activeSessions, func(i, j int) bool {
+				return activeSessions[i].CreatedAt.After(activeSessions[j].CreatedAt)
+			})
 
 			// Check if SSL certificate is available
 			_, hasSSLCert := os.Stat(tlsCertPath)
@@ -2800,6 +2799,7 @@ func main() {
 
 			data := struct {
 				Agents               []AgentWithSessions
+				ActiveSessions       []SessionInfo
 				Recordings           []RecordingInfo
 				RecordingsPage       int
 				RecordingsTotalPages int
@@ -2815,6 +2815,7 @@ func main() {
 				VersionNumber        string
 			}{
 				Agents:               agents,
+				ActiveSessions:       activeSessions,
 				Recordings:           recordings,
 				RecordingsPage:       recordingsPage,
 				RecordingsTotalPages: recordingsTotalPages,
