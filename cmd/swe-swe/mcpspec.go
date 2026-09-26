@@ -37,7 +37,7 @@ type mcpServer struct {
 }
 
 func mcpServers() []mcpServer {
-	const welcomeReplies = "What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned"
+	const welcomeReplies = "What can you help me with?,Give me an overview of this project,What has changed recently?,Discuss: which worktrees & branches can we clean up?,/swe-swe:recordings-list-orphaned"
 	return []mcpServer{
 		{
 			Name: "swe-swe-agent-chat",

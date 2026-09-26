@@ -82,7 +82,7 @@ func mcpLessProxySpecs(sessionMode string) []proxySpec {
 	if sessionMode == "chat" {
 		specs = append(specs, proxySpec{
 			Name: "swe-swe-agent-chat",
-			Argv: shExec("swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
+			Argv: shExec("swe-npx -y @choonkeat/agent-chat --theme-cookie swe-swe-theme --welcome-replies \"What can you help me with?,Give me an overview of this project,What has changed recently?,Discuss: which worktrees & branches can we clean up?,/swe-swe:recordings-list-orphaned\" --autocomplete-triggers /=slash-command --autocomplete-url http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY"),
 			// send_message / send_verbal_reply block until the user replies.
 			BlockingTools: []string{"send_message", "send_verbal_reply"},
 		})
