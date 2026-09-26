@@ -356,7 +356,7 @@ func TestBranchRefreshSavesDefaultBranch(t *testing.T) {
 		t.Fatalf("before refresh: default should be a guess, got %q", res.DefaultBranch)
 	}
 
-	if out, err := runBranchFetch(repo, "", "", ""); err != nil {
+	if out, err := runBranchFetch(repo, "", "", "", ""); err != nil {
 		t.Fatalf("refresh: %v\n%s", err, out)
 	}
 

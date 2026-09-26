@@ -32,10 +32,12 @@ export function groupCards(data) {
             byRemote.get(c.remote).push(c);
         }
     }
-    // Remote order as `git remote` lists it; any remote not in that list last.
-    const order = (data.remotes || []).filter((r) => byRemote.has(r));
+    // Every remote gets a group, even with no online-only branch yet: opening
+    // it is what downloads that remote. Order as `git remote` lists them; any
+    // remote not in that list last.
+    const order = (data.remotes || []).slice();
     for (const r of byRemote.keys()) if (!order.includes(r)) order.push(r);
-    g.online = order.map((remote) => ({ remote, cards: byRemote.get(remote) }));
+    g.online = order.map((remote) => ({ remote, cards: byRemote.get(remote) || [] }));
     return g;
 }
 
@@ -164,6 +166,16 @@ export function resolveTyped(text, data) {
         return { pick: { kind: 'online', remote: onlineHit.remote, name }, message: '"' + name + '" is already online. Picked it for you.' };
     }
     return { pick: { kind: 'new', name }, message: '' };
+}
+
+/**
+ * Which remote to ask before creating a new branch: origin when there is
+ * one, else the first remote, '' for a repo with no remotes (nothing to ask).
+ */
+export function nameCheckRemote(data) {
+    const remotes = (data && data.remotes) || [];
+    if (remotes.includes('origin')) return 'origin';
+    return remotes[0] || '';
 }
 
 /**

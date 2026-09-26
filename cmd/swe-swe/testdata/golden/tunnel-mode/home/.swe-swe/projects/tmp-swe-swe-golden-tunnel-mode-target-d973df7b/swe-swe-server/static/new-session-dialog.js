@@ -111,6 +111,16 @@
         // drops the in-flight check when another card is picked.
         pickCheck: null,
         pickCheckAbort: null,
+        // Online sections download only when opened: remote -> {state:
+        // 'fetching' | 'done' | 'failed', reason}, plus each download's
+        // AbortController so closing the dialog drops them.
+        remoteFetches: {},
+        remoteFetchAborts: {},
+        // Before Start creates a new branch, ask the remote about that one
+        // name: {name, remote, mode, state: 'checking' | 'failed' |
+        // 'clear' | 'skipped', reason}.
+        nameCheck: null,
+        nameCheckAbort: null,
         // Delete flow per card, keyed by branchCards.localKey/leftoverKey
         // (and 'workspace:' for Switch back). Lives until the dialog closes,
         // which is how long an Undo strip stays.
@@ -252,9 +262,13 @@
         dialogState.initSha = '';
         dialogState.remoteHost = '';
         dialogState.prefillName = '';
-        // Whatever repo the in-flight check was for, it is not the one the
+        // Whatever repo the in-flight checks were for, it is not the one the
         // user is now looking at.
         abortPickCheck();
+        abortRemoteFetches();
+        abortNameCheck();
+        dialogState.remoteFetches = {};
+        dialogState.nameCheck = null;
         if (extraArgsInput) extraArgsInput.value = '';
 
         // Reset color picker
@@ -522,14 +536,185 @@
         }
     }
 
-    function setBranchCardsMsg(text, blocked) {
+    // `buttons` (optional): [[label, onClick], ...] after the text.
+    function setBranchCardsMsg(text, blocked, buttons) {
         branchCardsMsg.textContent = text;
         branchCardsMsg.classList.toggle('branch-cards__msg--blocked', !!blocked);
+        (buttons || []).forEach(function(b) {
+            branchCardsMsg.appendChild(document.createTextNode(' '));
+            branchCardsMsg.appendChild(smallButton(b[0], '', b[1]));
+        });
+    }
+
+    // Borrow the saved HTTPS token for a remote call. In the body only,
+    // never the URL; the credential helper only hands it to its own host.
+    function withRemoteCreds(body) {
+        var creds = readCloneCreds(dialogState.remoteHost);
+        if (creds && creds.token) {
+            body.credHost = dialogState.remoteHost;
+            body.credUsername = creds.username || 'x-access-token';
+            body.credToken = creds.token;
+        }
+        return body;
+    }
+
+    function abortRemoteFetches() {
+        Object.keys(dialogState.remoteFetchAborts).forEach(function(r) {
+            dialogState.remoteFetchAborts[r].abort();
+        });
+        dialogState.remoteFetchAborts = {};
+    }
+
+    // Download one remote's branches (an online section was opened, or Retry
+    // tapped), then re-list. A failure keeps the list as it was and says so
+    // inside the section, not in the dialog-wide warning.
+    function fetchRemote(remote) {
+        var repoPath = dialogState.repoPath;
+        var st = dialogState.remoteFetches[remote];
+        if (st && st.state === 'fetching') return;
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        if (controller) dialogState.remoteFetchAborts[remote] = controller;
+        dialogState.remoteFetches[remote] = { state: 'fetching' };
+        renderBranchCards();
+        var failed = function(reason) {
+            if (dialogState.repoPath !== repoPath) return;
+            dialogState.remoteFetches[remote] = { state: 'failed', reason: reason || ("Couldn't reach " + remote + '.') };
+            renderBranchCards();
+        };
+        fetch('/api/repo/branches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(withRemoteCreds({ path: repoPath, fetch: true, remote: remote })),
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function(response) { return response.ok ? response.json() : null; })
+            .then(function(branchData) {
+                if (!branchData) { failed(''); return; }
+                if (dialogState.repoPath !== repoPath) return;
+                var warning = branchData.warning;
+                delete branchData.warning;
+                dialogState.remoteFetches[remote] = warning
+                    ? { state: 'failed', reason: "Couldn't reach " + remote + '. ' + warning }
+                    : { state: 'done' };
+                populateBranches(branchData);
+            })
+            .catch(function() { failed(''); })
+            .finally(function() {
+                if (dialogState.remoteFetchAborts[remote] === controller) delete dialogState.remoteFetchAborts[remote];
+            });
+    }
+
+    function abortNameCheck() {
+        if (dialogState.nameCheckAbort) {
+            dialogState.nameCheckAbort.abort();
+            dialogState.nameCheckAbort = null;
+        }
+    }
+
+    // Start with a new branch name: first ask the remote whether it already
+    // has that name, so a branch that is online but was never downloaded is
+    // used instead of shadowed by a new one. Never blocks for long: the
+    // server gives up after 10 s, and Cancel, a failure or a timeout all
+    // offer "Start anyway" (create the new branch, as before) or "Back".
+    function runNameCheck(name, remote, mode) {
+        var repoPath = dialogState.repoPath;
+        abortNameCheck();
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        dialogState.nameCheckAbort = controller;
+        dialogState.nameCheck = { name: name, remote: remote, mode: mode, state: 'checking' };
+        var guard = setTimeout(function() { if (controller) controller.abort(); }, 15000);
+        var mine = function() {
+            var nc = dialogState.nameCheck;
+            return dialogState.repoPath === repoPath && nc && nc.name === name && nc.state === 'checking';
+        };
+        applyBranchBlockToStart();
+        showNameCheck();
+        fetch('/api/repo/remote-branch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(withRemoteCreds({ path: repoPath, remote: remote, name: name })),
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function(response) {
+                return response.json().catch(function() { return {}; }).then(function(body) {
+                    return { ok: response.ok, body: body || {} };
+                });
+            })
+            .then(function(r) {
+                if (!mine()) return;
+                if (!r.ok || (r.body.exists && !r.body.fetched)) {
+                    nameCheckFailed(r.body.error);
+                    return;
+                }
+                if (!r.body.exists) {
+                    dialogState.nameCheck.state = 'clear';
+                    applyBranchBlockToStart();
+                    startSession(mode);
+                    return;
+                }
+                // It is online: re-list, which turns the typed name into
+                // that online card. The user then presses Start again.
+                return fetch('/api/repo/branches?path=' + encodeURIComponent(repoPath))
+                    .then(function(response) { return response.ok ? response.json() : null; })
+                    .then(function(branchData) {
+                        if (!mine()) return;
+                        dialogState.nameCheck = null;
+                        if (branchData) populateBranches(branchData);
+                        applyBranchBlockToStart();
+                        setBranchCardsMsg('"' + name + '" is already on ' + remote + '. Picked that branch; press Start again to use it.', false);
+                    });
+            })
+            .catch(function() {
+                if (mine()) nameCheckFailed('');
+            })
+            .finally(function() {
+                clearTimeout(guard);
+                if (dialogState.nameCheckAbort === controller) dialogState.nameCheckAbort = null;
+            });
+    }
+
+    function nameCheckFailed(reason) {
+        var nc = dialogState.nameCheck;
+        nc.state = 'failed';
+        nc.reason = reason || ("Couldn't reach " + nc.remote + ' to check if this name is taken.');
+        applyBranchBlockToStart();
+        showNameCheck();
+    }
+
+    function showNameCheck() {
+        var nc = dialogState.nameCheck;
+        if (!nc) return;
+        if (nc.state === 'checking') {
+            setBranchCardsMsg('Checking if "' + nc.name + '" is already on ' + nc.remote + '...', false, [
+                ['Cancel', function() {
+                    abortNameCheck();
+                    nameCheckFailed('');
+                }]
+            ]);
+        } else if (nc.state === 'failed') {
+            setBranchCardsMsg(nc.reason, true, [
+                ['Start anyway', function() {
+                    nc.state = 'skipped';
+                    setBranchCardsMsg('', false);
+                    startSession(nc.mode);
+                }],
+                ['Back', function() {
+                    dialogState.nameCheck = null;
+                    setBranchCardsMsg('', false);
+                    applyBranchBlockToStart();
+                }]
+            ]);
+        }
     }
 
     // Start stays greyed while "+ New" holds a name that can't be used.
     function applyBranchBlockToStart() {
-        if (dialogState.branchBlocked) {
+        var checking = !!dialogState.nameCheck && dialogState.nameCheck.state === 'checking';
+        [startTerminalBtn, startChatBtn].forEach(function(b) {
+            if (!b.dataset.label) b.dataset.label = b.textContent;
+            b.textContent = checking ? 'Checking ' + dialogState.nameCheck.remote + '...' : b.dataset.label;
+        });
+        if (dialogState.branchBlocked || checking) {
             startTerminalBtn.disabled = true; startChatBtn.disabled = true;
         } else if (dialogState.selectedAgent) {
             startTerminalBtn.disabled = false; startChatBtn.disabled = false;
@@ -543,6 +728,11 @@
             return;
         }
         var bc = window.branchCards;
+        var nc = dialogState.nameCheck;
+        if (nc && nc.name !== branchInput.value.trim()) {
+            abortNameCheck();
+            dialogState.nameCheck = null;
+        }
         var r = bc.resolveTyped(branchInput.value, bc.withoutDeleted(dialogState.branchData, dialogState.cardStates));
         if (!r.pick) {
             // Emptied the box: back to the card that was picked before typing.
@@ -949,12 +1139,29 @@
             var details = document.createElement('details');
             details.className = 'branch-cards__online';
             details.open = !!dialogState.openRemotes[group.remote];
+            // Opening a section is what downloads that remote, once per
+            // dialog; after a failure only Retry downloads again. Setting
+            // .open while re-drawing also fires this, which the state check
+            // turns into a no-op.
             details.addEventListener('toggle', function() {
                 dialogState.openRemotes[group.remote] = details.open;
+                if (details.open && !dialogState.remoteFetches[group.remote]) fetchRemote(group.remote);
             });
+            var fs = dialogState.remoteFetches[group.remote];
             var summary = el('summary', 'branch-cards__section',
-                'Online only: ' + group.remote + ' (' + group.cards.length + ')');
+                'Online only: ' + group.remote + ' (' + group.cards.length + ')' +
+                (fs && fs.state === 'fetching' ? ', fetching...' : ''));
             details.appendChild(summary);
+            if (fs && fs.state === 'fetching') {
+                details.appendChild(el('div', 'branch-card__line', 'Fetching from ' + group.remote + '...'));
+            } else if (fs && fs.state === 'failed') {
+                var failLine = el('div', 'branch-card__line branch-card__line--error');
+                failLine.appendChild(el('span', 'branch-card__line-text', fs.reason));
+                failLine.appendChild(smallButton('Retry', '', function() { fetchRemote(group.remote); }));
+                details.appendChild(failLine);
+            } else if (fs && fs.state === 'done' && !group.cards.length) {
+                details.appendChild(el('div', 'branch-card__line', 'Every branch on ' + group.remote + ' is already on this box.'));
+            }
             group.cards.forEach(function(c) {
                 // No [x]: deleting an online copy would affect everyone else.
                 details.appendChild(makeBranchCard(c.name, {
@@ -1495,9 +1702,20 @@
         onBranchTyped();
         if (dialogState.branchBlocked) { showError(dialogState.branchBlocked); return; }
         if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        var pick = dialogState.branchPick;
+        if (dialogState.cardsOn && pick && pick.kind === 'new') {
+            var remote = window.branchCards.nameCheckRemote(dialogState.branchData);
+            var nc = dialogState.nameCheck;
+            var settled = nc && nc.name === pick.name && (nc.state === 'clear' || nc.state === 'skipped');
+            if (remote && !settled) {
+                if (!(nc && nc.name === pick.name && nc.state === 'checking')) runNameCheck(pick.name, remote, sessionMode);
+                return;
+            }
+        }
         // The session is being created: a still-running check has nothing
         // left to update, and must not compete with the create call.
         abortPickCheck();
+        abortRemoteFetches();
         // Record this repo as most-recently-used so it sorts to the top of the
         // Where dropdown next time (per-device recency). repoPath is the
         // resolved local path, matching the dynamic option's value.
