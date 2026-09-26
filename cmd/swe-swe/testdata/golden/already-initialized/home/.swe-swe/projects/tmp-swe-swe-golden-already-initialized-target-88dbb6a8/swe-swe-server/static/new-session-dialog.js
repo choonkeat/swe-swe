@@ -889,7 +889,10 @@
         (opts.tags || []).forEach(function(t) {
             main.appendChild(el('span', 'branch-card__tag', t));
         });
-        if (st && (st.state === 'checking' || st.state === 'deleting')) {
+        // A leftover folder has no open line, so its busy state is a tag. A
+        // branch card stays open instead (see deletingLine), so the cards
+        // below don't jump.
+        if (!opts.del && st && (st.state === 'checking' || st.state === 'deleting')) {
             main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
         }
         row.appendChild(main);
@@ -925,11 +928,27 @@
         } else if (st && (st.state === 'why' || st.state === 'failed')) {
             row.appendChild(el('div', 'branch-card__line' + (st.state === 'failed' ? ' branch-card__line--error' : ''), st.reason));
         }
-        // A failed delete keeps its error above a fresh Delete to retry.
-        if (opts.del && picked && !bc.isBusy(st) && !(st && st.state === 'confirm')) {
+        if (opts.del && bc.isBusy(st)) {
+            // Stays open until the delete finishes, even once another card
+            // is picked.
+            row.appendChild(deletingLine(label));
+        } else if (opts.del && picked && !(st && st.state === 'confirm')) {
+            // A failed delete keeps its error above a fresh Delete to retry.
             row.appendChild(pickCheckLine(label, opts.del));
         }
         return row;
+    }
+
+    // A branch card while its delete runs: same size as the open card, with
+    // the button greyed so it can't be pressed twice.
+    function deletingLine(label) {
+        var line = el('div', 'branch-card__line');
+        line.appendChild(el('span', 'branch-card__line-text', 'Deleting folder...'));
+        var b = smallButton('Deleting...', 'branch-card__btn--danger', function() {});
+        b.disabled = true;
+        b.setAttribute('aria-label', 'Deleting ' + label);
+        line.appendChild(b);
+        return line;
     }
 
     // The picked branch's line: why it can't be deleted, or what deleting
@@ -950,6 +969,28 @@
         b.setAttribute('aria-label', 'Delete ' + label);
         line.appendChild(b);
         return line;
+    }
+
+    // navigator.clipboard exists only in a secure context; a box reached over
+    // plain http on anything but localhost is not one, so fall back to a
+    // hidden textarea (same as homepage-main.js copyText).
+    function copyText(text) {
+        if (window.isSecureContext && navigator.clipboard) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function(resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            if (ok) resolve(); else reject(new Error('copy unavailable'));
+        });
     }
 
     function sectionTitle(text) {
@@ -1090,7 +1131,23 @@
             }));
         }
         var tip = bc.cleanupTip(g);
-        if (tip) branchWorkspaceSlot.appendChild(el('div', 'branch-cards__tip', tip));
+        if (tip) {
+            var tipEl = el('div', 'branch-cards__tip');
+            tipEl.appendChild(el('div', 'branch-cards__tip-text', tip.text));
+            var promptEl = el('div', 'branch-cards__tip-prompt');
+            promptEl.appendChild(el('span', 'branch-cards__tip-prompt-text', tip.prompt));
+            var copyBtn = smallButton('Copy', '', function() {
+                copyText(tip.prompt).then(function() { flash('Copied'); }, function() { flash('Copy failed'); });
+            });
+            var flash = function(word) {
+                copyBtn.textContent = word;
+                setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+            };
+            copyBtn.setAttribute('aria-label', 'Copy the clean-up prompt');
+            promptEl.appendChild(copyBtn);
+            tipEl.appendChild(promptEl);
+            branchWorkspaceSlot.appendChild(tipEl);
+        }
         branchNewCard.classList.toggle('branch-card--picked',
             !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
 

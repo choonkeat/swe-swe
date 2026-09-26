@@ -68,11 +68,12 @@ test('cleanupTip: shows once branches plus leftover folders reach the minimum', 
         local: Array.from({ length: local }, (_, i) => ({ kind: 'local', name: 'b' + i })),
         leftovers: Array.from({ length: leftovers }, (_, i) => ({ folder: '/w/f' + i })),
     });
-    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 0)), '');
-    assert.strictEqual(cleanupTip(null), '');
-    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 1)),
-        CLEANUP_TIP_MIN + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent: ' +
-        '"Let\'s discuss what worktrees & branches we can clean up".');
+    assert.strictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 0)), null);
+    assert.strictEqual(cleanupTip(null), null);
+    assert.deepStrictEqual(cleanupTip(g(CLEANUP_TIP_MIN - 1, 1)), {
+        text: CLEANUP_TIP_MIN + ' branches and folders here. Instead of deleting them one at a time, it may be quicker to ask your agent:',
+        prompt: 'Let\'s discuss what worktrees & branches we can clean up',
+    });
 });
 
 test('needsPickCheck: only deletable local branches cost a check', () => {

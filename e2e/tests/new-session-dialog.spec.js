@@ -377,7 +377,13 @@ test.describe('new-session dialog', () => {
       await openCardsRepo(page);
       const tip = page.locator('#branch-card-workspace-slot .branch-cards__tip');
       await expect(tip).toContainText('10 branches and folders here.');
-      await expect(tip).toContainText('"Let\'s discuss what worktrees & branches we can clean up"');
+      await expect(tip.locator('.branch-cards__tip-prompt-text')).toHaveText("Let's discuss what worktrees & branches we can clean up");
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+      const copy = tip.getByRole('button', { name: 'Copy the clean-up prompt' });
+      await copy.click();
+      await expect(copy).toHaveText('Copied');
+      const copied = await page.evaluate(() => navigator.clipboard ? navigator.clipboard.readText().catch(() => null) : null);
+      if (copied !== null) expect(copied).toBe("Let's discuss what worktrees & branches we can clean up");
     } finally {
       inCards('for i in 1 2 3 4 5 6; do git branch -D tip-$i; done 2>/dev/null; true');
     }
@@ -736,7 +742,7 @@ test.describe('new-session dialog', () => {
     }
   });
 
-  test('a slow delete shows "deleting..." and the dialog stays usable', async ({ page }) => {
+  test('a slow delete keeps the card open with a greyed Deleting... button, and the dialog stays usable', async ({ page }) => {
     inCards('git branch del-slow');
     let release;
     const held = new Promise((resolve) => { release = resolve; });
@@ -747,13 +753,19 @@ test.describe('new-session dialog', () => {
     try {
       await openCardsRepo(page);
       const row = cardRow(page, 'del-slow');
-      await pickAndDelete(page, 'del-slow');
-      await expect(row).toContainText('deleting...');
-      // Double-tap guard: no Delete to press again meanwhile.
-      await expect(row.getByRole('button', { name: 'Delete del-slow', exact: true })).toHaveCount(0);
-      // The rest of the dialog still works.
+      await branchCard(page, 'del-slow').click();
+      const delBtn = row.getByRole('button', { name: 'Delete del-slow', exact: true });
+      await expect(delBtn).toBeVisible();
+      const openHeight = (await row.boundingBox()).height;
+      await delBtn.click();
+      await expect(row).toContainText('Deleting folder...');
+      // Double-tap guard: the button is greyed, not gone.
+      await expect(row.getByRole('button', { name: 'Deleting del-slow' })).toBeDisabled();
+      expect(Math.abs((await row.boundingBox()).height - openHeight)).toBeLessThanOrEqual(2);
+      // The rest of the dialog still works, and the deleting card stays open.
       await branchCard(page, 'feat-a').click();
       await expect(branchCard(page, 'feat-a')).toHaveAttribute('aria-pressed', 'true');
+      await expect(row).toContainText('Deleting folder...');
 
       release();
       await expect(page.locator('.branch-card-row--deleted', { hasText: 'Deleted del-slow' })).toBeVisible();
