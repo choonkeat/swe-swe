@@ -971,6 +971,28 @@
         return line;
     }
 
+    // navigator.clipboard exists only in a secure context; a box reached over
+    // plain http on anything but localhost is not one, so fall back to a
+    // hidden textarea (same as homepage-main.js copyText).
+    function copyText(text) {
+        if (window.isSecureContext && navigator.clipboard) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function(resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            if (ok) resolve(); else reject(new Error('copy unavailable'));
+        });
+    }
+
     function sectionTitle(text) {
         return el('div', 'branch-cards__section', text);
     }
@@ -1112,7 +1134,18 @@
         if (tip) {
             var tipEl = el('div', 'branch-cards__tip');
             tipEl.appendChild(el('div', 'branch-cards__tip-text', tip.text));
-            tipEl.appendChild(el('div', 'branch-cards__tip-prompt', tip.prompt));
+            var promptEl = el('div', 'branch-cards__tip-prompt');
+            promptEl.appendChild(el('span', 'branch-cards__tip-prompt-text', tip.prompt));
+            var copyBtn = smallButton('Copy', '', function() {
+                copyText(tip.prompt).then(function() { flash('Copied'); }, function() { flash('Copy failed'); });
+            });
+            var flash = function(word) {
+                copyBtn.textContent = word;
+                setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+            };
+            copyBtn.setAttribute('aria-label', 'Copy the clean-up prompt');
+            promptEl.appendChild(copyBtn);
+            tipEl.appendChild(promptEl);
             branchWorkspaceSlot.appendChild(tipEl);
         }
         branchNewCard.classList.toggle('branch-card--picked',
