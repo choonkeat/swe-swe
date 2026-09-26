@@ -85,6 +85,7 @@ args = ["-y", "@choonkeat/agent-chat", "--theme-cookie", "swe-swe-theme", "--wel
 # agent-chat itself, so they have to be on the whitelist or Codex sessions
 # silently lose both.
 env_vars = ["AGENT_CHAT_PORT", "AGENT_CHAT_EVENT_LOG", "AGENT_CHAT_EXPORT_DIR", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"]
+tool_timeout_sec = 86400
 
 [mcp_servers.swe-swe-playwright]
 command = "mcp-lazy-init"

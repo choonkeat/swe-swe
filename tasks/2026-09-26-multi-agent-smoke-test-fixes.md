@@ -1,6 +1,6 @@
 # Multi-agent smoke test: fixes
 
-## Status: PROPOSED - awaiting review
+## Status: IN PROGRESS - fixes 1 and 2 done
 
 ## Context
 
@@ -26,6 +26,9 @@ gave up waiting, and no message was lost.
 
 ### 1. Wake-up nudge fires while the agent is busy (swe-swe bug)
 
+**DONE** in 455520677; verified live on Pi after reboot 2026-09-26
+(`/ck:run-marp` ran to completion, no stray nudge).
+
 - **Where:** `wakeAgentForQueuedChat`,
   `cmd/swe-swe/templates/host/swe-swe-server/main.go:9650`
 - **Symptom:** Pi was working on `/ck:run-marp` when
@@ -46,6 +49,9 @@ gave up waiting, and no message was lost.
 - **Estimate:** about 2 hours.
 
 ### 2. Codex stops waiting for a chat reply after 5 minutes
+
+**DONE**; `codex mcp get` (0.157.1) confirms both the TOML and `-c` forms
+parse. Not yet retested live (needs a reboot + a 6-minute wait).
 
 - **Where:** `cmd/swe-swe/mcpspec.go:186` (`mcpCodexTOML`) and `:208`
   (`mcpCodexFlags`)

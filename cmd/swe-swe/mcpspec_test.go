@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The expected strings below are copied verbatim from what the container
 // entrypoint wrote before the spec table existed. They are the contract:
@@ -63,4 +66,26 @@ func referencedEnvVars(s string) []string {
 		i = j - 1
 	}
 	return out
+}
+
+// Codex gives up on a tool call after its default timeout (300s seen in
+// 0.157.1), so a send_message waiting for the user's reply fails and Codex
+// ends its turn. Only agent-chat blocks on a human; the others keep the default.
+func TestMCPCodexAgentChatWaitsForTheUser(t *testing.T) {
+	const want = "tool_timeout_sec = 86400"
+	for _, block := range strings.Split(mcpCodexTOML(), "\n\n") {
+		has := strings.Contains(block, want)
+		isChat := strings.HasPrefix(block, "[mcp_servers.swe-swe-agent-chat]")
+		if has != isChat {
+			t.Errorf("%q present=%v in block:\n%s", want, has, block)
+		}
+	}
+
+	flags := strings.Join(mcpCodexFlags(), " ")
+	if !strings.Contains(flags, "-c mcp_servers.swe-swe-agent-chat.tool_timeout_sec=86400") {
+		t.Errorf("flags missing agent-chat tool_timeout_sec: %s", flags)
+	}
+	if n := strings.Count(flags, "tool_timeout_sec"); n != 1 {
+		t.Errorf("tool_timeout_sec set on %d servers, want 1: %s", n, flags)
+	}
 }
