@@ -1,7 +1,7 @@
 # Branch cards stop overloading the box; git runs one command at a time
 
 **Date**: 2026-09-25
-**Status**: Phases A and B DONE (branch feat/branch-list-only); C-E not started
+**Status**: Phases A, B, C DONE (branch feat/branch-list-only); D-E not started
 **Estimate**: about 2.5 days (A: 0.5, B: 0.5, C+D: 1.5)
 
 ## Why
@@ -180,6 +180,14 @@ downloads seen in the incident logs.
 3. Linter with the current 37 call sites as a known list: passes today,
    fails on any NEW site.
 4. `make test` green. Commit.
+
+Phase C result: git_run.go (runGit, gitLineKey, killGitGroupOnCancel moved
+from clone_cred.go), OnStart hook for the broker's pid registration.
+git_run_lint_test.go counts git starts per file (gitStartsNotYetMoved): 38
+today, main.go 27 (the 37 estimate missed remote_branch.go, added in B).
+A file above its number, or a new file, fails; a file below must have its
+number lowered. The checker's own test covers "git", "/usr/bin/git", a const,
+and sh/bash -c scripts.
 
 ## Phase D: move all call sites (known list shrinks to zero)
 
